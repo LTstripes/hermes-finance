@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 from test_r08_02_portfolio_xirr import END, MID, START, _history
 from test_r08_03_portfolio_twrr import END as TWRR_END
 from test_r08_03_portfolio_twrr import FIRST_FLOW_DATE, _close_interval, _environment, _flow
@@ -62,6 +62,49 @@ def test_exact_zero_and_legacy_endpoints_unchanged_read_only(history):
         assert "/api/performance/readiness" in schema["paths"]
         assert set(schema["paths"]["/api/performance/readiness"]) == {"get"}
     assert list(database.engine.raw_connection().iterdump()) == before
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_coverage_capability_never_reserves_writer_or_ends_read_snapshot(history, closed):
+    session, database, opening, closing, account = history
+    from hermes_finance.services.reporting_months import reopen_reporting_month
+
+    if not closed:
+        reopen_reporting_month(session, opening)
+        reopen_reporting_month(session, closing)
+    session.execute(delete(CashBoundaryCoverage))
+    session.execute(delete(InKindBoundaryCoverage))
+    session.commit()
+    statements = []
+
+    def record(_connection, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", record)
+    try:
+        with TestClient(create_app(database=database)) as client:
+            response = client.get(
+                "/api/performance/readiness",
+                params={
+                    "start_date": str(START),
+                    "end_date": str(END),
+                    "scope": "account",
+                    "account_id": account,
+                },
+            )
+            assert response.status_code == 200, response.text
+            body = response.json()
+            capability = "requires_reopen" if closed else "available"
+            for key in ("cash_history", "in_kind_history"):
+                diagnostic = next(d for d in body["diagnostics"] if d["key"] == key)
+                assert diagnostic["action"]["capability"] == capability
+            assert body["xirr"]["availability"] != "available"
+            assert body["twrr"]["availability"] != "available"
+    finally:
+        event.remove(database.engine, "before_cursor_execute", record)
+    assert not any(
+        s.lstrip().upper().startswith(("UPDATE", "INSERT", "DELETE")) for s in statements
+    )
 
 
 def test_xirr_available_despite_missing_twrr_observations(tmp_path):

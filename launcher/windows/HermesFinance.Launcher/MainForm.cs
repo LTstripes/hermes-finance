@@ -10,7 +10,6 @@ public sealed class MainForm : Form
     private const string ReadyMarker = "Hermes Finance is ready: http://127.0.0.1:8000";
     private const string ReadyUrl = "http://127.0.0.1:8000";
     private static readonly Color WindowBackground = Color.FromArgb(9, 17, 31);
-    private static readonly Color PanelBackground = Color.FromArgb(15, 27, 46);
     private static readonly Color MutedText = Color.FromArgb(148, 161, 181);
     private static readonly Color PrimaryText = Color.FromArgb(245, 248, 252);
 
@@ -19,312 +18,154 @@ public sealed class MainForm : Form
         Dock = DockStyle.Fill,
         ColumnCount = 1,
         RowCount = 6,
-        // #302: slightly tighter than #284 so the window reads compact
-        // without losing air between header / cards / selected / actions.
-        Padding = new Padding(22, 18, 22, 16),
+        Padding = new Padding(16, 12, 16, 12),
         BackColor = WindowBackground,
-    };
-    private readonly HeaderLayoutPanel _header = new()
-    {
-        Dock = DockStyle.Fill,
-        // #284: grow with content like the other content-driven blocks, but
-        // never beyond the root cell width (see HeaderLayoutPanel).
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        ColumnCount = 2,
-        RowCount = 3,
-        BackColor = Color.Transparent,
-        Margin = new Padding(0, 0, 0, 8),
-    };
-    private readonly Label _brand = new()
-    {
-        Text = "HERMES FINANCE  /  LAUNCHER",
-        // #284: AutoSize without Dock (Dock+AutoSize disagrees on preferred
-        // size and the AutoSize root row undermeasures, clipping siblings).
-        TextAlign = ContentAlignment.BottomLeft,
-        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
-        ForeColor = Color.FromArgb(102, 227, 190),
-        AutoSize = true,
     };
     private readonly Label _title = new()
     {
         Text = "Запуск локального Hermes",
-        // #284: see _brand — left-aligned text renders identically.
+        AutoSize = true,
+        Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleLeft,
-        Font = new Font("Segoe UI", 21F, FontStyle.Bold),
+        Font = new Font("Segoe UI", 14F, FontStyle.Bold),
         ForeColor = PrimaryText,
-        AutoSize = true,
-    };
-    private readonly Label _subtitle = new()
-    {
-        // • = U+2022; single spaces so the line stays comfortably inside the
-        // cell width on every Windows metric (hosted runners measure wider).
-        Text = "Выберите подготовленную среду • Git меняется только по явному owner-действию, данные не смешиваются",
-        // #284: see _brand — left-aligned text renders identically.
-        TextAlign = ContentAlignment.TopLeft,
-        Font = new Font("Segoe UI", 9.5F),
-        ForeColor = MutedText,
-        AutoSize = true,
+        Margin = new Padding(0, 0, 0, 2),
     };
     private readonly Label _localPill = new()
     {
-        Text = "LOCAL ONLY\r\n127.0.0.1:8000",
+        Text = "Локально · 127.0.0.1:8000",
+        AutoSize = true,
         Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleCenter,
-        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
-        ForeColor = Color.FromArgb(164, 190, 225),
-        BackColor = Color.FromArgb(22, 38, 64),
-        Margin = new Padding(0, 10, 0, 10),
-        // #302: narrow horizontal padding + wider header cell (184px) keep
-        // the loopback address on its own explicit line without wrapping
-        // the last digit at 125/150% scaling. NoWrap is intentionally NOT
-        // set: the explicit CRLF break must keep working.
-        Padding = new Padding(8, 0, 8, 0),
-        AutoEllipsis = false,
-    };
-    private readonly Label _profilesCaption = new()
-    {
-        Text = "ПОДГОТОВЛЕННЫЕ СРЕДЫ",
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.BottomLeft,
-        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Segoe UI", 8.5F),
         ForeColor = MutedText,
-        Margin = new Padding(0, 4, 0, 4),
+        Margin = new Padding(0, 0, 0, 6),
     };
     private readonly FlowLayoutPanel _profiles = new()
     {
-        Dock = DockStyle.Fill,
-        // #284: cards wrap instead of clipping when the window is narrow;
-        // the row heights itself to the tallest card (see AutoSize root row).
+        Dock = DockStyle.Top,
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.LeftToRight,
         WrapContents = true,
-        AutoScroll = false,
         BackColor = Color.Transparent,
-        Margin = new Padding(-6, 0, -6, 8),
+        Margin = new Padding(0, 2, 0, 6),
         Padding = new Padding(0),
-    };
-    private readonly Panel _selectedPanel = new()
-    {
-        Dock = DockStyle.Fill,
-        BackColor = PanelBackground,
-        Padding = new Padding(16, 12, 16, 12),
-        Margin = new Padding(0, 0, 0, 8),
-        // #284: at small window sizes the flex area scrolls instead of
-        // silently clipping readiness/checks content.
-        AutoScroll = true,
-    };
-    private readonly TableLayoutPanel _selectedLayout = new()
-    {
-        // #284: Dock.Top (not Fill) + AutoSize: the table keeps its content
-        // height so the scrollable panel above can actually scroll instead
-        // of squeezing the table into a 1px flex row and clipping children.
-        Dock = DockStyle.Top,
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        ColumnCount = 1,
-        RowCount = 5,
-        BackColor = Color.Transparent,
-    };
-    private readonly Label _selectedName = new()
-    {
-        // #302: AutoSize without Dock (same #284 rationale as the window
-        // header labels): a Dock-Fill label reports stale bounds as its
-        // preferred size, so the single AutoSize header row undermeasured
-        // and clipped Cyrillic titles at 125/150%. Anchored top+bottom it
-        // still fills the row height; width follows the text.
-        Dock = DockStyle.None,
-        Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom,
-        AutoSize = true,
-        TextAlign = ContentAlignment.MiddleLeft,
-        // #302: 13F matches card titles and keeps Cyrillic titles inside
-        // the single AutoSize header row at 125/150% scaling.
-        Font = new Font("Segoe UI", 13F, FontStyle.Bold),
-        ForeColor = PrimaryText,
-        AutoEllipsis = true,
-        Margin = new Padding(0),
-    };
-    private readonly Label _selectedType = new()
-    {
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleRight,
-        Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
-        ForeColor = MutedText,
-        AutoEllipsis = true,
     };
     private readonly Label _shaSummary = new()
     {
+        AutoSize = true,
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleLeft,
-        Font = new Font("Cascadia Mono", 8F),
+        Font = new Font("Segoe UI", 9F),
         ForeColor = Color.FromArgb(164, 190, 225),
-        AutoEllipsis = true,
-        Text = "Current SHA: —",
-        Margin = new Padding(0, 0, 0, 3),
-    };
-    private readonly ReadinessContainerPanel _readinessPanel = new()
-    {
-        // #284: the selected-profile AutoSize row must consume the wrapper's
-        // content-driven preferred height. Dock.Top keeps the cell width,
-        // while AutoSize makes the inner layout's wrapped height authoritative.
-        Dock = DockStyle.Top,
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        BackColor = Color.FromArgb(21, 35, 57),
-        Padding = new Padding(12, 8, 12, 8),
-        Margin = new Padding(0, 2, 0, 8),
-    };
-    private readonly Label _readinessDot = new()
-    {
-        Text = "●",
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleCenter,
-        Font = new Font("Segoe UI", 17F, FontStyle.Bold),
-        ForeColor = MutedText,
+        Text = "—",
+        Margin = new Padding(0, 2, 0, 2),
     };
     private readonly Label _readinessTitle = new()
     {
+        AutoSize = true,
         Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.BottomLeft,
-        Font = new Font("Segoe UI", 11.5F, FontStyle.Bold),
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = new Font("Segoe UI", 12F, FontStyle.Bold),
         ForeColor = PrimaryText,
-        AutoEllipsis = true,
+        Text = "Не проверено",
+        Margin = new Padding(0, 6, 0, 0),
     };
-    private readonly ReadinessDescriptionLabel _readinessDescription = new()
+    private readonly Label _readinessDescription = new()
     {
-        // #284: fills the table cell and wraps to the cell width instead of
-        // clipping; the row is AutoSize so the height follows the wrapped
-        // text. Clamp tracks the cell width (MaximumSize is the wrap hint),
-        // and the label itself measures its wrapped height at the real
-        // proposed width (see ReadinessDescriptionLabel).
+        AutoSize = true,
         Dock = DockStyle.Fill,
-        AutoSize = false,
         TextAlign = ContentAlignment.TopLeft,
         Font = new Font("Segoe UI", 8.5F),
         ForeColor = MutedText,
-        // Spacing is provided by the readiness panel padding and title row;
-        // the AutoSize row must not add the Label's default 3px margins.
-        Margin = new Padding(0),
-        AutoEllipsis = false,
-    };
-    private readonly TableLayoutPanel _checks = new()
-    {
-        Dock = DockStyle.Fill,
-        ColumnCount = 3,
-        RowCount = 4,
-        BackColor = Color.Transparent,
-        Margin = new Padding(0),
-    };
-    private readonly Label _identityCheck = new();
-    private readonly Label _dataCheck = new();
-    private readonly Label _dependenciesCheck = new();
-    private readonly Label _serviceCheck = new();
-    private readonly ActionTableLayoutPanel _actions = new()
-    {
-        Dock = DockStyle.Fill,
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        ColumnCount = 2,
-        RowCount = 2,
-        BackColor = Color.Transparent,
-        Margin = new Padding(0),
+        Visible = false,
+        Margin = new Padding(0, 2, 0, 4),
     };
     private readonly FlowLayoutPanel _actionButtons = new()
     {
-        Dock = DockStyle.Fill,
-        // #284: primary buttons wrap to a second line instead of clipping
-        // when labels outgrow one row (narrow window / larger fonts). The
-        // row height is sized explicitly (see SizeActionRows): an AutoSize
-        // table row cannot measure a wrapping flow panel (unconstrained
-        // preferred width collapses to a single column).
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.LeftToRight,
         WrapContents = true,
         BackColor = Color.Transparent,
-        Margin = new Padding(-4, 0, 0, 0),
+        Margin = new Padding(0, 6, 0, 0),
         Padding = new Padding(0),
     };
     private readonly FlowLayoutPanel _secondaryButtons = new()
     {
-        Dock = DockStyle.Fill,
-        // #284: secondary actions wrap instead of hiding behind a scrollbar;
-        // row height is sized explicitly (see SizeActionRows).
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         FlowDirection = FlowDirection.LeftToRight,
         WrapContents = true,
-        AutoScroll = true,
         BackColor = Color.Transparent,
-        Margin = new Padding(-4, 0, 0, 0),
+        Margin = new Padding(0, 2, 0, 0),
         Padding = new Padding(0),
     };
     private readonly Button _start = new()
     {
         Text = "Запустить",
-        Width = 112,
-        Height = 40,
+        Width = 148,
+        Height = 36,
         Enabled = false,
+        Visible = false,
         AccessibleName = "Запустить Hermes",
     };
     private readonly Button _stop = new()
     {
         Text = "Остановить",
-        Width = 112,
-        Height = 40,
+        Width = 104,
+        Height = 28,
         Enabled = false,
+        Visible = false,
         AccessibleName = "Остановить Hermes",
     };
     private readonly Button _open = new()
     {
         Text = "Открыть Hermes",
-        Width = 132,
-        // #302: secondary row is visually subordinate to the primary CTA
-        // row (40px): same labels, smaller footprint, still reachable.
-        Height = 34,
+        Width = 156,
+        Height = 36,
         Enabled = false,
+        Visible = false,
         AccessibleName = "Открыть Hermes",
     };
     private readonly Button _refresh = new()
     {
         Text = "Обновить проверку",
-        Width = 150,
-        Height = 34,
+        Width = 168,
+        Height = 36,
+        Enabled = false,
+        Visible = false,
         AccessibleName = "Обновить проверку",
     };
     private readonly Button _detailsToggle = new()
     {
         Text = "Диагностика и логи",
-        Width = 154,
-        Height = 34,
+        Width = 148,
+        Height = 28,
         AccessibleName = "Показать диагностику и логи",
     };
     private readonly Button _setup = new()
     {
         Text = "Настроить…",
-        Width = 132,
-        Height = 34,
+        Width = 112,
+        Height = 28,
         Enabled = false,
         AccessibleName = "Настроить профили Hermes",
-    };
-    private readonly Label _lastLaunch = new()
-    {
-        Text = "Последний запуск: ещё не выполнялся",
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleRight,
-        Font = new Font("Segoe UI", 8.5F),
-        ForeColor = MutedText,
-        AutoEllipsis = true,
-        Margin = new Padding(12, 0, 0, 0),
     };
     private readonly Panel _detailsPanel = new()
     {
         Dock = DockStyle.Fill,
         BackColor = Color.FromArgb(11, 21, 37),
-        Padding = new Padding(12, 8, 12, 10),
+        Padding = new Padding(8, 6, 8, 8),
         Visible = false,
-        Margin = new Padding(0),
+        Margin = new Padding(0, 8, 0, 0),
     };
     private readonly Label _detailsTitle = new()
     {
-        Text = "Технический слой — raw logs и diagnostics",
+        Text = "Диагностика",
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleLeft,
         Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
@@ -342,7 +183,7 @@ public sealed class MainForm : Form
         Font = new Font("Cascadia Mono", 8.5F),
         Margin = new Padding(0),
     };
-    private readonly Dictionary<string, ProfileCard> _profileCards = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ProfileChoice> _profileChoices = new(StringComparer.OrdinalIgnoreCase);
     private LauncherConfig? _config;
     private string _configPath = LauncherSetup.DefaultConfigPath;
     private LauncherProfile? _selectedProfile;
@@ -376,13 +217,8 @@ public sealed class MainForm : Form
     {
         _ownership = new LauncherProcessOwnership(ownershipDirectory);
         Text = "Hermes Finance — Launcher";
-        // #284: below 720px the honest content height collapses the flex
-        // viewport to scrolling-only; keep the minimum usable.
-        MinimumSize = new Size(780, 720);
-        // #284: default height fits all content without scrolling on real
-        // screens (the honest AutoSize layout no longer clips actions/cards
-        // into 660px); ~20px air covers cross-machine font metric variance.
-        ClientSize = new Size(960, 820);
+        MinimumSize = new Size(440, 280);
+        ClientSize = new Size(560, 320);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = WindowBackground;
@@ -426,8 +262,6 @@ public sealed class MainForm : Form
                     DisplayName = "Hermes Finance — Stable",
                     Type = "stable",
                     Checkout = stableCheckout,
-                    // Synthetic smoke uses an exact local identity, not a
-                    // moving release or remote ref.
                     ExpectedRef = "synthetic-stable-head",
                     DataDir = stableData,
                     Database = Path.Combine(stableData, "finance.db"),
@@ -453,87 +287,68 @@ public sealed class MainForm : Form
 
     private void BuildUi()
     {
-        // #284: content-driven rows (AutoSize) so translated labels and larger
-        // fonts grow their rows instead of clipping. Only the selected-profile
-        // area flexes (Percent); the diagnostics row stays Absolute for toggle.
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
 
-        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        // #302: 184px keeps "LOCAL ONLY / 127.0.0.1:8000" on its two
-        // explicit lines without wrapping the last digit at 125/150%.
-        _header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 184));
-        _header.Controls.Add(_brand, 0, 0);
-        _header.Controls.Add(_title, 0, 1);
-        _header.Controls.Add(_subtitle, 0, 2);
-        _header.Controls.Add(_localPill, 1, 0);
-        _header.SetRowSpan(_localPill, 3);
-
-        // #284: selected-profile blocks size to content; the Percent filler
-        // row keeps the panel top-aligned when extra space is available.
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        _selectedLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var selectedHeader = new TableLayoutPanel
+        var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            // #302: a single AutoSize row — the old RowCount=2 left an empty
-            // second Percent row that stole half the header height and
-            // clipped the selected-profile title at larger font metrics.
-            RowCount = 1,
+            ColumnCount = 1,
+            RowCount = 2,
             BackColor = Color.Transparent,
             Margin = new Padding(0),
         };
-        selectedHeader.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-        selectedHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-        selectedHeader.Controls.Add(_selectedName, 0, 0);
-        selectedHeader.Controls.Add(_selectedType, 1, 0);
-        _selectedLayout.Controls.Add(selectedHeader, 0, 0);
-        _selectedLayout.Controls.Add(_shaSummary, 0, 1);
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.Controls.Add(_title, 0, 0);
+        header.Controls.Add(_localPill, 0, 1);
 
-        BuildReadinessPanel();
-        // #284: re-clamp the wrapping width whenever layout resizes the panel.
-        _readinessPanel.Resize += (_, _) => ClampReadinessWrap();
-        _selectedLayout.Controls.Add(_readinessPanel, 0, 2);
-        BuildChecks();
-        _selectedLayout.Controls.Add(_checks, 0, 3);
-        _selectedPanel.Controls.Add(_selectedLayout);
+        var statusBlock = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        statusBlock.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        statusBlock.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        statusBlock.Controls.Add(_readinessTitle, 0, 0);
+        statusBlock.Controls.Add(_readinessDescription, 0, 1);
 
-        _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270));
-        // #302: action rows are sized explicitly from wrapped content (see
-        // SizeActionRows) — an AutoSize row cannot measure a wrapping flow
-        // panel, it collapses to a single column and eats the flex area.
-        // Primary row keeps the 48px touch target; the secondary row is
-        // deliberately slimmer (42px) so it reads subordinate.
-        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        _actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        _actions.Controls.Add(_actionButtons, 0, 0);
-        _actions.Controls.Add(_secondaryButtons, 0, 1);
-        _actions.Controls.Add(_lastLaunch, 1, 0);
-        _actions.SetRowSpan(_lastLaunch, 2);
-        _actions.PrimaryActions = _actionButtons;
-        _actions.SecondaryActions = _secondaryButtons;
+        var actions = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+        };
+        actions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        actions.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        actions.Controls.Add(_actionButtons, 0, 0);
+        actions.Controls.Add(_secondaryButtons, 0, 1);
+
         StyleButton(_start, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 0);
-        StyleButton(_stop, Color.FromArgb(255, 125, 139), Color.FromArgb(49, 22, 34), 1);
-        StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 2);
-        StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 3);
+        StyleButton(_open, Color.FromArgb(190, 165, 255), Color.FromArgb(32, 23, 55), 1);
+        StyleButton(_refresh, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 2);
+        StyleButton(_stop, Color.FromArgb(255, 125, 139), Color.FromArgb(49, 22, 34), 3);
         StyleButton(_detailsToggle, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 4);
-        StyleButton(_setup, Color.FromArgb(102, 227, 190), Color.FromArgb(8, 29, 31), 5);
+        StyleButton(_setup, Color.FromArgb(91, 124, 167), Color.FromArgb(20, 34, 56), 5);
         _actionButtons.Controls.Add(_start);
+        _actionButtons.Controls.Add(_open);
+        _actionButtons.Controls.Add(_refresh);
         _actionButtons.Controls.Add(_stop);
-        _secondaryButtons.Controls.Add(_open);
-        _secondaryButtons.Controls.Add(_refresh);
         _secondaryButtons.Controls.Add(_detailsToggle);
         _secondaryButtons.Controls.Add(_setup);
 
@@ -545,17 +360,17 @@ public sealed class MainForm : Form
             BackColor = Color.Transparent,
             Margin = new Padding(0),
         };
-        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         detailsLayout.Controls.Add(_detailsTitle, 0, 0);
         detailsLayout.Controls.Add(_status, 0, 1);
         _detailsPanel.Controls.Add(detailsLayout);
 
-        _root.Controls.Add(_header, 0, 0);
-        _root.Controls.Add(_profilesCaption, 0, 1);
-        _root.Controls.Add(_profiles, 0, 2);
-        _root.Controls.Add(_selectedPanel, 0, 3);
-        _root.Controls.Add(_actions, 0, 4);
+        _root.Controls.Add(header, 0, 0);
+        _root.Controls.Add(_profiles, 0, 1);
+        _root.Controls.Add(_shaSummary, 0, 2);
+        _root.Controls.Add(statusBlock, 0, 3);
+        _root.Controls.Add(actions, 0, 4);
         _root.Controls.Add(_detailsPanel, 0, 5);
         Controls.Add(_root);
 
@@ -565,82 +380,8 @@ public sealed class MainForm : Form
         _refresh.Click += async (_, _) => await RefreshSelectedAsync();
         _setup.Click += async (_, _) => await OpenSetupAsync();
         _detailsToggle.Click += (_, _) => ToggleDetails();
-        _profiles.Resize += (_, _) => ResizeProfileCards();
-        Resize += (_, _) => ResizeProfileCards();
-    }
-
-    private void BuildReadinessPanel()
-    {
-        var layout = new ReadinessLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            RowCount = 2,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0),
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(_readinessDot, 0, 0);
-        layout.SetRowSpan(_readinessDot, 2);
-        layout.Controls.Add(_readinessTitle, 1, 0);
-        layout.Controls.Add(_readinessDescription, 1, 1);
-        layout.Description = _readinessDescription;
-        _readinessPanel.ContentControl = layout;
-        layout.Resize += (_, _) => ClampReadinessWrap();
-        _readinessPanel.Controls.Add(layout);
-    }
-
-    private void BuildChecks()
-    {
-        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 22));
-        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        _checks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-        for (var row = 0; row < 4; row++)
-        {
-            // #284: check rows size to their (translated) content instead of
-            // splitting a fixed 92px that clips larger fonts.
-            _checks.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        }
-        AddCheckRow(0, "Code identity", _identityCheck);
-        AddCheckRow(1, "Data boundary", _dataCheck);
-        AddCheckRow(2, "Locked dependencies", _dependenciesCheck);
-        AddCheckRow(3, "Loopback service", _serviceCheck);
-    }
-
-    private void AddCheckRow(int row, string title, Label status)
-    {
-        var icon = new Label
-        {
-            Text = "●",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 7F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(102, 227, 190),
-            Margin = new Padding(0),
-        };
-        var label = new Label
-        {
-            Text = title,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font = new Font("Segoe UI", 8.5F),
-            ForeColor = Color.FromArgb(193, 204, 220),
-            Margin = new Padding(0),
-        };
-        status.Dock = DockStyle.Fill;
-        status.TextAlign = ContentAlignment.MiddleRight;
-        status.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
-        status.ForeColor = MutedText;
-        status.AutoEllipsis = true;
-        status.Margin = new Padding(0);
-        _checks.Controls.Add(icon, 0, row);
-        _checks.Controls.Add(label, 1, row);
-        _checks.Controls.Add(status, 2, row);
+        Resize += (_, _) => FitOwnerText();
+        FitOwnerText();
     }
 
     private async Task LoadConfigAsync()
@@ -721,16 +462,15 @@ public sealed class MainForm : Form
     {
         _profiles.SuspendLayout();
         _profiles.Controls.Clear();
-        _profileCards.Clear();
+        _profileChoices.Clear();
         foreach (var profile in _config?.Profiles ?? [])
         {
-            var card = new ProfileCard(profile);
-            card.Selected += (_, _) => SelectProfile(profile, runPreflight: true);
-            _profileCards[profile.Id] = card;
-            _profiles.Controls.Add(card);
+            var choice = new ProfileChoice(profile);
+            choice.Selected += (_, _) => SelectProfile(profile, runPreflight: true);
+            _profileChoices[profile.Id] = choice;
+            _profiles.Controls.Add(choice);
         }
         _profiles.ResumeLayout();
-        ResizeProfileCards();
 
         var firstProfile = _config?.Profiles.FirstOrDefault();
         if (firstProfile is not null)
@@ -753,9 +493,9 @@ public sealed class MainForm : Form
         _selectedProfile = profile;
         _validatedProfile = null;
         _ready = false;
-        foreach (var card in _profileCards.Values)
+        foreach (var choice in _profileChoices.Values)
         {
-            card.SetSelected(ReferenceEquals(card.Profile, profile));
+            choice.SetSelected(ReferenceEquals(choice.Profile, profile));
         }
         SetSelectedIdentity(profile);
         SetReadiness(profile, LauncherReadinessState.NotChecked);
@@ -861,7 +601,6 @@ public sealed class MainForm : Form
 
             SetReadiness(profile, LauncherReadinessState.Starting);
             AppendDiagnostic("Starting selected checkout's existing guarded startup and waiting for health probes.");
-            SetLastLaunchStatus($"Последний запуск: стартует {LauncherUi.OwnerTitle(profile)}");
             StartProcess(validated);
         }
         catch (Exception exception) when (exception is LauncherValidationException or IOException or UnauthorizedAccessException or Win32Exception)
@@ -892,7 +631,6 @@ public sealed class MainForm : Form
             process.Start();
             processStartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks;
             _ownership.Write(profile, process);
-            _stop.Enabled = true;
             _profiles.Enabled = false;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
@@ -943,8 +681,7 @@ public sealed class MainForm : Form
             {
                 AppendDiagnostic($"Launcher-owned Stop completed; process exited with code {exitCode} as expected.");
                 SetReadiness(profile.Profile, LauncherReadinessState.Stopped);
-                SetLastLaunchStatus("Последний запуск: остановлен");
-                if (_validatedProfile is not null)
+                                if (_validatedProfile is not null)
                 {
                     ApplyPrimaryPlan(profile.Profile, LauncherReadinessState.Stopped, _validatedProfile, null);
                 }
@@ -965,8 +702,7 @@ public sealed class MainForm : Form
             SetReadiness(profile.Profile, state, exitCode == 0
                 ? LauncherUi.ReadinessDescription(LauncherReadinessState.Stopped)
                 : "Hermes завершился до подтверждения готовности. Откройте «Диагностика и логи» — raw детали вторичны.");
-            SetLastLaunchStatus($"Последний запуск: завершён с кодом {exitCode}");
-            if (_validatedProfile is not null)
+                        if (_validatedProfile is not null)
             {
                 ApplyPrimaryPlan(profile.Profile, state, _validatedProfile, null);
             }
@@ -984,8 +720,7 @@ public sealed class MainForm : Form
         AttachProcess(profile, recovered.Process, () => recovered.Marker.ProcessStartTimeUtcTicks);
         _ready = true;
         SetReadiness(profile.Profile, LauncherReadinessState.Running);
-        SetLastLaunchStatus($"Последний запуск: готов — {LauncherUi.OwnerTitle(profile.Profile)}");
-        AppendDiagnostic("Recovered a launcher-owned Hermes process after launcher restart.");
+                AppendDiagnostic("Recovered a launcher-owned Hermes process after launcher restart.");
     }
 
     internal static bool TryCompleteReady(
@@ -1033,13 +768,17 @@ public sealed class MainForm : Form
                 _healthVerificationPending = false;
                 _profiles.Enabled = true;
                 _open.Enabled = false;
+                _open.Visible = false;
+                _stop.Enabled = false;
+                _stop.Visible = false;
+                _refresh.Visible = false;
                 _start.Enabled = true;
+                _start.Visible = true;
                 SetReadiness(
                     profile.Profile,
                     LauncherReadinessState.Blocked,
                     "Identity данных не удалось подтвердить. Исправьте права или sidecar и повторите запуск.");
-                SetLastLaunchStatus("Последний запуск: заблокирован");
-                return;
+                                return;
             }
 
             if (_launcherProcess is null || !_ownership.MarkReady(profile, _launcherProcess))
@@ -1113,8 +852,7 @@ public sealed class MainForm : Form
                 _ready = false;
                 _open.Enabled = false;
                 SetReadiness(profile.Profile, LauncherReadinessState.Blocked, _pendingHealthFailure);
-                SetLastLaunchStatus("Последний запуск: заблокирован");
-            });
+                            });
         }
     }
 
@@ -1124,8 +862,7 @@ public sealed class MainForm : Form
         _ready = true;
         SetReadiness(profile.Profile, LauncherReadinessState.Running);
         ApplyPrimaryPlan(profile.Profile, LauncherReadinessState.Running, profile, null);
-        SetLastLaunchStatus($"Последний запуск: готов — {LauncherUi.OwnerTitle(profile.Profile)}");
-        AppendDiagnostic(version is null
+                AppendDiagnostic(version is null
             ? "Health marker and data identity passed; backend package version was unavailable in this legacy/synthetic runtime. Raw logs remain in «Диагностика»."
             : $"Health checks passed with backend version {version}; it matches launcher release identity. Raw logs remain in «Диагностика».");
         if (profile.Profile.OpenBrowser)
@@ -1202,8 +939,7 @@ public sealed class MainForm : Form
             process.WaitForExit(5000);
             _ownership.RemoveIfOwned(_validatedProfile, process, processStartTimeUtcTicks);
             AppendDiagnostic(successMessage);
-            SetLastLaunchStatus("Последний запуск: остановлен");
-            _ready = false;
+                        _ready = false;
             _healthVerificationPending = false;
             if (_selectedProfile is not null)
             {
@@ -1272,20 +1008,7 @@ public sealed class MainForm : Form
             : LauncherReadinessState.Ready;
         SetReadiness(validated.Profile, state);
         SetShaSummary(validated);
-        // Human plain-language checks (summarized, raw in diagnostics)
-        var identity = validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase)
-            ? $"main · SHA {LauncherUi.ShaShort(validated.Head)} · UNRELEASED"
-            : $"{LauncherUi.StableIdentityLabel(validated.Profile, validated.Head, validated.ApplicationVersion)} — проверено";
-        SetCheck(_identityCheck, identity, true);
-        SetCheck(_dataCheck, validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase) ? "production — isolated OK" : LauncherUi.DataBoundary(validated.Profile.Type) + " — isolated OK", true);
-        SetCheck(
-            _dependenciesCheck,
-            validated.Dependencies?.Ready == true ? "locked — готовы" : "нужна подготовка",
-            validated.Dependencies?.Ready == true);
-        var alembicNote = validated.Dependencies?.Ready == true ? "порт свободен · Alembic OK" : "порт свободен";
-        SetCheck(_serviceCheck, alembicNote, true);
         _ready = false;
-        // Single primary CTA enforcement
         ApplyPrimaryPlan(validated.Profile, state, validated, null);
     }
 
@@ -1303,90 +1026,77 @@ public sealed class MainForm : Form
         var actionable = plan.Primary != LauncherPrimaryAction.Refresh && plan.Primary != LauncherPrimaryAction.None
             ? $" {plan.Reason} — нажмите primary кнопку ниже."
             : "";
-        SetReadiness(
-            profile,
-            LauncherReadinessState.Blocked,
-            human + actionable + "  Откройте «Диагностика» для raw деталей.");
-        SetAllChecks("Не подтверждено", false);
-        // Update specific failed check with plain language
-        var msg = exception.Message.ToLowerInvariant();
-        if (msg.Contains("identity") || msg.Contains("checkout") || msg.Contains("expected_ref"))
-        {
-            SetCheck(_identityCheck, "identity — требует действия", false);
-        }
-        else if (msg.Contains("sidecar") || msg.Contains("unstamped") || msg.Contains("data"))
-        {
-            SetCheck(_dataCheck, "data — требует внимания", false);
-        }
-        else if (msg.Contains("dependency") || msg.Contains("npm") || msg.Contains("uv "))
-        {
-            SetCheck(_dependenciesCheck, "зависимости — нужна подготовка", false);
-        }
-        else if (msg.Contains("port") || msg.Contains("another hermes"))
-        {
-            SetCheck(_serviceCheck, "127.0.0.1:8000 — занят", false);
-        }
+        SetReadiness(profile, LauncherReadinessState.Blocked, human + actionable);
         ApplyPrimaryPlan(profile, LauncherReadinessState.Blocked, null, exception);
         _profiles.Enabled = true;
-        SetLastLaunchStatus("Последний запуск: заблокирован");
     }
 
     private void ShowConfigurationFailure()
     {
         _selectedProfile = null;
         _validatedProfile = null;
-        _start.Enabled = false;
-        _stop.Enabled = false;
-        _open.Enabled = false;
-        _refresh.Enabled = true;
-        _setup.Enabled = true;
+        _ready = false;
         _profiles.Enabled = false;
-        _selectedName.Text = "Профили недоступны";
-        _selectedType.Text = "CONFIGURATION";
-        _selectedType.ForeColor = MutedText;
-        _readinessDot.ForeColor = LauncherUi.StatusColor(LauncherReadinessState.Blocked);
+        _shaSummary.Text = "Конфигурация не задана";
         _readinessTitle.Text = "Нужна настройка";
-        _readinessDescription.Text = "Конфигурация launcher отсутствует или невалидна. Нажмите «Настроить…» и выберите подготовленные Stable/Preview каталоги — ручной JSON не нужен (он recovery-only).";
-        SetAllChecks("Не подтверждено", false);
-        SetLastLaunchStatus("Последний запуск: заблокирован");
+        _readinessTitle.ForeColor = LauncherUi.StatusColor(LauncherReadinessState.Blocked);
+        _readinessDescription.Text = "Нажмите «Настроить…» и выберите подготовленные каталоги Stable и Preview.";
+        _readinessDescription.Visible = true;
+        Place(_setup, _actionButtons);
+        Place(_refresh, _secondaryButtons);
+        _start.Enabled = false;
+        _start.Visible = false;
+        _stop.Enabled = false;
+        _stop.Visible = false;
+        _open.Enabled = false;
+        _open.Visible = false;
+        _refresh.Enabled = true;
+        _refresh.Visible = true;
+        _setup.Enabled = true;
+        _setup.Visible = true;
+        HighlightPrimary(LauncherPrimaryAction.None);
+        _setup.FlatAppearance.BorderSize = 2;
+        FitOwnerText();
     }
 
     private void SetSelectedIdentity(LauncherProfile profile)
     {
-        // #302: the header title is the version-free owner title; the
-        // release version lives in _selectedType/_shaSummary derived from
-        // validated identity, never in a stale display_name copy.
-        _selectedName.Text = LauncherUi.OwnerTitle(profile);
         var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
         var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
         if (isStable)
         {
-            _selectedType.Text = $"{LauncherUi.TypeBadge(profile.Type)}  /  {LauncherUi.ReleaseBadge(profile.ExpectedRef)}  ·  production";
+            _shaSummary.Text = $"{LauncherUi.ReleaseBadge(profile.ExpectedRef)}  ·  {LauncherUi.DataBoundary(profile.Type)}";
         }
         else if (isPreview)
         {
-            _selectedType.Text = $"{LauncherUi.TypeBadge(profile.Type)}  /  main  ·  UNRELEASED  ·  isolated";
+            _shaSummary.Text = $"main · UNRELEASED · {LauncherUi.DataBoundary(profile.Type)}";
         }
         else
         {
-            _selectedType.Text = $"{LauncherUi.TypeBadge(profile.Type)}  /  {LauncherUi.DataBoundary(profile.Type)}";
+            _shaSummary.Text = LauncherUi.DataBoundary(profile.Type);
         }
-        _selectedType.ForeColor = LauncherUi.AccentFor(profile.Type);
+
+        _shaSummary.ForeColor = LauncherUi.AccentFor(profile.Type);
+        FitOwnerText();
     }
 
     private void SetShaSummary(ValidatedProfile validated)
     {
-        var card = _profileCards.TryGetValue(validated.Profile.Id, out var c) ? c : null;
         if (validated.Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase))
         {
-            var identity = LauncherUi.StableIdentityLabel(validated.Profile, validated.Head, validated.ApplicationVersion);
-            _shaSummary.Text = identity;
-            _selectedType.Text = $"{LauncherUi.TypeBadge(validated.Profile.Type)}  /  {LauncherUi.ReleaseBadge(validated.Profile.ExpectedRef)}  ·  production";
-            card?.SetIdentity(validated.Head, null, validated.ApplicationVersion);
-            return;
+            _shaSummary.Text = LauncherUi.StableIdentityLabel(validated.Profile, validated.Head, validated.ApplicationVersion);
         }
-        _shaSummary.Text = $"SHA {LauncherUi.ShaShort(validated.Head)}  ·  {LauncherUi.DataBoundary(validated.Profile.Type)}";
-        card?.SetIdentity(validated.Head, null);
+        else if (validated.Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase))
+        {
+            _shaSummary.Text = LauncherUi.PreviewIdentityLabel(validated.Profile, validated.Head);
+        }
+        else
+        {
+            _shaSummary.Text = $"SHA {LauncherUi.ShaShort(validated.Head)}  ·  {LauncherUi.DataBoundary(validated.Profile.Type)}";
+        }
+
+        _shaSummary.ForeColor = LauncherUi.AccentFor(validated.Profile.Type);
+        FitOwnerText();
     }
 
     private void ApplyPrimaryPlan(LauncherProfile profile, LauncherReadinessState state, ValidatedProfile? validated, Exception? blockedEx)
@@ -1404,36 +1114,40 @@ public sealed class MainForm : Form
         {
             plan = new(LauncherPrimaryAction.Refresh, "Порт занят внешним процессом", "Порт 127.0.0.1:8000 занят другим процессом — launcher не останавливает чужие процессы. Остановите его вручную и «Обновить проверку»");
         }
-        // Reset all to secondary disabled state first
         _start.Enabled = false;
         _stop.Enabled = false;
         _open.Enabled = false;
         _refresh.Enabled = false;
-        // Reconfigure is always an explicit secondary recovery path for an
-        // existing selected profile, but never while a runtime is starting
-        // or running. Saving setup is the only path that can rebind identity.
         _setup.Enabled = state != LauncherReadinessState.Starting
             && state != LauncherReadinessState.Running;
-
-        // Always allow details and refresh as secondary where sensible
-        _refresh.Enabled = state != LauncherReadinessState.Checking
-            && state != LauncherReadinessState.Starting;
         _profiles.Enabled = state != LauncherReadinessState.Starting
             && state != LauncherReadinessState.Running;
+        Place(_setup, _secondaryButtons);
+        Place(_start, _actionButtons);
+        Place(_open, _actionButtons);
+        Place(_refresh, _actionButtons);
+        Place(_stop, _actionButtons);
 
-        // Enable correct primary CTA only — exactly one obvious primary per #279, others secondary or disabled
         switch (plan.Primary)
         {
             case LauncherPrimaryAction.Start:
                 _start.Enabled = true;
                 break;
             case LauncherPrimaryAction.Open:
-                _open.Enabled = true;
-                _stop.Enabled = true;
+                _open.Enabled = _ready && ownsRunningProcess;
+                _stop.Enabled = ownsRunningProcess;
                 break;
             case LauncherPrimaryAction.Stop:
-                _stop.Enabled = true;
-                _open.Enabled = _ready;
+                if (ownsRunningProcess)
+                {
+                    _stop.Enabled = true;
+                    _open.Enabled = _ready;
+                }
+                else
+                {
+                    _refresh.Enabled = true;
+                    plan = new(LauncherPrimaryAction.Refresh, plan.Reason, plan.HumanSummary);
+                }
                 break;
             case LauncherPrimaryAction.Refresh:
                 _refresh.Enabled = true;
@@ -1442,9 +1156,14 @@ public sealed class MainForm : Form
                 break;
         }
 
-        // Visual primary emphasis: highlight the single primary button
+        _start.Visible = _start.Enabled;
+        _open.Visible = _open.Enabled;
+        _refresh.Visible = _refresh.Enabled;
+        _stop.Visible = _stop.Enabled;
+        _setup.Visible = true;
         HighlightPrimary(plan.Primary);
-        _readinessDescription.Text = plan.HumanSummary;
+        var showDetail = state is LauncherReadinessState.Blocked or LauncherReadinessState.NeedsPreparation;
+        ShowOwnerDetail(showDetail ? plan.HumanSummary : string.Empty, showDetail);
     }
 
     private void HighlightPrimary(LauncherPrimaryAction primary)
@@ -1470,10 +1189,6 @@ public sealed class MainForm : Form
 
     private void SetReadiness(LauncherProfile? profile, LauncherReadinessState state, string? description = null)
     {
-        if (profile is not null && _profileCards.TryGetValue(profile.Id, out var card))
-        {
-            card.SetState(state);
-        }
         if (!ReferenceEquals(profile, _selectedProfile) && profile is not null)
         {
             return;
@@ -1483,69 +1198,29 @@ public sealed class MainForm : Form
         {
             SetSelectedIdentity(profile);
         }
-        _readinessDot.ForeColor = LauncherUi.StatusColor(state);
+
         _readinessTitle.Text = LauncherUi.ReadinessTitle(state);
-        _readinessDescription.Text = description ?? LauncherUi.ReadinessDescription(state);
-        _readinessPanel.BackColor = state == LauncherReadinessState.Blocked
-            ? Color.FromArgb(49, 27, 43)
-            : Color.FromArgb(21, 35, 57);
-        _readinessDot.AccessibleName = LauncherUi.ReadinessLabel(state);
-        if (state is LauncherReadinessState.Starting or LauncherReadinessState.Running)
+        _readinessTitle.ForeColor = LauncherUi.StatusColor(state);
+        _readinessTitle.AccessibleName = LauncherUi.ReadinessLabel(state);
+        var detail = description ?? LauncherUi.ReadinessDescription(state);
+        var showDetail = description is not null
+            || state is LauncherReadinessState.Blocked or LauncherReadinessState.NeedsPreparation;
+        ShowOwnerDetail(showDetail ? detail : string.Empty, showDetail);
+        if (state == LauncherReadinessState.Starting)
         {
-            // SetReadiness is also used by the startup/health callbacks before
-            // the full action plan is recomputed. Keep Setup fail-closed during
-            // that narrow transition window as well as in ApplyPrimaryPlan.
+            _start.Enabled = false;
+            _start.Visible = false;
+            _open.Enabled = false;
+            _open.Visible = false;
+            _stop.Enabled = false;
+            _stop.Visible = false;
+            _refresh.Enabled = false;
+            _refresh.Visible = false;
             _setup.Enabled = false;
         }
-    }
-
-    private void SetAllChecks(string text, bool passed)
-    {
-        SetCheck(_identityCheck, text, passed);
-        SetCheck(_dataCheck, text, passed);
-        SetCheck(_dependenciesCheck, text, passed);
-        SetCheck(_serviceCheck, text, passed);
-    }
-
-    private static void SetCheck(Label label, string text, bool passed)
-    {
-        label.Text = text;
-        label.ForeColor = passed
-            ? Color.FromArgb(102, 227, 190)
-            : Color.FromArgb(255, 125, 139);
-    }
-
-    private void ClampReadinessWrap()
-    {
-        // #284: keep the wrapping description clamped to the visible panel
-        // width; runs on panel resize (including layout sizing) so the wrap
-        // width tracks reality instead of a pre-layout default.
-        var availableWidth = _readinessPanel.ClientSize.Width - _readinessPanel.Padding.Horizontal;
-        if (availableWidth <= 30)
+        else if (state == LauncherReadinessState.Running)
         {
-            return;
-        }
-
-        var wrapWidth = availableWidth - 30;
-        var clamped = new Size(wrapWidth, 0);
-        if (_readinessDescription.MaximumSize != clamped)
-        {
-            _readinessDescription.MaximumSize = clamped;
-        }
-    }
-
-    private void ResizeProfileCards()
-    {
-        ClampReadinessWrap();
-        if (_profileCards.Count == 0 || _profiles.ClientSize.Width <= 0)
-        {
-            return;
-        }
-        var available = Math.Max(540, _profiles.ClientSize.Width - 18);
-        var width = Math.Max(260, (available - ((_profileCards.Count - 1) * 12)) / _profileCards.Count);
-        foreach (var card in _profileCards.Values)
-        {
-            card.Width = width;
+            _setup.Enabled = false;
         }
     }
 
@@ -1573,31 +1248,21 @@ public sealed class MainForm : Form
         }
 
         _selectedProfile = stable;
-        SetSelectedIdentity(stable);
-        SetReadiness(stable, LauncherReadinessState.Ready, "Synthetic smoke: Stable готов к запуску с canonical production data (pinned release).");
-        SetCheck(_identityCheck, "Local identity — проверено", true);
-        SetCheck(_dataCheck, "production — isolated OK", true);
-        SetCheck(_dependenciesCheck, "locked — готовы", true);
-        SetCheck(_serviceCheck, "127.0.0.1:8000 — порт свободен · Alembic OK", true);
-        _shaSummary.Text = "Local identity  ·  SHA synthetic  ·  production data: synthetic";
-        if (_profileCards.TryGetValue(stable.Id, out var stableCard))
+        foreach (var choice in _profileChoices.Values)
         {
-            stableCard.SetIdentity("abc1234", null);
+            choice.SetSelected(ReferenceEquals(choice.Profile, stable));
         }
+        SetReadiness(stable, LauncherReadinessState.Ready);
+        _shaSummary.Text = LauncherUi.StableIdentityLabel(stable, "abc1234");
+        _shaSummary.ForeColor = LauncherUi.AccentFor(stable.Type);
         ApplyPrimaryPlan(stable, LauncherReadinessState.Ready, new ValidatedProfile(stable, stable.Checkout, stable.DataDir, stable.Database, "abc1234", "production", new DependencyStatus(true, true, "ready", "ready")), null);
         _profiles.Enabled = true;
-        if (_profileCards.TryGetValue(preview.Id, out var previewCard))
-        {
-            previewCard.SetState(LauncherReadinessState.Blocked);
-            previewCard.SetIdentity("def5678", "abc1234");
-            previewCard.AccessibleDescription = "Preview: main · UNRELEASED — synthetic data identity requires confirmation";
-        }
-        AppendDiagnostic("Synthetic UI smoke: no runtime or owner data was loaded. Stable=ready, Preview=UNRELEASED.");
+        AppendDiagnostic("Synthetic UI smoke: no runtime or owner data was loaded.");
     }
 
     private void ShowTransientMessage(string message)
     {
-        _readinessDescription.Text = message;
+        ShowOwnerDetail(message, true);
         AppendDiagnostic(message);
     }
 
@@ -1610,8 +1275,34 @@ public sealed class MainForm : Form
         _status.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
     }
 
-    private void SetLastLaunchStatus(string message) =>
-        _lastLaunch.Text = $"{message}  ·  {DateTime.Now:HH:mm}";
+    private void ShowOwnerDetail(string? text, bool show)
+    {
+        _readinessDescription.Text = text ?? string.Empty;
+        _readinessDescription.Visible = show && !string.IsNullOrWhiteSpace(_readinessDescription.Text);
+        FitOwnerText();
+    }
+
+    private static void Place(Control control, Control parent)
+    {
+        if (ReferenceEquals(control.Parent, parent))
+        {
+            return;
+        }
+
+        control.Parent?.Controls.Remove(control);
+        parent.Controls.Add(control);
+    }
+
+    private void FitOwnerText()
+    {
+        var width = Math.Max(200, ClientSize.Width - _root.Padding.Horizontal - 8);
+        var clamp = new Size(width, 0);
+        _title.MaximumSize = clamp;
+        _localPill.MaximumSize = clamp;
+        _shaSummary.MaximumSize = clamp;
+        _readinessTitle.MaximumSize = clamp;
+        _readinessDescription.MaximumSize = clamp;
+    }
 
     private bool IsCurrentSelection(LauncherProfile profile, long generation) =>
         ReferenceEquals(profile, _selectedProfile) && generation == Interlocked.Read(ref _validationGeneration);
@@ -1686,325 +1377,6 @@ public sealed class MainForm : Form
         catch (Exception exception) when (exception is IOException or ArgumentException)
         {
             AppendDiagnostic($"Application icon could not be loaded: {exception.Message}");
-        }
-    }
-
-    // #284: the readiness description. Dock Fill + AutoSize=false means the
-    // base Label reports its current bounds as its preferred size, so an
-    // AutoSize table row would keep a stale height when wider font metrics
-    // (hosted runners at 150%) wrap the text into an extra line. Measure the
-    // wrapped text at the real proposed (cell) width instead, so the row
-    // height always fits the text as actually laid out. No ellipsis, no
-    // fixed pixel height — the height follows the font metrics.
-    private sealed class ReadinessDescriptionLabel : Label
-    {
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            if (string.IsNullOrEmpty(Text))
-            {
-                return base.GetPreferredSize(proposedSize);
-            }
-
-            // The proposed width is the live cell width from the table layout.
-            // A stale MaximumSize clamp must never widen the measurement past
-            // it: measuring wide would report fewer lines (short height) while
-            // the label is actually laid out narrow — exactly the 150% clip.
-            var width = proposedSize.Width;
-            if (width <= 0)
-            {
-                width = MaximumSize.Width;
-            }
-            if (width <= 0)
-            {
-                width = Width;
-            }
-            if (width <= 0)
-            {
-                return base.GetPreferredSize(proposedSize);
-            }
-
-            return new Size(width, GetWrappedHeight(width, proposedSize));
-        }
-
-        public int GetWrappedHeight(int width, Size? fallbackProposal = null)
-        {
-            if (string.IsNullOrEmpty(Text) || width <= 0)
-            {
-                return 0;
-            }
-
-            var need = TextRenderer.MeasureText(
-                Text, Font, new Size(width, int.MaxValue), TextFormatFlags.WordBreak);
-            var fallback = base.GetPreferredSize(fallbackProposal ?? new Size(width, int.MaxValue));
-            return Math.Max(need.Height, fallback.Height);
-        }
-
-        public void SetWrapWidth(int width)
-        {
-            var clamped = new Size(Math.Max(1, width), 0);
-            if (MaximumSize != clamped)
-            {
-                MaximumSize = clamped;
-            }
-        }
-    }
-
-    // #284: a plain Panel's preferred size is based on its current bounds.
-    // That loses an inner AutoSize table's wrapped height while the selected
-    // layout is measuring its AutoSize row. Propagate the inner table's
-    // preferred height through the readiness container, using the width that
-    // the selected-profile cell can actually provide.
-    private sealed class ReadinessContainerPanel : Panel
-    {
-        public Control? ContentControl { get; set; }
-
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            var width = ResolveAvailableWidth(proposedSize.Width);
-            if (width <= 0 || ContentControl is null)
-            {
-                return base.GetPreferredSize(proposedSize);
-            }
-
-            var contentWidth = Math.Max(1, width - Padding.Horizontal);
-            var contentPreferred = ContentControl.GetPreferredSize(new Size(contentWidth, 0));
-            return new Size(width, Padding.Vertical + contentPreferred.Height);
-        }
-
-        protected override void OnLayout(LayoutEventArgs levent)
-        {
-            base.OnLayout(levent);
-            if (ContentControl is not null)
-            {
-                ContentControl.Bounds = DisplayRectangle;
-            }
-        }
-
-        private int ResolveAvailableWidth(int proposedWidth)
-        {
-            var width = proposedWidth;
-            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
-            {
-                if (parent.ClientSize.Width > 0)
-                {
-                    width = parent.ClientSize.Width;
-                }
-            }
-
-            if (Parent is not null && Parent.ClientSize.Width > 0)
-            {
-                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
-            }
-
-            return width > 0 ? width : Width;
-        }
-    }
-
-    // #284: make the inner table expose the same wrapped height it will use
-    // during real layout. This closes the second propagation boundary: the
-    // outer readiness container can then return that height to selectedLayout.
-    private sealed class ReadinessLayoutPanel : TableLayoutPanel
-    {
-        public ReadinessDescriptionLabel? Description { get; set; }
-
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            var width = ResolveAvailableWidth(proposedSize.Width);
-            if (width <= 0)
-            {
-                return base.GetPreferredSize(proposedSize);
-            }
-
-            var descriptionWidth = GetDescriptionWidth(width);
-            Description?.SetWrapWidth(descriptionWidth);
-            var wrappedHeight = Description?.GetWrappedHeight(descriptionWidth) ?? 0;
-            SetDescriptionRowHeight(wrappedHeight);
-            var preferred = base.GetPreferredSize(new Size(width, 0));
-            return new Size(width, Math.Max(preferred.Height, GetTitleRowHeight() + wrappedHeight));
-        }
-
-        protected override void OnLayout(LayoutEventArgs levent)
-        {
-            var width = ClientSize.Width;
-            if (width > 0)
-            {
-                var descriptionWidth = GetDescriptionWidth(width);
-                Description?.SetWrapWidth(descriptionWidth);
-                SetDescriptionRowHeight(Description?.GetWrappedHeight(descriptionWidth) ?? 0);
-            }
-
-            base.OnLayout(levent);
-        }
-
-        private int GetDescriptionWidth(int width) => Math.Max(1, width - GetIconColumnWidth());
-
-        private void SetDescriptionRowHeight(int height)
-        {
-            if (RowStyles.Count <= 1)
-            {
-                return;
-            }
-
-            var row = RowStyles[1];
-            if (row.SizeType != SizeType.Absolute)
-            {
-                row.SizeType = SizeType.Absolute;
-            }
-
-            if (Math.Abs(row.Height - height) > 0.1F)
-            {
-                row.Height = height;
-            }
-        }
-
-        private int GetIconColumnWidth()
-        {
-            if (ColumnStyles.Count > 0 && ColumnStyles[0].SizeType == SizeType.Absolute)
-            {
-                return Math.Max(1, (int)Math.Ceiling(ColumnStyles[0].Width));
-            }
-
-            var widths = GetColumnWidths();
-            return widths.Length > 0 ? Math.Max(1, widths[0]) : 1;
-        }
-
-        private int GetTitleRowHeight()
-        {
-            if (RowStyles.Count > 0 && RowStyles[0].SizeType == SizeType.Absolute)
-            {
-                return Math.Max(1, (int)Math.Ceiling(RowStyles[0].Height));
-            }
-
-            var heights = GetRowHeights();
-            return heights.Length > 0 ? Math.Max(1, heights[0]) : 1;
-        }
-
-        private int ResolveAvailableWidth(int proposedWidth)
-        {
-            var width = proposedWidth;
-            for (var parent = Parent; width <= 0 && parent is not null; parent = parent.Parent)
-            {
-                if (parent.ClientSize.Width > 0)
-                {
-                    width = parent.ClientSize.Width;
-                }
-            }
-
-            if (Parent is not null && Parent.ClientSize.Width > 0)
-            {
-                width = width > 0 ? Math.Min(width, Parent.ClientSize.Width) : Parent.ClientSize.Width;
-            }
-
-            return width > 0 ? width : Width;
-        }
-    }
-
-    // #284: the top header. AutoSize (so the root row takes its content
-    // height) but its width must never grow the root beyond the window: the
-    // root row is AutoSize too, and an unbounded preferred width would push
-    // the row (and header) past the content area on wider font metrics.
-    // GetPreferredSize therefore reports the constrained parent width and
-    // lets the AutoSize rows compute their heights at the real wrap width.
-    private sealed class HeaderLayoutPanel : TableLayoutPanel
-    {
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            var width = proposedSize.Width;
-            if (width <= 0 && Parent is not null)
-            {
-                // Docked Fill inside the padded root: usable width is the
-                // parent's client width minus the parent's horizontal padding.
-                var available = Parent.ClientSize.Width - Parent.Padding.Horizontal;
-                width = Math.Max(0, available);
-            }
-
-            var preferred = width > 0
-                ? base.GetPreferredSize(new Size(width, proposedSize.Height))
-                : base.GetPreferredSize(proposedSize);
-
-            if (Parent is not null)
-            {
-                var cap = Math.Max(0, Parent.ClientSize.Width - Parent.Padding.Horizontal - Margin.Horizontal);
-                if (preferred.Width > cap)
-                {
-                    preferred.Width = cap;
-                }
-            }
-
-            return preferred;
-        }
-    }
-
-    // #284: the action area measures its own wrapped rows. Pushing Absolute
-    // heights from outside handlers cannot work: TableLayoutPanel ignores a
-    // RowStyles index assignment for layout invalidation and a bare
-    // PerformLayout is a no-op while no layout is pending. The measurement
-    // must be pulled at the right time — root asks during GetPreferredSize
-    // and the table arranges during OnLayout, both with a live column width.
-    private sealed class ActionTableLayoutPanel : TableLayoutPanel
-    {
-        public FlowLayoutPanel? PrimaryActions { get; set; }
-        public FlowLayoutPanel? SecondaryActions { get; set; }
-
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            // During root's AutoSize measurement, proposedSize may be
-            // unconstrained (0) — fall back to the parent's width which is
-            // already known top-down (form → root). The arranged ClientSize
-            // is stale at that moment, but the parent's ClientSize is live.
-            var width = proposedSize.Width;
-            if (width <= 0)
-            {
-                width = Parent?.ClientSize.Width ?? 0;
-                // Root has padding 26+26; action cell fills it. Parent width
-                // already excludes that, so usable width is parent width.
-                // If still 0 (very early), fall back to own ClientSize.
-                if (width <= 0)
-                {
-                    width = ClientSize.Width;
-                }
-            }
-
-            var columnWidth = width > 0 ? width - 270 : 0;
-            if (columnWidth > 0 && PrimaryActions is not null && SecondaryActions is not null)
-            {
-                // #302: primary row keeps the 48px target, secondary stays
-                // slimmer so it reads subordinate to the single primary CTA.
-                var h0 = Math.Max(48, PrimaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
-                var h1 = Math.Max(42, SecondaryActions.GetPreferredSize(new Size(columnWidth, 0)).Height);
-                var basePreferred = base.GetPreferredSize(proposedSize);
-                return new Size(basePreferred.Width, h0 + h1);
-            }
-
-            return base.GetPreferredSize(proposedSize);
-        }
-
-        protected override void OnLayout(LayoutEventArgs levent)
-        {
-            var columnWidth = ClientSize.Width - 270;
-            if (columnWidth > 0 && PrimaryActions is not null && SecondaryActions is not null)
-            {
-                SyncRow(0, PrimaryActions, columnWidth);
-                SyncRow(1, SecondaryActions, columnWidth);
-            }
-
-            base.OnLayout(levent);
-        }
-
-        private void SyncRow(int row, FlowLayoutPanel panel, int width)
-        {
-            // #302: row 0 (primary) keeps 48px, row 1 (secondary) 42px.
-            var min = row == 1 ? 42 : 48;
-            var needed = Math.Max(min, panel.GetPreferredSize(new Size(width, 0)).Height);
-            if (RowStyles.Count > row && RowStyles[row].SizeType == SizeType.Absolute && (int)RowStyles[row].Height == needed)
-            {
-                return;
-            }
-
-            if (RowStyles.Count > row)
-            {
-                RowStyles[row] = new RowStyle(SizeType.Absolute, needed);
-            }
         }
     }
 }

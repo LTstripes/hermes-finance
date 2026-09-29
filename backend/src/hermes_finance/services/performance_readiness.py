@@ -15,11 +15,10 @@ from hermes_finance.domain.performance_availability import (
 )
 from hermes_finance.domain.valuation_points import PerformanceScope
 from hermes_finance.persistence import Account
-from hermes_finance.services.cash_boundary_coverage import require_editable_cash_boundary_interval
+from hermes_finance.services.cash_boundary_coverage import closed_month_for_cash_boundary_interval
 from hermes_finance.services.performance_availability import performance_availability_for_interval
 from hermes_finance.services.portfolio_twrr import PortfolioTwrrResult, twrr_for_interval
 from hermes_finance.services.portfolio_xirr import PortfolioXirrResult, xirr_for_interval
-from hermes_finance.services.reporting_months import ClosedReportingMonthError
 from hermes_finance.services.valuation_capture import capture_capability_for_evidence
 
 Capability = Literal[
@@ -167,15 +166,16 @@ def _diagnostics(
     twrr: PortfolioTwrrResult,
 ) -> tuple[ReadinessDiagnostic, ...]:
     diagnostics = []
-    # Reuse the actual coverage edit guard, including its reporting-period semantics.
+    # Reuse the mutation guard's exact CLOSED predicate, within this read snapshot.
+    # The guard itself reserves a writer and rolls back on CLOSED; neither action
+    # belongs in a coherent read-only capability projection.
     coverage_capability: Capability = "available"
-    try:
-        require_editable_cash_boundary_interval(
-            session,
-            covered_from=evidence.start_date,
-            covered_to=evidence.end_date,
+    if (
+        closed_month_for_cash_boundary_interval(
+            session, covered_from=evidence.start_date, covered_to=evidence.end_date
         )
-    except ClosedReportingMonthError:
+        is not None
+    ):
         coverage_capability = "requires_reopen"
     # The observation adapter is supported only where a concrete target needs
     # fresh evidence in an editable month with a current material identity.

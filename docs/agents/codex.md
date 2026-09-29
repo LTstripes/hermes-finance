@@ -4,9 +4,11 @@
 
 ## Default Worker
 
-For an ordinary implementation task, the current session defaults to one accountable Worker. If the session is explicitly assigned as an independent Reviewer or Execution Orchestrator, follow the corresponding section instead. Read the current issue/applicable notes, verify the assigned actual root, branch and exact baseline, and use only the relevant policy sections.
+For an ordinary implementation task, the current session defaults to one accountable Worker. If the session is explicitly assigned as an independent Reviewer or Execution Orchestrator, follow the corresponding section instead. Read the current issue/applicable notes, verify the branch and exact baseline, and use only the relevant policy sections.
 
-Use synthetic evidence. Owner canonical/Stable/Preview/UAT/private-runtime locations and other active workspaces are excluded regardless of machine paths. Concrete workstation assignments belong to local configuration and the explicit launch, not this adapter.
+If the launch pins the exact baseline/target and task identity/branch but omits an absolute workspace path, apply the standing self-create authorization in `AGENTS.md`: when the configured local workspace root is known, create a fresh isolated `workspaces/<agent>/<task>/` worktree/clone yourself and continue without asking the Owner for a path. Ask only when the root is genuinely unknown/ambiguous, the intended path already exists, or safe creation would cross the configured workspace boundary.
+
+Use synthetic evidence. Owner canonical/Stable/Preview/UAT/private-runtime locations and other active workspaces are excluded regardless of machine paths. Concrete workstation roots remain local configuration and must not be written into tracked project docs.
 
 Select checks under the [verification policy](../VERIFICATION_POLICY.md). Preserve evidence and use focused regressions during iteration. Finish formatting before final frozen-candidate checks; do not edit source while a full gate is running. Return the completion report from AGENTS.md; no implicit merge, release or project acceptance.
 
