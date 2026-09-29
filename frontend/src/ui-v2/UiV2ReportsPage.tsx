@@ -97,7 +97,7 @@ export default function UiV2ReportsPage() {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
         Архив строится только по закрытым отчётам. Черновик не выдаётся за историю.{" "}
-        <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+        <Link to="/v2/close">Перейти к закрытию месяца →</Link>
       </UiV2Notice>
     );
   } else {

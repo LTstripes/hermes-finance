@@ -9,6 +9,7 @@ import type { MonthlyComment, ReportingMonth } from "../api/types";
 import {
   monthlyCloseReturnPath,
   parseMonthlyCloseReturnContext,
+  withMonthlyCloseReturn,
 } from "../components/month-close/navigation";
 import { ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
@@ -182,7 +183,20 @@ export default function UiV2MonthEditorPage() {
       v1ReturnPath={monthId ? `/months/${monthId}` : "/months"}
     >
       <div className={styles.toolbar}>
-        <Link to={monthId ? `/v2/data/months?month=${monthId}` : "/v2/data/months"}>
+        <Link
+          to={
+            monthId && returnContext?.monthId === monthId
+              ? withMonthlyCloseReturn(
+                  `/v2/data/months?month=${monthId}`,
+                  monthId,
+                  returnContext.step,
+                  returnContext.origin,
+                )
+              : monthId
+                ? `/v2/data/months?month=${monthId}`
+                : "/v2/data/months"
+          }
+        >
           ← Все месяцы
         </Link>
         {returnToClose ? <Link to={returnToClose}>Вернуться к закрытию</Link> : null}

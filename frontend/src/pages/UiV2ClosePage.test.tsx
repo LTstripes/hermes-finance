@@ -197,6 +197,19 @@ describe("native Monthly Close work mode", () => {
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeVisible();
   });
 
+  it("fails closed when final review belongs to another month", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    if (!state.workflow.final_review.available) throw new Error("Review fixture is missing");
+    state.workflow.final_review.month_header.id = 91;
+    mount();
+    expect(
+      await screen.findByRole("heading", { name: "Состояние месяца не подтверждено" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
+    expect(state.writes).toEqual([]);
+  });
+
   it("double-refetches, verifies persisted status and stays on the calm CLOSED review", async () => {
     const { fetchMock, mount, state } = setup("/v2/close?month=12&step=final_review_close");
     state.workflow = readyForClose();
@@ -214,6 +227,7 @@ describe("native Monthly Close work mode", () => {
       "href",
       "/v2",
     );
+    expect(screen.queryByRole("link", { name: "Изменить" })).toBeNull();
     expect(screen.queryByText(/из 8 шагов/)).toBeNull();
     expect(screen.queryByRole("link", { name: "Открыть будущие события" })).toBeNull();
     expect(state.writes).toEqual(["close"]);

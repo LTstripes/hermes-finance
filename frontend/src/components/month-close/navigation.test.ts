@@ -100,6 +100,27 @@ describe("monthly close navigation", () => {
     ).toBe("/payouts?from=monthly-close&step=actual_payouts&monthId=42");
   });
 
+  it.each([
+    ["open_month", "month_setup", "/v2/data/months/42"],
+    ["set_snapshot_date", "month_setup", "/v2/data/months/42?section=general"],
+    ["open_quote_preview", "market_quotes", "/v2/data/months/42?section=positions"],
+    ["clone_next_month", "next_month_outlook", "/v2/data/months?month=42"],
+  ] as const)("keeps the exact close return on native %s", (action, step, destination) => {
+    const separator = destination.includes("?") ? "&" : "?";
+    expect(routeForGuidedAction(action, 42, step, "monthly-close-v2")).toBe(
+      `${destination}${separator}from=monthly-close-v2&step=${step}&monthId=42`,
+    );
+  });
+
+  it("keeps final review and confirmation in native Close", () => {
+    expect(routeForGuidedAction("open_final_review", 42, "readiness", "monthly-close-v2")).toBe(
+      "/v2/close?month=42&step=final_review_close",
+    );
+    expect(
+      routeForGuidedAction("confirm_close", 42, "final_review_close", "monthly-close-v2"),
+    ).toBe("/v2/close?month=42&step=final_review_close");
+  });
+
   it("updates the selected month and bounded close return together", () => {
     expect(
       withSelectedReturnMonth(
