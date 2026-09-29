@@ -8,6 +8,8 @@ helpers so the invariant lives in exactly one place. Entities without a
 app_settings, iis profiles) must not use this guard.
 """
 
+from datetime import date
+
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,25 @@ from hermes_finance.services.reporting_months import (
 )
 
 _EDIT_ERROR_MESSAGE = "closed reporting month must be reopened before editing"
+
+
+def reserve_reporting_month_interval_writer(
+    session: Session, *, covered_from: date, covered_to: date
+) -> None:
+    """Reserve SQLite's writer before checking an evidence interval.
+
+    The no-op UPDATE is bounded to intersecting months and leaves ORM
+    ``updated_at`` untouched. SQLite reserves the writer even if no row
+    matches; a competing Close cannot commit between the check and evidence
+    write. The caller keeps the reservation through commit or rollback.
+    """
+    session.execute(
+        text(
+            "UPDATE reporting_months SET status = status "
+            "WHERE period_start <= :covered_to AND period_end >= :covered_from"
+        ),
+        {"covered_from": covered_from, "covered_to": covered_to},
+    )
 
 
 def require_editable_reporting_month(session: Session, month_id: int) -> ReportingMonth:

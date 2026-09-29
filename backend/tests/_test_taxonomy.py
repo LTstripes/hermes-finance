@@ -202,6 +202,7 @@ _PERSISTENCE_FILES = frozenset(
         "test_month_clone.py",
         "test_month_guard.py",
         "test_linked_pair_balance_evidence_concurrency.py",
+        "test_r08_623_boundary_close_atomicity.py",
         "test_positions.py",
         "test_sqlite_locking.py",
         "test_reporting_months.py",
