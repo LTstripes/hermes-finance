@@ -164,6 +164,10 @@ describe("UiV2TaxIisPage", () => {
 
     const account = screen.getByRole("article");
     expect(within(account).getByRole("heading", { name: "Synthetic IIS" })).toBeVisible();
+    expect(within(account).getByRole("link", { name: /Изменить данные ИИС/ })).toHaveAttribute(
+      "href",
+      "/v2/data/catalogs?month=2&account=7",
+    );
     expect(
       within(account).getByText(/Открыт 01\.01\.2031 · Закрытие доступно с 01\.01\.2036/),
     ).toBeVisible();

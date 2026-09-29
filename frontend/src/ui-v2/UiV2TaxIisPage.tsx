@@ -108,10 +108,12 @@ function WarningList({ codes }: { codes: string[] }) {
 }
 
 function PlannerContent({
+  catalogPath,
   planner,
   requestedMonthId,
   selectedMonth,
 }: {
+  catalogPath: string;
   planner: TaxIisPlanner;
   requestedMonthId: number | null;
   selectedMonth: ReportingMonth | null;
@@ -275,7 +277,11 @@ function PlannerContent({
         ) : (
           <div className={styles.accountList}>
             {planner.iis_accounts.map((account) => (
-              <IisAccountCard account={account} key={account.account_id} />
+              <IisAccountCard
+                account={account}
+                catalogPath={catalogPath}
+                key={account.account_id}
+              />
             ))}
           </div>
         )}
@@ -284,7 +290,13 @@ function PlannerContent({
   );
 }
 
-function IisAccountCard({ account }: { account: TaxIisPlanner["iis_accounts"][number] }) {
+function IisAccountCard({
+  account,
+  catalogPath,
+}: {
+  account: TaxIisPlanner["iis_accounts"][number];
+  catalogPath: string;
+}) {
   const benefits = account.tax_benefits;
   const benefitRows = [
     ["planned", benefits.planned],
@@ -306,6 +318,12 @@ function IisAccountCard({ account }: { account: TaxIisPlanner["iis_accounts"][nu
         Открыт {formatDate(account.opened_at)} · Закрытие доступно с{" "}
         {formatDate(account.eligible_close_at, { empty: "не рассчитано" })}
       </p>
+      <Link
+        className={styles.accountEditLink}
+        to={`${catalogPath}${catalogPath.includes("?") ? "&" : "?"}account=${account.account_id}`}
+      >
+        Изменить данные ИИС ↗
+      </Link>
 
       <section
         aria-labelledby={`iis-contributions-${account.account_id}`}
@@ -371,6 +389,9 @@ function IisAccountCard({ account }: { account: TaxIisPlanner["iis_accounts"][nu
 
 export default function UiV2TaxIisPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const catalogSearch = new URLSearchParams();
+  for (const value of searchParams.getAll("month")) catalogSearch.append("month", value);
+  const catalogPath = `/v2/data/catalogs${catalogSearch.toString() ? `?${catalogSearch.toString()}` : ""}`;
   const monthValues = searchParams.getAll("month");
   const rawMonth = monthValues[0];
   const monthContext =
@@ -568,6 +589,7 @@ export default function UiV2TaxIisPage() {
           </UiV2Notice>
         ) : !monthContextError && planner ? (
           <PlannerContent
+            catalogPath={catalogPath}
             planner={planner}
             requestedMonthId={monthContext ?? null}
             selectedMonth={selectedMonth}

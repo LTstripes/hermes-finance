@@ -221,6 +221,14 @@
   font-size: 11px;
 }
 
+.accountEditLink {
+  display: inline-block;
+  margin-top: 9px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .accountSection {
   margin-top: 17px;
 }
