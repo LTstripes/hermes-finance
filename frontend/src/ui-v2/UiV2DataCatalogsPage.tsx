@@ -49,6 +49,7 @@ import { formatMarketIdentity, MAPPING_STATE_LABELS, mappingStateTone } from "..
 import { queryKeys } from "../queryClient";
 import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { UiV2IisAccountForms } from "./UiV2IisAccountForms";
 import { sortReportingMonths } from "./monthSelection";
 import dataStyles from "./UiV2Data.module.css";
 import styles from "./UiV2Catalogs.module.css";
@@ -117,6 +118,13 @@ function TabButton({
 
 export default function UiV2DataCatalogsPage() {
   const [params, setParams] = useSearchParams();
+  const requestedAccounts = params.getAll("account");
+  const accountId =
+    requestedAccounts.length === 1 && /^[1-9]\d*$/.test(requestedAccounts[0])
+      ? Number(requestedAccounts[0])
+      : null;
+  const accountParamInvalid =
+    requestedAccounts.length > 0 && (accountId === null || !Number.isSafeInteger(accountId));
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
@@ -140,6 +148,16 @@ export default function UiV2DataCatalogsPage() {
     else next.set("tab", nextTab);
     setParams(next);
   }
+  function selectIisAccount(id: number) {
+    const next = new URLSearchParams(params);
+    next.delete("tab");
+    next.set("account", String(id));
+    setParams(next);
+  }
+  const plannerParams = new URLSearchParams(params);
+  plannerParams.delete("tab");
+  plannerParams.delete("account");
+  const plannerPath = `/v2/income/tax-iis${plannerParams.toString() ? `?${plannerParams.toString()}` : ""}`;
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
@@ -500,6 +518,11 @@ export default function UiV2DataCatalogsPage() {
                     >
                       Изменить
                     </Button>
+                    {account.account_type === "iis" && account.status === "active" ? (
+                      <Button onClick={() => selectIisAccount(account.id)} size="sm">
+                        Данные ИИС
+                      </Button>
+                    ) : null}
                     {account.status === "hidden" ? (
                       <Button
                         disabled={actionBusy}
@@ -646,6 +669,7 @@ export default function UiV2DataCatalogsPage() {
   }
 
   function accountsContent(): ReactNode {
+    const selectedIisAccount = accounts.find((row) => row.id === accountId);
     return (
       <section className={styles.catalogPanel} data-testid="catalog-accounts">
         <div className={styles.panelHeader}>
@@ -688,6 +712,23 @@ export default function UiV2DataCatalogsPage() {
             </div>
           </>
         )}
+        {accountParamInvalid ? (
+          <UiV2Notice title="Некорректный счёт ИИС">
+            Укажите один существующий идентификатор счёта.
+          </UiV2Notice>
+        ) : accountId !== null && !accountsLoading && !accountsError ? (
+          selectedIisAccount?.account_type === "iis" && selectedIisAccount.status === "active" ? (
+            <UiV2IisAccountForms
+              account={selectedIisAccount}
+              key={selectedIisAccount.id}
+              plannerPath={plannerPath}
+            />
+          ) : (
+            <UiV2Notice title="Счёт ИИС недоступен">
+              Активный счёт ИИС с этим идентификатором не найден.
+            </UiV2Notice>
+          )
+        ) : null}
       </section>
     );
   }
