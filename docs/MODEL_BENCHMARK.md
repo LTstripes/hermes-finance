@@ -177,6 +177,23 @@ Interpretation: Muse Spark successfully delivered the frozen-contract provider/a
 
 Interpretation: MiMo 2.6 Flash completed a private-file financial-import integration after one bounded correction round. This is stronger evidence than the earlier CRUD-only MiMo cases, but privacy/data-integrity review remains mandatory for this task profile.
 
+## UI-tail Owner-confirmed cases — 2026-09-29
+
+Source: [#605 Owner-confirmation record](https://github.com/LTstripes/hermes-finance/issues/605#issuecomment-5898533940). The Owner explicitly reported `отдал оба сол хай` for #568/#569 and `оба ушли сол хай (они пишут неизвестно, в таких случаях доверяйся мне)` for #570/#571. All four Workers are **Sol High / OpenAI / Codex desktop**, attribution **owner_reported**. Their raw `unknown` or generic GPT-6 statements qualify runtime visibility; they do not replace the confirmed model label. This supersedes the earlier assigned-only/unknown attribution for these cases, without changing grades or counting duplicate successes.
+
+| Worker case / profile | Baseline | Candidate history | Verified stage / evidence |
+| --- | --- | --- | --- |
+| [#568 / PR #632](https://github.com/LTstripes/hermes-finance/pull/632), medium-complexity high-risk IIS financial-write UI | `f27c33dff940315827d7b9231146945a43b16273` | First/accepted `9c72ebd095fcf23b25abc217070e34749ee1274b` | **A**, 0 substantive correction rounds, at staging integration. Grok 4.7 / xAI / Grok Build CLI independent ACCEPT. CI/UI `36606687426` / `36606687601` SUCCESS. Merge `1be28feba70bc4f94aa2c4f996cf258d516db11f`. Owner UAT/main pending #572. |
+| [#569 / PR #631](https://github.com/LTstripes/hermes-finance/pull/631), medium-complexity medium-risk allocation/concentration presentation | `f27c33dff940315827d7b9231146945a43b16273` | First `2620ee7cafcf3ffe002e6480c024179f6a585a92` -> accepted `a22cb77c4c61de9eb1e493d2a392fa66f8a77585` | **B**, 1 substantive correction round, at staging integration. Fixed zero-basis/undefined-share wording and included-unallocated double-count implication. Grok 4.7 / xAI / Grok Build independent re-review ACCEPT. CI/UI `36616663581` / `36616663744` SUCCESS. Leaf merge `5e8c66b6d714028daf55566aa669e7c0952f58c4`; separate wiring PR #635 merge `0f6791c32c4926be29103ad81b3826f22bb8842d`. Owner UAT/main pending #572. |
+| [#570 / PR #574](https://github.com/LTstripes/hermes-finance/pull/574), current medium-complexity docs refresh with high-risk financial/product interpretation | Refreshed against `0f6791c32c4926be29103ad81b3826f22bb8842d`; original matrix commits retained | Current refresh `9ea4a63ec205f0a20dd5f9f9d5ca40eda09fb92d` | **PENDING**, no final grade. CI `36623529216` SUCCESS. Independent financial/product review and final refresh after #571 remain pending. Sol attribution covers this refresh, not the earlier GitHub-native matrix authorship. |
+| [#571 / PR #639](https://github.com/LTstripes/hermes-finance/pull/639), medium-complexity high-risk Monthly Close native wiring | `0f6791c32c4926be29103ad81b3826f22bb8842d` | First/current candidate `f69d2603709a06ac483875415bef6fc247c347cc` | **PENDING**, no final grade. CI/UI `36627209205` / `36627209078` SUCCESS. Worker reports 936 full Vitest passes and synthetic real-backend/browser evidence; independent review, Integrator acceptance and Owner UAT remain pending. |
+
+The separate attempted #571 Reviewer reported Astra Medium with a read-only runtime, but stopped before diff inspection over a callable external image-generation tool. Record **review not performed / tooling confounder**, not a Worker correction round, code rejection, independent ACCEPT or model quality grade. Do not transfer that Reviewer identity to the Sol Worker.
+
+PR #635 shared route/link wiring was Integrator-authored. Its initial test asserted before async month loading completed; the test-only correction passed final CI/UI `36618769831` / `36618769838`. That Integrator test defect is not an extra Sol/#569 correction round.
+
+Local checks remain Worker-reported unless independently inspected. Usage/cost/time are unknown; no additional telemetry is requested. The completed #568/#569 cases and pending #570/#571 cases are not one homogeneous benchmark sample.
+
 ## Lightweight case template
 
 ```text
