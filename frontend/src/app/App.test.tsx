@@ -206,6 +206,58 @@ describe("App", () => {
     ).toHaveAttribute("href", "/v1");
   });
 
+  it("registers the native Capital allocation deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/capital/allocation?month=1");
+    const zero = { amount: "0.00", currency: "RUB" };
+    const supported = { status: "supported", reason_codes: [] };
+    const allocation = {
+      support: supported,
+      denominator: zero,
+      covered_amount: zero,
+      unallocated_amount: zero,
+      coverage_pct: null,
+      items: [],
+      excluded: [],
+    };
+    const concentration = {
+      support: supported,
+      denominator: zero,
+      top_n: 5,
+      top_amount: zero,
+      top_share_pct: null,
+      items: [],
+      excluded: [],
+      is_approximate: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/months": () => jsonResponse(sampleMonths),
+        "GET /api/analytics/risk-allocation?month_id=1&top_n=5&forecast_version=v1": () =>
+          jsonResponse({
+            reporting_month_id: 1,
+            as_of_date: "2026-06-30",
+            base_currency: "RUB",
+            liquid_assets_total: zero,
+            allocation_by_asset_class: allocation,
+            allocation_by_account: allocation,
+            top_positions: concentration,
+            payout_concentration: concentration,
+            redemption_concentration: concentration,
+            support: {},
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Распределение и концентрация" }),
+    ).toBeVisible();
+    expect(await screen.findByLabelText("Отчётный месяц")).toHaveValue("1");
+    expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
+  });
+
   it("registers the native goals deep-link route with its selected report month", async () => {
     window.history.pushState({}, "", "/v2/income/goals?month=1");
     vi.stubGlobal(
