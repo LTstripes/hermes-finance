@@ -4,11 +4,11 @@ import { Link, useSearchParams } from "react-router";
 
 import { getPassiveIncomeHistory } from "../api/analytics";
 import { getCashFlowLadder } from "../api/cashFlowLadder";
-import { listGoalSummary, type GoalSummary } from "../api/goals";
+import { type GoalSummary, listGoalSummary } from "../api/goals";
 import { listMonths } from "../api/months";
 import { plannedVsActual } from "../api/plannedBudget";
-import { getIncomePlanSummary } from "../api/summary";
 import { listSavings } from "../api/savings";
+import { getIncomePlanSummary } from "../api/summary";
 import type {
   CashFlowLadder,
   CashFlowLadderEvent,
@@ -25,12 +25,12 @@ import type {
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
+import { uiV2GoalsPath } from "./goalRoute";
 import { sortReportingMonths } from "./monthSelection";
-import {
-  eventLabel as ownerEventLabel,
-  PRINCIPAL_REPAYMENT_LABEL,
-  sourceLabel as ownerSourceLabel,
-} from "./uiV2Copy";
+import { uiV2TaxIisPath } from "./taxIisRoute";
+import incomeStyles from "./UiV2Income.module.css";
+import sharedStyles from "./UiV2Page.module.css";
+import { UiV2Shell } from "./UiV2Shell";
 import {
   isQueryReady,
   UiV2Loading,
@@ -38,9 +38,11 @@ import {
   UiV2ReportContext,
   UiV2WidgetState,
 } from "./UiV2StateBlocks";
-import { UiV2Shell } from "./UiV2Shell";
-import sharedStyles from "./UiV2Page.module.css";
-import incomeStyles from "./UiV2Income.module.css";
+import {
+  eventLabel as ownerEventLabel,
+  sourceLabel as ownerSourceLabel,
+  PRINCIPAL_REPAYMENT_LABEL,
+} from "./uiV2Copy";
 import { moneyText as money } from "./valueFormat";
 
 type FactSelection = {
@@ -79,6 +81,29 @@ function averageDetail(average: PassiveIncomeAverage): string {
     return `Нет закрытых месяцев в выбранном периоде · 0 из ${average.target_window_months}${suffix}`;
   }
   return `${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
+}
+
+/** Closed-month display order only. The API history payload stays oldest-first. */
+function historyNewestFirst(
+  points: PassiveIncomeHistory["points"],
+): PassiveIncomeHistory["points"] {
+  return [...points].sort(
+    (left, right) =>
+      right.year - left.year ||
+      right.month - left.month ||
+      right.reporting_month_id - left.reporting_month_id,
+  );
+}
+
+function planFactCopy(row: PlanVsActualRow): string | null {
+  const planned = row.planned;
+  const actual = row.actual;
+  if (planned === null && actual !== null) return `Факт ${money(actual)}`;
+  if (planned !== null && actual !== null) {
+    return `План ${money(planned)} · факт ${money(actual)}`;
+  }
+  if (planned !== null && actual === null) return `План ${money(planned)} · факта нет`;
+  return null;
 }
 
 function progressStyle(value: string): CSSProperties {
@@ -275,7 +300,7 @@ function FactHistoryBlock({
               aria-label="История фактического пассивного дохода"
               className={incomeStyles.historyList}
             >
-              {history.points.map((point) => {
+              {historyNewestFirst(history.points).map((point) => {
                 const selected =
                   point.reporting_month_id === history.selected_report?.reporting_month_id;
                 return (
@@ -563,10 +588,12 @@ function LadderBlock({
 
 function GoalsBlock({
   goals,
+  monthId,
   ready,
   retry,
 }: {
   goals: GoalSummary[];
+  monthId: number | null;
   ready: boolean;
   retry: () => void;
 }) {
@@ -581,7 +608,7 @@ function GoalsBlock({
   return (
     <Panel
       action={
-        <Link className={sharedStyles.contextLink} to="/goals">
+        <Link className={sharedStyles.contextLink} to={uiV2GoalsPath(monthId)}>
           Все цели →
         </Link>
       }
@@ -712,16 +739,23 @@ function CoveragePlanBlock({
               ) : budget.length === 0 ? (
                 <p className={incomeStyles.emptyPlan}>План расходов не задан.</p>
               ) : (
-                <ul className={incomeStyles.valueList}>
-                  {budget.slice(0, 5).map((row) => (
-                    <li key={`${row.expense_type}-${row.category}`}>
-                      <span>{row.category}</span>
-                      <strong>
-                        {money(row.planned, "Не задано")} / {money(row.actual, "Нет факта")}
-                      </strong>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <p className={incomeStyles.planFactNote}>
+                    Отдельный план показывается только когда он действительно введён.
+                  </p>
+                  <ul className={incomeStyles.valueList}>
+                    {budget.slice(0, 5).map((row) => {
+                      const copy = planFactCopy(row);
+                      if (copy === null) return null;
+                      return (
+                        <li key={`${row.expense_type}-${row.category}`}>
+                          <span>{row.category}</span>
+                          <strong className={incomeStyles.planFact}>{copy}</strong>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               )}
             </div>
             <div>
@@ -748,7 +782,7 @@ function CoveragePlanBlock({
   );
 }
 
-function Handoffs({ narrow }: { narrow: boolean }) {
+function Handoffs({ narrow, taxIisPath }: { narrow: boolean; taxIisPath: string }) {
   return (
     <Panel
       eyebrow="Дополнительные разделы"
@@ -762,13 +796,13 @@ function Handoffs({ narrow }: { narrow: boolean }) {
           <div className={incomeStyles.handoffGrid}>
             <div>
               <h3>Налоги и ИИС</h3>
-              <p>Подробная работа остаётся в предыдущем интерфейсе.</p>
-              <Link to="/tax-iis-planner">Открыть Налоги и ИИС →</Link>
+              <p>НДФЛ и ИИС по выбранному отчётному срезу.</p>
+              <Link to={taxIisPath}>Открыть Налоги и ИИС →</Link>
             </div>
             <div>
               <h3>Сценарии</h3>
               <p>Сценарии открываются в отдельном разделе; действий на этой странице нет.</p>
-              <Link to="/scenario-lab">Открыть сценарии →</Link>
+              <Link to="/v2/income/scenario-lab">Открыть сценарии →</Link>
             </div>
           </div>
         </div>
@@ -796,6 +830,7 @@ export default function UiV2IncomePage() {
   const planningId = latestClosed?.id ?? null;
   const factSelection = resolveFactSelection(params.getAll("month"), closedMonths);
   const factId = factSelection.month?.id ?? null;
+  const taxIisPath = uiV2TaxIisPath(params, planningId);
 
   const summaryQuery = useQuery({
     enabled: planningId !== null,
@@ -959,6 +994,7 @@ export default function UiV2IncomePage() {
           />
           <GoalsBlock
             goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            monthId={planningId}
             ready={goalsReady}
             retry={() => void goalsQuery.refetch()}
           />
@@ -981,7 +1017,7 @@ export default function UiV2IncomePage() {
             ready={ladderReady}
             retry={() => void ladderQuery.refetch()}
           />
-          <Handoffs narrow={narrow} />
+          <Handoffs narrow={narrow} taxIisPath={taxIisPath} />
         </div>
       </>
     );

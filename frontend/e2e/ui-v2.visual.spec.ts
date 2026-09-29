@@ -394,6 +394,12 @@ async function installCloseApi(page: Page) {
       json = state.months;
     } else if (url.pathname === "/api/months/12/close-workflow") {
       json = state.workflow;
+    } else if (url.pathname === "/api/months/12") {
+      json = state.workflow.month;
+    } else if (url.pathname === "/api/months/12/close-readiness") {
+      json = { ...state.workflow.month, can_close: state.workflow.readiness.can_close, items: [] };
+    } else if (url.pathname === "/api/positions" && url.search === "?month_id=12") {
+      json = [];
     } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
       json = [];
     } else if (url.pathname === "/api/health") {
@@ -430,7 +436,14 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   await expect(page.getByRole("heading", { name: "Сверить состав портфеля" })).toBeVisible();
 
   await page.getByRole("link", { name: "Открыть предпросмотр Alfa" }).click();
-  await expect(page).toHaveURL(/\/accounts\?from=monthly-close-v2&step=alfa_baseline&monthId=12$/);
+  await expect(page).toHaveURL(
+    /\/v2\/data\/alfa-baseline\?month=12&from=monthly-close-v2&step=alfa_baseline&monthId=12$/,
+  );
+  await expect(page.getByRole("heading", { name: "Текущий базовый срез" })).toBeVisible();
+  await expect(page.getByLabel("Отчётный месяц", { exact: true })).toHaveValue("12");
+  expect(
+    evidence.requests.filter((request) => request.includes("broker-snapshot-preview")),
+  ).toEqual([]);
   await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
     "href",
     "/v2/close?month=12&step=alfa_baseline",

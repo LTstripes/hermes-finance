@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
+vi.mock("../ui-v2/UiV2ScenarioLabPage", () => ({
+  default: function BrokenScenarioLabPage() {
+    throw new Error("synthetic Scenario Lab chunk failure");
+  },
+}));
+
 const sampleMonths = [
   {
     id: 2,
@@ -195,6 +201,142 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByText("Загружаем основной интерфейс…")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
+  });
+
+  it("registers the native Capital allocation deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/capital/allocation?month=1");
+    const zero = { amount: "0.00", currency: "RUB" };
+    const supported = { status: "supported", reason_codes: [] };
+    const allocation = {
+      support: supported,
+      denominator: zero,
+      covered_amount: zero,
+      unallocated_amount: zero,
+      coverage_pct: null,
+      items: [],
+      excluded: [],
+    };
+    const concentration = {
+      support: supported,
+      denominator: zero,
+      top_n: 5,
+      top_amount: zero,
+      top_share_pct: null,
+      items: [],
+      excluded: [],
+      is_approximate: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/months": () => jsonResponse(sampleMonths),
+        "GET /api/analytics/risk-allocation?month_id=1&top_n=5&forecast_version=v1": () =>
+          jsonResponse({
+            reporting_month_id: 1,
+            as_of_date: "2026-06-30",
+            base_currency: "RUB",
+            liquid_assets_total: zero,
+            allocation_by_asset_class: allocation,
+            allocation_by_account: allocation,
+            top_positions: concentration,
+            payout_concentration: concentration,
+            redemption_concentration: concentration,
+            support: {},
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Распределение и концентрация" }),
+    ).toBeVisible();
+    expect(await screen.findByLabelText("Отчётный месяц")).toHaveValue("1");
+    expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
+  });
+
+  it("registers the native goals deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/income/goals?month=1");
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/goals?include_inactive=true": () => jsonResponse([]),
+        "GET /api/goals/summary?reporting_month_id=1&include_inactive=true": () => jsonResponse([]),
+        "GET /api/months": () => jsonResponse(sampleMonths),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Цели" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+      "href",
+      "/v2/income?month=1",
+    );
+  });
+
+  it("registers the native Tax/IIS deep-link route with its selected report month", async () => {
+    window.history.pushState({}, "", "/v2/income/tax-iis?month=1");
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "GET /api/months": () => jsonResponse(sampleMonths),
+        "GET /api/tax-iis-planner?reporting_month_id=1": () =>
+          jsonResponse({
+            contract_version: "tax_iis_planner_v1",
+            tax_year: 2026,
+            as_of: {
+              reporting_month: sampleMonths[1],
+              selection_reason: "requested",
+            },
+            salary_tax: {
+              tax_year: 2026,
+              history_complete: true,
+              history_coverage: "complete",
+              available: true,
+              opening_context_available: false,
+              taxable_gross_ytd: { amount: "100000.00", currency: "RUB" },
+              current_marginal_bracket: {
+                threshold_from: { amount: "0.00", currency: "RUB" },
+                threshold_to: { amount: "2400000.00", currency: "RUB" },
+                rate_bps: 1300,
+              },
+              current_marginal_rate_bps: 1300,
+              next_threshold: { amount: "2400000.00", currency: "RUB" },
+              distance_to_next_threshold: { amount: "2300000.00", currency: "RUB" },
+              tax_bracket_source: "official_default",
+              warning_codes: [],
+            },
+            iis_accounts: [],
+            warnings: [],
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Налоги и ИИС" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+      "href",
+      "/v2/income?month=1",
+    );
+  });
+
+  it("loads Scenario Lab through the shared lazy fallback and error boundary", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    window.history.pushState({}, "", "/v2/income/scenario-lab");
+
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
+    expect(
+      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
+    ).toHaveAttribute("href", "/v1");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
     expect(
       screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
     ).toHaveAttribute("href", "/v1");

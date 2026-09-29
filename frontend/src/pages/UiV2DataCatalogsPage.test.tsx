@@ -141,13 +141,13 @@ const confirmBrokerMappingMock = vi.mocked(confirmBrokerIdentityMapping);
 const remapBrokerMappingMock = vi.mocked(remapBrokerIdentityMapping);
 const revokeBrokerMappingMock = vi.mocked(revokeBrokerIdentityMapping);
 
-function renderPage() {
+function renderPage(path = "/v2/data/catalogs") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/v2/data/catalogs"]}>
+      <MemoryRouter initialEntries={[path]}>
         <UiV2DataCatalogsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -200,6 +200,16 @@ describe("UiV2DataCatalogsPage", () => {
     expect(within(activeRow).getByText("Да")).toBeInTheDocument();
     expect(within(activeRow).getByText("Нет")).toBeInTheDocument();
     expect(discoverInstrumentMappingMock).not.toHaveBeenCalled();
+  });
+
+  it("opens mappings from a deep link and preserves the selected month", async () => {
+    renderPage("/v2/data/catalogs?month=12&tab=mappings");
+    expect(await screen.findByTestId("catalog-mappings")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Постоянные сопоставления" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("data-month-context")).toHaveTextContent("Август 2031");
   });
 
   it("requires explicit account mutations and confirmation for deletion", async () => {

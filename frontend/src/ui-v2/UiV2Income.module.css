@@ -81,6 +81,11 @@
   font-size: 12px;
 }
 
+.reportSelect select:focus-visible {
+  outline: 3px solid #2b74c4;
+  outline-offset: 2px;
+}
+
 .historyList,
 .valueList,
 .eventList,
@@ -179,6 +184,20 @@
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.valueList .planFact {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.planFactNote {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .totalRow {

@@ -1104,6 +1104,12 @@ export default function UiV2CapitalPage() {
       <>
         <UiV2ReportContext month={latestClosed}>
           <span className={styles.reportContextLinks}>
+            <Link to={`/v2/capital/allocation?month=${latestClosed.id}`}>
+              Распределение и концентрация →
+            </Link>
+            <Link to={`/v2/capital/monthly-result?month=${latestClosed.id}`}>
+              Денежный результат месяца →
+            </Link>
             <Link to="/v2/reports">Все отчёты →</Link>
             <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
           </span>

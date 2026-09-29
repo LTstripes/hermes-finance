@@ -1,0 +1,39 @@
+.meta {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--soft);
+}
+.meta p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.meta p:first-child {
+  margin-top: 0;
+}
+.meta p:last-child {
+  margin-bottom: 0;
+}
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 480px) {
+  .meta {
+    padding: 10px 12px;
+  }
+}
+
+/*
+ * The deposits table has seven fixed columns; below 700px the shared
+ * `table-layout: fixed` would squeeze the name cell to ~0px (the legacy
+ * section does exactly that). Keep the table's real width and let the shared
+ * `.table-wrap` scroll it horizontally instead — no shared CSS touched.
+ */
+@media (max-width: 700px) {
+  .depositsTable {
+    min-width: 56rem;
+  }
+}

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import type { ReportingMonth } from "../api/types";
 import { formatDate, formatMonth } from "../lib/format";
@@ -19,6 +19,9 @@ const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
 ];
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
+  { id: "alfa-baseline", label: "Alfa baseline" },
+  { id: "payouts", label: "Выплаты" },
+  { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
   { id: "files", label: "Файлы" },
   { id: "app", label: "Приложение" },
@@ -61,6 +64,7 @@ function Chip({ active, label, to }: { active: boolean; label: string; to: strin
 }
 
 export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; monthId?: number }) {
+  const location = useLocation();
   return (
     <nav aria-label="Разделы данных и приложения" className={dataStyles.subnav}>
       <div className={dataStyles.modeGroup}>
@@ -73,7 +77,7 @@ export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; mo
               active={active === section.id}
               key={section.id}
               label={section.label}
-              to={dataAppPath(section.id, monthId)}
+              to={dataAppPath(section.id, monthId, location.search, location.hash)}
             />
           ))}
         </div>
@@ -91,7 +95,7 @@ export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; mo
               active={active === section.id}
               key={section.id}
               label={section.label}
-              to={dataAppPath(section.id, monthId)}
+              to={dataAppPath(section.id, monthId, location.search, location.hash)}
             />
           ))}
         </div>

@@ -34,6 +34,8 @@ type Props = {
   onForecastVersionChange: (value: string) => void;
   onRefresh: () => void;
   onApply: (rows: PayoutApplySelection[]) => void;
+  /** Opt-in freeze of the version input (used by native v2 payout tool while applying). */
+  versionDisabled?: boolean;
 };
 
 type BadgeTone = "neutral" | "ok" | "draft" | "closed" | "info";
@@ -126,6 +128,7 @@ export function PayoutPreviewPanel({
   onForecastVersionChange,
   onRefresh,
   onApply,
+  versionDisabled = false,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [duplicateDrafts, setDuplicateDrafts] = useState<Record<string, DuplicateDraft>>({});
@@ -194,6 +197,7 @@ export function PayoutPreviewPanel({
           <Input
             id="payout-forecast-version"
             maxLength={32}
+            disabled={versionDisabled}
             onChange={(event) => onForecastVersionChange(event.target.value)}
             value={forecastVersion}
           />

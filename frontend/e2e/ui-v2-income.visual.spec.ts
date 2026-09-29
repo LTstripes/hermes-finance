@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, type Page, test, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import type {
   CashFlowLadder,
@@ -132,6 +132,8 @@ const budget: PlanVsActualRow[] = [
     planned: money("50000.00"),
     actual: money("48000.00"),
   },
+  { category: "Связь", expense_type: "mandatory", planned: null, actual: money("3000.00") },
+  { category: "Подарки", expense_type: "discretionary", planned: money("0.00"), actual: null },
 ];
 
 const savings: SavingAllocation[] = [
@@ -272,8 +274,35 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
     page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
   ).toBeVisible();
   await expect(page.getByTestId("income-history-panel")).toContainText("Купоны");
+  await expect(page.locator('button[data-testid^="income-history-"]')).toHaveText([
+    /Июль\s+2031/,
+    /Май\s+2031/,
+    /Апрель\s+2031/,
+    /Февраль\s+2031/,
+  ]);
+  await expect(page.getByRole("option", { name: /Август/ })).toHaveCount(0);
+  const reportSelect = page.getByRole("combobox", {
+    name: "Отчёт для разбивки фактического дохода",
+  });
+  await reportSelect.evaluate((element) => {
+    if (element instanceof HTMLElement) element.focus({ focusVisible: true });
+  });
+  await expect(reportSelect).toBeFocused();
+  await expect
+    .poll(() => reportSelect.evaluate((element) => getComputedStyle(element).outlineStyle))
+    .not.toBe("none");
+  await page.keyboard.press("Tab");
+  const newestHistory = page.getByTestId("income-history-91");
+  await expect(newestHistory).toBeFocused();
+  await expect
+    .poll(() => newestHistory.evaluate((element) => getComputedStyle(element).outlineStyle))
+    .not.toBe("none");
   await expect(page.getByTestId("income-goals-panel")).toContainText("Нет прогноза срока");
-  await expect(page.getByTestId("income-plan-panel")).toBeVisible();
+  const plan = page.getByTestId("income-plan-panel");
+  await expect(plan).toContainText("План 50 000 ₽ · факт 48 000 ₽");
+  await expect(plan).toContainText("Факт 3 000 ₽");
+  await expect(plan).toContainText("План 0 ₽ · факта нет");
+  await expect(plan).not.toContainText("Не задано");
   await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toHaveAttribute(
     "aria-controls",
     "income-ladder-content",
@@ -317,6 +346,41 @@ test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no pag
   await expect(page.getByTestId("income-plan-panel").locator("details")).not.toHaveAttribute(
     "open",
   );
+  await expect(page.locator('button[data-testid^="income-history-"]').first()).toHaveAttribute(
+    "data-testid",
+    "income-history-91",
+  );
+  await page.getByTestId("income-plan-panel").locator("summary").click();
+  const narrowPlan = page.getByTestId("income-plan-panel");
+  await expect(narrowPlan).toContainText("Факт 3 000 ₽");
+  await expect(narrowPlan).toContainText("План 0 ₽ · факта нет");
+  await expect(narrowPlan).not.toContainText("Не задано");
+  const planOverlaps = await narrowPlan.locator("li").evaluateAll((rows) => {
+    const boxes = rows.map((row) => {
+      const rect = row.getBoundingClientRect();
+      const amount = row.querySelector("strong")?.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        right: rect.right,
+        amountRight: amount?.right ?? rect.right,
+        amountBottom: amount?.bottom ?? rect.bottom,
+        text: row.textContent ?? "",
+      };
+    });
+    return boxes.flatMap((box, index) => {
+      const problems: string[] = [];
+      if (box.amountRight > box.right + 1 || box.amountBottom > box.bottom + 1) {
+        problems.push(`overflow:${box.text}`);
+      }
+      const previous = boxes[index - 1];
+      if (previous && box.top < previous.bottom - 1) {
+        problems.push(`overlap:${previous.text} / ${box.text}`);
+      }
+      return problems;
+    });
+  });
+  expect(planOverlaps).toEqual([]);
   await expect(
     page.getByTestId("income-window-30").getByTestId("income-event-provider-701"),
   ).toBeVisible();
