@@ -205,6 +205,21 @@ Source: [Owner's version-specific confirmation in #605](https://github.com/LTstr
 
 Earlier #568/#569/#571 remain Sol High A/B/A at their staging stages. The #541 attempted reviewer stopped at runtime-isolation preflight before code inspection: no code verdict, no Worker correction round and no independent ACCEPT. Neither pending Sol 6.1 stage receives a final grade here; Owner UAT and release remain separate gates.
 
+## Accepted dependency reviews — 2026-09-30
+
+This entry supersedes the earlier pending dispositions for the two source/dependency stages above, not their historical attribution. Sources: [#605 review/outcome record](https://github.com/LTstripes/hermes-finance/issues/605#issuecomment-5900325881), [#574 Integrator ACCEPT](https://github.com/LTstripes/hermes-finance/pull/574#issuecomment-5900263443), [#641 Integrator ACCEPT](https://github.com/LTstripes/hermes-finance/pull/641#issuecomment-5900266444). The Owner supplied both independent review reports; local reviewer test results are not claimed as Integrator-executed.
+
+| Case / role | Model and provider/client | Exact identity | Result at the named stage |
+| --- | --- | --- | --- |
+| #570 / #574 final UI-source refresh, Worker stage | Sol 6.1 High / OpenAI / Codex desktop, owner_reported; earlier Sol High and GitHub-native authors retained | Candidate `f549bd8f7986178d488544349aed5347b64e16cf` -> UI staging merge `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa`; CI `36633295520` SUCCESS | ACCEPTED source checkpoint. No review-required code/doc correction; not a pure Sol 6.1 from-scratch A or a duplicate independent success. #570 common-tree refresh/validation remains in #572. |
+| #541 / #641 refresh/reconciliation, Worker | Sol 6.1 High / Codex desktop, owner_reported; provider not independently disclosed | Candidate `95097f75174116f608f761f791d0ee500e9e56ca` -> Performance staging merge `47a798de5b979fcd50b5a9880330e2c3eef62b56`; CI/UI `36632951022` / `36632950943` SUCCESS | **A at refreshed Phase A dependency/staging stage**, 0 substantive correction rounds after first handoff. #541 common-tree/Owner gates and Checkpoint B remain open; this does not grade all prior Performance leaves again. |
+| #570 / #574 financial/product Reviewer | **DeepSeek V4.1 Flash / opencode-go / OpenCode CLI (Code Mode)**, Reviewer-reported via Owner | Exact docs `f549bd8f7986178d488544349aed5347b64e16cf` against UI `fb0c3b29cbf8e54df00cf7ee849a202b060de105` | Completed independent ACCEPT for source checkpoint only. Source links, meanings, D1/D2, native destinations and evidence boundaries checked; no common-aggregate/UAT/retirement approval. |
+| #541 / #641 compatibility/data-integrity Reviewer | **DeepSeek V4.1 Flash / opencode-go (OpenCode)**, Reviewer-reported via Owner | Exact candidate `95097f75174116f608f761f791d0ee500e9e56ca` | Completed independent ACCEPT. Reviewer reports 54 tests PASS and both parameters of the new regression FAIL on pre-reconciliation merge `6add07fd`; retained real-backend CI journey and mutation guards checked. |
+
+Both merged trees are exact-equivalent to the reviewed candidates. The all-event Actions lookup returned no new workflow for either staging merge SHA; no merge-SHA CI PASS is invented. The eventual #572 union needs its own frozen-tree CI, retained native import/Close/Performance journeys, independent integration review and Owner UAT.
+
+Review qualification: the #641 report's 'only 3 files' wording refers to a restricted main-side preservation check, not the full main-to-candidate aggregate diff. The Integrator explicitly separated that scope from the accepted Performance feature set and the final 5-file reconciliation. This clarification caused no code change or Worker correction round. These two completed review cases are useful bounded-review evidence, not a universal reviewer ranking or proof of aggregate readiness.
+
 ## Lightweight case template
 
 ```text
