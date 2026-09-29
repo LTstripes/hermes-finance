@@ -189,8 +189,15 @@ for (const viewport of [
     await expect(classes.locator("summary")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(classes.getByRole("table", { name: "По классам активов" })).toBeVisible();
-    await expect(classes.getByText("Неизвестный класс активов")).toBeVisible();
-    await expect(classes.getByText(/Охват неполный или не подтверждён/)).toBeVisible();
+    await expect(
+      classes
+        .getByRole("table", { name: "По классам активов" })
+        .getByText("Неизвестный класс активов"),
+    ).toBeVisible();
+    await expect(classes.getByText(/Покрытие известных групп ниже 100%/)).toBeVisible();
+    await expect(
+      classes.getByText(/уже показана строкой «Неизвестный класс активов»/),
+    ).toBeVisible();
     const redemptions = page
       .locator("details")
       .filter({ has: page.locator("summary", { hasText: "Погашения" }) })

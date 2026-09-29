@@ -112,24 +112,50 @@ function Allocation({
 }) {
   if (!metric)
     return <UiV2Notice title={`${title}: нет ответа`}>Срез отсутствует в ответе.</UiV2Notice>;
-  const partial =
-    metric.coverage_pct === null ||
-    metric.coverage_pct !== "100.00" ||
-    metric.support.status !== "supported" ||
-    metric.excluded.length > 0;
+  const zeroDenominator = /^0+(?:\.0+)?$/.test(metric.denominator.amount);
+  const undefinedCoverage = metric.coverage_pct === null && !zeroDenominator;
+  const partialCoverage = metric.coverage_pct !== null && metric.coverage_pct !== "100.00";
+  const includedUnallocated = metric.items.find(
+    (item) => item.key === "unknown_asset_class" || item.key === "unassigned_cash",
+  );
   return (
     <details className={styles.metric}>
       <summary>
         <span className={styles.metricName}>{title}</span>
         <span>
-          {metric.items.length} групп · покрытие {percent(metric.coverage_pct)}
+          {metric.items.length} групп ·{" "}
+          {zeroDenominator && metric.coverage_pct === null
+            ? "нулевая основа, доля не определяется"
+            : metric.coverage_pct === null
+              ? "покрытие неизвестно"
+              : `покрытие известных групп ${percent(metric.coverage_pct)}`}
         </span>
         <Support support={metric.support} />
       </summary>
       <div className={styles.metricBody}>
-        {partial ? (
+        {zeroDenominator && metric.coverage_pct === null ? (
+          <p className={styles.intro}>При нулевой основе процент покрытия не определяется.</p>
+        ) : null}
+        {undefinedCoverage ? (
+          <p className={styles.partial}>API не определил долю покрытия для этого среза.</p>
+        ) : null}
+        {partialCoverage ? (
           <p className={styles.partial}>
-            Охват неполный или не подтверждён. Строки не равны всему портфелю.
+            Покрытие известных групп ниже 100%. Основа долей остаётся полной суммой ликвидных
+            активов из ответа.
+          </p>
+        ) : null}
+        {metric.support.status !== "supported" || metric.excluded.length > 0 ? (
+          <p className={styles.partial}>
+            Доступность данных: {supportStatusLabel(metric.support.status).toLowerCase()}.
+            Ограничения и исключённые строки указаны ниже.
+          </p>
+        ) : null}
+        {includedUnallocated ? (
+          <p className={styles.intro}>
+            Не отнесённая к известным группам сумма уже показана строкой «
+            {ASSET_CLASS_LABELS[includedUnallocated.key] ?? includedUnallocated.label}» и входит в
+            основу долей. Не прибавляй её повторно.
           </p>
         ) : null}
         <dl className={styles.facts}>
@@ -142,7 +168,7 @@ function Allocation({
             <dd>{money(metric.covered_amount)}</dd>
           </div>
           <div>
-            <dt>Не распределено</dt>
+            <dt>Не отнесено к известным группам · в составе основы</dt>
             <dd>{money(metric.unallocated_amount)}</dd>
           </div>
         </dl>

@@ -216,13 +216,19 @@ describe("UiV2CapitalAllocationPage", () => {
     const classes = screen.getByRole("table", { name: "По классам активов" });
     expect(within(classes).getByText("Облигации")).toBeInTheDocument();
     expect(within(classes).getByText("Неизвестный класс активов")).toBeInTheDocument();
-    expect(screen.getByText(/Охват неполный или не подтверждён/)).toBeInTheDocument();
+    const classDetails = classes.closest("details") as HTMLElement;
     expect(
-      within(classes.closest("details") as HTMLElement).getByText(
-        /Распределено по известным группам/,
-      ),
+      within(classDetails).getByText(/Покрытие известных групп ниже 100%/),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/20\s*000\s*₽/).length).toBeGreaterThan(0);
+    expect(within(classDetails).getByText(/Доступность данных: неизвестно/)).toBeInTheDocument();
+    expect(
+      within(classDetails).getByText(/уже показана строкой «Неизвестный класс активов»/),
+    ).toBeInTheDocument();
+    expect(within(classDetails).getByText(/Распределено по известным группам/)).toBeInTheDocument();
+    expect(within(classes).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
+    expect(
+      within(classDetails).getByText(/Не отнесено к известным группам · в составе основы/),
+    ).toBeInTheDocument();
     await user.click(screen.getByText("По счетам", { selector: "span" }));
     const accounts = screen.getByRole("table", { name: "По счетам" });
     expect(within(accounts).getByText("Счёт А")).toBeInTheDocument();
@@ -277,6 +283,7 @@ describe("UiV2CapitalAllocationPage", () => {
   });
 
   it("calls the portfolio empty only for confirmed explicit zero, and marks a missing slice", async () => {
+    const user = userEvent.setup();
     const empty = response();
     empty.liquid_assets_total = cash("0.00");
     empty.allocation_by_asset_class = {
@@ -299,6 +306,21 @@ describe("UiV2CapitalAllocationPage", () => {
     vi.mocked(getRiskAllocation).mockResolvedValue(empty);
     const mounted = setup();
     expect(await screen.findByText("Портфель пуст")).toBeInTheDocument();
+    await user.click(screen.getByText("По классам активов", { selector: "span" }));
+    const zeroDetails = screen
+      .getByText("По классам активов", { selector: "span" })
+      .closest("details") as HTMLElement;
+    expect(
+      within(zeroDetails).getByText(/нулевая основа, доля не определяется/),
+    ).toBeInTheDocument();
+    expect(
+      within(zeroDetails).getByText("При нулевой основе процент покрытия не определяется."),
+    ).toBeInTheDocument();
+    expect(
+      within(zeroDetails).queryByText(
+        /Покрытие известных групп ниже 100%|API не определил долю покрытия|Доступность данных:/,
+      ),
+    ).toBeNull();
     mounted.unmount();
     vi.mocked(getRiskAllocation).mockResolvedValue({
       ...empty,
@@ -307,6 +329,46 @@ describe("UiV2CapitalAllocationPage", () => {
     setup();
     expect(await screen.findByText("По классам активов: нет ответа")).toBeInTheDocument();
     expect(screen.queryByText("Портфель пуст")).toBeNull();
+  });
+
+  it("shows unassigned cash within account rows and distinguishes unavailable support", async () => {
+    const user = userEvent.setup();
+    const data = response();
+    data.allocation_by_account = {
+      ...data.allocation_by_account,
+      support: { status: "unavailable", reason_codes: ["cash_not_account_linked"] },
+      covered_amount: cash("80000.00"),
+      unallocated_amount: cash("20000.00"),
+      coverage_pct: "80.00",
+      items: [
+        data.allocation_by_account.items[0],
+        {
+          key: "unassigned_cash",
+          label: "Unassigned cash",
+          amount: cash("20000.00"),
+          share_pct: "20.00",
+          account_id: null,
+          instrument_id: null,
+          instrument_type: null,
+        },
+      ],
+    };
+    vi.mocked(getRiskAllocation).mockResolvedValue(data);
+    setup();
+    await screen.findByText("По счетам", { selector: "span" });
+    await user.click(screen.getByText("По счетам", { selector: "span" }));
+    const accounts = screen.getByRole("table", { name: "По счетам" });
+    const accountDetails = accounts.closest("details") as HTMLElement;
+    expect(within(accounts).getByText("Наличные без привязки к счёту")).toBeInTheDocument();
+    expect(within(accounts).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
+    expect(
+      within(accountDetails).getByText(/уже показана строкой «Наличные без привязки к счёту»/),
+    ).toBeInTheDocument();
+    expect(
+      within(accountDetails).getByText(/Покрытие известных групп ниже 100%/),
+    ).toBeInTheDocument();
+    expect(within(accountDetails).getByText(/Доступность данных: недоступно/)).toBeInTheDocument();
+    expect(within(accountDetails).queryByText(/Строки не равны всему портфелю/)).toBeNull();
   });
 
   it.each(["month=bad", "month=999", "month=2&month=1", "month=0"])(
