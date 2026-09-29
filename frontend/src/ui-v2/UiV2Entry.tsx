@@ -8,6 +8,7 @@ const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
+const UiV2CapitalAllocationPage = lazy(() => import("./UiV2CapitalAllocationPage"));
 const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
 const UiV2ReportsPage = lazy(() => import("./UiV2ReportsPage"));
 const UiV2ReportPage = lazy(() => import("./UiV2ReportPage"));
@@ -91,6 +92,14 @@ export function UiV2CapitalEntry() {
   return (
     <SuspenseFrame>
       <UiV2CapitalPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2CapitalAllocationEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2CapitalAllocationPage />
     </SuspenseFrame>
   );
 }
