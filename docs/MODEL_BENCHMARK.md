@@ -10,6 +10,14 @@ The exact issue contract, candidate diff, CI, independent review and Integrator 
 
 Record rejected, abandoned and still-pending attempts as well as successes. A correction changes an attempt's outcome, not its original first-pass result. Subsequent regressions/UAT failures are appended, never erased from the history. Historical grades already in #605 remain historical assessments until their exact source packets are indexed; they are not silently combined with this cohort.
 
+### Owner-confirmed model identity
+
+An explicit task-specific Owner report of the model used is sufficient to name that model in this journal. If the Worker reports `unknown`, `GPT-6` or `GPT-6 family` without a precise runtime ID, retain the Owner-confirmed model/effort label (for example **Sol High** or **Astra High**) as the case's model and mark its source **owner_reported**. A generic or unavailable runtime identity does not erase the Owner's confirmation.
+
+Keep the raw Worker statement as a qualification where useful; do not manufacture a more specific backend model ID, provider, vendor or runtime-confirmation claim. An assistant recommendation alone is not execution evidence. A task-specific Owner selection followed by the corresponding delivery can establish the Owner-confirmed route; do not transfer that attribution to another task or to its Reviewer. If two explicit identities genuinely conflict, preserve both and flag the conflict rather than silently overwriting either.
+
+This follows the compact runtime/Owner evidence rule already in `AGENTS.md`. Normal Worker/Reviewer handoffs still contain exactly `model` and `provider/client`; the Integrator records attribution confidence separately.
+
 ## One case, several attempts
 
 A case is `(repository, issue, role, assigned baseline, initial candidate, execution route)`. Follow-up SHAs are attempts of the same case, not additional independent successes. Record Worker, Reviewer and research/critique roles separately. A model/provider/version switch or fallback chain is explicit; it cannot be credited as a pure single-model result.
@@ -44,6 +52,22 @@ Start new/anonymous/temporary-free models on bounded, noncritical work with synt
 ## Resource-aware execution
 
 One primary Worker; at most two genuinely independent writers in isolated assigned workspaces when resources permit. Only one heavyweight local verification process at a time across both projects and all clients: full Vitest, browser/Playwright, production build or substantial backend suites. Full local Finance Vitest uses `--maxWorkers=1` under the current laptop assignment; CI gates are unchanged. Record workload conditions, do not exclude failing tests or weaken assertions. Do not kill another task's or Owner runtime's processes. These scheduling limits are separate from model quality.
+
+## Owner-confirmed attribution corrections — 2026-09-29
+
+These are identity corrections for existing Finance cases, not new successful attempts or revised quality grades. They supersede earlier `assigned_only`, generic-family or `unknown` benchmark model labels where the Owner supplied the task-specific execution route. Source: Owner handoffs/confirmations in the Performance and Finance work chats, reconciled by the Integrator in [#605](https://github.com/LTstripes/hermes-finance/issues/605).
+
+| Worker case | Model used for benchmark | Provider/client evidence | Owner confirmation and retained qualification |
+| --- | --- | --- | --- |
+| [#530 / PR #598](https://github.com/LTstripes/hermes-finance/pull/598), readiness projection | **Astra Medium** | Codex client; exact runtime ID not supplied in that handoff | Owner introduced the delivery as `astra med`; keep `owner_reported`, not runtime-confirmed. Accepted candidate `f21d020292b4b2b68d323a3e5ebbb6180d35eff4`. |
+| [#532 / PR #604](https://github.com/LTstripes/hermes-finance/pull/604), Owner preparation | **Astra High** | Codex client; exact runtime ID not supplied in that handoff | Owner selected the Astra High route and returned the corresponding Astra delivery/fix. Accepted candidate `fdc812bce7640062d9b91d4bec393d7550762697`; raw runtime uncertainty remains a qualification, not the model label. |
+| [#608 / PR #614](https://github.com/LTstripes/hermes-finance/pull/614), membership writer | **Astra High** | Codex desktop; provider was not confirmed in the Worker block | Owner explicitly confirmed `давай 608 и пока что Астре, да` for the Astra High launch, then supplied its delivery. Accepted candidate `f1456a6ef4132b7001bf6a6df7e847c774c18717`; raw Worker wording was `GPT-6 family`. The earlier Astra Pro chat gate analysis is a separate case, not this implementation. |
+| [#621 / PR #626](https://github.com/LTstripes/hermes-finance/pull/626), month-delete invalidation | **Sol High** | Codex client | Owner supplied the delivery with `высылаю от сол хай` in Finance work chat. Candidate `1a491beb13175dd8f2187c17203a54a36800a107`. |
+| [#622 / PR #633](https://github.com/LTstripes/hermes-finance/pull/633), month PATCH/Close | **Sol High** | OpenAI / Codex desktop | Owner confirmed `оба ушли сол хай` for #622/#623. Candidate `9a7d5f0a9d9f3128b19bf84c013835b3d0096f9b`; raw Worker label `GPT-6` does not supersede that confirmation. |
+| [#623 / PR #634](https://github.com/LTstripes/hermes-finance/pull/634), evidence writes/Close | **Sol High** | OpenAI / Codex desktop | Same explicit Owner confirmation for the paired launch. Candidate `b0321fa3166e8c59672d16d6f9f17852ffa2a507`; raw Worker model `unknown` is retained only as a runtime-ID limitation. |
+| [#624 / PR #637](https://github.com/LTstripes/hermes-finance/pull/637), ambiguous coverage | **Sol High** | OpenAI / Codex desktop | Owner explicitly says `сделал сол хай`. Candidate `9ac3f8a4bd07534e8d3aee3855ee263278005e02`; raw Worker wording `GPT-6 family`. Integrator preflight PASS, exact-head CI `36625063015` SUCCESS; independent semantics review **PENDING**, no final grade. |
+
+Existing specific Muse/MiMo/Grok/DeepSeek labels and runtime-confirmed #565 metadata remain unchanged. #561 already names Sol High correctly. Do not resolve unrelated unknown cases merely by analogy: #607's requested Astra Medium route alone, without a separate Owner confirmation of execution, remains insufficient. Do not infer a launcher Worker model from a Reviewer identity. Health-Check cases belong to its own journal.
 
 ## Initial UI cohort — snapshot 2026-09-27
 
@@ -168,6 +192,6 @@ optional measured telemetry if independently available / confounders:
 provisional use / avoid / next evidence needed:
 ```
 
-Worker handoffs use the standard `Model evidence` block from `AGENTS.md` in both Finance and Health-Check. Exact usage/cost/time/delegate fields are reported only when exposed by the runtime; otherwise they are written as `unknown`. The Integrator records benchmark outcomes after review and keeps implementation and Reviewer attribution separate.
+Worker and Reviewer handoffs use only the two-field `Model evidence` block from `AGENTS.md`: `model` and `provider/client`. Do not request usage/cost/time/delegate fields or pad the handoff with `unknown` telemetry. The Integrator may record genuinely available telemetry separately and records benchmark outcomes after review, keeping implementation and Reviewer attribution separate.
 
 Only technical metadata, synthetic-safe summaries and source links belong here. Never include Owner finance/health values, DBs, credentials, private screenshots, raw provider payloads or unsanitized model transcripts. Controlled blind A/B requires a separate explicit assignment with identical contract/baseline and no candidate cross-reading; normal outcome logging does not activate it.
