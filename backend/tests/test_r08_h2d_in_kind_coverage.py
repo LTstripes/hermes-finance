@@ -18,10 +18,18 @@ from hermes_finance.domain import (
 )
 from hermes_finance.main import create_app
 from hermes_finance.persistence import AccountPerformanceScopeMembership, Base, PositionSnapshot
+from hermes_finance.persistence import CashBoundaryCoverage as CashBoundaryCoverageRecord
+from hermes_finance.persistence import InKindBoundaryCoverage as InKindBoundaryCoverageRecord
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
+from hermes_finance.services.cash_boundary_coverage import (
+    _account_is_covered as cash_account_is_covered,
+)
 from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
+from hermes_finance.services.in_kind_boundary_coverage import (
+    _account_is_covered as in_kind_account_is_covered,
+)
 from hermes_finance.services.in_kind_boundary_coverage import (
     attest_in_kind_boundary_history,
     create_in_kind_boundary_coverage,
@@ -164,6 +172,124 @@ def test_explicit_owner_attestation_with_no_movement_is_complete(tmp_path: Path)
     finally:
         session.close()
         database.engine.dispose()
+
+
+@pytest.mark.parametrize("coverage_kind", ["cash", "in_kind"])
+@pytest.mark.parametrize(
+    ("intervals", "expected_complete"),
+    [
+        ([(START, END), (MID, MID)], False),
+        ([(MID, MID), (START, END)], False),
+        ([(START, MID), (MID, END)], False),
+        ([(START, date(2030, 2, 14)), (MID, END)], True),
+        ([(START, date(2030, 2, 13)), (MID, END)], False),
+        ([(START, END)], True),
+    ],
+    ids=["wide-nested", "nested-wide", "partial-overlap", "adjacent", "gap", "wide"],
+)
+def test_complete_coverage_requires_all_relevant_intervals_to_be_unambiguous(
+    tmp_path: Path,
+    coverage_kind: str,
+    intervals: list[tuple[date, date]],
+    expected_complete: bool,
+) -> None:
+    session, database, january, february, account, _ = _environment(tmp_path)
+    try:
+        if coverage_kind == "cash":
+            attest_in_kind_boundary_history(
+                session, account_id=account.id, covered_from=START, covered_to=END
+            )
+            create_coverage = create_cash_boundary_coverage
+            reason = "not_computable_external_flows_incomplete"
+            coverage_field = "cash_boundary_coverage"
+        else:
+            create_cash_boundary_coverage(
+                session, account_id=account.id, covered_from=START, covered_to=END
+            )
+            create_coverage = create_in_kind_boundary_coverage
+            reason = "not_computable_in_kind_boundary_coverage_unknown"
+            coverage_field = "in_kind_boundary_coverage"
+
+        for covered_from, covered_to in intervals:
+            create_coverage(
+                session,
+                account_id=account.id,
+                covered_from=covered_from,
+                covered_to=covered_to,
+            )
+        _close(session, january, february)
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=PerformanceScope.ACCOUNT,
+            account_id=account.id,
+        )
+        coverage = getattr(result, coverage_field)
+        assert coverage.status == ("complete" if expected_complete else "unknown")
+        assert len(coverage.evidence) == len(intervals)
+        assert result.xirr.is_available is expected_complete
+        assert result.twrr.is_available is expected_complete
+        if not expected_complete:
+            assert reason in result.xirr.reason_codes
+            assert reason in result.twrr.reason_codes
+
+        session.close()
+        params = {
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "scope": "account",
+            "account_id": account.id,
+        }
+        with TestClient(create_app(database)) as client:
+            response = client.get("/api/performance/availability", params=params)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body[coverage_field]["status"] == coverage.status
+            assert body["xirr"]["availability"] == (
+                "available" if expected_complete else "not_computable"
+            )
+            assert body["twrr"]["availability"] == (
+                "available" if expected_complete else "not_computable"
+            )
+            if not expected_complete:
+                for metric in ("xirr", "twrr"):
+                    metric_response = client.get(f"/api/performance/{metric}", params=params)
+                    assert metric_response.status_code == 200, metric_response.text
+                    metric_body = metric_response.json()
+                    assert metric_body["availability"] == "not_computable"
+                    assert metric_body["quality"] == "unavailable"
+                    assert metric_body["value"] is None
+                    assert reason in metric_body["reason_codes"]
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("record_type", "account_is_covered"),
+    [
+        (CashBoundaryCoverageRecord, cash_account_is_covered),
+        (InKindBoundaryCoverageRecord, in_kind_account_is_covered),
+    ],
+    ids=["cash", "in-kind"],
+)
+def test_equal_intervals_are_ambiguous_even_if_first_row_is_complete(
+    record_type, account_is_covered
+) -> None:
+    # Persistence already prevents equal intervals; check the read rule independently.
+    rows = [
+        record_type(
+            id=row_id,
+            account_id=1,
+            covered_from=START,
+            covered_to=END,
+            coverage_state="complete",
+            provenance_kind="owner_attestation",
+        )
+        for row_id in (1, 2)
+    ]
+    assert not account_is_covered(rows, start_date=START, end_date=END)
 
 
 def test_complete_state_rejects_non_owner_provenance(tmp_path: Path) -> None:

@@ -544,9 +544,7 @@ def _account_is_covered(
             return False
         cursor = max(cursor, row.covered_to + timedelta(days=1))
         previous_to = row.covered_to
-        if cursor > end_date:
-            return True
-    return False
+    return cursor > end_date
 
 
 def _movement_evidence(row: InKindMovementRecord) -> InKindMovementEvidence:
