@@ -246,21 +246,15 @@ A normal Worker returns one concise per-task completion report with:
 - deviations, limitations, blockers and relevant execution confounders (for example resource contention);
 - final working-tree state and remote/HEAD read-back when local.
 
-Use this compact block in every Worker handoff:
+Use exactly this compact block in every Worker and Reviewer handoff:
 
 ```text
 Model evidence
-client/runtime: <name + version if exposed>
-requested model/effort: <value or unknown>
-actual model/provider/effort: <runtime-reported value or unknown>
-identity source: runtime_confirmed | worker_reported | owner_reported | assigned_only | unknown
-delegates/fallbacks: <chain or none/unknown>
-usage: input=<n|unknown>; cached_input=<n|unknown>; output=<n|unknown>; reasoning=<n|unknown>; total=<n|unknown>
-reported cost/credits: <exact runtime/billing value or unknown>
-reported active/elapsed time: <exact runtime value or unknown>
+model: <exact model name or unknown>
+provider/client: <provider / client or unknown>
 ```
 
-Usage fields are evidence only when the executing client/runtime exposes exact counters. Do not estimate token counts, infer subscription cost, convert public list prices into a claimed run cost, or treat unavailable counters as zero. If the normal runtime does not expose a field, write `unknown`; lack of telemetry is not a Worker defect. Report only aggregate counters/metadata; never include private prompts, secrets or hidden reasoning.
+Keep Model evidence to these two fields only. Do not add token usage, cost, elapsed-time, delegate/fallback, effort, identity-source or other telemetry to the normal handoff. If the exact model or provider/client is not explicitly exposed or supplied by the executing runtime/Owner, write `unknown`; do not infer it from an assignment, alias or expected route. The Integrator may record separately available benchmark telemetry when it is genuinely evidenced, but Workers/Reviewers should not pad handoffs with repeated `unknown` fields.
 
 Workers/Execution Orchestrators do **not** edit `docs/MODEL_BENCHMARK.md` or the benchmark tracker to grade themselves. The Integrator records accepted, rejected, pending and abandoned attempts centrally after source/evidence review and keeps Worker, Reviewer and research roles separate.
 
