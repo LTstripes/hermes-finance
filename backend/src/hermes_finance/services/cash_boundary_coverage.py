@@ -21,6 +21,7 @@ from hermes_finance.persistence import (
 from hermes_finance.persistence import (
     CashBoundaryCoverage as CashBoundaryCoverageRecord,
 )
+from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 
@@ -69,10 +70,13 @@ def require_editable_cash_boundary_interval(
     covered_from: date,
     covered_to: date,
 ) -> None:
-    """Reject evidence writes intersecting any closed reporting period."""
+    """Reserve the writer, then reject intersections with closed periods."""
 
+    reserve_reporting_month_interval_writer(
+        session, covered_from=covered_from, covered_to=covered_to
+    )
     closed_month = session.scalar(
-        select(ReportingMonth)
+        select(ReportingMonth.id)
         .where(
             ReportingMonth.status == "closed",
             ReportingMonth.period_start <= covered_to,
@@ -81,6 +85,7 @@ def require_editable_cash_boundary_interval(
         .order_by(ReportingMonth.period_start, ReportingMonth.id)
     )
     if closed_month is not None:
+        session.rollback()
         raise ClosedReportingMonthError("closed reporting month must be reopened before editing")
 
 
@@ -172,6 +177,9 @@ def attest_cash_boundary_history(
     """Create or explicitly reaffirm owner attestation for one exact interval."""
 
     _validate_interval(covered_from, covered_to)
+    require_editable_cash_boundary_interval(
+        session, covered_from=covered_from, covered_to=covered_to
+    )
     _require_account(session, account_id)
     existing = session.scalar(
         select(CashBoundaryCoverageRecord).where(
@@ -181,9 +189,6 @@ def attest_cash_boundary_history(
         )
     )
     if existing is not None:
-        require_editable_cash_boundary_interval(
-            session, covered_from=covered_from, covered_to=covered_to
-        )
         existing.coverage_state = CashBoundaryCoverageState.COMPLETE.value
         existing.provenance_kind = _DEFAULT_PROVENANCE_KIND
         existing.provenance_reference = (
@@ -221,6 +226,12 @@ def stage_update_cash_boundary_coverage(
     notes: str | None = None,
 ) -> CashBoundaryCoverageRecord:
     coverage = get_cash_boundary_coverage(session, coverage_id)
+    reserve_reporting_month_interval_writer(
+        session, covered_from=coverage.covered_from, covered_to=coverage.covered_to
+    )
+    # Another writer may have moved this row after the initial read. Refresh
+    # under the reservation before checking the actual old and requested new intervals.
+    session.refresh(coverage)
     new_from = coverage.covered_from if covered_from is None else covered_from
     new_to = coverage.covered_to if covered_to is None else covered_to
     _validate_interval(new_from, new_to)
@@ -383,9 +394,7 @@ def _account_is_covered(
             return False
         cursor = max(cursor, row.covered_to + timedelta(days=1))
         previous_to = row.covered_to
-        if cursor > end_date:
-            return True
-    return False
+    return cursor > end_date
 
 
 def cash_boundary_coverage_for_interval(

@@ -29,6 +29,7 @@ from hermes_finance.persistence import (
 from hermes_finance.persistence import (
     InKindMovement as InKindMovementRecord,
 )
+from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
@@ -100,10 +101,13 @@ def require_editable_in_kind_boundary_interval(
     covered_from: date,
     covered_to: date,
 ) -> None:
-    """Reject coverage writes intersecting any closed reporting period."""
+    """Reserve the writer, then reject intersections with closed periods."""
 
+    reserve_reporting_month_interval_writer(
+        session, covered_from=covered_from, covered_to=covered_to
+    )
     closed_month = session.scalar(
-        select(ReportingMonth)
+        select(ReportingMonth.id)
         .where(
             ReportingMonth.status == "closed",
             ReportingMonth.period_start <= covered_to,
@@ -112,6 +116,7 @@ def require_editable_in_kind_boundary_interval(
         .order_by(ReportingMonth.period_start, ReportingMonth.id)
     )
     if closed_month is not None:
+        session.rollback()
         raise ClosedReportingMonthError("closed reporting month must be reopened before editing")
 
 
@@ -233,6 +238,12 @@ def stage_update_in_kind_boundary_coverage(
     notes: str | None = None,
 ) -> InKindBoundaryCoverageRecord:
     coverage = get_in_kind_boundary_coverage(session, coverage_id)
+    reserve_reporting_month_interval_writer(
+        session, covered_from=coverage.covered_from, covered_to=coverage.covered_to
+    )
+    # Re-read the row under the reservation: a competing writer could have
+    # changed its original interval after the first lookup.
+    session.refresh(coverage)
     new_from = coverage.covered_from if covered_from is None else covered_from
     new_to = coverage.covered_to if covered_to is None else covered_to
     _validate_interval(new_from, new_to)
@@ -292,6 +303,29 @@ def revoke_in_kind_boundary_coverage(
         provenance_reference=provenance_reference,
         notes=notes,
     )
+
+
+def invalidate_in_kind_boundary_coverages_for_movement(
+    session: Session, *, account_id: int, event_date: date
+) -> tuple[int, ...]:
+    """Retire COMPLETE evidence intersecting a changed known movement."""
+
+    rows = list(
+        session.scalars(
+            select(InKindBoundaryCoverageRecord).where(
+                InKindBoundaryCoverageRecord.account_id == account_id,
+                InKindBoundaryCoverageRecord.coverage_state
+                == InKindBoundaryCoverageState.COMPLETE.value,
+                InKindBoundaryCoverageRecord.covered_from <= event_date,
+                InKindBoundaryCoverageRecord.covered_to >= event_date,
+            )
+        )
+    )
+    for row in rows:
+        row.coverage_state = InKindBoundaryCoverageState.UNKNOWN.value
+    if rows:
+        session.flush()
+    return tuple(row.id for row in rows)
 
 
 def list_in_kind_movements(
@@ -510,9 +544,7 @@ def _account_is_covered(
             return False
         cursor = max(cursor, row.covered_to + timedelta(days=1))
         previous_to = row.covered_to
-        if cursor > end_date:
-            return True
-    return False
+    return cursor > end_date
 
 
 def _movement_evidence(row: InKindMovementRecord) -> InKindMovementEvidence:

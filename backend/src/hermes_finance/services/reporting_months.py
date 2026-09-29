@@ -149,18 +149,24 @@ def update_reporting_month(
     snapshot_date: date | None = None,
     source: ReportingMonthSource | str | None = None,
 ) -> ReportingMonth:
-    reporting_month = get_reporting_month(session, month_id)
-    if reporting_month.status == ReportingMonthStatus.CLOSED.value:
-        raise ClosedReportingMonthError("closed reporting month must be reopened before editing")
+    get_reporting_month(session, month_id)
+    from hermes_finance.services._guard import require_editable_reporting_month
 
-    if snapshot_date is not None:
-        if snapshot_date < reporting_month.period_start:
-            raise ValueError("snapshot_date cannot be before the reporting period")
-        reporting_month.snapshot_date = snapshot_date
-    if source is not None:
-        reporting_month.source = _coerce_source(source).value
+    try:
+        # Recheck DRAFT while holding the same SQLite writer reservation as
+        # month-scoped child edits. The earlier read may predate a Close.
+        reporting_month = require_editable_reporting_month(session, month_id)
+        if snapshot_date is not None:
+            if snapshot_date < reporting_month.period_start:
+                raise ValueError("snapshot_date cannot be before the reporting period")
+            reporting_month.snapshot_date = snapshot_date
+        if source is not None:
+            reporting_month.source = _coerce_source(source).value
 
-    session.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(reporting_month)
     return reporting_month
 
@@ -171,7 +177,7 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         raise ClosedReportingMonthError("closed reporting month must be reopened before deletion")
 
     try:
-        from hermes_finance.persistence import ExternalFlow
+        from hermes_finance.persistence import ExternalFlow, InKindMovement
         from hermes_finance.services._guard import require_editable_reporting_month
         from hermes_finance.services.cash_boundary_coverage import (
             invalidate_cash_boundary_coverages_for_external_flow,
@@ -179,6 +185,9 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         from hermes_finance.services.external_flows import (
             refresh_external_transfer_link_statuses,
             require_no_transfer_reconciliation_evidence_for_month_deletion,
+        )
+        from hermes_finance.services.in_kind_boundary_coverage import (
+            invalidate_in_kind_boundary_coverages_for_movement,
         )
 
         # The evidence check and bulk leg deletion must share one writer reservation.
@@ -201,6 +210,21 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
                 session,
                 account_id=account_id,
                 event_date=event_date,
+            )
+
+        # The same bulk deletion bypasses per-row in-kind evidence handling.
+        # Both legs of an internal transfer change their account histories.
+        affected_in_kind_boundaries = {
+            (account_id, movement.event_date)
+            for movement in session.scalars(
+                select(InKindMovement).where(InKindMovement.reporting_month_id == month_id)
+            )
+            for account_id in (movement.source_account_id, movement.destination_account_id)
+            if account_id is not None
+        }
+        for account_id, event_date in sorted(affected_in_kind_boundaries):
+            invalidate_in_kind_boundary_coverages_for_movement(
+                session, account_id=account_id, event_date=event_date
             )
 
         from hermes_finance.services.payout_provenance_lifecycle import (

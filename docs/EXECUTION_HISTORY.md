@@ -34,6 +34,54 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+## 2026-09-28 — UI v2 parity editor/import checkpoint
+
+- **Status:** editor/import parity wave accepted and integrated to `integration/ui-v2-parity`.
+- **Parity staging checkpoint:** `f27c33dff940315827d7b9231146945a43b16273`.
+- **Canonical main at checkpoint creation:** `453dd6db68e069028d130060ce18e08bc3bbff64`; this checkpoint itself is docs-only and may advance main later.
+- **Completed scope:** #551–#553, #555–#567, #575 and #607.
+- **Bookkeeping repair:** #559–#564 were closed completed after GitHub confirmed their accepted PRs had already merged and shared editor wiring #607 was complete.
+- **#565 / PR #613:** Worker runtime-confirmed `gpt-6-astra / medium`; one bounded correction round; independent review gate completed; accepted head `6f3299601b23d0d76b74c98a40939b1a1ad88d98`; staging-stage benchmark grade B.
+- **#566 / PR #616:** OpenCode / `muse-spark-1.3-contributor` Worker identity was worker-reported; three substantive correction rounds, including an independent Grok 4.7 merged-calendar readback finding; accepted head `5029d13d10d3f40c74349e6dda2948044b960863`; staging-stage grade C.
+- **#567 / PR #619:** runtime-confirmed OpenCode / `opencode-go/mimo-v2.6-flash`; first candidate `7655717f056b3fc74f2cdc547b2cb7dfda33c168`; one bounded correction round for native month scoping, exact statement-event/material readback and 5xx ambiguity; accepted head `495f99cf6ad93b7ee7916a4b4c6eaedb53d87ceb`; exact-head CI `36467058094` and UI comparison `36467057893` SUCCESS; independent Grok 4.7 import/privacy/data-integrity review ACCEPT; final merge produced parity staging `f27c33dff940315827d7b9231146945a43b16273`; staging-stage grade B.
+- **Owner/UAT boundary:** no private Owner UAT was performed for these individual staging slices. One aggregate Owner UAT is intentionally deferred to #572 on a final exact tree.
+- **Remaining tail:** #568, #569, #570, #571, #572, #573 plus Performance #535/#540/#541 dependencies. No v1 retirement or release is authorized.
+
+Durable status handoff: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
+
+
+# 2026-09-27 Windows launcher CI + compact-shell closeout — #585 / #586
+
+### #585 / PR #589 — path-gate heavy launcher CI
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `988090419b6edfbfa5f6ef5c0a02064fedb07fb2`.
+- **Accepted candidate:** `85769623244d7185b669ea34ca90a2b28a3b1168`.
+- **Canonical merge:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Verification:** exact-head CI `36313043068` SUCCESS; control empty-diff PR #590 CI `36313059976` SUCCESS with `Windows launcher safety` terminal `skipped`; exact-main CI `36313666733` SUCCESS.
+- **Delivered:** deterministic launcher path classifier + job-level gating. Unrelated frontend/financial/backend diffs no longer start .NET, the retained 57-scenario launcher harness, publish or package/install smoke. Launcher/package/schema-helper/CI-contract changes still run the full blocking chain.
+- **Audit decision:** no launcher scenarios were deleted. The inner harness and outer package/install smoke own different guarantees; only irrelevant execution was removed.
+- **Observed effect:** roughly 1.5 minutes of Windows runner work is avoided on typical irrelevant diffs, while launcher-relevant CI still exercises the full package/install path.
+
+### #586 / PR #593 — compact prepared-runtime owner shell
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Accepted candidate:** `22c2dc5c7245953b08ad378de88ba4df3e22fd7c`.
+- **Canonical merge/main:** `bbfa4508f2ad66f35d15ed0f0b45bd41518427af`.
+- **Verification:** exact-head CI `36315571533` SUCCESS; exact-main CI `36315775997` SUCCESS; exact-main `Windows launcher safety` SUCCESS.
+- **Change size:** +419 / -1330 lines.
+- **Delivered:** default 560×320 shell with compact Stable/Preview choice, concise version/short-SHA + production/isolated boundary line, one readiness state and one primary action. Running state uses `Открыть Hermes` as primary; launcher-owned `Остановить` is secondary. Diagnostics are hidden; setup/reconfigure is recovery/setup rather than daily workflow.
+- **Removed with old UI:** large profile cards, separate selected-profile panel, four technical check rows, large SHA block, permanent refresh CTA, last-run footer, large LOCAL ONLY badge and their implementation-specific layout tests.
+- **Retained safety:** prepared-runtime only, no launcher Git/update behavior, Stable production vs Preview isolated-data fail-closed boundary, strict process ownership, foreign-port protection, sidecar/data identity, setup fail-closed behavior and loopback-only runtime.
+- **Release boundary:** published Stable remains immutable v1.0.0. The compact launcher is development-main launcher code until a future release; it can be installed independently from a clean trusted current-main/control checkout without promoting or mutating Stable.
+
+---
+
 # 2026-09-27 Astra audit data-integrity hardening closeout — #484–#498 / #536–#539
 
 - **Status:** complete; all scoped issues closed and integrated to canonical `main`.
