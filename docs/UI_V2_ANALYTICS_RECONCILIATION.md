@@ -2,7 +2,7 @@
 
 Initial audit: 2026-09-26. Final UI-parity source refresh: 2026-09-30. Parent: [#570](https://github.com/LTstripes/hermes-finance/issues/570). Tracker: [#554](https://github.com/LTstripes/hermes-finance/issues/554).
 
-Status: common-tree source refresh for #572 at frozen code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06`. This combines accepted UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa` and Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, preserving main `ee9faea0b49f08454c284deb0db926f8db981a9d`. #574's UI-source checkpoint and #641's Performance refresh were independently reviewed and accepted before this assembly. #570 remains open for common-tree validation acceptance; independent aggregate review, #572 Owner UAT and #573 retirement authorization remain separate pending gates. See [aggregate evidence/matrix](UI_V2_AGGREGATE_VERIFICATION.md) and [Owner runbook](UI_V2_OWNER_UAT.md).
+Status: common-tree source refresh for #572 at frozen code anchor `b05487b822252fad9d9ec7cf4410d6d96c91c8bb`. This combines accepted UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa` and Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, preserving main `ee9faea0b49f08454c284deb0db926f8db981a9d`. #574's UI-source checkpoint and #641's Performance refresh were independently reviewed and accepted before this assembly. #570 remains open for common-tree validation acceptance; independent aggregate review, #572 Owner UAT and #573 retirement authorization remain separate pending gates. See [aggregate evidence/matrix](UI_V2_AGGREGATE_VERIFICATION.md) and [Owner runbook](UI_V2_OWNER_UAT.md).
 
 ## 1. Exact source state reviewed
 
@@ -16,7 +16,7 @@ Status: common-tree source refresh for #572 at frozen code anchor `5d3819ad6ba9a
 - Accepted UI-parity outcomes on that staging tree: #552 Goals (PR #580), #553 Tax/IIS (PR #582 plus route reconciliation #584), #555–#558, #575 monetary result (accepted head `660895c1f7a87c59d7d2b2749423224445c42040`, staging merge `5638eeae858ddcf14a35637bbef45b561a3e4adb`), #559–#564 with shared #607 editor wiring, #565–#567, #568 IIS forms (accepted head `9c72ebd095fcf23b25abc217070e34749ee1274b`, staging merge `1be28feba70bc4f94aa2c4f996cf258d516db11f`), and #569 allocation detail (accepted head `a22cb77c4c61de9eb1e493d2a392fa66f8a77585`, leaf merge `5e8c66b6d714028daf55566aa669e7c0952f58c4`; route/link wiring accepted head `008a6409735c58af558dff1d5214293919dd8cb6`, staging merge `0f6791c32c4926be29103ad81b3826f22bb8842d`). These are source/acceptance records, not aggregate #572 UAT.
 - Earlier separate Performance staging inspection: `a9198a46a9efedcf1e60f5628ff308ebe65952dc`. The accepted refresh `47a798de5b979fcd50b5a9880330e2c3eef62b56` now belongs to this common candidate's ancestry; section 8 distinguishes old evidence from the new assembly.
 - #571: [independent lifecycle/data-integrity ACCEPT in PR #639](https://github.com/LTstripes/hermes-finance/pull/639#issuecomment-5899002497), exact candidate `f69d2603709a06ac483875415bef6fc247c347cc`, merged as `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Reviewer: Grok 4.7 / xAI / Grok Build CLI; candidate CI `36627209205` and UI comparison `36627209078` SUCCESS. Candidate ancestry and current native action/Edit/return source were checked; #572 still owns aggregate evidence and Owner UAT.
-- Live launch refs matched the packet: UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa`, Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, main `ee9faea0b49f08454c284deb0db926f8db981a9d`, including #621–#624. Merge `2dcd7336a6b2d75790399c694c66ac778e833082` retains both parents. Frozen code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06` adds bounded navigation/CI reconciliation; its tree is `ca763ecb54c99c79f58517e9ec5198afb3736117`. Final code+docs candidate SHA/tree are returned in the PR evidence, not claimed to equal this anchor.
+- Live launch refs matched the packet: UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa`, Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, main `ee9faea0b49f08454c284deb0db926f8db981a9d`, including #621–#624. Merge `2dcd7336a6b2d75790399c694c66ac778e833082` retains both parents. Frozen code anchor `b05487b822252fad9d9ec7cf4410d6d96c91c8bb` adds bounded navigation/CI reconciliation; its tree is `56ebf6d952c288159b231b06b3bce75bf4996312`. Final code+docs candidate SHA/tree are returned in the PR evidence, not claimed to equal this anchor.
 
 Source links below identify their exact baseline, current UI-parity staging or separate Performance staging SHA. `SOURCE MATCH` means a capability was found in source for the stated context, not runtime/e2e/UAT PASS. `ACCEPTED` identifies an Integrator-accepted slice on the stated staging branch, not final aggregate parity. `PARTIAL` means only some contexts/components match; `PENDING` identifies an existing implementation task; `OWNER DE-SCOPED` records an explicit bounded product decision; `RETIREMENT-ONLY` is intentional legacy routing retained until #573.
 
@@ -203,45 +203,45 @@ A green CI or the accepted D1/D2 scope decisions do not authorize removal. Legac
 
 ## Source manifest
 
-Legacy inventory references retain the initial audit SHA. Native UI and Performance references below pin common code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06`. This source anchor precedes the final documentation-only commit; final code+docs identity is reported in PR evidence. Source links do not claim independent aggregate ACCEPT or #572 Owner UAT.
+Legacy inventory references retain the initial audit SHA. Native UI and Performance references below pin common code anchor `b05487b822252fad9d9ec7cf4410d6d96c91c8bb`. This source anchor precedes the final documentation-only commit; final code+docs identity is reported in PR evidence. Source links do not claim independent aggregate ACCEPT or #572 Owner UAT.
 
 [S1]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/AnalyticsPage.tsx
 [S2]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/components/charts/InvestmentResultChart.tsx
 [S3]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/backend/src/hermes_finance/services/dashboard.py
-[S4]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPage.tsx
-[S5]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2Page.tsx
-[S6]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2IncomePage.tsx
-[S7]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2ReportPage.tsx
+[S4]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx
+[S5]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx
+[S6]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2IncomePage.tsx
+[S7]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ReportPage.tsx
 [S8]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/RiskAllocationPage.tsx
-[S9]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/docs/performance/PERFORMANCE_UI_V2_PLAN.md
+[S9]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/docs/performance/PERFORMANCE_UI_V2_PLAN.md
 [S10]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/DashboardPage.tsx
-[S11]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/backend/src/hermes_finance/services/income_plan_summary.py
-[S12]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/app/App.tsx
+[S11]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/backend/src/hermes_finance/services/income_plan_summary.py
+[S12]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/app/App.tsx
 
-[S13]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx
+[S13]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx
 
-[S14]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx
+[S14]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx
 
-[S15]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2GoalsPage.tsx
+[S15]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2GoalsPage.tsx
 
-[S16]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2DataCatalogsPage.tsx
+[S16]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2DataCatalogsPage.tsx
 
-[S17]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPerformanceDetail.tsx
+[S17]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPerformanceDetail.tsx
 
-[S18]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/app/App.tsx
+[S18]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/app/App.tsx
 
-[S19]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPage.tsx
+[S19]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx
 
-[S20]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2IisAccountForms.tsx
+[S20]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2IisAccountForms.tsx
 
-[S21]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/components/month-close/navigation.ts
+[S21]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/components/month-close/navigation.ts
 
-[S22]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2ClosePage.tsx
+[S22]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ClosePage.tsx
 
-[S23]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/components/month-close/FinalMonthReview.tsx
+[S23]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/components/month-close/FinalMonthReview.tsx
 
-[S24]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthEditorPage.tsx
+[S24]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthEditorPage.tsx
 
-[S25]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthsPage.tsx
+[S25]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthsPage.tsx
 
-[S26]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/e2e/monthly-close.acceptance.ts
+[S26]: https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/e2e/monthly-close.acceptance.ts

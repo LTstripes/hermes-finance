@@ -1,6 +1,6 @@
 # Owner UAT — common UI / Performance candidate (#572)
 
-This is an Owner-only runbook for the final candidate reported by the #572 draft PR. Source anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06` identifies code/CI/specs; use the **final code+docs candidate SHA**, not an old leaf/staging SHA. Only Integrator can mark READY_FOR_OWNER_UAT after the required CI and independent integration/product/lifecycle review. Worker synthetic tests do not provide Owner PASS.
+This is an Owner-only runbook for the final candidate reported by the #572 draft PR. Source anchor `b05487b822252fad9d9ec7cf4410d6d96c91c8bb` identifies code/CI/specs; use the **final code+docs candidate SHA**, not an old leaf/staging SHA. Only Integrator can mark READY_FOR_OWNER_UAT after the required CI and independent integration/product/lifecycle review. Worker synthetic tests do not provide Owner PASS.
 
 ## Assignment and backup first
 
