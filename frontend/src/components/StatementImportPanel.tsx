@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import { updateInstrument } from "../api/instruments";
 import {
   applyStatement,
   inspectStatement,
   prepareStatement,
+  type StatementApplyItem,
   type StatementCandidate,
   type StatementInspect,
   type StatementMapping,
@@ -25,6 +26,31 @@ type StatementDecision = {
 };
 
 const EMPTY_DECISION: StatementDecision = { action: "", candidateId: "" };
+
+/**
+ * Expected account/instrument identity of one submitted statement row (#567).
+ * It is the only identity the apply contract exposes for a returned item, so
+ * the authoritative post-apply readback proves the persisted flow against it.
+ */
+export type StatementApplyExpectation = {
+  natural_identity: string | null;
+  material_fingerprint: string | null;
+  expected_hermes_account_id: number | null;
+  expected_hermes_instrument_id: number | null;
+};
+
+export type StatementApplyVerification = {
+  submittedCount: number;
+  selectedCount: number;
+  items: StatementApplyItem[];
+  expectations: StatementApplyExpectation[];
+};
+
+const UNCONFIRMED_READBACK_MESSAGE =
+  "Импорт не подтверждён повторной загрузкой данных — успех не показан. Старая подготовка отменена, проверь файл заново и сверь сохранённые строки.";
+
+const AMBIGUOUS_APPLY_MESSAGE =
+  "Запрос применения завершился без ответа, результат неизвестен. Это не успех: старая подготовка отменена, чтобы не применить строки дважды. Проверь файл заново и сверь сохранённые строки.";
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   applicable: "Отчёт готов к подготовке",
@@ -140,6 +166,31 @@ function classLabel(row: StatementRow): string {
   return "Новая строка";
 }
 
+/**
+ * Optional native month scope (#567). The canonical backend still derives each
+ * row's reporting month from its own `event_date` and stays cross-month
+ * capable; a native workspace pins one exact reporting period so it can never
+ * write outside the explicit month it rereads. Without this constraint the
+ * panel keeps its existing (legacy/unconstrained) behaviour byte for byte.
+ */
+export type StatementTargetPeriod = { year: number; month: number };
+
+export const OUT_OF_PERIOD_REASON = "строка относится к другому отчётному месяцу";
+
+function rowMatchesTargetPeriod(row: StatementRow, target: StatementTargetPeriod | null): boolean {
+  if (!target) {
+    return true;
+  }
+  if (!row.event_date) {
+    return false;
+  }
+  const match = /^(\d{4})-(\d{2})/.exec(row.event_date);
+  if (!match) {
+    return false;
+  }
+  return Number(match[1]) === target.year && Number(match[2]) === target.month;
+}
+
 function classTone(row: StatementRow): "ok" | "draft" | "closed" | "info" {
   if (row.duplicate_class === "duplicate") {
     return "closed";
@@ -193,8 +244,13 @@ function isinSaveKind(
   return existing === statementIsin ? "same" : "conflict";
 }
 
-function readyForBulkSelect(row: StatementRow): boolean {
-  return row.status === "matched" && row.duplicate_class == null && row.candidates.length === 0;
+function readyForBulkSelect(row: StatementRow, target: StatementTargetPeriod | null): boolean {
+  return (
+    row.status === "matched" &&
+    row.duplicate_class == null &&
+    row.candidates.length === 0 &&
+    rowMatchesTargetPeriod(row, target)
+  );
 }
 
 type Props = {
@@ -204,6 +260,25 @@ type Props = {
   onApplied?: () => Promise<void> | void;
   onInstrumentsChange?: (instruments: Instrument[]) => void;
   onOutcome?: (outcome: AlfaStatementTransientOutcome | null) => void;
+  /**
+   * Optional native month scope (#567). When set, prepared rows outside this
+   * exact reporting period stay visible but are non-selectable, are excluded
+   * from bulk selection and are re-checked again immediately before the apply
+   * POST. Omitting it keeps the existing unconstrained cross-month behaviour.
+   */
+  targetPeriod?: StatementTargetPeriod | null;
+  /**
+   * Authoritative post-apply verification gate (#567). When provided, neither
+   * the success banner nor the `applied` outcome is published until this
+   * resolves; a rejection leaves an explicit unconfirmed state and retires the
+   * prepared document so the same preparation cannot be replayed blindly.
+   */
+  verifyApplied?: (verification: StatementApplyVerification) => Promise<void>;
+  /**
+   * Reports the whole write + authoritative readback lifetime so the host page
+   * can freeze its surrounding context controls (#567).
+   */
+  onApplyingChange?: (applying: boolean) => void;
 };
 
 export function StatementImportPanel({
@@ -213,7 +288,11 @@ export function StatementImportPanel({
   onApplied,
   onInstrumentsChange,
   onOutcome,
+  targetPeriod = null,
+  verifyApplied,
+  onApplyingChange,
 }: Props) {
+  const target: StatementTargetPeriod | null = targetPeriod;
   const [file, setFile] = useState<File | null>(null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({});
@@ -224,11 +303,32 @@ export function StatementImportPanel({
   const [decisions, setDecisions] = useState<Record<string, StatementDecision>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
   const [resultItems, setResultItems] = useState<{ action: string; natural_identity: string }[]>(
     [],
   );
+  // Lifecycle identity: an in-flight inspect/prepare/apply completion only
+  // publishes while the panel is alive and the file/mapping revision is intact.
+  const aliveRef = useRef(true);
+  const revisionRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const onApplyingChangeRef = useRef(onApplyingChange);
+
+  useEffect(() => {
+    onApplyingChangeRef.current = onApplyingChange;
+  });
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      revisionRef.current += 1;
+      onApplyingChangeRef.current?.(false);
+    };
+  }, []);
 
   useEffect(() => {
     setLocalInstruments(instruments);
@@ -291,32 +391,42 @@ export function StatementImportPanel({
   }
 
   function chooseFile(next: File | null) {
+    // Selecting, changing or clearing the document retires every completion
+    // that belongs to the previous file/mapping/selection/confirm lifetime.
+    revisionRef.current += 1;
     setFile(next);
     setInspected(null);
     clearReview();
     setMessage(null);
     setSuccess(null);
+    setUnconfirmed(null);
     onOutcome?.(null);
   }
 
   function resetMappings() {
+    revisionRef.current += 1;
     setAccountMappings({});
     setInstrumentMappings({});
     clearReview();
   }
 
   async function inspect() {
+    if (inFlightRef.current) return;
     if (!file) {
       setMessage("Выбери PDF отчёта Alfa.");
       return;
     }
+    clearReview();
+    const revision = revisionRef.current;
+    inFlightRef.current = true;
     setBusy(true);
     setMessage(null);
     setSuccess(null);
-    clearReview();
+    setUnconfirmed(null);
     onOutcome?.(null);
     try {
       const next = await inspectStatement(file);
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       const nextRefs = uniqueValues(next.rows.map((row) => row.provider_account_ref));
       const nextIsins = uniqueValues(next.rows.map((row) => row.isin));
       setInspected(next);
@@ -327,9 +437,11 @@ export function StatementImportPanel({
       );
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setMessage(formatApiError(error));
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -340,6 +452,7 @@ export function StatementImportPanel({
   );
 
   async function prepare() {
+    if (inFlightRef.current) return;
     if (!file || !inspected) {
       setMessage("Сначала выбери PDF и выполни инспекцию.");
       return;
@@ -348,18 +461,24 @@ export function StatementImportPanel({
       setMessage("Сопоставь каждый найденный Alfa-счёт с существующим Hermes-счётом.");
       return;
     }
+    clearReview();
+    const revision = revisionRef.current;
+    inFlightRef.current = true;
     setBusy(true);
     setMessage(null);
     setSuccess(null);
-    clearReview();
+    setUnconfirmed(null);
     try {
       const next = await prepareStatement(file, mapping());
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setPreparation(next);
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       setMessage(formatApiError(error));
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) setBusy(false);
     }
   }
 
@@ -401,6 +520,9 @@ export function StatementImportPanel({
     const key = rowKey(row, index);
     if (!selected[key] || row.status !== "matched" || row.duplicate_class === "duplicate")
       return false;
+    // Native month scope: a row outside the explicit target period can never
+    // become applicable in this workspace, whatever the current selection says.
+    if (!rowMatchesTargetPeriod(row, target)) return false;
     const decision = decisions[key] ?? EMPTY_DECISION;
     if (row.duplicate_class === "correction") return decision.action === "revise";
     if (row.candidates.length === 0) return decision.action === "";
@@ -461,52 +583,114 @@ export function StatementImportPanel({
     }
     const next: Record<string, boolean> = {};
     preparation.rows.forEach((row, index) => {
-      next[rowKey(row, index)] = readyForBulkSelect(row);
+      next[rowKey(row, index)] = readyForBulkSelect(row, target);
     });
     setSelected(next);
   }
 
+  async function refreshFacts() {
+    try {
+      await onApplied?.();
+    } catch (error) {
+      setMessage(formatApiError(error));
+    }
+  }
+
   async function apply() {
-    if (!file || !preparation || !selectedRowsReady) return;
+    // Single-flight: a second confirmation in the same tick cannot start a
+    // second concurrent apply for the same preparation.
+    if (inFlightRef.current) return;
+    if (!file || !preparation) return;
+    // Native month scope, re-checked immediately before the POST: even a stale
+    // selection can never send a row outside the explicit target period.
+    if (target && selectedRows.some(({ row }) => !rowMatchesTargetPeriod(row, target))) {
+      setMessage(
+        `Нельзя применить строку вне выбранного отчётного месяца. ${OUT_OF_PERIOD_REASON}.`,
+      );
+      return;
+    }
+    if (!selectedRowsReady) return;
+    const revision = revisionRef.current;
+    const submittedCount = selectedRows.length;
+    const selections = selectedRows.map(({ row, index }) => {
+      const decision = decisions[rowKey(row, index)] ?? EMPTY_DECISION;
+      return {
+        natural_identity: row.natural_identity,
+        material_fingerprint: row.material_fingerprint,
+        expected_hermes_account_id: row.expected_hermes_account_id,
+        expected_hermes_instrument_id: row.expected_hermes_instrument_id,
+        action: decision.action || undefined,
+        existing_cash_flow_id:
+          decision.action === "link_existing" ? Number(decision.candidateId) : undefined,
+        expected_candidate_ids: row.expected_candidate_ids,
+      };
+    });
+    const expectations: StatementApplyExpectation[] = selectedRows.map(({ row }) => ({
+      natural_identity: row.natural_identity,
+      material_fingerprint: row.material_fingerprint,
+      expected_hermes_account_id: row.expected_hermes_account_id,
+      expected_hermes_instrument_id: row.expected_hermes_instrument_id,
+    }));
+    inFlightRef.current = true;
     setBusy(true);
+    setApplying(true);
+    onApplyingChangeRef.current?.(true);
     setMessage(null);
     setSuccess(null);
+    setUnconfirmed(null);
     try {
-      const result = await applyStatement(
-        file,
-        mapping(),
-        selectedRows.map(({ row, index }) => {
-          const decision = decisions[rowKey(row, index)] ?? EMPTY_DECISION;
-          return {
-            natural_identity: row.natural_identity,
-            material_fingerprint: row.material_fingerprint,
-            expected_hermes_account_id: row.expected_hermes_account_id,
-            expected_hermes_instrument_id: row.expected_hermes_instrument_id,
-            action: decision.action || undefined,
-            existing_cash_flow_id:
-              decision.action === "link_existing" ? Number(decision.candidateId) : undefined,
-            expected_candidate_ids: row.expected_candidate_ids,
-          };
-        }),
-        preparation.document_sha256,
-      );
+      const result = await applyStatement(file, mapping(), selections, preparation.document_sha256);
+      if (!aliveRef.current || revision !== revisionRef.current) return;
       if (!result.success) {
         if (result.error_code === "preview_changed") clearReview();
         setMessage(result.message ?? "Импорт не применён.");
         return;
       }
+      if (verifyApplied) {
+        try {
+          await verifyApplied({
+            submittedCount,
+            selectedCount: result.selected_count,
+            items: result.items,
+            expectations,
+          });
+        } catch (error) {
+          if (!aliveRef.current || revision !== revisionRef.current) return;
+          clearReview();
+          setUnconfirmed(`${UNCONFIRMED_READBACK_MESSAGE} Причина: ${formatApiError(error)}`);
+          await refreshFacts();
+          return;
+        }
+      }
+      if (!aliveRef.current || revision !== revisionRef.current) return;
+      clearReview();
       setResultItems(result.items);
-      setPreparation(null);
-      setSelected({});
-      setDecisions({});
-      setConfirmOpen(false);
       setSuccess(`Импортировано строк: ${result.selected_count}.`);
       onOutcome?.({ kind: "applied", selectedCount: result.selected_count });
-      await onApplied?.();
+      await refreshFacts();
     } catch (error) {
-      setMessage(formatApiError(error));
+      if (!aliveRef.current || revision !== revisionRef.current) return;
+      // Only a proven client-side pre-handler 4xx rejection is definite: the
+      // service never ran, so nothing was written and the review may continue.
+      // Status 0 (network/timeout) and every 5xx are ambiguous — the service
+      // may already have committed before the response was lost — so they take
+      // the explicit unconfirmed/reconciliation path with no blind replay.
+      const definiteRejection =
+        error instanceof ApiClientError && error.status >= 400 && error.status < 500;
+      if (definiteRejection) {
+        setMessage(formatApiError(error));
+        return;
+      }
+      clearReview();
+      setUnconfirmed(`${AMBIGUOUS_APPLY_MESSAGE} ${formatApiError(error)}`);
+      await refreshFacts();
     } finally {
-      setBusy(false);
+      inFlightRef.current = false;
+      if (aliveRef.current) {
+        setBusy(false);
+        setApplying(false);
+      }
+      onApplyingChangeRef.current?.(false);
     }
   }
 
@@ -537,6 +721,7 @@ export function StatementImportPanel({
             id="statement-file"
             type="file"
             accept="application/pdf"
+            disabled={applying}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
           />
         </Field>
@@ -563,6 +748,11 @@ export function StatementImportPanel({
       {message ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {message}
+        </div>
+      ) : null}
+      {unconfirmed ? (
+        <div className="inline-alert inline-alert--warn" role="alert">
+          {unconfirmed}
         </div>
       ) : null}
       {success ? (
@@ -621,9 +811,13 @@ export function StatementImportPanel({
                     label={`Alfa-счёт ${ref}`}
                   >
                     <Select
+                      disabled={applying}
                       id={`statement-map-account-${ref}`}
                       value={accountMappings[ref] ?? ""}
                       onChange={(event) => {
+                        // A mapping change retires the previously prepared
+                        // identity; an in-flight completion must not publish.
+                        revisionRef.current += 1;
                         setAccountMappings((current) => ({
                           ...current,
                           [ref]: event.target.value,
@@ -667,9 +861,11 @@ export function StatementImportPanel({
                         label={`Инструмент для ${isin}`}
                       >
                         <Select
+                          disabled={applying}
                           id={`statement-map-instrument-${isin}`}
                           value={instrumentMappings[isin] ?? ""}
                           onChange={(event) => {
+                            revisionRef.current += 1;
                             setInstrumentMappings((current) => ({
                               ...current,
                               [isin]: event.target.value,
@@ -797,7 +993,8 @@ export function StatementImportPanel({
                 const decision = decisions[key] ?? EMPTY_DECISION;
                 const duplicate = row.duplicate_class === "duplicate";
                 const correction = row.duplicate_class === "correction";
-                const selectable = row.status === "matched" && !duplicate;
+                const inPeriod = rowMatchesTargetPeriod(row, target);
+                const selectable = row.status === "matched" && !duplicate && inPeriod;
                 const instrumentName = lookupName(
                   row.expected_hermes_instrument_id,
                   localInstruments,
@@ -841,11 +1038,20 @@ export function StatementImportPanel({
                       {moneyDisplay(row.net_amount, row.net_currency ?? row.gross_currency)}
                     </Td>
                     <Td className="statement-import__prepare-table__class">
-                      <Badge tone={classTone(row)}>{classLabel(row)}</Badge>
+                      <div className="statement-import__class">
+                        <Badge tone={classTone(row)}>{classLabel(row)}</Badge>
+                        {!inPeriod ? (
+                          <span className="muted tiny statement-import__out-of-period">
+                            {OUT_OF_PERIOD_REASON}
+                          </span>
+                        ) : null}
+                      </div>
                     </Td>
                     <Td className="statement-import__prepare-table__decision">
                       <div className="statement-import__decision">
-                        {duplicate ? (
+                        {!inPeriod ? (
+                          <span className="muted tiny">не применяется в этом месяце</span>
+                        ) : duplicate ? (
                           <span className="muted statement-import__decision-label">
                             Без изменений
                           </span>
@@ -853,7 +1059,7 @@ export function StatementImportPanel({
                           <Select
                             aria-label={`Решение correction ${index + 1}`}
                             value={decision.action}
-                            disabled={!selected[key]}
+                            disabled={busy || !selected[key]}
                             onChange={(event) =>
                               updateDecision(key, {
                                 action: event.target.value as StatementDecision["action"],
@@ -870,7 +1076,7 @@ export function StatementImportPanel({
                             <Select
                               aria-label={`Решение кандидата ${index + 1}`}
                               value={decision.action}
-                              disabled={!selected[key]}
+                              disabled={busy || !selected[key]}
                               onChange={(event) =>
                                 updateDecision(key, {
                                   action: event.target.value as StatementDecision["action"],
@@ -886,7 +1092,7 @@ export function StatementImportPanel({
                               <Select
                                 aria-label={`Кандидат для ссылки ${index + 1}`}
                                 value={decision.candidateId}
-                                disabled={!selected[key]}
+                                disabled={busy || !selected[key]}
                                 onChange={(event) =>
                                   updateDecision(key, { candidateId: event.target.value })
                                 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import type { BrokerReconciliationResponse } from "../api/brokerReconciliation";
 import type { Account, Instrument, ReportingMonth } from "../api/types";
@@ -94,6 +94,10 @@ export function MappingPanel({
   onAccountChange: (providerId: string, hermesId: string) => void;
   onInstrumentChange: (providerId: string, hermesId: string) => void;
 }) {
+  const location = useLocation();
+  const catalogParams = new URLSearchParams(location.search);
+  catalogParams.set("month", String(result.reporting_month_id));
+  catalogParams.set("tab", "mappings");
   const accountRows = result.accounts.filter((row) => row.status !== "matched");
   const instrumentRows = result.instruments.filter(
     (row) => row.provider_instrument_id && row.status !== "matched",
@@ -151,7 +155,9 @@ export function MappingPanel({
         })}
       </div>
       <p className={dataStyles.familyActions}>
-        <Link to="/v2/data/catalogs">Сохранить сопоставление в справочниках →</Link>
+        <Link to={`/v2/data/catalogs?${catalogParams.toString()}`}>
+          Сохранить сопоставление в справочниках →
+        </Link>
         <Link to="/settings">В предыдущем интерфейсе · настройки ↗</Link>
       </p>
     </section>

@@ -11,7 +11,7 @@ import dataStyles from "./UiV2Data.module.css";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
 const COPY: Record<
-  Exclude<DataAppSection, "sources" | "reconciliation">,
+  Exclude<DataAppSection, "sources" | "reconciliation" | "months" | "alfa-baseline" | "payouts">,
   { title: string; subtitle: string; escapes: Array<{ label: string; to: string }> }
 > = {
   catalogs: {
@@ -39,7 +39,10 @@ const COPY: Record<
 export default function UiV2DataPlaceholderPage({
   section,
 }: {
-  section: Exclude<DataAppSection, "sources" | "reconciliation">;
+  section: Exclude<
+    DataAppSection,
+    "sources" | "reconciliation" | "months" | "alfa-baseline" | "payouts"
+  >;
 }) {
   const copy = COPY[section];
   const [params] = useSearchParams();

@@ -583,7 +583,9 @@ export default function UiV2ReportPage() {
       <UiV2Notice title="Этот месяц ещё не закрыт">
         {formatMonth(target.month.year, target.month.month)} — черновик, не исторический отчёт.{" "}
         <Link to="/v2">Мои финансы →</Link> ·{" "}
-        <Link to={`/months/${target.month.id}/close`}>Закрытие месяца →</Link>
+        <Link to={`/v2/close?month=${target.month.id}&step=final_review_close`}>
+          Закрытие месяца →
+        </Link>
       </UiV2Notice>
     );
   } else if (target.kind === "current") {
@@ -632,6 +634,9 @@ export default function UiV2ReportPage() {
             ) : null}
             <Link to="/v2">Мои финансы</Link>
             <Link to="/v2/capital">Капитал</Link>
+            <Link to={`/v2/capital/monthly-result?month=${month.id}`}>
+              Денежный результат месяца →
+            </Link>
           </span>
         </UiV2ReportContext>
         <p className={reportStyles.caveat} data-testid="report-methodology-caveat">

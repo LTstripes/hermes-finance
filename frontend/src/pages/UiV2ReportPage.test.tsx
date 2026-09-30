@@ -318,7 +318,7 @@ describe("UI v2 historical report", () => {
     expect(screen.getByText(/черновик, не исторический отчёт/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Закрытие месяца →" })).toHaveAttribute(
       "href",
-      "/months/12/close",
+      "/v2/close?month=12&step=final_review_close",
     );
     expect(screen.queryByTestId("report-net")).toBeNull();
     expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);

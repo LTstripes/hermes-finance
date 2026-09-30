@@ -108,6 +108,23 @@ export function retractStatementEvent(eventId: number, signal?: AbortSignal) {
   );
 }
 
+export type StatementApplyItem = {
+  action: string;
+  natural_identity: string;
+  applied_statement_event_id: number;
+  investment_cash_flow_id: number;
+  material_fingerprint: string;
+  revision_id: number | null;
+};
+
+export type StatementApplyResult = {
+  success: boolean;
+  selected_count: number;
+  items: StatementApplyItem[];
+  error_code: string | null;
+  message: string | null;
+};
+
 export function applyStatement(
   file: File,
   mapping: StatementMapping,
@@ -118,18 +135,5 @@ export function applyStatement(
   const form = baseForm(file, mapping);
   form.append("selections", JSON.stringify(selections));
   form.append("expected_document_sha256", expectedDocumentSha256);
-  return apiMultipart<{
-    success: boolean;
-    selected_count: number;
-    items: {
-      action: string;
-      natural_identity: string;
-      applied_statement_event_id: number;
-      investment_cash_flow_id: number;
-      material_fingerprint: string;
-      revision_id: number | null;
-    }[];
-    error_code: string | null;
-    message: string | null;
-  }>("/api/statement-import/apply", form, signal);
+  return apiMultipart<StatementApplyResult>("/api/statement-import/apply", form, signal);
 }

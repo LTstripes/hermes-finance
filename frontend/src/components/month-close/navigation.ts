@@ -70,6 +70,13 @@ export function withMonthlyCloseReturn(
   return `${pathname}?${params.toString()}${hash ? `#${hash}` : ""}`;
 }
 
+export function withSelectedReturnMonth(params: URLSearchParams, monthId: number): URLSearchParams {
+  const next = new URLSearchParams(params);
+  next.set("month", String(monthId));
+  if (parseMonthlyCloseReturnContext(params)) next.set("monthId", String(monthId));
+  return next;
+}
+
 const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
   open_month: (monthId) => `/months/${monthId}`,
   set_snapshot_date: (monthId) => `/months/${monthId}?section=general`,
@@ -85,11 +92,47 @@ const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
   clone_next_month: () => "/months",
 };
 
+const V2_ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
+  open_month: (monthId) => `/v2/data/months/${monthId}`,
+  set_snapshot_date: (monthId) => `/v2/data/months/${monthId}?section=general`,
+  open_alfa_preview: (monthId) => `/v2/data/alfa-baseline?month=${monthId}`,
+  open_quote_preview: (monthId) => `/v2/data/months/${monthId}?section=positions`,
+  choose_statement_file: (monthId) => `/v2/data/payouts?month=${monthId}#statement-import`,
+  open_payout_batch_preview: (monthId) => `/v2/data/payouts?month=${monthId}`,
+  open_reconciliation_preview: (monthId) => `/v2/data/reconciliation?month=${monthId}`,
+  open_freshness: (monthId) => `/v2/data?month=${monthId}`,
+  open_final_review: (monthId) =>
+    monthlyCloseReturnPath({
+      monthId,
+      origin: "monthly-close-v2",
+      step: "final_review_close",
+    }),
+  confirm_close: (monthId) =>
+    monthlyCloseReturnPath({
+      monthId,
+      origin: "monthly-close-v2",
+      step: "final_review_close",
+    }),
+  open_cash_flow_ladder: (monthId) => `/v2/data/payouts?month=${monthId}`,
+  clone_next_month: (monthId) => `/v2/data/months?month=${monthId}`,
+};
+
 export function routeForGuidedAction(
   actionId: GuidedCloseActionId,
   monthId: number,
   step: GuidedCloseStepId,
   origin: MonthlyCloseOrigin = "monthly-close",
 ): string {
-  return withMonthlyCloseReturn(ACTION_PATHS[actionId](monthId), monthId, step, origin);
+  if (
+    origin === "monthly-close-v2" &&
+    (actionId === "open_final_review" || actionId === "confirm_close")
+  ) {
+    return V2_ACTION_PATHS[actionId](monthId);
+  }
+  return withMonthlyCloseReturn(
+    (origin === "monthly-close-v2" ? V2_ACTION_PATHS : ACTION_PATHS)[actionId](monthId),
+    monthId,
+    step,
+    origin,
+  );
 }

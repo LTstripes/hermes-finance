@@ -121,6 +121,10 @@ it("renders the latest CLOSED report as a quiet Home with exactly three canonica
   expect(screen.getByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("v2-capital-change")).toHaveTextContent("+42 600 ₽");
   expect(screen.getByTestId("v2-passive-actual")).toHaveTextContent("17 500 ₽");
+  expect(screen.getByRole("link", { name: "Все цели →" })).toHaveAttribute(
+    "href",
+    "/v2/income/goals?month=91",
+  );
   const changePanel = screen
     .getByRole("heading", { name: "Где изменились суммы" })
     .closest("section");
@@ -163,6 +167,10 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   state.months = [uiV2Months[1]];
   mount();
   expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+    "href",
+    "/v2/close",
+  );
   expect(screen.queryByTestId("v2-capital")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   expect(await screen.findByTestId("v2-draft-action")).toBeVisible();

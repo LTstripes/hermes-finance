@@ -64,6 +64,28 @@ def _require_account(session: Session, account_id: int) -> Account:
     return account
 
 
+def closed_month_for_cash_boundary_interval(
+    session: Session,
+    *,
+    covered_from: date,
+    covered_to: date,
+) -> int | None:
+    """Read the interval's CLOSED blocker without reserving or ending a transaction.
+
+    Capability projections call this in their coherent read snapshot. Mutations
+    must use require_editable_cash_boundary_interval instead.
+    """
+    return session.scalar(
+        select(ReportingMonth.id)
+        .where(
+            ReportingMonth.status == "closed",
+            ReportingMonth.period_start <= covered_to,
+            ReportingMonth.period_end >= covered_from,
+        )
+        .order_by(ReportingMonth.period_start, ReportingMonth.id)
+    )
+
+
 def require_editable_cash_boundary_interval(
     session: Session,
     *,
@@ -75,14 +97,8 @@ def require_editable_cash_boundary_interval(
     reserve_reporting_month_interval_writer(
         session, covered_from=covered_from, covered_to=covered_to
     )
-    closed_month = session.scalar(
-        select(ReportingMonth.id)
-        .where(
-            ReportingMonth.status == "closed",
-            ReportingMonth.period_start <= covered_to,
-            ReportingMonth.period_end >= covered_from,
-        )
-        .order_by(ReportingMonth.period_start, ReportingMonth.id)
+    closed_month = closed_month_for_cash_boundary_interval(
+        session, covered_from=covered_from, covered_to=covered_to
     )
     if closed_month is not None:
         session.rollback()

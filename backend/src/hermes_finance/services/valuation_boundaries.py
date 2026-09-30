@@ -553,7 +553,11 @@ def stage_create_observed_valuation_point(
         )
 
     material_signature = material_signature_for_boundary(
-        session, external_flow_id=external_flow_id, boundary_group_id=boundary_group_id
+        session,
+        scope=normalized_scope.value,
+        account_id=normalized_account_id,
+        external_flow_id=external_flow_id,
+        boundary_group_id=boundary_group_id,
     )
     if material_signature is None or expected_material_signature != material_signature:
         raise ValueError("valuation capture target changed materially")

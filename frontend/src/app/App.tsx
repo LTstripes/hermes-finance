@@ -21,17 +21,27 @@ import { SettingsPage } from "../pages/SettingsPage";
 import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
 import {
+  UiV2CapitalAllocationEntry,
   UiV2CapitalEntry,
+  UiV2CapitalPerformanceEntry,
   UiV2CloseEntry,
+  UiV2AlfaBaselineEntry,
+  UiV2PayoutForecastEntry,
   UiV2DataAppEntry,
   UiV2DataCatalogsEntry,
   UiV2DataFilesEntry,
   UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
+  UiV2MonthsEntry,
+  UiV2MonthEditorEntry,
+  UiV2MonthlyResultEntry,
   UiV2Entry,
   UiV2IncomeEntry,
+  UiV2GoalsEntry,
+  UiV2TaxIisEntry,
   UiV2ReportEntry,
   UiV2ReportsEntry,
+  UiV2ScenarioLabEntry,
 } from "../ui-v2/UiV2Entry";
 
 type AppProps = {
@@ -48,15 +58,25 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="/" element={<UiV2Entry />} />
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
+          <Route path="v2/capital/allocation" element={<UiV2CapitalAllocationEntry />} />
+          <Route path="v2/capital/monthly-result" element={<UiV2MonthlyResultEntry />} />
+          <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceEntry />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
           <Route path="v2/data" element={<UiV2DataSourcesEntry />} />
+          <Route path="v2/data/months" element={<UiV2MonthsEntry />} />
+          <Route path="v2/data/months/:monthId" element={<UiV2MonthEditorEntry />} />
           <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationEntry />} />
+          <Route path="v2/data/alfa-baseline" element={<UiV2AlfaBaselineEntry />} />
+          <Route path="v2/data/payouts" element={<UiV2PayoutForecastEntry />} />
           <Route path="v2/data/catalogs" element={<UiV2DataCatalogsEntry />} />
           <Route path="v2/data/files" element={<UiV2DataFilesEntry />} />
           <Route path="v2/data/app" element={<UiV2DataAppEntry />} />
+          <Route path="v2/income/goals" element={<UiV2GoalsEntry />} />
+          <Route path="v2/income/tax-iis" element={<UiV2TaxIisEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
+          <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabEntry />} />
           <Route element={<AppLayout />}>
             <Route path="v1" element={<DashboardPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

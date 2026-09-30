@@ -13,13 +13,17 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to:
   { id: "income", label: "Доход и планы", icon: "◒", to: "/v2/income" },
 ];
 
+const NATIVE_DATA_LINKS = [
+  { label: "Экспорт и копии", to: "/v2/data/files" },
+  { label: "Настройки", to: "/v2/data/app" },
+  { label: "Диагностика", to: "/v2/data/app#diagnostics" },
+];
+
 const LEGACY_LINKS: Array<{ label: string; to: string }> = [
   { label: "Закрыть месяц", to: "/monthly-close" },
   { label: "Счета и справочники", to: "/accounts" },
   { label: "История и результаты", to: "/analytics" },
   { label: "Доход и цели", to: "/goals" },
-  { label: "Экспорт и копии", to: "/export" },
-  { label: "Настройки", to: "/settings" },
 ];
 
 /**
@@ -64,6 +68,13 @@ export function UiV2Shell({
               to={section.to}
             >
               <span aria-hidden="true">{section.icon}</span> {section.label}
+            </Link>
+          ))}
+        </nav>
+        <nav aria-label="Данные и приложение" className={styles.navigation}>
+          {NATIVE_DATA_LINKS.map((link) => (
+            <Link key={link.to} to={link.to}>
+              {link.label}
             </Link>
           ))}
         </nav>

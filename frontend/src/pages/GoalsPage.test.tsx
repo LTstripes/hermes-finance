@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,6 +13,7 @@ import {
   type GoalSummary,
 } from "../api/goals";
 import { listMonths } from "../api/months";
+import UiV2GoalsPage from "../ui-v2/UiV2GoalsPage";
 import { GoalsPage } from "./GoalsPage";
 
 vi.mock("../api/goals", () => ({
@@ -108,6 +110,11 @@ function archiveSummary(): HTMLElement {
   return summary;
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="test-location">{`${location.pathname}${location.search}`}</output>;
+}
+
 const listGoalsMock = vi.mocked(listGoals);
 const listGoalSummaryMock = vi.mocked(listGoalSummary);
 const createGoalMock = vi.mocked(createGoal);
@@ -153,6 +160,7 @@ describe("GoalsPage R03-09 cards", () => {
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     expect(screen.queryByRole("table")).toBeNull();
+    expect(await screen.findByText("Прогресс на снимок 28.02.2031.")).toBeInTheDocument();
 
     const activePanel = screen.getByText("Цели (2)").closest(".panel");
     if (!(activePanel instanceof HTMLElement)) throw new Error("expected active goals panel");
@@ -308,5 +316,105 @@ describe("GoalsPage R03-09 cards", () => {
     await user.click(screen.getByRole("menuitem", { name: "Активировать" }));
 
     await waitFor(() => expect(updateGoalMock).toHaveBeenCalledWith(3, { is_active: true }));
+  });
+
+  it("renders the native v2 route and keeps the selected month in navigation and dialogs", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/v2/income/goals?month=10"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
+    expect(screen.getByRole("heading", { level: 1, name: "Цели" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+      "href",
+      "/v2/income?month=10",
+    );
+    expect(await screen.findByTestId("test-location")).toHaveTextContent(
+      "/v2/income/goals?month=10",
+    );
+    expect(listGoalSummaryMock).toHaveBeenCalledWith(
+      10,
+      { includeInactive: true },
+      expect.anything(),
+    );
+    expect(screen.getByText("Архив").closest("details")).not.toHaveAttribute("open");
+
+    const create = screen.getByRole("button", { name: "Создать цель" });
+    await user.click(create);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(create).toHaveFocus();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Оценка на месяц" }), "11");
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/income/goals?month=11"),
+    );
+    await waitFor(() =>
+      expect(listGoalSummaryMock).toHaveBeenCalledWith(
+        11,
+        { includeInactive: true },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("defaults a missing month to the newest report and does not replace an invalid explicit month", async () => {
+    const defaultRoute = render(
+      <MemoryRouter initialEntries={["/v2/income/goals"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/income/goals?month=11"),
+    );
+    defaultRoute.unmount();
+
+    vi.clearAllMocks();
+    listGoalsMock.mockResolvedValue([secondGoal, inactiveGoal, mainGoal]);
+    listMonthsMock.mockResolvedValue([
+      {
+        id: 10,
+        year: 2031,
+        month: 1,
+        status: "closed",
+        snapshot_date: "2031-01-31",
+        source: "manual",
+      },
+      {
+        id: 11,
+        year: 2031,
+        month: 2,
+        status: "draft",
+        snapshot_date: "2031-02-28",
+        source: "manual",
+      },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/v2/income/goals?month=not-a-month"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(
+        "В ссылке указан некорректный месяц. Выберите доступный отчётный месяц.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByTestId("test-location")).toHaveTextContent(
+      "/v2/income/goals?month=not-a-month",
+    );
+    expect(listGoalSummaryMock).not.toHaveBeenCalled();
   });
 });

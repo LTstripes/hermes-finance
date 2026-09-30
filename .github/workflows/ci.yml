@@ -165,15 +165,15 @@ jobs:
         run: npm run format-check
 
       - name: Test frontend
-        run: npm test
+        run: npm test -- --maxWorkers=1
 
       - name: Build frontend
         run: npm run build
 
   g04-browser:
-    name: G04 real-backend owner journey
+    name: G04 and native v2 real-backend journeys
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -206,9 +206,38 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run G04 synthetic real-backend journey
+      - name: Run G04 and Performance synthetic real-backend journeys
+        env:
+          TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- g04-smoke.spec.ts --project=chromium --retries=0
+        run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
+
+      - name: Build native frontend for retained acceptance journeys
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run native statement import apply and authoritative readback
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --config=playwright.statement.config.ts
+
+      - name: Run native Monthly Close edit return report and reopen
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --config=playwright.monthly-close.config.ts
+
+      - name: Upload synthetic real-backend journey evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-v2-real-backend-evidence
+          path: |
+            ${{ runner.temp }}/hermes-finance-playwright-results
+            ${{ runner.temp }}/hermes-statement-playwright-results
+            ${{ runner.temp }}/hermes-571-playwright
+          if-no-files-found: warn
 
   visual-audit-paths:
     name: Visual audit path filter

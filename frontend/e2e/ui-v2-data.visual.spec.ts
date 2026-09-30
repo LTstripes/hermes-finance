@@ -4,7 +4,12 @@ import path from "node:path";
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import { makeUiV2Freshness, makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
-import { uiV2Accounts, uiV2Instruments, uiV2Months } from "../src/test/uiV2Fixtures";
+import {
+  makeUiV2Workflow,
+  uiV2Accounts,
+  uiV2Instruments,
+  uiV2Months,
+} from "../src/test/uiV2Fixtures";
 
 async function assertBounded(page: Page) {
   expect(
@@ -63,6 +68,8 @@ async function installDataApi(page: Page) {
       json = makeUiV2Freshness(uiV2Months[0]);
     } else if (url.pathname === "/api/market-data/providers/capabilities") {
       json = makeUiV2ProviderCapabilities();
+    } else if (url.pathname === "/api/months/12/close-workflow") {
+      json = makeUiV2Workflow();
     } else if (/^\/api\/instruments\/\d+\/market-mapping$/.test(url.pathname)) {
       const instrumentId = Number(url.pathname.split("/")[3]);
       json = {
@@ -235,6 +242,51 @@ test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", as
   );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-sources-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Data navigation keeps native Close context through keyboard, back and refresh", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Navigation evidence captured once");
+  const evidence = await installDataApi(page);
+  const sourcePath = "/v2/data?month=12&from=monthly-close-v2&step=readiness&monthId=12";
+  const reconciliationPath =
+    "/v2/data/reconciliation?month=12&from=monthly-close-v2&step=readiness&monthId=12";
+  await page.goto(sourcePath);
+  await expect(page.getByTestId("data-month-context")).toContainText("Август 2031");
+  await expect(page.getByRole("link", { name: "Экспорт и копии" })).toHaveAttribute(
+    "href",
+    "/v2/data/files",
+  );
+  await expect(page.getByRole("link", { name: "Диагностика" })).toHaveAttribute(
+    "href",
+    "/v2/data/app#diagnostics",
+  );
+  const reconciliation = page.getByRole("link", { name: "Сверка портфеля" });
+  await reconciliation.focus();
+  await expect(reconciliation).toBeFocused();
+  await reconciliation.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`${reconciliationPath.replaceAll("?", "\\?")}$`));
+  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`${sourcePath.replaceAll("?", "\\?")}$`));
+  await expect(page.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=12&step=readiness",
+  );
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-navigation-desktop");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-navigation-narrow");
+  await page.getByRole("link", { name: "Открыть закрытие месяца →" }).press("Enter");
+  await expect(page).toHaveURL(/\/v2\/close\?month=12&step=readiness$/);
+  await expect(page.getByRole("heading", { name: /Закрытие месяца/ })).toBeVisible();
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);

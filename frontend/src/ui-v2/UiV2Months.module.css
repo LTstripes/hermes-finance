@@ -1,0 +1,152 @@
+.toolbar,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar {
+  margin-bottom: 16px;
+}
+.primary,
+.secondary,
+.danger {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.secondary {
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+.danger {
+  border: 1px solid #a74242;
+  background: white;
+  color: #8b3030;
+}
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.panel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+.panel h2 {
+  margin-bottom: 10px;
+  font-size: 1.1rem;
+}
+.panel p {
+  margin: 8px 0;
+}
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.form label {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.form input,
+.form select {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+.form .actions {
+  width: 100%;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.row > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.row small {
+  color: var(--muted);
+}
+.row a {
+  font-size: 12px;
+}
+.status,
+.selected {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 11px;
+}
+.selected {
+  background: #e8f0f9;
+  color: var(--accent);
+}
+.error,
+.notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.error {
+  background: #f8eaea;
+  color: #7a2e2e;
+}
+.notice {
+  background: #e5f3ea;
+  color: #2f6b45;
+}
+@media (max-width: 480px) {
+  .toolbar > button,
+  .form label,
+  .form .actions > button,
+  .row .actions > button {
+    width: 100%;
+  }
+  .row,
+  .row .actions {
+    align-items: stretch;
+    width: 100%;
+  }
+}

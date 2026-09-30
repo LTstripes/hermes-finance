@@ -36,6 +36,7 @@ import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
+import { uiV2GoalsPath } from "./goalRoute";
 import {
   reportIndex,
   monthWorkspacePath,
@@ -527,7 +528,7 @@ function PassiveBlock({
           <p className={styles.eyebrow}>Получено · факт</p>
           <h2 id="passive-title">Пассивный доход</h2>
         </div>
-        <Link className={styles.contextLink} to="/payouts">
+        <Link className={styles.contextLink} to="/v2/income">
           Выплаты и прогноз →
         </Link>
       </div>
@@ -577,10 +578,12 @@ function goalProgressStyle(value: string): CSSProperties {
 
 function GoalsBlock({
   goals,
+  monthId,
   ready,
   retry,
 }: {
   goals: GoalSummary[];
+  monthId: number | null;
   ready: boolean;
   retry: () => void;
 }) {
@@ -599,7 +602,7 @@ function GoalsBlock({
           <p className={styles.eyebrow}>Текущий прогресс</p>
           <h2 id="goals-title">Ключевые цели</h2>
         </div>
-        <Link className={styles.contextLink} to="/goals">
+        <Link className={styles.contextLink} to={uiV2GoalsPath(monthId)}>
           Все цели →
         </Link>
       </div>
@@ -729,7 +732,7 @@ export default function UiV2Page() {
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
         <UiV2Notice title="Закрой первый отчёт">
           «Мои финансы» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
-          финансовую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+          финансовую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
         </UiV2Notice>
       </>
     );
@@ -771,6 +774,7 @@ export default function UiV2Page() {
           />
           <GoalsBlock
             goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            monthId={closedId}
             ready={goalsReady}
             retry={() => void goalsQuery.refetch()}
           />
