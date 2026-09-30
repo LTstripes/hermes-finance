@@ -2,7 +2,7 @@
 
 Initial audit: 2026-09-26. Final UI-parity source refresh: 2026-09-30. Parent: [#570](https://github.com/LTstripes/hermes-finance/issues/570). Tracker: [#554](https://github.com/LTstripes/hermes-finance/issues/554).
 
-Status: promised source refresh completed after #571 acceptance on UI-parity staging `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Independent financial/product review of this docs candidate remains pending; #570 stays open for that review and Integrator acceptance. #572 aggregate verification/Owner UAT and #573 separate retirement authorization remain pending. The common main/Performance/UI-parity union still needs its own exact-tree verification.
+Status: common-tree source refresh for #572 at frozen code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06`. This combines accepted UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa` and Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, preserving main `ee9faea0b49f08454c284deb0db926f8db981a9d`. #574's UI-source checkpoint and #641's Performance refresh were independently reviewed and accepted before this assembly. #570 remains open for common-tree validation acceptance; independent aggregate review, #572 Owner UAT and #573 retirement authorization remain separate pending gates. See [aggregate evidence/matrix](UI_V2_AGGREGATE_VERIFICATION.md) and [Owner runbook](UI_V2_OWNER_UAT.md).
 
 ## 1. Exact source state reviewed
 
@@ -12,11 +12,11 @@ Status: promised source refresh completed after #571 acceptance on UI-parity sta
 - Relative to the split base, that Performance head adds only `docs/performance/PERFORMANCE_UI_V2_PLAN.md`; it is not the later canonical main plus implemented Phase A/B. No accepted Phase A/B implementation was present on that inspected staging head.
 - #529–#535, #540 and #541 were open at the audit. This is dated evidence, not a claim that their status can never change.
 - Previous docs refresh: `9ea4a63ec205f0a20dd5f9f9d5ca40eda09fb92d`, against `integration/ui-v2-parity@0f6791c32c4926be29103ad81b3826f22bb8842d`; CI `36623529216` SUCCESS. This remains dated evidence for that head.
-- Current UI-parity aggregate reviewed here: `integration/ui-v2-parity@fb0c3b29cbf8e54df00cf7ee849a202b060de105`. The same #570 branch retains original matrix commits `e964717dfd24f51e371f8ed6302a7468abaad381` / `8fe0f33a6ab4cbbe95f90dcc799dbd2a31d2600e` and the previous refresh, and incorporates accepted staging ancestry. The PR diff against staging remains this document only.
+- Previous UI-source checkpoint reviewed: `integration/ui-v2-parity@fb0c3b29cbf8e54df00cf7ee849a202b060de105`. The same #570 branch retains original matrix commits `e964717dfd24f51e371f8ed6302a7468abaad381` / `8fe0f33a6ab4cbbe95f90dcc799dbd2a31d2600e` and the previous refresh, and incorporates accepted staging ancestry. The PR diff against staging remains this document only.
 - Accepted UI-parity outcomes on that staging tree: #552 Goals (PR #580), #553 Tax/IIS (PR #582 plus route reconciliation #584), #555–#558, #575 monetary result (accepted head `660895c1f7a87c59d7d2b2749423224445c42040`, staging merge `5638eeae858ddcf14a35637bbef45b561a3e4adb`), #559–#564 with shared #607 editor wiring, #565–#567, #568 IIS forms (accepted head `9c72ebd095fcf23b25abc217070e34749ee1274b`, staging merge `1be28feba70bc4f94aa2c4f996cf258d516db11f`), and #569 allocation detail (accepted head `a22cb77c4c61de9eb1e493d2a392fa66f8a77585`, leaf merge `5e8c66b6d714028daf55566aa669e7c0952f58c4`; route/link wiring accepted head `008a6409735c58af558dff1d5214293919dd8cb6`, staging merge `0f6791c32c4926be29103ad81b3826f22bb8842d`). These are source/acceptance records, not aggregate #572 UAT.
-- Performance staging separately reviewed at `integration/performance-ui-v2@a9198a46a9efedcf1e60f5628ff308ebe65952dc`. Its status is in section 8; it is not merged into the UI-parity staging tree.
+- Earlier separate Performance staging inspection: `a9198a46a9efedcf1e60f5628ff308ebe65952dc`. The accepted refresh `47a798de5b979fcd50b5a9880330e2c3eef62b56` now belongs to this common candidate's ancestry; section 8 distinguishes old evidence from the new assembly.
 - #571: [independent lifecycle/data-integrity ACCEPT in PR #639](https://github.com/LTstripes/hermes-finance/pull/639#issuecomment-5899002497), exact candidate `f69d2603709a06ac483875415bef6fc247c347cc`, merged as `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Reviewer: Grok 4.7 / xAI / Grok Build CLI; candidate CI `36627209205` and UI comparison `36627209078` SUCCESS. Candidate ancestry and current native action/Edit/return source were checked; #572 still owns aggregate evidence and Owner UAT.
-- Current main read-back: `ee9faea0b49f08454c284deb0db926f8db981a9d`, including accepted #621–#624 fixes. The separate Performance staging has not incorporated those main fixes; source acceptance on the older branch does not prove compatibility of the future union.
+- Live launch refs matched the packet: UI `17af4c29ed5ab02472c6f4378e59cf54fd7fa1aa`, Performance `47a798de5b979fcd50b5a9880330e2c3eef62b56`, main `ee9faea0b49f08454c284deb0db926f8db981a9d`, including #621–#624. Merge `2dcd7336a6b2d75790399c694c66ac778e833082` retains both parents. Frozen code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06` adds bounded navigation/CI reconciliation; its tree is `ca763ecb54c99c79f58517e9ec5198afb3736117`. Final code+docs candidate SHA/tree are returned in the PR evidence, not claimed to equal this anchor.
 
 Source links below identify their exact baseline, current UI-parity staging or separate Performance staging SHA. `SOURCE MATCH` means a capability was found in source for the stated context, not runtime/e2e/UAT PASS. `ACCEPTED` identifies an Integrator-accepted slice on the stated staging branch, not final aggregate parity. `PARTIAL` means only some contexts/components match; `PENDING` identifies an existing implementation task; `OWNER DE-SCOPED` records an explicit bounded product decision; `RETIREMENT-ONLY` is intentional legacy routing retained until #573.
 
@@ -25,7 +25,7 @@ No product code, API, financial formula, data, route or Performance branch is ch
 ## 2. Semantic guardrails
 
 1. **Monetary result for a reporting month is not XIRR/TWRR or profit earned during that month.** [Dashboard result service][S3] and [DTO/chart][S2] combine cash income recorded in the selected month with unrealized result from open-position snapshots. The latter is not the month-over-month change in unrealized result. Keep both components separately labelled; do not rename their displayed sum to "earned this month".
-2. Account results and instrument-class results are not identical scopes. Cash events without an instrument can appear by account but not by class. A cash-income-only class has no current market/cost/unrealized evidence; preserve its null values and unavailable total, not invented zeros. Class grouping here is `instrument_type`, not a new Performance asset-class taxonomy. [S3][S3]
+2. Account results and instrument-class results are not identical scopes. Cash events without an instrument can appear by account but not by class. A cash-income-only class has no current market/cost/unrealized evidence; preserve its null values and unavailable total, not invented zeros. Class grouping here is `instrument_type`, not a new Performance asset-class taxonomy. [S3]
 3. Capital delta is a change of state, not investment return. Home/Capital already label the distinction; class transfers may change rows without increasing capital. [Home][S5], [Capital][S4]
 4. The exact monetary bridge after external flows is not P&L, "earned" or class/instrument return attribution. Preserve the existing labels, exactness gate, scope, currency and interval. [Analytics][S1], [Capital][S4]
 5. Allocation/concentration is not class performance. Risk allocation describes denominators, support, holdings and future payout/redemption concentration; #534/#535/#540 own future class-specific return rates. [Risk][S8], [Performance plan][S9]
@@ -40,10 +40,10 @@ No product code, API, financial formula, data, route or Performance branch is ch
 | Global selected-draft analytics view | Legacy month selector accepts drafts | Do not recreate as a global confirmed-data analytics mode | OWNER DE-SCOPED D2 | Editor/close and separately scoped local tools remain |
 | Monetary result by account | `result_by_account`: monthly cash income plus unrealized snapshot component | [Monthly result][S14] at `/v2/capital/monthly-result?month=<closed-id>&view=accounts`; linked from Capital/Reports | ACCEPTED #575 in staging | D1 KEEP; exact #575 head above; no rate conversion or aggregate UAT claim |
 | Monetary result by instrument class | `result_by_instrument_class`; class cash-only nulls preserved | Same [monthly-result detail][S14], `view=classes` | ACCEPTED #575 in staging | #540 class return table is not a replacement; class/account cuts need not total identically |
-| Exact bridge after external flows | Canonical attribution for a closed-snapshot interval | Capital PerformanceBlock, current adjacent closed pair | SOURCE MATCH for latest pair | Historical/richer periods remain #529/#531 |
-| Portfolio XIRR | Annualized canonical return rate | Capital PerformanceBlock | SOURCE MATCH for latest pair | Period/account detail #529–#531 |
-| Portfolio TWRR | Canonical return over interval | Capital PerformanceBlock | SOURCE MATCH for latest pair | Diagnostics/capture #529–#533 |
-| Older closed-pair Performance selection | Legacy older closed-month choice changes bridge/XIRR/TWRR interval | [Performance detail][S17] accepted on separate Performance staging, not on this UI-parity tree | ACCEPTED #529/#531 in Performance staging; cross-stream reconciliation pending | D2 does not remove historical Performance periods; #541 gate remains open |
+| Exact bridge after external flows | Canonical attribution for a closed-snapshot interval | Capital PerformanceBlock, current adjacent closed pair | SOURCE MATCH for latest pair | Historical/richer periods are present in accepted #529/#531 detail |
+| Portfolio XIRR | Annualized canonical return rate | Capital PerformanceBlock | SOURCE MATCH for latest pair | Period/account detail #529–#531 in the common tree |
+| Portfolio TWRR | Canonical return over interval | Capital PerformanceBlock | SOURCE MATCH for latest pair | Diagnostics/capture #529–#533 in the common tree |
+| Older closed-pair Performance selection | Legacy older closed-month choice changes bridge/XIRR/TWRR interval | [Performance detail][S17] on this common tree, with exact dates/account scope | ACCEPTED #529/#531 ancestry; aggregate verification required | D2 does not remove historical Performance periods; #541 aggregate/Owner gates remain open |
 | Allocation by class/account, top positions | [RiskAllocationPage][S8] | [Capital allocation detail][S13] at `/v2/capital/allocation`, linked from Capital | ACCEPTED #569 + route wiring in staging | Local month context, canonical denominator/support; zero basis is distinct from partial coverage |
 | Payout/redemption concentration and support matrix | Risk future-event concentration and support | Same [allocation detail][S13], including payout/redemption groups and support/limitations | ACCEPTED #569 + route wiring in staging | Preserve future window, denominator and exclusions; source presence is not #572 UAT |
 | Open/create selected month actions | Legacy `/months` and `/months/:id` | Native month management/editor at `/v2/data/months` and `/v2/data/months/:monthId` | ACCEPTED #557/#558 + #559–#564/#607 and #571 wiring in staging | Exact native action/return mapping is delivered; #572 aggregate journey remains pending |
@@ -67,7 +67,7 @@ No product code, API, financial formula, data, route or Performance branch is ch
 | Open/create/all months | Native `/v2/data/months` management and `/v2/data/months/:monthId` editor | ACCEPTED #557/#558 + #559–#564/#607 and #571 wiring in staging | Close CTA/Edit/return wiring accepted; #572 aggregate journey remains pending |
 | Select arbitrary month and recompute whole Dashboard | No global v2 replacement planned | OWNER DE-SCOPED D2 | Current picture remains latest closed |
 | Historical/draft forecast, coverage, ladder in that global mode | Do not recreate this global planning mode | OWNER DE-SCOPED D2 | Not a deletion of underlying APIs/history or local task contracts |
-| Link to mixed Analytics | Split among Capital, Income, Reports, accepted #569/#575 details and separate Performance staging | RETIREMENT-ONLY | Only remove after kept capabilities and route handling are verified |
+| Link to mixed Analytics | Split among Capital, Income, Reports, accepted #569/#575 details and common-tree Performance | RETIREMENT-ONLY | Only remove after kept capabilities and route handling are verified |
 
 This is a source-backed mapped capability inventory, not proof that every legacy field/help/annotation or full workflow is replaced. #572 must check the accepted scope and surface any additional gaps; D2 is not a catch-all waiver for unrelated losses.
 
@@ -90,7 +90,7 @@ The #568 and #569 accepted heads and Integrator reviews are [PR #632](https://gi
 - `/v2` and `/v2/capital` show latest closed data. A newer draft is workflow context, not confirmed financial truth.
 - Their current `month`/`step` handling contributes to a legacy return path; it does not select a historical main-data view. Do not pretend otherwise by changing only a link label. [Home][S5], [Capital][S4]
 - Historical closed capital facts live in `/v2/reports/:monthId`; current latest closed is deliberately handled by Home/Capital rather than duplicated in the archive. [Reports][S7]
-- Accepted #575 and #569 links/routes are present in this staging tree. Performance #531 remains on its separate staging branch; future shared Capital/routes/entry/shell reconciliation is Integrator-owned.
+- Accepted #575, #569 and Performance #531 routes coexist on the frozen common tree. Shared App/entry union retains all three detail routes; Capital retains allocation/monthly-result links and the Performance summary/detail entry. Empty Home/Capital/Income actions lead to native `/v2/close`; Home's payouts/forecast action leads to native `/v2/income`. Explicitly labelled previous-interface links remain.
 
 ### Income
 
@@ -111,8 +111,8 @@ The #568 and #569 accepted heads and Integrator reviews are [PR #632](https://gi
 
 ### Performance
 
-- Accepted #529 owns exact period/scope/action contracts; accepted #531 supplies portfolio/account detail and its stream routing on Performance staging.
-- Accepted #532/#533 supply evidence preparation/capture there, not on the UI-parity staging tree.
+- Accepted #529 owns exact period/scope/action contracts; accepted #531 supplies portfolio/account detail at `/v2/capital/performance` on this common tree.
+- Accepted #532/#533 supply evidence preparation/capture on the same tree. Canonical CI retains `performance-real-backend.spec.ts`: unavailable -> XIRR-only -> explicitly observed synthetic PRE/POST -> TWRR, correction invalidation and stale-token rejection.
 - Historical Performance periods remain required under the accepted Performance scope. D2 does not waive them.
 - Phase B is separate class-return work: #534 contract is accepted, while #535/#540 implementation and #541 Checkpoint B remain open. Neither future #540 nor risk allocation replaces delivered #575 monetary results.
 
@@ -124,7 +124,7 @@ All existing routes remain during this work. D2 is an approved future scope redu
 
 Current [Close action map][S21] defines native paths for every guided action with `monthly-close-v2` origin: editor/general/positions under `/v2/data/months/:monthId`, native Alfa/payout/reconciliation/freshness tools, final review/close at `/v2/close`, and next-month management under `/v2/data/months`. The legacy-origin map remains for retained v1. [Final-review Edit links][S23] use the exact native month/section and return to the same Close step; CLOSED v2 review hides mutation links. [Editor][S24] and [month management][S25] retain return context, and [v2 Close][S22] validates workflow/final-review/outlook month identity while reusing the backend-owned lifecycle/readiness reads.
 
-[PR #639's independent ACCEPT](https://github.com/LTstripes/hermes-finance/pull/639#issuecomment-5899002497) covers candidate `f69d2603709a06ac483875415bef6fc247c347cc`, integrated as `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Its [real-backend acceptance harness][S26] is accepted Worker evidence, but those PR CI/UI runs did not execute that exact scenario. #572 must execute it on the designated aggregate or retain an equivalent canonical real-backend journey before Owner UAT; this source refresh does not claim that aggregate execution or Owner PASS.
+[PR #639's independent ACCEPT](https://github.com/LTstripes/hermes-finance/pull/639#issuecomment-5899002497) covers candidate `f69d2603709a06ac483875415bef6fc247c347cc`, integrated as `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Its [real-backend acceptance harness][S26] is now retained in required canonical CI via `playwright.monthly-close.config.ts`, with actual historical archive readback added on the common tree. `playwright.statement.config.ts` retains native statement import/apply/readback. Exact execution results belong to #572 PR/job evidence; registration/source presence alone is not a pass or Owner PASS.
 
 ## 6. Owner decisions — recorded 2026-09-26
 
@@ -165,23 +165,23 @@ This does not authorize deleting stored history, APIs, financial logic, existing
 | #565–#567 | Accepted native Alfa, forecast/calendar and statement-import actions |
 | #568 | Accepted native IIS write forms in account catalogs |
 | #569 | Accepted allocation/concentration leaf plus separate Capital route/link wiring |
-| #529–#531 | Accepted Performance period/scope/diagnostics and portfolio/account UI on separate staging |
-| #532/#533 | Accepted Performance evidence preparation/capture on separate staging |
+| #529–#531 | Accepted Performance period/scope/diagnostics and portfolio/account UI in common-tree ancestry |
+| #532/#533 | Accepted Performance evidence preparation/capture in common-tree ancestry |
 | #534/#535/#540 | Accepted Phase B contract; backend/UI still open, not a substitute for #575 |
 | #541 | Checkpoint A technical verification and Owner PASS recorded with stated limitation; refreshed release/integration gate remains; Checkpoint B open |
 | #571 | **ACCEPTED / INTEGRATED:** candidate `f69d2603709a06ac483875415bef6fc247c347cc`, merge `fb0c3b29cbf8e54df00cf7ee849a202b060de105`; aggregate harness gate remains #572 |
 | #572 | **PENDING:** common aggregate verification and Owner UAT, including #575, #571 and the exact D2 scope boundary |
 | #573 | **PENDING:** separate v1-retirement decision packet and explicit Owner authorization |
 
-#551 Income polish is an accepted neighbouring slice; #538 owns portfolio-source coverage metadata, with no React-side replacement rules here. Accepted #555 navigation is already in the staging ancestry. This completes the promised #570 source refresh after #571 acceptance; #570 remains open for independent financial/product review and Integrator acceptance. D2 does not waive any additional capability.
+#551 Income polish is an accepted neighbouring slice; #538 owns portfolio-source coverage metadata, with no React-side replacement rules here. Accepted #555 navigation is in the common ancestry. #574's earlier source refresh was accepted in [Integrator comment 5900263443](https://github.com/LTstripes/hermes-finance/pull/574#issuecomment-5900263443). This common-tree refresh still requires independent aggregate financial/product/lifecycle review and Integrator acceptance. D2 does not waive any additional capability.
 
-## 8. Performance checkpoint: initial audit and current separate staging
+## 8. Performance checkpoint: historical evidence and common assembly
 
 At the initial audited baseline, main had a real portfolio bridge/XIRR/TWRR block for the adjacent latest closed pair, with existing unavailable messages. That was source parity for that interval only, not new account drill-down or evidence-entry capability. [Capital at the initial baseline](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/ui-v2/UiV2CapitalPage.tsx)
 
-At the 2026-09-30 recheck, Performance staging remains `a9198a46a9efedcf1e60f5628ff308ebe65952dc`: #529–#533, historical membership #608/#610, the #620 capture-context fix and the #534 contract are accepted there. [#541 Checkpoint A record](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5875528250) reports technical verification, independent re-review and exact-head CI/UI evidence. The later [Owner disposition](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5895015839) is PASS with an explicit real-data limitation and deferred Stable/main smoke; an empty Preview did not prove representative historical values. #541 remains open for refreshed aggregate verification and the durable real-backend Performance journey. #535/#540 and Checkpoint B remain open; class returns/UI are not delivered. [Performance detail][S17] is accepted source on that separate branch, not yet reconciled into the UI-parity aggregate.
+The earlier Performance staging `a9198a46a9efedcf1e60f5628ff308ebe65952dc` contained accepted #529–#533, historical membership #608/#610, #620 capture-context fix and #534 contract. [#541's accepted refresh](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5900366386) records accepted head `95097f75174116f608f761f791d0ee500e9e56ca`, staged as `47a798de5b979fcd50b5a9880330e2c3eef62b56`, with main/#621–#624 ancestry and retained canonical real-backend journey. Old candidate CI/UI `36632951022` / `36632950943` passed; they do not verify this #572 candidate. The earlier [Owner disposition](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5895015839) deferred representative real-history UAT and Stable/main smoke. That limitation persists. #535/#540 and Checkpoint B remain deferred; class returns/UI are not delivered.
 
-The earlier [release-gate follow-up](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5895050559) paused canonical publication on data-integrity prerequisites. The latest [Integrator update](https://github.com/LTstripes/hermes-finance/issues/541#issuecomment-5898510254) records all #621–#624 accepted and merged into main; current main is `ee9faea0b49f08454c284deb0db926f8db981a9d`. Performance staging still lacks those fixes (including #624 merge `33a7f8b63ef0b13c31af471bed1c5da3cd787e9d`), so the old staging is not the final integration candidate. The [common aggregate sequence](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5898506335) requires one Integrator-owned union of current main, accepted Performance and accepted UI parity, followed by affected verification, retained real-backend journeys, independent integration review and applicable Owner acceptance. Earlier Performance Owner PASS does not mark #572 PASS or prove the future union.
+The [#572 launch packet](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5900360825) delegates one task-branch assembly of the exact accepted inputs. The common source anchor above preserves #621–#624 (including #624 merge `33a7f8b63ef0b13c31af471bed1c5da3cd787e9d`) and native editor/import/Close, allocation/monthly-result and interval Performance together. Both accepted histories remain. Independent integration review and actual Owner acceptance follow the Worker candidate; earlier Performance Owner PASS does not mark #572 PASS.
 
 An unfinished new Phase B does not automatically block delivery of unrelated retained legacy capabilities. Conversely, its future table cannot be cited as a delivered replacement for old monetary-result fields. Re-read the actual accepted candidates before final reconciliation; do not copy the staging branch or rely on open issue promises.
 
@@ -189,7 +189,7 @@ An unfinished new Phase B does not automatically block delivery of unrelated ret
 
 Before #573 can become READY_FOR_OWNER_DECISION:
 
-- This source refresh records accepted #571 and current separate Performance status. Obtain independent review of this docs head; before retirement, verify compatibility on the exact common aggregate designated by #541/#572.
+- This refresh records accepted #571 and Performance Phase A on one common code anchor. Obtain independent review and Owner UAT on the exact final code+docs candidate designated by #541/#572 before any retirement decision.
 - Verify delivered #575 on that aggregate, including closed historical context, cash-only nulls and accurate labels. Accepted staging source is not #572 aggregate UAT.
 - Carry the D2 decision link forward; verify its narrow boundary without deleting local factual/Performance contexts.
 - Verify other retained native destinations, including #552/#568/#569/editor and completed #571 Close wiring, plus additional gaps found by #572.
@@ -203,45 +203,45 @@ A green CI or the accepted D1/D2 scope decisions do not authorize removal. Legac
 
 ## Source manifest
 
-Legacy inventory references retain the initial audit SHA. Native UI-parity references are pinned to accepted aggregate `fb0c3b29cbf8e54df00cf7ee849a202b060de105`; Performance references retain its separately accepted staging SHA. These links prove source identity, not runtime tests, common-aggregate compatibility or #572 Owner UAT.
+Legacy inventory references retain the initial audit SHA. Native UI and Performance references below pin common code anchor `5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06`. This source anchor precedes the final documentation-only commit; final code+docs identity is reported in PR evidence. Source links do not claim independent aggregate ACCEPT or #572 Owner UAT.
 
 [S1]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/AnalyticsPage.tsx
 [S2]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/components/charts/InvestmentResultChart.tsx
 [S3]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/backend/src/hermes_finance/services/dashboard.py
-[S4]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2CapitalPage.tsx
-[S5]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2Page.tsx
-[S6]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2IncomePage.tsx
-[S7]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2ReportPage.tsx
+[S4]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPage.tsx
+[S5]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2Page.tsx
+[S6]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2IncomePage.tsx
+[S7]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2ReportPage.tsx
 [S8]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/RiskAllocationPage.tsx
-[S9]: https://github.com/LTstripes/hermes-finance/blob/a9198a46a9efedcf1e60f5628ff308ebe65952dc/docs/performance/PERFORMANCE_UI_V2_PLAN.md
+[S9]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/docs/performance/PERFORMANCE_UI_V2_PLAN.md
 [S10]: https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/DashboardPage.tsx
-[S11]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/backend/src/hermes_finance/services/income_plan_summary.py
-[S12]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/app/App.tsx
+[S11]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/backend/src/hermes_finance/services/income_plan_summary.py
+[S12]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/app/App.tsx
 
-[S13]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx
+[S13]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx
 
-[S14]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx
+[S14]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx
 
-[S15]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2GoalsPage.tsx
+[S15]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2GoalsPage.tsx
 
-[S16]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2DataCatalogsPage.tsx
+[S16]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2DataCatalogsPage.tsx
 
-[S17]: https://github.com/LTstripes/hermes-finance/blob/a9198a46a9efedcf1e60f5628ff308ebe65952dc/frontend/src/ui-v2/UiV2CapitalPerformanceDetail.tsx
+[S17]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPerformanceDetail.tsx
 
-[S18]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/app/App.tsx
+[S18]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/app/App.tsx
 
-[S19]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2CapitalPage.tsx
+[S19]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2CapitalPage.tsx
 
-[S20]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2IisAccountForms.tsx
+[S20]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2IisAccountForms.tsx
 
-[S21]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/components/month-close/navigation.ts
+[S21]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/components/month-close/navigation.ts
 
-[S22]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2ClosePage.tsx
+[S22]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2ClosePage.tsx
 
-[S23]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/components/month-close/FinalMonthReview.tsx
+[S23]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/components/month-close/FinalMonthReview.tsx
 
-[S24]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2MonthEditorPage.tsx
+[S24]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthEditorPage.tsx
 
-[S25]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/src/ui-v2/UiV2MonthsPage.tsx
+[S25]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/src/ui-v2/UiV2MonthsPage.tsx
 
-[S26]: https://github.com/LTstripes/hermes-finance/blob/fb0c3b29cbf8e54df00cf7ee849a202b060de105/frontend/e2e/monthly-close.acceptance.ts
+[S26]: https://github.com/LTstripes/hermes-finance/blob/5d3819ad6ba9acd9d07555cbfc52968f5e3ccd06/frontend/e2e/monthly-close.acceptance.ts
