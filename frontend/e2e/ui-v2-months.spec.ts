@@ -48,7 +48,7 @@ for (const viewport of [
     const calls = await installMonthsApi(page);
     await page.goto("/v2/data/months?month=2");
     await expect(page.getByRole("heading", { level: 1, name: "Отчётные месяцы" })).toBeVisible();
-    await expect(page.getByText("Выбран")).toBeVisible();
+    await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -72,7 +72,7 @@ for (const viewport of [
     expect(calls.filter((call) => call === "POST /api/months/2/clone")).toHaveLength(1);
 
     await page.reload();
-    await expect(page.getByText("Выбран")).toBeVisible();
+    await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Удалить черновик" }).first().click();
     await expect(page.getByRole("alertdialog")).toContainText("Июль 2030");
     await page.getByRole("alertdialog").getByRole("button", { name: "Удалить черновик" }).click();
