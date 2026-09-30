@@ -1,4 +1,3 @@
-using System.Drawing.Drawing2D;
 using System.Text.RegularExpressions;
 
 namespace HermesFinance.Launcher;
@@ -34,6 +33,14 @@ internal static class LauncherUi
         "preview" => "PREVIEW  ·  ISOLATED",
         "experiment" => "EXPERIMENT  ·  SANDBOX",
         _ => "PROFILE",
+    };
+
+    public static string ChoiceLabel(string type) => type.ToLowerInvariant() switch
+    {
+        "stable" => "Stable · production",
+        "preview" => "Preview · isolated",
+        "experiment" => "Experiment · sandbox",
+        _ => "Profile",
     };
 
     public static string DataBoundary(string type) => type.ToLowerInvariant() switch
@@ -150,28 +157,28 @@ internal static class LauncherUi
 
     public static string ReadinessTitle(LauncherReadinessState state) => state switch
     {
-        LauncherReadinessState.NotChecked => "Проверка ещё не запускалась",
-        LauncherReadinessState.Checking => "Проверяем подготовленную среду…",
-        LauncherReadinessState.Ready => "Готово к запуску",
-        LauncherReadinessState.NeedsPreparation => "Нужна подготовка зависимостей",
-        LauncherReadinessState.Blocked => "Запуск заблокирован",
-        LauncherReadinessState.Starting => "Hermes запускается",
-        LauncherReadinessState.Running => "Hermes работает",
-        LauncherReadinessState.Stopped => "Hermes остановлен",
-        _ => "Проверка ещё не запускалась",
+        LauncherReadinessState.NotChecked => "Не проверено",
+        LauncherReadinessState.Checking => "Проверяем",
+        LauncherReadinessState.Ready => "Готов",
+        LauncherReadinessState.NeedsPreparation => "Нужна подготовка",
+        LauncherReadinessState.Blocked => "Заблокировано",
+        LauncherReadinessState.Starting => "Запускается",
+        LauncherReadinessState.Running => "Работает",
+        LauncherReadinessState.Stopped => "Остановлено",
+        _ => "Не проверено",
     };
 
     public static string ReadinessDescription(LauncherReadinessState state) => state switch
     {
-        LauncherReadinessState.NotChecked => "Выберите профиль, чтобы проверить его готовность.",
-        LauncherReadinessState.Checking => "Проверяем runtime, данные, зависимости и loopback-порт.",
-        LauncherReadinessState.Ready => "Все проверки пройдены. Можно запускать Hermes.",
-        LauncherReadinessState.NeedsPreparation => "Зависимости не готовы. Выполните OPS01 Prepare во внешнем подготовленном runtime, затем обновите проверку.",
-        LauncherReadinessState.Blocked => "Исправьте blocker в подготовленном runtime и повторите проверку. Подсказка ниже — какое launcher-действие исправляет это.",
-        LauncherReadinessState.Starting => "Ждём штатные health probes существующего guarded startup.",
-        LauncherReadinessState.Running => "Сервис доступен только локально на 127.0.0.1:8000.",
-        LauncherReadinessState.Stopped => "Профиль остановлен. Можно снова выполнить preflight.",
-        _ => "Выберите профиль, чтобы проверить его готовность.",
+        LauncherReadinessState.NotChecked => "Выберите среду.",
+        LauncherReadinessState.Checking => "Проверяем подготовленную среду.",
+        LauncherReadinessState.Ready => "Можно запускать.",
+        LauncherReadinessState.NeedsPreparation => "Зависимости не готовы. Нужен внешний OPS01 Prepare.",
+        LauncherReadinessState.Blocked => "Запуск заблокирован.",
+        LauncherReadinessState.Starting => "Ждём локальный запуск.",
+        LauncherReadinessState.Running => "Только 127.0.0.1:8000.",
+        LauncherReadinessState.Stopped => "Остановлено.",
+        _ => "Выберите среду.",
     };
 
     public static string OwnerFacingFailure(string rawMessage)
@@ -256,7 +263,7 @@ internal static class LauncherUi
     {
         if (state == LauncherReadinessState.Running)
         {
-            return new(LauncherPrimaryAction.Stop, "Hermes работает — можно остановить или открыть.", "Hermes запущен на 127.0.0.1:8000");
+            return new(LauncherPrimaryAction.Open, "Hermes работает", "Локально на 127.0.0.1:8000");
         }
         if (state == LauncherReadinessState.Ready)
         {
@@ -332,120 +339,43 @@ internal static class LauncherUi
     };
 }
 
-internal sealed class ProfileCard : Panel
+internal sealed class ProfileChoice : Panel
 {
-    private readonly Label _badge = new();
     private readonly Label _name = new();
-    private readonly Label _description = new();
-    private readonly Label _dataBoundary = new();
-    private readonly Label _identity = new();
-    private readonly Label _status = new();
-    private LauncherReadinessState _state = LauncherReadinessState.NotChecked;
     private bool _selected;
 
-    public ProfileCard(LauncherProfile profile)
+    public ProfileChoice(LauncherProfile profile)
     {
         Profile = profile;
         AccessibleRole = AccessibleRole.RadioButton;
-        AccessibleName = LauncherUi.OwnerTitle(profile);
+        AccessibleName = LauncherUi.ChoiceLabel(profile.Type);
         Cursor = Cursors.Hand;
-        Margin = new Padding(6, 4, 6, 6);
-        // #302: taller than the #284 168px so the 13F title + identity +
-        // boundary rows keep air at 125/150% scaling instead of crowding.
-        Height = 188;
+        Margin = new Padding(0, 0, 8, 0);
+        Padding = Padding.Empty;
+        TabStop = true;
         BackColor = LauncherUi.CardBackgroundFor(profile.Type);
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-
-        _badge.Text = LauncherUi.TypeBadge(profile.Type);
-        _badge.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
-        _badge.ForeColor = LauncherUi.AccentFor(profile.Type);
-        _badge.AutoSize = true;
-
-        _name.Text = LauncherUi.OwnerTitle(profile);
-        // #302: 13F keeps the hierarchy (header 19F > card 13F > body 9F)
-        // with enough air that Cyrillic ascenders/descenders do not clip
-        // at 125/150% scaling; the version lives in _identity/_description.
-        // AutoSize without Dock (same #284 rationale as the window header):
-        // a Dock-Fill label reports stale bounds as its preferred size and
-        // the AutoSize card row undermeasures at larger font metrics.
-        _name.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
-        _name.ForeColor = Color.FromArgb(245, 248, 252);
-        _name.AutoEllipsis = true;
-        _name.AutoSize = true;
-        _name.Dock = DockStyle.None;
-        _name.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
-
-        var isStable = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
-        var isPreview = profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-        string desc;
-        if (isStable)
-        {
-            desc = $"Pinned {LauncherUi.ReleaseBadge(profile.ExpectedRef)}  ·  production";
-        }
-        else if (isPreview)
-        {
-            desc = $"main / unreleased  ·  {LauncherUi.DataBoundary(profile.Type)}";
-        }
-        else
-        {
-            desc = $"{LauncherUi.CardDescription(profile.Type)}  ·  {LauncherUi.ReleaseBadge(profile.ExpectedRef)}";
-        }
-        _description.Text = desc;
-        _description.Font = new Font("Segoe UI", 9F);
-        _description.ForeColor = Color.FromArgb(193, 204, 220);
-        _description.AutoEllipsis = true;
-        _description.Dock = DockStyle.Fill;
-
-        _dataBoundary.Text = profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase)
-            ? "Canonical production data  ·  Stable"
-            : LauncherUi.DataBoundary(profile.Type) + (isPreview ? "  ·  UNRELEASED" : "");
-        _dataBoundary.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        _dataBoundary.ForeColor = isStable ? Color.FromArgb(102, 227, 190) : isPreview ? Color.FromArgb(255, 196, 116) : Color.FromArgb(160, 175, 196);
-        _dataBoundary.AutoEllipsis = true;
-        _dataBoundary.Dock = DockStyle.Fill;
-
-        _identity.Text = isStable
-            ? LauncherUi.StableIdentityLabel(profile, null)
-            : isPreview ? LauncherUi.PreviewIdentityLabel(profile, null) : LauncherUi.ReleaseBadge(profile.ExpectedRef);
-        _identity.Font = new Font("Cascadia Mono", 7.5F);
-        _identity.ForeColor = Color.FromArgb(164, 190, 225);
-        _identity.AutoEllipsis = true;
-        _identity.Dock = DockStyle.Fill;
-
-        _status.Text = LauncherUi.ReadinessLabel(_state);
-        _status.Font = new Font("Segoe UI", 8.5F, FontStyle.Bold);
-        _status.ForeColor = LauncherUi.StatusColor(_state);
-        _status.AutoSize = true;
-        _status.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 6,
-            Padding = new Padding(16, 12, 16, 10),
-            BackColor = Color.Transparent,
-        };
-        // #284: text rows size to content (badge/name/desc/identity/status)
-        // so larger fonts grow the card content instead of clipping inside
-        // fixed rows; the Percent boundary row absorbs the slack of the
-        // fixed 168px card, keeping Stable/Preview visually comparable.
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(_badge, 0, 0);
-        layout.Controls.Add(_name, 0, 1);
-        layout.Controls.Add(_description, 0, 2);
-        layout.Controls.Add(_identity, 0, 3);
-        layout.Controls.Add(_dataBoundary, 0, 4);
-        layout.Controls.Add(_status, 0, 5);
-        Controls.Add(layout);
+        _name.Text = LauncherUi.ChoiceLabel(profile.Type);
+        _name.ForeColor = LauncherUi.AccentFor(profile.Type);
+        _name.BackColor = Color.Transparent;
+        _name.AutoSize = false;
+        _name.AutoEllipsis = false;
+        _name.FontChanged += (_, _) => Fit();
+        _name.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        Controls.Add(_name);
+        Fit();
         WireClick(this);
-        Resize += (_, _) => SetRoundedRegion();
-        SetRoundedRegion();
+    }
+
+    private void Fit()
+    {
+        var text = TextRenderer.MeasureText(
+            _name.Text,
+            _name.Font,
+            new Size(int.MaxValue, int.MaxValue),
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        _name.Location = new Point(12, 8);
+        _name.Size = new Size(Math.Max(1, text.Width), Math.Max(1, text.Height));
+        Size = new Size(_name.Right + 12, Math.Max(34, _name.Bottom + 8));
     }
 
     public LauncherProfile Profile { get; }
@@ -458,44 +388,11 @@ internal sealed class ProfileCard : Panel
         Invalidate();
     }
 
-    public void SetState(LauncherReadinessState state)
-    {
-        _state = state;
-        _status.Text = LauncherUi.ReadinessLabel(state);
-        _status.ForeColor = LauncherUi.StatusColor(state);
-        AccessibleDescription = $"{LauncherUi.OwnerTitle(Profile)}: {_status.Text}";
-        Invalidate();
-    }
-
-    public void SetIdentity(string? headSha, string? targetSha = null, string? applicationVersion = null)
-    {
-        // #302: re-derive the title on every identity refresh so a stale
-        // display_name can never linger beside validated identity lines.
-        _name.Text = LauncherUi.OwnerTitle(Profile);
-        AccessibleName = LauncherUi.OwnerTitle(Profile);
-        var isStable = Profile.Type.Equals("stable", StringComparison.OrdinalIgnoreCase);
-        var isPreview = Profile.Type.Equals("preview", StringComparison.OrdinalIgnoreCase);
-        if (isStable)
-        {
-            _identity.Text = LauncherUi.StableIdentityLabel(Profile, headSha, applicationVersion);
-        }
-        else if (isPreview)
-        {
-            _identity.Text = LauncherUi.PreviewIdentityLabel(Profile, headSha);
-        }
-        else
-        {
-            _identity.Text = headSha is not null ? $"SHA {LauncherUi.ShaShort(headSha)}" : LauncherUi.ReleaseBadge(Profile.ExpectedRef);
-        }
-    }
-
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var path = RoundedPath(new Rectangle(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1)), 14);
-        using var pen = new Pen(_selected ? LauncherUi.AccentFor(Profile.Type) : Color.FromArgb(60, 77, 101), _selected ? 2.2F : 1F);
-        e.Graphics.DrawPath(pen, path);
+        using var pen = new Pen(_selected ? LauncherUi.AccentFor(Profile.Type) : Color.FromArgb(60, 77, 101), _selected ? 2F : 1F);
+        e.Graphics.DrawRectangle(pen, 0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -506,6 +403,7 @@ internal sealed class ProfileCard : Panel
             e.Handled = true;
             return;
         }
+
         base.OnKeyDown(e);
     }
 
@@ -516,27 +414,5 @@ internal sealed class ProfileCard : Panel
         {
             WireClick(child);
         }
-    }
-
-    private void SetRoundedRegion()
-    {
-        if (Width <= 0 || Height <= 0)
-        {
-            return;
-        }
-        using var path = RoundedPath(new Rectangle(0, 0, Width, Height), 14);
-        Region = new Region(path);
-    }
-
-    private static GraphicsPath RoundedPath(Rectangle bounds, int radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2;
-        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

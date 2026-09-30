@@ -10,7 +10,7 @@ from hermes_finance.services._guard import (
     require_editable_reporting_month,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
-from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.concurrency import ConcurrencyError, atomic_compare_and_update
 from hermes_finance.services.linked_pairs import ensure_linked_pair_balance_evidence_survives
 
 
@@ -133,24 +133,51 @@ def update_deposit_snapshot(
     require_editable_child_month(session, snapshot)
     if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
         raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
-    if name is not None:
-        snapshot.name = _normalize_name(name)
-    if deposit_type is not None:
-        snapshot.deposit_type = _coerce_deposit_type(deposit_type).value
-    if balance is not None:
-        snapshot.balance_kopecks = _normalize_balance(balance)
-    if annual_rate is not None:
-        snapshot.annual_rate_basis_points = _normalize_rate(annual_rate)
-    if actual_interest_received is not None:
-        snapshot.actual_interest_received_kopecks = _normalize_balance(actual_interest_received)
-    if notes is not None:
-        snapshot.notes = notes
-
-    snapshot.expected_monthly_interest_kopecks = _compute_expected_monthly_interest(
-        snapshot.balance_kopecks, snapshot.annual_rate_basis_points
+    next_name = _normalize_name(name) if name is not None else snapshot.name
+    next_deposit_type = (
+        _coerce_deposit_type(deposit_type).value
+        if deposit_type is not None
+        else snapshot.deposit_type
     )
+    next_balance = _normalize_balance(balance) if balance is not None else snapshot.balance_kopecks
+    next_annual_rate = (
+        _normalize_rate(annual_rate)
+        if annual_rate is not None
+        else snapshot.annual_rate_basis_points
+    )
+    next_actual_interest = (
+        _normalize_balance(actual_interest_received)
+        if actual_interest_received is not None
+        else snapshot.actual_interest_received_kopecks
+    )
+    next_notes = notes if notes is not None else snapshot.notes
+    values = {
+        "name": next_name,
+        "deposit_type": next_deposit_type,
+        "balance_kopecks": next_balance,
+        "annual_rate_basis_points": next_annual_rate,
+        "expected_monthly_interest_kopecks": _compute_expected_monthly_interest(
+            next_balance, next_annual_rate
+        ),
+        "actual_interest_received_kopecks": next_actual_interest,
+        "notes": next_notes,
+    }
+    if expected_updated_at is not None:
+        atomic_compare_and_update(
+            session,
+            table=DepositSnapshot.__table__,
+            row_id=snapshot_id,
+            expected_updated_at=expected_updated_at,
+            values=values,
+        )
+        session.expire(snapshot)
+        session.refresh(snapshot)
+    else:
+        for field, value in values.items():
+            setattr(snapshot, field, value)
     session.commit()
-    session.refresh(snapshot)
+    if expected_updated_at is None:
+        session.refresh(snapshot)
     return snapshot
 
 

@@ -1,0 +1,276 @@
+/* Leaf Performance UI (PUI-03). Reuses shared shell/panel tokens; no page overflow at 390px. */
+
+.preparation {
+  display: grid;
+  gap: 12px;
+}
+
+.preparation select,
+.preparation input:not([type="checkbox"]) {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.preparation input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  height: auto;
+}
+
+.summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.summary > * {
+  min-width: 0;
+}
+
+.periodLine {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metricCard {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #e8ecf0;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.metricValue {
+  margin-top: 8px !important;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.metricNote {
+  margin-top: 6px !important;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.warning {
+  margin-top: 6px !important;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.stateLine {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnosticList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.diagnosticItem {
+  padding: 10px 12px;
+  border: 1px solid #e8ecf0;
+  border-radius: 9px;
+  background: #fbfcfd;
+  font-size: 12px;
+}
+
+.diagnosticItem strong {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnosticItem p {
+  margin-top: 4px !important;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.capabilityNote {
+  margin-top: 6px !important;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.actionRow {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.linkButton {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid #bdcadd;
+  border-radius: 7px;
+  background: white;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.inlineButton {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid #bdcadd;
+  border-radius: 7px;
+  background: white;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.controls label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.controls input,
+.controls select {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.controlsFull {
+  grid-column: 1 / -1;
+}
+
+.composition {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.compositionBlock {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border: 1px solid #e8ecf0;
+  border-radius: 9px;
+  background: #fbfcfd;
+  font-size: 12px;
+}
+
+.compositionBlock h3 {
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.compositionBlock p {
+  margin-top: 4px !important;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.accountsTableWrap {
+  overflow-x: auto;
+  margin-top: 8px;
+  border: 1px solid #e8ecf0;
+  border-radius: 10px;
+}
+
+.accountsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.accountsTable th,
+.accountsTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf0f3;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.accountsTable tr:last-child th,
+.accountsTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.accountsTable th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bridgeBox {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.technicalBox {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.technicalBox code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+@media (max-width: 550px) {
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

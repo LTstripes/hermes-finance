@@ -32,6 +32,7 @@ from hermes_finance.services.expected_cash_flows import (
     calendar_expected_cash_flows,
     create_expected_cash_flow,
 )
+from hermes_finance.services.forecast_passive_income import forecast_passive_income
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.payout_calendar import (
     PayoutCalendarSource,
@@ -301,16 +302,8 @@ def test_later_snapshot_quantity_change_does_not_recalculate_applied_total(tmp_p
             [PayoutCalendarSource.MANUAL, PayoutCalendarSource.PROVIDER],
             15_000,
         ),
-        (
-            PayoutCountingDecision.COUNT_MANUAL,
-            [PayoutCalendarSource.MANUAL],
-            10_000,
-        ),
-        (
-            PayoutCountingDecision.COUNT_PROVIDER,
-            [PayoutCalendarSource.PROVIDER],
-            5_000,
-        ),
+        (PayoutCountingDecision.COUNT_MANUAL, [PayoutCalendarSource.MANUAL], 10_000),
+        (PayoutCountingDecision.COUNT_PROVIDER, [PayoutCalendarSource.PROVIDER], 5_000),
     ],
 )
 def test_explicit_reconciliation_controls_counting(
@@ -391,7 +384,24 @@ def test_unresolved_duplicate_defaults_to_manual_only_without_writes(tmp_path: P
         database.engine.dispose()
 
 
-def test_new_extra_manual_candidate_makes_existing_resolution_conservative(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("decision", "resolved_sources", "resolved_total"),
+    [
+        (PayoutCountingDecision.COUNT_PROVIDER, [PayoutCalendarSource.PROVIDER], 5_000),
+        (PayoutCountingDecision.COUNT_MANUAL, [PayoutCalendarSource.MANUAL], 10_000),
+        (
+            PayoutCountingDecision.KEEP_BOTH,
+            [PayoutCalendarSource.MANUAL, PayoutCalendarSource.PROVIDER],
+            15_000,
+        ),
+    ],
+)
+def test_new_extra_manual_candidate_falls_back_and_resolution_restores(
+    tmp_path: Path,
+    decision: PayoutCountingDecision,
+    resolved_sources: list[PayoutCalendarSource],
+    resolved_total: int,
+) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, instrument_id, snapshot_id = build_environment(session)
@@ -409,13 +419,21 @@ def test_new_extra_manual_candidate_makes_existing_resolution_conservative(tmp_p
             instrument_id=instrument_id,
             snapshot_id=snapshot_id,
         )
-        set_applied_payout_reconciliation(
+        reconciliation = set_applied_payout_reconciliation(
             session,
             payout.id,
             expected_cash_flow_id=first.id,
-            counting_decision=PayoutCountingDecision.KEEP_BOTH,
+            counting_decision=decision,
         )
         session.commit()
+        [resolved] = merged_payout_calendar(
+            session,
+            reporting_month_id=month_id,
+            forecast_version="v1",
+        )
+        assert sources((resolved,)) == resolved_sources
+        assert resolved.total_net.kopecks == resolved_total
+
         second = manual_flow(
             session,
             month_id=month_id,
@@ -424,6 +442,8 @@ def test_new_extra_manual_candidate_makes_existing_resolution_conservative(tmp_p
             expected_date=date(2030, 6, 16),
             amount="1.00",
         )
+        session.commit()
+        before_reads = counts(session)
 
         [june] = merged_payout_calendar(
             session,
@@ -435,6 +455,32 @@ def test_new_extra_manual_candidate_makes_existing_resolution_conservative(tmp_p
             (PayoutCalendarSource.MANUAL, second.id),
         ]
         assert june.total_net.kopecks == 10_100
+        # Forecast consumes this same merged result, so it retains both manual
+        # rows while the provider is conservatively excluded.
+        forecast = forecast_passive_income(session, month_id, "v1")
+        assert forecast.annual_total.kopecks == 10_100
+        [repeated] = merged_payout_calendar(
+            session,
+            reporting_month_id=month_id,
+            forecast_version="v1",
+        )
+        assert repeated == june
+        assert counts(session) == before_reads
+        assert reconciliation.expected_cash_flow_id == first.id
+        assert reconciliation.counting_decision == decision.value
+        assert not session.new
+        assert not session.dirty
+        assert not session.deleted
+
+        session.delete(second)
+        session.commit()
+        [restored] = merged_payout_calendar(
+            session,
+            reporting_month_id=month_id,
+            forecast_version="v1",
+        )
+        assert sources((restored,)) == resolved_sources
+        assert restored.total_net.kopecks == resolved_total
     finally:
         session.close()
         database.engine.dispose()

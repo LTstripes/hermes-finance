@@ -34,6 +34,107 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+## 2026-09-28 — UI v2 parity editor/import checkpoint
+
+- **Status:** editor/import parity wave accepted and integrated to `integration/ui-v2-parity`.
+- **Parity staging checkpoint:** `f27c33dff940315827d7b9231146945a43b16273`.
+- **Canonical main at checkpoint creation:** `453dd6db68e069028d130060ce18e08bc3bbff64`; this checkpoint itself is docs-only and may advance main later.
+- **Completed scope:** #551–#553, #555–#567, #575 and #607.
+- **Bookkeeping repair:** #559–#564 were closed completed after GitHub confirmed their accepted PRs had already merged and shared editor wiring #607 was complete.
+- **#565 / PR #613:** Worker runtime-confirmed `gpt-6-astra / medium`; one bounded correction round; independent review gate completed; accepted head `6f3299601b23d0d76b74c98a40939b1a1ad88d98`; staging-stage benchmark grade B.
+- **#566 / PR #616:** OpenCode / `muse-spark-1.3-contributor` Worker identity was worker-reported; three substantive correction rounds, including an independent Grok 4.7 merged-calendar readback finding; accepted head `5029d13d10d3f40c74349e6dda2948044b960863`; staging-stage grade C.
+- **#567 / PR #619:** runtime-confirmed OpenCode / `opencode-go/mimo-v2.6-flash`; first candidate `7655717f056b3fc74f2cdc547b2cb7dfda33c168`; one bounded correction round for native month scoping, exact statement-event/material readback and 5xx ambiguity; accepted head `495f99cf6ad93b7ee7916a4b4c6eaedb53d87ceb`; exact-head CI `36467058094` and UI comparison `36467057893` SUCCESS; independent Grok 4.7 import/privacy/data-integrity review ACCEPT; final merge produced parity staging `f27c33dff940315827d7b9231146945a43b16273`; staging-stage grade B.
+- **Owner/UAT boundary:** no private Owner UAT was performed for these individual staging slices. One aggregate Owner UAT is intentionally deferred to #572 on a final exact tree.
+- **Remaining tail:** #568, #569, #570, #571, #572, #573 plus Performance #535/#540/#541 dependencies. No v1 retirement or release is authorized.
+
+Durable status handoff: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
+
+
+# 2026-09-27 Windows launcher CI + compact-shell closeout — #585 / #586
+
+### #585 / PR #589 — path-gate heavy launcher CI
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `988090419b6edfbfa5f6ef5c0a02064fedb07fb2`.
+- **Accepted candidate:** `85769623244d7185b669ea34ca90a2b28a3b1168`.
+- **Canonical merge:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Verification:** exact-head CI `36313043068` SUCCESS; control empty-diff PR #590 CI `36313059976` SUCCESS with `Windows launcher safety` terminal `skipped`; exact-main CI `36313666733` SUCCESS.
+- **Delivered:** deterministic launcher path classifier + job-level gating. Unrelated frontend/financial/backend diffs no longer start .NET, the retained 57-scenario launcher harness, publish or package/install smoke. Launcher/package/schema-helper/CI-contract changes still run the full blocking chain.
+- **Audit decision:** no launcher scenarios were deleted. The inner harness and outer package/install smoke own different guarantees; only irrelevant execution was removed.
+- **Observed effect:** roughly 1.5 minutes of Windows runner work is avoided on typical irrelevant diffs, while launcher-relevant CI still exercises the full package/install path.
+
+### #586 / PR #593 — compact prepared-runtime owner shell
+
+- **Status:** accepted, integrated and canonically verified.
+- **Worker:** Grok worker session supplied by Owner; exact model/effort not independently runtime-confirmed in the repository evidence.
+- **Integrator:** ChatGPT/Lera.
+- **Baseline:** `d2acd8b52c43725b76b32fb514a56744def6f529`.
+- **Accepted candidate:** `22c2dc5c7245953b08ad378de88ba4df3e22fd7c`.
+- **Canonical merge/main:** `bbfa4508f2ad66f35d15ed0f0b45bd41518427af`.
+- **Verification:** exact-head CI `36315571533` SUCCESS; exact-main CI `36315775997` SUCCESS; exact-main `Windows launcher safety` SUCCESS.
+- **Change size:** +419 / -1330 lines.
+- **Delivered:** default 560×320 shell with compact Stable/Preview choice, concise version/short-SHA + production/isolated boundary line, one readiness state and one primary action. Running state uses `Открыть Hermes` as primary; launcher-owned `Остановить` is secondary. Diagnostics are hidden; setup/reconfigure is recovery/setup rather than daily workflow.
+- **Removed with old UI:** large profile cards, separate selected-profile panel, four technical check rows, large SHA block, permanent refresh CTA, last-run footer, large LOCAL ONLY badge and their implementation-specific layout tests.
+- **Retained safety:** prepared-runtime only, no launcher Git/update behavior, Stable production vs Preview isolated-data fail-closed boundary, strict process ownership, foreign-port protection, sidecar/data identity, setup fail-closed behavior and loopback-only runtime.
+- **Release boundary:** published Stable remains immutable v1.0.0. The compact launcher is development-main launcher code until a future release; it can be installed independently from a clean trusted current-main/control checkout without promoting or mutating Stable.
+
+---
+
+# 2026-09-27 Astra audit data-integrity hardening closeout — #484–#498 / #536–#539
+
+- **Status:** complete; all scoped issues closed and integrated to canonical `main`.
+- **Original staging line:** `integration/data-integrity-hardening`.
+- **Final accepted staging head:** `ad59be98450599c0253e9dbf027385d06f1eabb1`.
+- **Aggregate PR:** #509.
+- **Canonical merge/main:** `b6f3ff1aff93f06ae0a563ba8704b91086a80924`.
+- **Aggregate verification:** merge-ref CI `36306528111` SUCCESS; UI comparison `36306528183` SUCCESS; exact-main push CI `36306845860` SUCCESS.
+- **Main-drift proof:** before final merge, current `main` was `10d545882041593f37d65cf8f56b42b3a18ccebd`; GitHub test merge `4c918569cb940519118e50522ab5f1202a7a4d3e` combined that main with the staging head and was the exact tree checked by aggregate CI.
+- **Review model:** implementation used multiple isolated Worker sessions and multiple model families/effort levels. Per-task model identity was not uniformly runtime-confirmed, so this aggregate record does not invent a single model attribution. Integrator acceptance was performed by ChatGPT/Lera with independent review where the project risk policy or task gate required it.
+
+Accepted task candidates:
+
+| Issue | PR | Accepted candidate | Result |
+| --- | --- | --- | --- |
+| #484 | #504 | `9b04463e35c84039de97017b64e77ed6df257767` | DB-level CAS write atomicity |
+| #485 | #508 | `b4a75a0d69a07432ce4230108d4ecc992b7563b1` | closed-month writer reservation |
+| #486 | #523 | `3a769023b401d378bcd63aee8c1c2aca14f286ff` | payout/provenance correction lifecycle |
+| #487 | #520 | `fbc47cb71e6f667a690922992883de416a60ebf5` | conservative payout ambiguity fallback |
+| #488 | #513 | `271138e4eb9e87fe19c802cb2b5a5dc7a85dce3c` | statement correction/revision atomicity |
+| #489 | #510 | `a294b8b8bb0a398aacd0055b61538617c92d2ffb` | linked-debt balance-evidence atomic guard |
+| #490 | #515 | `ee1feab0080e58ac50d396cccdc2e1418a07d9af` | transfer-link ownership/evidence atomicity |
+| #491 | #512 | `a7ad85708947a3ed0f48c66a2fa5ce4139a4a0ec` | salary canonical-cardinality atomicity |
+| #492 | #514 | `b78e9664ae7dc2b73abbb1122a10dc86d2061ab2` | coherent/atomic month clone |
+| #493 | #519 | `618fea1b00e118b5e48a98db3513e41bd68b7b8d` | performance coverage invalidation on month delete |
+| #494 | #526 | `83acc7e2ab1939321fb2bb831bfe365d8c26cf04` | valuation material-signature binding |
+| #495 | #522 | `bada0db0a0c7d90a33a6b390cfdffd6ac16bec7e` | valuation boundary-group consistency |
+| #496 | #505 | `e562aaa1e1eed4184cf8b2277bfcdc589cdcdde6` | coherent composite financial reads |
+| #497 | #503 | `1316fa7a048fc91c1209d23fbf94b1271388cba7` | real/unassigned cash identity preservation |
+| #498 | #521 | `2978a8925ff7f1da66a05c490495baa5d2297103` | financial-completeness contract |
+| #536 | #546 | `c5b9e89841bd2adbc95c5f3ed616a1c4eba49abb` | AI bundle/history completeness propagation |
+| #537 | #549 | `4bdbcc2d3cf2d39a040be97b2fd43dda46ad9fea` | review/goals/allocation completeness propagation |
+| #538 | #579 | `d105542eca762f6e4248757e567e1c963d7a614d` | canonical owner-facing portfolio-source coverage |
+| #539 | #544 | `fdd6df92c50dac1434dfb7fc0079c1e5244738ab` | close-readiness unassigned-cash identity fix |
+
+Material blockers caught before final integration included stale statement revision races, payout reconciliation-slot ownership after correction, divergent Alembic heads during #494 refresh, and a final #538 drift where AI bundle treated excluded reference debt as capital evidence while owner-facing coverage did not. Each blocker was remediated and re-reviewed before merge.
+
+Delivered project effect:
+
+- stale validations cannot silently commit hybrid financial state across the covered write paths;
+- composite reads cannot mix several committed database moments in one result;
+- payout/statement audit history survives owner corrections without remaining active financial state;
+- stale Performance evidence fails closed instead of recreating false exact XIRR/TWRR;
+- cash account identity is preserved through AI/export;
+- exact known subtotal, availability and source completeness are separate claims across backend, AI and UI;
+- missing account values are never zero-filled merely to make a total look complete.
+
+Published Stable `v1.0.0` was not changed or promoted by this wave.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
+
+---
+
 # 2026-09-26 process hardening closeout — #476 / #543
 
 ### #476 / PR #548 — canonical real-backend G04 browser gate

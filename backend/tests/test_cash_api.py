@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from hermes_finance.api import cash as cash_api
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services.cash import update_cash_balance
 
 
 @pytest.fixture
@@ -75,3 +77,47 @@ def test_cash_balance_crud_and_total(client: TestClient) -> None:
     assert deleted.status_code == 204
     after = client.get(f"/api/cash-balances?month_id={month_id}")
     assert after.json() == []
+
+
+def test_cash_totals_share_one_snapshot_across_writer_commit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    month_id = _month(client)
+    created = client.post(
+        "/api/cash-balances",
+        json={
+            "reporting_month_id": month_id,
+            "name": "Snapshot cash",
+            "amount": _rub("100.00"),
+            "include_in_capital": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    balance_id = created.json()["id"]
+    database = client.app.state.database
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+
+    real_total_cash = cash_api.total_cash
+    writer_committed = False
+
+    def interleaved_total_cash(*args, **kwargs):
+        nonlocal writer_committed
+        result = real_total_cash(*args, **kwargs)
+        if not writer_committed:
+            writer_committed = True
+            with database.session_factory() as writer:
+                update_cash_balance(writer, balance_id, amount="200.00")
+        return result
+
+    monkeypatch.setattr(cash_api, "total_cash", interleaved_total_cash)
+    response = client.get(f"/api/cash-balances/total?month_id={month_id}")
+    assert response.status_code == 200, response.text
+    assert writer_committed
+    assert response.json()["total"] == _rub("100.00")
+    assert response.json()["total_in_capital"] == _rub("100.00")
+
+    fresh = client.get(f"/api/cash-balances/total?month_id={month_id}")
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["total"] == _rub("200.00")
+    assert fresh.json()["total_in_capital"] == _rub("200.00")

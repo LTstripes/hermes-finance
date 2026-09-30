@@ -36,6 +36,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import GoalType
 from hermes_finance.domain.coverage_goals import (
     CoverageGoalsInput,
@@ -55,6 +56,7 @@ from hermes_finance.services.goals import MainGoalSelectionError
 from hermes_finance.services.passive_income_average import passive_income_average
 
 
+@coherent_read_operation
 def coverage_and_goals(
     session: Session,
     reporting_month_id: int,

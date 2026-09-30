@@ -18,6 +18,7 @@ from hermes_finance.domain import LINKED_DEBT_ACCOUNT_TYPES, DebtType
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import Account, CashBalance, Debt, DepositSnapshot
+from hermes_finance.services._guard import require_editable_reporting_month
 
 
 class LinkedPairReadModelError(ValueError):
@@ -96,7 +97,17 @@ def ensure_linked_pair_balance_evidence_survives(
     exclude_cash_balance_id: int | None = None,
     exclude_deposit_snapshot_id: int | None = None,
 ) -> None:
-    """Reject removal of the last qualifying fact for an existing linked pair."""
+    """Reject removal of the last qualifying fact for an existing linked pair.
+
+    Competing removals or exclusions of qualifying evidence share the same
+    SQLite writer reservation that #485 uses for month-scoped writes. The
+    reservation is acquired before the survival check so two overlapping
+    operations cannot each observe the other row, both pass, and both commit.
+    Callers typically already hold the reservation via
+    ``require_editable_reporting_month``; acquiring it again is a no-op UPDATE
+    that keeps the lock for the remainder of this transaction.
+    """
+    require_editable_reporting_month(session, reporting_month_id)
     linked_debt_exists = (
         session.scalar(
             select(Debt.id)

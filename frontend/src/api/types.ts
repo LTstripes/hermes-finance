@@ -126,6 +126,117 @@ export type PortfolioTwrr = {
   reason_codes: string[];
 };
 
+/** Read-only readiness projection (accepted #530): coherent availability + final results. */
+
+export type PerformanceReadinessScope = "portfolio" | "account";
+
+export type PerformanceReadinessMetric = {
+  metric: "xirr" | "twrr";
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  performance_currency: string;
+  value: string | null;
+  value_unit: "percentage_points";
+  annualized: boolean;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  reason_codes: string[];
+};
+
+export type PerformanceReadinessRefs = {
+  account_ids: number[];
+  reporting_month_ids: number[];
+  external_flow_ids: number[];
+  legacy_flow_ids: number[];
+  movement_ids: number[];
+  boundary_group_ids: number[];
+  dates: string[];
+};
+
+export type PerformanceReadinessCapability =
+  | "available"
+  | "requires_reopen"
+  | "not_implemented"
+  | "source_required"
+  | "unsupported";
+
+export type PerformanceReadinessActionKind =
+  | "select_interval"
+  | "review_month"
+  | "review_scope"
+  | "review_cash_binding"
+  | "review_cash_history"
+  | "review_legacy_flows"
+  | "review_external_flows"
+  | "review_transfer"
+  | "review_in_kind_history"
+  | "review_in_kind_movement"
+  | "review_observations"
+  | "review_fx"
+  | "inspect_result";
+
+export type PerformanceReadinessAction = {
+  kind: PerformanceReadinessActionKind;
+  capability: PerformanceReadinessCapability;
+  params: PerformanceReadinessRefs;
+  verify: "reread_readiness";
+};
+
+export type PerformanceReadinessDiagnostic = {
+  key: string;
+  reason_codes: string[];
+  affected_metrics: Array<"xirr" | "twrr">;
+  category: "actionable" | "limitation";
+  refs: PerformanceReadinessRefs;
+  action: PerformanceReadinessAction;
+};
+
+/** Minimal evidence surface used by the leaf Performance UI. Extra backend fields are ignored. */
+export type PerformanceReadinessEvidence = {
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  start_date: string;
+  end_date: string;
+  performance_currency: string;
+  availability: "available" | "not_computable";
+  reason_codes: string[];
+  scope_membership: {
+    status: string;
+    account_ids: number[];
+    missing_or_ambiguous_account_ids: number[];
+    reason_codes: string[];
+  };
+  cash_boundary_coverage: {
+    status: string;
+    account_ids: number[];
+    missing_or_incomplete_account_ids: number[];
+    reason_codes: string[];
+  };
+  in_kind_boundary_coverage: {
+    status: string;
+    account_ids: number[];
+    missing_or_incomplete_account_ids: number[];
+    reason_codes: string[];
+  };
+};
+
+export type PerformanceReadiness = {
+  schema_version: 1;
+  scope: PerformanceReadinessScope;
+  account_id: number | null;
+  start_date: string;
+  end_date: string;
+  performance_currency: string;
+  xirr: PerformanceReadinessMetric;
+  twrr: PerformanceReadinessMetric;
+  evidence: PerformanceReadinessEvidence;
+  diagnostics: PerformanceReadinessDiagnostic[];
+};
+
 export type PerformanceAttributionEvidence = {
   opening_valuation: {
     availability: "available" | "not_computable";
@@ -258,7 +369,9 @@ export type DashboardMortgage = {
 
 export type DashboardKpis = {
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   liquid_capital_delta: MoneyValue | null;
+  liquid_capital_delta_coverage?: PortfolioSourceCoverage | null;
   passive_income_actual: MoneyValue;
   passive_income_delta: MoneyValue | null;
   forecast_monthly_passive_income: MoneyValue;
@@ -347,6 +460,7 @@ export type DashboardLinkedPair = {
 
 export type DashboardLiquidCapital = {
   linked_pairs: DashboardLinkedPair[];
+  portfolio_source_coverage?: PortfolioSourceCoverage | null;
 };
 
 export type CashFlowLadderEvent = {
@@ -426,6 +540,7 @@ export type CapitalHistoryPoint = {
   month: number;
   reporting_month_id: number;
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   passive_income_actual: MoneyValue;
 };
 
@@ -433,6 +548,12 @@ export type CapitalHistoryPoint = {
 export type AssetAllocationPoint = {
   asset_class: string;
   amount: MoneyValue;
+};
+
+export type PortfolioSourceCoverage = {
+  status: "complete" | "partial" | "unavailable";
+  reason_codes: string[];
+  missing_account_ids: number[];
 };
 
 /** One closed-month point from the read-only Analytics capital-composition API. */
@@ -445,6 +566,7 @@ export type CapitalCompositionPoint = {
   liquid_assets_total: MoneyValue;
   included_debts: MoneyValue;
   liquid_capital_net: MoneyValue;
+  portfolio_source_coverage?: PortfolioSourceCoverage;
   /** Returned by `/api/analytics/capital-composition` for every point (ADR 0007). */
   linked_pair_assets: MoneyValue;
   linked_pair_debts: MoneyValue;
@@ -473,6 +595,7 @@ export type ClosedReportComparison = {
   liquid_assets_total_delta: MoneyValue | null;
   included_debts_delta: MoneyValue | null;
   liquid_capital_net_delta: MoneyValue | null;
+  liquid_capital_net_delta_coverage?: PortfolioSourceCoverage | null;
   linked_pair_assets_delta: MoneyValue | null;
   linked_pair_debts_delta: MoneyValue | null;
   linked_pair_net_contribution_delta: MoneyValue | null;

@@ -30,7 +30,7 @@ import {
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
 
-type Scene = "normal" | "no-closed" | "first-closed" | "zero" | "passive-error";
+type Scene = "normal" | "no-closed" | "first-closed" | "zero" | "passive-error" | "coverage";
 
 async function installApi(page: Page, scene: Scene = "normal") {
   const firstClosed = scene === "first-closed";
@@ -43,6 +43,18 @@ async function installApi(page: Page, scene: Scene = "normal") {
     passive: makeUiV2PassiveHistory({ firstClosed, zero }),
     goals: makeUiV2Goals({ firstClosed, zero }),
   };
+  if (scene === "coverage" && state.comparison.current) {
+    state.comparison.current.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+    state.comparison.liquid_capital_net_delta_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [],
+    };
+  }
   const unexpected: string[] = [];
   const reads: string[] = [];
   const errors: string[] = [];
@@ -156,6 +168,19 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-home-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Home partial capital coverage stays beside the known subtotal", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installApi(page, "coverage");
+  await page.goto("/v2");
+  await expect(page.getByTestId("v2-capital")).toHaveText("2 803 900 ₽");
+  await expect(page.getByText("Частично: нет снимка счёта")).toHaveCount(2);
+  await assertBounded(page);
+  await capture(page, testInfo, "issue-538-home-partial");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -485,7 +510,50 @@ test("ui-v2 Monthly Close narrow: current action and collapsed step list stay bo
   expect(evidence.errors).toEqual([]);
 });
 
-type CapitalScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial";
+type CapitalScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial" | "coverage";
+
+/** Coherent readiness projection mirroring the synthetic performance fixture. */
+function makeReadinessBody(performance: ReturnType<typeof makeUiV2Performance>) {
+  const available = performance.xirr.availability === "available";
+  return {
+    schema_version: 1,
+    scope: "portfolio",
+    account_id: null,
+    start_date: "2031-05-31",
+    end_date: "2031-07-31",
+    performance_currency: "RUB",
+    xirr: { ...performance.xirr, account_id: null },
+    twrr: performance.twrr,
+    evidence: {
+      scope: "portfolio",
+      account_id: null,
+      start_date: "2031-05-31",
+      end_date: "2031-07-31",
+      performance_currency: "RUB",
+      availability: available ? "available" : "not_computable",
+      reason_codes: [],
+      scope_membership: {
+        status: "complete",
+        account_ids: [3],
+        missing_or_ambiguous_account_ids: [],
+        reason_codes: [],
+      },
+      cash_boundary_coverage: {
+        status: "complete",
+        account_ids: [3],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+      in_kind_boundary_coverage: {
+        status: "complete",
+        account_ids: [],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+    },
+    diagnostics: [],
+  };
+}
 
 async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
   const firstClosed = scene === "first-closed";
@@ -507,6 +575,16 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     properties: makeUiV2Properties(),
     performance: makeUiV2Performance(),
   };
+  if (scene === "coverage" && state.comparison.current) {
+    state.comparison.current.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+    const latest = state.composition.points.at(-1);
+    if (!latest) throw new Error("Missing current composition fixture");
+    latest.portfolio_source_coverage = state.comparison.current.portfolio_source_coverage;
+  }
   const unexpected: string[] = [];
   const reads: string[] = [];
   const errors: string[] = [];
@@ -566,10 +644,8 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       status = state.instrumentsError ? 503 : 200;
     } else if (url.pathname === "/api/performance/attribution") {
       json = state.performance.attribution;
-    } else if (url.pathname === "/api/performance/xirr") {
-      json = state.performance.xirr;
-    } else if (url.pathname === "/api/performance/twrr") {
-      json = state.performance.twrr;
+    } else if (url.pathname === "/api/performance/readiness") {
+      json = makeReadinessBody(state.performance);
     } else {
       unexpected.push(`${request.method()} ${url.pathname}`);
       status = 404;
@@ -627,7 +703,18 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Capital narrow: long values, collapsed performance and actions stay operable", async ({
+test("ui-v2 Capital partial coverage keeps the known net", async ({ page }, testInfo) => {
+  const evidence = await installCapitalApi(page, "coverage");
+  await page.goto("/v2/capital");
+  await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "issue-538-capital-partial");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 Capital narrow: long values and compact performance stay operable", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
@@ -638,10 +725,11 @@ test("ui-v2 Capital narrow: long values, collapsed performance and actions stay 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
-  const disclosure = page.locator("details").first();
-  await expect(disclosure).not.toHaveAttribute("open", "");
-  await page.locator("details summary").first().click();
-  await expect(page.getByTestId("capital-performance-xirr")).toBeVisible();
+  // Compact XIRR/TWRR summary is visible by default; only the secondary bridge is disclosed.
+  await expect(page.getByTestId("capital-performance-xirr")).toContainText("+7,42%");
+  await expect(page.getByTestId("capital-performance-twrr")).toContainText("+6,10%");
+  const bridge = page.locator('details:has([data-testid="capital-performance-bridge"])');
+  await expect(bridge).not.toHaveAttribute("open", "");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-narrow");
   expect(evidence.unexpected).toEqual([]);
@@ -727,13 +815,14 @@ type ReportsScene =
   | "money-error"
   | "report"
   | "report-partial"
+  | "report-coverage"
   | "report-older-than-window";
 
 /** 2030-12: older than the latest twelve CLOSED reports (2031-01 … 2031-12). */
 const olderReportId = uiV2LongHistoryFirstMonthId + 11;
 
 async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
-  const report = scene === "report" || scene === "report-partial";
+  const report = scene === "report" || scene === "report-partial" || scene === "report-coverage";
   const olderThanWindow = scene === "report-older-than-window";
   const long = olderThanWindow ? makeUiV2LongHistory({ count: 24 }) : null;
   const rowMonthId = olderThanWindow ? olderReportId : uiV2CapitalPreviousMonthId;
@@ -757,6 +846,17 @@ async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
     deposits: makeUiV2Deposits({ monthId: rowMonthId }),
     positions: makeUiV2Positions({ monthId: rowMonthId }),
   };
+  if (scene === "report-coverage") {
+    const selected = state.composition.points.find(
+      (point) => point.reporting_month_id === rowMonthId,
+    );
+    if (!selected) throw new Error("Missing selected report fixture");
+    selected.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: ["active_account_snapshot_missing"],
+      missing_account_ids: [2],
+    };
+  }
   const unexpected: string[] = [];
   const reads: string[] = [];
   const errors: string[] = [];
@@ -859,6 +959,35 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
   expect(evidence.errors).toEqual([]);
 });
 
+test("issue 538 archive keeps a known subtotal beside its source coverage", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installReportsApi(page);
+  const selected = evidence.state.composition.points.find(
+    (point) => point.reporting_month_id === uiV2CapitalPreviousMonthId,
+  );
+  if (!selected) throw new Error("Missing archive fixture point");
+  selected.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  await page.goto("/v2/reports");
+  const row = page.getByTestId(`reports-row-${uiV2CapitalPreviousMonthId}`);
+  await expect(row).toContainText("2 761 300 ₽");
+  await expect(row).toContainText("Частично: нет снимка счёта");
+  const overlap = await row.evaluate((element) => {
+    const note = element.querySelector('[data-testid="portfolio-coverage-note"]');
+    const assets = element.querySelectorAll("td")[4];
+    if (!note || !assets) throw new Error("Missing archive coverage or assets cell");
+    return note.getBoundingClientRect().right > assets.getBoundingClientRect().left;
+  });
+  expect(overlap).toBe(false);
+  await capture(page, testInfo, "issue-538-archive-partial");
+  expect(evidence.errors).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+});
+
 test("ui-v2 reports archive narrow: rows stay readable as cards", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
   const evidence = await installReportsApi(page);
@@ -933,6 +1062,19 @@ test("ui-v2 historical report desktop: context, values and place in history stay
   await capture(page, testInfo, "ui-v2-report-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
   expect(evidence.reads.some((read) => read.includes("/api/performance/"))).toBe(false);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 report partial source coverage stays beside the historical value", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installReportsApi(page, "report-coverage");
+  await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
+  await expect(page.getByTestId("report-net")).toHaveText("2 761 300 ₽");
+  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "issue-538-report-partial");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

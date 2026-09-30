@@ -6,7 +6,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _valuation_capture import create_observed_valuation_point
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -33,18 +35,24 @@ from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.external_flows import (
     create_external_flow,
     create_external_transfer_link,
+    delete_external_flow,
+    update_external_flow,
 )
 from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
 )
+from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 from hermes_finance.services.valuation_boundaries import (
     create_external_flow_boundary_group,
-    create_observed_valuation_point,
+    delete_external_flow_boundary_group,
+    list_observed_valuation_points,
 )
+from hermes_finance.services.valuation_capture import stage_observed_valuation_capture
+from hermes_finance.services.valuation_material_signature import material_signature_for_boundary
 
 START = date(2030, 1, 31)
 FLOW_DATE = date(2030, 2, 15)
@@ -128,6 +136,422 @@ def _flow(session: Session, february_id: int, account_id: int, *, amount: str = 
         kind="external_contribution",
         scope_membership="stable_in_scope",
     )
+
+
+def _capture_side(
+    session: Session,
+    *,
+    february_id: int,
+    account_id: int,
+    flow_id: int,
+    observed_date: date,
+    relation: str,
+    expected_material_signature: str | None = None,
+) -> ObservedValuationPoint:
+    if expected_material_signature is None:
+        expected_material_signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow_id
+        )
+    assert expected_material_signature is not None
+    return create_observed_valuation_point(
+        session,
+        reporting_month_id=february_id,
+        scope="account",
+        account_id=account_id,
+        observed_date=observed_date,
+        total_value="1100.00" if relation == "pre_external_flow" else "1200.00",
+        performance_currency="RUB",
+        provenance_kind="synthetic_capture",
+        relation=relation,
+        external_flow_id=flow_id,
+        expected_material_signature=expected_material_signature,
+    )
+
+
+@pytest.mark.parametrize("correction", ["amount", "date", "delete"])
+def test_inflight_capture_rejects_material_correction_and_fresh_capture_works(
+    tmp_path: Path, correction: str
+) -> None:
+    capture, database, january_id, february_id, account_id = _environment(tmp_path)
+    writer = database.session_factory()
+    try:
+        flow = _flow(capture, february_id, account_id)
+        flow_id = flow.id
+        original = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, external_flow_id=flow_id
+        )
+        assert original is not None
+        # Deterministic interleaving: capture records A, correction commits B,
+        # then each side tries to publish A in a separate transaction.
+        if correction == "amount":
+            update_external_flow(writer, flow_id, boundary_amount="125.00")
+        elif correction == "date":
+            update_external_flow(
+                writer,
+                flow_id,
+                event_date=date(2030, 2, 14),
+                scope_membership="stable_in_scope",
+            )
+        else:
+            delete_external_flow(writer, flow_id)
+        current_date = date(2030, 2, 14) if correction == "date" else FLOW_DATE
+        for relation in ("pre_external_flow", "post_external_flow"):
+            with pytest.raises(ValueError, match="not found|changed materially"):
+                _capture_side(
+                    capture,
+                    february_id=february_id,
+                    account_id=account_id,
+                    flow_id=flow_id,
+                    observed_date=current_date,
+                    relation=relation,
+                    expected_material_signature=original,
+                )
+            capture.rollback()
+        assert (
+            list_observed_valuation_points(
+                capture, scope="account", account_id=account_id, external_flow_id=flow_id
+            )
+            == []
+        )
+        if correction == "delete":
+            return
+        current = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, external_flow_id=flow_id
+        )
+        assert current is not None and current != original
+        for relation in ("pre_external_flow", "post_external_flow"):
+            point = _capture_side(
+                capture,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow_id,
+                observed_date=current_date,
+                relation=relation,
+                expected_material_signature=current,
+            )
+            assert point.material_signature == current
+        attest_cash_boundary_history(
+            capture, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(capture, january_id, february_id)
+        result = performance_availability_for_interval(
+            capture, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert result.twrr.is_available
+    finally:
+        writer.close()
+        capture.close()
+        database.engine.dispose()
+
+
+def test_metadata_edit_preserves_observed_material_signature(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        for relation in ("pre_external_flow", "post_external_flow"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation=relation,
+                expected_material_signature=signature,
+            )
+        update_external_flow(session, flow.id, source="metadata_edit", notes="synthetic")
+        assert (
+            material_signature_for_boundary(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
+            == signature
+        )
+        assert (
+            len(
+                list_observed_valuation_points(
+                    session, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+            )
+            == 2
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert result.twrr.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("legacy_v1", [False, True])
+def test_read_rejects_stale_persisted_material_signature(tmp_path: Path, legacy_v1: bool) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        old_signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        if legacy_v1:
+            import json
+            from hashlib import sha256
+
+            from hermes_finance.services.valuation_material_signature import _flow_material
+
+            old_signature = sha256(
+                json.dumps(
+                    ("observed-valuation-material-v1", ("flow", _flow_material(flow))),
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        if not legacy_v1:
+            update_external_flow(session, flow.id, boundary_amount="125.00")
+        points = []
+        for relation in ("pre_external_flow", "post_external_flow"):
+            point = _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation=relation,
+            )
+            points.append(point)
+        for point in points:
+            point.material_signature = old_signature
+        session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert not result.twrr.is_available
+        assert "not_computable_valuation_boundary_missing" in result.twrr.reason_codes
+        assert result.xirr.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_group_capture_rejects_changed_member_and_accepts_fresh_pair(tmp_path: Path) -> None:
+    capture, database, january_id, february_id, account_id = _environment(tmp_path)
+    writer = database.session_factory()
+    try:
+        flow = _flow(capture, february_id, account_id)
+        group = create_external_flow_boundary_group(
+            capture,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        old = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, boundary_group_id=group.id
+        )
+        update_external_flow(writer, flow.id, boundary_amount="125.00")
+        for relation in ("pre_external_flow", "post_external_flow"):
+            with pytest.raises(ValueError, match="changed materially"):
+                create_observed_valuation_point(
+                    capture,
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value="1100.00",
+                    performance_currency="RUB",
+                    provenance_kind="synthetic_group_capture",
+                    relation=relation,
+                    boundary_group_id=group.id,
+                    expected_material_signature=old,
+                )
+            capture.rollback()
+        current = material_signature_for_boundary(
+            capture, scope="account", account_id=account_id, boundary_group_id=group.id
+        )
+        assert current is not None and current != old
+        for relation in ("pre_external_flow", "post_external_flow"):
+            point = create_observed_valuation_point(
+                capture,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value="1100.00",
+                performance_currency="RUB",
+                provenance_kind="synthetic_group_capture",
+                relation=relation,
+                boundary_group_id=group.id,
+                expected_material_signature=current,
+            )
+            assert point.material_signature == current
+        attest_cash_boundary_history(
+            capture, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(capture, january_id, february_id)
+        result = performance_availability_for_interval(
+            capture, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert result.twrr.is_available
+    finally:
+        writer.close()
+        capture.close()
+        database.engine.dispose()
+
+
+def test_pre_and_post_must_bind_same_current_material_state(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        pre = _capture_side(
+            session,
+            february_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            observed_date=FLOW_DATE,
+            relation="pre_external_flow",
+        )
+        old = pre.material_signature
+        # Simulate a corrupt writer bypassing the normal invalidation path.
+        session.execute(
+            text("UPDATE external_flows SET boundary_amount_kopecks = 12500 WHERE id = :id"),
+            {"id": flow.id},
+        )
+        session.commit()
+        current = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert current is not None and current != old
+        with pytest.raises(ValueError, match="changed materially"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation="post_external_flow",
+                expected_material_signature=old,
+            )
+        session.rollback()
+        assert (
+            list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )[0].id
+            == pre.id
+        )
+        post = _capture_side(
+            session,
+            february_id=february_id,
+            account_id=account_id,
+            flow_id=flow.id,
+            observed_date=FLOW_DATE,
+            relation="post_external_flow",
+            expected_material_signature=current,
+        )
+        assert post.material_signature == current
+        assert post.relation == "post_external_flow"
+        # The old PRE was retired; a fresh POST alone cannot complete a pair.
+        assert (
+            len(
+                list_observed_valuation_points(
+                    session, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+            )
+            == 1
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert not result.twrr.is_available
+        assert "not_computable_valuation_boundary_missing" in result.twrr.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_unbound_legacy_direct_boundary_can_be_recaptured(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        legacy = [
+            ObservedValuationPoint(
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value_kopecks=110_000 if relation == "pre_external_flow" else 120_000,
+                performance_currency="RUB",
+                coverage_status="complete",
+                quality="exact",
+                provenance_kind="synthetic_legacy",
+                relation=relation,
+                external_flow_id=flow.id,
+                material_signature=None,
+            )
+            for relation in ("pre_external_flow", "post_external_flow")
+        ]
+        session.add_all(legacy)
+        session.commit()
+        legacy_ids = {point.id for point in legacy}
+        current = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert current is not None
+        with pytest.raises(ValueError, match="changed materially"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation="pre_external_flow",
+                expected_material_signature="0" * 64,
+            )
+        session.rollback()
+        assert {
+            point.id
+            for point in list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
+        } == legacy_ids
+        for relation in ("pre_external_flow", "post_external_flow"):
+            _capture_side(
+                session,
+                february_id=february_id,
+                account_id=account_id,
+                flow_id=flow.id,
+                observed_date=FLOW_DATE,
+                relation=relation,
+                expected_material_signature=current,
+            )
+        current_points = list_observed_valuation_points(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert len(current_points) == 2
+        assert {point.provenance_kind for point in current_points} == {"synthetic_capture"}
+        assert {point.material_signature for point in current_points} == {current}
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert result.twrr.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
 
 
 def test_explicit_flow_pre_post_observations_make_twrr_boundary_available(
@@ -248,6 +672,308 @@ def test_same_day_group_is_deterministic_and_uses_group_observations(tmp_path: P
             group.id
         ]
         assert result.external_flow_boundaries[0].flow_ids == tuple(sorted((first.id, second.id)))
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_group_member_date_change_invalidates_and_rejects_new_group_observations(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        second_flow = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="50.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+        )
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id, second_flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_group_observation",
+                relation=relation,
+                boundary_group_id=group.id,
+            )
+
+        changed_date = date(2030, 2, 14)
+        update_external_flow(
+            session,
+            flow.id,
+            event_date=changed_date,
+            scope_membership="stable_in_scope",
+        )
+        update_external_flow(
+            session,
+            second_flow.id,
+            event_date=changed_date,
+            scope_membership="stable_in_scope",
+        )
+
+        assert list_observed_valuation_points(session, boundary_group_id=group.id) == []
+        with pytest.raises(
+            ValueError, match="all boundary-group flows must share the same event date"
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value="1150.00",
+                performance_currency="RUB",
+                provenance_kind="synthetic_stale_group_observation",
+                relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
+                boundary_group_id=group.id,
+            )
+
+        with pytest.raises(ValueError, match="already belongs to a boundary group"):
+            create_external_flow_boundary_group(
+                session,
+                reporting_month_id=february_id,
+                boundary_date=changed_date,
+                flow_ids=[flow.id, second_flow.id],
+                scope="account",
+                account_id=account_id,
+            )
+        delete_external_flow_boundary_group(session, group.id)
+        replacement = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=changed_date,
+            flow_ids=[flow.id, second_flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1150.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=changed_date,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_recreated_group_observation",
+                relation=relation,
+                boundary_group_id=replacement.id,
+            )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        result = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        assert result.is_available
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_availability_rejects_persisted_observations_for_stale_group(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        update_external_flow(
+            session,
+            flow.id,
+            event_date=date(2030, 2, 14),
+            scope_membership="stable_in_scope",
+        )
+        # Simulate stale persisted rows from an older writer or imported database.
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_stale_group",
+                    relation="pre_external_flow",
+                    boundary_group_id=group.id,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_stale_group",
+                    relation="post_external_flow",
+                    boundary_group_id=group.id,
+                ),
+            )
+        )
+        session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+
+        availability = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+        twrr = twrr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert not availability.twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" in availability.twrr.reason_codes
+        assert not twrr.is_available
+        assert "not_computable_valuation_boundary_order_unknown" in twrr.reason_codes
+        assert availability.external_flow_boundaries[0].reason_codes == (
+            "not_computable_valuation_boundary_order_unknown",
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_boundary_group_membership_change_requires_explicit_recreation(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        first = _flow(session, february_id, account_id)
+        second = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="50.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        third = create_external_flow(
+            session,
+            reporting_month_id=february_id,
+            account_id=account_id,
+            event_date=FLOW_DATE,
+            boundary_amount="25.00",
+            direction="withdrawal",
+            kind="external_withdrawal",
+            scope_membership="stable_in_scope",
+        )
+        original = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[first.id, second.id],
+            scope="account",
+            account_id=account_id,
+        )
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=february_id,
+            scope="account",
+            account_id=account_id,
+            observed_date=FLOW_DATE,
+            total_value="1100.00",
+            performance_currency="RUB",
+            provenance_kind="synthetic_old_membership_observation",
+            relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
+            boundary_group_id=original.id,
+        )
+
+        delete_external_flow_boundary_group(session, original.id)
+        assert list_observed_valuation_points(session, boundary_group_id=original.id) == []
+        replacement = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[third.id, first.id, second.id],
+            scope="account",
+            account_id=account_id,
+        )
+        for relation, value in (
+            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
+            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1125.00"),
+        ):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=february_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=FLOW_DATE,
+                total_value=value,
+                performance_currency="RUB",
+                provenance_kind="synthetic_recreated_membership_observation",
+                relation=relation,
+                boundary_group_id=replacement.id,
+            )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+
+        result = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope="account",
+            account_id=account_id,
+        )
+
+        assert result.twrr.is_available
+        assert result.external_flow_boundaries[0].flow_ids == tuple(
+            sorted((first.id, second.id, third.id))
+        )
     finally:
         session.close()
         database.engine.dispose()
@@ -438,9 +1164,8 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
             )
         )
         session.commit()
-        for relation, total_value in (
-            (ValuationBoundaryRelation.PRE_EXTERNAL_FLOW, "1100.00"),
-            (ValuationBoundaryRelation.POST_EXTERNAL_FLOW, "1200.00"),
+        with pytest.raises(
+            ValueError, match="out-of-scope flows cannot create valuation boundaries"
         ):
             create_observed_valuation_point(
                 session,
@@ -448,12 +1173,43 @@ def test_invalid_selected_scope_group_membership_remains_fail_closed(tmp_path: P
                 scope="account",
                 account_id=account_id,
                 observed_date=FLOW_DATE,
-                total_value=total_value,
+                total_value="1100.00",
                 performance_currency="RUB",
                 provenance_kind="synthetic_invalid_group_membership",
-                relation=relation,
+                relation=ValuationBoundaryRelation.PRE_EXTERNAL_FLOW,
                 boundary_group_id=group.id,
             )
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_invalid_membership",
+                    relation="pre_external_flow",
+                    boundary_group_id=group.id,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="RUB",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_persisted_invalid_membership",
+                    relation="post_external_flow",
+                    boundary_group_id=group.id,
+                ),
+            )
+        )
+        session.commit()
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
@@ -632,10 +1388,16 @@ def test_availability_rejects_non_boundary_observation_dates(tmp_path: Path) -> 
         )
 
         assert not result.twrr.is_available
-        assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert result.twrr.reason_codes == (
+            "not_computable_valuation_boundary_missing",
+            "not_computable_valuation_boundary_order_unknown",
+        )
         boundary = result.external_flow_boundaries[0]
         assert not boundary.is_available
-        assert boundary.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+        assert boundary.reason_codes == (
+            "not_computable_valuation_boundary_missing",
+            "not_computable_valuation_boundary_order_unknown",
+        )
         assert boundary.pre_external_flow is not None
         assert boundary.post_external_flow is not None
         assert boundary.pre_external_flow.observed_date == date(2030, 2, 14)
@@ -832,6 +1594,684 @@ def test_observed_boundary_cannot_be_written_after_month_close(tmp_path: Path) -
                 relation="pre_external_flow",
                 external_flow_id=flow.id,
             )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+CAPTURE_PATH = "/api/performance/valuation-captures"
+
+
+def _capture_params(account_id: int, *, scope: str = "account") -> dict[str, object]:
+    return {
+        "start_date": START.isoformat(),
+        "end_date": END.isoformat(),
+        "scope": scope,
+        "account_id": account_id,
+    }
+
+
+def _capture_submission(
+    target: dict[str, object],
+    *,
+    relation: str,
+    amount: str,
+    token: str | None = None,
+    **overrides: object,
+) -> dict[str, object]:
+    boundary_group_id = target["boundary_group_id"]
+    flow_ids = target["flow_ids"]
+    assert isinstance(flow_ids, list)
+    body: dict[str, object] = {
+        "scope": target["scope"],
+        "account_id": target["account_id"],
+        "start_date": START.isoformat(),
+        "end_date": END.isoformat(),
+        "form_token": token if token is not None else target["form_token"],
+        "external_flow_id": None if boundary_group_id is not None else flow_ids[0],
+        "boundary_group_id": boundary_group_id,
+        "relation": relation,
+        "expected_material_signature": target["material_signature"],
+        "total_value": amount,
+        "performance_currency": target["performance_currency"],
+        "coverage": "complete",
+        "quality": "exact",
+        "provenance_kind": "owner_observed",
+        "provenance_reference": None,
+        "notes": None,
+        "attested": True,
+    }
+    body.update(overrides)
+    return body
+
+
+def _capture_target(client: TestClient, account_id: int) -> dict[str, object]:
+    response = client.get(CAPTURE_PATH, params=_capture_params(account_id))
+    assert response.status_code == 200, response.text
+    return response.json()["targets"][0]
+
+
+def test_capture_api_publishes_pre_post_and_rereads_exact_twrr(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            read = client.get(CAPTURE_PATH, params=_capture_params(account_id))
+            assert read.status_code == 200, read.text
+            body = read.json()
+            assert body["schema_version"] == 1
+            assert body["scope"] == "account" and body["account_id"] == account_id
+            assert body["readiness"]["scope"] == "account"
+            target = body["targets"][0]
+            assert target["boundary_group_id"] is None
+            assert target["flow_ids"] == [flow.id]
+            assert target["event_date"] == FLOW_DATE.isoformat()
+            assert target["reporting_month_id"] == february_id
+            assert target["reporting_month_status"] == "draft"
+            assert target["capture_capability"] == "available"
+            assert target["missing_relations"] == ["pre_external_flow", "post_external_flow"]
+            assert target["pre_external_flow"] == [] and target["post_external_flow"] == []
+            assert len(target["material_signature"]) == 64
+            assert target["form_token"]
+
+            pre = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(target, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert pre.status_code == 200, pre.text
+            pre_body = pre.json()
+            assert pre_body["captured"]["relation"] == "pre_external_flow"
+            after_pre = pre_body["targets"][0]
+            assert after_pre["pre_state"] == "captured"
+            assert after_pre["post_state"] == "missing"
+            assert after_pre["missing_relations"] == ["post_external_flow"]
+            assert after_pre["pre_external_flow"][0]["total_value"] == {
+                "amount": "1100.00",
+                "currency": "RUB",
+            }
+            assert after_pre["pre_external_flow"][0]["bound"] is True
+            assert after_pre["form_token"] != target["form_token"]
+
+            post = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(
+                    after_pre, relation="post_external_flow", amount="1200.00"
+                ),
+            )
+            assert post.status_code == 200, post.text
+            after_post = post.json()["targets"][0]
+            assert after_post["pre_state"] == after_post["post_state"] == "captured"
+            assert after_post["missing_relations"] == []
+            assert after_post["capture_capability"] is None
+            assert after_post["form_token"] is None
+
+            attest_cash_boundary_history(
+                session, account_id=account_id, covered_from=START, covered_to=END
+            )
+            _close_interval(session, january_id, february_id)
+            final = client.get(CAPTURE_PATH, params=_capture_params(account_id))
+            assert final.status_code == 200, final.text
+            readiness = final.json()["readiness"]
+            assert readiness["twrr"]["availability"] == "available"
+            assert readiness["twrr"]["value"] is not None
+            assert readiness["xirr"]["availability"] == "available"
+            assert final.json()["targets"][0]["capture_capability"] is None
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_rejects_stale_signature_duplicate_and_replay(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            update_external_flow(session, flow.id, boundary_amount="125.00")
+
+            stale = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(target, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert stale.status_code == 409, stale.text
+            assert "changed materially" in stale.json()["error"]["message"]
+
+            fresh = _capture_target(client, account_id)
+            assert fresh["material_signature"] != target["material_signature"]
+            submission = _capture_submission(fresh, relation="pre_external_flow", amount="1100.00")
+            first = client.post(CAPTURE_PATH, json=submission)
+            assert first.status_code == 200, first.text
+
+            replay = client.post(CAPTURE_PATH, json=submission)
+            assert replay.status_code == 409, replay.text
+            assert "already submitted" in replay.json()["error"]["message"]
+
+            # A fresh token still cannot create a duplicate same-relation side.
+            again = _capture_target(client, account_id)
+            duplicate = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(again, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert duplicate.status_code == 409, duplicate.text
+            assert "already recorded" in duplicate.json()["error"]["message"]
+
+            verify = database.session_factory()
+            try:
+                rows = list_observed_valuation_points(
+                    verify, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+                assert len(rows) == 1
+                assert rows[0].relation == "pre_external_flow"
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_closed_month_requires_explicit_reopen(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            draft_target = _capture_target(client, account_id)
+            assert draft_target["capture_capability"] == "available"
+
+            _close_interval(session, january_id, february_id)
+            closed_target = _capture_target(client, account_id)
+            assert closed_target["reporting_month_status"] == "closed"
+            assert closed_target["capture_capability"] == "requires_reopen"
+            assert closed_target["form_token"] is None
+
+            write = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(
+                    closed_target,
+                    relation="pre_external_flow",
+                    amount="1100.00",
+                    token=draft_target["form_token"],
+                ),
+            )
+            assert write.status_code == 409, write.text
+            assert "closed reporting month" in write.json()["error"]["message"]
+            verify = database.session_factory()
+            try:
+                assert list_observed_valuation_points(verify) == []
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_rejects_non_authoritative_and_mismatched_currency_without_mutation(
+    tmp_path: Path,
+) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            assert target["flow_ids"] == [flow.id]
+            assert target["performance_currency"] == "RUB"
+            non_authoritative = (
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", coverage="unknown"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", coverage="unavailable"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", quality="unknown"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="1100.00", quality="unavailable"
+                ),
+            )
+            for payload in non_authoritative:
+                response = client.post(CAPTURE_PATH, json=payload)
+                assert response.status_code == 422, response.text
+            mismatched = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(
+                    target,
+                    relation="pre_external_flow",
+                    amount="1100.00",
+                    performance_currency="USD",
+                ),
+            )
+            assert mismatched.status_code == 409, mismatched.text
+            assert "currency" in mismatched.json()["error"]["message"]
+            verify = database.session_factory()
+            try:
+                assert list_observed_valuation_points(verify) == []
+            finally:
+                verify.close()
+
+            # Nothing was written, so a fresh source-backed complete/exact side
+            # in the target currency is still possible.
+            fresh = _capture_target(client, account_id)
+            valid = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(fresh, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert valid.status_code == 200, valid.text
+            assert valid.json()["captured"]["relation"] == "pre_external_flow"
+            verify = database.session_factory()
+            try:
+                rows = list_observed_valuation_points(
+                    verify, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+                assert len(rows) == 1
+                assert rows[0].coverage_status == "complete"
+                assert rows[0].quality == "exact"
+                assert rows[0].performance_currency == "RUB"
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        ({"coverage": "unknown"}, "coverage must be complete"),
+        ({"coverage": "unavailable"}, "coverage must be complete"),
+        ({"quality": "unknown"}, "quality must be exact"),
+        ({"quality": "unavailable"}, "quality must be exact"),
+        ({"performance_currency": "USD"}, "currency must equal"),
+    ],
+)
+def test_capture_service_rejects_non_authoritative_values_without_mutation(
+    tmp_path: Path, overrides: dict[str, str], message: str
+) -> None:
+    session, database, _january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert signature is not None
+        kwargs: dict[str, object] = {
+            "scope": "account",
+            "account_id": account_id,
+            "relation": "pre_external_flow",
+            "expected_material_signature": signature,
+            "total_value": "1100.00",
+            "performance_currency": "RUB",
+            "coverage": "complete",
+            "quality": "exact",
+            "provenance_kind": "synthetic_non_authoritative",
+            "external_flow_id": flow.id,
+        }
+        kwargs.update(overrides)
+        with pytest.raises(ValueError, match=message):
+            stage_observed_valuation_capture(session, **kwargs)  # type: ignore[arg-type]
+        session.rollback()
+        assert (
+            list_observed_valuation_points(
+                session, scope="account", account_id=account_id, external_flow_id=flow.id
+            )
+            == []
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_non_authoritative_legacy_sides_stay_visible_and_fail_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        signature = material_signature_for_boundary(
+            session, scope="account", account_id=account_id, external_flow_id=flow.id
+        )
+        assert signature is not None
+        # Persisted legacy/non-authoritative sides (as a migration or an older
+        # writer could have left them): unknown coverage/quality and a foreign
+        # currency that can never make the pair authoritative.
+        session.add_all(
+            (
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=110_000,
+                    performance_currency="USD",
+                    coverage_status="unknown",
+                    quality="unknown",
+                    provenance_kind="synthetic_legacy_non_authoritative",
+                    relation="pre_external_flow",
+                    external_flow_id=flow.id,
+                    material_signature=signature,
+                ),
+                ObservedValuationPoint(
+                    reporting_month_id=february_id,
+                    scope="account",
+                    account_id=account_id,
+                    observed_date=FLOW_DATE,
+                    total_value_kopecks=120_000,
+                    performance_currency="USD",
+                    coverage_status="complete",
+                    quality="exact",
+                    provenance_kind="synthetic_legacy_non_authoritative",
+                    relation="post_external_flow",
+                    external_flow_id=flow.id,
+                    material_signature=signature,
+                ),
+            )
+        )
+        session.commit()
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        _close_interval(session, january_id, february_id)
+        with TestClient(create_app(database=database)) as client:
+            final = client.get(CAPTURE_PATH, params=_capture_params(account_id)).json()
+            target = final["targets"][0]
+            # Stored sides stay visible in their exact persisted form.
+            assert target["pre_state"] == target["post_state"] == "captured"
+            pre = target["pre_external_flow"][0]
+            post = target["post_external_flow"][0]
+            assert pre["coverage"] == "unknown" and pre["quality"] == "unknown"
+            assert pre["performance_currency"] == "USD"
+            assert post["coverage"] == "complete" and post["quality"] == "exact"
+            assert post["performance_currency"] == "USD"
+            # No supported write/repair path may be presented for them.
+            assert target["capture_capability"] is None
+            assert target["form_token"] is None
+            assert target["missing_relations"] == []
+            readiness = final["readiness"]
+            assert readiness["twrr"]["availability"] == "not_computable"
+            # The foreign-currency observation is TWRR-boundary evidence only;
+            # XIRR stays independently available from the canonical snapshots.
+            assert readiness["xirr"]["availability"] == "available"
+            diagnostics = {item["key"]: item for item in readiness["diagnostics"]}
+            assert diagnostics["valuation_boundary"]["action"]["capability"] == "not_implemented"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_group_target_and_member_change_fail_closed(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, february_id, account_id)
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=february_id,
+            boundary_date=FLOW_DATE,
+            flow_ids=[flow.id],
+            scope="account",
+            account_id=account_id,
+        )
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            assert target["boundary_group_id"] == group.id
+            assert target["flow_ids"] == [flow.id]
+            assert target["capture_capability"] == "available"
+
+            update_external_flow(session, flow.id, boundary_amount="125.00")
+            stale = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(target, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert stale.status_code == 409, stale.text
+
+            fresh = _capture_target(client, account_id)
+            for relation, amount in (
+                ("pre_external_flow", "1100.00"),
+                ("post_external_flow", "1250.00"),
+            ):
+                current = _capture_target(client, account_id)
+                assert current["material_signature"] == fresh["material_signature"]
+                response = client.post(
+                    CAPTURE_PATH,
+                    json=_capture_submission(current, relation=relation, amount=amount),
+                )
+                assert response.status_code == 200, response.text
+            attest_cash_boundary_history(
+                session, account_id=account_id, covered_from=START, covered_to=END
+            )
+            _close_interval(session, january_id, february_id)
+            final = client.get(CAPTURE_PATH, params=_capture_params(account_id)).json()
+            assert final["readiness"]["twrr"]["availability"] == "available"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_portfolio_scope_binds_all_account_membership(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        _flow(session, february_id, account_id)
+        params = {
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "scope": "portfolio",
+        }
+        with TestClient(create_app(database=database)) as client:
+            read = client.get(CAPTURE_PATH, params=params)
+            assert read.status_code == 200, read.text
+            target = read.json()["targets"][0]
+            assert target["scope"] == "portfolio"
+            assert target["account_id"] is None
+            assert target["capture_capability"] == "available"
+            for relation, amount in (
+                ("pre_external_flow", "1100.00"),
+                ("post_external_flow", "1200.00"),
+            ):
+                current = client.get(CAPTURE_PATH, params=params).json()["targets"][0]
+                response = client.post(
+                    CAPTURE_PATH,
+                    json=_capture_submission(current, relation=relation, amount=amount),
+                )
+                assert response.status_code == 200, response.text
+            attest_cash_boundary_history(
+                session, account_id=account_id, covered_from=START, covered_to=END
+            )
+            _close_interval(session, january_id, february_id)
+            final = client.get(CAPTURE_PATH, params=params).json()
+            assert final["readiness"]["scope"] == "portfolio"
+            assert final["readiness"]["twrr"]["availability"] == "available"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_membership_change_rejects_the_stale_form(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            assert target["capture_capability"] == "available"
+            # A covering second membership row makes the boundary-date identity
+            # non-authoritative; the capture-start signature can no longer match.
+            session.add(
+                AccountPerformanceScopeMembership(
+                    account_id=account_id,
+                    effective_from=date(2029, 6, 1),
+                    effective_to=date(2030, 6, 1),
+                    include_in_returns=True,
+                )
+            )
+            session.commit()
+            stale = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(target, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert stale.status_code == 409, stale.text
+            assert "changed materially" in stale.json()["error"]["message"]
+            verify = database.session_factory()
+            try:
+                assert list_observed_valuation_points(verify) == []
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_never_echoes_free_form_provenance_reference(tmp_path: Path) -> None:
+    session, database, january_id, february_id, account_id = _environment(tmp_path)
+    try:
+        _flow(session, february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            response = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(
+                    target,
+                    relation="pre_external_flow",
+                    amount="1100.00",
+                    provenance_reference="SYNTHETIC-PRIVATE-PATH",
+                ),
+            )
+            assert response.status_code == 200, response.text
+            assert "SYNTHETIC-PRIVATE-PATH" not in response.text
+            reread = client.get(CAPTURE_PATH, params=_capture_params(account_id))
+            assert "SYNTHETIC-PRIVATE-PATH" not in reread.text
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_rejects_invalid_observation_values(tmp_path: Path) -> None:
+    session, database, _january_id, _february_id, account_id = _environment(tmp_path)
+    try:
+        _flow(session, _february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            invalid_payloads = (
+                _capture_submission(target, relation="pre_external_flow", amount="100.001"),
+                _capture_submission(target, relation="pre_external_flow", amount="-5.00"),
+                _capture_submission(target, relation="pre_external_flow", amount="abc"),
+                _capture_submission(
+                    target,
+                    relation="pre_external_flow",
+                    amount="100.00",
+                    performance_currency="RUBX",
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="100.00", performance_currency="12"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="100.00", coverage="exact"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="100.00", quality="complete"
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="100.00", provenance_kind=""
+                ),
+                _capture_submission(
+                    target, relation="pre_external_flow", amount="100.00", attested=False
+                ),
+            )
+            for payload in invalid_payloads:
+                response = client.post(CAPTURE_PATH, json=payload)
+                assert response.status_code == 422, response.text
+            two_targets = _capture_submission(target, relation="pre_external_flow", amount="100.00")
+            two_targets["boundary_group_id"] = 77
+            assert client.post(CAPTURE_PATH, json=two_targets).status_code == 422
+            verify = database.session_factory()
+            try:
+                assert list_observed_valuation_points(verify) == []
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_unconfirmed_readback_is_not_presented_as_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    import hermes_finance.api.performance_valuation_capture as capture_api
+
+    session, database, _january_id, _february_id, account_id = _environment(tmp_path)
+    try:
+        flow = _flow(session, _february_id, account_id)
+        with TestClient(create_app(database=database)) as client:
+            target = _capture_target(client, account_id)
+            real = capture_api.valuation_capture_projection_for_interval
+
+            def tampered(*args: object, **kwargs: object):
+                projection = real(*args, **kwargs)
+                return replace(
+                    projection,
+                    targets=tuple(
+                        replace(candidate, material_signature="0" * 64)
+                        for candidate in projection.targets
+                    ),
+                )
+
+            monkeypatch.setattr(capture_api, "valuation_capture_projection_for_interval", tampered)
+            response = client.post(
+                CAPTURE_PATH,
+                json=_capture_submission(target, relation="pre_external_flow", amount="1100.00"),
+            )
+            assert response.status_code == 409, response.text
+            assert "read-back did not confirm" in response.json()["error"]["message"]
+            # The committed write exists and must only be resolved by rereading.
+            verify = database.session_factory()
+            try:
+                rows = list_observed_valuation_points(
+                    verify, scope="account", account_id=account_id, external_flow_id=flow.id
+                )
+                assert len(rows) == 1
+            finally:
+                verify.close()
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start_date": START.isoformat(), "end_date": END.isoformat(), "scope": "account"},
+        {
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "scope": "portfolio",
+            "account_id": 1,
+        },
+        {"start_date": END.isoformat(), "end_date": START.isoformat(), "scope": "portfolio"},
+        {
+            "start_date": START.isoformat(),
+            "end_date": END.isoformat(),
+            "scope": "portfolio",
+            "start_date_repeat": START.isoformat(),
+        },
+    ],
+)
+def test_capture_api_rejects_invalid_context(tmp_path: Path, params: dict[str, object]) -> None:
+    session, database, _january_id, _february_id, _account_id = _environment(tmp_path)
+    try:
+        query = dict(params)
+        query.pop("start_date_repeat", None)
+        if "start_date_repeat" in params:
+            query["start_date"] = [START.isoformat(), START.isoformat()]
+        with TestClient(create_app(database=database)) as client:
+            response = client.get(CAPTURE_PATH, params=query)
+            assert response.status_code == 422, response.text
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capture_api_unknown_account_is_context_error(tmp_path: Path) -> None:
+    session, database, _january_id, _february_id, _account_id = _environment(tmp_path)
+    try:
+        with TestClient(create_app(database=database)) as client:
+            response = client.get(CAPTURE_PATH, params=_capture_params(999))
+            assert response.status_code == 404, response.text
     finally:
         session.close()
         database.engine.dispose()

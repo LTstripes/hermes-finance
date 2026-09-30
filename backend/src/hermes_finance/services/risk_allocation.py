@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, InstrumentType, RubleAmount
 from hermes_finance.domain.risk_allocation import (
     ConcentrationItem,
@@ -277,6 +278,7 @@ def _flow_concentration_metric(
     )
 
 
+@coherent_read_operation
 def risk_allocation_for_month(
     session: Session,
     reporting_month_id: int,

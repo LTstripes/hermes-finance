@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
@@ -10,7 +10,7 @@ import { listDebts } from "../api/debts";
 import { listDeposits } from "../api/deposits";
 import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
-import { getPerformanceAttribution, getPortfolioTwrr, getPortfolioXirr } from "../api/performance";
+import { getPerformanceAttribution, getPerformanceReadiness } from "../api/performance";
 import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
 import { getRiskAllocation, type RiskAllocationResponse } from "../api/riskAllocation";
@@ -23,8 +23,7 @@ import type {
   DashboardMortgage,
   DebtEntry,
   PerformanceAttribution,
-  PortfolioTwrr,
-  PortfolioXirr,
+  PerformanceReadiness,
   PropertySnapshot,
 } from "../api/types";
 import {
@@ -32,18 +31,14 @@ import {
   type CapitalCompositionMode,
 } from "../components/charts/CapitalCompositionChart";
 import { buildLinkedPairFacts, pairFactNote } from "../components/LinkedPairContext";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { buildCapitalCompositionSeries } from "../lib/capitalComposition";
-import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
-import {
-  performanceAttributionUnavailableMessage,
-  portfolioTwrrUnavailableMessage,
-  portfolioXirrUnavailableMessage,
-  VALUE_BRIDGE_DISCLAIMER,
-  VALUE_BRIDGE_LABEL,
-} from "../lib/performanceMessages";
+import { formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
+import { CapitalPerformanceSummary } from "./CapitalPerformanceSummary";
+import { performanceDetailHref } from "./capitalPerformanceContext";
 import {
   buildHoldingRows,
   filterHoldingRows,
@@ -88,26 +83,6 @@ function rowsMatchMonth(
 
 function isZeroAmount(amount: string): boolean {
   return /^-?0(?:\.0+)?$/.test(amount.trim());
-}
-
-/** Secondary performance evidence starts collapsed on the narrow layout only. */
-function useNarrowViewport(maxWidthPx = 800): boolean {
-  const query = `(max-width: ${maxWidthPx}px)`;
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const list = window.matchMedia(query);
-    const handle = (event: MediaQueryListEvent) => setNarrow(event.matches);
-    setNarrow(list.matches);
-    list.addEventListener("change", handle);
-    return () => list.removeEventListener("change", handle);
-  }, [query]);
-  return narrow;
 }
 
 function Panel({
@@ -157,7 +132,11 @@ function HeadlineGrid({
       eyebrow: "Ликвидный капитал",
       primary: true,
       testId: "capital-net",
-      value: current ? money(current.liquid_capital_net) : null,
+      value: current
+        ? current.portfolio_source_coverage?.status === "unavailable"
+          ? "—"
+          : money(current.liquid_capital_net)
+        : null,
     },
     {
       detail: "Деньги, депозиты, ценные бумаги и прочее ликвидное",
@@ -188,6 +167,9 @@ function HeadlineGrid({
                 <p className={styles.metricValue} data-testid={metric.testId}>
                   {metric.value}
                 </p>
+                {metric.primary ? (
+                  <PortfolioCoverageNote coverage={current?.portfolio_source_coverage} />
+                ) : null}
                 <p className={styles.metricDetail}>{metric.detail}</p>
               </>
             )}
@@ -354,7 +336,11 @@ function CurrentAllocation({
             </div>
             <div>
               <dt>Ликвидный капитал</dt>
-              <dd>{money(current.liquid_capital_net)}</dd>
+              <dd>
+                {current.portfolio_source_coverage?.status === "unavailable"
+                  ? "—"
+                  : money(current.liquid_capital_net)}
+              </dd>
             </div>
           </dl>
           <div className={capitalStyles.subBlock}>
@@ -434,8 +420,11 @@ function ChangeBlock({
           <div className={styles.changeTotal}>
             <span>Изменение ликвидного капитала</span>
             <strong data-tone={tone(comparison?.liquid_capital_net_delta)}>
-              {moneyDelta(comparison?.liquid_capital_net_delta)}
+              {comparison?.liquid_capital_net_delta_coverage?.status === "unavailable"
+                ? "—"
+                : moneyDelta(comparison?.liquid_capital_net_delta)}
             </strong>
+            <PortfolioCoverageNote coverage={comparison?.liquid_capital_net_delta_coverage} />
           </div>
           <p className={styles.panelFootnote}>
             Та же пара закрытых отчётов, что на «Мои финансы». Перемещение между классами может
@@ -677,121 +666,54 @@ function LinkedPairsBlock({
   );
 }
 
-function PerformanceItem({
-  currency,
-  metricLabel,
-  ready,
-  reason,
-  period,
-  retry,
-  testId,
-}: {
-  currency: string | null;
-  metricLabel: string;
-  period: string | null;
-  ready: boolean;
-  reason: string | null;
-  retry: () => void;
-  testId: string;
-}) {
-  return (
-    <article data-testid={testId}>
-      <p className={styles.eyebrow}>{metricLabel}</p>
-      {!ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : currency === null ? (
-        <p className={capitalStyles.muted}>
-          {reason ?? "Не удалось получить подтверждённый результат для выбранного периода."}
-        </p>
-      ) : (
-        <>
-          <p className={capitalStyles.performanceValue}>{currency}</p>
-          <p className={capitalStyles.muted}>{period}</p>
-        </>
-      )}
-    </article>
-  );
-}
-
 function PerformanceBlock({
   attribution,
+  attributionError,
   attributionReady,
   pairEnd,
   pairStart,
+  readiness,
+  readinessError,
+  readinessReady,
   retry,
-  twrr,
-  twrrReady,
-  xirr,
-  xirrReady,
 }: {
   attribution: PerformanceAttribution | null;
+  attributionError: boolean;
   attributionReady: boolean;
   pairEnd: string | null;
   pairStart: string | null;
+  readiness: PerformanceReadiness | null;
+  readinessError: boolean;
+  readinessReady: boolean;
   retry: () => void;
-  twrr: PortfolioTwrr | null;
-  twrrReady: boolean;
-  xirr: PortfolioXirr | null;
-  xirrReady: boolean;
 }) {
-  const narrow = useNarrowViewport();
-  const period = pairStart && pairEnd ? `${formatDate(pairStart)} — ${formatDate(pairEnd)}` : null;
-  const bridgeValue =
-    attribution &&
-    attribution.availability === "available" &&
-    attribution.quality === "exact" &&
-    attribution.value !== null
-      ? moneyDelta(attribution.value)
-      : null;
-  const xirrValue =
-    xirr && xirr.availability === "available" && xirr.value !== null
-      ? formatPercent(xirr.value, { digits: 2, signed: true })
-      : null;
-  const twrrValue =
-    twrr && twrr.availability === "available" && twrr.value !== null
-      ? formatPercent(twrr.value, { digits: 2, signed: true })
-      : null;
+  const detailHref =
+    pairStart !== null && pairEnd !== null
+      ? performanceDetailHref({
+          start: pairStart,
+          end: pairEnd,
+          scope: "portfolio",
+          accountId: null,
+          view: "accounts",
+        })
+      : "/v2/capital";
   return (
     <Panel eyebrow="Доходность" id="capital-performance-title" title="Доходность портфеля" wide>
       {pairStart === null || pairEnd === null ? (
         <UiV2WidgetState title="Нужны два закрытых отчёта для расчёта за период" />
       ) : (
-        <details className={capitalStyles.collapsible} open={!narrow}>
-          <summary>Показать расчёты за период между двумя закрытыми отчётами</summary>
-          <div className={capitalStyles.performanceList}>
-            <PerformanceItem
-              currency={bridgeValue}
-              metricLabel={`${VALUE_BRIDGE_LABEL} · ${VALUE_BRIDGE_DISCLAIMER}`}
-              period={period}
-              ready={attributionReady}
-              reason={
-                attribution
-                  ? performanceAttributionUnavailableMessage(attribution.reason_codes)
-                  : null
-              }
-              retry={retry}
-              testId="capital-performance-bridge"
-            />
-            <PerformanceItem
-              currency={xirrValue}
-              metricLabel="Годовая доходность (XIRR)"
-              period={period}
-              ready={xirrReady}
-              reason={xirr ? portfolioXirrUnavailableMessage(xirr.reason_codes) : null}
-              retry={retry}
-              testId="capital-performance-xirr"
-            />
-            <PerformanceItem
-              currency={twrrValue}
-              metricLabel="Доходность за период (TWRR)"
-              period={period}
-              ready={twrrReady}
-              reason={twrr ? portfolioTwrrUnavailableMessage(twrr.reason_codes) : null}
-              retry={retry}
-              testId="capital-performance-twrr"
-            />
-          </div>
-        </details>
+        <CapitalPerformanceSummary
+          attribution={attribution}
+          attributionError={attributionError}
+          attributionReady={attributionReady}
+          detailHref={detailHref}
+          pairEnd={pairEnd}
+          pairStart={pairStart}
+          readiness={readiness}
+          readinessError={readinessError}
+          readinessReady={readinessReady}
+          retry={retry}
+        />
       )}
       <p className={styles.panelFootnote}>
         Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
@@ -999,16 +921,11 @@ export default function UiV2CapitalPage() {
       getPerformanceAttribution(pairStart as string, pairEnd as string, signal),
     refetchOnWindowFocus: true,
   });
-  const xirrQuery = useQuery({
+  const readinessQuery = useQuery({
     enabled: pairStart !== null,
-    queryKey: queryKeys.portfolioXirr(pairStart, pairEnd),
-    queryFn: ({ signal }) => getPortfolioXirr(pairStart as string, pairEnd as string, signal),
-    refetchOnWindowFocus: true,
-  });
-  const twrrQuery = useQuery({
-    enabled: pairStart !== null,
-    queryKey: queryKeys.portfolioTwrr(pairStart, pairEnd),
-    queryFn: ({ signal }) => getPortfolioTwrr(pairStart as string, pairEnd as string, signal),
+    queryKey: queryKeys.performanceReadiness(pairStart, pairEnd, "portfolio", null),
+    queryFn: ({ signal }) =>
+      getPerformanceReadiness(pairStart as string, pairEnd as string, "portfolio", null, signal),
     refetchOnWindowFocus: true,
   });
 
@@ -1021,14 +938,12 @@ export default function UiV2CapitalPage() {
     isQueryReady(attributionQuery) &&
     attributionQuery.data?.scope === "portfolio" &&
     periodMatches(attributionQuery.data.period);
-  const xirrReady =
-    isQueryReady(xirrQuery) &&
-    xirrQuery.data?.scope === "portfolio" &&
-    periodMatches(xirrQuery.data.period);
-  const twrrReady =
-    isQueryReady(twrrQuery) &&
-    twrrQuery.data?.scope === "portfolio" &&
-    periodMatches(twrrQuery.data.period);
+  const readinessReady =
+    isQueryReady(readinessQuery) &&
+    readinessQuery.data?.scope === "portfolio" &&
+    readinessQuery.data?.account_id === null &&
+    readinessQuery.data?.start_date === pairStart &&
+    readinessQuery.data?.end_date === pairEnd;
 
   const holdingRows = useMemo(
     () =>
@@ -1180,20 +1095,14 @@ export default function UiV2CapitalPage() {
           />
           <PerformanceBlock
             attribution={attributionReady ? (attributionQuery.data ?? null) : null}
+            attributionError={attributionQuery.isError}
             attributionReady={attributionReady}
             pairEnd={pairEnd}
             pairStart={pairStart}
-            retry={() =>
-              void Promise.all([
-                attributionQuery.refetch(),
-                xirrQuery.refetch(),
-                twrrQuery.refetch(),
-              ])
-            }
-            twrr={twrrReady ? (twrrQuery.data ?? null) : null}
-            twrrReady={twrrReady}
-            xirr={xirrReady ? (xirrQuery.data ?? null) : null}
-            xirrReady={xirrReady}
+            readiness={readinessReady ? (readinessQuery.data ?? null) : null}
+            readinessError={readinessQuery.isError}
+            readinessReady={readinessReady}
+            retry={() => void Promise.all([attributionQuery.refetch(), readinessQuery.refetch()])}
           />
           {propertiesQuery.isError ||
           (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (

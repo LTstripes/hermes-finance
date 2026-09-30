@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.api.performance_evidence_guard import preparation_session
+from hermes_finance.api.settings import MoneyValue
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import RubleAmount
 from hermes_finance.services.cash import (
     _UNSET,
@@ -93,7 +95,7 @@ def _response(balance: object) -> CashBalanceResponse:
 @router.get("", response_model=list[CashBalanceResponse])
 def list_cash_balances_endpoint(
     month_id: int = Query(...),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> list[CashBalanceResponse]:
     rows = [row for row in list_cash_balances(session) if row.reporting_month_id == month_id]
     return [_response(row) for row in rows]
@@ -102,21 +104,22 @@ def list_cash_balances_endpoint(
 @router.get("/total", response_model=CashTotalResponse)
 def cash_total_endpoint(
     month_id: int = Query(...),
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashTotalResponse:
-    total = total_cash(session, month_id)
-    in_capital = total_cash(session, month_id, include_in_capital_only=True)
-    return CashTotalResponse(
-        reporting_month_id=month_id,
-        total=_money(total.kopecks),
-        total_in_capital=_money(in_capital.kopecks),
-    )
+    with coherent_read_snapshot(session):
+        total = total_cash(session, month_id)
+        in_capital = total_cash(session, month_id, include_in_capital_only=True)
+        return CashTotalResponse(
+            reporting_month_id=month_id,
+            total=_money(total.kopecks),
+            total_in_capital=_money(in_capital.kopecks),
+        )
 
 
 @router.post("", response_model=CashBalanceResponse, status_code=status.HTTP_201_CREATED)
 def create_cash_balance_endpoint(
     payload: CashBalanceCreate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBalanceResponse:
     balance = create_cash_balance(
         session,
@@ -134,7 +137,7 @@ def create_cash_balance_endpoint(
 @router.get("/{balance_id}", response_model=CashBalanceResponse)
 def get_cash_balance_endpoint(
     balance_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBalanceResponse:
     return _response(get_cash_balance(session, balance_id))
 
@@ -143,7 +146,7 @@ def get_cash_balance_endpoint(
 def update_cash_balance_endpoint(
     balance_id: int,
     payload: CashBalanceUpdate,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> CashBalanceResponse:
     balance = update_cash_balance(
         session,
@@ -161,6 +164,6 @@ def update_cash_balance_endpoint(
 @router.delete("/{balance_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_cash_balance_endpoint(
     balance_id: int,
-    session: Session = Depends(session_for_request),
+    session: Session = Depends(preparation_session),
 ) -> None:
     delete_cash_balance(session, balance_id)

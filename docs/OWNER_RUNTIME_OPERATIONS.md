@@ -46,23 +46,44 @@ Detailed evidence: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
 
 ## 3. Windows launcher
 
-The launcher is still valid and intentionally familiar for its bounded role:
+The launcher is a compact shell for already-prepared runtimes. The normal owner surface is intentionally small:
 
-- show Stable/Preview profile identity/status;
-- ordinary Start/Stop;
-- open Hermes after health is ready;
-- diagnostics/status presentation;
-- installed shortcuts/package shell.
+- choose Stable or isolated Preview;
+- see one concise version/short-SHA + data-boundary line;
+- see one readiness state;
+- use one primary action for that state;
+- `Остановить` is secondary and appears only for a launcher-owned running process;
+- diagnostics/logs stay hidden until requested;
+- setup/reconfigure is primarily a missing/invalid-config recovery path.
 
-It is **not** the canonical Stable release updater.
+It is **not** the canonical Stable release updater and does not move Git or perform OPS01/OPS02/OPS03.
 
-That is the main architectural change: safety-critical release/update semantics are no longer hidden inside a second launcher-owned state machine.
+### Reinstall the released launcher
 
-Install/reinstall from the currently selected published Stable checkout:
+From the published Stable checkout:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
 ```
+
+### Try the newer launcher from development `main`
+
+The compact shell from #586 is newer than published v1.0.0 until a later release. To install it without promoting Stable:
+
+1. use a clean trusted/control checkout, **not** the production Stable runtime checkout;
+2. update that checkout to current `main`;
+3. stop Hermes and close the launcher before packaging, because the retained launcher safety harness exercises local process/port behavior;
+4. run:
+
+```powershell
+git switch main
+git pull --ff-only
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
+```
+
+The installer rebuilds the self-contained launcher, runs the retained launcher safety harness, copies the package to the per-user launcher install directory (by default `%LOCALAPPDATA%\HermesFinance\launcher`) and refreshes Desktop/Start-menu shortcuts. Existing launcher `config.json` is not replaced by the installer.
+
+This updates the launcher package only. It does **not** change the Stable checkout, production database, release tag or prepared-runtime identity.
 
 Do not use the legacy launcher self-update experiment as release-update evidence.
 
@@ -255,15 +276,18 @@ If any operation fails:
 
 The architecture is designed so an update failure does not automatically imply Start, migration, Preview mutation or release publication.
 
-## 11. Launcher future
+## 11. Launcher state after #585 / #586
 
-The runtime redesign parent #313 is complete after the successful real `v0.8.2 -> v0.9.0` owner transition.
+The runtime redesign parent #313 remains complete. The later launcher follow-ups are also complete:
 
-Future launcher work is optional:
+- #585 path-gated the heavy Windows launcher safety/package lane so unrelated changes do not spend Windows/.NET time while launcher-relevant changes still run the full retained harness;
+- #586 reduced the owner UI to the compact prepared-runtime shell without changing runtime/profile/process/data safety semantics.
 
-- thin UX wrappers over accepted owner operations may be valuable;
-- diagnosis/recovery may be added as bounded operations if real owner pain justifies them;
-- do **not** rebuild the old monolithic launcher updater/state machine.
+Future launcher work should now be evidence-driven and bounded:
+
+- add only small owner-facing wrappers when a real recurring operation justifies them;
+- diagnosis/recovery may be added if real owner pain appears;
+- do **not** rebuild the old monolithic launcher updater/state machine or re-expand the compact shell into a control dashboard.
 
 ## 12. Safety reminders
 

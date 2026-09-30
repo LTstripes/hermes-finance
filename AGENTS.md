@@ -33,7 +33,7 @@ Do not treat old release-execution notes as current standing orders.
 
 The current GitHub issue, accepted contract and applicable Integrator notes define the task under the source precedence above. A launch prompt is a locator and execution assignment, not a second specification. Update the authoritative issue/note when requirements change.
 
-Use the [Owner task proposal](docs/MODEL_ROUTING.md#owner-task-proposal) format when handing a task to the Owner. The launch identifies the issue/note, assigned branch and actual workspace, exact baseline/target, intended result and authorized delivery. Missing safety-critical information must be resolved before writes.
+Use the [Owner task proposal](docs/MODEL_ROUTING.md#owner-task-proposal) format when handing a task to the Owner. The launch identifies the issue/note, assigned branch and workspace policy, exact baseline/target, intended result and authorized delivery. An absolute workspace path is optional when the client has a known configured workspace root and the standing self-create rule below applies. Missing safety-critical information must still be resolved before writes.
 
 One bounded task defaults to one Worker; independent review follows risk policy and does not activate orchestration. Only an explicit orchestration/queue request uses `docs/AGENT_ORCHESTRATION.md` and its listed eligible tasks.
 
@@ -110,7 +110,7 @@ Rules:
 - Parallel tasks must use separately assigned Git worktrees or independent clones. Branch isolation alone is insufficient when two sessions share the same checkout directory.
 - A second session must not switch, reset, pull or otherwise change the branch/HEAD of a working tree that another active task is using for implementation or verification.
 - Read-only review may share GitHub repository state, but any local review whose result depends on checkout contents or local test execution requires its own assigned workspace when another task is active in the original tree.
-- Creating a sibling worktree/clone under the canonical workspace root still requires explicit Owner/Integrator assignment under the workspace-root rules below.
+- Creating a sibling worktree/clone under the canonical workspace root requires either an explicit per-task assignment or the standing self-create authorization in the workspace-root rules below.
 - Prefer a dedicated independent clone rather than a worktree when a high-risk migration/runtime/live-provider task benefits from stronger filesystem isolation.
 - Production runtime and Owner preview/UAT/live-probe workspaces remain forbidden development-agent workspaces regardless of this parallelism rule.
 
@@ -137,11 +137,24 @@ Do not put machine-specific absolute local paths into tracked repository docs.
 
 ## Workspace root discipline
 
-- A development agent may write only inside its explicitly assigned clone or task workspace.
-- Agents MUST NOT create, clone, move, rename or delete sibling directories under the canonical local workspace root unless the Owner/Integrator explicitly assigns that filesystem operation.
-- Temporary repositories or workspaces outside the assigned agent clone require explicit Owner/Integrator instruction.
+- A development agent may write only inside its explicitly assigned clone/task workspace or a task workspace it created under the standing authorization below.
+- Agents MUST NOT move, rename, delete or repurpose sibling directories under the canonical local workspace root. Creating one new isolated task workspace is allowed only by explicit per-task assignment or the standing self-create authorization below.
+- Temporary repositories or workspaces outside the configured canonical workspace root require explicit Owner/Integrator instruction.
 - Owner-only live/probe workspaces use the designated local `owner-probes/` root and are never agent workspaces. Development agents must not access, inspect or reuse them while they contain Owner/live data.
 - Machine-specific workspace-root paths and local placement remain untracked local configuration.
+
+### Standing self-create authorization
+
+For an ordinary development task, if the launch pins the exact baseline/target and task identity/branch, and the executing client can identify the configured local workspace root, the Owner/Integrator grants standing authority to create **one new isolated task worktree or clone** under that root using `workspaces/<agent>/<task>/`. The Worker must do this itself and **must not ask the Owner for an absolute workspace path merely because the launch omitted one**.
+
+This standing authorization is limited:
+
+- create a fresh task directory only; never reuse an active workspace;
+- never switch/reset/pull the branch of another task's working tree;
+- never touch Stable, Preview/UAT, production runtime, `owner-probes/`, private data locations or another active task;
+- do not delete, move or clean up sibling workspaces under this authorization;
+- if the intended path already exists, the configured workspace root is genuinely unknown/ambiguous, the root is inaccessible, or safe creation would require leaving the configured root, stop and ask the Owner/Integrator;
+- a task may still require an explicitly assigned independent clone/path when its issue or launch says so, especially for migration/runtime/live-provider boundaries.
 
 For future local task placement, use the portable hierarchy `workspaces/<agent>/<task>/`.
 An agent root groups that client's task workspaces but is not itself a shared mutable working tree. Temporary verification artifacts belong under assigned scratch roots: `scratch/pytest/`, `scratch/verification/`, or `scratch/uv-cache/`. Remove a task workspace only after its final Git state has been verified and the cleanup is Owner/Integrator controlled.
@@ -236,14 +249,27 @@ No document may continue to describe the published release as RC, candidate or u
 
 ## Completion reporting
 
-A normal Worker returns a per-task completion report with:
+A normal Worker returns one concise per-task completion report with:
 
-- task ID and status;
-- baseline, branch/workspace and exact candidate SHA;
-- work completed and changed files;
+- task/issue ID and status;
+- **Model evidence** using the common fields below;
+- baseline, target integration branch, task branch/workspace and exact candidate SHA;
+- work completed, key files and exact `git diff --stat` additions/deletions when available;
 - exact checks and outcomes;
-- limitations/questions/blockers;
-- final working-tree state when local.
+- deviations, limitations, blockers and relevant execution confounders (for example resource contention);
+- final working-tree state and remote/HEAD read-back when local.
+
+Use exactly this compact block in every Worker and Reviewer handoff:
+
+```text
+Model evidence
+model: <exact model name or unknown>
+provider/client: <provider / client or unknown>
+```
+
+Keep Model evidence to these two fields only. Do not add token usage, cost, elapsed-time, delegate/fallback, effort, identity-source or other telemetry to the normal handoff. If the exact model or provider/client is not explicitly exposed or supplied by the executing runtime/Owner, write `unknown`; do not infer it from an assignment, alias or expected route. The Integrator may record separately available benchmark telemetry when it is genuinely evidenced, but Workers/Reviewers should not pad handoffs with repeated `unknown` fields.
+
+Workers/Execution Orchestrators do **not** edit `docs/MODEL_BENCHMARK.md` or the benchmark tracker to grade themselves. The Integrator records accepted, rejected, pending and abandoned attempts centrally after source/evidence review and keeps Worker, Reviewer and research roles separate.
 
 An orchestrated queue additionally returns one final queue report listing every authorized task, its final internal state, candidate SHA where applicable, review path and unresolved Integrator action. That queue report is not a batch project acceptance.
 

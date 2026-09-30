@@ -77,6 +77,7 @@ def _require_salary_slot(
     *,
     exclude_entry_id: int | None = None,
 ) -> None:
+    """Reject a second salary while the caller holds the month writer reservation."""
     if _salary_entries(
         session,
         reporting_month_id,

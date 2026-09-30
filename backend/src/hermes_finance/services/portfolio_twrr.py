@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import (
     AvailabilityReasonCode,
     ExternalFlowClassification,
@@ -132,6 +133,7 @@ def _boundaries_from_availability(
     return tuple(boundaries), tuple(sorted(reasons))
 
 
+@coherent_read_operation
 def _twrr_for_scope_interval(
     session: Session,
     *,

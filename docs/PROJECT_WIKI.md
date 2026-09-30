@@ -4,7 +4,7 @@
 >
 > Current-status companion: [`docs/CURRENT_STATUS.md`](CURRENT_STATUS.md).
 >
-> Last synchronized: **2026-09-25**.
+> Last synchronized: **2026-09-27**.
 
 ## 1. Что мы строим
 
@@ -67,6 +67,8 @@ The `v1.0.0` release source is `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 The live development SHA is always current GitHub `main`; documentation-only synchronization commits may advance it after publication without changing the immutable `v1.0.0` tag identity.
 
 Owner durability closeout checkpoint: `744c613884d074e6f9d35d61523603f257371713`, exact-main CI #947 / `36139627216` SUCCESS. #417 is closed completed.
+
+Current accepted development checkpoint after the Astra-audit hardening wave: `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; exact-main push CI `36306845860` SUCCESS.
 
 ## 4. Неподвижные продуктовые и privacy-инварианты
 
@@ -154,6 +156,24 @@ Contract: `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`.
 #400 / PR #402 реализовал bounded backend read model и прошёл independent financial-semantics review.
 
 Важно: PERF04C пока **backend-only**. API/UI exposure отдельно не разблокирован автоматически.
+
+### Post-Astra data-integrity / completeness hardening
+
+The audit-driven hardening wave #484–#498 and #536–#539 is complete and canonical.
+
+What changed structurally:
+
+- financial writes and month-state guards are serialized/atomic where stale validation previously could race;
+- composite reads hold one coherent SQLite snapshot;
+- statement correction, transfer ownership, salary cardinality and month clone workflows now fail with conflicts instead of committing mixed state;
+- payout/reconciliation provenance survives DRAFT corrections without destroying history or blocking the corrected active relationship;
+- Performance boundary/coverage evidence is invalidated or version-bound so stale PRE/POST evidence cannot recreate false exactness;
+- real cash-account identity is preserved through AI/export; unassigned cash stays synthetic;
+- portfolio-source coverage is canonical across backend, AI exports and UI: known subtotal and completeness are separate claims, missing accounts are not zero-filled, and no-capital-evidence periods remain unavailable.
+
+Final aggregate PR #509 merged integration head `ad59be98450599c0253e9dbf027385d06f1eabb1` into canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`. Merge-ref CI `36306528111`, UI comparison `36306528183` and exact-main push CI `36306845860` all passed.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ## 6. Что по-прежнему нельзя называть exact attribution
 
@@ -296,28 +316,25 @@ The redesign acceptance boundary is now fulfilled on a real owner release transi
 
 Detailed closeout: `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`.
 
-## 8. Windows launcher — what changed and what did not
+## 8. Windows launcher — compact owner shell
 
-Launcher не retired, и внешне он специально не обязан выглядеть новым.
+Launcher не retired, но теперь он действительно соответствует своей ограниченной роли.
 
-Его полезная роль:
+После #586 primary UI — маленький owner shell:
 
-- owner-facing Stable/Preview profile/status UI;
-- ordinary Start/Stop;
-- shortcut/install shell;
-- diagnostics/status presentation.
+- компактный выбор Stable / Preview;
+- одна строка version / short SHA + production или isolated data;
+- одно состояние готовности;
+- одна primary action: `Запустить`, `Открыть Hermes` или контекстный recheck;
+- `Остановить` — вторичное действие только для доказанного launcher-owned процесса;
+- diagnostics/logs скрыты;
+- setup/reconfigure — recovery path, а не часть ежедневного запуска.
 
-Но launcher **не является canonical Stable updater**.
+Старые большие profile cards, selected-profile panel, четыре technical check rows, большой SHA block, постоянный refresh CTA, last-run footer и крупный LOCAL ONLY badge удалены вместе с их implementation-specific layout tests. Default window уменьшен до 560×320.
 
-Поэтому главный результат R09 — не новая кнопка, а качественно другая система под ней:
+Launcher по-прежнему **не является canonical Stable updater**. Он не двигает Git, не делает OPS02/OPS03 и не готовит зависимости. Под ним остаётся доказанная composable architecture: exact code identity, отдельные Prepare/Start/Preview/Stable-update/publication operations и fail-closed production/isolated boundaries.
 
-- exact code tested = exact code published = exact code installed;
-- backup exists before mutation;
-- publication, update, Preview and Start are separate actions;
-- failures локализованы по операции;
-- future UI can wrap proven primitives instead of duplicating their safety semantics.
-
-Если позже launcher получает новые кнопки, они должны быть thin wrappers над accepted operations, а не вторая state machine.
+#585 отдельно убрал тяжёлый launcher harness из нерелевантного CI: frontend/financial/backend изменения больше не поднимают Windows/.NET launcher lane, а любые launcher/package/schema-helper изменения всё ещё получают полный retained safety + package/install chain.
 
 ## 9. Release flow — теперь доказанный
 
@@ -403,6 +420,8 @@ Closeouts:
 
 ## 11. Что идёт дальше
 
+The Astra-audit hardening queue is complete. No task from #484–#498 or #536–#539 remains open; future product/engineering work starts from canonical `main`.
+
 ### UI / product
 
 The core UI v2 roadmap (#387) is complete.
@@ -438,6 +457,29 @@ Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 Не возрождать monolithic launcher updater.
 
+### UI v2 parity checkpoint — 2026-09-28
+
+The post-v1.0 native parity/editor-import wave is now complete in staging through #567.
+
+Exact active checkpoints:
+- canonical `main` at checkpoint creation: `453dd6db68e069028d130060ce18e08bc3bbff64`;
+- UI parity staging: `integration/ui-v2-parity@f27c33dff940315827d7b9231146945a43b16273`;
+- Performance staging: `integration/performance-ui-v2@a9198a46a9efedcf1e60f5628ff308ebe65952dc`.
+
+Completed parity slices: #551–#553, #555–#567, #575 and #607. This includes month management/editor, all editor leaves, native Alfa baseline, payout forecast/apply and native statement import. Legacy routes stay available; no v1 retirement is authorized.
+
+Remaining bounded tail:
+- #568 IIS write forms;
+- #569 Capital allocation/concentration detail;
+- #570 final Analytics/Home reconciliation refresh;
+- #571 native Monthly Close wiring;
+- #572 one exact aggregate verification + Owner UAT;
+- #573 explicit v1-retirement decision gate.
+
+Performance Phase B/final checkpoint remains separate: #535 backend class returns, #540 class-return UI and #541 final Performance aggregate/UAT.
+
+Durable handoff: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
+
 ### Performance
 
 Account + internal-transfer decomposition backend завершён.
@@ -450,24 +492,19 @@ Account + internal-transfer decomposition backend завершён.
 
 `v1.0.0` is now published and installed as real Stable after exact-SHA Owner OPS03 PASS, guarded #124 publication and backup-first OPS02 transition.
 
-## 12. CI/test execution optimization — closeout 2026-09-16
+## 12. CI/test execution optimization — closeout + launcher follow-up
 
-Отдельный bounded pass по CI завершён. Целью было убрать лишнюю работу, не сокращая regression coverage.
+Основной bounded CI pass от 2026-09-16 завершился без удаления regression coverage:
 
-Принятые изменения:
+- PR #397 — full Windows launcher safety harness перестал запускаться дважды;
+- PR #399 — Windows timezone lane сокращён до Windows-specific nodes;
+- PR #401 — Synthetic visual audit использует bounded two-worker execution.
 
-- PR #397 — full Windows launcher safety harness больше не запускается дважды; 88 сценариев выполняются один раз через canonical package/install chain;
-- PR #399 — Windows timezone lane сокращён с 35 до 7 Windows-specific nodes; исключённые 28 nodes продолжают обязательное выполнение в Linux lanes;
-- PR #401 — Synthetic visual audit сохраняет те же 84 nodes, но безопасно выполняется двумя Playwright workers при `fullyParallel: false`.
+Позже реальная owner-потребность дала ещё один безопасный follow-up:
 
-Итог:
+- **#585 / PR #589** — launcher safety/package lane стал path-gated. На нерелевантном diff heavy job получает terminal `skipped`; на launcher-relevant diff полный harness/package/install chain остаётся blocking и прошёл exact-head/exact-main CI. Контрольный PR #590 доказал отсутствие вечного pending check. На docs-only baseline-run heavy job занимал примерно 1.5 минуты Windows runner.
 
-- примерно 116 redundant test/scenario executions убраны из каждого полного CI;
-- удалённых regression tests: 0;
-- visual coverage и screenshot inventory сохранены;
-- whole-CI wall time на closeout checkpoint сократился примерно до 3.5 минут, с обычной оговоркой о GitHub-runner variance.
-
-После отдельного read-only launcher audit принят STOP: оставшийся безопасный резерв в несколько секунд не оправдывает дополнительную сложность safety fixtures.
+57 launcher scenarios не удалялись: аудит не нашёл точного дубля с outer package/install smoke. Убрано именно нерелевантное выполнение, а не гарантия.
 
 Project-specific evidence: `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`.
 
@@ -482,7 +519,7 @@ Completed process follow-ups:
 - #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
 - #543 / PR #547 — non-blocking post-closeout recovery hardening.
 
-Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
+Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #476, #480, #484–#498, #511, #524, #527, #536–#539 and #543.
 
 ## 14. Canonical reference documents
 
@@ -498,6 +535,8 @@ Completed: #313, #387, #410, #417, #429, #430, #459, #460, #461, #462, #475, #47
 - `docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`
 - `docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`
 - `docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`
+- `docs/financial-completeness-contract.md` — #498 known subtotal versus portfolio-source coverage; implemented end-to-end through #536–#539.
+- `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md` — canonical closeout for the Astra-audit hardening wave.
 - `docs/RELEASE_AUTOMATION.md`
 - `docs/releases/1.0.0.md`
 - `docs/release-notes-1.0.0.md`

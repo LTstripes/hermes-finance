@@ -8,6 +8,9 @@ helpers so the invariant lives in exactly one place. Entities without a
 app_settings, iis profiles) must not use this guard.
 """
 
+from datetime import date
+
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import ReportingMonthStatus
@@ -20,18 +23,49 @@ from hermes_finance.services.reporting_months import (
 _EDIT_ERROR_MESSAGE = "closed reporting month must be reopened before editing"
 
 
+def reserve_reporting_month_interval_writer(
+    session: Session, *, covered_from: date, covered_to: date
+) -> None:
+    """Reserve SQLite's writer before checking an evidence interval.
+
+    The no-op UPDATE is bounded to intersecting months and leaves ORM
+    ``updated_at`` untouched. SQLite reserves the writer even if no row
+    matches; a competing Close cannot commit between the check and evidence
+    write. The caller keeps the reservation through commit or rollback.
+    """
+    session.execute(
+        text(
+            "UPDATE reporting_months SET status = status "
+            "WHERE period_start <= :covered_to AND period_end >= :covered_from"
+        ),
+        {"covered_from": covered_from, "covered_to": covered_to},
+    )
+
+
 def require_editable_reporting_month(session: Session, month_id: int) -> ReportingMonth:
-    """Resolve a reporting month and require it to be editable (draft).
+    """Acquire SQLite's writer reservation before checking DRAFT.
 
     Raises ``ReportingMonthNotFoundError`` when the month does not exist and
-    ``ClosedReportingMonthError`` when the month is closed.
+    ``ClosedReportingMonthError`` when the month is closed. The reservation
+    remains on this session's transaction through the child write and commit;
+    a concurrent Close must wait for that commit or win before this UPDATE.
+    A SELECT (even in a SQLAlchemy autobegin transaction) does not acquire
+    that reservation with the configured pysqlite driver. Use raw SQL so the
+    no-op does not run ReportingMonth.updated_at's ORM onupdate callback.
     """
-    reporting_month = session.get(ReportingMonth, month_id)
+    result = session.execute(
+        text(
+            "UPDATE reporting_months SET status = status WHERE id = :month_id AND status = :draft"
+        ),
+        {"month_id": month_id, "draft": ReportingMonthStatus.DRAFT.value},
+    )
+    reporting_month = session.get(ReportingMonth, month_id, populate_existing=True)
+    if result.rowcount == 1:
+        return reporting_month
+    session.rollback()
     if reporting_month is None:
         raise ReportingMonthNotFoundError(f"reporting month {month_id} was not found")
-    if reporting_month.status == ReportingMonthStatus.CLOSED.value:
-        raise ClosedReportingMonthError(_EDIT_ERROR_MESSAGE)
-    return reporting_month
+    raise ClosedReportingMonthError(_EDIT_ERROR_MESSAGE)
 
 
 def require_editable_child_month(session: Session, child: object) -> ReportingMonth:

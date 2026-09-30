@@ -7,6 +7,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import (
     AvailabilityReasonCode,
     ExternalFlowClassification,
@@ -268,6 +269,7 @@ def _boundary_value(
     return point.total_value
 
 
+@coherent_read_operation
 def performance_attribution_for_interval(
     session: Session,
     *,

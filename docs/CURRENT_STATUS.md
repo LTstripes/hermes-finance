@@ -2,13 +2,16 @@
 
 > Canonical owner/integrator checkpoint. This document summarizes what is true **now**; detailed historical evidence remains in issues, PRs, closeout documents, `CHANGELOG.md` and `docs/EXECUTION_HISTORY.md`.
 >
-> Last synchronized: **2026-09-25**.
+> Last synchronized: **2026-09-28**.
 
 ## Canonical identity
 
 - Published Stable release: **v1.0.0**.
-- Current accepted implementation checkpoint: `744c613884d074e6f9d35d61523603f257371713`.
-- Exact-main CI for that checkpoint: **#947 / run `36139627216` — SUCCESS**.
+- Canonical `main` at this checkpoint's creation: `453dd6db68e069028d130060ce18e08bc3bbff64` (a later docs-only merge may advance `main` without changing product code).
+- UI parity staging: `integration/ui-v2-parity@f27c33dff940315827d7b9231146945a43b16273`.
+- Performance staging: `integration/performance-ui-v2@a9198a46a9efedcf1e60f5628ff308ebe65952dc`.
+- Detailed active-session checkpoint: `docs/UI_V2_PARITY_CHECKPOINT_2026-09-28.md`.
+- Post-Astra data-integrity/completeness hardening (#484–#498, #536–#539): **complete**; final aggregate #509 merged after exact merge-ref CI/UI evidence passed.
 - Published release / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`.
 - Annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`; tag peels exactly to the released SHA.
 - Guarded Release run `35580890145`: **SUCCESS**.
@@ -20,6 +23,16 @@
 - UI v2 is primary at `/`; previous UI remains available at `/v1`.
 - Published predecessor `v0.9.0` remains immutable historical evidence.
 - GitHub `main` is authoritative for live development; documentation-only closeout commits may advance it beyond the released code without changing the immutable `v1.0.0` tag identity.
+
+## Active post-v1.0 development checkpoint — 2026-09-28
+
+The large UI-v2 editor/import parity wave is now integrated in staging. #551–#553, #555–#567, #575 and #607 are complete at their accepted staging stages. The final #567 statement-import candidate `495f99cf6ad93b7ee7916a4b4c6eaedb53d87ceb` passed exact-head CI/UI and independent Grok 4.7 import/privacy/data-integrity review before merging to parity staging `f27c33dff940315827d7b9231146945a43b16273`.
+
+Remaining parity work is bounded to #568 IIS write forms, #569 Capital allocation detail, #570 final Analytics/Home reconciliation refresh, #571 native Monthly Close wiring, #572 aggregate verification/Owner UAT and #573 the explicit v1-retirement decision gate.
+
+Performance Phase B/final reconciliation remains separate on `integration/performance-ui-v2`: open work is #535 class-return backend, #540 class-return UI and #541 final aggregate/UAT milestone. Phase A progress is retained; unfinished Phase B does not silently become a parity PASS.
+
+No immediate Owner UAT is pending at this checkpoint. The next Owner-facing test is the aggregate #572 Preview/UAT after the remaining slices are present on one exact tree.
 
 ## Product/runtime invariants
 
@@ -72,6 +85,25 @@ Complete and integrated:
 - exact-zero versus unavailable/null distinction.
 
 Closeout: `docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`.
+
+### Post-Astra data-integrity and financial-completeness hardening
+
+The full audit wave is complete on canonical `main`: #484–#498 plus #536–#539.
+
+Delivered across the wave:
+
+- database-level write atomicity for financial edits, month-close races, statement corrections, linked-debt evidence, transfer ownership and salary cardinality;
+- coherent SQLite snapshots for composite financial reads;
+- atomic month clone source/target behavior;
+- auditable payout/reconciliation provenance through DRAFT corrections;
+- performance coverage/version/group invalidation so stale evidence cannot recreate false exact XIRR/TWRR;
+- stable real-versus-unassigned cash identity through AI/export;
+- canonical portfolio-source coverage: an exact known subtotal can coexist with partial account coverage, while missing evidence is never zero-filled;
+- the same coverage semantics now propagate through AI bundle/reviews/goals/allocation and owner-facing v1/v2 capital/history surfaces.
+
+Final integration head `ad59be98450599c0253e9dbf027385d06f1eabb1` merged through PR #509 as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`. Merge-ref CI `36306528111`, UI comparison `36306528183` and exact-main push CI `36306845860` all succeeded.
+
+Closeout: `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
 
 ### PERF04B / PERF04C bounded decomposition
 
@@ -172,22 +204,25 @@ No private database, backup identifier or financial values are recorded in repos
 
 Detailed closeout: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
 
-## Why the launcher looks similar — and why quality changed
+## Windows launcher compact-shell closeout — completed 2026-09-27
 
-The redesign was intentionally not a visual launcher rewrite.
+The runtime responsibility split remains unchanged:
 
-The launcher remains useful as an owner-facing profile/status/Start/Stop shell. What changed is responsibility and blast radius:
-
-- **launcher** — presentation + ordinary Start/Stop;
+- **launcher** — compact profile/status/Start/Open/Stop shell;
 - **Prepare/Validate** — `scripts/prepare-runtime.ps1`;
 - **deterministic Start** — `scripts/start-local.ps1`;
 - **Stable release transition** — `scripts/update-stable.ps1`;
 - **exact candidate Preview/UAT** — `scripts/prepare-preview.ps1`;
 - **release publication** — guarded #124 flow.
 
-This provides reproducible exact code identity, backup-before-mutation, smaller failure boundaries, clearer diagnosis and no accidental coupling between update, Preview, migration, Start and publication.
+Two post-v1.0.0 launcher follow-ups are now complete on canonical development `main`:
 
-A future launcher may wrap these accepted operations, but must not recreate an independent update state machine.
+- **#585 / PR #589** — heavy `Windows launcher safety` + package/install CI is path-gated. Unrelated frontend/financial/backend diffs skip the heavy Windows/.NET lane; launcher/package/schema-helper changes still run the retained full harness. Accepted candidate `85769623244d7185b669ea34ca90a2b28a3b1168`; canonical merge `d2acd8b52c43725b76b32fb514a56744def6f529`; exact-main CI `36313666733` SUCCESS.
+- **#586 / PR #593** — the owner launcher was reduced from the large control-panel presentation to a compact shell (default 560×320) with environment choice, one concise identity/boundary line, one readiness state and one primary action. Old selected-profile/check-grid/footer/badge layout code and its implementation-specific tests were removed with net code deletion. Accepted candidate `22c2dc5c7245953b08ad378de88ba4df3e22fd7c`; canonical merge/main `bbfa4508f2ad66f35d15ed0f0b45bd41518427af`; exact-head CI `36315571533` and exact-main CI `36315775997` SUCCESS.
+
+Semantic safety is unchanged: no launcher-owned Git/update flow, Stable production vs Preview isolated data remain fail-closed, process ownership/foreign-port protection stay retained, and ordinary runtime remains loopback-only.
+
+Published Stable is still immutable **v1.0.0**; the compact launcher is newer development-main launcher code until a future release. It may be installed separately from a clean current-main/control checkout without promoting or mutating Stable.
 
 ## Release flow
 
@@ -231,6 +266,8 @@ Parent #417 is **closed completed**. #543 / PR #547 separately completed the non
 Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
 
 ## Active roadmap / what comes next
+
+The Astra-audit hardening queue is closed. There are no remaining implementation tasks from #484–#498 / #536–#539; future work starts from current canonical `main`.
 
 ### UI v2 — core roadmap complete / primary interface
 
@@ -297,7 +334,7 @@ Completed process follow-ups:
 - #476 / PR #548 — real-backend synthetic G04 canonical CI gate;
 - #543 / PR #547 — post-closeout recovery CLI/retention hardening.
 
-Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #511, #524, #527 and #543.
+Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #460, #461, #462, #475, #476, #480, #484–#498, #511, #524, #527, #536–#539 and #543.
 
 ## Canonical references
 
@@ -305,6 +342,7 @@ Completed: #313, #387, #410, #417, #429, #430, #432–#434, #444–#448, #459, #
 - `docs/MASTER_SPEC.md`
 - `docs/VERIFICATION_POLICY.md`
 - `docs/PROJECT_WIKI.md`
+- `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`
 - `docs/EXECUTION_HISTORY.md`
 - `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
 - `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`

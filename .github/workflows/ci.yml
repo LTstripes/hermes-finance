@@ -24,6 +24,9 @@ jobs:
       - name: Check visual-audit path-filter regressions
         run: python3 scripts/tests/test-visual-audit-paths.py
 
+      - name: Check launcher path-filter regressions
+        run: python3 scripts/tests/test-launcher-ci-paths.py
+
   backend-quality:
     name: Backend quality
     runs-on: ubuntu-latest
@@ -203,9 +206,9 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run G04 synthetic real-backend journey
+      - name: Run G04 and Performance synthetic real-backend journeys
         working-directory: frontend
-        run: npm run test:e2e -- g04-smoke.spec.ts --project=chromium --retries=0
+        run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
 
   visual-audit-paths:
     name: Visual audit path filter
@@ -307,6 +310,11 @@ jobs:
               exit $LASTEXITCODE
           }
 
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-launcher-ci-workflow.ps1
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update.ps1
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
@@ -402,8 +410,60 @@ jobs:
               throw "Canonical launcher left port 8000 listening after -ExitAfterReady."
           }
 
+  # Job condition, not an `on.paths` filter: a workflow path filter leaves a
+  # required check pending, while a skipped job reports a terminal success.
+  windows-launcher-paths:
+    name: Windows launcher path filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Determine whether launcher-relevant paths changed
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              echo "Push has no previous commit. Running launcher safety fail-closed."
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git diff --name-only --no-renames "$BEFORE_SHA" "$PUSH_SHA" > "$RUNNER_TEMP/changed-files.txt"
+          else
+            echo "Unknown event ${EVENT_NAME}. Running launcher safety fail-closed."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Changed paths:"
+          cat "$RUNNER_TEMP/changed-files.txt"
+          should_run=$(python3 scripts/launcher_ci_paths.py --from-file "$RUNNER_TEMP/changed-files.txt")
+          echo "run=$should_run" >> "$GITHUB_OUTPUT"
+
   windows-launcher-safety:
     name: Windows launcher safety
+    needs: windows-launcher-paths
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.windows-launcher-paths.result == 'success' &&
+      needs.windows-launcher-paths.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 10
 

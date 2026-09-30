@@ -140,6 +140,27 @@ Reopen launcher CI optimization only if one of these becomes true:
 
 Do **not** reopen merely to chase a few seconds.
 
+### Post-closeout launcher follow-up — #585 / PR #589 (2026-09-27)
+
+A later owner-driven simplification reopened only the **execution topology**, not the retained launcher safety scenarios.
+
+PR #589 added a deterministic job-level path gate for `Windows launcher safety`:
+
+- launcher/package/schema-helper/CI-contract changes still run the full retained 57-scenario harness plus canonical package/install smoke;
+- unrelated frontend/financial/backend/runtime-preparation changes skip the heavy Windows/.NET launcher job;
+- the workflow itself still runs, so the skipped heavy job reaches terminal `skipped` rather than leaving a required check pending;
+- cheap classifier/workflow-contract checks remain in ordinary CI;
+- no launcher safety scenario was deleted because audit found no exact duplicate with the outer package/install smoke.
+
+Evidence:
+
+- relevant exact-head PR #589 CI `36313043068`: SUCCESS, heavy launcher job ran and passed;
+- irrelevant empty-diff control PR #590 CI `36313059976`: SUCCESS, heavy launcher job terminal `skipped`;
+- exact-main CI `36313666733`: SUCCESS;
+- previous docs-only main evidence had spent about 1.5 minutes of Windows runner time on the launcher job, so this follow-up removes material irrelevant execution without changing the launcher safety contract.
+
+This does not invalidate the 2026-09-16 stop decision about micro-optimizing the safety fixture internals. The later change had a larger owner-visible payoff because it stopped launching the entire heavy job when no launcher contract changed.
+
 ## What worked
 
 1. **Remove duplicate executions before touching tests.** The largest gain came from identifying the same 88-scenario harness running twice.

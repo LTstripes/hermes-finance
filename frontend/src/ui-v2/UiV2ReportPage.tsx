@@ -16,6 +16,7 @@ import {
   type CapitalCompositionMode,
 } from "../components/charts/CapitalCompositionChart";
 import { buildCapitalCompositionSeries } from "../lib/capitalComposition";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { SOURCE_LABELS } from "../lib/labels";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
@@ -79,7 +80,10 @@ function ReportValues({ point }: { point: CapitalCompositionPoint }) {
   const values: Record<string, string> = {
     "report-assets": money(point.liquid_assets_total),
     "report-debts": `− ${money(point.included_debts)}`,
-    "report-net": money(point.liquid_capital_net),
+    "report-net":
+      point.portfolio_source_coverage?.status === "unavailable"
+        ? "—"
+        : money(point.liquid_capital_net),
   };
   return (
     <>
@@ -93,6 +97,9 @@ function ReportValues({ point }: { point: CapitalCompositionPoint }) {
             <p className={styles.metricValue} data-testid={metric.testId}>
               {values[metric.testId]}
             </p>
+            {metric.primary ? (
+              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} />
+            ) : null}
             <p className={styles.metricDetail}>{metric.detail}</p>
           </article>
         ))}
@@ -173,7 +180,11 @@ function CompositionBlock({
             </div>
             <div>
               <dt>Ликвидный капитал</dt>
-              <dd>{money(point.liquid_capital_net)}</dd>
+              <dd>
+                {point.portfolio_source_coverage?.status === "unavailable"
+                  ? "—"
+                  : money(point.liquid_capital_net)}
+              </dd>
             </div>
           </dl>
           {positive ? null : (
