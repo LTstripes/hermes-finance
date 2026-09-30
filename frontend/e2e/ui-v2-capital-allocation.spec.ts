@@ -176,7 +176,7 @@ for (const viewport of [
   }, testInfo) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await syntheticApi(page);
-    await page.goto("/e2e/fixtures/capital-allocation.html?month=2");
+    await page.goto("/v2/capital/allocation?month=2");
     await expect(
       page.getByRole("heading", { level: 1, name: "Распределение и концентрация" }),
     ).toBeVisible();
