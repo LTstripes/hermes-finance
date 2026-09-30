@@ -950,7 +950,7 @@ export default function UiV2IncomePage() {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
         «Доход и планы» строится только по данным закрытых отчётов. Черновик не выдаётся за
-        подтверждённую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+        подтверждённую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
       </UiV2Notice>
     );
   } else {

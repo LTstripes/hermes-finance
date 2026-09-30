@@ -258,6 +258,23 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
   });
 
+  it.each([
+    ["/v2/capital/monthly-result?month=1&view=classes", "Денежный результат"],
+    ["/v2/capital/performance?start=invalid&scope=account", "Доходность"],
+  ])("keeps the aggregate Capital detail route %s registered", async (path, heading) => {
+    window.history.pushState({}, "", path);
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({ "GET /api/months": () => jsonResponse(sampleMonths) }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeVisible();
+    expect(window.location.pathname + window.location.search).toBe(path);
+    expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
+  });
+
   it("registers the native goals deep-link route with its selected report month", async () => {
     window.history.pushState({}, "", "/v2/income/goals?month=1");
     vi.stubGlobal(

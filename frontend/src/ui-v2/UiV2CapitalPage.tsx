@@ -1006,7 +1006,7 @@ export default function UiV2CapitalPage() {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
         «Капитал» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
-        финансовую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+        финансовую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
       </UiV2Notice>
     );
   } else {

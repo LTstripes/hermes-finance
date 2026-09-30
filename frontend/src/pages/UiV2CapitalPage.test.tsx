@@ -291,6 +291,10 @@ it("shows no capital numbers when there is no closed report yet", async () => {
   mount();
 
   expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+    "href",
+    "/v2/close",
+  );
   expect(screen.queryByTestId("capital-net")).toBeNull();
   expect(screen.queryByTestId("capital-composition")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);

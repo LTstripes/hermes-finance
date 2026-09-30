@@ -535,6 +535,10 @@ describe("UI v2 Income and plans", () => {
     mount();
 
     expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+      "href",
+      "/v2/close",
+    );
     expect(screen.queryByTestId("income-average")).toBeNull();
     expect(reads).toEqual(["GET /api/months"]);
   });

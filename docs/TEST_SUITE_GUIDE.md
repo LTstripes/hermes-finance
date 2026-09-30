@@ -169,8 +169,13 @@ complementary lanes, not duplicate test files.
 The G04 browser gate is intentionally not path-filtered: it runs on every pull
 request and canonical `main` push because either frontend routing/editor
 changes or backend/API changes can break the same critical monthly workflow.
-Keep this lane to one deterministic synthetic real-backend journey; broader
-browser coverage belongs in separate bounded tasks.
+G04 remains its original deterministic journey. The #572 aggregate also retains
+the accepted Performance preparation/PRE-POST journey, native statement
+import/apply/readback (`playwright.statement.config.ts`) and native Monthly Close
+edit/return/close/report/reopen (`playwright.monthly-close.config.ts`). They run
+serially on temporary synthetic databases in the same required browser job;
+the two acceptance configs serve the production frontend build. This is the
+bounded aggregate gate, not a general browser harness redesign.
 
 Use `docs/VERIFICATION_POLICY.md` for the proportional implementation and
 final-gate rules. When a task changes only docs or test organization, review

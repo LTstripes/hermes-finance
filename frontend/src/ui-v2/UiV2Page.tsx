@@ -528,7 +528,7 @@ function PassiveBlock({
           <p className={styles.eyebrow}>Получено · факт</p>
           <h2 id="passive-title">Пассивный доход</h2>
         </div>
-        <Link className={styles.contextLink} to="/payouts">
+        <Link className={styles.contextLink} to="/v2/income">
           Выплаты и прогноз →
         </Link>
       </div>
@@ -732,7 +732,7 @@ export default function UiV2Page() {
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
         <UiV2Notice title="Закрой первый отчёт">
           «Мои финансы» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
-          финансовую картину. <Link to="/monthly-close">Перейти к закрытию месяца →</Link>
+          финансовую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
         </UiV2Notice>
       </>
     );

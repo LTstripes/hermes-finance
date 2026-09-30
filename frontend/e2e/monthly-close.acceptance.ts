@@ -107,6 +107,24 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   expect((await (await request.get("/api/months/1")).json()).status).toBe("closed");
   await page.screenshot({ path: info.outputPath("closed-desktop.png"), fullPage: true });
 
+  // A later synthetic CLOSED report makes this month an actual archive target.
+  const laterResponse = await request.post("/api/months", {
+    data: { year: 2031, month: 6, snapshot_date: "2031-06-30" },
+  });
+  expect(laterResponse.status()).toBe(201);
+  const later = await laterResponse.json();
+  expect((await request.post(`/api/months/${later.id}/close`)).status()).toBe(200);
+  await page.goto("/v2/reports/1");
+  await expect(
+    page.getByRole("heading", { name: "Исторический отчёт", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("report-net")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Изменить", exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page).toHaveURL(/\/v2\/reports\/1$/);
+  await expect(page.getByTestId("report-net")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("archive-desktop.png"), fullPage: true });
+
   await page.goto("/v2/close?month=1&step=next_month_outlook");
   await expect(page.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
     "href",

@@ -167,6 +167,10 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   state.months = [uiV2Months[1]];
   mount();
   expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+    "href",
+    "/v2/close",
+  );
   expect(screen.queryByTestId("v2-capital")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   expect(await screen.findByTestId("v2-draft-action")).toBeVisible();
