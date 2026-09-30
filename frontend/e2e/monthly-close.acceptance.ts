@@ -143,6 +143,8 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/v2/close?month=1&step=final_review_close");
+  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );

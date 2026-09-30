@@ -174,8 +174,6 @@ jobs:
     name: G04 and native v2 real-backend journeys
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      TMPDIR: ${{ runner.temp }}
 
     steps:
       - name: Check out repository
@@ -209,6 +207,8 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run G04 and Performance synthetic real-backend journeys
+        env:
+          TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
 
@@ -217,10 +217,14 @@ jobs:
         run: npm run build
 
       - name: Run native statement import apply and authoritative readback
+        env:
+          TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --config=playwright.statement.config.ts
 
       - name: Run native Monthly Close edit return report and reopen
+        env:
+          TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --config=playwright.monthly-close.config.ts
 
