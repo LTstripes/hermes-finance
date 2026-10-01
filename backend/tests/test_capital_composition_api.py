@@ -292,6 +292,62 @@ def test_explanation_without_any_snapshot_is_unavailable(client):
     assert body["explanation"] is None
 
 
+@pytest.mark.parametrize("excluded_endpoint,pair_delta", [(0, "120.00"), (1, "0.00")])
+def test_pair_residuals_after_cash_exclusion_preserves_deposit_evidence(
+    client, excluded_endpoint, pair_delta
+):
+    account_id = client.post(
+        "/api/accounts", json={"name": "Synthetic included components", "account_type": "savings"}
+    ).json()["id"]
+    months = [
+        _create_month(client, year=2042, month=m, snapshot_date=f"2042-0{m}-28") for m in (1, 2)
+    ]
+    cash_ids = []
+    for i, month_id in enumerate(months):
+        response = client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": account_id,
+                "name": "Synthetic paired cash",
+                "amount": _rub("60.00"),
+            },
+        )
+        assert response.status_code == 201, response.text
+        cash_ids.append(response.json()["id"])
+        _create_deposit(client, month_id, account_id, "40.00")
+        _linked_debt(client, month_id, account_id, "80.00" if i == 0 else "20.00")
+        _create_cash(client, month_id, "10.00" if i == 0 else "15.00")
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    assert _comparison(client)["explanation"]["pairs"][0]["net_contribution_delta"] == _rub("60.00")
+    month_id = months[excluded_endpoint]
+    assert client.post(f"/api/months/{month_id}/reopen").status_code == 200
+    response = client.patch(
+        f"/api/cash-balances/{cash_ids[excluded_endpoint]}", json={"include_in_capital": False}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["include_in_capital"] is False
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    body = _comparison(client)
+    pair = body["explanation"]["pairs"][0]
+    assert pair["previous"]["account_balance"] == _rub(
+        "40.00" if excluded_endpoint == 0 else "100.00"
+    )
+    assert pair["current"]["account_balance"] == _rub(
+        "40.00" if excluded_endpoint == 1 else "100.00"
+    )
+    assert pair["net_contribution_delta"] == _rub(pair_delta)
+    residual = {
+        item["asset_class"]: item["amount"]
+        for item in body["explanation"]["residual_asset_class_deltas"]
+    }
+    assert residual["cash"] == _rub("5.00")
+    assert residual["deposits"] == _rub("0.00")
+    assert body["explanation"]["residual_debt_contribution_delta"] == _rub("0.00")
+    assert body["explanation"]["noncomparable_account_ids"] == []
+    _assert_explanation_reconciles(body)
+
+
 def test_comparison_link_projection_uses_same_snapshot_as_canonical_totals(client, monkeypatch):
     accounts = [
         client.post(
