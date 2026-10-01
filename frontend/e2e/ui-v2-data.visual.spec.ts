@@ -261,10 +261,11 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
     "href",
     "/v2/data/files",
   );
-  await expect(page.getByRole("link", { name: "Диагностика" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Настройки", exact: true }).first()).toHaveAttribute(
     "href",
-    "/v2/data/app#diagnostics",
+    "/v2/data/app",
   );
+  await expect(page.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
   const reconciliation = page.getByRole("link", { name: "Сверка портфеля" });
   await reconciliation.focus();
   await expect(reconciliation).toBeFocused();

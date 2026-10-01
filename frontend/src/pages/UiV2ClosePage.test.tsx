@@ -138,7 +138,7 @@ describe("native Monthly Close work mode", () => {
         "/v2/close?month=12&step=alfa_baseline",
       ),
     );
-    expect(screen.getByText("1 из 8 шагов подтверждены сохранёнными фактами")).toBeVisible();
+    expect(screen.getByText(/1 из 8 шагов подтверждены сохранёнными фактами/)).toBeVisible();
     expect(state.writes).toEqual([]);
   });
 
@@ -324,9 +324,10 @@ describe("native Monthly Close work mode", () => {
   it("rechecks before reopen and derives the draft workflow after the persisted command", async () => {
     const { mount, state } = setup("/v2/close?month=91&step=next_month_outlook");
     state.workflow = makeUiV2Workflow({ monthId: 91 });
+    const originalPeriod = { ...state.workflow.month };
     state.finalizeWrite = () => {
       state.workflow = makeUiV2Workflow();
-      state.workflow.month = { ...state.workflow.month, id: 91, status: "draft" };
+      state.workflow.month = { ...originalPeriod, status: "draft" };
       if (state.workflow.final_review.available) {
         state.workflow.final_review.month_header = { ...state.workflow.month };
       }
@@ -346,5 +347,59 @@ describe("native Monthly Close work mode", () => {
     const before = state.workflowReads;
     fireEvent.focus(window);
     await waitFor(() => expect(state.workflowReads).toBeGreaterThan(before));
+  });
+
+  it("keeps final review above collapsed progress with an accessible close and exact-month edit", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close&context=retained");
+    state.workflow = readyForClose();
+    mount();
+    const close = await screen.findByRole("button", { name: "Закрыть месяц" });
+    const edit = screen.getByRole("link", { name: "Редактировать данные месяца" });
+    expect(edit).toHaveAttribute(
+      "href",
+      "/v2/data/months/12?from=monthly-close-v2&step=final_review_close&monthId=12",
+    );
+    const progress = screen
+      .getByText("Шаги закрытия · до закрытия и после него")
+      .closest("details");
+    expect(progress).not.toHaveAttribute("open");
+    const review = document.getElementById("final_review_close");
+    if (!review || !progress) throw new Error("Final review and progress must be present");
+    expect(close.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      review.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId("test-location")).toHaveTextContent("context=retained");
+    await waitFor(() => expect(document.getElementById("v2-close-current-step")).toHaveFocus());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("rejects a reused ID for a different reporting period before sending Close", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const original = readyForClose();
+    const reused = structuredClone(original);
+    reused.month.year += 1;
+    if (reused.final_review.available) reused.final_review.month_header = { ...reused.month };
+    state.workflow = original;
+    state.workflowResponse = (read) => (read >= 3 ? reused : original);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("rejects a foreign final review arriving after the confirmation dialog opens", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const original = readyForClose();
+    const foreign = structuredClone(original);
+    if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
+    state.workflow = original;
+    state.workflowResponse = (read) => (read >= 3 ? foreign : original);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(state.writes).toEqual([]);
   });
 });

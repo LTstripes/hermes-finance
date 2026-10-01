@@ -475,6 +475,7 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   );
   await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
 
+  await page.getByText("Шаги закрытия · до закрытия и после него", { exact: true }).click();
   await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
   await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть месяц" }).click();

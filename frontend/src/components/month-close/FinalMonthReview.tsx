@@ -238,7 +238,13 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
   );
 }
 
-function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
+function ReadinessDetails({
+  review,
+  origin,
+}: {
+  review: FinalMonthReviewModel;
+  origin: MonthlyCloseOrigin;
+}) {
   const itemsBySeverity = (severity: CloseReadinessItem["severity"]) =>
     review.close_readiness.items.filter((item) => item.severity === severity);
 
@@ -266,7 +272,7 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
         <summary>Показать причины и диагностику</summary>
         <div className="final-review__details-stack">
           <section>
-            <h3>Close Cockpit</h3>
+            <h3>Готовность к закрытию</h3>
             {review.close_readiness.items.length > 0 ? (
               <ul className="final-review__diagnostic-list">
                 {review.close_readiness.items.map((item) => (
@@ -287,6 +293,12 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
                           : "Контекст"}
                     </Badge>
                     <span>{item.message}</span>
+                    {item.code === "active_account_snapshot_missing" &&
+                    review.month_header.status === "draft" ? (
+                      <Link to={editPath(review.month_header.id, "assets", origin)}>
+                        Заполнить остатки этого месяца
+                      </Link>
+                    ) : null}
                     <code>{item.code}</code>
                   </li>
                 ))}
@@ -570,7 +582,7 @@ export function FinalMonthReview({
         origin={origin}
         review={review}
       />
-      <ReadinessDetails review={review} />
+      <ReadinessDetails origin={origin} review={review} />
       <FutureEvents review={review} />
     </section>
   );

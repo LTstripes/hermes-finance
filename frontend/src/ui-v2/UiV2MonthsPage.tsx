@@ -15,7 +15,7 @@ import { formatDate, formatMonth } from "../lib/format";
 import { lastDayOfMonth, nextPeriod } from "../lib/period";
 import { queryKeys } from "../queryClient";
 import { UiV2DataFrame } from "./UiV2DataShell";
-import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import { monthWorkspacePath, resolveMonthSelection, sortReportingMonths } from "./monthSelection";
 import styles from "./UiV2Months.module.css";
 
 type Target = { year: number; month: number; snapshot_date: string };
@@ -184,7 +184,7 @@ export default function UiV2MonthsPage() {
       active="months"
       busy={monthsQuery.isPending || busy}
       monthId={selected?.id}
-      subtitle="Создай отчётный период, скопируй данные или удали разрешённый черновик."
+      subtitle="Выбери любой период: исправь черновик, проверь и закрой его или открой сохранённый отчёт."
       title="Отчётные месяцы"
       v1ReturnPath="/months"
     >
@@ -406,8 +406,23 @@ export default function UiV2MonthsPage() {
                         : `/v2/data/months/${month.id}`
                     }
                   >
-                    Открыть редактор месяца
+                    {month.status === "draft" ? "Редактировать" : "Данные закрытого месяца"}
                   </Link>
+                  {month.status === "draft" ? (
+                    <Link
+                      className={styles.primary}
+                      to={monthWorkspacePath(month.id, "final_review_close")}
+                    >
+                      Проверить и закрыть
+                    </Link>
+                  ) : (
+                    <>
+                      <Link to={`/v2/reports/${month.id}`}>Посмотреть отчёт</Link>
+                      <Link to={`/v2/data/months/${month.id}?action=reopen`}>
+                        Открыть для редактирования
+                      </Link>
+                    </>
+                  )}
                   <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
                 </div>
               </li>
@@ -415,8 +430,8 @@ export default function UiV2MonthsPage() {
           </ul>
         ) : null}
         <p className={styles.hint}>
-          В native редакторе доступны данные и заметки выбранного месяца. Архив подтверждённых
-          отчётов остаётся отдельным разделом.
+          В редакторе доступны данные и заметки выбранного месяца. Архив подтверждённых отчётов
+          остаётся отдельным разделом.
         </p>
       </section>
       <ConfirmDialog

@@ -59,10 +59,16 @@ export function resolveMonthSelection(values: string[], months: ReportingMonth[]
   return month ? { kind: "selected", month } : { kind: "missing" };
 }
 
-export function monthWorkspacePath(monthId: number, step?: GuidedCloseStepId): string {
-  const params = new URLSearchParams({ month: String(monthId) });
+export function monthWorkspacePath(
+  monthId: number,
+  step?: GuidedCloseStepId,
+  search = "",
+  hash = "",
+): string {
+  const params = new URLSearchParams(search);
+  params.set("month", String(monthId));
   if (step) params.set("step", step);
-  return `/v2/close?${params.toString()}`;
+  return `/v2/close?${params.toString()}${hash}`;
 }
 
 /**

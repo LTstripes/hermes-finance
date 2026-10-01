@@ -279,7 +279,7 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
       return event.defaultPrevented;
     }),
   ).toBe(true);
-  await page.getByRole("link", { name: "← Все месяцы" }).click();
+  await page.getByRole("link", { name: "← Отчётные месяцы" }).click();
   await page.getByRole("button", { name: "Остаться", exact: true }).click();
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.evaluate(() => window.history.back());

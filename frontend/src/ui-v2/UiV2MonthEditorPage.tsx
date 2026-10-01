@@ -72,9 +72,21 @@ export default function UiV2MonthEditorPage() {
     retry: false,
     refetchOnWindowFocus: true,
   });
-  const month = monthQuery.isSuccess && monthQuery.data.id === monthId ? monthQuery.data : null;
+  const identity = useRef<{ id: number; year: number; month: number } | null>(null);
+  if (identity.current?.id !== monthId) identity.current = null;
+  const fetchedMonth =
+    monthQuery.isSuccess && monthQuery.data.id === monthId ? monthQuery.data : null;
+  if (fetchedMonth && !identity.current) identity.current = { ...fetchedMonth };
+  const month =
+    fetchedMonth &&
+    fetchedMonth.year === identity.current?.year &&
+    fetchedMonth.month === identity.current?.month
+      ? fetchedMonth
+      : null;
   const [dirtySections, setDirtySections] = useState<Record<string, boolean>>({});
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [rereadNotice, setRereadNotice] = useState<string | null>(null);
+  const [rereadVersion, setRereadVersion] = useState(0);
   const historyGuard = useRef(false);
   const allowHistoryPop = useRef(false);
   const setDirty = useCallback(
@@ -164,7 +176,12 @@ export default function UiV2MonthEditorPage() {
         readOnly: month.status === "closed",
         refresh: async () => {
           const result = await monthQuery.refetch();
-          if (!result.isSuccess || result.data.id !== monthId)
+          if (
+            !result.isSuccess ||
+            result.data.id !== monthId ||
+            result.data.year !== month.year ||
+            result.data.month !== month.month
+          )
             throw new Error("Месяц не подтверждён повторной загрузкой.");
           return result.data;
         },
@@ -197,20 +214,40 @@ export default function UiV2MonthEditorPage() {
                 : "/v2/data/months"
           }
         >
-          ← Все месяцы
+          ← Отчётные месяцы
         </Link>
         {returnToClose ? <Link to={returnToClose}>Вернуться к закрытию</Link> : null}
         {monthId && !returnToClose ? (
-          <Link to={`/v2/close?month=${monthId}`}>К закрытию месяца</Link>
+          <Link to={`/v2/close?month=${monthId}&step=final_review_close`}>Проверить и закрыть</Link>
         ) : null}
         <button
           disabled={!monthId || monthQuery.isFetching || dirty}
-          onClick={() => void monthQuery.refetch()}
+          onClick={async () => {
+            setRereadNotice("Перечитываем сохранённые данные…");
+            const result = await monthQuery.refetch();
+            if (
+              result.isSuccess &&
+              result.data.id === monthId &&
+              result.data.year === month?.year &&
+              result.data.month === month?.month
+            ) {
+              setRereadVersion((value) => value + 1);
+            }
+            setRereadNotice(
+              result.isSuccess &&
+                result.data.id === monthId &&
+                result.data.year === month?.year &&
+                result.data.month === month?.month
+                ? "Сведения о месяце перечитаны. Сохранённые данные раздела загружаются заново."
+                : "Не удалось перечитать сохранённые данные.",
+            );
+          }}
           type="button"
         >
-          Обновить данные
+          {monthQuery.isFetching ? "Перечитываем…" : "Перечитать сохранённые данные"}
         </button>
       </div>
+      {rereadNotice ? <p role="status">{rereadNotice}</p> : null}
       <ConfirmDialog
         cancelLabel="Остаться"
         confirmLabel="Перейти без сохранения"
@@ -244,8 +281,13 @@ export default function UiV2MonthEditorPage() {
           </button>
         </div>
       ) : null}
+      {monthQuery.isSuccess && !month ? (
+        <p role="alert">
+          Период выбранного месяца изменился. Действия скрыты; выбери месяц из списка явно.
+        </p>
+      ) : null}
       {month && editorContext ? (
-        <>
+        <div key={`${month.id}:${rereadVersion}`}>
           <DataMonthContext month={month} automatic={false} />
           <p className={styles.status} role="status">
             {dirty ? "Есть несохранённые изменения" : "Изменения сохранены или не вносились"}
@@ -274,7 +316,13 @@ export default function UiV2MonthEditorPage() {
           ) : (
             <>
               {section === "general" ? (
-                <GeneralSection key={month.id} context={editorContext} />
+                <GeneralSection
+                  key={month.id}
+                  context={editorContext}
+                  requestReopen={
+                    params.getAll("action").length === 1 && params.get("action") === "reopen"
+                  }
+                />
               ) : null}
               {section === "income" ? (
                 <MonthIncomeSection key={month.id} context={editorContext} />
@@ -297,20 +345,26 @@ export default function UiV2MonthEditorPage() {
               {section === "note" ? <NoteSection key={month.id} context={editorContext} /> : null}
             </>
           )}
-        </>
+        </div>
       ) : null}
     </UiV2DataFrame>
   );
 }
 
-function GeneralSection({ context }: { context: MonthEditorContext }) {
+function GeneralSection({
+  context,
+  requestReopen = false,
+}: {
+  context: MonthEditorContext;
+  requestReopen?: boolean;
+}) {
   const { month, readOnly, refresh, setDirty } = context;
   const queryClient = useQueryClient();
   const [snapshotDate, setSnapshotDate] = useState(month.snapshot_date);
   const [baseline, setBaseline] = useState(month.snapshot_date);
   const [saving, setSaving] = useState(false);
   const [reopening, setReopening] = useState(false);
-  const [confirmReopen, setConfirmReopen] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(requestReopen && readOnly);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const operation = useRef(0);
@@ -362,8 +416,16 @@ function GeneralSection({ context }: { context: MonthEditorContext }) {
     setError(null);
     setNotice(null);
     try {
+      const before = await refresh();
+      if (operation.current !== token) return;
+      if (before.status !== "closed") throw new Error("Месяц уже открыт. Состояние перечитано.");
       const result = await reopenMonth(month.id);
-      if (result.id !== month.id || result.status !== "draft")
+      if (
+        result.id !== month.id ||
+        result.year !== month.year ||
+        result.month !== month.month ||
+        result.status !== "draft"
+      )
         throw new Error("Reopen не подтверждён ответом API.");
       const fresh = await refresh();
       if (fresh.status !== "draft") throw new Error("Reopen не подтверждён повторной загрузкой.");

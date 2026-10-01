@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatApiError } from "../../api/client";
@@ -13,11 +13,29 @@ const WORKFLOW_CONTRACT_VERSION = "monthly_close_workflow_v1";
 function assertLifecycleWorkflowIdentity(
   workflow: MonthCloseWorkflow,
   expectedMonthId: number,
+  expectedPeriod?: Pick<ReportingMonth, "year" | "month">,
 ): MonthCloseWorkflow {
   if (workflow.contract_version !== WORKFLOW_CONTRACT_VERSION) {
     throw new Error("Состояние закрытия имеет неподдерживаемую версию. Действие отменено.");
   }
-  if (workflow.month.id !== expectedMonthId) {
+  if (
+    workflow.month.id !== expectedMonthId ||
+    (expectedPeriod &&
+      (workflow.month.year !== expectedPeriod.year ||
+        workflow.month.month !== expectedPeriod.month))
+  ) {
+    throw new Error("Получено состояние другого месяца. Действие отменено.");
+  }
+  const periodMatches = (period: Pick<ReportingMonth, "id" | "year" | "month">) =>
+    period.id === workflow.month.id &&
+    period.year === workflow.month.year &&
+    period.month === workflow.month.month;
+  if (
+    (workflow.final_review.available &&
+      (!periodMatches(workflow.final_review.month_header) ||
+        workflow.final_review.month_header.status !== workflow.month.status)) ||
+    (workflow.outlook && !periodMatches(workflow.outlook.source_month))
+  ) {
     throw new Error("Получено состояние другого месяца. Действие отменено.");
   }
   return workflow;
@@ -27,8 +45,13 @@ function assertPersistedMonthIdentity(
   persisted: ReportingMonth,
   expectedMonthId: number,
   expectedStatus: ReportingMonthStatus,
+  expectedPeriod?: Pick<ReportingMonth, "year" | "month">,
 ) {
-  if (persisted.id !== expectedMonthId) {
+  if (
+    persisted.id !== expectedMonthId ||
+    (expectedPeriod &&
+      (persisted.year !== expectedPeriod.year || persisted.month !== expectedPeriod.month))
+  ) {
     throw new Error("Изменение подтверждено для другого месяца. Новое состояние не доказано.");
   }
   if (persisted.status !== expectedStatus) {
@@ -41,7 +64,10 @@ function assertPersistedMonthIdentity(
  * The server workflow stays authoritative: refetch before the dialog, refetch
  * again before the command, verify persisted status, invalidate, then refetch.
  */
-export function useMonthCloseLifecycle(monthId: number | null) {
+export function useMonthCloseLifecycle(
+  monthId: number | null,
+  expectedPeriod?: Pick<ReportingMonth, "year" | "month">,
+) {
   const workflowQuery = useMonthCloseWorkflow(monthId);
   const queryClient = useQueryClient();
   const [pendingLifecycle, setPendingLifecycle] = useState<Lifecycle | null>(null);
@@ -49,6 +75,16 @@ export function useMonthCloseLifecycle(monthId: number | null) {
   const [preparingClose, setPreparingClose] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const { refetch } = workflowQuery;
+  const identityKey = `${monthId}:${expectedPeriod?.year}:${expectedPeriod?.month}`;
+  const currentIdentity = useRef(identityKey);
+  const previousIdentity = useRef(identityKey);
+  currentIdentity.current = identityKey;
+  useEffect(() => {
+    if (previousIdentity.current === identityKey) return;
+    previousIdentity.current = identityKey;
+    setPendingLifecycle(null);
+    setLifecycleError(null);
+  }, [identityKey]);
 
   useEffect(() => {
     function refetchOnFocus() {
@@ -61,9 +97,12 @@ export function useMonthCloseLifecycle(monthId: number | null) {
   async function refetchAuthoritativeWorkflow(): Promise<MonthCloseWorkflow> {
     if (monthId === null) throw new Error("Месяц для действия не выбран.");
     const result = await refetch();
+    if (currentIdentity.current !== identityKey) {
+      throw new Error("Выбранный месяц изменился. Действие отменено.");
+    }
     if (result.error) throw result.error;
     if (!result.data) throw new Error("Актуальное состояние месяца не получено.");
-    return assertLifecycleWorkflowIdentity(result.data, monthId);
+    return assertLifecycleWorkflowIdentity(result.data, monthId, expectedPeriod);
   }
 
   function closeIsAllowed(current: MonthCloseWorkflow): boolean {
@@ -122,7 +161,7 @@ export function useMonthCloseLifecycle(monthId: number | null) {
       const persisted =
         pendingLifecycle === "close" ? await closeMonth(monthId) : await reopenMonth(monthId);
       const expectedStatus = pendingLifecycle === "close" ? "closed" : "draft";
-      assertPersistedMonthIdentity(persisted, monthId, expectedStatus);
+      assertPersistedMonthIdentity(persisted, monthId, expectedStatus, expectedPeriod);
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.months });
       await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });

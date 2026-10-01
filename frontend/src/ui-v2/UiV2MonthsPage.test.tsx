@@ -91,6 +91,34 @@ describe("native month management", () => {
     expect(screen.getAllByRole("button", { name: "Удалить черновик" })).toHaveLength(1);
   });
 
+  it("offers status-specific exact-month actions even for an older reopened draft", async () => {
+    rows.push({ ...draft, id: 9, year: 2029, month: 1 });
+    renderPage();
+    await screen.findByText("Январь 2029");
+    const older = screen.getByText("Январь 2029").closest("li");
+    if (!older) throw new Error("Historical draft row missing");
+    expect(within(older).getByRole("link", { name: "Редактировать" })).toHaveAttribute(
+      "href",
+      "/v2/data/months/9",
+    );
+    expect(within(older).getByRole("link", { name: "Проверить и закрыть" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=9&step=final_review_close",
+    );
+    const saved = screen.getByText("Май 2030").closest("li");
+    if (!saved) throw new Error("Closed row missing");
+    expect(within(saved).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
+      "href",
+      "/v2/reports/1",
+    );
+    expect(within(saved).getByRole("link", { name: "Открыть для редактирования" })).toHaveAttribute(
+      "href",
+      "/v2/data/months/1?action=reopen",
+    );
+    expect(createMonth).not.toHaveBeenCalled();
+    expect(deleteMonth).not.toHaveBeenCalled();
+  });
+
   it("creates a period once and selects it only after list readback", async () => {
     const user = userEvent.setup();
     vi.mocked(createMonth).mockImplementation(async (payload) => {

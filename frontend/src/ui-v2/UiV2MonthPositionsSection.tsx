@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 
 import { createAccount, listAccounts } from "../api/accounts";
 import { ApiClientError, formatApiError } from "../api/client";
@@ -126,6 +127,7 @@ function editDraftFromPosition(row: PositionSnapshot): PositionDraft {
 }
 
 function PositionsLeaf({ context }: { context: MonthEditorContext }) {
+  const location = useLocation();
   const { month, readOnly, refresh, setDirty } = context;
   const monthId = month.id;
   const defaultPriceDate = month.snapshot_date;
@@ -140,6 +142,12 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [positions, setPositions] = useState<PositionSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (loading || location.hash !== "#month-quotes") return;
+    const quotes = document.getElementById("month-quotes");
+    quotes?.scrollIntoView?.({ block: "start" });
+    quotes?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  }, [loading, location.hash]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1101,16 +1109,18 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
         ) : null}
       </Panel>
 
-      <QuotePreviewPanel
-        applying={previewApplying}
-        applyResult={quoteApplyResult}
-        closedMonthHint={readOnly}
-        error={previewError}
-        loading={previewLoading}
-        onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
-        onRefresh={() => void handleQuotePreview()}
-        preview={quotePreview}
-      />
+      <div id="month-quotes" tabIndex={-1}>
+        <QuotePreviewPanel
+          applying={previewApplying}
+          applyResult={quoteApplyResult}
+          closedMonthHint={readOnly}
+          error={previewError}
+          loading={previewLoading}
+          onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
+          onRefresh={() => void handleQuotePreview()}
+          preview={quotePreview}
+        />
+      </div>
 
       <ConfirmDialog
         busy={busy}

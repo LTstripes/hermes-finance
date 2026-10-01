@@ -188,3 +188,153 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await page.goto("/v2/close?month=1&month=1&step=final_review_close");
   await expect(page.getByRole("heading", { name: "Некорректный месяц" })).toBeVisible();
 });
+
+test("historical months stay exact through reopen, edit, direct review, quotes and another period", async ({
+  page,
+  request,
+}, info) => {
+  async function create(year: number, month: number, snapshot_date: string) {
+    const response = await request.post("/api/months", {
+      data: { year, month, snapshot_date, source: "manual" },
+    });
+    expect(response.ok()).toBe(true);
+    return (await response.json()).id as number;
+  }
+  const old = await create(2034, 5, "2034-05-31");
+  test.setTimeout(60_000);
+  const other = await create(2035, 5, "2035-05-31");
+  const latestClosed = await create(2036, 5, "2036-05-31");
+  const newestDraft = await create(2037, 5, "2037-05-31");
+  for (const id of [old, other, latestClosed])
+    expect((await request.post(`/api/months/${id}/close`)).ok()).toBe(true);
+
+  let quoteRequests = 0;
+  let closePosts = 0;
+  page.on("request", (sent) => {
+    if (sent.url().includes("quote-preview")) quoteRequests += 1;
+    if (sent.method() === "POST" && sent.url().endsWith(`/api/months/${old}/close`))
+      closePosts += 1;
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/v2/data/months");
+    const oldRow = page
+      .getByRole("listitem")
+      .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
+    await oldRow.getByRole("link", { name: "Открыть для редактирования", exact: true }).click();
+    await expect(
+      page.getByRole("alertdialog", { name: "Открыть месяц для редактирования?" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
+    await page.getByRole("button", { name: "Открыть для редактирования", exact: true }).click();
+    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+    await expect(
+      page.getByText("Месяц открыт для редактирования. Данные перечитаны."),
+    ).toBeVisible();
+    await page
+      .getByLabel("Дата снимка", { exact: true })
+      .fill(width === 1440 ? "2034-05-30" : "2034-05-31");
+    await page.getByRole("link", { name: "Проверить и закрыть", exact: true }).click();
+    await page.getByRole("button", { name: "Остаться", exact: true }).click();
+    await page.getByRole("button", { name: "Сохранить общие данные" }).click();
+    await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
+    await page.getByRole("link", { name: "Проверить и закрыть", exact: true }).click();
+    await expect(page).toHaveURL(`/v2/close?month=${old}&step=final_review_close`);
+    await expect(page.locator("#v2-close-current-step")).toBeFocused();
+    await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeInViewport();
+    expect(closePosts).toBe(width === 1440 ? 0 : 1);
+    await page.screenshot({
+      path: info.outputPath(`historical-review-${width}.png`),
+      fullPage: true,
+    });
+
+    // Quotes are a focused handoff; only its explicit button requests the provider.
+    await page.goto(`/v2/close?month=${old}&step=market_quotes`);
+    await page.getByRole("link", { name: "Открыть котировки", exact: true }).click();
+    const quotes = page.getByRole("button", { name: "Обновить котировки", exact: true });
+    await expect(quotes).toBeFocused();
+    await expect(quotes).toBeInViewport();
+    expect(quoteRequests).toBe(0);
+    await page.getByRole("link", { name: "Вернуться к закрытию", exact: true }).click();
+    await expect(page).toHaveURL(`/v2/close?month=${old}&step=market_quotes`);
+    await page.goto(`/v2/data/months?month=${old}`);
+    const reopened = page
+      .getByRole("listitem")
+      .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
+    await reopened.getByRole("link", { name: "Проверить и закрыть" }).click();
+    await page.getByRole("button", { name: "Закрыть месяц", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("draft");
+    await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
+    await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+    await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
+    expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
+    expect((await (await request.get(`/api/months/${newestDraft}`)).json()).status).toBe("draft");
+    await page.getByRole("link", { name: "Выбрать другой отчётный месяц" }).click();
+    const otherRow = page
+      .getByRole("listitem")
+      .filter({ has: page.getByText(/Май.*2035/, { exact: true }) });
+    await otherRow.getByRole("link", { name: "Посмотреть отчёт", exact: true }).click();
+    await expect(page).toHaveURL(`/v2/reports/${other}`);
+    await page.goto("/v2");
+    await expect(page.getByTestId("v2-report-context")).toContainText(/2036/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+  }
+});
+
+test("a second tab closing a historical month cancels the pending Close without another write", async ({
+  page,
+  request,
+}) => {
+  const response = await request.post("/api/months", {
+    data: { year: 2038, month: 5, snapshot_date: "2038-05-31", source: "manual" },
+  });
+  expect(response.ok()).toBe(true);
+  const month = await response.json();
+  let posts = 0;
+  page.on("request", (sent) => {
+    if (sent.method() === "POST" && sent.url().endsWith(`/api/months/${month.id}/close`))
+      posts += 1;
+  });
+  await page.goto(`/v2/close?month=${month.id}&step=final_review_close`);
+  await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
+  await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
+  expect((await request.post(`/api/months/${month.id}/close`)).ok()).toBe(true);
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
+  expect(posts).toBe(0);
+  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("closed");
+});
+
+test("settings has one sidebar entry and diagnostics deep links keep selection, focus and keyboard return", async ({
+  page,
+}) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/v2/data/app?month=1#diagnostics");
+    const sections = page.getByRole("navigation", { name: "Настройки и диагностика" });
+    await expect(sections.getByRole("link", { name: "Диагностика", exact: true })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+    await expect(page.locator("#diagnostics")).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Диагностика", exact: true })).toBeInViewport();
+    const sidebar = page.getByRole("navigation", { name: "Данные и приложение" });
+    await expect(sidebar.getByRole("link", { name: "Настройки", exact: true })).toHaveCount(1);
+    await expect(sidebar.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
+    await sections.getByRole("link", { name: "Настройки", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL("/v2/data/app?month=1#settings");
+    await expect(page.locator("#settings")).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+  }
+});
