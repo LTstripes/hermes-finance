@@ -593,6 +593,14 @@
   border-top: 1px dashed #cfd6dc;
 }
 
+.changeList details {
+  min-width: 0;
+}
+
+.changeList strong {
+  flex-shrink: 0;
+}
+
 .changeTotal {
   margin-top: 5px;
   border-bottom: 0;

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
+from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
@@ -23,6 +24,7 @@ from hermes_finance.services.asset_allocation import (
     AssetClassSlice,
     asset_allocation_for_months,
 )
+from hermes_finance.services.linked_pairs import linked_pairs_for_months
 from hermes_finance.services.liquid_capital import liquid_capital_for_months
 from hermes_finance.services.portfolio_source_coverage import (
     combined_portfolio_source_coverage,
@@ -53,6 +55,22 @@ class CapitalCompositionHistory:
 
 
 @dataclass(frozen=True, slots=True)
+class LinkedPairChange:
+    previous: LinkedPairReadModel
+    current: LinkedPairReadModel
+    net_contribution_delta: RubleAmount
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalChangeExplanation:
+    pairs: tuple[LinkedPairChange, ...]
+    noncomparable_account_ids: tuple[int, ...]
+    residual_asset_class_deltas: tuple[AssetClassSlice, ...]
+    residual_debt_contribution_delta: RubleAmount
+    reconciles: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ClosedReportComparison:
     """The latest closed snapshot compared with the previous closed snapshot.
 
@@ -72,6 +90,7 @@ class ClosedReportComparison:
     linked_pair_assets_delta: RubleAmount | None
     linked_pair_debts_delta: RubleAmount | None
     linked_pair_net_contribution_delta: RubleAmount | None
+    explanation: CapitalChangeExplanation | None
 
 
 def _amount_delta(current: RubleAmount, previous: RubleAmount) -> RubleAmount:
@@ -103,6 +122,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
             linked_pair_assets_delta=None,
             linked_pair_debts_delta=None,
             linked_pair_net_contribution_delta=None,
+            explanation=None,
         )
 
     previous_allocation = {item.asset_class: item.amount for item in previous.allocation}
@@ -113,6 +133,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
         )
         for item in current.allocation
     )
+    explanation = _change_explanation(session, current, previous, asset_class_deltas)
     return ClosedReportComparison(
         asset_classes=history.asset_classes,
         current=current,
@@ -137,6 +158,81 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
         linked_pair_net_contribution_delta=_amount_delta(
             current.linked_pair_net_contribution, previous.linked_pair_net_contribution
         ),
+        explanation=explanation,
+    )
+
+
+def _change_explanation(
+    session: Session,
+    current: CapitalCompositionPoint,
+    previous: CapitalCompositionPoint,
+    deltas: tuple[AssetClassSlice, ...],
+) -> CapitalChangeExplanation | None:
+    """Project one fixed account set S; debt IDs are endpoint-local facts.
+
+    Cash/deposit components use precisely the existing pair source predicates.
+    One-sided links remain in gross residuals, without a fabricated pair delta.
+    The enclosing coherent read includes endpoints, links and source components.
+    """
+    if (
+        combined_portfolio_source_coverage(
+            current.portfolio_source_coverage, previous.portfolio_source_coverage
+        ).status
+        == "unavailable"
+    ):
+        return None
+    endpoints = linked_pairs_for_months(
+        session, (previous.reporting_month_id, current.reporting_month_id)
+    )
+    before = {pair.account_id: pair for pair in endpoints[previous.reporting_month_id]}
+    after = {pair.account_id: pair for pair in endpoints[current.reporting_month_id]}
+    comparable = before.keys() & after.keys()
+    changes = tuple(
+        LinkedPairChange(
+            previous=before[account_id],
+            current=after[account_id],
+            net_contribution_delta=_amount_delta(
+                after[account_id].net_contribution, before[account_id].net_contribution
+            ),
+        )
+        for account_id in sorted(comparable)
+    )
+    removed = {
+        "cash": sum(
+            item.current.cash_balance.kopecks - item.previous.cash_balance.kopecks
+            for item in changes
+        ),
+        "deposits": sum(
+            item.current.deposit_balance.kopecks - item.previous.deposit_balance.kopecks
+            for item in changes
+        ),
+    }
+    residual = tuple(
+        AssetClassSlice(
+            item.asset_class, RubleAmount(item.amount.kopecks - removed.get(item.asset_class, 0))
+        )
+        for item in deltas
+    )
+    debt_contribution = RubleAmount(
+        previous.included_debts.kopecks
+        - current.included_debts.kopecks
+        + sum(
+            item.current.debt_balance.kopecks - item.previous.debt_balance.kopecks
+            for item in changes
+        )
+    )
+    reconciles = (
+        sum(item.amount.kopecks for item in residual)
+        + debt_contribution.kopecks
+        + sum(item.net_contribution_delta.kopecks for item in changes)
+        == current.liquid_capital_net.kopecks - previous.liquid_capital_net.kopecks
+    )
+    return CapitalChangeExplanation(
+        pairs=changes,
+        noncomparable_account_ids=tuple(sorted(before.keys() ^ after.keys())),
+        residual_asset_class_deltas=residual,
+        residual_debt_contribution_delta=debt_contribution,
+        reconciles=reconciles,
     )
 
 

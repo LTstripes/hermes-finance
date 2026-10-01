@@ -47,12 +47,7 @@ import {
 import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
 import styles from "./UiV2Page.module.css";
-import {
-  liabilityTone,
-  moneyDeltaText as moneyDelta,
-  moneyText as money,
-  moneyTone as tone,
-} from "./valueFormat";
+import { moneyDeltaText as moneyDelta, moneyText as money, moneyTone as tone } from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -432,6 +427,7 @@ function ChangeBlock({
   ready: boolean;
   retry: () => void;
 }) {
+  const explanation = comparison?.explanation;
   return (
     <section className={styles.panel} aria-labelledby="change-title">
       <div className={styles.panelHeader}>
@@ -443,23 +439,55 @@ function ChangeBlock({
       </div>
       {!ready ? (
         <UiV2WidgetState retry={retry} />
-      ) : comparison?.availability !== "available" || !comparison.asset_class_deltas ? (
+      ) : comparison?.availability !== "available" ? (
         <UiV2WidgetState title="Нужны два закрытых отчёта для сравнения" />
+      ) : !explanation?.reconciles ? (
+        <UiV2WidgetState title="Разложение изменения недоступно" retry={retry} />
       ) : (
         <>
           <ul className={styles.changeList}>
-            {comparison.asset_class_deltas.map((item) => (
+            {explanation.residual_asset_class_deltas.map((item) => (
               <li key={item.asset_class}>
-                <span>{ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}</span>
+                <span>
+                  {ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}
+                  {explanation.pairs.length > 0 ? " · вне сравнимых пар" : ""}
+                </span>
                 <strong data-tone={tone(item.amount)}>{moneyDelta(item.amount)}</strong>
               </li>
             ))}
             <li className={styles.liabilityChange}>
-              <span>Включённые обязательства</span>
-              <strong data-tone={liabilityTone(comparison.included_debts_delta)}>
-                {moneyDelta(comparison.included_debts_delta)}
+              <span>
+                Вклад обязательств
+                {explanation.pairs.length > 0 ? " вне сравнимых пар" : ""}
+              </span>
+              <strong data-tone={tone(explanation.residual_debt_contribution_delta)}>
+                {moneyDelta(explanation.residual_debt_contribution_delta)}
               </strong>
             </li>
+            {explanation.pairs.map((pair) => (
+              <li key={pair.account_id}>
+                <details>
+                  <summary>
+                    {pair.account_name} · связанный счёт и кредитка — изменение чистого вклада
+                  </summary>
+                  <p>
+                    {formatMonth(comparison.previous?.year ?? 0, comparison.previous?.month ?? 0)}:
+                    счёт {money(pair.previous.account_balance)}, {pair.previous.debt_name}{" "}
+                    {money(pair.previous.debt_balance)}, чистый вклад{" "}
+                    {money(pair.previous.net_contribution)}
+                  </p>
+                  <p>
+                    {formatMonth(comparison.current?.year ?? 0, comparison.current?.month ?? 0)}:
+                    счёт {money(pair.current.account_balance)}, {pair.current.debt_name}{" "}
+                    {money(pair.current.debt_balance)}, чистый вклад{" "}
+                    {money(pair.current.net_contribution)}
+                  </p>
+                </details>
+                <strong data-tone={tone(pair.net_contribution_delta)}>
+                  {moneyDelta(pair.net_contribution_delta)}
+                </strong>
+              </li>
+            ))}
           </ul>
           <div className={styles.changeTotal}>
             <span>Изменение ликвидного капитала</span>
@@ -472,8 +500,14 @@ function ChangeBlock({
           </div>
           <p className={styles.panelFootnote}>
             Перемещение между классами может менять строки без роста капитала. Рост обязательств
-            уменьшает чистый капитал.
+            уменьшает чистый капитал. Связь не устанавливает источник погашения.
           </p>
+          {explanation.noncomparable_account_ids.length > 0 ? (
+            <p className={styles.panelFootnote}>
+              Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы
+              сохранены в остальных строках.
+            </p>
+          ) : null}
         </>
       )}
     </section>
@@ -674,7 +708,9 @@ export default function UiV2Page() {
   const monthsReady = isQueryReady(monthsQuery);
   const comparisonIdentityMatches =
     comparisonQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
-    comparisonQuery.data.current?.reporting_month_id === closedId;
+    comparisonQuery.data.current?.reporting_month_id === closedId &&
+    (comparisonQuery.data.previous?.reporting_month_id ?? null) ===
+      (months.filter((month) => month.status === "closed")[1]?.id ?? null);
   const comparisonReady = isQueryReady(comparisonQuery) && comparisonIdentityMatches;
   const compositionIdentityMatches =
     compositionQuery.data?.points.at(-1)?.reporting_month_id === closedId;
