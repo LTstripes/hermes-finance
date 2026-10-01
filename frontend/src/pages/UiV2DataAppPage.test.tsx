@@ -129,6 +129,22 @@ describe("UI v2 Data/App", () => {
     expect(updateSettingsMock).not.toHaveBeenCalled();
   });
 
+  it("preserves a dirty settings form while switching sections without saving", async () => {
+    const user = userEvent.setup();
+    renderPage("/v2/data/app?month=7");
+    const locale = await screen.findByLabelText("Локаль");
+    await user.clear(locale);
+    await user.type(locale, "en-US");
+    const navigation = screen.getByRole("navigation", { name: "Настройки и диагностика" });
+    await user.click(within(navigation).getByRole("link", { name: "Диагностика" }));
+    expect(locale).not.toBeVisible();
+    expect(screen.getByRole("heading", { name: "Диагностика" })).toBeVisible();
+    await user.click(within(navigation).getByRole("link", { name: "Настройки" }));
+    expect(locale).toBeVisible();
+    expect(locale).toHaveValue("en-US");
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+
   it("sends only changed settings and can clear the history boundary", async () => {
     const user = userEvent.setup();
     updateSettingsMock.mockImplementation(async (payload) => ({
@@ -231,6 +247,12 @@ describe("UI v2 Data/App", () => {
     expect(await screen.findByText("Недоступно")).toBeInTheDocument();
 
     getHealthMock.mockResolvedValueOnce({ status: "ok", version: "0.9.0-retry" });
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Настройки и диагностика" })).getByRole(
+        "link",
+        { name: "Диагностика" },
+      ),
+    );
     await user.click(screen.getByRole("button", { name: "Проверить снова" }));
     expect(await screen.findByText("0.9.0-retry")).toBeInTheDocument();
   });

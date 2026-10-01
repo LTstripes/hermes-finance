@@ -310,33 +310,39 @@ export default function UiV2DataAppPage() {
         </Link>
       </nav>
       <div className={styles.stack}>
-        <h2 id="settings" tabIndex={-1}>
-          Настройки приложения
-        </h2>
-        <SettingsPanel />
+        <section aria-labelledby="settings" hidden={diagnostics}>
+          <div className={styles.stack}>
+            <h2 id="settings" tabIndex={-1}>
+              Настройки приложения
+            </h2>
+            <SettingsPanel />
 
-        <div className={styles.compatPanel} data-testid="data-app-tax">
-          <div className={dataStyles.badgeRow}>
-            <span className={`${dataStyles.modeBadge} ${dataStyles.modeBadgeMutate}`}>
-              Изменяет данные
-            </span>
-            <span className={styles.note}>Вся шкала сохраняется одной операцией.</span>
+            <div className={styles.compatPanel} data-testid="data-app-tax">
+              <div className={dataStyles.badgeRow}>
+                <span className={`${dataStyles.modeBadge} ${dataStyles.modeBadgeMutate}`}>
+                  Изменяет данные
+                </span>
+                <span className={styles.note}>Вся шкала сохраняется одной операцией.</span>
+              </div>
+              <TaxBracketsPanel />
+            </div>
           </div>
-          <TaxBracketsPanel />
-        </div>
+        </section>
 
-        <div className={styles.compatPanel} data-testid="data-app-diagnostics">
-          <div className={dataStyles.badgeRow}>
-            <span className={dataStyles.readOnlyBadge}>Только чтение</span>
-            <span className={styles.note}>
-              Проверка не изменяет настройки или финансовые данные.
-            </span>
+        <section aria-label="Диагностика" hidden={!diagnostics}>
+          <div className={styles.compatPanel} data-testid="data-app-diagnostics">
+            <div className={dataStyles.badgeRow}>
+              <span className={dataStyles.readOnlyBadge}>Только чтение</span>
+              <span className={styles.note}>
+                Проверка не изменяет настройки или финансовые данные.
+              </span>
+            </div>
+            <div className={styles.diagnosticsAnchor} id="diagnostics" tabIndex={-1}>
+              <h2 tabIndex={-1}>Диагностика</h2>
+              <DiagnosticsPanel />
+            </div>
           </div>
-          <div className={styles.diagnosticsAnchor} id="diagnostics" tabIndex={-1}>
-            <h2 tabIndex={-1}>Диагностика</h2>
-            <DiagnosticsPanel />
-          </div>
-        </div>
+        </section>
       </div>
     </UiV2DataFrame>
   );

@@ -315,7 +315,11 @@ test("a second tab closing a historical month cancels the pending Close without 
 
 test("settings has one sidebar entry and diagnostics deep links keep selection, focus and keyboard return", async ({
   page,
-}) => {
+}, info) => {
+  let settingsWrites = 0;
+  page.on("request", (sent) => {
+    if (sent.method() === "PUT" && sent.url().endsWith("/api/settings")) settingsWrites += 1;
+  });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/v2/data/app?month=1#diagnostics");
@@ -324,8 +328,11 @@ test("settings has one sidebar entry and diagnostics deep links keep selection, 
       "aria-current",
       "location",
     );
+    // Slow settings reads must not move the selected diagnostics heading away.
+    await expect(page.locator("#v2-data-app-locale")).toHaveValue(/.+/);
     await expect(page.locator("#diagnostics")).toBeFocused();
     await expect(page.getByRole("heading", { name: "Диагностика", exact: true })).toBeInViewport();
+    await page.screenshot({ path: info.outputPath(`settings-diagnostics-${width}.png`) });
     const sidebar = page.getByRole("navigation", { name: "Данные и приложение" });
     await expect(sidebar.getByRole("link", { name: "Настройки", exact: true })).toHaveCount(1);
     await expect(sidebar.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
@@ -333,8 +340,14 @@ test("settings has one sidebar entry and diagnostics deep links keep selection, 
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL("/v2/data/app?month=1#settings");
     await expect(page.locator("#settings")).toBeFocused();
+    const locale = page.getByLabel("Локаль", { exact: true });
+    await locale.fill("en-US");
+    await sections.getByRole("link", { name: "Диагностика", exact: true }).click();
+    await sections.getByRole("link", { name: "Настройки", exact: true }).click();
+    await expect(locale).toHaveValue("en-US");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
   }
+  expect(settingsWrites).toBe(0);
 });
