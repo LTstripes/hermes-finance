@@ -229,6 +229,53 @@ describe("native month editor frame", () => {
     expect(reopenMonth).not.toHaveBeenCalled();
   });
 
+  it("prevents new edits throughout a delayed saved-data reread", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const date = await screen.findByLabelText("Дата снимка");
+    let finishRead!: (value: ReportingMonth) => void;
+    vi.mocked(getMonth).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    expect(date).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Сохранить общие данные" })).toBeDisabled();
+    await act(async () => {
+      finishRead({ ...draft });
+    });
+    await waitFor(() => expect(screen.getByLabelText("Дата снимка")).toBeEnabled());
+    expect(screen.getByLabelText("Дата снимка")).toHaveValue(draft.snapshot_date);
+    expect(updateMonth).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late reread after navigation without remounting the new month's draft", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByLabelText("Дата снимка");
+    let finishRead!: (value: ReportingMonth) => void;
+    vi.mocked(getMonth).mockImplementation((id) =>
+      id === 7
+        ? new Promise((resolve) => {
+            finishRead = resolve;
+          })
+        : Promise.resolve({ ...draft, id: 8, month: 5, snapshot_date: "2030-05-31" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    await user.click(screen.getByRole("link", { name: "Другой месяц" }));
+    const date = await screen.findByDisplayValue("2030-05-31");
+    fireEvent.change(date, { target: { value: "2030-05-30" } });
+    await act(async () => {
+      finishRead({ ...draft });
+    });
+    expect(date).toHaveValue("2030-05-30");
+    expect(screen.getByText("Есть несохранённые изменения")).toBeVisible();
+    expect(screen.queryByText(/Сведения о месяце перечитаны/)).toBeNull();
+    expect(updateMonth).not.toHaveBeenCalled();
+  });
+
   it("saves a note with readback and keeps a draft when save fails", async () => {
     const user = userEvent.setup();
     renderPage("/v2/data/months/7?section=note");

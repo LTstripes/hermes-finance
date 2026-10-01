@@ -87,6 +87,18 @@ export default function UiV2MonthEditorPage() {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [rereadNotice, setRereadNotice] = useState<string | null>(null);
   const [rereadVersion, setRereadVersion] = useState(0);
+  const [rereading, setRereading] = useState(false);
+  const rereadOperation = useRef(0);
+  const rereadScope = useRef(location.key);
+  rereadScope.current = location.key;
+  useEffect(() => {
+    rereadScope.current = location.key;
+    setRereading(false);
+    setRereadNotice(null);
+    return () => {
+      rereadOperation.current += 1;
+    };
+  }, [location.key]);
   const historyGuard = useRef(false);
   const allowHistoryPop = useRef(false);
   const setDirty = useCallback(
@@ -190,6 +202,34 @@ export default function UiV2MonthEditorPage() {
       }
     : null;
 
+  async function rereadSavedData() {
+    if (!month || dirty || rereading || monthQuery.isFetching) return;
+    const token = ++rereadOperation.current;
+    const scope = location.key;
+    const active = () => token === rereadOperation.current && rereadScope.current === scope;
+    setRereading(true);
+    setRereadNotice("Перечитываем сохранённые данные…");
+    try {
+      const result = await monthQuery.refetch();
+      if (!active()) return;
+      const confirmed =
+        result.isSuccess &&
+        result.data.id === month.id &&
+        result.data.year === month.year &&
+        result.data.month === month.month;
+      if (confirmed) setRereadVersion((value) => value + 1);
+      setRereadNotice(
+        confirmed
+          ? "Сведения о месяце перечитаны. Сохранённые данные раздела загружаются заново."
+          : "Не удалось перечитать сохранённые данные.",
+      );
+    } catch {
+      if (active()) setRereadNotice("Не удалось перечитать сохранённые данные.");
+    } finally {
+      if (active()) setRereading(false);
+    }
+  }
+
   return (
     <UiV2DataFrame
       active="months"
@@ -221,27 +261,8 @@ export default function UiV2MonthEditorPage() {
           <Link to={`/v2/close?month=${monthId}&step=final_review_close`}>Проверить и закрыть</Link>
         ) : null}
         <button
-          disabled={!monthId || monthQuery.isFetching || dirty}
-          onClick={async () => {
-            setRereadNotice("Перечитываем сохранённые данные…");
-            const result = await monthQuery.refetch();
-            if (
-              result.isSuccess &&
-              result.data.id === monthId &&
-              result.data.year === month?.year &&
-              result.data.month === month?.month
-            ) {
-              setRereadVersion((value) => value + 1);
-            }
-            setRereadNotice(
-              result.isSuccess &&
-                result.data.id === monthId &&
-                result.data.year === month?.year &&
-                result.data.month === month?.month
-                ? "Сведения о месяце перечитаны. Сохранённые данные раздела загружаются заново."
-                : "Не удалось перечитать сохранённые данные.",
-            );
-          }}
+          disabled={!month || rereading || monthQuery.isFetching || dirty}
+          onClick={() => void rereadSavedData()}
           type="button"
         >
           {monthQuery.isFetching ? "Перечитываем…" : "Перечитать сохранённые данные"}
@@ -287,7 +308,12 @@ export default function UiV2MonthEditorPage() {
         </p>
       ) : null}
       {month && editorContext ? (
-        <div key={`${month.id}:${rereadVersion}`}>
+        <fieldset
+          aria-busy={rereading}
+          disabled={rereading}
+          key={`${month.id}:${rereadVersion}`}
+          style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+        >
           <DataMonthContext month={month} automatic={false} />
           <p className={styles.status} role="status">
             {dirty ? "Есть несохранённые изменения" : "Изменения сохранены или не вносились"}
@@ -345,7 +371,7 @@ export default function UiV2MonthEditorPage() {
               {section === "note" ? <NoteSection key={month.id} context={editorContext} /> : null}
             </>
           )}
-        </div>
+        </fieldset>
       ) : null}
     </UiV2DataFrame>
   );

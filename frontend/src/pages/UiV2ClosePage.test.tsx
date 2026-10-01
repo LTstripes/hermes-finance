@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
+import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
 import UiV2ClosePage from "../ui-v2/UiV2ClosePage";
 
@@ -111,7 +112,7 @@ function setup(path = "/v2/close") {
       </QueryClientProvider>,
     );
   }
-  return { fetchMock, mount, state };
+  return { client, fetchMock, mount, state };
 }
 
 beforeEach(() => {
@@ -400,6 +401,62 @@ describe("native Monthly Close work mode", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("pins the original period when both months and workflow refresh to a reused ID", async () => {
+    const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    const originalHeading = `Закрытие месяца · Август ${state.workflow.month.year}`;
+    const view = mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    await screen.findByRole("alertdialog");
+    state.months = state.months.map((month) =>
+      month.id === 12 ? { ...month, year: month.year + 1 } : month,
+    );
+    state.workflow.month.year += 1;
+    if (state.workflow.final_review.available)
+      state.workflow.final_review.month_header = { ...state.workflow.month };
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Период выбранного месяца изменился" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(originalHeading);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
+    expect(state.writes).toEqual([]);
+    // Explicitly leaving and selecting this period again establishes a new identity.
+    view.unmount();
+    mount();
+    expect(await screen.findByRole("button", { name: "Закрыть месяц" })).toBeVisible();
+    expect(state.writes).toEqual([]);
+  });
+
+  it("retains the selected identity while a deleted ID disappears and is recreated", async () => {
+    const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    mount();
+    await screen.findByRole("button", { name: "Закрыть месяц" });
+    state.months = state.months.filter((month) => month.id !== 12);
+    await act(async () => {
+      await client.refetchQueries({ queryKey: queryKeys.months });
+    });
+    await screen.findByRole("heading", { name: "Месяц не найден" });
+    state.months = structuredClone(uiV2Months).map((month) =>
+      month.id === 12 ? { ...month, year: month.year + 1 } : month,
+    );
+    state.workflow.month.year += 1;
+    if (state.workflow.final_review.available)
+      state.workflow.final_review.month_header = { ...state.workflow.month };
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Период выбранного месяца изменился" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
     expect(state.writes).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import type { GuidedCloseActionId, GuidedCloseStep } from "../api/monthCloseWorkflow";
+import type { ReportingMonth } from "../api/types";
 import { listMonths } from "../api/months";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
@@ -103,6 +104,28 @@ export default function UiV2ClosePage() {
         ? newestDraft
         : null;
   const monthId = selectedMonth?.id ?? null;
+  const selectionKey = params.getAll("month").join(":");
+  const identity = useRef<{
+    key: string;
+    period: Pick<ReportingMonth, "id" | "year" | "month">;
+  } | null>(null);
+  if (identity.current && identity.current.key !== selectionKey) {
+    if (identity.current.key === "" && selectionKey === String(identity.current.period.id)) {
+      // The automatic route is canonicalized to its already selected month.
+      identity.current.key = selectionKey;
+    } else {
+      identity.current = null;
+    }
+  }
+  if (!identity.current && selectedMonth && isQueryReady(monthsQuery)) {
+    identity.current = { key: selectionKey, period: { ...selectedMonth } };
+  }
+  const selectedPeriod = identity.current?.period;
+  const selectionIdentityMatches =
+    Boolean(selectedMonth && selectedPeriod) &&
+    selectedMonth?.id === selectedPeriod?.id &&
+    selectedMonth?.year === selectedPeriod?.year &&
+    selectedMonth?.month === selectedPeriod?.month;
   const {
     cancelLifecycle,
     confirmLifecycle,
@@ -113,7 +136,7 @@ export default function UiV2ClosePage() {
     preparingClose,
     requestReopen,
     workflowQuery,
-  } = useMonthCloseLifecycle(monthId, selectedMonth ?? undefined);
+  } = useMonthCloseLifecycle(selectionIdentityMatches ? monthId : null, selectedPeriod);
   const [statementOutcome] = useState<AlfaStatementTransientOutcome | null>(() =>
     parseAlfaStatementTransientOutcome(
       (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,
@@ -122,10 +145,11 @@ export default function UiV2ClosePage() {
   const focusedStepRef = useRef<string | null>(null);
   const workflow = workflowQuery.data;
   const workflowIdentityMatches =
+    selectionIdentityMatches &&
     workflow?.contract_version === "monthly_close_workflow_v1" &&
     workflow.month.id === monthId &&
-    workflow.month.year === selectedMonth?.year &&
-    workflow.month.month === selectedMonth?.month &&
+    workflow.month.year === selectedPeriod?.year &&
+    workflow.month.month === selectedPeriod?.month &&
     (!workflow.final_review.available ||
       (workflow.final_review.month_header.id === monthId &&
         workflow.final_review.month_header.year === workflow.month.year &&
@@ -185,7 +209,7 @@ export default function UiV2ClosePage() {
   }, [monthId, viewedStep]);
 
   const v1ReturnPath =
-    monthId === null
+    monthId === null || !selectionIdentityMatches
       ? "/monthly-close"
       : `/months/${monthId}/close${viewedStep ? `#${viewedStep.id}` : ""}`;
   const monthsReady = isQueryReady(monthsQuery);
@@ -224,6 +248,13 @@ export default function UiV2ClosePage() {
       <UiV2Notice title="Нет незакрытого месяца">
         Сейчас нет черновика для продолжения. <Link to="/v2">Открыть «Мои финансы» →</Link> или{" "}
         <Link to="/v2/reports">посмотреть историю отчётов →</Link>
+      </UiV2Notice>
+    );
+  } else if (!selectionIdentityMatches) {
+    content = (
+      <UiV2Notice title="Период выбранного месяца изменился">
+        Действия скрыты. Выбери отчётный месяц заново из{" "}
+        <Link to="/v2/data/months">списка месяцев →</Link>.
       </UiV2Notice>
     );
   } else if (workflowQuery.isError) {
@@ -492,13 +523,13 @@ export default function UiV2ClosePage() {
 
   return (
     <UiV2Shell
-      busy={!monthsReady || (monthId !== null && !workflowReady)}
+      busy={!monthsReady || (selectionIdentityMatches && monthId !== null && !workflowReady)}
       header={
         <>
           <p className={styles.eyebrow}>Пошаговое закрытие</p>
           <h1>
-            {selectedMonth
-              ? `Закрытие месяца · ${formatMonth(selectedMonth.year, selectedMonth.month)}`
+            {selectedPeriod
+              ? `Закрытие месяца · ${formatMonth(selectedPeriod.year, selectedPeriod.month)}`
               : "Закрытие месяца"}
           </h1>
           <p className={styles.subtitle}>
@@ -522,7 +553,7 @@ export default function UiV2ClosePage() {
         }
         onCancel={cancelLifecycle}
         onConfirm={() => void confirmLifecycle()}
-        open={pendingLifecycle !== null}
+        open={pendingLifecycle !== null && selectionIdentityMatches}
         title={pendingLifecycle === "close" ? "Закрыть месяц?" : "Открыть месяц заново?"}
       />
     </UiV2Shell>
