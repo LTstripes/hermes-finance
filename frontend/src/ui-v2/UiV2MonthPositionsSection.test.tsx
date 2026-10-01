@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReportingMonth } from "../api/types";
@@ -124,7 +125,7 @@ function setup(overrides: Record<string, Handler> = {}, initial: unknown[] = [po
     setDirty,
     returnToClose: null,
   };
-  const view = render(<UiV2MonthPositionsSection context={context} />);
+  const view = render(<UiV2MonthPositionsSection context={context} />, { wrapper: MemoryRouter });
   return { fetchMock, setDirty, context, ...view };
 }
 
