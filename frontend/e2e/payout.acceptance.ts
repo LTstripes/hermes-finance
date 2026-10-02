@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import type { PayoutCalendarMonth } from "../src/api/payouts";
 
 async function selectWithManual(page: Page, manualId: number, decision = "count_manual") {
   await page.getByRole("button", { name: "Проверить все позиции T-Invest" }).click();
@@ -50,16 +51,14 @@ test("individual Apply confirms through the real API and reload never submits", 
   await page.getByRole("button", { name: "Применить (1)", exact: true }).click();
   await expect(page.getByText(/Применено выплат: 1/)).toBeVisible();
   expect(posts).toHaveLength(1);
-  const calendar = await (
+  const calendar: PayoutCalendarMonth[] = await (
     await request.get(`/api/payouts/calendar?month_id=${month.id}&forecast_version=v1`)
   ).json();
   const providers = calendar
-    .flatMap(
-      (entry: { items: { source_kind: string; amount: { amount: string } }[] }) => entry.items,
-    )
-    .filter((entry: { source_kind: string }) => entry.source_kind === "provider");
+    .flatMap((entry) => entry.items)
+    .filter((entry) => entry.source_kind === "provider");
   expect(providers).toHaveLength(1);
-  expect(providers[0].amount.amount).toBe("50.00");
+  expect(providers[0].expected_net_amount.amount).toBe("50.00");
   expect(await (await request.get(`/api/investment-flows?month_id=${month.id}`)).json()).toEqual(
     [],
   );
