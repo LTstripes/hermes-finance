@@ -213,7 +213,18 @@ export function makeUiV2Freshness(
           manual_count: 1,
           provider_count: 0,
         },
-        reasons: [],
+        reasons: [
+          {
+            code: "manual_month_data_present",
+            severity: "info",
+            message: "В месяце есть данные, которые ведутся вручную.",
+          },
+          {
+            code: "manual_source_no_provider_timestamp",
+            severity: "info",
+            message: "Ручные значения без времени наблюдения провайдера не считаются устаревшими.",
+          },
+        ],
         items: [
           {
             item_kind: "manual_group",

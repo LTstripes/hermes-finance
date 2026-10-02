@@ -150,7 +150,7 @@ describe("QuotePreviewPanel", () => {
       ]),
     );
     expect(screen.getByText("T Stock")).toBeInTheDocument();
-    expect(screen.getByText("Подходящей котировки нет")).toBeInTheDocument();
+    expect(screen.getByText("Токен не настроен")).toBeInTheDocument();
     expect(
       screen.queryByText(/T-Invest · 11111111-1111-1111-1111-111111111111/),
     ).not.toBeInTheDocument();
@@ -558,7 +558,7 @@ describe("QuotePreviewPanel", () => {
     );
     expect(screen.getByText("Внешний источник не настроен")).toBeInTheDocument();
     expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
-    expect(screen.getByText("Подходящей котировки нет")).toBeInTheDocument();
+    expect(screen.getByText("Токен не настроен")).toBeInTheDocument();
     expect(screen.getByText("Обновляется вручную")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Unmapped Stock" }));
     expect(onMapInstrument).toHaveBeenCalledWith(

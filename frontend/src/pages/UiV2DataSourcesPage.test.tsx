@@ -267,6 +267,7 @@ describe("UI v2 Data sources", () => {
     const { mount } = setup();
     mount();
     const manual = await screen.findByTestId("freshness-family-manual_month_data");
+    expect(within(manual).getByText("Сохранено — можно продолжать")).toBeTruthy();
     expect(within(manual).getByText("Вручную / не оценивается")).toBeTruthy();
     expect(within(manual).queryByText("Свежесть по дате не оценивается")).toBeNull();
     expect(within(manual).getByText("Время применения не зафиксировано")).toBeTruthy();

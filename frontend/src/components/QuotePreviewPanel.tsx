@@ -38,8 +38,11 @@ function needsMappingAction(row: QuotePreviewRow): boolean {
   return row.status === "unmapped" || row.status === "ambiguous";
 }
 
-function statusLabel(status: string): string {
-  return labelOf(QUOTE_PREVIEW_STATUS_LABELS, status);
+function statusLabel(row: QuotePreviewRow): string {
+  if (row.status === "unavailable" && row.failure_reason === "token_unavailable") {
+    return "Токен не настроен";
+  }
+  return labelOf(QUOTE_PREVIEW_STATUS_LABELS, row.status);
 }
 
 function rowClassName(row: QuotePreviewRow): string {
@@ -145,7 +148,7 @@ function PreviewRow({
       </Td>
       <Td>
         <div className="quote-preview-status">
-          <Badge tone={quoteStatusTone(row.status)}>{statusLabel(row.status)}</Badge>
+          <Badge tone={quoteStatusTone(row.status)}>{statusLabel(row)}</Badge>
           {row.status === "stale" ? (
             <span className="quote-preview-stale-note">Нужно выбрать отдельно</span>
           ) : null}
