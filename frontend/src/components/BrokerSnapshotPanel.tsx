@@ -598,9 +598,8 @@ export function BrokerSnapshotPanel({
     }) ?? [];
   const groupedPositionRows = groupPositionRows(visiblePositionRows);
   const confirmedAccountCount =
-    preview?.accounts.filter(
-      (row) => mappingBucket(row.classification, row.status) === "confirmed",
-    ).length ?? 0;
+    preview?.accounts.filter((row) => mappingBucket(row.classification, row.status) === "confirmed")
+      .length ?? 0;
   const visibleAccountMappingRows = preview
     ? visibleMappingRows(preview.accounts, accountMappingFilter)
     : [];

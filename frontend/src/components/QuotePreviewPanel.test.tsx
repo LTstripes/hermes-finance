@@ -560,9 +560,7 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
     expect(screen.getByText("Подходящей котировки нет")).toBeInTheDocument();
     expect(screen.getByText("Обновляется вручную")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Сопоставить инструмент Unmapped Stock" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Unmapped Stock" }));
     expect(onMapInstrument).toHaveBeenCalledWith(
       expect.objectContaining({ position_snapshot_id: 1, instrument_id: 11 }),
     );
@@ -593,7 +591,9 @@ describe("QuotePreviewPanel", () => {
         }),
       ]),
     );
-    expect(screen.queryByRole("button", { name: /Сопоставить инструмент/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Сопоставить инструмент/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("states that a confirmed mapping change requires an explicit new preview", () => {

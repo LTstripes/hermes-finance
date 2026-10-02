@@ -84,7 +84,8 @@ export function makeUiV2Freshness(
           {
             code: "payout_not_freshness_classified",
             severity: "info",
-            message: "Дата выплаты — событие, а не котировка; по возрасту она не помечается устаревшей.",
+            message:
+              "Дата выплаты — событие, а не котировка; по возрасту она не помечается устаревшей.",
           },
         ],
         items: [
@@ -129,7 +130,8 @@ export function makeUiV2Freshness(
           {
             code: "statement_not_freshness_classified",
             severity: "info",
-            message: "Дата в выписке — событие документа, а не котировка; по возрасту она не устаревает.",
+            message:
+              "Дата в выписке — событие документа, а не котировка; по возрасту она не устаревает.",
           },
         ],
         items: [

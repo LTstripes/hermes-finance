@@ -236,9 +236,13 @@ describe("UI v2 Data sources", () => {
     const { mount } = setup();
     mount();
     const statements = await screen.findByTestId("freshness-family-alfa_statement_payouts");
-    expect(within(statements).getByText("Происхождение: Загружено из выписки Альфа-Банка")).toBeTruthy();
+    expect(
+      within(statements).getByText("Происхождение: Загружено из выписки Альфа-Банка"),
+    ).toBeTruthy();
     expect(within(statements).getByText("Сохранено — можно продолжать")).toBeTruthy();
-    expect(within(statements).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
+    expect(
+      within(statements).getAllByText("Свежесть по дате не оценивается").length,
+    ).toBeGreaterThan(0);
     expect(within(statements).queryByText("Вручную / не оценивается")).toBeNull();
     expect(within(statements).getByText(/Последнее применение/)).toBeTruthy();
     expect(within(statements).getAllByText(/13\.08\.2031/).length).toBeGreaterThan(0);
@@ -252,7 +256,9 @@ describe("UI v2 Data sources", () => {
     const payouts = await screen.findByTestId("freshness-family-t_invest_payouts");
     expect(within(payouts).getByText("Происхождение: Получено из T-Invest")).toBeTruthy();
     expect(within(payouts).getByText("Сохранено — можно продолжать")).toBeTruthy();
-    expect(within(payouts).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
+    expect(within(payouts).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(
+      0,
+    );
     const link = within(payouts).getByRole("link", { name: /Открыть шаг закрытия/ });
     expect(link).toHaveAttribute("href", "/v2/close?month=12&step=future_payouts");
   });

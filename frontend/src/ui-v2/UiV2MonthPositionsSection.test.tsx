@@ -608,15 +608,12 @@ describe("native month positions leaf", () => {
       false,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
     const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
     expect(
       fetchMock.mock.calls.some(
         ([url, init]) =>
-          String(url) === "/api/instruments/21/market-mapping" &&
-          (init?.method ?? "GET") === "GET",
+          String(url) === "/api/instruments/21/market-mapping" && (init?.method ?? "GET") === "GET",
       ),
     ).toBe(true);
     await user.type(
@@ -685,9 +682,7 @@ describe("native month positions leaf", () => {
     await screen.findByText("Synthetic Fund (SYN)");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
-    await user.click(
-      screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
     const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
     await user.type(
       within(dialog).getByLabelText("Идентификатор инструмента T-Invest"),
