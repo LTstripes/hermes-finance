@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -1394,6 +1394,74 @@ it("bulk mixed success and ambiguous failure retains CONFIRMED, UNKNOWN and NOT_
   await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
   await user.click(screen.getByRole("button", { name: "Подтвердить выбор (3 групп)" }));
   await screen.findByText(/Подтверждено: 3 из 3/);
+});
+
+it("a preview queued before Apply cannot rearm selection after UNKNOWN", async () => {
+  const user = userEvent.setup();
+  let reply!: (value: PayoutPreview) => void;
+  const oldPreview = new Promise<PayoutPreview>((resolve) => {
+    reply = resolve;
+  });
+  vi.mocked(previewPayouts)
+    .mockResolvedValueOnce(previewFixture)
+    .mockReturnValueOnce(oldPreview)
+    .mockResolvedValue(previewFixture);
+  vi.mocked(applyPayouts).mockRejectedValueOnce(new Error("synthetic lost response"));
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  const refresh = screen.getByRole("button", { name: "Проверить выплаты T-Invest" });
+  await user.click(refresh);
+  await screen.findByText("Новая");
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  const confirm = screen.getByRole("button", { name: /Применить \(1\)/ });
+  // Two already queued activations before React commits the busy state:
+  // a pre-attempt preview must be fenced even if UI disabling is not yet painted.
+  act(() => {
+    refresh.click();
+    confirm.click();
+  });
+  await screen.findByText(/UNKNOWN/);
+  expect(applyPayouts).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reply(previewFixture);
+    await oldPreview;
+  });
+  expect(screen.queryByText("Новая")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /Применить выбранные \(1\)/ }),
+  ).not.toBeInTheDocument();
+  expect(applyPayouts).toHaveBeenCalledTimes(1);
+  await user.click(refresh);
+  await screen.findByText("Новая");
+  expect(previewPayouts).toHaveBeenCalledTimes(3);
+  expect(applyPayouts).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  await screen.findByText(/Применено выплат: 1/);
+  expect(applyPayouts).toHaveBeenCalledTimes(2);
+});
+
+it("blocks bulk Apply while an explicit batch preview remains pending", async () => {
+  const user = userEvent.setup();
+  mockBulk();
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  const refresh = screen.getByRole("button", { name: "Проверить все позиции T-Invest" });
+  await user.click(refresh);
+  await screen.findByText("Выбрано событий: 3");
+  let reply!: (value: PayoutBatchPreview) => void;
+  vi.mocked(previewPayoutsBatch).mockReturnValueOnce(
+    new Promise((resolve) => {
+      reply = resolve;
+    }),
+  );
+  await user.click(refresh);
+  expect(screen.getByRole("button", { name: "Применить выбранные", exact: true })).toBeDisabled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+  const original = await vi.mocked(previewPayoutsBatch).mock.results[0].value;
+  await act(async () => {
+    reply(original);
+  });
 });
 
 it("bulk blocks duplicate clicks and individual Apply until authoritative readback completes", async () => {

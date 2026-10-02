@@ -469,7 +469,7 @@ function PayoutForecastTool({
 
   async function handlePreview() {
     const payload = contextPayload();
-    if (!payload || applying || isPayoutExecutionActive()) return;
+    if (!payload || applying || previewLoading || batchLoading || isPayoutExecutionActive()) return;
     const token = ++applyGeneration.current;
     setPreviewLoading(true);
     setActionError(null);
@@ -503,7 +503,7 @@ function PayoutForecastTool({
   }
 
   async function handleBatchPreview(positionSnapshotIds?: number[]) {
-    if (!version || applying || isPayoutExecutionActive()) return;
+    if (!version || applying || previewLoading || batchLoading || isPayoutExecutionActive()) return;
     const token = ++applyGeneration.current;
     // Capture the current position identities for exact batch validation.
     const positionsAtRequest = positions;
@@ -539,7 +539,8 @@ function PayoutForecastTool({
 
   async function handleBatchPositionRefresh(positionSnapshotId: number) {
     const position = positions.find((row) => row.id === positionSnapshotId);
-    if (!position || applying || isPayoutExecutionActive()) return;
+    if (!position || applying || previewLoading || batchLoading || isPayoutExecutionActive())
+      return;
     const requested: PayoutContextRequest = {
       account_id: position.account_id,
       instrument_id: position.instrument_id,
@@ -591,7 +592,15 @@ function PayoutForecastTool({
 
   function requestSingleApply(rows: PayoutApplySelection[]) {
     const payload = contextPayload();
-    if (!payload || rows.length === 0 || applying || retiredPreview || isPayoutExecutionActive())
+    if (
+      !payload ||
+      rows.length === 0 ||
+      applying ||
+      previewLoading ||
+      batchLoading ||
+      retiredPreview ||
+      isPayoutExecutionActive()
+    )
       return;
     if (readOnly) {
       setActionError(APPLY_FAILURE_LABELS.closed_month);
@@ -623,6 +632,8 @@ function PayoutForecastTool({
     if (
       previewValue.position_snapshot_id === null ||
       applying ||
+      previewLoading ||
+      batchLoading ||
       retiredPreview ||
       isPayoutExecutionActive()
     )
@@ -667,6 +678,8 @@ function PayoutForecastTool({
   function requestBulkApply() {
     if (
       applying ||
+      previewLoading ||
+      batchLoading ||
       retiredPreview ||
       readOnly ||
       isPayoutExecutionActive() ||
@@ -697,7 +710,20 @@ function PayoutForecastTool({
   }
 
   async function runSelection(groups: FrozenPayoutGroup[], single: boolean) {
-    if (applying || isPayoutExecutionActive() || retiredPreview || readOnly) return;
+    if (
+      applying ||
+      previewLoading ||
+      batchLoading ||
+      isPayoutExecutionActive() ||
+      retiredPreview ||
+      readOnly
+    )
+      return;
+    // Fence any preview activation queued before the busy state was painted.
+    // Its late response must never rearm a consumed/UNKNOWN selection.
+    applyGeneration.current += 1;
+    setPreviewLoading(false);
+    setBatchLoading(false);
     const frozenRevision = contextRevision.current;
     const frozenMonthId = monthId;
     const frozenVersion = version;
@@ -888,7 +914,9 @@ function PayoutForecastTool({
       <Panel label="Будущие выплаты" title="Получить → проверить выбор → применить → результат">
         <div className="toolbar">
           <Button
-            disabled={batchLoading || applying || loadingContext || positions.length === 0}
+            disabled={
+              previewLoading || batchLoading || applying || loadingContext || positions.length === 0
+            }
             onClick={() => void handleBatchPreview()}
             variant="primary"
             type="button"
@@ -898,6 +926,8 @@ function PayoutForecastTool({
           <Button
             disabled={
               applying ||
+              previewLoading ||
+              batchLoading ||
               retiredPreview ||
               readOnly ||
               !Object.values(selectedGroups).some((rows) => rows.length)
@@ -1101,7 +1131,7 @@ function PayoutForecastTool({
                         applying={applying}
                         error={null}
                         forecastVersion={version}
-                        loading={previewLoading}
+                        loading={previewLoading || batchLoading}
                         onApply={(rows) => requestBatchApply(previewValue, rows)}
                         onForecastVersionChange={() => undefined}
                         onRefresh={() => void handleBatchPositionRefresh(item.position_snapshot_id)}
@@ -1221,7 +1251,7 @@ function PayoutForecastTool({
           applying={applying}
           error={null}
           forecastVersion={forecastVersion}
-          loading={previewLoading}
+          loading={previewLoading || batchLoading}
           onApply={(rows) => requestSingleApply(rows)}
           onForecastVersionChange={(value) => {
             handleVersionChange(value);
