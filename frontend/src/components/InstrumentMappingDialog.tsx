@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useId, useState } from "react";
 
 import type {
-  Instrument,
   InstrumentMarketMapping,
   MarketDiscoverCandidate,
   MarketDiscoverResult,
@@ -30,9 +29,16 @@ import {
 } from "../lib/marketData";
 import { Badge, Button, Field, Input } from "./ui";
 
+/** Minimal authoritative subject needed to open the mapping dialog. */
+export type InstrumentMappingSubject = {
+  id: number;
+  name: string;
+  instrument_type: string;
+};
+
 type Props = {
   open: boolean;
-  instrument: Instrument | null;
+  instrument: InstrumentMappingSubject | null;
   mapping: InstrumentMarketMapping | null;
   busy: boolean;
   error: string | null;

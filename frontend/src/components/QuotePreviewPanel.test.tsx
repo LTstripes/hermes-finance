@@ -63,6 +63,8 @@ function renderPanel(
     closed?: boolean;
     applyResult?: QuoteApplyResult | null;
     onApply?: (rows: unknown[]) => void;
+    onMapInstrument?: (row: QuotePreviewRow) => void;
+    mappingNotice?: string | null;
   } = {},
 ) {
   const onRefresh = vi.fn();
@@ -72,7 +74,9 @@ function renderPanel(
       error={extras.error ?? null}
       applyResult={extras.applyResult}
       loading={extras.loading ?? false}
+      mappingNotice={extras.mappingNotice}
       onApply={extras.onApply}
+      onMapInstrument={extras.onMapInstrument}
       onRefresh={onRefresh}
       preview={next}
     />,
@@ -501,6 +505,105 @@ describe("QuotePreviewPanel", () => {
         expected_quote_kind: "last",
       },
     ]);
+  });
+
+  it("offers the contextual mapping action only for mapping-caused rows", async () => {
+    const user = userEvent.setup();
+    const onMapInstrument = vi.fn();
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 1,
+          instrument_id: 11,
+          instrument_name: "Unmapped Stock",
+          status: "unmapped",
+          mapping_state: "unmapped",
+          identity: null,
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 2,
+          instrument_id: 12,
+          instrument_name: "Ambiguous Stock",
+          status: "ambiguous",
+          failure_reason: "ambiguous",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 3,
+          instrument_id: 13,
+          instrument_name: "Token Stock",
+          status: "unavailable",
+          failure_reason: "token_unavailable",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+        row({
+          position_snapshot_id: 4,
+          instrument_id: 14,
+          instrument_name: "Manual Stock",
+          status: "unsupported",
+          failure_reason: "unsupported",
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+      ]),
+      { onMapInstrument },
+    );
+    expect(screen.getByText("Внешний источник не настроен")).toBeInTheDocument();
+    expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
+    expect(screen.getByText("Подходящей котировки нет")).toBeInTheDocument();
+    expect(screen.getByText("Обновляется вручную")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Сопоставить инструмент Unmapped Stock" }),
+    );
+    expect(onMapInstrument).toHaveBeenCalledWith(
+      expect.objectContaining({ position_snapshot_id: 1, instrument_id: 11 }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Сопоставить инструмент Ambiguous Stock" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Сопоставить инструмент Token Stock" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Сопоставить инструмент Manual Stock" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the mapping action hidden without a mapping handler", () => {
+    renderPanel(
+      preview([
+        row({
+          position_snapshot_id: 1,
+          instrument_id: 11,
+          instrument_name: "Unmapped Stock",
+          status: "unmapped",
+          mapping_state: "unmapped",
+          identity: null,
+          proposed_market_price_per_unit: null,
+          proposed_price_date: null,
+          apply_allowed: false,
+        }),
+      ]),
+    );
+    expect(screen.queryByRole("button", { name: /Сопоставить инструмент/ })).not.toBeInTheDocument();
+  });
+
+  it("states that a confirmed mapping change requires an explicit new preview", () => {
+    renderPanel(null, {
+      mappingNotice:
+        "Сопоставление сохранено. Предпросмотр сброшен: котировки не применяются автоматически. Запроси новый предпросмотр кнопкой «Обновить котировки».",
+    });
+    expect(screen.getByText(/Сопоставление сохранено/)).toBeInTheDocument();
+    expect(screen.getByText(/котировки не применяются автоматически/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Обновить котировки" })).toBeEnabled();
   });
 
   it("shows a total request failure through the existing alert", () => {

@@ -28,7 +28,15 @@ type Props = {
   closedMonthHint: boolean;
   onRefresh: () => void;
   onApply?: (rows: QuoteApplyRowRequest[]) => void;
+  onMapInstrument?: (row: QuotePreviewRow) => void;
+  mappingNotice?: string | null;
 };
+
+/** Mapping-caused quote failures get the contextual mapping action; provider
+ * token/network failures, unsupported instruments and unavailable quotes do not. */
+function needsMappingAction(row: QuotePreviewRow): boolean {
+  return row.status === "unmapped" || row.status === "ambiguous";
+}
 
 function statusLabel(status: string): string {
   return labelOf(QUOTE_PREVIEW_STATUS_LABELS, status);
@@ -73,11 +81,13 @@ function PreviewRow({
   selected,
   selectable,
   onToggle,
+  onMap,
 }: {
   row: QuotePreviewRow;
   selected: boolean;
   selectable: boolean;
   onToggle: (next: boolean) => void;
+  onMap?: () => void;
 }) {
   const proposed = row.proposed_market_price_per_unit;
   const delta = displayPriceDelta(row.current_market_price_per_unit, proposed);
@@ -139,6 +149,16 @@ function PreviewRow({
           {row.status === "stale" ? (
             <span className="quote-preview-stale-note">Нужно выбрать отдельно</span>
           ) : null}
+          {onMap ? (
+            <Button
+              aria-label={`Сопоставить инструмент ${row.instrument_name}`}
+              onClick={onMap}
+              size="sm"
+              type="button"
+            >
+              Сопоставить инструмент
+            </Button>
+          ) : null}
           {hasStatusDetail ? (
             <HelpTip label={`Подробности статуса для ${row.instrument_name}`}>
               {row.status === "stale" ? (
@@ -167,6 +187,8 @@ export function QuotePreviewPanel({
   closedMonthHint,
   onRefresh,
   onApply,
+  onMapInstrument,
+  mappingNotice = null,
 }: Props) {
   const monthLocked = closedMonthHint || preview?.month_editable === false;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(
@@ -234,6 +256,11 @@ export function QuotePreviewPanel({
         Запрос к внешнему источнику идёт только по этой кнопке. Сохранённые цены месяца меняются
         только после явного применения выбранных строк.
       </p>
+      {mappingNotice ? (
+        <div className="inline-alert inline-alert--warn" role="status">
+          {mappingNotice}
+        </div>
+      ) : null}
       {monthLocked ? (
         <div className="inline-alert inline-alert--warn" role="status">
           Месяц утверждён и его нельзя изменить. Предпросмотр можно смотреть, применение цен здесь
@@ -275,6 +302,11 @@ export function QuotePreviewPanel({
             {preview.rows.map((row) => (
               <PreviewRow
                 key={row.position_snapshot_id}
+                onMap={
+                  onMapInstrument && needsMappingAction(row)
+                    ? () => onMapInstrument(row)
+                    : undefined
+                }
                 onToggle={(next) => {
                   setSelectedIds((current) => {
                     const copy = new Set(current);

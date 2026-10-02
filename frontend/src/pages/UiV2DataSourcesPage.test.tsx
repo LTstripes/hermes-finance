@@ -232,6 +232,50 @@ describe("UI v2 Data sources", () => {
     expect(link).toHaveAttribute("href", "/v2/close?month=12&step=market_quotes");
   });
 
+  it("separates origin, saved application state and freshness for imported events", async () => {
+    const { mount } = setup();
+    mount();
+    const statements = await screen.findByTestId("freshness-family-alfa_statement_payouts");
+    expect(within(statements).getByText("Происхождение: Загружено из выписки Альфа-Банка")).toBeTruthy();
+    expect(within(statements).getByText("Сохранено — можно продолжать")).toBeTruthy();
+    expect(within(statements).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
+    expect(within(statements).queryByText("Вручную / не оценивается")).toBeNull();
+    expect(within(statements).getByText(/Последнее применение/)).toBeTruthy();
+    expect(within(statements).getAllByText(/13\.08\.2031/).length).toBeGreaterThan(0);
+    const link = within(statements).getByRole("link", { name: /Открыть шаг закрытия/ });
+    expect(link).toHaveAttribute("href", "/v2/close?month=12&step=actual_payouts");
+  });
+
+  it("routes provider payouts to the accepted future-payouts workflow", async () => {
+    const { mount } = setup();
+    mount();
+    const payouts = await screen.findByTestId("freshness-family-t_invest_payouts");
+    expect(within(payouts).getByText("Происхождение: Получено из T-Invest")).toBeTruthy();
+    expect(within(payouts).getByText("Сохранено — можно продолжать")).toBeTruthy();
+    expect(within(payouts).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
+    const link = within(payouts).getByRole("link", { name: /Открыть шаг закрытия/ });
+    expect(link).toHaveAttribute("href", "/v2/close?month=12&step=future_payouts");
+  });
+
+  it("keeps manual families on the manual label without faking a dated clock", async () => {
+    const { mount } = setup();
+    mount();
+    const manual = await screen.findByTestId("freshness-family-manual_month_data");
+    expect(within(manual).getByText("Вручную / не оценивается")).toBeTruthy();
+    expect(within(manual).queryByText("Свежесть по дате не оценивается")).toBeNull();
+    expect(within(manual).getByText("Время применения не зафиксировано")).toBeTruthy();
+  });
+
+  it("labels applied Alfa PRO baselines without converting them to current", async () => {
+    const { mount } = setup();
+    mount();
+    const alfa = await screen.findByTestId("freshness-family-alfa_pro_positions");
+    expect(within(alfa).getByText("Происхождение: Получено из Alfa PRO")).toBeTruthy();
+    expect(within(alfa).getByText("Сохранено — можно продолжать")).toBeTruthy();
+    expect(within(alfa).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
+    expect(within(alfa).queryByText("Актуально")).toBeNull();
+  });
+
   it("shows mode-grouped Data/App subnav with v1 escape", async () => {
     const { mount } = setup();
     mount();
