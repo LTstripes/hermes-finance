@@ -14,6 +14,61 @@ async function confirmBulk(page: Page, groups: number) {
   await page.getByRole("button", { name: `Подтвердить выбор (${groups} групп)` }).click();
 }
 
+test("individual Apply confirms through the real API and reload never submits", async ({
+  page,
+  request,
+}) => {
+  const created = await request.post("/api/months", {
+    data: { year: 2037, month: 5, snapshot_date: "2037-05-12" },
+  });
+  expect(created.ok()).toBe(true);
+  const month = await created.json();
+  const position = await request.post("/api/positions", {
+    data: {
+      reporting_month_id: month.id,
+      account_id: 1,
+      instrument_id: 1,
+      quantity: "2.000000",
+      average_cost_per_unit: { amount: "100.00", currency: "RUB" },
+      market_price_per_unit: { amount: "101.00", currency: "RUB" },
+      price_date: "2037-05-12",
+    },
+  });
+  expect(position.ok()).toBe(true);
+  const posts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/payout-apply")) posts.push(request.url());
+  });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(`/v2/data/payouts?month=${month.id}`);
+  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  expect(posts).toEqual([]);
+  await page.getByRole("button", { name: "Проверить выплаты T-Invest" }).click();
+  await expect(page.getByText("Новая", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Применить выбранные \(1\)/ }).click();
+  expect(posts).toEqual([]);
+  await page.getByRole("button", { name: "Применить (1)", exact: true }).click();
+  await expect(page.getByText(/Применено выплат: 1/)).toBeVisible();
+  expect(posts).toHaveLength(1);
+  const calendar = await (
+    await request.get(`/api/payouts/calendar?month_id=${month.id}&forecast_version=v1`)
+  ).json();
+  const providers = calendar
+    .flatMap(
+      (entry: { items: { source_kind: string; amount: { amount: string } }[] }) => entry.items,
+    )
+    .filter((entry: { source_kind: string }) => entry.source_kind === "provider");
+  expect(providers).toHaveLength(1);
+  expect(providers[0].amount.amount).toBe("50.00");
+  expect(await (await request.get(`/api/investment-flows?month_id=${month.id}`)).json()).toEqual(
+    [],
+  );
+  await page.reload();
+  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  expect(posts).toHaveLength(1);
+  await expect(page.getByRole("button", { name: /Применить выбранные \(1\)/ })).toHaveCount(0);
+});
+
 for (const [monthId, decision] of [
   [6, "count_provider"],
   [7, "keep_both"],
