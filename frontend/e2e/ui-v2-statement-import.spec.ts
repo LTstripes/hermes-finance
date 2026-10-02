@@ -332,7 +332,7 @@ for (const viewport of [
   }, testInfo) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12");
+    await page.goto("/v2/data/payouts?month=12#statement-import");
 
     await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
     await expect(page.locator("#statement-import")).toBeVisible();
@@ -417,7 +417,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12");
+    await page.goto("/v2/data/payouts?month=12#statement-import");
     await expect(page.locator("#statement-import")).toBeVisible();
 
     await prepareStatement(page);
@@ -437,7 +437,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12");
+    await page.goto("/v2/data/payouts?month=12#statement-import");
     await expect(page.locator("#statement-import")).toBeVisible();
     await prepareStatement(page);
 
@@ -465,7 +465,7 @@ for (const viewport of [
 test("native spanning document: only the explicit month can be submitted", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
-  await page.goto("/v2/data/payouts?month=12");
+  await page.goto("/v2/data/payouts?month=12#statement-import");
   await expect(page.locator("#statement-import")).toBeVisible();
   await prepareStatement(page);
 
