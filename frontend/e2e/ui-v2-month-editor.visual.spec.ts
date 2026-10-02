@@ -301,29 +301,112 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
 });
 
 for (const width of [1280, 390]) {
-  test(`#650 debt surface ${width}px keeps actions reachable without page scroll`, async ({
+  test(`#650 debt stacked editor ${width}px keeps Save/Cancel reachable without page scroll`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
+    const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
     await installApi(page);
+    // Specific mocks after the generic catch-all: later routes take precedence.
+    await page.route("**/api/debts*", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        json: [
+          {
+            id: 1,
+            reporting_month_id: 7,
+            debt_type: "credit_card",
+            name: "Основная карта с очень длинным названием для проверки переноса",
+            current_balance: { amount: "1234567890.50", currency: "RUB" },
+            include_in_liquid_capital: true,
+            linked_account_id: null,
+            annual_rate: "19.90",
+            next_due_date: "2030-06-20",
+            contract_end_date: null,
+            notes: null,
+          },
+        ],
+      });
+    });
+    await page.route("**/api/accounts*", async (route) => {
+      await route.fulfill({
+        json: [
+          {
+            id: 11,
+            name: longAccount,
+            account_type: "deposit",
+            status: "active",
+            external_code: null,
+            include_in_capital: true,
+            include_in_returns: true,
+            notes: null,
+          },
+        ],
+      });
+    });
+    await page.route("**/api/properties*", async (route) => {
+      if (route.request().method() === "GET") await route.fulfill({ json: [] });
+      else await route.continue();
+    });
 
-    // Read-only deep link like the existing passing tests: no reopen flow.
     await page.goto("/v2/data/months/7?section=liabilities");
+    await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
-    // Owner language, no technical shorthand; money is one unit (empty debts show explicit zero).
+    // Owner language, no technical shorthand; money is one unit.
     await expect(page.getByText("Кредитные карты:", { exact: false })).toBeVisible();
     await expect(page.getByText("Долг по кредитным картам:", { exact: false })).toBeVisible();
     expect(await page.getByText("CC ", { exact: false }).count()).toBe(0);
     expect(await page.locator(".money").count()).toBeGreaterThan(0);
 
-    // Closed leaves expose no enabled mutation fields; the surface stays bounded.
+    // Open the stacked editor below the readonly row.
+    await page.getByRole("button", { name: /Изменить долг/ }).click();
+    const editor = page.getByRole("form", { name: /Редактирование долга/ });
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel("Название долга")).toBeVisible();
+    await expect(editor.getByLabel("Текущий баланс долга")).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+    await expect(
+      page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeVisible();
+
+    // Save/Cancel are reachable without page-level horizontal scrolling.
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
     ).toBe(true);
+    for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
+      await expect(editor.getByLabel(label)).toBeInViewport();
+    }
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeInViewport();
+    await expect(editor.getByRole("button", { name: "Отмена" })).toBeInViewport();
+
+    // Keyboard reaches Save/Cancel.
+    await editor.getByLabel("Название долга").focus();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
 
     await page.screenshot({
-      path: testInfo.outputPath(`debt-surface-${width}.png`),
+      path: testInfo.outputPath(`debt-stacked-editor-${width}.png`),
+      fullPage: true,
+    });
+
+    // Link editor keeps the same reachable treatment with a long account name.
+    await editor.getByRole("button", { name: "Отмена" }).click();
+    await page.getByRole("button", { name: "Связать счёт" }).click();
+    const linkEditor = page.getByRole("form", { name: /Связь долга/ });
+    await expect(linkEditor).toBeVisible();
+    await expect(linkEditor.getByLabel("Счёт для связи с долгом")).toBeVisible();
+    await expect(linkEditor.getByRole("button", { name: "Сохранить связь" })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`debt-link-editor-${width}.png`),
       fullPage: true,
     });
   });
