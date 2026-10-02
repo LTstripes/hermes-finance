@@ -293,7 +293,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(debtTable).toHaveTextContent(/19,90%/);
     expect(debtTable).toHaveTextContent(/20\.06\.2030/);
     expect(debtTable).toHaveTextContent("Не связано");
-    expect(month).toHaveTextContent(/CC\s*123\s*456\s*₽/);
+    expect(month).toHaveTextContent(/Кредитные карты:\s*123\s*456\s*₽/);
     expect(month).toHaveTextContent("Долг по кредитным картам:");
     expect(month).not.toHaveTextContent("Долгов нет.");
 
@@ -301,7 +301,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(propertyTable).toHaveTextContent("не указано");
     expect(propertyTable).not.toHaveTextContent(/0,00%/);
     const propertyBlock = await propertySection();
-    expect(propertyBlock).toHaveTextContent(/RE\s*7\s*000\s*000\s*₽/);
+    expect(propertyBlock).toHaveTextContent(/Недвижимость:\s*7\s*000\s*000\s*₽/);
     expect(propertyBlock).not.toHaveTextContent("Объектов нет.");
   });
 
@@ -373,10 +373,16 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await user.click(
       within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
     );
+    // #650: stacked editor below the readonly row keeps saved totals visible.
+    expect(await screen.findByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
+      .toBeInTheDocument();
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    expect(within(editor).getByLabelText("Название долга")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Текущий баланс долга")).toBeInTheDocument();
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
       expect(updateDebt).toHaveBeenCalledWith(1, {
@@ -393,7 +399,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [debtTableAfter] = await tables();
     expect(debtTableAfter).toHaveTextContent(/100\s*000\s*₽/);
     expect(debtTableAfter).not.toHaveTextContent(/123\s*456\s*₽/);
-    expect(within(debtTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(screen.queryByRole("form", { name: /Редактирование долга/ })).toBeNull();
   });
 
   it("keeps a cleared name visible as a validation error without a write", async () => {
@@ -405,11 +411,14 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
     );
     await user.clear(screen.getByDisplayValue("Основная карта"));
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Имя и баланс долга обязательны");
     expect(updateDebt).not.toHaveBeenCalled();
-    expect(within(debtTable).getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("form", { name: /Редактирование долга/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows a rejected save and allows the same edit to be submitted again", async () => {
@@ -424,14 +433,19 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("save failed");
-    expect(within(debtTable).getByRole("button", { name: "OK" })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: /Редактирование долга/ })).toBeInTheDocument();
     expect(screen.getByDisplayValue("100000.00")).toBeInTheDocument();
     expect(screen.getByDisplayValue("100000.00")).toBeEnabled();
 
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    await user.click(
+      within(screen.getByRole("form", { name: /Редактирование долга/ })).getByRole("button", {
+        name: "Сохранить",
+      }),
+    );
     await waitFor(() => expect(updateDebt).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("alert")).toBeNull();
     const [debtTableAfter] = await tables();
@@ -447,7 +461,8 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
     );
     await user.clear(screen.getByDisplayValue("19.90"));
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
       expect(updateDebt).toHaveBeenCalledWith(1, expect.objectContaining({ annual_rate: null })),
@@ -463,10 +478,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [debtTable] = await tables();
 
     await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
-      "11",
-    );
+    await user.selectOptions(screen.getByLabelText("Счёт для связи с долгом"), "11");
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
 
     await waitFor(() => expect(linkDebtToAccount).toHaveBeenCalledWith(1, 11));
@@ -485,9 +497,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [debtTable] = await tables();
 
     await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
-    const picker = screen.getByRole("combobox", {
-      name: "Счёт для связи с долгом «Основная карта»",
-    });
+    const picker = screen.getByLabelText("Счёт для связи с долгом");
 
     expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
     expect(within(picker).getByRole("option", { name: /Синтетические наличные/ })).toBeEnabled();
@@ -526,14 +536,10 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(within(debtTable).getByText("Синтетический брокерский счёт")).toBeInTheDocument();
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
 
-    const picker = screen.getByRole("combobox", {
-      name: "Счёт для связи с долгом «Основная карта»",
-    });
-    expect(within(picker).getByRole("option", { name: /брокерский/i })).toBeDisabled();
+    const picker = screen.getByLabelText("Счёт для связи с долгом");
+    expect(within(picker).queryByRole("option", { name: /брокерский/i })).toBeNull();
     expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
-    expect(
-      within(debtTable).getByText("Текущая связь сохранена", { exact: false }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Текущая связь сохранена", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сохранить связь" })).toBeDisabled();
   });
 
@@ -752,8 +758,16 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
     );
     await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("liabilities", true));
+    // #650: saved totals stay visible with an explicit dirty note, not optimistic totals.
+    expect(screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("form", { name: /Редактирование долга/ })).toBeInTheDocument();
 
-    await user.click(within(debtTable).getByRole("button", { name: "Отмена" }));
+    await user.click(
+      within(screen.getByRole("form", { name: /Редактирование долга/ })).getByRole("button", {
+        name: "Отмена",
+      }),
+    );
     await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("liabilities", false));
 
     view.unmount();
@@ -921,23 +935,29 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
-    await user.click(within(debtTable).getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
     await waitFor(() => expect(updateDebt).toHaveBeenCalledTimes(1));
 
-    expect(within(debtTable).getByLabelText("Название долга")).toBeDisabled();
-    const pendingBalance = screen.getByDisplayValue("100000.00");
+    expect(within(editor).getByLabelText("Название долга")).toBeDisabled();
+    const pendingBalance = within(editor).getByLabelText("Текущий баланс долга");
     expect(pendingBalance).toBeDisabled();
+    expect(pendingBalance).toHaveValue("100000.00");
     await user.type(pendingBalance, "9");
-    expect(screen.getByDisplayValue("100000.00")).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("100000.009")).toBeNull();
-    expect(within(debtTable).getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(within(editor).getByDisplayValue("100000.00")).toBeInTheDocument();
+    expect(within(editor).queryByDisplayValue("100000.009")).toBeNull();
+    expect(
+      within(screen.getByRole("form", { name: /Редактирование долга/ })).getByRole("button", {
+        name: "Сохранить",
+      }),
+    ).toBeDisabled();
 
     await act(async () => {
       release?.();
     });
 
     const [debtTableAfter] = await tables();
-    expect(within(debtTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(screen.queryByRole("form", { name: /Редактирование долга/ })).toBeNull();
     expect(debtTableAfter).toHaveTextContent(/100\s*000\s*₽/);
     expect(updateDebt).toHaveBeenCalledTimes(1);
   });
@@ -1038,5 +1058,98 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(within(propertyTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
     expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
     expect(updateProperty).toHaveBeenCalledTimes(1);
+  });
+
+  it("#650 keeps money as one unit with Owner language and no technical shorthand", async () => {
+    renderLeaf();
+    const month = await debtSection();
+
+    expect(month).not.toHaveTextContent("CC ");
+    expect(month).not.toHaveTextContent("MV ");
+    expect(month).toHaveTextContent("Кредитные карты:");
+    expect(month).toHaveTextContent("Долг по кредитным картам:");
+    const moneyUnits = month.querySelectorAll(".money");
+    expect(moneyUnits.length).toBeGreaterThan(0);
+    for (const unit of Array.from(moneyUnits)) {
+      expect(unit.textContent).toMatch(/₽/);
+    }
+    const propertyBlock = await propertySection();
+    expect(propertyBlock).not.toHaveTextContent("RE ");
+    expect(propertyBlock).toHaveTextContent("Недвижимость:");
+  });
+
+  it("#650 shows a stacked labelled editor with reachable Save/Cancel and saved totals", async () => {
+    const user = userEvent.setup();
+    renderLeaf();
+    const [debtTable] = await tables();
+
+    await user.click(
+      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
+    );
+    const editor = await screen.findByRole("form", { name: /Редактирование долга/ });
+    expect(within(editor).getByLabelText("Название долга")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Тип долга")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Текущий баланс долга")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Годовая ставка, %")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Ближайший обязательный платёж")).toBeInTheDocument();
+    expect(within(editor).getByLabelText("Окончание договора")).toBeInTheDocument();
+    expect(
+      within(editor).getByRole("button", { name: "Сохранить" }),
+    ).toBeEnabled();
+    expect(within(editor).getByRole("button", { name: "Отмена" })).toBeEnabled();
+    // Saved row and totals stay visible with an explicit saved-values note.
+    expect(within(debtTable).getByText("Основная карта")).toBeInTheDocument();
+    expect(screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
+      .toBeInTheDocument();
+    expect(await debtSection()).toHaveTextContent("Долг по кредитным картам:");
+
+    // Keyboard: tab reaches Save without horizontal hunting.
+    within(editor).getByLabelText("Название долга").focus();
+    expect(document.activeElement).toBe(within(editor).getByLabelText("Название долга"));
+    await user.tab();
+    expect(document.activeElement).not.toBe(document.body);
+
+    await user.click(within(editor).getByRole("button", { name: "Отмена" }));
+    expect(screen.queryByRole("form", { name: /Редактирование долга/ })).toBeNull();
+    expect(screen.queryByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
+      .toBeNull();
+  });
+
+  it("#650 keeps long linked-account names wrapped and totals on saved values", async () => {
+    const longName = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(8)}`;
+    vi.mocked(listAccounts).mockResolvedValue([{ ...account, id: 11, name: longName }]);
+    debtsByMonth.set(7, [{ ...debt, linked_account_id: 11 }]);
+    const user = userEvent.setup();
+    renderLeaf();
+    const [debtTable] = await tables();
+
+    expect(within(debtTable).getByText(/очень длинный накопительный/)).toBeInTheDocument();
+    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    const linkEditor = await screen.findByRole("form", { name: /Связь долга/ });
+    expect(within(linkEditor).getByLabelText("Счёт для связи с долгом")).toBeInTheDocument();
+    expect(
+      within(linkEditor).getByRole("button", { name: "Сохранить связь" }),
+    ).toBeInTheDocument();
+    expect(within(linkEditor).getByRole("button", { name: "Отмена" })).toBeInTheDocument();
+    expect(screen.getByText("Итоги посчитаны по сохранённой связи", { exact: false }))
+      .toBeInTheDocument();
+  });
+
+  it("#650 renders large, negative, zero and null debt balances without optimistic totals", async () => {
+    debtsByMonth.set(7, [
+      { ...debt, id: 1, name: "Крупный долг", current_balance: { amount: "1234567890.50", currency: "RUB" } },
+      { ...debt, id: 3, name: "Переплата", debt_type: "other", current_balance: { amount: "-48200.00", currency: "RUB" } },
+      { ...debt, id: 4, name: "Нулевой долг", debt_type: "other", current_balance: { amount: "0.00", currency: "RUB" } },
+    ]);
+    renderLeaf();
+    const [debtTable] = await tables();
+
+    expect(debtTable).toHaveTextContent(/1\s*234\s*567\s*890,50\s*₽/);
+    expect(debtTable).toHaveTextContent(/−48\s*200\s*₽/);
+    expect(debtTable).toHaveTextContent(/0\s*₽/);
+    // Card total is saved-only (credit_card only): large amount, no draft math.
+    const month = await debtSection();
+    expect(month).toHaveTextContent(/1\s*234\s*567\s*890,50\s*₽/);
+    expect(month).toHaveTextContent("Кредитные карты:");
   });
 });

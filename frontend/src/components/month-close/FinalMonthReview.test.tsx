@@ -282,4 +282,43 @@ describe("FinalMonthReview", () => {
     );
     expect(screen.queryByRole("link", { name: "Изменить" })).toBeNull();
   });
+
+  it("#650 keeps money as one nowrap unit with explicit zero, null and negative states", () => {
+    const data = review();
+    data.kpis.liquid_capital_net = rub("1234567890.50");
+    data.debts_and_property.debt_total = rub("-48200.00");
+    data.kpis.goal_target = rub("0.00");
+    data.investments = {
+      available: false,
+      reason_code: "no_position_snapshots",
+      position_count: 0,
+      market_value: rub("0.00"),
+      manual_price_count: 0,
+      actual_flow_count: 0,
+      future_flow_count: 0,
+      by_instrument_class: [],
+    };
+    render(
+      <MemoryRouter>
+        <FinalMonthReviewView review={data} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/1\s*234\s*567\s*890,50\s*₽/)).toBeInTheDocument();
+    expect(screen.getByText(/−48\s*200\s*₽/)).toBeInTheDocument();
+    expect(screen.getAllByText(/0\s*₽/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Инвестиции").parentElement).toHaveTextContent("Недоступно");
+    const moneyUnits = document.querySelectorAll(".money");
+    expect(moneyUnits.length).toBeGreaterThan(5);
+    for (const unit of Array.from(moneyUnits)) {
+      expect(unit.textContent).toMatch(/₽|Недоступно/);
+    }
+    // No technical shorthand on this surface; navigation from #647 stays intact.
+    expect(screen.queryByText(/CC\s/)).toBeNull();
+    expect(screen.queryByText(/MV\s/)).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
+      "href",
+      "/months/17?section=assets&from=monthly-close&step=final_review_close&monthId=17",
+    );
+  });
 });
