@@ -81,6 +81,15 @@ candidate-status wording. After publication, the normal documentation closeout
 records the published identity without rewriting the historical preparation
 record.
 
+## Documentation closeout
+
+After publication, the Integrator synchronizes `README.md`, `CHANGELOG.md`,
+`docs/PROJECT_WIKI.md` and `docs/EXECUTION_HISTORY.md` with the published reality.
+Active status must not still call a published release RC/candidate/unreleased;
+dated historical preparation records remain historical, not rewritten as a fabricated PASS.
+Version equality alone is not evidence that documented capabilities, limitations and release status are correct.
+This is a release closeout, not a four-document checklist for every Worker task.
+
 ## Publication boundary
 
 The publication path is deliberately narrow:
@@ -180,6 +189,12 @@ No HYG-04 acceptance test publishes a throwaway real Hermes Finance tag or relea
 The visual audit itself remains synthetic-only: its Playwright fixtures are
 local deterministic data, and CI does not start the backend or use Preview,
 production runtime, `.env`, an owner database, or live provider data.
+
+## Owner runtime updates
+
+Launcher Stable self-update is not a proven canonical release/update path until the #313 redesign is accepted.
+Use documented small Owner operations and recovery. Launcher removal approval (#629) alone does not retire shared backup/recovery/runtime protection.
+While Launcher remains supported, it selects prepared checkout/code/data runtime profiles, not arbitrary branches against one database; ADR 0014 governs this boundary.
 
 ## Manual fallback
 

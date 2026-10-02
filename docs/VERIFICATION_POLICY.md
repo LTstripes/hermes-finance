@@ -1,146 +1,88 @@
 # Verification policy — пропорциональные проверки
 
-> **Статус:** обязательный проектный протокол для Hermes/agent implementation.  
-> Цель — сохранять надёжность, но не тратить время на повторный запуск несвязанных или полных suite после каждого маленького изменения.
+Обязательный протокол. Проверяем изменённое поведение и реальные риски, а не повторяем одни и те же действия при каждой передаче задачи.
 
 ## 1. Общий принцип
 
-Проверки должны быть **пропорциональны риску и изменённым слоям**.
-
-Во время implementation loop используй самые узкие проверки, которые быстро подтверждают текущую гипотезу. Полные suite запускаются на финальном локальном gate, когда реализация уже стабилизировалась, а не после каждой правки.
-
-Явные требования task-card, ADR, release gate или владельца имеют приоритет над этой политикой и могут требовать более строгих проверок.
+Для обычной задачи нет обязательного локального full-suite перед каждым handoff.
+Targeted evidence проверяет изменение; полный релевантный охват может обеспечить успешный CI точного кандидата.
+Не дублируй этот охват локально только ради отчёта Worker, Reviewer или Integrator.
+Явные task/ADR/release/Owner gates сохраняются. Противоречащее им сокращение сначала согласуется в авторитетной issue/note, а не скрывается в отчёте.
 
 ## 1.1. Semantic lanes и ownership
 
-Backend pytest регистрирует semantic markers в `backend/pyproject.toml`, а
-`backend/tests/conftest.py` добавляет их по устойчивому пути теста. Полная
-карта владельцев, путей и frontend/external lanes находится в
-[`TEST_SUITE_GUIDE.md`](TEST_SUITE_GUIDE.md).
-
-При реализации регрессии сначала ищи существующий semantic owner и запускай
-его marker-lane. Новый `test_rXX_*` файл допустим только для отдельного
-release/version/compatibility gate или task-acceptance contract; issue ID сам
-по себе не является ownership-категорией. Markers additive и не исключают
-тесты из обычного полного suite. Существующие немаркированные файлы остаются
-частью полного suite и классифицируются при следующем осмысленном изменении,
-без массового переименования.
+Добавляй регрессию существующему semantic owner; выбирай marker или конкретный test path.
+Карта и команды находятся в [TEST_SUITE_GUIDE.md](TEST_SUITE_GUIDE.md); читай нужный участок, а не весь каталог.
+Новый `test_rXX_*` файл нужен для отдельного release/version/compatibility или task-acceptance контракта, не просто для номера issue.
+Markers не исключают тесты из полного suite; существующее покрытие и CI lanes эта политика не меняет.
 
 ## 2. Implementation loop
 
-1. Для bugfix/regression-задачи сначала добавь или найди targeted regression test и, когда это практически осмысленно, подтверди RED на старом поведении.
-2. Во время разработки повторно запускай только affected/targeted tests — по возможности через semantic marker или явный test path — и относящиеся к изменённым файлам lint/format checks.
-3. Не запускай full backend/frontend suite после каждой небольшой правки.
-4. Если targeted test падает вне заявленного scope, остановись и разберись с причиной; не расширяй scope автоматически.
-5. После стабилизации implementation переходи к финальному local verification gate ниже.
+1. Для bugfix найди/добавь regression test; подтверди RED на старом поведении, когда это даёт полезное воспроизводимое доказательство.
+2. Во время правок запускай affected tests и lint/format для затронутого кода. Сначала стабилизируй реализацию и форматирование.
+3. При сбое сохрани ошибки, установи причину, затем проверь failed nodes и affected contracts. Не используй полный suite как следующую диагностическую команду по привычке.
+4. При новом контрактном/integration риске останови расширение задачи и обратись к Integrator; не исправляй чужое поведение молча.
 
-Для worker handoff соблюдай отдельный бюджет проверок: targeted tests во время
-итерации → один полный relevant harness после стабилизации и перед передачей
-worker-результата → package/install smoke как финальный gate, если упаковка или
-установка входит в scope. Для launcher-работы это не означает повторять полный
-serial harness после каждой правки; его можно разделять на логические lanes,
-но покрытие release/production safety ослаблять нельзя.
+RED-first не обязателен для docs-only, форматирования и других изменений, где failing test не добавляет уверенности.
+<a id="stabilize-before-a-full-gate"></a>
+Для shared DB/session, serialization, restore и иных cross-cutting primitives сначала проверь direct consumers, failure/lifecycle boundaries и production entrypoints.
+Один heavyweight local verification process одновременно, включая параллельные проекты. Не меняй source/config/dependencies во время его работы.
+После выявленного инфраструктурного сбоя исправь temp/cache/toolchain условия и проверь малым запуском, прежде чем снова запускать дорогой suite.
 
-RED-first не обязателен для docs-only, механического formatting/refactor без изменения поведения и задач, где воспроизводимый failing test не даёт дополнительной уверенности.
+<a id="3-финальный-local-verification-gate-по-типу-задачи"></a>
+<a id="backenddomain-only"></a><a id="frontend-only"></a><a id="apishared-contract-change"></a>
+<a id="migration--startup--backup--restore--filesystem--concurrency--security"></a>
+<a id="docsprocess-only"></a><a id="cross-cutting-backend--frontend"></a>
+## 3. Достаточный охват по типу задачи
 
-### Stabilize before a full gate
+| Изменение | Достаточное локальное evidence и дополнительный охват |
+| --- | --- |
+| Docs/process-only | Diff, ссылки/anchors, whitespace; privacy/tracked-files check при затрагивании путей/данных. Без backend/frontend full suite. |
+| Backend под принятым контрактом | Targeted regressions + backend lint/format. Полный backend охват — CI либо один локальный full, если CI его не обеспечивает. |
+| Frontend под принятым API | Targeted component/interaction tests + frontend lint/format; production build локально или в exact-candidate CI. Полный frontend охват — CI либо один локальный full при отсутствии такого CI. |
+| API/shared contract или оба слоя | Targeted проверки обеих сторон и реальных consumers; lint/build затронутых слоёв. Полный релевантный охват — соответствующие CI lanes или недостающий локальный gate. |
+| Financial semantics, migration, startup, backup/restore, filesystem/concurrency, security/runtime | Targeted boundary/failure regressions, полный релевантный охват и все task-specific probes. Нужны соответствующая среда, независимое ревью и применимый Owner UAT. Linux unit CI не заменяет Windows process/file-handle/path probe. |
 
-For a shared DB/session, serialization, restore or other cross-cutting primitive, map its direct consumers and failure/lifecycle boundaries before the expensive gate. Cover those boundaries with focused regressions, including known failure clusters and the actual production entry points. Review an unresolved contract early when warranted; this is not an extra mandatory review for every small task or a replacement for final independent review.
-
-Finish formatting/lint fixes and focused tests before starting the full suite. Freeze its source, relevant configuration and dependencies until it finishes; do not run a formatter or another writer against the candidate in parallel. If a full suite fails, preserve its failures, diagnose and rerun the failed nodes plus the affected contract tests first. Run the required complete gate after the fixes stabilize, not as the next diagnostic command after every change.
-
-Before any repeat record the previous evidence, what changed and the concrete unresolved risk/gate. A changed commit SHA, lost polling session or desire for extra confidence alone is not a reason. A nonsemantic-only edit can reuse evidence only where policy permits and its exact diff is proven; a source-changed or interrupted record is never silently relabeled passed. Keep stricter issue/CI/independent-review/UAT requirements. There is no blanket numeric cap that waives a required full gate.
-
-Readiness means an actual writable, short external temp/cache and resolved toolchain plus an appropriate small check, not only a path/dry-run check. Once an infrastructure fault is known, fix its conditions before another expensive suite; do not weaken the tested safety contract.
-
-## 3. Финальный local verification gate по типу задачи
-
-### Backend/domain-only
-
-Обычно перед commit/push достаточно:
-
-- targeted tests для изменённого поведения;
-- backend lint + format-check;
-- **full backend suite один раз** после стабилизации implementation.
-
-Не запускай локально full frontend suite/build только потому, что он существует.
-
-Frontend проверки добавляются, если изменён публичный API/DTO, которым реально пользуется frontend, shared generated/static contract, scripts/build integration или task-card явно требует frontend verification.
-
-### Frontend-only
-
-Обычно перед commit/push достаточно:
-
-- targeted component/integration tests;
-- frontend lint + format-check;
-- **full frontend test suite один раз** после стабилизации implementation;
-- production frontend build один раз.
-
-Не запускай локально full backend suite, если backend/API contract не изменялся и task-card этого не требует.
-
-### API/shared-contract change
-
-Если меняется backend API/DTO, который потребляет frontend:
-
-- targeted backend tests;
-- full backend suite один раз;
-- targeted frontend contract/component tests для затронутого API;
-- frontend lint/format/build;
-- full frontend suite — когда изменение затрагивает shared API types/client behavior или task-card это требует.
-
-### Migration / startup / backup / restore / filesystem / concurrency / security
-
-Это high-verification задачи. Обычно требуются:
-
-- targeted regression tests;
-- full backend suite один раз;
-- lint/format;
-- task-specific integration/probe;
-- Windows-specific probe, если поведение зависит от Windows process/file-handle/path semantics;
-- exact-HEAD CI после push, если commit/push входит в iteration contract.
-
-Не сокращай task-specific probe ради скорости.
-
-### Docs/process-only
-
-Обычно достаточно:
-
-- review фактического diff;
-- `git diff --check` или эквивалентной проверки whitespace/format, если доступно;
-- privacy/tracked-files check, если документ касается путей/seed/private data или это дешёвая каноническая проверка.
-
-Локальные full backend/frontend suite для docs-only не нужны. Если repository CI автоматически запускает их на PR — дождись CI, но не дублируй их локально без причины.
-
-### Cross-cutting backend + frontend
-
-Если задача действительно изменяет оба слоя, выполни соответствующие targeted checks и по одному финальному full suite каждого затронутого слоя плюс production build frontend.
+Полный локальный запуск нужен, когда CI недоступен/не покрывает релевантный слой, есть воспроизводимый local-only риск, либо его прямо требует task/ADR gate.
+Для high-risk задачи CI засчитывается только за реально выполненные проверки в подходящей среде; отсутствующие platform/integration/package probes выполняются отдельно.
+Package/install smoke — финальная проверка при изменении упаковки/установки, а не причина повторять все suite перед каждым smoke.
+Не запускай frontend full для чистого backend изменения и наоборот без изменённого consumer/shared contract или отдельного требования.
+Push и PR можно создать для получения CI evidence; пока обязательные проверки идут, статус — pending, не done/accepted.
 
 ## 4. Когда полный suite надо повторить
 
-После уже прошедшего full suite повтори его, если затем было сделано **семантическое изменение кода** в этом же слое.
+Повторный полный запуск должен закрывать конкретную недостающую гарантию:
+- семантическое изменение затронуло слой после предыдущего полного evidence;
+- предыдущий нужный gate был прерван, невалиден или завершился ошибкой;
+- новый установленный риск/обязательный gate не покрыт имеющимися результатами.
 
-Если после full suite были только formatting, комментарии, docs или иная доказуемо non-semantic правка, локально повторять несвязанный full suite не обязательно; exact-HEAD CI остаётся финальной проверкой, если он предусмотрен iteration contract.
+Сначала стабилизируй исправление на focused tests; затем получи полный нужный охват обновлённого кандидата, в том числе через CI.
+Это не требование одновременно повторить и локальный full, и CI, и всё то же у Reviewer.
+Смена роли/сессии, передача кандидата, потеря polling-сессии, новый SHA после docs/format-only правки и «для уверенности» сами по себе не основания для локального full.
+После доказуемо non-semantic diff допускается переиспользовать применимое локальное evidence с указанием исходного SHA и проверенного отличия.
+Нельзя приписывать старый PASS изменённому поведению, смешивать несовместимые запуски или выдавать failed-node rerun за пройденный полный gate.
+Числового лимита, который отменял бы необходимую проверку, нет. Перед дорогим повтором достаточно коротко назвать изменение/ошибку и незакрытый риск; отдельный отчёт не нужен.
 
 ## 5. CI и exact HEAD
 
-GitHub Actions может канонически запускать больше jobs, чем нужно локально. Это нормально.
-
-- Не дублируй локально unrelated suite только ради совпадения со всеми CI jobs.
-- Если task-card/iteration contract требует commit + push + exact-HEAD CI, задача не считается завершённой до зелёного CI точного финального SHA.
-- После CI не вноси semantic changes без повторной релевантной локальной проверки и нового exact-HEAD CI.
-- Для интеграции обязательны оба удалённых доказательства: зелёный PR CI на
-  принятом candidate и зелёный canonical exact-main push CI на точном merge SHA.
-  Ни одно из них не заменяет другое.
+Успешный exact-candidate CI может быть полным verification gate без его локального дубля, только если проверены нужные jobs, охват и среда.
+Skipped, pending, failed, чужой SHA или отфильтрованный нужный lane не являются этим доказательством.
+Проверки на новом executable/config/dependency состоянии должны соответствовать этому состоянию; отчёт явно связывает каждый результат с кандидатом/run.
+Для интеграции обязательны зелёный PR CI принятого кандидата и зелёный canonical main push CI точного merge SHA. Ни одно не заменяет другое.
+Эта задача не меняет workflow coverage, filters, assertions или release guards; не обходи существующие required jobs.
+Reviewer/Integrator используют подтверждённое evidence кандидата. Независимость означает отдельную оценку diff/контракта, а не обязательный повтор всех тестов.
+Reviewer запускает focused reproduction/probe, когда есть спорный вывод, пробел покрытия или другое конкретное основание; для локального запуска нужна изоляция.
 
 ## 6. Что писать в отчёте
 
-В секции `Проверки` перечисли фактически выполненные команды и результаты. Для пропущенных несвязанных suite не нужно оправдание по умолчанию; если task-card ожидала необычную проверку и она не выполнялась, явно объясни почему.
-
-Не заявляй `full suite`, если запускалась только targeted subset.
+Назови выполненные команды/CI jobs, результат и исходный SHA/run; отдельно обозначь material gaps и ожидаемые проверки.
+Не называй targeted subset полным suite и не утверждай, что локально запускалось то, что выполнялось только в CI.
+Не добавляй перечень оправданий за каждый несвязанный suite. Неисполненное явное требование задачи, напротив, нельзя умолчать.
 
 ## 7. Примеры
 
-- Исправление чисто backend service: targeted pytest в цикле → backend lint/format → full backend pytest один раз → push/CI. Frontend локально не гоняется, если API contract не менялся.
-- React-страница поверх существующего API: targeted Vitest → frontend lint/format → full Vitest один раз → Vite build → push/CI. Backend full pytest локально не нужен.
-- Windows restore serialization: RED regression → targeted restore tests → implementation → targeted green → full backend → Windows file-handle/concurrency probe → push → exact-HEAD CI.
-- Docs-only ADR: diff/format/privacy checks → PR CI; без локального backend/frontend full suite.
+- Docs-only: diff/link/whitespace/privacy review → обычный PR CI; локально продуктовые full suite не нужны.
+- React leaf: targeted Vitest + frontend lint/format → exact-candidate frontend tests/build в CI; повтор full у Reviewer не нужен.
+- Backend service: regression + targeted pytest + lint/format → полный backend CI; frontend добавляется только при реальном consumer/API влиянии.
+- Windows restore: synthetic failure/concurrency regressions + нужный Windows probe + полный релевантный охват → independent review/UAT по контракту.
+- После failed full: диагностика → failed nodes + affected tests → полный нужный gate на стабилизированном кандидате, не full после каждой правки.
