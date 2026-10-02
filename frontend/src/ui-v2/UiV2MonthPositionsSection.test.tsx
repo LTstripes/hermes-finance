@@ -541,6 +541,263 @@ describe("native month positions leaf", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
   });
 
+  it("maps an unmapped quote row contextually and requires an explicit new preview", async () => {
+    const user = userEvent.setup();
+    const unmappedRow = {
+      ...quote.rows[0],
+      status: "unmapped",
+      mapping_state: "unmapped",
+      identity: null,
+      proposed_market_price_per_unit: null,
+      proposed_price_date: null,
+      proposed_quote_kind: null,
+      proposed_raw_price: null,
+      proposed_raw_price_basis: null,
+      fetched_at_utc: null,
+      freshness_status: null,
+      failure_reason: "unmapped",
+      apply_allowed: false,
+    };
+    const mappedRow = {
+      ...quote.rows[0],
+      status: "ok",
+      freshness_status: "ok",
+      apply_allowed: true,
+    };
+    const mappedIdentity = {
+      provider: "t_invest",
+      provider_instrument_id: "synthetic-uid",
+      provider_venue_id: null,
+    };
+    let mappingState = "unmapped";
+    let previewCalls = 0;
+    const { fetchMock } = setup({
+      "POST /api/months/7/quote-preview": () => {
+        previewCalls += 1;
+        return json({ ...quote, rows: [mappingState === "mapped" ? mappedRow : unmappedRow] });
+      },
+      "GET /api/instruments/21/market-mapping": () =>
+        json({
+          instrument_id: 21,
+          state: mappingState,
+          identity: mappingState === "mapped" ? mappedIdentity : null,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        }),
+      "PUT /api/instruments/21/market-mapping?verify=true": () => {
+        mappingState = "mapped";
+        return json({
+          instrument_id: 21,
+          state: "mapped",
+          identity: mappedIdentity,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        });
+      },
+    });
+    await screen.findByText("Synthetic Fund (SYN)");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("market-mapping"))).toBe(
+      false,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("table", { name: "Предпросмотр котировок" });
+    expect(screen.getByText("Внешний источник не настроен")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("market-mapping"))).toBe(
+      false,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
+    const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url) === "/api/instruments/21/market-mapping" && (init?.method ?? "GET") === "GET",
+      ),
+    ).toBe(true);
+    await user.type(
+      within(dialog).getByLabelText("Идентификатор инструмента T-Invest"),
+      "synthetic-uid",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить источник" }));
+    await waitFor(() => expect(mappingState).toBe("mapped"));
+    const put = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/instruments/21/market-mapping?verify=true" && init?.method === "PUT",
+    );
+    expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+      provider: "t_invest",
+      provider_instrument_id: "synthetic-uid",
+    });
+    expect(await within(dialog).findByText("T-Invest · synthetic-uid")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("table", { name: "Предпросмотр котировок" })).toBeNull();
+    expect(screen.getByText(/Сопоставление сохранено/)).toBeInTheDocument();
+    expect(screen.getByText(/Запроси новый предпросмотр/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("table", { name: "Предпросмотр котировок" });
+    expect(previewCalls).toBe(2);
+    expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeEnabled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+  });
+
+  it("keeps the existing preview when a contextual mapping save fails", async () => {
+    const user = userEvent.setup();
+    const unmappedRow = {
+      ...quote.rows[0],
+      status: "unmapped",
+      mapping_state: "unmapped",
+      identity: null,
+      proposed_market_price_per_unit: null,
+      proposed_price_date: null,
+      failure_reason: "unmapped",
+      apply_allowed: false,
+    };
+    const { fetchMock } = setup({
+      "POST /api/months/7/quote-preview": () => json({ ...quote, rows: [unmappedRow] }),
+      "GET /api/instruments/21/market-mapping": () =>
+        json({
+          instrument_id: 21,
+          state: "unmapped",
+          identity: null,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        }),
+      "PUT /api/instruments/21/market-mapping?verify=true": () =>
+        json(
+          {
+            error: {
+              code: "mapping_verify_failed",
+              message: "Инструмент не подтверждён внешним источником.",
+              details: [],
+            },
+          },
+          409,
+        ),
+    });
+    await screen.findByText("Synthetic Fund (SYN)");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("table", { name: "Предпросмотр котировок" });
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
+    const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
+    await user.type(
+      within(dialog).getByLabelText("Идентификатор инструмента T-Invest"),
+      "synthetic-uid",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить источник" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      /Инструмент не подтверждён внешним источником/,
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Закрыть" }));
+    expect(screen.getByRole("table", { name: "Предпросмотр котировок" })).toBeInTheDocument();
+    expect(screen.queryByText(/Сопоставление сохранено/)).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+  });
+
+  it("opens the validated mapping flow for an ambiguous quote row", async () => {
+    const user = userEvent.setup();
+    const ambiguousRow = {
+      ...quote.rows[0],
+      status: "ambiguous",
+      failure_reason: "ambiguous",
+      apply_allowed: false,
+    };
+    const existingIdentity = {
+      provider: "t_invest",
+      provider_instrument_id: "old-uid",
+      provider_venue_id: null,
+    };
+    let saved = false;
+    const { fetchMock } = setup({
+      "POST /api/months/7/quote-preview": () => json({ ...quote, rows: [ambiguousRow] }),
+      "GET /api/instruments/21/market-mapping": () =>
+        json({
+          instrument_id: 21,
+          state: "mapped",
+          identity: existingIdentity,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        }),
+      "PUT /api/instruments/21/market-mapping?verify=true": () => {
+        saved = true;
+        return json({
+          instrument_id: 21,
+          state: "mapped",
+          identity: { ...existingIdentity, provider_instrument_id: "synthetic-uid" },
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        });
+      },
+    });
+    await screen.findByText("Synthetic Fund (SYN)");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("table", { name: "Предпросмотр котировок" });
+    expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
+    const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
+    expect(within(dialog).getByText("T-Invest · old-uid")).toBeInTheDocument();
+    const uid = within(dialog).getByLabelText("Идентификатор инструмента T-Invest");
+    await user.clear(uid);
+    await user.type(uid, "synthetic-uid");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить источник" }));
+    await waitFor(() => expect(saved).toBe(true));
+    await user.click(within(dialog).getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("table", { name: "Предпросмотр котировок" })).toBeNull();
+    expect(screen.getByText(/Сопоставление сохранено/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+  });
+
+  it("invalidates the preview when quote updates are excluded from the dialog", async () => {
+    const user = userEvent.setup();
+    const unmappedRow = {
+      ...quote.rows[0],
+      status: "unmapped",
+      mapping_state: "unmapped",
+      identity: null,
+      proposed_market_price_per_unit: null,
+      proposed_price_date: null,
+      failure_reason: "unmapped",
+      apply_allowed: false,
+    };
+    let excluded = false;
+    const { fetchMock } = setup({
+      "POST /api/months/7/quote-preview": () => json({ ...quote, rows: [unmappedRow] }),
+      "GET /api/instruments/21/market-mapping": () =>
+        json({
+          instrument_id: 21,
+          state: excluded ? "excluded" : "unmapped",
+          identity: null,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        }),
+      "PUT /api/instruments/21/market-mapping/exclusion": () => {
+        excluded = true;
+        return json({
+          instrument_id: 21,
+          state: "excluded",
+          identity: null,
+          instrument_isin: null,
+          legacy_moex_secid: null,
+        });
+      },
+    });
+    await screen.findByText("Synthetic Fund (SYN)");
+    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+    await screen.findByRole("table", { name: "Предпросмотр котировок" });
+    await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
+    const dialog = await screen.findByRole("dialog", { name: "Источник котировки" });
+    await user.click(within(dialog).getByRole("button", { name: "Отключить обновление" }));
+    await waitFor(() => expect(excluded).toBe(true));
+    await user.click(within(dialog).getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("table", { name: "Предпросмотр котировок" })).toBeNull();
+    expect(screen.getByText(/Обновление котировок для инструмента отключено/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+  });
+
   it("keeps a failed save dirty and never reports it as confirmed", async () => {
     const { setDirty } = setup(
       {

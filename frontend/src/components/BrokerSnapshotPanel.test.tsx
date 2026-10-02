@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -556,6 +556,8 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
     await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
     await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+    expect(await screen.findByText("Подтверждённых: 1 · свёрнуты")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Показать все" }));
     expect(await screen.findByText("Уже подтверждено")).toBeInTheDocument();
     expect(screen.getByText("Дата базового среза")).toBeInTheDocument();
     expect(screen.getByDisplayValue("2026-08-31")).toBeInTheDocument();
@@ -566,6 +568,155 @@ describe("BrokerSnapshotPanel explicit owner decisions", () => {
     expect(
       screen.getByRole("button", { name: "Отозвать сопоставление счёта" }),
     ).toBeInTheDocument();
+  });
+
+  it("collapses confirmed mappings by default and keeps attention rows visible", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        accounts: [
+          {
+            provider_account_id: "SYN-ACCOUNT-001",
+            hermes_account_id: 1,
+            status: "matched",
+            reason: null,
+            classification: "reused",
+            section_codes: ["RUB"],
+          },
+          {
+            provider_account_id: "SYN-ACCOUNT-002",
+            hermes_account_id: null,
+            status: "unmatched",
+            reason: "no explicit owner mapping for provider account",
+            classification: "new",
+          },
+        ],
+        instruments: [
+          {
+            provider_instrument_id: "SYN-INSTRUMENT-001",
+            isin: "RU000SYNTH01",
+            ticker: null,
+            display_name: "Уже сопоставлено",
+            hermes_instrument_id: 10,
+            status: "matched",
+            reason: null,
+            classification: "reused",
+          },
+          {
+            provider_instrument_id: "SYN-INSTRUMENT-002",
+            isin: null,
+            ticker: null,
+            display_name: "Нужно сопоставить",
+            hermes_instrument_id: null,
+            status: "unmatched",
+            reason: "instrument_unmatched",
+            classification: "new",
+          },
+        ],
+      }),
+    );
+    vi.mocked(listBrokerIdentityMappings).mockResolvedValue([
+      {
+        mapping_id: 9,
+        provider: "alfa_pro",
+        subject_kind: "account",
+        provider_identity: "SYN-ACCOUNT-001",
+        hermes_target_id: 1,
+        status: "effective",
+        observed_isin: null,
+        confirmed_at: "2026-08-31T12:00:00Z",
+        source_as_of: null,
+        captured_at: null,
+        predecessor_mapping_id: null,
+        successor_mapping_id: null,
+        revoked_at: null,
+        revoke_reason: null,
+      },
+    ]);
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    // Attention rows stay visible and actionable.
+    expect(await screen.findByLabelText("Счёт без наблюдений")).toBeInTheDocument();
+    expect(screen.getByLabelText("Нужно сопоставить")).toBeInTheDocument();
+    // Confirmed rows are collapsed, not removed; both panels report their count.
+    expect(screen.queryByText("Раздел RUB")).toBeNull();
+    expect(screen.queryByText("Уже сопоставлено · RU000SYNTH01")).toBeNull();
+    expect(screen.getAllByText("Подтверждённых: 1 · свёрнуты")).toHaveLength(2);
+    expect(screen.getByText(/не подтверждает совпадение количеств позиций/)).toBeInTheDocument();
+
+    const accountsPanel = screen
+      .getByRole("heading", { name: "Счета Alfa → Hermes" })
+      .closest("section") as HTMLElement;
+    await user.click(within(accountsPanel).getByRole("button", { name: "Показать все" }));
+    expect(await screen.findByText("Раздел RUB")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Отозвать сопоставление счёта" }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Показывать инструменты"), "confirmed");
+    expect(await screen.findByText("Уже сопоставлено · RU000SYNTH01")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Нужно сопоставить")).toBeNull();
+  });
+
+  it("keeps changed matched positions visible and reveals unchanged rows on demand", async () => {
+    const user = userEvent.setup();
+    vi.mocked(previewBrokerSnapshot).mockResolvedValue(
+      preview({
+        positions: [
+          {
+            ...matched,
+            instrument_id: 20,
+            instrument_name: "Изменённая позиция",
+            instrument_isin: "RU000SYNTH02",
+            quantity_equal: false,
+            fingerprint: "fp-changed",
+          },
+          {
+            ...matched,
+            instrument_id: 21,
+            instrument_name: "Неизменённая позиция",
+            instrument_isin: "RU000SYNTH03",
+            provider_quantity: "299.500000",
+            hermes_quantity: "299.500000",
+            quantity_difference: "0.000000",
+            quantity_equal: true,
+            fingerprint: "fp-unchanged",
+          },
+        ],
+      }),
+    );
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(await screen.findByText(/Изменённая позиция/)).toBeInTheDocument();
+    expect(screen.queryByText(/Неизменённая позиция/)).toBeNull();
+    expect(screen.getByText(/Скрыто неизменённых сопоставленных строк: 1/)).toBeInTheDocument();
+
+    // Selection semantics are not redefined by the disclosure filter.
+    await user.click(screen.getByRole("button", { name: "Выбрать все применимые" }));
+    expect(screen.getByText("Выбрано: 2 из 2 применимых")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Показывать строки"), "all");
+    expect(await screen.findByText(/Неизменённая позиция/)).toBeInTheDocument();
+  });
+
+  it("keeps the safe diagnostics disclosure after the preview results", async () => {
+    const user = userEvent.setup();
+    render(<BrokerSnapshotPanel accounts={[account]} instruments={[instrument]} />);
+    await user.selectOptions(await screen.findByLabelText("Отчётный месяц"), "7");
+    await user.click(screen.getByRole("button", { name: "Получить данные из Альфа PRO" }));
+
+    expect(await screen.findByText("safe synthetic diagnostics")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    const diagnostics = screen
+      .getByText("Безопасная диагностика для поддержки")
+      .closest("details") as HTMLElement;
+    expect(
+      table.compareDocumentPosition(diagnostics) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("groups positions and lets the owner select all applicable rows explicitly", async () => {
