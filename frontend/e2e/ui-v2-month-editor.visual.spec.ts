@@ -9,7 +9,10 @@ const closed = {
   source: "manual",
 };
 
-async function installApi(page: Page) {
+async function installApi(
+  page: Page,
+  overrides: { debts?: object[]; accounts?: object[]; properties?: object[] } = {},
+) {
   let month = { ...closed };
   const calls: string[] = [];
   const expenses: object[] = [];
@@ -55,6 +58,12 @@ async function installApi(page: Page) {
         expenses.push(row);
         await route.fulfill({ json: row });
       } else await route.fulfill({ json: expenses });
+    } else if (path === "/api/debts" && request.method() === "GET" && overrides.debts) {
+      await route.fulfill({ json: overrides.debts });
+    } else if (path === "/api/accounts" && request.method() === "GET" && overrides.accounts) {
+      await route.fulfill({ json: overrides.accounts });
+    } else if (path === "/api/properties" && request.method() === "GET" && overrides.properties) {
+      await route.fulfill({ json: overrides.properties });
     } else if (
       [
         "/api/incomes",
@@ -306,50 +315,36 @@ for (const width of [1280, 390]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
-    await installApi(page);
-    // Specific mocks after the generic catch-all: later routes take precedence.
-    await page.route("**/api/debts*", async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        json: [
-          {
-            id: 1,
-            reporting_month_id: 7,
-            debt_type: "credit_card",
-            name: "Основная карта с очень длинным названием для проверки переноса",
-            current_balance: { amount: "1234567890.50", currency: "RUB" },
-            include_in_liquid_capital: true,
-            linked_account_id: null,
-            annual_rate: "19.90",
-            next_due_date: "2030-06-20",
-            contract_end_date: null,
-            notes: null,
-          },
-        ],
-      });
-    });
-    await page.route("**/api/accounts*", async (route) => {
-      await route.fulfill({
-        json: [
-          {
-            id: 11,
-            name: longAccount,
-            account_type: "deposit",
-            status: "active",
-            external_code: null,
-            include_in_capital: true,
-            include_in_returns: true,
-            notes: null,
-          },
-        ],
-      });
-    });
-    await page.route("**/api/properties*", async (route) => {
-      if (route.request().method() === "GET") await route.fulfill({ json: [] });
-      else await route.continue();
+    // One catch-all mock serves the #650 fixtures: no overlapping routes.
+    await installApi(page, {
+      debts: [
+        {
+          id: 1,
+          reporting_month_id: 7,
+          debt_type: "credit_card",
+          name: "Основная карта с очень длинным названием для проверки переноса",
+          current_balance: { amount: "1234567890.50", currency: "RUB" },
+          include_in_liquid_capital: true,
+          linked_account_id: null,
+          annual_rate: "19.90",
+          next_due_date: "2030-06-20",
+          contract_end_date: null,
+          notes: null,
+        },
+      ],
+      accounts: [
+        {
+          id: 11,
+          name: longAccount,
+          account_type: "deposit",
+          status: "active",
+          external_code: null,
+          include_in_capital: true,
+          include_in_returns: true,
+          notes: null,
+        },
+      ],
+      properties: [],
     });
 
     await page.goto("/v2/data/months");
