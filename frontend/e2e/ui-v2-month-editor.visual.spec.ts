@@ -306,7 +306,7 @@ for (const width of [1280, 390]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
-    // Specific routes first: they win over the generic installApi catch-all.
+    // Specific routes first: first matching route handles the request.
     await page.route("**/api/debts", async (route) => {
       if (route.request().method() !== "GET") {
         await route.continue();
