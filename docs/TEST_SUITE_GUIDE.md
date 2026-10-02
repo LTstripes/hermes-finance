@@ -135,8 +135,9 @@ backend-style directories only to make the trees look symmetrical.
 
 ## Useful targeted commands
 
-From `backend/`, use a marker for a semantic implementation loop and the full
-suite once the affected layer is stable:
+From `backend/`, use a marker for the semantic implementation loop. The full
+command below is available when a local full gate is needed under
+`VERIFICATION_POLICY.md`; it is not mandatory in addition to complete relevant CI.
 
 ```powershell
 uv run --locked python -I -m pytest -q -m domain
@@ -154,8 +155,9 @@ selection is targeted evidence, not a claim that unrelated lanes passed.
 
 ## Local helper versus CI
 
-The root `scripts/test.ps1` is a developer convenience path. It checks the
-backend lockfile/full tests and frontend tests/build. The canonical CI matrix
+The root `scripts/test.ps1` is an optional developer convenience path, not a
+mandatory handoff command. It checks the backend lockfile/full tests and
+frontend tests/build. The canonical CI matrix
 also runs Ruff, Biome, the Windows timezone subset, the G04 synthetic
 real-backend owner journey, synthetic visual audit, privacy/path checks,
 release PowerShell contracts, production smoke, and the .NET launcher safety
