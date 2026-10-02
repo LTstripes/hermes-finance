@@ -20,6 +20,23 @@
 .tool {
   display: grid;
   gap: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.individual {
+  min-width: 0;
+}
+
+.individual > summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-weight: 600;
+}
+
+.individual[open] {
+  display: grid;
+  gap: 18px;
 }
 
 .statement {
