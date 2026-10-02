@@ -352,9 +352,14 @@ for (const width of [1280, 390]) {
       else await route.continue();
     });
 
-    await page.goto("/v2/data/months/7?section=liabilities");
+    await page.goto("/v2/data/months");
+    await page.goto("/v2/data/months/7");
     await page.getByRole("button", { name: "Открыть для редактирования" }).click();
     await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Разделы редактора месяца" })
+      .getByRole("link", { name: "Долги и недвижимость", exact: true })
+      .click();
     await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
     // Owner language, no technical shorthand; money is one unit.
