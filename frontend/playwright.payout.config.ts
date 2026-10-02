@@ -7,7 +7,7 @@ const directory = path.dirname(fileURLToPath(import.meta.url));
 const port = process.env.HERMES_SYNTHETIC_PAYOUT_PORT ?? "18468";
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "payout-real-backend.spec.ts",
+  testMatch: "payout.acceptance.ts",
   workers: 1,
   retries: 0,
   outputDir:

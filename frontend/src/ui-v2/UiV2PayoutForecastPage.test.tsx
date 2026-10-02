@@ -969,6 +969,18 @@ it("confirms count_manual success through the linked manual calendar row", async
   // No provider row for the applied payout: the canonical projection keeps
   // it on the manual row via linked_provider_payout_id.
   vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 601) as never);
+  vi.mocked(listExpectedFlows).mockResolvedValue([
+    {
+      id: 101,
+      reporting_month_id: 7,
+      forecast_version: "v1",
+      account_id: 1,
+      instrument_id: 10,
+      flow_type: "coupon",
+      expected_date: "2026-09-10",
+      expected_net_amount: money("100.00"),
+    },
+  ] as never);
   show("?month=7");
   await screen.findByText("Объединённый календарь выплат");
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
@@ -990,6 +1002,61 @@ it("confirms provider-visible success through the provider calendar row", async 
   await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
   // Default fixtures: payout_id 2 is a visible provider row (source_id 2).
   expect(await screen.findByText(/Применено выплат: 1/)).toBeInTheDocument();
+});
+
+it.each(["date", "reconciliation", "counting", "manual_link"])(
+  "keeps a successful receipt unverified for mismatched provider calendar %s",
+  async (change) => {
+    const user = userEvent.setup();
+    const calendar = structuredClone(calendarFixture);
+    const provider = calendar[0].items[1];
+    if (change === "date") provider.expected_date = "2026-09-09";
+    if (change === "reconciliation") Object.assign(provider, { reconciliation_id: 999 });
+    if (change === "counting") Object.assign(provider, { counting_decision: "count_provider" });
+    if (change === "manual_link") Object.assign(provider, { linked_manual_id: 999 });
+    vi.mocked(listPayoutCalendar).mockResolvedValue(calendar as never);
+    show("?month=7");
+    await screen.findByText("Объединённый календарь выплат");
+    await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+    await screen.findByText("Новая");
+    await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+    await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+    expect(await screen.findByText(/APPLIED_UNVERIFIED/)).toBeInTheDocument();
+    expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
+  },
+);
+
+it("does not confirm readback after the reporting-month snapshot context changes", async () => {
+  const user = userEvent.setup();
+  let committed = false;
+  const changed = { ...draftMonth, snapshot_date: "2026-08-30" };
+  vi.mocked(getMonth).mockImplementation(async () => (committed ? changed : draftMonth));
+  vi.mocked(getCloseReadiness).mockImplementation(
+    async () =>
+      ({
+        ...(committed ? changed : draftMonth),
+        can_close: false,
+        items: [],
+      }) as CloseReadiness,
+  );
+  vi.mocked(applyPayouts).mockImplementation(async () => {
+    committed = true;
+    return {
+      success: true,
+      selected_count: 1,
+      items: [applyItem(2, null)],
+      error_code: null,
+      message: null,
+    };
+  });
+  show("?month=7");
+  await screen.findByText("Объединённый календарь выплат");
+  await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
+  await screen.findByText("Новая");
+  await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
+  await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
+  expect(await screen.findByText(/APPLIED_UNVERIFIED/)).toBeInTheDocument();
+  expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
 });
 
 it("does not confirm an unrelated manual link for the applied payout", async () => {

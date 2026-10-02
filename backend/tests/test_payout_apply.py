@@ -1181,6 +1181,27 @@ def test_duplicate_decisions_persist_link_without_mutating_manual_flow(
             refreshed.notes,
         )
         assert after == before
+        revised_fetch = fetch_result(event(amount=Decimal("40.00")))
+        scope = dict(
+            month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            snapshot_id=snapshot_id,
+        )
+        revised_row = preview_row(session, result=revised_fetch, **scope)
+        assert revised_row.status.value == "revised"
+        revised_result = apply(
+            session,
+            FakeProvider(revised_fetch),
+            selections=(selection_from_row(revised_row),),
+            **scope,
+        )
+        assert revised_result.success
+        [receipt] = revised_result.items
+        assert receipt.reconciliation_id == link.id
+        assert receipt.expected_cash_flow_id == manual.id
+        assert receipt.counting_decision == decision.value
+        assert counts(session) == (1, 2, 1)
     finally:
         session.close()
         database.engine.dispose()

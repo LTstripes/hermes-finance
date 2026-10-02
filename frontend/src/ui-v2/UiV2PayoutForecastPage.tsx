@@ -22,7 +22,13 @@ import {
   previewPayoutsBatch,
 } from "../api/payouts";
 import { listPositions } from "../api/positions";
-import type { Account, Instrument, PositionSnapshot, ReportingMonth } from "../api/types";
+import type {
+  Account,
+  ExpectedFlow,
+  Instrument,
+  PositionSnapshot,
+  ReportingMonth,
+} from "../api/types";
 import {
   type MonthlyCloseReturnContext,
   monthlyCloseReturnPath,
@@ -160,6 +166,7 @@ function isAppliedPayoutRepresented(
   item: PayoutApplyResult["items"][number],
   calendar: PayoutCalendarMonth[],
   group: FrozenPayoutGroup,
+  expected: ExpectedFlow[],
 ): boolean {
   const payload = group.payload;
   const reviewed = group.reviewedRows.find(
@@ -179,30 +186,52 @@ function isAppliedPayoutRepresented(
         row.instrument_id === payload.instrument_id &&
         row.flow_type === item.event_kind,
     );
-  if (
-    rows.some(
-      (row) =>
-        row.source_kind === "provider" &&
-        row.source_id === item.payout_id &&
-        row.provider === item.provider &&
-        row.provider_instrument_uid === item.instrument_uid &&
-        row.provider_identity_key === item.identity_key &&
-        row.provider_lifecycle === item.lifecycle &&
-        row.expected_net_amount.amount === item.total_amount.amount &&
-        row.expected_net_amount.currency === item.total_amount.currency,
-    )
-  ) {
-    return true;
-  }
-  const linked = rows.filter(
+  const provider = rows.find(
+    (row) =>
+      row.source_kind === "provider" &&
+      row.source_id === item.payout_id &&
+      row.provider === item.provider &&
+      row.provider_instrument_uid === item.instrument_uid &&
+      row.provider_identity_key === item.identity_key &&
+      row.provider_lifecycle === item.lifecycle &&
+      row.expected_date === reviewed?.payment_date &&
+      row.expected_net_amount.amount === item.total_amount.amount &&
+      row.expected_net_amount.currency === item.total_amount.currency,
+  );
+  if (manualId == null)
+    return (
+      !!provider &&
+      provider.reconciliation_id === null &&
+      provider.counting_decision === null &&
+      provider.linked_manual_id === null
+    );
+  const manual = expected.find(
+    (row) =>
+      row.id === manualId &&
+      row.account_id === payload.account_id &&
+      row.instrument_id === payload.instrument_id &&
+      row.flow_type === item.event_kind,
+  );
+  if (!manual) return false;
+  const manualProof = rows.some(
     (row) =>
       row.source_kind === "manual" &&
+      row.source_id === manualId &&
       row.linked_provider_payout_id === item.payout_id &&
-      row.counting_decision === counting,
+      row.reconciliation_id === item.reconciliation_id &&
+      row.counting_decision === counting &&
+      row.expected_date === manual.expected_date &&
+      row.expected_net_amount.amount === manual.expected_net_amount.amount &&
+      row.expected_net_amount.currency === manual.expected_net_amount.currency,
   );
-  if (linked.length === 0) return false;
-  if (manualId == null) return false;
-  return linked.some((row) => row.source_id === manualId);
+  const providerProof =
+    !!provider &&
+    provider.reconciliation_id === item.reconciliation_id &&
+    provider.counting_decision === counting &&
+    provider.linked_manual_id === manualId;
+  if (counting === "count_manual") return manualProof;
+  if (counting === "count_provider") return providerProof;
+  return counting === "keep_both" && providerProof && manualProof;
 }
 
 function newestMonth(months: ReportingMonth[]): ReportingMonth | undefined {
@@ -739,6 +768,9 @@ function PayoutForecastTool({
             !current() ||
             rereadMonth.id !== frozenMonthId ||
             rereadMonth.status === "closed" ||
+            rereadMonth.year !== month?.year ||
+            rereadMonth.month !== month?.month ||
+            rereadMonth.snapshot_date !== month?.snapshot_date ||
             rereadRefresh.reporting_month_id !== frozenMonthId ||
             rereadExpected.some(
               (row) =>
@@ -748,7 +780,9 @@ function PayoutForecastTool({
             readiness.month !== rereadMonth.month ||
             readiness.snapshot_date !== rereadMonth.snapshot_date ||
             readiness.status !== rereadMonth.status ||
-            !result.items.every((item) => isAppliedPayoutRepresented(item, rereadCalendar, group))
+            !result.items.every((item) =>
+              isAppliedPayoutRepresented(item, rereadCalendar, group, rereadExpected),
+            )
           )
             return false;
           setMonth(rereadMonth);

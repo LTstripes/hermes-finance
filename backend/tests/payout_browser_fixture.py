@@ -63,44 +63,58 @@ def create_browser_app():
                     forecast_version="v1",
                     is_confirmed=False,
                 )
-        second_month = create_reporting_month(
-            session, year=2031, month=5, snapshot_date=date(2031, 5, 12)
-        )
-        for instrument in session.scalars(select(Instrument).order_by(Instrument.id)):
-            create_position_snapshot(
-                session,
-                reporting_month_id=second_month.id,
-                account_id=account_id,
-                instrument_id=instrument.id,
-                quantity="2.000000",
-                average_cost_per_unit="100.00",
-                market_price_per_unit="101.00",
-                price_date=date(2031, 5, 12),
+        for year in range(2031, 2037):
+            extra_month = create_reporting_month(
+                session, year=year, month=5, snapshot_date=date(year, 5, 12)
             )
-            if instrument.name == "Synthetic duplicate and principal":
-                create_expected_cash_flow(
+            for instrument in session.scalars(select(Instrument).order_by(Instrument.id)):
+                create_position_snapshot(
                     session,
-                    reporting_month_id=second_month.id,
+                    reporting_month_id=extra_month.id,
                     account_id=account_id,
                     instrument_id=instrument.id,
-                    flow_type=ExpectedCashFlowType.COUPON,
-                    expected_date=date(2031, 6, 15),
-                    gross_amount="999.00",
-                    expected_net_amount="999.00",
-                    source="synthetic",
-                    source_as_of_date=date(2031, 5, 12),
-                    forecast_version="v1",
-                    is_confirmed=False,
+                    quantity="2.000000",
+                    average_cost_per_unit="100.00",
+                    market_price_per_unit="101.00",
+                    price_date=date(year, 5, 12),
                 )
+                if instrument.name == "Synthetic duplicate and principal":
+                    create_expected_cash_flow(
+                        session,
+                        reporting_month_id=extra_month.id,
+                        account_id=account_id,
+                        instrument_id=instrument.id,
+                        flow_type=ExpectedCashFlowType.COUPON,
+                        expected_date=date(year, 6, 15),
+                        gross_amount="999.00",
+                        expected_net_amount="999.00",
+                        source="synthetic",
+                        source_as_of_date=date(year, 5, 12),
+                        forecast_version="v1",
+                        is_confirmed=False,
+                    )
 
     class SyntheticProvider(RecordingPayoutProvider):
         def fetch_payouts(self, request):
             result = super().fetch_payouts(request)
-            payment = date(request.calendar_from.year, 6, 15)
+            year = request.calendar_from.year
+            attempt = sum(
+                saved.instrument_uid == request.instrument_uid and saved.calendar_from.year == year
+                for saved in self.requests
+            )
+            if year == 2033 and request.instrument_uid == second_uid and attempt >= 2:
+                raise RuntimeError("synthetic provider failure")
+            revised = year == 2032 and attempt >= 3
+            payment = date(year, 6, 16 if revised else 15)
             result = replace(
                 result,
                 events=tuple(
-                    replace(event, payment_date=payment, provider_filter_date=payment)
+                    replace(
+                        event,
+                        payment_date=payment,
+                        provider_filter_date=payment,
+                        per_unit_amount=Decimal("30.00") if revised else event.per_unit_amount,
+                    )
                     for event in result.events
                 ),
             )

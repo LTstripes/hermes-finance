@@ -22,6 +22,7 @@ from hermes_finance.services.applied_payouts import (
     append_applied_payout_revision,
     create_applied_payout,
     get_applied_payout,
+    get_applied_payout_reconciliation,
     list_applied_payout_revisions,
     set_applied_payout_reconciliation,
 )
@@ -320,7 +321,7 @@ def apply_payout_preview(
                     revision.provider_status = None
                     session.flush()
 
-            link = None
+            link = get_applied_payout_reconciliation(session, payout.id)
             decision = plan.duplicate_decision
             if decision is not None:
                 link = set_applied_payout_reconciliation(
