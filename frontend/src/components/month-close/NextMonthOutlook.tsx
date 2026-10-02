@@ -44,8 +44,8 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
       </div>
       <p className="muted tiny">
         {formatDate(window.from_date)} — до {formatDate(window.to_date)} · пассивный доход{" "}
-        {hasKnownEvents ? moneyValue(window.passive_income) : "неизвестен"} · возврат основной
-        суммы {hasKnownEvents ? moneyValue(window.redemption_principal) : "неизвестно"}
+        {hasKnownEvents ? moneyValue(window.passive_income) : "неизвестен"} · возврат основной суммы{" "}
+        {hasKnownEvents ? moneyValue(window.redemption_principal) : "неизвестно"}
       </p>
       {hasKnownEvents ? (
         <ul className="final-review__event-list">

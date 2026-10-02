@@ -585,7 +585,10 @@ export function FinalMonthReview({
             label="Обязательные расходы"
             value={moneyValue(review.kpis.mandatory_expenses)}
           />
-          <DataValue label="Ипотека" value={moneyValue(review.debts_and_property.mortgage_balance)} />
+          <DataValue
+            label="Ипотека"
+            value={moneyValue(review.debts_and_property.mortgage_balance)}
+          />
         </div>
       </Panel>
 

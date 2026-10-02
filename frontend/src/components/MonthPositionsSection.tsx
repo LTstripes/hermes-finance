@@ -476,8 +476,8 @@ export function MonthPositionsSection({
       <Panel
         action={
           <Badge>
-            Рыночная стоимость: <MoneyAmount amount={totals.market} /> ·{" "}
-            {filteredPositions.length} поз.
+            Рыночная стоимость: <MoneyAmount amount={totals.market} /> · {filteredPositions.length}{" "}
+            поз.
           </Badge>
         }
         label="Портфель"

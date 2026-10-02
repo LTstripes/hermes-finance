@@ -371,8 +371,9 @@ for (const width of [1280, 390]) {
     await expect(editor.getByLabel("Текущий баланс долга")).toBeVisible();
     await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
     await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
-    await expect(page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
-      .toBeVisible();
+    await expect(
+      page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeVisible();
 
     // Save/Cancel are reachable without page-level horizontal scrolling.
     expect(
@@ -381,9 +382,7 @@ for (const width of [1280, 390]) {
     for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
       await expect(editor.getByLabel(label)).toBeInViewport();
     }
-    await expect(
-      editor.getByRole("button", { name: "Сохранить", exact: true }),
-    ).toBeInViewport();
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeInViewport();
     await expect(editor.getByRole("button", { name: "Отмена" })).toBeInViewport();
 
     // Keyboard reaches Save/Cancel.

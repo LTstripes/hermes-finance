@@ -739,7 +739,10 @@ function DebtBlock({
                           <div className={leafStyles.rowActions}>
                             <Button
                               disabled={
-                                busy || readOnly || editingId !== null || eligibleAccounts.length === 0
+                                busy ||
+                                readOnly ||
+                                editingId !== null ||
+                                eligibleAccounts.length === 0
                               }
                               onClick={() => startLinkingDebt(row)}
                               size="sm"
@@ -845,7 +848,9 @@ function DebtBlock({
                       id={`debt-edit-${editingRow.id}-balance`}
                       onChange={(event) =>
                         setEditDraft((previous) =>
-                          previous ? { ...previous, current_balance: event.target.value } : previous,
+                          previous
+                            ? { ...previous, current_balance: event.target.value }
+                            : previous,
                         )
                       }
                       value={edit.current_balance}
@@ -896,7 +901,10 @@ function DebtBlock({
                     />
                   </Field>
                   <div className={leafStyles.stackedCheck}>
-                    <label className={leafStyles.checkRow} htmlFor={`debt-edit-${editingRow.id}-inc`}>
+                    <label
+                      className={leafStyles.checkRow}
+                      htmlFor={`debt-edit-${editingRow.id}-inc`}
+                    >
                       <input
                         checked={edit.include_in_liquid_capital}
                         disabled={busy || readOnly}
@@ -915,12 +923,7 @@ function DebtBlock({
                   </div>
                 </div>
                 <div className={leafStyles.rowActions}>
-                  <Button
-                    disabled={busy || readOnly}
-                    size="sm"
-                    type="submit"
-                    variant="primary"
-                  >
+                  <Button disabled={busy || readOnly} size="sm" type="submit" variant="primary">
                     Сохранить
                   </Button>
                   <Button
@@ -994,9 +997,7 @@ function DebtBlock({
                   <p className={leafStyles.hint}>{LINK_ACCOUNT_EMPTY_HINT}</p>
                 ) : null}
                 {linkingRow.linked_account_id != null &&
-                !eligibleAccounts.some(
-                  (account) => account.id === linkingRow.linked_account_id,
-                ) ? (
+                !eligibleAccounts.some((account) => account.id === linkingRow.linked_account_id) ? (
                   <p className={leafStyles.hint}>{LINK_ACCOUNT_STALE_HINT}</p>
                 ) : null}
                 <div className={leafStyles.rowActions}>
@@ -1534,9 +1535,7 @@ function PropertyBlock({
         </span>
         <span>
           Недостаток покрытия:{" "}
-          <strong>
-            {mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}
-          </strong>
+          <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
         </span>
         <span>
           Покрытие обязательных расходов: <strong>{coveragePct ?? "—"}</strong>

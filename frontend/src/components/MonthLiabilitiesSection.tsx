@@ -502,7 +502,10 @@ export function MonthLiabilitiesSection({
                             <div className="linked-debt-control__actions">
                               <Button
                                 disabled={
-                                  busy || readOnly || editingDebtId !== null || eligibleAccounts.length === 0
+                                  busy ||
+                                  readOnly ||
+                                  editingDebtId !== null ||
+                                  eligibleAccounts.length === 0
                                 }
                                 onClick={() => startLinkingDebt(row)}
                                 size="sm"
@@ -612,10 +615,7 @@ export function MonthLiabilitiesSection({
                         value={editDebt.current_balance}
                       />
                     </Field>
-                    <Field
-                      htmlFor={`v1-debt-edit-${editingRow.id}-rate`}
-                      label="Годовая ставка, %"
-                    >
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-rate`} label="Годовая ставка, %">
                       <Input
                         id={`v1-debt-edit-${editingRow.id}-rate`}
                         onChange={(e) => setEditDebt({ ...editDebt, annual_rate: e.target.value })}
@@ -636,10 +636,7 @@ export function MonthLiabilitiesSection({
                         value={editDebt.next_due_date}
                       />
                     </Field>
-                    <Field
-                      htmlFor={`v1-debt-edit-${editingRow.id}-end`}
-                      label="Окончание договора"
-                    >
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-end`} label="Окончание договора">
                       <Input
                         id={`v1-debt-edit-${editingRow.id}-end`}
                         onChange={(e) =>
@@ -736,9 +733,7 @@ export function MonthLiabilitiesSection({
                       disabled={
                         busy ||
                         readOnly ||
-                        !eligibleAccounts.some(
-                          (account) => account.id === Number(linkAccountId),
-                        )
+                        !eligibleAccounts.some((account) => account.id === Number(linkAccountId))
                       }
                       size="sm"
                       type="submit"
@@ -1045,9 +1040,7 @@ export function MonthLiabilitiesSection({
           </span>
           <span>
             Недостаток покрытия:{" "}
-            <strong>
-              {mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}
-            </strong>
+            <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
           </span>
           <span>
             Покрытие обязательных расходов:{" "}

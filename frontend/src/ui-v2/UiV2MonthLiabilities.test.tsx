@@ -374,8 +374,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
     );
     // #650: stacked editor below the readonly row keeps saved totals visible.
-    expect(await screen.findByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeInTheDocument();
     const editor = screen.getByRole("form", { name: /Редактирование долга/ });
     expect(within(editor).getByLabelText("Название долга")).toBeInTheDocument();
     expect(within(editor).getByLabelText("Текущий баланс долга")).toBeInTheDocument();
@@ -416,9 +417,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Имя и баланс долга обязательны");
     expect(updateDebt).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("form", { name: /Редактирование долга/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: /Редактирование долга/ })).toBeInTheDocument();
   });
 
   it("shows a rejected save and allows the same edit to be submitted again", async () => {
@@ -759,8 +758,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     );
     await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("liabilities", true));
     // #650: saved totals stay visible with an explicit dirty note, not optimistic totals.
-    expect(screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("form", { name: /Редактирование долга/ })).toBeInTheDocument();
 
     await user.click(
@@ -1093,14 +1093,13 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(within(editor).getByLabelText("Годовая ставка, %")).toBeInTheDocument();
     expect(within(editor).getByLabelText("Ближайший обязательный платёж")).toBeInTheDocument();
     expect(within(editor).getByLabelText("Окончание договора")).toBeInTheDocument();
-    expect(
-      within(editor).getByRole("button", { name: "Сохранить" }),
-    ).toBeEnabled();
+    expect(within(editor).getByRole("button", { name: "Сохранить" })).toBeEnabled();
     expect(within(editor).getByRole("button", { name: "Отмена" })).toBeEnabled();
     // Saved row and totals stay visible with an explicit saved-values note.
     expect(within(debtTable).getByText("Основная карта")).toBeInTheDocument();
-    expect(screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeInTheDocument();
     expect(await debtSection()).toHaveTextContent("Долг по кредитным картам:");
 
     // Keyboard: tab reaches Save without horizontal hunting.
@@ -1111,8 +1110,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     await user.click(within(editor).getByRole("button", { name: "Отмена" }));
     expect(screen.queryByRole("form", { name: /Редактирование долга/ })).toBeNull();
-    expect(screen.queryByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }))
-      .toBeNull();
+    expect(
+      screen.queryByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeNull();
   });
 
   it("#650 keeps long linked-account names wrapped and totals on saved values", async () => {
@@ -1127,19 +1127,35 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
     const linkEditor = await screen.findByRole("form", { name: /Связь долга/ });
     expect(within(linkEditor).getByLabelText("Счёт для связи с долгом")).toBeInTheDocument();
-    expect(
-      within(linkEditor).getByRole("button", { name: "Сохранить связь" }),
-    ).toBeInTheDocument();
+    expect(within(linkEditor).getByRole("button", { name: "Сохранить связь" })).toBeInTheDocument();
     expect(within(linkEditor).getByRole("button", { name: "Отмена" })).toBeInTheDocument();
-    expect(screen.getByText("Итоги посчитаны по сохранённой связи", { exact: false }))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText("Итоги посчитаны по сохранённой связи", { exact: false }),
+    ).toBeInTheDocument();
   });
 
   it("#650 renders large, negative, zero and null debt balances without optimistic totals", async () => {
     debtsByMonth.set(7, [
-      { ...debt, id: 1, name: "Крупный долг", current_balance: { amount: "1234567890.50", currency: "RUB" } },
-      { ...debt, id: 3, name: "Переплата", debt_type: "other", current_balance: { amount: "-48200.00", currency: "RUB" } },
-      { ...debt, id: 4, name: "Нулевой долг", debt_type: "other", current_balance: { amount: "0.00", currency: "RUB" } },
+      {
+        ...debt,
+        id: 1,
+        name: "Крупный долг",
+        current_balance: { amount: "1234567890.50", currency: "RUB" },
+      },
+      {
+        ...debt,
+        id: 3,
+        name: "Переплата",
+        debt_type: "other",
+        current_balance: { amount: "-48200.00", currency: "RUB" },
+      },
+      {
+        ...debt,
+        id: 4,
+        name: "Нулевой долг",
+        debt_type: "other",
+        current_balance: { amount: "0.00", currency: "RUB" },
+      },
     ]);
     renderLeaf();
     const [debtTable] = await tables();
