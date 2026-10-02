@@ -47,6 +47,8 @@ class LinkedPairReadModel:
     account_name: str
     account_type: str
     account_balance: RubleAmount
+    cash_balance: RubleAmount
+    deposit_balance: RubleAmount
 
     @property
     def net_contribution(self) -> RubleAmount:

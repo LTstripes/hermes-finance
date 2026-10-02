@@ -600,6 +600,29 @@ export type ClosedReportComparison = {
   linked_pair_debts_delta: MoneyValue | null;
   linked_pair_net_contribution_delta: MoneyValue | null;
   net_liquid_capital_reconciles: boolean | null;
+  explanation: CapitalChangeExplanation | null;
+};
+
+export type LinkedPairEndpoint = {
+  debt_id: number;
+  debt_name: string;
+  account_balance: MoneyValue;
+  debt_balance: MoneyValue;
+  net_contribution: MoneyValue;
+};
+
+export type CapitalChangeExplanation = {
+  pairs: {
+    account_id: number;
+    account_name: string;
+    previous: LinkedPairEndpoint;
+    current: LinkedPairEndpoint;
+    net_contribution_delta: MoneyValue;
+  }[];
+  noncomparable_account_ids: number[];
+  residual_asset_class_deltas: AssetAllocationPoint[];
+  residual_debt_contribution_delta: MoneyValue;
+  reconciles: boolean;
 };
 
 export type PassiveIncomeHistoryPoint = {

@@ -76,6 +76,36 @@ class ClosedReportSnapshotOut(BaseModel):
     linked_pair_net_contribution: MoneyValue
 
 
+class LinkedPairEndpointOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    debt_id: int
+    debt_name: str
+    account_balance: MoneyValue
+    debt_balance: MoneyValue
+    net_contribution: MoneyValue
+
+
+class LinkedPairChangeOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    account_name: str
+    previous: LinkedPairEndpointOut
+    current: LinkedPairEndpointOut
+    net_contribution_delta: MoneyValue
+
+
+class CapitalChangeExplanationOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pairs: list[LinkedPairChangeOut]
+    noncomparable_account_ids: list[int]
+    residual_asset_class_deltas: list[AssetClassSliceOut]
+    residual_debt_contribution_delta: MoneyValue
+    reconciles: bool
+
+
 class ClosedReportComparisonOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +127,7 @@ class ClosedReportComparisonOut(BaseModel):
     linked_pair_debts_delta: MoneyValue | None
     linked_pair_net_contribution_delta: MoneyValue | None
     net_liquid_capital_reconciles: bool | None
+    explanation: CapitalChangeExplanationOut | None
 
 
 class PassiveIncomeBreakdownOut(BaseModel):
@@ -340,6 +371,43 @@ def get_closed_report_comparison(
             else None
         ),
         net_liquid_capital_reconciles=reconciles,
+        explanation=(
+            CapitalChangeExplanationOut(
+                pairs=[
+                    LinkedPairChangeOut(
+                        account_id=item.current.account_id,
+                        account_name=item.current.account_name,
+                        previous=LinkedPairEndpointOut(
+                            debt_id=item.previous.debt_id,
+                            debt_name=item.previous.debt_name,
+                            account_balance=_money(item.previous.account_balance),
+                            debt_balance=_money(item.previous.debt_balance),
+                            net_contribution=_money(item.previous.net_contribution),
+                        ),
+                        current=LinkedPairEndpointOut(
+                            debt_id=item.current.debt_id,
+                            debt_name=item.current.debt_name,
+                            account_balance=_money(item.current.account_balance),
+                            debt_balance=_money(item.current.debt_balance),
+                            net_contribution=_money(item.current.net_contribution),
+                        ),
+                        net_contribution_delta=_money(item.net_contribution_delta),
+                    )
+                    for item in comparison.explanation.pairs
+                ],
+                noncomparable_account_ids=list(comparison.explanation.noncomparable_account_ids),
+                residual_asset_class_deltas=[
+                    AssetClassSliceOut(asset_class=item.asset_class, amount=_money(item.amount))
+                    for item in comparison.explanation.residual_asset_class_deltas
+                ],
+                residual_debt_contribution_delta=_money(
+                    comparison.explanation.residual_debt_contribution_delta
+                ),
+                reconciles=comparison.explanation.reconciles,
+            )
+            if comparison.explanation is not None
+            else None
+        ),
     )
 
 

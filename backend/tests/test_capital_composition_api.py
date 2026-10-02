@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from sqlalchemy import select
 
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base, PositionSnapshot
+from hermes_finance.persistence import Base, CashBalance, PositionSnapshot
 from hermes_finance.services import capital_composition as capital_composition_service
 from hermes_finance.services.positions import update_position_snapshot
 from hermes_finance.services.reporting_months import reopen_reporting_month
@@ -119,6 +120,277 @@ def _comparison(client: TestClient) -> dict[str, object]:
     response = client.get("/api/analytics/closed-report-comparison")
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def _linked_debt(client: TestClient, month_id: int, account_id: int | None, amount: str) -> int:
+    response = client.post(
+        "/api/debts",
+        json={
+            "reporting_month_id": month_id,
+            "debt_type": "credit_card",
+            "name": "Synthetic endpoint card",
+            "current_balance": _rub(amount),
+            "include_in_liquid_capital": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    debt_id = response.json()["id"]
+    if account_id is not None:
+        response = client.put(
+            f"/api/debts/{debt_id}/linked-account", json={"account_id": account_id}
+        )
+        assert response.status_code == 200, response.text
+    return debt_id
+
+
+def _assert_explanation_reconciles(body: dict) -> None:
+    explanation = body["explanation"]
+    assert explanation["reconciles"] is True
+    total = sum(
+        Decimal(item["amount"]["amount"]) for item in explanation["residual_asset_class_deltas"]
+    )
+    total += Decimal(explanation["residual_debt_contribution_delta"]["amount"])
+    total += sum(Decimal(item["net_contribution_delta"]["amount"]) for item in explanation["pairs"])
+    assert total == Decimal(body["liquid_capital_net_delta"]["amount"])
+
+
+@pytest.mark.parametrize(
+    "cash,deposit,debt,expected",
+    [
+        ("10.00", "30.00", "20.00", "0.00"),
+        ("50.00", "110.00", "140.00", "0.00"),
+        ("40.00", "60.00", "20.00", "60.00"),
+        ("0.00", "0.00", "0.00", "-20.00"),
+    ],
+)
+def test_fixed_pair_set_removes_exact_mixed_components_once(client, cash, deposit, debt, expected):
+    accounts = [
+        client.post(
+            "/api/accounts", json={"name": f"Synthetic account {i}", "account_type": "savings"}
+        ).json()["id"]
+        for i in range(4)
+    ]
+    months = [
+        _create_month(client, year=2036, month=m, snapshot_date=f"2036-0{m}-28") for m in (1, 2)
+    ]
+    debt_ids = []
+    for i, month_id in enumerate(months):
+        _create_cash(client, month_id, "40.00" if i == 0 else cash, account_id=accounts[0])
+        _create_deposit(client, month_id, accounts[0], "60.00" if i == 0 else deposit)
+        debt_ids.append(_linked_debt(client, month_id, accounts[0], "80.00" if i == 0 else debt))
+        # Another comparable zero pair, plus one-sided pairs on opposite endpoints.
+        _create_cash(client, month_id, "0.00", account_id=accounts[1])
+        _linked_debt(client, month_id, accounts[1], "0.00")
+        _create_cash(client, month_id, "7.00", account_id=accounts[2])
+        _create_cash(client, month_id, "9.00", account_id=accounts[3])
+        _linked_debt(client, month_id, accounts[2] if i == 0 else accounts[3], "3.00")
+        _create_cash(client, month_id, "2.00" if i == 0 else "5.00")
+        _create_debt(client, month_id, "4.00" if i == 0 else "1.00")
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    body = _comparison(client)
+    explanation = body["explanation"]
+    assert debt_ids[0] != debt_ids[1]
+    assert [item["account_id"] for item in explanation["pairs"]] == accounts[:2]
+    assert explanation["noncomparable_account_ids"] == accounts[2:]
+    pair = explanation["pairs"][0]
+    assert pair["previous"]["debt_id"] == debt_ids[0]
+    assert pair["current"]["debt_id"] == debt_ids[1]
+    assert pair["net_contribution_delta"] == _rub(expected)
+    residual = {
+        item["asset_class"]: item["amount"] for item in explanation["residual_asset_class_deltas"]
+    }
+    assert residual["cash"] == _rub("3.00")
+    assert residual["deposits"] == _rub("0.00")
+    assert explanation["residual_debt_contribution_delta"] == _rub("3.00")
+    _assert_explanation_reconciles(body)
+    # Existing gross allocation remains the source allocation.
+    assert body["current"]["allocation"][1]["amount"] == _rub(deposit)
+
+
+def test_pair_explanation_reopen_relink_reclose_fresh_readback(client):
+    accounts = [
+        client.post(
+            "/api/accounts", json={"name": f"Synthetic relink {i}", "account_type": "cash"}
+        ).json()["id"]
+        for i in (1, 2)
+    ]
+    months = [
+        _create_month(client, year=2037, month=m, snapshot_date=f"2037-0{m}-28") for m in (1, 2)
+    ]
+    debts = []
+    for month_id in months:
+        for account_id in accounts:
+            _create_cash(client, month_id, "100.00", account_id=account_id)
+        debts.append(_linked_debt(client, month_id, accounts[0], "80.00"))
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    original = _comparison(client)
+    assert len(original["explanation"]["pairs"]) == 1
+    assert client.post(f"/api/months/{months[0]}/reopen").status_code == 200
+    assert _comparison(client)["explanation"] is None
+    assert (
+        client.put(
+            f"/api/debts/{debts[0]}/linked-account", json={"account_id": accounts[1]}
+        ).status_code
+        == 200
+    )
+    assert client.post(f"/api/months/{months[0]}/close").status_code == 200
+    relinked = _comparison(client)
+    assert relinked["explanation"]["pairs"] == []
+    assert relinked["explanation"]["noncomparable_account_ids"] == accounts
+    assert relinked["liquid_capital_net_delta"] == original["liquid_capital_net_delta"]
+    _assert_explanation_reconciles(relinked)
+    assert client.post(f"/api/months/{months[0]}/reopen").status_code == 200
+    assert (
+        client.put(
+            f"/api/debts/{debts[0]}/linked-account", json={"account_id": accounts[0]}
+        ).status_code
+        == 200
+    )
+    # Existing uniqueness guard prevents removal of A twice.
+    another = _linked_debt(client, months[0], None, "0.00")
+    assert (
+        client.put(
+            f"/api/debts/{another}/linked-account", json={"account_id": accounts[0]}
+        ).status_code
+        == 409
+    )
+    assert client.post(f"/api/months/{months[0]}/close").status_code == 200
+    assert _comparison(client)["explanation"] == original["explanation"]
+
+
+def test_explanation_partial_coverage_and_invalid_missing_pair_fail_closed(client):
+    known = client.post(
+        "/api/accounts", json={"name": "Synthetic known", "account_type": "cash"}
+    ).json()["id"]
+    client.post("/api/accounts", json={"name": "Synthetic missing", "account_type": "cash"})
+    months = [
+        _create_month(client, year=2038, month=m, snapshot_date=f"2038-0{m}-28") for m in (1, 2)
+    ]
+    for month_id in months:
+        _create_cash(client, month_id, "0.00", account_id=known)
+        _linked_debt(client, month_id, known, "0.00")
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    body = _comparison(client)
+    assert body["liquid_capital_net_delta_coverage"]["status"] == "partial"
+    assert body["explanation"]["pairs"][0]["net_contribution_delta"] == _rub("0.00")
+    _assert_explanation_reconciles(body)
+    with client.app.state.database.session_factory() as session:
+        # Synthetic corrupted persisted evidence must never become a zero pair.
+        session.query(CashBalance).filter(CashBalance.reporting_month_id == months[0]).delete()
+        session.commit()
+    response = client.get("/api/analytics/closed-report-comparison")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "linked_pair_read_model_unavailable"
+
+
+def test_explanation_without_any_snapshot_is_unavailable(client):
+    for m in (1, 2):
+        month_id = _create_month(client, year=2039, month=m, snapshot_date=f"2039-0{m}-28")
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    body = _comparison(client)
+    assert body["liquid_capital_net_delta_coverage"]["status"] == "unavailable"
+    assert body["explanation"] is None
+
+
+@pytest.mark.parametrize("excluded_endpoint,pair_delta", [(0, "120.00"), (1, "0.00")])
+def test_pair_residuals_after_cash_exclusion_preserves_deposit_evidence(
+    client, excluded_endpoint, pair_delta
+):
+    account_id = client.post(
+        "/api/accounts", json={"name": "Synthetic included components", "account_type": "savings"}
+    ).json()["id"]
+    months = [
+        _create_month(client, year=2042, month=m, snapshot_date=f"2042-0{m}-28") for m in (1, 2)
+    ]
+    cash_ids = []
+    for i, month_id in enumerate(months):
+        response = client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "account_id": account_id,
+                "name": "Synthetic paired cash",
+                "amount": _rub("60.00"),
+            },
+        )
+        assert response.status_code == 201, response.text
+        cash_ids.append(response.json()["id"])
+        _create_deposit(client, month_id, account_id, "40.00")
+        _linked_debt(client, month_id, account_id, "80.00" if i == 0 else "20.00")
+        _create_cash(client, month_id, "10.00" if i == 0 else "15.00")
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    assert _comparison(client)["explanation"]["pairs"][0]["net_contribution_delta"] == _rub("60.00")
+    month_id = months[excluded_endpoint]
+    assert client.post(f"/api/months/{month_id}/reopen").status_code == 200
+    response = client.patch(
+        f"/api/cash-balances/{cash_ids[excluded_endpoint]}", json={"include_in_capital": False}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["include_in_capital"] is False
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    body = _comparison(client)
+    pair = body["explanation"]["pairs"][0]
+    assert pair["previous"]["account_balance"] == _rub(
+        "40.00" if excluded_endpoint == 0 else "100.00"
+    )
+    assert pair["current"]["account_balance"] == _rub(
+        "40.00" if excluded_endpoint == 1 else "100.00"
+    )
+    assert pair["net_contribution_delta"] == _rub(pair_delta)
+    residual = {
+        item["asset_class"]: item["amount"]
+        for item in body["explanation"]["residual_asset_class_deltas"]
+    }
+    assert residual["cash"] == _rub("5.00")
+    assert residual["deposits"] == _rub("0.00")
+    assert body["explanation"]["residual_debt_contribution_delta"] == _rub("0.00")
+    assert body["explanation"]["noncomparable_account_ids"] == []
+    _assert_explanation_reconciles(body)
+
+
+def test_comparison_link_projection_uses_same_snapshot_as_canonical_totals(client, monkeypatch):
+    accounts = [
+        client.post(
+            "/api/accounts", json={"name": f"Synthetic coherent {i}", "account_type": "cash"}
+        ).json()["id"]
+        for i in (1, 2)
+    ]
+    months = [
+        _create_month(client, year=2041, month=m, snapshot_date=f"2041-0{m}-28") for m in (1, 2)
+    ]
+    debts = []
+    for month_id in months:
+        for account_id in accounts:
+            _create_cash(client, month_id, "100.00", account_id=account_id)
+        debts.append(_linked_debt(client, month_id, accounts[0], "80.00"))
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    database = client.app.state.database
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+    real_pairs = capital_composition_service.linked_pairs_for_months
+    committed = False
+
+    def interleaved(*args, **kwargs):
+        nonlocal committed
+        if not committed:
+            committed = True
+            from hermes_finance.services.debts import link_debt_to_account
+            from hermes_finance.services.reporting_months import close_reporting_month
+
+            with database.session_factory() as writer:
+                reopen_reporting_month(writer, months[0])
+                link_debt_to_account(writer, debts[0], accounts[1])
+                close_reporting_month(writer, months[0])
+        return real_pairs(*args, **kwargs)
+
+    monkeypatch.setattr(capital_composition_service, "linked_pairs_for_months", interleaved)
+    before = _comparison(client)
+    assert len(before["explanation"]["pairs"]) == 1
+    _assert_explanation_reconciles(before)
+    fresh = _comparison(client)
+    assert fresh["explanation"]["pairs"] == []
+    assert fresh["explanation"]["noncomparable_account_ids"] == accounts
+    _assert_explanation_reconciles(fresh)
 
 
 def test_known_capital_subtotal_carries_account_coverage_through_all_read_models(
