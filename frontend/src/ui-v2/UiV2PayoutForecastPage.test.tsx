@@ -14,6 +14,7 @@ import {
   getPayoutRefreshStatus,
   listPayoutCalendar,
   type PayoutApplyItem,
+  type PayoutBatchPreview,
   type PayoutPreview,
   previewPayouts,
   previewPayoutsBatch,
@@ -1456,7 +1457,7 @@ it("blocks bulk Apply while an explicit batch preview remains pending", async ()
     }),
   );
   await user.click(refresh);
-  expect(screen.getByRole("button", { name: "Применить выбранные", exact: true })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /^Применить выбранные$/ })).toBeDisabled();
   expect(applyPayouts).not.toHaveBeenCalled();
   const original = await vi.mocked(previewPayoutsBatch).mock.results[0].value;
   await act(async () => {
