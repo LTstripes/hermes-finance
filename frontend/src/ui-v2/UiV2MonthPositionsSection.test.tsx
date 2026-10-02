@@ -415,6 +415,7 @@ describe("native month positions leaf", () => {
     let rows: unknown[] = [position];
     const freshQuote = {
       ...quote,
+      preview_id: "synthetic-preview-id",
       rows: [
         {
           ...quote.rows[0],
@@ -454,6 +455,7 @@ describe("native month positions leaf", () => {
       fetchMock.mock.calls.filter(([url]) => String(url).includes("quote-preview")),
     ).toHaveLength(1);
     const apply = fetchMock.mock.calls.find(([url]) => String(url).includes("quote-apply"));
+    expect(JSON.parse(String(apply?.[1]?.body)).preview_id).toBe("synthetic-preview-id");
     expect(JSON.parse(String(apply?.[1]?.body)).rows).toMatchObject([
       {
         position_snapshot_id: 31,
@@ -462,6 +464,59 @@ describe("native month positions leaf", () => {
       },
     ]);
   });
+
+  it.each(["preview_evidence_invalid", "preview_changed", "network", "readback"])(
+    "requires a new explicit preview after %s without resubmitting Apply",
+    async (failure) => {
+      const freshQuote = {
+        ...quote,
+        preview_id: "synthetic-preview-id",
+        rows: [{ ...quote.rows[0], status: "ok", freshness_status: "ok", apply_allowed: true }],
+      };
+      const { fetchMock } = setup({
+        "POST /api/months/7/quote-preview": () => json(freshQuote),
+        "POST /api/months/7/quote-apply": () => {
+          if (failure === "network") return Promise.reject(new TypeError("Failed to fetch"));
+          if (failure === "readback")
+            return json({
+              reporting_month_id: 7,
+              applied_count: 1,
+              rows: [
+                {
+                  position_snapshot_id: 31,
+                  market_price_per_unit: { amount: "200.00", currency: "RUB" },
+                  price_date: "2031-01-31",
+                  price_source: "t_invest",
+                },
+              ],
+            });
+          return json({ error: { code: failure, message: "synthetic", details: [] } }, 409);
+        },
+      });
+      const user = userEvent.setup();
+      await screen.findByText("Synthetic Fund (SYN)");
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(
+        false,
+      );
+      await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
+      await user.click(await screen.findByRole("button", { name: "Применить выбранные" }));
+      const message =
+        failure === "preview_evidence_invalid"
+          ? /Предпросмотр больше недействителен/
+          : failure === "preview_changed"
+            ? /Котировка изменилась/
+            : /Результат применения не подтверждён/;
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Применить выбранные" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Котировки применены/)).not.toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).includes("quote-apply")),
+      ).toHaveLength(1);
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).includes("quote-preview")),
+      ).toHaveLength(1);
+    },
+  );
 
   it("invalidates a preview when the month closes while its provider request is pending", async () => {
     let release: ((response: Response) => void) | undefined;

@@ -927,6 +927,7 @@ export type QuotePreviewRow = {
 };
 
 export type QuotePreview = {
+  preview_id?: string | null;
   reporting_month_id: number;
   month_status: ReportingMonthStatus;
   target_date: string;

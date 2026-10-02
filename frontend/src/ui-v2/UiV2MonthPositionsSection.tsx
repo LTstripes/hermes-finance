@@ -558,7 +558,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     try {
       await assertDraft();
       if (sequence.current !== token) return;
-      const result = await applyMonthQuotes(monthId, rows, controller.signal);
+      const previewId = quotePreview.preview_id;
+      setQuotePreview(null);
+      const result = await applyMonthQuotes(monthId, rows, controller.signal, previewId);
       if (!active.current || sequence.current !== token) return;
       if (result.reporting_month_id !== monthId)
         throw new Error("Ответ применения относится к другому месяцу.");
@@ -581,10 +583,12 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
         setQuoteApplyResult(result);
     } catch (err) {
       if (!active.current || sequence.current !== token) return;
-      if (err instanceof ApiClientError && err.code === "preview_changed") {
-        setQuotePreview(null);
-      }
-      setPreviewError(formatApiError(err));
+      setQuotePreview(null);
+      setPreviewError(
+        err instanceof ApiClientError && err.status >= 400 && err.status < 500 && err.status !== 408
+          ? formatApiError(err)
+          : "Результат применения не подтверждён. Обнови позиции и проверь сохранённые цены перед новым предпросмотром.",
+      );
     } finally {
       if (request.current === controller) {
         quoteBusy.current = false;

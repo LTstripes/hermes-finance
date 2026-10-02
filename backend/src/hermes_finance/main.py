@@ -73,6 +73,7 @@ from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
 from hermes_finance.database import Database
 from hermes_finance.security import LocalhostSecurityMiddleware
+from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceStore
 from hermes_finance.settings import Settings
 
 
@@ -109,6 +110,7 @@ def create_app(
     broker_snapshot_provider: object | None = None,
 ) -> FastAPI:
     application = FastAPI(title="Hermes Finance API", version=__version__)
+    application.state.quote_preview_evidence = QuotePreviewEvidenceStore()
     application.add_middleware(LocalhostSecurityMiddleware)
     if database is not None:
         application.state.database = database

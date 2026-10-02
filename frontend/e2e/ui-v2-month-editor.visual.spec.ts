@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const closed = {
@@ -8,6 +10,192 @@ const closed = {
   snapshot_date: "2030-04-30",
   source: "manual",
 };
+
+for (const outcome of ["success", "expired", "ambiguous"] as const) {
+  test(`ui-v2 current-day quote preview ${outcome} is explicit and never blindly retried`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await installApi(page);
+    const money = (amount: string) => ({ amount, currency: "RUB" });
+    const position = {
+      id: 31,
+      reporting_month_id: 7,
+      account_id: 11,
+      instrument_id: 21,
+      quantity: "1.000000",
+      average_cost_per_unit: money("100.00"),
+      market_price_per_unit: money("100.00"),
+      market_value: money("100.00"),
+      cost_basis: money("100.00"),
+      unrealized_result: money("0.00"),
+      accrued_interest: money("15.00"),
+      price_source: "manual",
+      price_date: "2030-04-30",
+      updated_at: "2030-04-30T12:00:00Z",
+      notes: null,
+    };
+    let saved = position;
+    let previewCalls = 0;
+    let applyCalls = 0;
+    await page.route("**/api/months/7", (route) =>
+      route.fulfill({ json: { ...closed, status: "draft" } }),
+    );
+    await page.route("**/api/accounts", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: 11,
+            name: "Synthetic Broker",
+            account_type: "brokerage",
+            status: "active",
+            include_in_capital: true,
+            include_in_returns: true,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/instruments?active=true", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: 21,
+            name: "Synthetic Stock",
+            ticker: "SYN",
+            instrument_type: "stock",
+            currency: "RUB",
+            is_active: true,
+            manual_price_allowed: true,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/positions?month_id=7", (route) => route.fulfill({ json: [saved] }));
+    await page.route("**/api/months/7/quote-preview", async (route) => {
+      previewCalls++;
+      await route.fulfill({
+        json: {
+          reporting_month_id: 7,
+          month_status: "draft",
+          target_date: "2030-04-30",
+          month_editable: true,
+          batch_error: null,
+          batch_error_reason: null,
+          preview_id: "synthetic-preview",
+          rows: [
+            {
+              position_snapshot_id: 31,
+              account_id: 11,
+              instrument_id: 21,
+              instrument_name: "Synthetic Stock",
+              instrument_type: "stock",
+              mapping_state: "mapped",
+              identity: {
+                provider: "t_invest",
+                provider_instrument_id: "synthetic",
+                provider_venue_id: null,
+              },
+              current_market_price_per_unit: money("100.00"),
+              current_price_date: "2030-04-30",
+              current_price_source: "manual",
+              proposed_market_price_per_unit: money("110.00"),
+              proposed_price_date: "2030-04-30",
+              proposed_quote_kind: "last",
+              proposed_raw_price: "110.00",
+              proposed_raw_price_basis: "R",
+              fetched_at_utc: "2030-04-30T12:00:00Z",
+              freshness_status: "ok",
+              status: "ok",
+              failure_reason: null,
+              message: null,
+              apply_allowed: true,
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/months/7/quote-apply", async (route) => {
+      applyCalls++;
+      expect(route.request().postDataJSON()).toMatchObject({
+        preview_id: "synthetic-preview",
+        rows: [
+          {
+            position_snapshot_id: 31,
+            expected_market_price_per_unit: money("110.00"),
+            expected_quote_kind: "last",
+          },
+        ],
+      });
+      if (outcome === "expired") {
+        await route.fulfill({
+          status: 409,
+          json: { error: { code: "preview_evidence_invalid", message: "synthetic", details: [] } },
+        });
+        return;
+      }
+      saved = {
+        ...position,
+        market_price_per_unit: money("110.00"),
+        market_value: money("125.00"),
+        price_source: "t_invest",
+      };
+      if (outcome === "ambiguous") {
+        await route.abort("failed");
+        return;
+      }
+      await route.fulfill({
+        json: {
+          reporting_month_id: 7,
+          applied_count: 1,
+          rows: [
+            {
+              position_snapshot_id: 31,
+              market_price_per_unit: saved.market_price_per_unit,
+              price_source: saved.price_source,
+              price_date: saved.price_date,
+              accrued_interest: saved.accrued_interest,
+              market_value: saved.market_value,
+              unrealized_result: money("25.00"),
+              freshness: "ok",
+            },
+          ],
+        },
+      });
+    });
+    await page.goto("/v2/data/months/7?section=positions#month-quotes");
+    await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+    expect(previewCalls).toBe(0);
+    expect(applyCalls).toBe(0);
+    expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
+    await page.getByRole("button", { name: "Обновить котировки" }).click();
+    await page.getByRole("button", { name: "Применить выбранные" }).click();
+    if (outcome === "success") {
+      await expect(page.getByText(/Котировки применены: 1/)).toBeVisible();
+    } else {
+      await expect(
+        page.getByText(
+          outcome === "expired"
+            ? /Предпросмотр больше недействителен/
+            : /Результат применения не подтверждён/,
+        ),
+      ).toBeVisible();
+      await expect(page.getByText(/Котировки применены: 1/)).toHaveCount(0);
+    }
+    await expect(page.getByRole("button", { name: "Применить выбранные" })).toHaveCount(0);
+    expect(applyCalls).toBe(1);
+    expect(previewCalls).toBe(1);
+    const screenshotDir = path.resolve(".visual-audit", testInfo.project.name);
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    await page.screenshot({
+      path: path.join(screenshotDir, `ui-v2-quote-${outcome}.png`),
+      fullPage: true,
+    });
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Обновить котировки" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Применить выбранные" })).toHaveCount(0);
+    expect(previewCalls).toBe(1);
+    expect(applyCalls).toBe(1);
+  });
+}
 
 async function installApi(page: Page) {
   let month = { ...closed };
