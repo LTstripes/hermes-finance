@@ -447,6 +447,47 @@ def test_cleanup_git_admin_lockfile_holds(cleanup_case):
     assert cleanup_row(cleanup_case)["state"] == "HOLD"
 
 
+def test_cleanup_exact_public_repo_marker_paths_are_allowed(cleanup_case):
+    _, path, control = cleanup_case
+    (control / "data").mkdir()
+    (control / "data" / ".gitkeep").write_text("")
+    (control / "sketches" / "themes").mkdir(parents=True)
+    (control / "sketches" / "themes" / "tokens.css").write_text(":root {}\n")
+    git(control, "add", ".")
+    git(
+        control,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.com",
+        "commit",
+        "-qm",
+        "public tracked marker paths",
+    )
+    git(control, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(path, "fetch", str(control), "main")
+    git(path, "merge", "--ff-only", "FETCH_HEAD")
+    assert cleanup_row(cleanup_case)["state"] == "CANDIDATE"
+
+
+@pytest.mark.parametrize("name", ["finance.db", "notes.txt", "nested/anything"])
+def test_cleanup_data_directory_allows_only_exact_tracked_placeholder(cleanup_case, name):
+    config, path, _ = cleanup_case
+    target = path / "data" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("SYNTHETIC_PRIVATE_SENTINEL")
+    with cleanup.Pins() as pins, pytest.raises(cleanup.Hold, match="private_marker"):
+        cleanup.inspect(config, config["entries"][0], pins, "0" * 40)
+
+
+def test_cleanup_token_named_file_outside_exact_exception_holds(cleanup_case):
+    config, path, _ = cleanup_case
+    target = path / "secrets-token.txt"
+    target.write_text("SYNTHETIC_PRIVATE_SENTINEL")
+    with cleanup.Pins() as pins, pytest.raises(cleanup.Hold, match="private_marker"):
+        cleanup.inspect(config, config["entries"][0], pins, "0" * 40)
+
+
 def make_linked(case):
     config, old, control = case
     path = old.parent / "linked-task"
