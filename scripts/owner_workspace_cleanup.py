@@ -379,12 +379,13 @@ def safe_config(common):
             "objects/info/http-alternates",
             "modules",
             "shallow",
+            "info/grafts",
         )
     ):
         raise Hold("external_or_incomplete_git")
 
 
-def git(path, *command):
+def git(path, *command, input_bytes=None):
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
     env.update(
         GIT_CONFIG_NOSYSTEM="1",
@@ -417,7 +418,12 @@ def git(path, *command):
     ]
     try:
         result = subprocess.run(
-            args, env=env, capture_output=True, timeout=30, check=False
+            args,
+            env=env,
+            capture_output=True,
+            timeout=30,
+            check=False,
+            input=input_bytes,
         )
         if result.returncode or len(result.stdout) > MAX_OUTPUT:
             raise Hold("git_evidence_unavailable")
@@ -466,6 +472,7 @@ def trusted(config, pins):
     common = control / ".git"
     inv.plain(common, directory=True)
     safe_config(common)
+    verify_index_bytes(control, tree)
     if git(control, "symbolic-ref", "HEAD") != "refs/heads/main" or git(
         control, "status", "--porcelain=v1", "--untracked-files=all"
     ):
@@ -477,6 +484,44 @@ def trusted(config, pins):
     ):
         raise Hold("control_not_current")
     return main, tree
+
+
+def verify_index_bytes(path, tree):
+    """Do not trust status's index flags or cached timestamps as clean proof."""
+    flags = git(path, "ls-files", "-v", "-z").split("\0")
+    if any(item and not item.startswith("H ") for item in flags):
+        raise Hold("hidden_index_state")
+    expected, names = [], []
+    scanned = set(tree["paths"])
+    for item in git(path, "ls-files", "--stage", "-z").split("\0"):
+        if not item:
+            continue
+        metadata, name = item.split("\t", 1)
+        mode, obj, stage = metadata.split()
+        file = inv.absolute(str(path / name))
+        if (
+            stage != "0"
+            or mode not in {"100644", "100755"}
+            or file not in scanned
+            or not inv.within(file, path)
+            or not SHA.fullmatch(obj)
+        ):
+            raise Hold("unsupported_index")
+        names.append(name)
+        expected.append(obj)
+    # Git C quoting handles arbitrary UTF-8/newline filenames without allowing
+    # option or path injection. Git hashes real bytes, including its safe text
+    # normalization, without writing objects or trusting stat caches. Filters
+    # cannot execute: safe_config rejects all filter/include/core execution settings.
+    quoted = "".join(
+        '"' + "".join(f"\\{b:03o}" for b in name.encode("utf-8")) + '"\n'
+        for name in names
+    )
+    actual = git(
+        path, "hash-object", "--stdin-paths", input_bytes=quoted.encode("ascii")
+    ).splitlines()
+    if actual != expected:
+        raise Hold("uncommitted_bytes")
 
 
 def inspect(config, entry, pins, main):
@@ -522,12 +567,27 @@ def inspect(config, entry, pins, main):
         ):
             raise Hold("git_pointer_mismatch")
         admin_tree = scan(admin, pins)
+        allowed = {
+            ".",
+            "HEAD",
+            "index",
+            "commondir",
+            "gitdir",
+            "logs",
+            "logs/HEAD",
+            "ORIG_HEAD",
+        }
+        if any(
+            p.relative_to(admin).as_posix() not in allowed for p in admin_tree["paths"]
+        ):
+            raise Hold("additional_worktree_metadata")
         if inv.read_metadata(admin / "commondir").strip() != "../..":
             raise Hold("git_pointer_mismatch")
         back = inv.absolute(inv.read_metadata(admin / "gitdir").strip())
         if back != dotgit or (admin / "locked").exists():
             raise Hold("git_pointer_mismatch")
     safe_config(common)
+    verify_index_bytes(path, tree)
     if git(path, "rev-parse", "--show-toplevel") != str(path).replace("\\", "/"):
         raise Hold("git_root_mismatch")
     # No untracked OR ignored artifacts are silently discarded.
@@ -578,6 +638,8 @@ def inspect(config, entry, pins, main):
             commits.update(c for c in fields[:2] if c != "0" * 40)
         for commit in commits:
             preserved(commit, ancestors)
+    if kind == "linked_worktree" and (admin / "ORIG_HEAD").exists():
+        preserved(inv.read_metadata(admin / "ORIG_HEAD").strip(), ancestors)
     evidence = {
         "kind": kind,
         "head": head,
@@ -673,6 +735,8 @@ def apply(config, frozen, approved_digest, *, now=None, journal=None):
             target.upgrade(paths)
             if journal:
                 journal(index, "deleting")
+            if int(time.time()) > frozen["expires"]:
+                raise Hold("stale_plan")
             target.erase(paths)
             deleted.append(index)
             if journal:

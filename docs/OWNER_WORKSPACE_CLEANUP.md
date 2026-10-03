@@ -54,6 +54,9 @@ and clean Git status with **no untracked or ignored files**. Only exact tracked
 backups, exports and private markers remain protected. Untracked templates are
 HOLD and never read. Arbitrarily renamed private content cannot be detected by
 name: the Owner must attest that these are code-only workspaces.
+Unsupported index flags (including assume-unchanged/skip-worktree) are HOLD.
+Real tracked bytes are hashed against index objects independently of Git's
+timestamp cache; status must also prove that index equals HEAD.
 
 HEAD must exist in trusted Control and be an ancestor of current main. An
 independent clone also needs all local refs peeled to preserved commits, no
@@ -61,6 +64,10 @@ stash/replacement refs, no unique reflog history, and no unreachable objects.
 For a linked worktree, validate the declared pointer, reciprocal registration,
 common directory and its own HEAD reflog. Shared refs, branch/stash/reflogs and
 object store remain in Control; unrelated shared history is never deleted.
+Additional per-worktree refs/reflogs or operation metadata are HOLD. Only
+ordinary HEAD/index/pointer/HEAD-reflog metadata and a preserved ORIG_HEAD are
+eligible for registration deletion. Grafts and shallow/alternate object
+graphs are refused in both Control and candidates.
 Unsafe configuration (including hooks/filter/include execution settings),
 alternates, nested Git/submodules, locks and scan limits fail closed.
 

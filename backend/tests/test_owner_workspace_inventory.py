@@ -638,3 +638,84 @@ def test_cleanup_junction_does_not_open_target(cleanup_case, tmp_path, monkeypat
     monkeypatch.setattr(Path, "open", lambda *a, **kw: pytest.fail("aliased tree read content"))
     with cleanup.Pins() as pins, pytest.raises(tool.InventoryError):
         cleanup.inspect(config, config["entries"][0], pins, "0" * 40)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_cleanup_index_flags_cannot_hide_dirty_code(cleanup_case, flag):
+    _, path, _ = cleanup_case
+    git(path, "update-index", flag, "README.md")
+    (path / "README.md").write_text("uncommitted hidden edit")
+    assert not git(path, "status", "--porcelain")  # reproduces misleading clean status
+    assert cleanup_row(cleanup_case)["state"] == "HOLD"
+
+
+def test_cleanup_control_grafts_refuse_before_git(cleanup_case):
+    _, _, control = cleanup_case
+    (control / ".git" / "info" / "grafts").write_text(git(control, "rev-parse", "HEAD") + "\n")
+    with pytest.raises(cleanup.Hold):
+        cleanup.plan(cleanup_case[0])
+
+
+def test_cleanup_linked_per_worktree_unique_ref_holds(cleanup_case):
+    path, _ = make_linked(cleanup_case)
+    git(path, "checkout", "--detach")
+    (path / "README.md").write_text("unique per-worktree reference")
+    git(path, "add", "README.md")
+    git(
+        path,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.com",
+        "commit",
+        "-qm",
+        "unique",
+    )
+    unique = git(path, "rev-parse", "HEAD")
+    git(path, "update-ref", "refs/worktree/retained", unique)
+    git(path, "reset", "--hard", "main")  # synthetic fixture ONLY
+    git(path, "reflog", "expire", "--expire=now", "--all")  # fixture removes competing proof
+    assert cleanup_row(cleanup_case)["state"] == "HOLD"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows final authorization boundary")
+@pytest.mark.parametrize("phase", ["inspect", "upgrade"])
+def test_cleanup_expiry_during_final_validation_never_deletes(cleanup_case, monkeypatch, phase):
+    config, path, _ = cleanup_case
+    frozen = cleanup.plan(config)
+    approved = cleanup.digest(frozen)
+    clock_value = [frozen["created"]]
+    monkeypatch.setattr(cleanup.time, "time", lambda: clock_value[0])
+    if phase == "inspect":
+        original = cleanup.inspect
+
+        def expired(*a, **kw):
+            result = original(*a, **kw)
+            clock_value[0] = frozen["expires"] + 1
+            return result
+
+        monkeypatch.setattr(cleanup, "inspect", expired)
+    else:
+        original = cleanup.Pins.upgrade
+
+        def expired(*a, **kw):
+            result = original(*a, **kw)
+            clock_value[0] = frozen["expires"] + 1
+            return result
+
+        monkeypatch.setattr(cleanup.Pins, "upgrade", expired)
+    monkeypatch.setattr(
+        cleanup.Pins, "erase", lambda *a: pytest.fail("expired approval reached deletion")
+    )
+    with pytest.raises(cleanup.Hold, match="stale_plan"):
+        cleanup.apply(config, frozen, approved)
+    assert path.is_dir()
+
+
+def test_cleanup_cached_stat_cannot_hide_dirty_bytes(cleanup_case):
+    _, path, _ = cleanup_case
+    file = path / "README.md"
+    before = file.stat()
+    file.write_bytes(b"x" * before.st_size)
+    os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert cleanup_row(cleanup_case)["state"] == "HOLD"
