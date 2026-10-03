@@ -305,6 +305,34 @@ def cleanup_row(case):
     return cleanup.plan(case[0])["entries"][0]
 
 
+@pytest.mark.parametrize(
+    "error,reason",
+    [
+        (cleanup.Hold("control_not_current"), "control_not_current"),
+        (cleanup.Hold("private_marker"), "private_marker"),
+        (cleanup.Hold("remote_evidence_unavailable"), "remote_evidence_unavailable"),
+        (cleanup.Hold("SYNTHETIC_PRIVATE_SENTINEL"), "unsafe_or_unresolved"),
+        (OSError("SYNTHETIC_PRIVATE_SENTINEL"), "unsafe_or_unresolved"),
+        (tool.InventoryError("SYNTHETIC_PRIVATE_SENTINEL"), "unsafe_or_unresolved"),
+    ],
+)
+def test_cleanup_cli_refusal_exposes_only_enumerated_reasons(monkeypatch, capsys, error, reason):
+    monkeypatch.setattr(sys, "argv", ["cleanup", "--config", "unused", "--plan", "unused"])
+
+    def refused(_args):
+        raise error
+
+    monkeypatch.setattr(cleanup, "run_cli", refused)
+    assert cleanup.main() == 2
+    output = capsys.readouterr().out
+    assert "SYNTHETIC_PRIVATE_SENTINEL" not in output
+    assert json.loads(output) == {
+        "error": "cleanup_refused_or_incomplete",
+        "reason": reason,
+        "reinventory_required": True,
+    }
+
+
 def test_cleanup_plan_freezes_clean_independent_clone_without_mutation(cleanup_case):
     config, path, _ = cleanup_case
     with cleanup.Pins() as pins:

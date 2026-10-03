@@ -33,6 +33,57 @@ class Hold(Exception):
     """Fixed, privacy-safe reason only."""
 
 
+PUBLIC_FAILURE_REASONS = frozenset(
+    {
+        "active_lock",
+        "aliased_path",
+        "busy_or_inaccessible",
+        "candidate_changed",
+        "control_not_clean_main",
+        "control_not_current",
+        "deletion_incomplete",
+        "explicit_plan_approval_required",
+        "external_or_incomplete_git",
+        "git_evidence_unavailable",
+        "hidden_index_state",
+        "indirection",
+        "invalid_ancestry_evidence",
+        "invalid_configuration",
+        "invalid_document",
+        "invalid_plan",
+        "nested_git",
+        "overlapping_boundaries",
+        "overlapping_entries",
+        "path_changed",
+        "plan_mismatch",
+        "private_marker",
+        "remote_evidence_unavailable",
+        "scan_limit",
+        "stale_plan",
+        "trusted_state_changed",
+        "uncommitted_bytes",
+        "unsafe_document_destination",
+        "unsafe_git_config",
+        "unsupported_entry",
+        "unsupported_index",
+        "untrusted_git_origin",
+        "windows_apply_required",
+    }
+)
+
+
+def failure_payload(error):
+    """Expose only enumerated diagnostics, never exception text or local names."""
+    reason = str(error) if isinstance(error, Hold) else None
+    return {
+        "error": "cleanup_refused_or_incomplete",
+        "reason": reason
+        if reason in PUBLIC_FAILURE_REASONS
+        else "unsafe_or_unresolved",
+        "reinventory_required": True,
+    }
+
+
 def digest(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -875,12 +926,8 @@ def main():
         KeyError,
         RecursionError,
         configparser.Error,
-    ):
-        print(
-            json.dumps(
-                {"error": "cleanup_refused_or_incomplete", "reinventory_required": True}
-            )
-        )
+    ) as error:
+        print(json.dumps(failure_payload(error)))
         return 2
 
 
