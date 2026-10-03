@@ -1,96 +1,49 @@
 # Owner-local workspace cleanup — plan/apply (#666)
 
-For the exact #679 filesystem migration, the later authoritative Owner
-clarification directly authorizes the named legacy forest deletion, including
-local-only history, after Stable/Main/Test verification. See the
-[operational continuation](OWNER_MACHINE_LAYOUT.md#explicit-operational-continuation-679).
-That one-time assignment supersedes its earlier preservation-heavy eligibility
-and extra package approval split. It does not change the conservative generic
-CLI rules below. Reparse targets remain outside deletion traversal.
+## Current status and tool selection
 
-Only the Owner runs this command on real paths. Agents use synthetic fixtures.
-An explicitly launched Owner-local assignment such as #679 assigns bounded
-structural preparation and accepted-tool execution to its one local Worker;
-the Owner supplies one chat approval of the independently reviewed package.
-That assignment supersedes the manual execution split, not privacy, ancestry,
-TTL, identity or replay guards. See the [operational continuation](OWNER_MACHINE_LAYOUT.md#explicit-operational-continuation-679).
-Keep populated configuration, frozen plans and journals outside Git, runtime
-trees and all agent workspaces. Do not upload them: they contain local paths.
-The [inventory command](OWNER_MACHINE_LAYOUT.md#owner-inventory-command) remains
-read-only forever. This command implements no scheduler or runtime migration.
+#679/#666 migration and the named legacy cleanup are **CLOSED COMPLETE**. The [final report](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455) records all 54 Access Denied remnants removed and no remaining failures. Do not rerun the historical inventory/config/plan batches. The one-time Owner permission to discard those named technical histories is not future blanket deletion authority.
 
-Create an Owner-local JSON configuration with these fields (all paths are
-absolute local fixed-disk paths selected by the Owner, never template literals):
+The deployed daily task uses **`scripts/cleanup-workspaces.ps1` plus its native helper**, documented in [WORKSPACE_JANITOR](WORKSPACE_JANITOR.md). Its active Ops installation is protected even though it is outside the main Hermes folder. This page describes the separate conservative Python frozen-plan tool, not the scheduler.
+
+Only the Owner or the one local Worker under an explicitly accepted operational assignment runs this on real paths. Ordinary agents use synthetic fixtures. Keep populated configuration, plans and journals outside Git, runtime trees and task workspaces. They contain local paths and must not be uploaded. The [inventory tool](OWNER_MACHINE_LAYOUT.md#owner-inventory-command) remains read-only. This Python command implements no scheduler or automatic runtime migration.
+
+## Configuration
+
+All paths are absolute local fixed-disk paths selected by the Owner, not template literals.
 
 | Field | Meaning |
 | --- | --- |
 | `version` | Integer `1` |
 | `owner_root` | Protected Owner container; never a target |
-| `stable`, `control`, `preview` | Mandatory protected checkout/runtime boundaries, including their data children |
-| `workspace_roots` | Array of configured per-client task roots; pairwise disjoint from each other and protected boundaries |
-| `entries` | Up to 64 explicit entries, each with `path` and `role` (`workspace`, `unknown`, `stable`, `control`, `preview`) |
-| Entry `active`, `artifacts_resolved` | Only explicit `false` / `true` permit evaluation; refresh ownership across clients/processes before planning and applying |
-| Entry `git_dir`, `git_common_dir` | Required only for linked worktrees: exact own registration directory and trusted Control's `.git` |
+| `stable`, `control`, `preview` | Mandatory protected runtime/code/data boundaries; current roles are Stable/Main/Test |
+| `workspace_roots` | Configured roots pairwise disjoint from each other and protected boundaries |
+| `entries` | Up to 64 explicit `path` + `role` entries (`workspace`, `unknown`, `stable`, `control`, `preview`) |
+| `active`, `artifacts_resolved` | Explicit false / true required for evaluation; not inferred from historical registry or closed PR alone |
+| `git_dir`, `git_common_dir` | For linked worktrees only: own registration and trusted Control's `.git` |
 
-The configuration is intentionally separate from the phase-1 inventory registry.
-Targets must be immediate task children of a configured root. Unknown, active,
-out-of-boundary or unresolved entries are HOLD without content inspection.
-Protected paths and workspace roots themselves are impossible targets. Legacy
-linked worktrees hosted anywhere except trusted Control remain HOLD; migrate
-or preserve their metadata through a separate Owner-approved procedure first.
-Independent clones with registered child worktrees also remain HOLD.
+Targets must be immediate task children of configured roots. Active/unknown/out-of-boundary/unresolved entries are HOLD without payload inspection. Protected roots and client roots are not targets. Legacy linked worktrees outside trusted Control and independent clones with retained child worktrees remain HOLD under this generic tool. Do not generalize #679's exceptional discard decision into a changed generic classifier.
 
-Use existing Python 3.12+, Git and authenticated GitHub CLI (`gh`), from trusted
-Control. First update Control through the approved canonical procedure. Control
-must be an independent clean `main` checkout; HEAD and `origin/main` must equal
-the freshly queried canonical GitHub main SHA. Network/authentication failures,
-unsafe Git configuration or incomplete scans refuse the run. No fetch/reset or
-credential changes are performed by the cleanup command.
+Use existing Python 3.12+, Git and authenticated gh from trusted Main/Control. It must be an independent clean main with HEAD and origin/main equal to freshly queried canonical GitHub main. Network/auth failures, unsafe config or incomplete scans refuse the run; the command does not fetch/reset/change credentials.
+
+## Plan
 
 ```powershell
 & $Python -B "$CONTROL_CHECKOUT/scripts/owner_workspace_cleanup.py" `
   --config $OWNER_CLEANUP_CONFIG --plan $OWNER_FROZEN_PLAN
 ```
 
-Default is **plan only**. The destination must not already exist. This writes
-one frozen Owner-local JSON plan and prints only its canonical JSON SHA-256,
-candidate/HOLD counts. It does not delete or change inspected directories.
-The plan includes exact configuration, main SHA, object/file identities,
-content fingerprints, HEAD, shared-ref fingerprint and logical size estimate.
-Reasons are fixed codes, with no private payloads or arbitrary Git errors.
-CLI refusal also includes an enumerated `reason`; an unrecognized exception
-becomes `unsafe_or_unresolved`. A Control-level refusal blocks the whole plan,
-and is not evidence that its entries were evaluated or are cleanup candidates.
-Logical bytes are not guaranteed reclaimed disk space.
+Plan-only is default. Its destination must be new. It freezes exact configuration, main, object/file identities, fingerprints, HEAD, shared refs and logical size; stdout is only canonical JSON SHA-256 and candidate/HOLD counts. Enumerated failure `reason` is privacy-safe; unknown exceptions become `unsafe_or_unresolved`. A Control-level refusal is not evidence that entries were evaluated. Logical size is not measured reclaimed disk space.
 
-Eligibility requires a complete code-only scan, no symlink/reparse/junction or
-hardlink anywhere in the inspected boundary or ancestors, no private markers,
-and clean Git status with **no untracked or ignored files**. Only exact tracked
-`.env.example` files are allowed; `.env`, other `.env*`, runtime data/sidecars,
-backups, exports and private markers remain protected. Untracked templates are
-HOLD and never read. Arbitrarily renamed private content cannot be detected by
-name: the Owner must attest that these are code-only workspaces.
-Unsupported index flags (including assume-unchanged/skip-worktree) are HOLD.
-Real tracked bytes are hashed against index objects independently of Git's
-timestamp cache; status must also prove that index equals HEAD.
+Eligibility requires a complete code-only plain scan, safe Git config, no runtime/private material, and clean index/bytes with no untracked/ignored files. Exact public repository exceptions remain narrowly defined by current source (#677/#678); ordinary project lockfiles are not Git administrative locks. The read-only inventory intentionally retains broader name heuristics. Do not extend public exceptions to arbitrary `.env*`, `data/*` or token-named content.
 
-HEAD must exist in trusted Control and be an ancestor of current main. An
-independent clone also needs all local refs peeled to preserved commits, no
-stash/replacement refs, no unique reflog history, and no unreachable objects.
-For a linked worktree, validate the declared pointer, reciprocal registration,
-common directory and its own HEAD reflog. Shared refs, branch/stash/reflogs and
-object store remain in Control; unrelated shared history is never deleted.
-Additional per-worktree refs/reflogs or operation metadata are HOLD. Only
-ordinary HEAD/index/pointer/HEAD-reflog metadata and a preserved ORIG_HEAD are
-eligible for registration deletion. Grafts and shallow/alternate object
-graphs are refused in both Control and candidates.
-Unsafe configuration (including hooks/filter/include execution settings),
-alternates, nested Git/submodules, locks and scan limits fail closed.
+Unsupported index flags, alias/reparse/junction/symlink/hardlink, nested Git/submodules, locks, unsafe filters/includes, alternate/shallow/grafted graphs and incomplete evidence fail closed. Actual bytes are checked against index objects; status must also prove index=HEAD. Name checks cannot detect arbitrary renamed private payloads: only declared code-only workspaces may be evaluated.
 
-Review the frozen local plan and approve its exact digest. It expires after
-15 minutes; a changed main, path, bytes, Git state or configuration requires a
-new plan and approval. Real deletion still requires the independent filesystem/
-privacy review and Owner approval required by #666.
+HEAD must be in trusted Control and an ancestor of current main. Independent clones require all local refs/reflog history preserved, no stash/replacement refs or unreachable objects. Linked pointers require exact reciprocal registration/common-dir evidence; only ordinary own metadata and preserved ORIG_HEAD are removed, never shared refs/object store or unrelated history.
+
+## Apply
+
+Review an unexpired exact local plan and authorize its canonical digest. Generic plans expire after 15 minutes; changed main/path/bytes/Git/config require a new plan and approval. An earlier issue discussion is not approval of an arbitrary future plan.
 
 ```powershell
 & $Python -B "$CONTROL_CHECKOUT/scripts/owner_workspace_cleanup.py" apply `
@@ -98,23 +51,8 @@ privacy review and Owner approval required by #666.
   --approve-sha256 $OWNER_APPROVED_PLAN_SHA256
 ```
 
-Apply is Windows-only. It holds input/configuration handles, obtains fresh
-canonical evidence immediately before **each** deletion, and revalidates that
-entry's exact frozen identity/state. Windows handles pin checked ancestors and
-objects; deletion uses those same objects after a verified handle handover,
-never recursive path deletion, link traversal, Git `--force`, branch deletion
-or worktree prune. For linked worktrees, only that task tree and its exact own
-registration are removed. Shared Git refs are preserved.
+Windows-only Apply pins input/configuration/ancestors/objects, obtains fresh canonical evidence before each deletion and revalidates frozen identity/state. It deletes the checked objects via handles, not recursive link traversal, Git force, branch deletion or general worktree prune. Only the exact task and its own trusted registration are removed for linked worktrees.
 
-An exclusive `<plan filename>.apply.jsonl` journal records entry indices,
-digest, timestamps and revalidation/deletion/completion states. Keep it with
-the plan for the local path mapping. A failure can leave a partially removed
-candidate; stop and reinventory, retaining the journal. A journal ending with
-`deleting` or `refused_or_incomplete_reinventory_required` is not success.
-The same plan cannot be replayed via the CLI after any apply attempt.
-No ACL/ownership changes or rollback/quarantine are implemented. Apply requires
-Windows support for handle disposition with read-only-file handling; lack of
-support refuses deletion. Linux plan/unit CI does not replace Windows probes.
+An exclusive `.apply.jsonl` journal records digest/entry/time/revalidation/deletion outcome. Keep it Owner-local. Failure may leave a partially removed candidate; stop and reinventory with the journal retained. `deleting` or `refused_or_incomplete_reinventory_required` is not success. CLI replay is refused after any Apply attempt. No ACL/ownership repair, quarantine or automatic rollback is supplied. Missing platform support refuses deletion; Linux tests do not replace Windows probes.
 
-Grace periods, recurring scheduling and an automatic enable setting belong
-to the later auto-cleanup phase. No automatic cleanup is enabled here.
+The separate recurring janitor has its own accepted 7-day eligibility and deployment. Do not schedule this Python command or weaken its guards merely to make an old frozen plan work. Current operating boundaries are in [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md).
