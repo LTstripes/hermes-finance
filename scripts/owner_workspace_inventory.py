@@ -227,7 +227,7 @@ def load_registry(path: Path) -> dict:
                 for right in (other["path"], other.get("data_path")):
                     if left and right and (within(left, right) or within(right, left)):
                         raise InventoryError("overlapping_registry")
-        if entry["role"] != "workspace":
+        if entry["role"] in {"stable", "control", "preview"}:
             for boundary in (entry["path"], entry.get("data_path")):
                 if boundary and any(
                     within(boundary, root) or within(root, boundary)

@@ -250,3 +250,10 @@ def test_cli_hides_private_errors_and_paths(tmp_path):
     assert proc.returncode == 2
     assert json.loads(proc.stdout)["cleanup_authorized"] is False
     assert str(tmp_path) not in proc.stdout + proc.stderr
+
+
+def test_unknown_entry_inside_workspace_root_is_preserved(tmp_path, checkout):
+    data = registry(tmp_path, [{"role": "unknown", "path": str(checkout)}])
+    report = tool.inventory(data)["entries"][0]
+    assert report["classification"] == "UNKNOWN"
+    assert report["git"]["dirty"] == "unknown"
