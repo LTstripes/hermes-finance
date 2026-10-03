@@ -719,3 +719,23 @@ def test_cleanup_cached_stat_cannot_hide_dirty_bytes(cleanup_case):
     file.write_bytes(b"x" * before.st_size)
     os.utime(file, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert cleanup_row(cleanup_case)["state"] == "HOLD"
+
+
+def test_cleanup_control_common_pointer_never_executes_git(cleanup_case, tmp_path, monkeypatch):
+    config, _, control = cleanup_case
+    outside = tmp_path / "outside-metadata"
+    outside.mkdir()
+    (outside / "config").write_text("SYNTHETIC_EXTERNAL_SENTINEL")
+    (control / ".git" / "commondir").write_text(str(outside))
+    monkeypatch.setattr(
+        cleanup, "git", lambda *a, **kw: pytest.fail("unvalidated Control started Git")
+    )
+    original = Path.open
+
+    def observed(path, *a, **kw):
+        assert outside not in path.parents, "external Git metadata was read"
+        return original(path, *a, **kw)
+
+    monkeypatch.setattr(Path, "open", observed)
+    with pytest.raises(cleanup.Hold, match="external_or_incomplete_git"):
+        cleanup.plan(config)

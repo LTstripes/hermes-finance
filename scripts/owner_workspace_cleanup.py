@@ -380,6 +380,7 @@ def safe_config(common):
             "modules",
             "shallow",
             "info/grafts",
+            "commondir",
         )
     ):
         raise Hold("external_or_incomplete_git")
@@ -576,11 +577,14 @@ def inspect(config, entry, pins, main):
             "logs",
             "logs/HEAD",
             "ORIG_HEAD",
+            "refs",  # Git may create this empty directory for an ordinary worktree
         }
         if any(
             p.relative_to(admin).as_posix() not in allowed for p in admin_tree["paths"]
         ):
             raise Hold("additional_worktree_metadata")
+        if (admin / "refs").exists():
+            inv.plain(admin / "refs", directory=True)
         if inv.read_metadata(admin / "commondir").strip() != "../..":
             raise Hold("git_pointer_mismatch")
         back = inv.absolute(inv.read_metadata(admin / "gitdir").strip())
@@ -664,7 +668,9 @@ def plan(config, *, now=None):
                 rows.append(
                     {"entry": index, "state": "CANDIDATE", "evidence": evidence}
                 )
-            except (Hold, inv.InventoryError, OSError, ValueError, configparser.Error):
+            except Hold as exc:
+                rows.append({"entry": index, "state": "HOLD", "reason": str(exc)})
+            except (inv.InventoryError, OSError, ValueError, configparser.Error):
                 rows.append(
                     {"entry": index, "state": "HOLD", "reason": "unsafe_or_unresolved"}
                 )
