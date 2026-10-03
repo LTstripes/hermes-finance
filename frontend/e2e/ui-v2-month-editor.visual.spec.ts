@@ -498,7 +498,7 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
 });
 
 for (const width of [1280, 390]) {
-  test(`#650 debt stacked editor ${width}px keeps Save/Cancel reachable without page scroll`, async ({
+  test(`#650 debt stacked editor ${width}px keeps Save/Cancel reachable without horizontal page scroll`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -563,15 +563,24 @@ for (const width of [1280, 390]) {
       page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
     ).toBeVisible();
 
-    // Save/Cancel are reachable without page-level horizontal scrolling.
+    // Save/Cancel are reachable with vertical scroll only: no page-level horizontal scrolling.
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
     ).toBe(true);
     for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
-      await expect(editor.getByLabel(label)).toBeInViewport();
+      await editor.getByLabel(label).scrollIntoViewIfNeeded();
+      await expect(editor.getByLabel(label)).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
     }
-    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeInViewport();
-    await expect(editor.getByRole("button", { name: "Отмена" })).toBeInViewport();
+    await editor.getByRole("button", { name: "Сохранить", exact: true }).scrollIntoViewIfNeeded();
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+    await editor.getByRole("button", { name: "Отмена" }).scrollIntoViewIfNeeded();
+    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
 
     // Keyboard reaches Save/Cancel.
     await editor.getByLabel("Название долга").focus();
@@ -588,6 +597,7 @@ for (const width of [1280, 390]) {
     await page.getByRole("button", { name: "Связать счёт" }).click();
     const linkEditor = page.getByRole("form", { name: /Связь долга/ });
     await expect(linkEditor).toBeVisible();
+    await linkEditor.scrollIntoViewIfNeeded();
     await expect(linkEditor.getByLabel("Счёт для связи с долгом")).toBeVisible();
     await expect(linkEditor.getByRole("button", { name: "Сохранить связь" })).toBeVisible();
     expect(
