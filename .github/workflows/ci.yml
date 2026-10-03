@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+# Ordinary pull_request runs share repository + workflow + PR and cancel only
+# their own stale attempts. main and integration/* head/base each use a unique
+# run group, so they are neither cancelled nor queued behind another run.
+concurrency:
+  group: ${{ format('{0}--{1}--ci.yml--{2}', github.repository, github.workflow, case(github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/'), format('pr-{0}', github.event.pull_request.number || github.run_id), format('run-{0}', github.run_id))) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/') }}
+
 jobs:
   privacy:
     name: Privacy guard
@@ -26,6 +33,9 @@ jobs:
 
       - name: Check launcher path-filter regressions
         run: python3 scripts/tests/test-launcher-ci-paths.py
+
+      - name: Check ordinary pull request concurrency regressions
+        run: python3 scripts/tests/test-pr-concurrency.py
 
   backend-quality:
     name: Backend quality
