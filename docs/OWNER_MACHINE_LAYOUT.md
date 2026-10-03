@@ -188,3 +188,13 @@ executes it and reports actual results. No manual JSON or PowerShell is required
 from the Owner. Preserve expiry/replay/identity guards and stop/refreeze on
 changed evidence; never silently refresh an approved digest. A blocked review,
 unproved restore or incomplete reference map prevents READY_FOR_APPROVAL.
+
+The small `scripts/owner_machine_relocation.py` primitive performs one
+same-volume Windows rename using the cleanup tool's existing ancestor/source
+identity guards and a source handle. It refuses replacement and busy or changed
+boundaries; it supplies no CLI or implicit relocation authority. The operational
+caller still owns the reviewed package digest, expiry/replay check, quiescence,
+reference snapshots and readiness checks. Reverse moves use the same directory
+identity after restoring reference bytes. Synthetic tests cover a failure after
+move/reference update, destination collision and an open SQLite connection;
+the Windows production CI lane runs them explicitly.
