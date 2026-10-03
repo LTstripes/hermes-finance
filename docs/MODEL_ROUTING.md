@@ -5,7 +5,7 @@ Read this file when selecting an execution/review route or resolving risk, not a
 
 ## Roles
 
-Select capability per task, not a permanent vendor/model/effort roster. Actual model identity must be evidenced, not inferred from the requested route.
+Select capability per task, not a permanent vendor/model/effort roster.
 Independent review uses a separate context without implementation ownership; Worker self-review is not independent evidence.
 
 ## Risk classes
@@ -39,19 +39,8 @@ The issue/accepted contract holds acceptance criteria; do not duplicate it in th
 Use standing workspace self-create where applicable; do not invent a root, SHA or missing safety-critical authorization.
 Choose one execution route at launch. An alternative may be unavailable/not recommended; say so rather than manufacture a choice.
 
-## Evidence-backed routing
 
-The Integrator maintains [MODEL_BENCHMARK.md](MODEL_BENCHMARK.md) and tracker #605, paired with Health-Check's journal.
-Record actual task outcomes by role, complexity/risk, model/provider, baseline/candidate/verdict, material correction rounds and source evidence.
-Separate infrastructure contention, assignment/review mistakes and missing evidence from model defects. A leaf merge is not aggregate parity or Owner UAT.
-Workers, helpers and execution coordinators do not edit the benchmark/tracker to grade themselves.
-Normal handoffs keep the two-field identity block in AGENTS.md; telemetry is optional, only when genuinely available, and not a row of fabricated unknowns.
-Choose the least expensive suitable route supported by evidence; trial/anonymous routes begin on bounded noncritical work. Historical grades do not waive review.
-
-## Benchmark / A-B mode
-
-Only an explicit request activates a comparison: same baseline, isolated candidates, no viewing/copying the other candidate before comparison.
-Compare actual diffs/tests/evidence and preserve attribution/results in execution history. Do not rerun completed tasks merely to collect scores.
+Model choice is routing only. Normal task handoffs do not request or persist runtime model/provider identity, benchmark grades or usage telemetry.
 
 <a id="codex-local-orchestration"></a><a id="manual-execution-remains-supported"></a>
 ## Execution modes

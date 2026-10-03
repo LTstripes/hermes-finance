@@ -6,4 +6,4 @@ Use the Owner-configured OpenCode workspace root under the shared [machine-layou
 
 Do not inspect or edit another client's physical workspace by default. Review sibling work through GitHub PRs/remote refs, or use an explicitly assigned independent review clone/path.
 
-Model/provider/effort come from the selected OpenCode runtime. Report the actual evidenced identity using the two-field Model evidence block from AGENTS.md. Ordinary tasks do not activate an unattended queue or authorize merge/release/runtime changes.
+Model/provider/effort come from the selected OpenCode runtime. Ordinary tasks do not activate an unattended queue or authorize merge/release/runtime changes.

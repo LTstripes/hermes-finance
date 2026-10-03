@@ -64,7 +64,7 @@ Internal outcomes are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED` or `BLOCKED
 Start with one Worker and at most one independent Reviewer role. Extra writers/roles/replacement sessions need a concrete coordination benefit and explicit authorization.
 Do not add readiness-only model turns, nested delegation, speculative explorers or reviewers-of-reviewers by default.
 Use small environment checks and existing valid evidence; required safety/review gates are not waived for a session budget.
-Benchmark telemetry is recorded only when explicitly requested and measured; normal completion does not require a phase-by-phase ledger.
+Normal completion does not require model/provider identity, usage telemetry or a phase-by-phase ledger.
 
 ## Queue policy
 

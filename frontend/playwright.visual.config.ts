@@ -9,12 +9,20 @@ const baseURL = process.env.HERMES_VISUAL_AUDIT_BASE_URL ?? "http://127.0.0.1:41
 const repeatedViewportSpecs =
   /[/\\](?:performance-preparation\.visual|ui-v2-iis-forms|ui-v2-months|ui-v2-capital-allocation|ui-v2-scenario|ui-v2-payout-forecast)\.spec\.ts$/;
 
+// Same title filter as the exact-head UI evidence command. CI sets the env
+// below only after proving that command will run on this same git tree.
+const duplicateEvidenceGrep = /(?:dashboard:|monthly-close:|ui-v2)/;
+
 function visualProject(name: string, width: number, height: number) {
   const referenceDesktop = name === "1440x900";
+  const omitDuplicateEvidence =
+    referenceDesktop && process.env.HERMES_VISUAL_AUDIT_OMIT_DUPLICATE_EVIDENCE === "true";
   return {
     name,
     ...(referenceDesktop
-      ? {}
+      ? omitDuplicateEvidence
+        ? { grepInvert: duplicateEvidenceGrep }
+        : {}
       : {
           grepInvert: /@viewport-owned/,
           testIgnore: repeatedViewportSpecs,
@@ -57,7 +65,8 @@ export default defineConfig({
   },
   // 1440x900 owns tests that replace the project viewport with their own sizes.
   // The other desktop projects skip those executions. --project=1440x900 still
-  // selects them, including the UI evidence grep.
+  // selects them, including the UI evidence grep. The omit env removes only
+  // that grep from this project; 1366x768 and 1920x1080 stay unchanged.
   projects: [
     visualProject("1366x768", 1366, 768),
     visualProject("1440x900", 1440, 900),

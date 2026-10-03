@@ -37,6 +37,9 @@ jobs:
       - name: Check ordinary pull request concurrency regressions
         run: python3 scripts/tests/test-pr-concurrency.py
 
+      - name: Check UI evidence identity regressions
+        run: python3 scripts/tests/test-ui-evidence-identity.py
+
   backend-quality:
     name: Backend quality
     runs-on: ubuntu-latest
@@ -257,6 +260,7 @@ jobs:
 
     outputs:
       run: ${{ steps.filter.outputs.run }}
+      duplicate_paths: ${{ steps.filter.outputs.duplicate_paths }}
 
     steps:
       - name: Check out repository history
@@ -276,6 +280,21 @@ jobs:
           cat "$RUNNER_TEMP/changed-files.txt"
           should_run=$(python3 scripts/visual_audit_paths.py --from-file "$RUNNER_TEMP/changed-files.txt")
           echo "run=$should_run" >> "$GITHUB_OUTPUT"
+          # PR-owned files only. A missing base or merge-base fails closed to
+          # "not a duplicate" so CI keeps the full audit.
+          duplicate_paths=false
+          if git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            if merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null); then
+              git diff --name-only "$merge_base" "$HEAD_SHA" > "$RUNNER_TEMP/pr-own-files.txt"
+              duplicate_paths=$(python3 scripts/ui_evidence_identity.py paths \
+                --from-file "$RUNNER_TEMP/pr-own-files.txt" \
+                --workflow .github/workflows/ui-v2-evidence.yml || true)
+            fi
+          fi
+          if [ "$duplicate_paths" != "true" ]; then
+            duplicate_paths=false
+          fi
+          echo "duplicate_paths=$duplicate_paths" >> "$GITHUB_OUTPUT"
 
   visual-audit:
     name: Synthetic visual audit
@@ -306,7 +325,46 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      # The checkout above stays the merge ref on a pull request. Omit the
+      # 1440 evidence grep only when that checkout's tree is the PR head and
+      # the exact-head evidence workflow will run the same grep.
+      - name: Decide whether exact-head evidence already covers the 1440 grep
+        id: identity
+        working-directory: ${{ github.workspace }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DUPLICATE_PATHS: ${{ needs.visual-audit-paths.outputs.duplicate_paths }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          omit=false
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$DUPLICATE_PATHS" = "true" ]; then
+            if git fetch --no-tags --depth 1 origin \
+              "+refs/pull/${PR_NUMBER}/head:refs/pull-head" \
+              "+refs/pull/${PR_NUMBER}/merge:refs/pull-merge"; then
+              omit=$(python3 scripts/ui_evidence_identity.py trees \
+                --event-name "$EVENT_NAME" \
+                --duplicate-paths true \
+                --head-sha "$HEAD_SHA" \
+                --resolved-head-sha "$(git rev-parse refs/pull-head)" \
+                --base-sha "$BASE_SHA" \
+                --checkout-sha "$(git rev-parse HEAD)" \
+                --head-tree "$(git rev-parse refs/pull-head:)" \
+                --merge-tree "$(git rev-parse refs/pull-merge:)" \
+                --checkout-tree "$(git rev-parse HEAD:)") || omit=false
+            fi
+          fi
+          if [ "$omit" != "true" ]; then
+            omit=false
+          fi
+          echo "omit=$omit" >> "$GITHUB_OUTPUT"
+          echo "Exact-head evidence overlap omit=$omit"
+
       - name: Run synthetic visual audit
+        env:
+          HERMES_VISUAL_AUDIT_OMIT_DUPLICATE_EVIDENCE: ${{ steps.identity.outputs.omit }}
         run: npm run audit:visual
 
   release-safety:

@@ -27,4 +27,3 @@ Optional queue mechanics are in `docs/AGENT_ORCHESTRATION.md`; do not activate t
 ## Local helpers
 
 Load a relevant helper only when needed. Do not modify global/local skills, model defaults or installed configuration without an explicit request.
-Report actual runtime identity, not the model suggested by a launch prompt.

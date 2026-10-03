@@ -1,18 +1,17 @@
 # Hermes Finance — execution history
 
-> **Purpose:** durable human-readable history of how Hermes Finance was built: which agent/model/tool implemented each accepted task, who reviewed it, which candidate was selected, what blockers/iterations mattered, and which exact commit entered the integration line.
+> **Purpose:** durable human-readable history of accepted work: which candidate was selected, who accepted/reviewed it when relevant, what blockers or iterations mattered, and which exact commit entered the integration line.
 >
 > This file is **not** a specification or release backlog. Business semantics remain in `MASTER_SPEC.md` and accepted ADRs; task scope/status remains in active release docs; product-facing release notes remain in `CHANGELOG.md`.
 
 ## Recording policy
 
-After a task is **accepted and integrated** into its target branch, the accepting reviewer/integrator appends one execution record here. The implementation worker supplies completion evidence but does not self-accept its historical verdict.
+After a task is **accepted and integrated** into its target branch, the accepting reviewer/integrator may append a concise execution record. The implementation Worker supplies completion evidence but does not self-accept its historical verdict.
 
 Preserve when applicable:
 
 - release/task ID and acceptance date;
-- implementation agent/tool and exact model only when runtime-confirmed;
-- reviewer/acceptor;
+- reviewer/acceptor when material to acceptance;
 - baseline ref/SHA;
 - candidate branch and exact accepted HEAD;
 - target branch and exact integrated HEAD;
@@ -20,17 +19,14 @@ Preserve when applicable:
 - material blockers/follow-ups;
 - short decision rationale and historically relevant limitations.
 
-### A/B or multi-agent comparison
-
-Keep **all candidates**, including rejected ones. Record each candidate's agent/model/tool, branch/HEAD, checks, strongest points and material weaknesses, then record the selected candidate and evidence-based selection reason. Do not let blind-comparison candidates inspect/copy each other's work before the comparison is settled unless the owner explicitly ends the blind phase.
+Normal records do not collect model/provider identity, benchmark grades, tokens, cost or usage telemetry. Historical entries below are retained as history; do not backfill or continue model tracking from them.
 
 ## Evidence rules
 
 - Prefer exact Git refs/SHAs and verified CI/read-back over prose claims.
 - Worker completion reports are context, not proof.
-- Never fabricate model identity. If it is not runtime-confirmed, record the agent/tool and mark the model unknown/not independently confirmed.
 - Do not put private financial values, DB/seed/export contents, credentials, private payloads or owner screenshots containing personal values here.
-- Deep technical rationale belongs in ADRs/task cards; this file captures **who/how/why selected**.
+- Deep technical rationale belongs in ADRs/task cards; this file captures what changed, how it was verified and why it was accepted.
 
 ---
 
