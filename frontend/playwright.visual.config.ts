@@ -6,6 +6,23 @@ import { defineConfig } from "@playwright/test";
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.HERMES_VISUAL_AUDIT_BASE_URL ?? "http://127.0.0.1:4174";
 
+const repeatedViewportSpecs =
+  /[/\\](?:performance-preparation\.visual|ui-v2-iis-forms|ui-v2-months|ui-v2-capital-allocation|ui-v2-scenario|ui-v2-payout-forecast)\.spec\.ts$/;
+
+function visualProject(name: string, width: number, height: number) {
+  const referenceDesktop = name === "1440x900";
+  return {
+    name,
+    ...(referenceDesktop
+      ? {}
+      : {
+          grepInvert: /@viewport-owned/,
+          testIgnore: repeatedViewportSpecs,
+        }),
+    use: { viewport: { width, height } },
+  };
+}
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: [
@@ -38,9 +55,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
+  // 1440x900 owns tests that replace the project viewport with their own sizes.
+  // The other desktop projects skip those executions. --project=1440x900 still
+  // selects them, including the UI evidence grep.
   projects: [
-    { name: "1366x768", use: { viewport: { width: 1366, height: 768 } } },
-    { name: "1440x900", use: { viewport: { width: 1440, height: 900 } } },
-    { name: "1920x1080", use: { viewport: { width: 1920, height: 1080 } } },
+    visualProject("1366x768", 1366, 768),
+    visualProject("1440x900", 1440, 900),
+    visualProject("1920x1080", 1920, 1080),
   ],
 });

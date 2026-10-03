@@ -327,94 +327,100 @@ for (const viewport of [
   { name: "desktop", width: 1366, height: 900 },
   { name: "390px", width: 390, height: 844 },
 ]) {
-  test(`native statement import ${viewport.name}: inspect/prepare/cancel/apply + readback`, async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12#statement-import");
+  test(
+    `native statement import ${viewport.name}: inspect/prepare/cancel/apply + readback`,
+    { tag: "@viewport-owned" },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      const api = await installStatementApi(page);
+      await page.goto("/v2/data/payouts?month=12#statement-import");
 
-    await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
-    await expect(page.locator("#statement-import")).toBeVisible();
-    // No file or provider action happens on mount.
-    expect(api.posts).toEqual([]);
-    await assertNoPageOverflow(page);
-    await page.screenshot({
-      path: testInfo.outputPath(`${viewport.name}-statement-mount.png`),
-      fullPage: true,
-    });
+      await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
+      await expect(page.locator("#statement-import")).toBeVisible();
+      // No file or provider action happens on mount.
+      expect(api.posts).toEqual([]);
+      await assertNoPageOverflow(page);
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-statement-mount.png`),
+        fullPage: true,
+      });
 
-    // Selecting a file alone performs no request either.
-    await page.setInputFiles("#statement-file", {
-      name: "synthetic-statement.pdf",
-      mimeType: "application/pdf",
-      buffer: SYNTHETIC_PDF,
-    });
-    expect(api.posts).toEqual([]);
+      // Selecting a file alone performs no request either.
+      await page.setInputFiles("#statement-file", {
+        name: "synthetic-statement.pdf",
+        mimeType: "application/pdf",
+        buffer: SYNTHETIC_PDF,
+      });
+      expect(api.posts).toEqual([]);
 
-    await prepareStatement(page);
-    expect(api.posts).toEqual([
-      "POST /api/statement-import/inspect",
-      "POST /api/statement-import/prepare",
-    ]);
-    // Inspect and prepare never write imported facts.
-    expect(api.posts.filter((call) => call.startsWith("POST /api/investment-flows"))).toHaveLength(
-      0,
-    );
-    // The prepared rows table scrolls inside its own container.
-    const wrapOverflowX = await page
-      .locator(".statement-import .table-wrap")
-      .first()
-      .evaluate((element) => getComputedStyle(element).overflowX);
-    expect(wrapOverflowX).toBe("auto");
-    await assertNoPageOverflow(page);
-    await page.screenshot({
-      path: testInfo.outputPath(`${viewport.name}-statement-prepare.png`),
-      fullPage: true,
-    });
+      await prepareStatement(page);
+      expect(api.posts).toEqual([
+        "POST /api/statement-import/inspect",
+        "POST /api/statement-import/prepare",
+      ]);
+      // Inspect and prepare never write imported facts.
+      expect(
+        api.posts.filter((call) => call.startsWith("POST /api/investment-flows")),
+      ).toHaveLength(0);
+      // The prepared rows table scrolls inside its own container.
+      const wrapOverflowX = await page
+        .locator(".statement-import .table-wrap")
+        .first()
+        .evaluate((element) => getComputedStyle(element).overflowX);
+      expect(wrapOverflowX).toBe("auto");
+      await assertNoPageOverflow(page);
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-statement-prepare.png`),
+        fullPage: true,
+      });
 
-    // Keyboard: open the confirm dialog, cancel it, and prove no write.
-    const applyButton = page.getByRole("button", { name: "Применить выбранные строки" });
-    await applyButton.focus();
-    await expect(applyButton).toBeFocused();
-    await page.keyboard.press("Enter");
-    const dialog = page.getByRole("alertdialog");
-    await expect(dialog).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath(`${viewport.name}-statement-confirm.png`),
-      fullPage: true,
-    });
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(0);
+      // Keyboard: open the confirm dialog, cancel it, and prove no write.
+      const applyButton = page.getByRole("button", { name: "Применить выбранные строки" });
+      await applyButton.focus();
+      await expect(applyButton).toBeFocused();
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("alertdialog");
+      await expect(dialog).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-statement-confirm.png`),
+        fullPage: true,
+      });
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(
+        0,
+      );
 
-    // Keyboard confirm publishes success only after the exact-month reread.
-    await applyButton.focus();
-    await page.keyboard.press("Enter");
-    await expect(dialog).toBeVisible();
-    const confirmButton = dialog.getByRole("button", { name: "Подтвердить и применить" });
-    await confirmButton.focus();
-    await expect(confirmButton).toBeFocused();
-    await page.keyboard.press("Enter");
+      // Keyboard confirm publishes success only after the exact-month reread.
+      await applyButton.focus();
+      await page.keyboard.press("Enter");
+      await expect(dialog).toBeVisible();
+      const confirmButton = dialog.getByRole("button", { name: "Подтвердить и применить" });
+      await confirmButton.focus();
+      await expect(confirmButton).toBeFocused();
+      await page.keyboard.press("Enter");
 
-    await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
-    expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(1);
-    expect(api.posts.filter((call) => call.startsWith("POST /api/investment-flows"))).toHaveLength(
-      0,
-    );
-    expect(api.gets).toContain("GET /api/investment-flows");
-    await expect(page.getByText(/не подтверждён повторной загрузкой/)).toHaveCount(0);
-    await assertNoPageOverflow(page);
-    expect(api.errors).toEqual([]);
-    await page.screenshot({
-      path: testInfo.outputPath(`${viewport.name}-statement-applied.png`),
-      fullPage: true,
-    });
-  });
+      await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
+      expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(
+        1,
+      );
+      expect(
+        api.posts.filter((call) => call.startsWith("POST /api/investment-flows")),
+      ).toHaveLength(0);
+      expect(api.gets).toContain("GET /api/investment-flows");
+      await expect(page.getByText(/не подтверждён повторной загрузкой/)).toHaveCount(0);
+      await assertNoPageOverflow(page);
+      expect(api.errors).toEqual([]);
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-statement-applied.png`),
+        fullPage: true,
+      });
+    },
+  );
 
-  test(`native statement import ${viewport.name}: stale month context cannot publish`, async ({
-    page,
-  }) => {
+  test(`native statement import ${viewport.name}: stale month context cannot publish`, {
+    tag: "@viewport-owned",
+  }, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
     await page.goto("/v2/data/payouts?month=12#statement-import");
@@ -432,9 +438,9 @@ for (const viewport of [
     await assertNoPageOverflow(page);
   });
 
-  test(`native statement import ${viewport.name}: ambiguous apply failure needs a fresh prepare`, async ({
-    page,
-  }) => {
+  test(`native statement import ${viewport.name}: ambiguous apply failure needs a fresh prepare`, {
+    tag: "@viewport-owned",
+  }, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
     await page.goto("/v2/data/payouts?month=12#statement-import");
@@ -462,7 +468,9 @@ for (const viewport of [
   });
 }
 
-test("native spanning document: only the explicit month can be submitted", async ({ page }) => {
+test("native spanning document: only the explicit month can be submitted", {
+  tag: "@viewport-owned",
+}, async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
   await page.goto("/v2/data/payouts?month=12#statement-import");
@@ -488,7 +496,9 @@ test("native spanning document: only the explicit month can be submitted", async
   expect(api.errors).toEqual([]);
 });
 
-test("legacy panel stays unconstrained across a spanning document", async ({ page }) => {
+test("legacy panel stays unconstrained across a spanning document", {
+  tag: "@viewport-owned",
+}, async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
   await page.goto("/payouts");

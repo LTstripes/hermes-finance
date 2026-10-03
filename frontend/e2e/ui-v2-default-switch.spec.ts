@@ -101,9 +101,9 @@ test("ui-v2: failed lazy load still exposes a working v1 escape", async ({ page 
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
 });
 
-test("ui-v2: keeps the UI v1 rollback visible and keyboard-operable at narrow width", async ({
-  page,
-}) => {
+test("ui-v2: keeps the UI v1 rollback visible and keyboard-operable at narrow width", {
+  tag: "@viewport-owned",
+}, async ({ page }) => {
   await installReadOnlyApiFixtures(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");

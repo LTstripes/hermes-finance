@@ -317,32 +317,36 @@ test("saving removes the history guard and Back returns to the month list", asyn
 });
 
 for (const width of [1280, 390]) {
-  test(`native month editor ${width}px and keyboard`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 });
-    const calls = await installApi(page);
-    await page.goto("/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup");
-    await expect(page.getByRole("heading", { level: 1, name: "Редактор месяца" })).toBeVisible();
-    await expect(page.getByTestId("data-month-context").getByText("Апрель 2030")).toBeVisible();
-    await expect(page.getByLabel("Дата снимка")).toBeDisabled();
-    await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
-      "href",
-      "/v2/close?month=7&step=month_setup",
-    );
-    await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("A");
-    await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
-    await expect(page.getByLabel("Дата снимка")).toBeEnabled();
-    expect(calls.filter((call) => call === "GET /api/months/7").length).toBeGreaterThanOrEqual(2);
-    expect(calls).toContain("POST /api/months/7/reopen");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    );
-    await page.screenshot({
-      path: testInfo.outputPath(`month-editor-${width}.png`),
-      fullPage: true,
-    });
-  });
+  test(
+    `native month editor ${width}px and keyboard`,
+    { tag: "@viewport-owned" },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const calls = await installApi(page);
+      await page.goto("/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup");
+      await expect(page.getByRole("heading", { level: 1, name: "Редактор месяца" })).toBeVisible();
+      await expect(page.getByTestId("data-month-context").getByText("Апрель 2030")).toBeVisible();
+      await expect(page.getByLabel("Дата снимка")).toBeDisabled();
+      await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+        "href",
+        "/v2/close?month=7&step=month_setup",
+      );
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("A");
+      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await expect(page.getByLabel("Дата снимка")).toBeEnabled();
+      expect(calls.filter((call) => call === "GET /api/months/7").length).toBeGreaterThanOrEqual(2);
+      expect(calls).toContain("POST /api/months/7/reopen");
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`month-editor-${width}.png`),
+        fullPage: true,
+      });
+    },
+  );
 }
 
 const leaves = [
@@ -371,80 +375,84 @@ for (const [id, , heading] of leaves) {
 }
 
 for (const width of [1280, 390]) {
-  test(`aggregate six leaves write readback navigation ${width}px`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 });
-    const calls = await installApi(page);
-    await page.goto(
-      "/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup&extra=keep#editor",
-    );
-    await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
-    await expect(page.getByLabel("Дата снимка")).toBeEnabled();
-    const tabs = page.getByRole("navigation", { name: "Разделы редактора месяца" });
-    for (const [id, label, heading] of leaves) {
-      await tabs.getByRole("link", { name: label, exact: true }).focus();
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-      const writeField = {
-        income: "Премия",
-        assets: "Название вклада",
-        positions: "Количество",
-        payouts: "Брутто",
-        budget: "Категория расхода",
-        liabilities: "Название долга",
-      }[id];
-      await expect(page.getByLabel(writeField, { exact: true })).toBeEnabled();
-      const url = new URL(page.url());
-      expect(url.pathname).toBe("/v2/data/months/7");
-      expect(url.searchParams.get("section")).toBe(id);
-      expect(url.searchParams.get("extra")).toBe("keep");
-      expect(url.hash).toBe("#editor");
-      await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
-        "href",
-        "/v2/close?month=7&step=month_setup",
+  test(
+    `aggregate six leaves write readback navigation ${width}px`,
+    { tag: "@viewport-owned" },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const calls = await installApi(page);
+      await page.goto(
+        "/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup&extra=keep#editor",
       );
+      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await expect(page.getByLabel("Дата снимка")).toBeEnabled();
+      const tabs = page.getByRole("navigation", { name: "Разделы редактора месяца" });
+      for (const [id, label, heading] of leaves) {
+        await tabs.getByRole("link", { name: label, exact: true }).focus();
+        await page.keyboard.press("Enter");
+        await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+        const writeField = {
+          income: "Премия",
+          assets: "Название вклада",
+          positions: "Количество",
+          payouts: "Брутто",
+          budget: "Категория расхода",
+          liabilities: "Название долга",
+        }[id];
+        await expect(page.getByLabel(writeField, { exact: true })).toBeEnabled();
+        const url = new URL(page.url());
+        expect(url.pathname).toBe("/v2/data/months/7");
+        expect(url.searchParams.get("section")).toBe(id);
+        expect(url.searchParams.get("extra")).toBe("keep");
+        expect(url.hash).toBe("#editor");
+        await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+          "href",
+          "/v2/close?month=7&step=month_setup",
+        );
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        ).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`), fullPage: true });
+      }
+      await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
+      await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
+      await page.getByLabel("Сумма расхода", { exact: true }).fill("123.45");
+      await tabs.getByRole("link", { name: "Активы", exact: true }).click();
+      await expect(page.getByRole("alertdialog")).toBeVisible();
+      await page.getByRole("button", { name: "Остаться", exact: true }).click();
+      await expect(page.getByLabel("Сумма расхода", { exact: true })).toHaveValue("123.45");
+      await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
+      await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
+      const write = calls.indexOf("POST /api/expenses");
+      expect(write).toBeGreaterThan(-1);
+      expect(calls.slice(write + 1)).toContain("GET /api/expenses");
+      expect(calls.slice(write + 1)).toContain("GET /api/months/7");
+      await expect(
+        page.getByRole("cell", { name: "Синтетический расход", exact: true }),
+      ).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
-      await page.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`), fullPage: true });
-    }
-    await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
-    await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
-    await page.getByLabel("Сумма расхода", { exact: true }).fill("123.45");
-    await tabs.getByRole("link", { name: "Активы", exact: true }).click();
-    await expect(page.getByRole("alertdialog")).toBeVisible();
-    await page.getByRole("button", { name: "Остаться", exact: true }).click();
-    await expect(page.getByLabel("Сумма расхода", { exact: true })).toHaveValue("123.45");
-    await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
-    await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
-    const write = calls.indexOf("POST /api/expenses");
-    expect(write).toBeGreaterThan(-1);
-    expect(calls.slice(write + 1)).toContain("GET /api/expenses");
-    expect(calls.slice(write + 1)).toContain("GET /api/months/7");
-    await expect(
-      page.getByRole("cell", { name: "Синтетический расход", exact: true }),
-    ).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    );
-    if (width === 390) {
-      const scroll = page.locator(".table-wrap").first();
-      expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-      await scroll.evaluate((el) => {
-        el.scrollLeft = 100;
+      if (width === 390) {
+        const scroll = page.locator(".table-wrap").first();
+        expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+        await scroll.evaluate((el) => {
+          el.scrollLeft = 100;
+        });
+        expect(await scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+      }
+      await page.screenshot({
+        path: testInfo.outputPath(`budget-readback-${width}.png`),
+        fullPage: true,
       });
-      expect(await scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-    }
-    await page.screenshot({
-      path: testInfo.outputPath(`budget-readback-${width}.png`),
-      fullPage: true,
-    });
-    await tabs.getByRole("link", { name: "Активы", exact: true }).click();
-    await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
-    await expect(
-      page.getByRole("cell", { name: "Синтетический расход", exact: true }),
-    ).toBeVisible();
-  });
+      await tabs.getByRole("link", { name: "Активы", exact: true }).click();
+      await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
+      await expect(
+        page.getByRole("cell", { name: "Синтетический расход", exact: true }),
+      ).toBeVisible();
+    },
+  );
 }
 
 test("invalid and duplicate sections fail closed", async ({ page }) => {
@@ -498,114 +506,116 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
 });
 
 for (const width of [1280, 390]) {
-  test(`#650 debt stacked editor ${width}px keeps Save/Cancel reachable without horizontal page scroll`, async ({
-    page,
-  }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 });
-    const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
-    // One catch-all mock serves the #650 fixtures: no overlapping routes.
-    await installApi(page, {
-      debts: [
-        {
-          id: 1,
-          reporting_month_id: 7,
-          debt_type: "credit_card",
-          name: "Основная карта с очень длинным названием для проверки переноса",
-          current_balance: { amount: "1234567890.50", currency: "RUB" },
-          include_in_liquid_capital: true,
-          linked_account_id: null,
-          annual_rate: "19.90",
-          next_due_date: "2030-06-20",
-          contract_end_date: null,
-          notes: null,
-        },
-      ],
-      accounts: [
-        {
-          id: 11,
-          name: longAccount,
-          account_type: "deposit",
-          status: "active",
-          external_code: null,
-          include_in_capital: true,
-          include_in_returns: true,
-          notes: null,
-        },
-      ],
-      properties: [],
-    });
+  test(
+    `#650 debt stacked editor ${width}px keeps Save/Cancel reachable without horizontal page scroll`,
+    { tag: "@viewport-owned" },
+    async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
+      // One catch-all mock serves the #650 fixtures: no overlapping routes.
+      await installApi(page, {
+        debts: [
+          {
+            id: 1,
+            reporting_month_id: 7,
+            debt_type: "credit_card",
+            name: "Основная карта с очень длинным названием для проверки переноса",
+            current_balance: { amount: "1234567890.50", currency: "RUB" },
+            include_in_liquid_capital: true,
+            linked_account_id: null,
+            annual_rate: "19.90",
+            next_due_date: "2030-06-20",
+            contract_end_date: null,
+            notes: null,
+          },
+        ],
+        accounts: [
+          {
+            id: 11,
+            name: longAccount,
+            account_type: "deposit",
+            status: "active",
+            external_code: null,
+            include_in_capital: true,
+            include_in_returns: true,
+            notes: null,
+          },
+        ],
+        properties: [],
+      });
 
-    await page.goto("/v2/data/months");
-    await page.goto("/v2/data/months/7");
-    await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
-    await page
-      .getByRole("navigation", { name: "Разделы редактора месяца" })
-      .getByRole("link", { name: "Долги и недвижимость", exact: true })
-      .click();
-    await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
+      await page.goto("/v2/data/months");
+      await page.goto("/v2/data/months/7");
+      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await page
+        .getByRole("navigation", { name: "Разделы редактора месяца" })
+        .getByRole("link", { name: "Долги и недвижимость", exact: true })
+        .click();
+      await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
-    // Owner language, no technical shorthand; money is one unit.
-    await expect(page.getByText("Кредитные карты:", { exact: false })).toBeVisible();
-    await expect(page.getByText("Долг по кредитным картам:", { exact: false })).toBeVisible();
-    expect(await page.getByText("CC ", { exact: false }).count()).toBe(0);
-    expect(await page.locator(".money").count()).toBeGreaterThan(0);
+      // Owner language, no technical shorthand; money is one unit.
+      await expect(page.getByText("Кредитные карты:", { exact: false })).toBeVisible();
+      await expect(page.getByText("Долг по кредитным картам:", { exact: false })).toBeVisible();
+      expect(await page.getByText("CC ", { exact: false }).count()).toBe(0);
+      expect(await page.locator(".money").count()).toBeGreaterThan(0);
 
-    // Open the stacked editor below the readonly row.
-    await page.getByRole("button", { name: /Изменить долг/ }).click();
-    const editor = page.getByRole("form", { name: /Редактирование долга/ });
-    await expect(editor).toBeVisible();
-    await expect(editor.getByLabel("Название долга")).toBeVisible();
-    await expect(editor.getByLabel("Текущий баланс долга")).toBeVisible();
-    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
-    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
-    await expect(
-      page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
-    ).toBeVisible();
+      // Open the stacked editor below the readonly row.
+      await page.getByRole("button", { name: /Изменить долг/ }).click();
+      const editor = page.getByRole("form", { name: /Редактирование долга/ });
+      await expect(editor).toBeVisible();
+      await expect(editor.getByLabel("Название долга")).toBeVisible();
+      await expect(editor.getByLabel("Текущий баланс долга")).toBeVisible();
+      await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+      await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+      await expect(
+        page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+      ).toBeVisible();
 
-    // Save/Cancel are reachable with vertical scroll only: no page-level horizontal scrolling.
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
-    ).toBe(true);
-    for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
-      await editor.getByLabel(label).scrollIntoViewIfNeeded();
-      await expect(editor.getByLabel(label)).toBeVisible();
+      // Save/Cancel are reachable with vertical scroll only: no page-level horizontal scrolling.
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
       ).toBe(true);
-    }
-    await editor.getByRole("button", { name: "Сохранить", exact: true }).scrollIntoViewIfNeeded();
-    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
-    await editor.getByRole("button", { name: "Отмена" }).scrollIntoViewIfNeeded();
-    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
-    ).toBe(true);
+      for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
+        await editor.getByLabel(label).scrollIntoViewIfNeeded();
+        await expect(editor.getByLabel(label)).toBeVisible();
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+        ).toBe(true);
+      }
+      await editor.getByRole("button", { name: "Сохранить", exact: true }).scrollIntoViewIfNeeded();
+      await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+      await editor.getByRole("button", { name: "Отмена" }).scrollIntoViewIfNeeded();
+      await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
 
-    // Keyboard reaches Save/Cancel.
-    await editor.getByLabel("Название долга").focus();
-    await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+      // Keyboard reaches Save/Cancel.
+      await editor.getByLabel("Название долга").focus();
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
 
-    await page.screenshot({
-      path: testInfo.outputPath(`debt-stacked-editor-${width}.png`),
-      fullPage: true,
-    });
+      await page.screenshot({
+        path: testInfo.outputPath(`debt-stacked-editor-${width}.png`),
+        fullPage: true,
+      });
 
-    // Link editor keeps the same reachable treatment with a long account name.
-    await editor.getByRole("button", { name: "Отмена" }).click();
-    await page.getByRole("button", { name: "Связать счёт" }).click();
-    const linkEditor = page.getByRole("form", { name: /Связь долга/ });
-    await expect(linkEditor).toBeVisible();
-    await linkEditor.scrollIntoViewIfNeeded();
-    await expect(linkEditor.getByLabel("Счёт для связи с долгом")).toBeVisible();
-    await expect(linkEditor.getByRole("button", { name: "Сохранить связь" })).toBeVisible();
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
-    ).toBe(true);
-    await page.screenshot({
-      path: testInfo.outputPath(`debt-link-editor-${width}.png`),
-      fullPage: true,
-    });
-  });
+      // Link editor keeps the same reachable treatment with a long account name.
+      await editor.getByRole("button", { name: "Отмена" }).click();
+      await page.getByRole("button", { name: "Связать счёт" }).click();
+      const linkEditor = page.getByRole("form", { name: /Связь долга/ });
+      await expect(linkEditor).toBeVisible();
+      await linkEditor.scrollIntoViewIfNeeded();
+      await expect(linkEditor.getByLabel("Счёт для связи с долгом")).toBeVisible();
+      await expect(linkEditor.getByRole("button", { name: "Сохранить связь" })).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`debt-link-editor-${width}.png`),
+        fullPage: true,
+      });
+    },
+  );
 }
