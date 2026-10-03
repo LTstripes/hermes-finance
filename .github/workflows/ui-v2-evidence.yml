@@ -53,11 +53,29 @@ jobs:
         if: success()
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
+          set -euo pipefail
           mkdir -p ../ui-v2-evidence/screenshots
           cp .visual-audit/1440x900/*.png ../ui-v2-evidence/screenshots/
           cp -R dist ../ui-v2-evidence/frontend-dist
-          printf '{"candidate_sha":"%s","data":"synthetic API fixtures only","runtime":"no backend or provider"}\n' "$CANDIDATE_SHA" > ../ui-v2-evidence/provenance.json
+          merge_tree=""
+          if git -C .. fetch --no-tags --depth 1 origin "+refs/pull/${PR_NUMBER}/merge:refs/pull-merge"; then
+            merge_tree="$(git -C .. rev-parse refs/pull-merge:)"
+          fi
+          python3 ../scripts/ui_evidence_identity.py publish \
+            --package ../ui-v2-evidence \
+            --repo .. \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --base-sha "$BASE_SHA" \
+            --event-sha "$EVENT_SHA" \
+            --merge-tree "$merge_tree" \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT"
 
       - name: Retain synthetic screenshots and public frontend build
         if: success()
