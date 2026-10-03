@@ -92,11 +92,5 @@ Integration requires successful exact-candidate PR CI and canonical exact-main p
 Return one concise report: issue/status; baseline/target, branch/workspace and exact candidate SHA; changed files/diff stat;
 actual checks and results; material limitations/blockers; final local HEAD/remote/working-tree read-back, or the truthful GitHub-native equivalent.
 
-```text
-Model evidence
-model: <exact model name or unknown>
-provider/client: <provider / client or unknown>
-```
-
-Use only these two identity fields. Do not infer identity from assignment/alias or add unmeasured telemetry; benchmark recording belongs to the Integrator.
+Normal handoffs do not request or record model/provider identity, benchmark grades or usage telemetry.
 Keep new operational detail in its existing procedure, not as another copy here. Change this file for shared boundaries, authority or the minimum task entrypoint.

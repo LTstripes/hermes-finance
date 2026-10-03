@@ -46,7 +46,7 @@ Native parity #570/#571/#643 and the original #572 Owner gate are complete. Port
 
 Data-integrity #484–#498/#536–#539 and #621–#624, Decision Support v1, and owner durability #417 remain accepted. Prior closeouts are retained: [data integrity](DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md), [durability](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md), [Decision Support](DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md), [Performance v1](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
 
-Deferred: #629 launcher removal with dependency/runtime review, #630 representative synthetic stand, #573 explicit v1-retirement decision, #389 dashboard composer. `/v1` stays. #124 is permanent release infrastructure; #127/#528/#554 and model tracker #605 are coordination, not automatic implementation queues.
+Deferred: #629 launcher removal with dependency/runtime review, #630 representative synthetic stand, #573 explicit v1-retirement decision, #389 dashboard composer. `/v1` stays. #124 is permanent release infrastructure; #127/#528/#554 are coordination, not automatic implementation queues.
 
 ## Operating boundaries
 

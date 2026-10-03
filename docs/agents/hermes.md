@@ -12,7 +12,7 @@ Do not require a delegate/fallback ledger for an ordinary handoff. Report only a
 
 ## No permanent provider/model lock
 
-Provider/model/effort come from the selected launch/runtime. Record only evidenced identity.
+Provider/model/effort come from the selected launch/runtime.
 Do not change shared Hermes defaults to satisfy one task without an explicit request.
 
 ## Relationship to Codex orchestration
