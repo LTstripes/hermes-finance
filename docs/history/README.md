@@ -14,3 +14,5 @@ Authoritative current agent operation:
 Active task scope comes from the assigned task or current release contract, not from these files.
 
 Old model routes and process instructions here must not be reused as current policy.
+
+Reading this directory does not start product tests or change runtime behavior.
