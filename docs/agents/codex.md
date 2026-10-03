@@ -9,6 +9,9 @@ Use the configured workspace root under the standing self-create policy. Local m
 
 Portable role/root boundaries and the Owner-local registry are in [Owner machine layout](../OWNER_MACHINE_LAYOUT.md).
 The real-machine inventory is Owner-only; agents use synthetic fixtures.
+An explicitly launched Owner-local operational assignment such as #679 follows
+the narrow helper boundary in AGENTS.md and the machine-layout procedure; it
+does not extend ordinary development access to private runtime payloads.
 
 ## Independent review
 

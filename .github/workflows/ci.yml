@@ -471,6 +471,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Verify identity-bound Owner relocation rollback
+        working-directory: backend
+        shell: pwsh
+        run: uv run --locked python -I -m pytest -q tests/test_owner_machine_relocation.py --basetemp "$env:RUNNER_TEMP/hermes-relocation-pytest"
+
       - name: Run prepared runtime regression
         shell: pwsh
         run: |

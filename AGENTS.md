@@ -48,6 +48,7 @@ Agent workspaces and artifacts (Git, tests, logs, prompts and reports) must not 
 SQLite sidecars, backups, `private/`, credentials/tokens/secrets, Owner exports or other reconstructive private/provider datasets.
 This includes copies, symlinks, junctions, hardlinks and other indirection. Tests/probes use synthetic data only.
 Never inspect or reuse Owner runtime, Stable/Preview/UAT or `owner-probes/` locations; Owner-generated local reports remain allowed in Owner runtime.
+An explicit Owner-local operational assignment may authorize a bounded helper to collect structural/Git metadata and perform supported recovery/readiness operations on named boundaries. Private payloads remain opaque and outside agent artifacts; implementation/tests stay in a separate code-only clone. Relocation, deletion and existing-client reconfiguration still require the exact independently reviewed package and explicit Owner approval specified by that assignment. This exception does not grant ordinary development tasks runtime access.
 Avoid publishing individual financial values. An isolated scalar is normally P3 hygiene, not automatically a critical incident/release blocker;
 escalate when its context increases sensitivity or reconstructive risk. No history rewrite for scalar cleanup without explicit Owner authorization.
 No machine-specific absolute paths in tracked files. Governing runtime contracts remain in accepted ADRs, including 0012 and 0014.
