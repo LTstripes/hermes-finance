@@ -384,6 +384,11 @@ jobs:
           enable-cache: false
           cache-dependency-glob: backend/uv.lock
 
+      - name: Test disposable Finance workspace janitor
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-cleanup-workspaces.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run guarded release synthetic tests
         shell: pwsh
         run: |
