@@ -1,6 +1,6 @@
 # Hermes Finance — current status
 
-Canonical Owner/Integrator checkpoint, synchronized **2026-09-30** during preparation of Owner-selected **1.1.0**. Publication, local installation and real-history acceptance are separate facts. The live publication identity and final evidence are recorded in [release control #643](https://github.com/LTstripes/hermes-finance/issues/643); this file does not predict a release run or tag.
+Canonical Owner/Integrator checkpoint, synchronized **2026-10-03** after publication of Owner-selected **1.1.0**. Publication is complete; local installation and real-history acceptance remain separate facts. The independently verified publication identity and final evidence are recorded in [release control #643](https://github.com/LTstripes/hermes-finance/issues/643).
 
 ## Current delivery
 
@@ -17,11 +17,13 @@ The original split-branch September 28 checkpoint is historical, not the current
 
 ## Owner acceptance and release identity
 
-Owner explicitly approved main integration and release before repeating representative-history Preview UAT, then selected **1.1.0**. [Recorded exception](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5919067817): **OWNER_AUTHORIZED_UAT_DEFERRAL**, not Owner PASS. This applies to this delivery only; CI, independent review, guarded publication, backup-first update and data isolation remain required.
+Owner explicitly approved main integration and release before repeating representative-history Preview UAT, then selected **1.1.0**. [Recorded exception](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5919067817): **OWNER_AUTHORIZED_UAT_DEFERRAL**, not Owner PASS. This applies to this delivery only; CI, independent review, guarded publication, backup-first update and data isolation remain required. #572 stays open for the actual ordinary-use observation.
 
-At this preparation checkpoint the last independently verified published/local Stable remains **v1.0.0**, code `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`, annotated tag `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`. Its proven Owner UAT/OPS02/Start/data continuity are historical evidence for that version, not 1.1.0 acceptance.
+**1.1.0 is published** (2026-09-30). Independently verified identity: released commit `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, release tree `7f5a3198fa650b71545550301063c9afd887f8f8`; annotated tag `v1.1.0`, tag object `9b402190bafc5d8415b217580da5e18ed35a6331`, peeling exactly to the released commit; published GitHub Release `Hermes Finance 1.1.0`. Release preparation PR #644 accepted head `f4de8e39217ee0ec73b2524433940674247461f7`; exact-main push CI `36776904188`: SUCCESS; guarded Release run `36777962224`: SUCCESS. Full evidence: [release control #643](https://github.com/LTstripes/hermes-finance/issues/643).
 
-The **1.1.0 version files and publication notes are being prepared**. Do not call the version published until #643 records successful guarded #124 publication plus independently verified annotated tag/peeled commit/GitHub Release. Do not call local Stable updated until Owner reports the supported operation and Start. See [1.1.0 release record](releases/1.1.0.md) and [publication notes](release-notes-1.1.0.md).
+Publication is complete, but **local Stable update, Start and real-history acceptance are still outstanding Owner operations** and are not claimed here. The predecessor **v1.0.0**, code `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`, annotated tag `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`, remains historical evidence for that version; its proven Owner UAT/OPS02/Start/data continuity are not 1.1.0 acceptance. See [1.1.0 release record](releases/1.1.0.md) and [publication notes](release-notes-1.1.0.md).
+
+The current aggregate draft UAT wave ([PR #662](https://github.com/LTstripes/hermes-finance/pull/662), targeting `main` from `integration/post-release-uat-wave`) is **not merged and not part of published 1.1.0**; its Owner UAT is pending and it must not be described as released or accepted.
 
 ## Completed scope in the common main tree
 
@@ -51,7 +53,7 @@ Accepted common-head CI `36676404532`: SUCCESS, 17 jobs; frontend 1023 passed, v
 
 ## Owner's next operation
 
-One supported production update after publication, then ordinary September-close use rather than duplicate full entry in a Preview copy. From an assigned trusted control checkout, use `scripts/update-stable.ps1` for exactly 1.1.0 with the known Stable and database paths. The operation verifies publication/current identity and backup before mutation, prepares/validates the target and stops. `scripts/start-local.ps1` is a separate explicit Start. No automatic update, runtime start or private-data access occurs from a GitHub merge.
+One supported production update to **1.1.0**, then ordinary September-close use rather than duplicate full entry in a Preview copy. From an assigned trusted control checkout, use `scripts/update-stable.ps1` for exactly 1.1.0 with the known Stable and database paths. The operation verifies publication/current identity and backup before mutation, prepares/validates the target and stops. `scripts/start-local.ps1` is a separate explicit Start. No automatic update, runtime start or private-data access occurs from a GitHub merge.
 
 Backup first. Verify version and continuity before entry. Check the real month/edit/save/return/readiness/close/report and Performance contexts; report actual PASS/FAIL/NOT TESTED, not private values or files. Do not invent PRE/POST observations or run destructive restore drills on the working DB.
 

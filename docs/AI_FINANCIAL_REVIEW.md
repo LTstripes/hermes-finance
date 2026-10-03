@@ -1,8 +1,13 @@
 # #331 — AI Financial Review contract
 
-**Status:** contract/design only. This document and its schema define the
-follow-up implementation boundary; they do not add an assembler, endpoint,
-frontend behavior, migration, provider call, cloud upload, or LLM call.
+**Status:** implemented and shipped. The read-only backend assembler and export
+endpoints (`GET /api/export/ai-financial-review` and
+`GET /api/export/ai-financial-review/json`) exist on canonical `main` and have
+been part of the published application since v1.0.0; the Export page presents
+the recommended report and its technical alternatives. This document and its
+schema remain the normative contract for the generated report. The
+implementation adds no migration, provider call, cloud upload or LLM call, and
+later staged UAT work does not change this contract.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 

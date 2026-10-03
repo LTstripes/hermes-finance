@@ -6,22 +6,31 @@ Hermes Finance — локальное однопользовательское W
 
 ## Current status
 
-Published Stable: **v1.0.0** (2026-09-21).
+Published Stable: **v1.1.0** (2026-09-30).
 
-- released / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
-- annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`;
-- tag peels exactly to `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
-- Guarded Release run `35580890145`: SUCCESS;
-- exact-main release-candidate CI #880 / run `35579583692`: SUCCESS;
-- Owner OPS03 Preview/UAT on exact `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`: **PASS**;
-- real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**;
-- production Stable Start / owner data continuity: **PASS**;
+- released commit: `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, release tree `7f5a3198fa650b71545550301063c9afd887f8f8`;
+- annotated tag `v1.1.0`, tag object `9b402190bafc5d8415b217580da5e18ed35a6331`, peeling exactly to the released commit;
+- GitHub Release `Hermes Finance 1.1.0`: published, not a draft or prerelease;
+- release preparation PR #644, accepted head `f4de8e39217ee0ec73b2524433940674247461f7`; exact-main push CI `36776904188`: SUCCESS; guarded Release run `36777962224`: SUCCESS;
+- release control: [issue #643](https://github.com/LTstripes/hermes-finance/issues/643);
+- local Stable update/Start and real-history acceptance remain explicit Owner operations; publication does not itself update or start Stable. See the [1.1.0 release record](docs/releases/1.1.0.md);
 - UI v2 is the primary/default interface at `/`; previous UI remains available at `/v1`.
 
-The immutable published `v0.9.0` history remains valid as the predecessor release.
+Owner-authorized UAT deferral for this delivery is **OWNER_AUTHORIZED_UAT_DEFERRAL**, not Owner PASS; [#572](https://github.com/LTstripes/hermes-finance/issues/572) stays open for the ordinary production-use observation.
+
+The previous release **v1.0.0** (2026-09-21) remains immutable predecessor history:
+
+- released / Owner-OPS03-tested code identity: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
+- annotated tag object: `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`, peeling exactly to that commit;
+- guarded Release run `35580890145`: SUCCESS; exact-main release-candidate CI #880 / run `35579583692`: SUCCESS;
+- Owner OPS03 Preview/UAT on that exact code: **PASS**; real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**; production Stable Start / owner data continuity: **PASS**.
+
+The immutable published `v0.9.0` history remains valid as the predecessor to v1.0.0.
 
 Canonical status: [CURRENT_STATUS](docs/CURRENT_STATUS.md).
-Release closeout: [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md).
+v1.1.0 record: [`docs/releases/1.1.0.md`](docs/releases/1.1.0.md).
+v1.1.0 publication notes: [`docs/release-notes-1.1.0.md`](docs/release-notes-1.1.0.md).
+v1.0.0 release closeout: [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md).
 Owner durability closeout: [`docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md).
 
 ## Product/runtime invariants
@@ -262,9 +271,9 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published **v1.0.0** is the current Stable release. Development `main` has advanced beyond that immutable release with accepted post-release durability and data-integrity/completeness hardening.
+Published **v1.1.0** is the current release. The accepted native monthly workflow, Performance Phase A, and the post-1.0.0 durability and data-integrity/completeness hardening it packages are described below.
 
-UI v2 is part of the published v1.0.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
+UI v2 is part of the published v1.1.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
 
 Final UI v2 cutover evidence:
 
@@ -312,7 +321,7 @@ Separate future work:
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
-Release publication/runtime promotion for v1.0.0 is complete. Stable now runs the published v1.0.0 on the owner production database. Future releases continue to use the same exact-SHA OPS03 -> guarded publication -> backup-first OPS02 sequence.
+Release publication for v1.1.0 is complete. The supported backup-first Stable update (`scripts/update-stable.ps1 -TargetVersion 1.1.0`) and explicit Start remain the Owner's local operation; publication does not itself update or start Stable. Future releases continue to use the same exact-SHA OPS03 -> guarded publication -> backup-first OPS02 sequence.
 
 ## Health
 
@@ -322,12 +331,12 @@ After a successful local start:
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Current Stable should include:
+The published v1.1.0 application reports:
 
 ```json
 {
   "status": "ok",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }
 ```
 
@@ -362,6 +371,8 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md`](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md) — Performance v1 closeout;
 - [`docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md`](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md) — component-decomposition contract;
 - [`docs/RELEASE_AUTOMATION.md`](docs/RELEASE_AUTOMATION.md) — guarded release publication;
+- [`docs/release-notes-1.1.0.md`](docs/release-notes-1.1.0.md) — v1.1.0 release notes;
+- [`docs/releases/1.1.0.md`](docs/releases/1.1.0.md) — v1.1.0 release record;
 - [`docs/release-notes-1.0.0.md`](docs/release-notes-1.0.0.md) — final v1.0.0 release notes;
 - [`docs/releases/1.0.0.md`](docs/releases/1.0.0.md) — published v1.0.0 release record;
 - [`docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md) — v1.0.0 publication/Stable closeout;
