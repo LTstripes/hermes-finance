@@ -1,5 +1,6 @@
 .toolbar,
-.actions {
+.actions,
+.secondaryActions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -8,9 +9,15 @@
 .toolbar {
   margin-bottom: 16px;
 }
+.secondaryActions {
+  flex-basis: 100%;
+}
 .primary,
 .secondary,
 .danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 40px;
   padding: 8px 12px;
   border-radius: 9px;
@@ -21,6 +28,10 @@
 .primary {
   border: 1px solid var(--accent);
   background: var(--accent);
+  color: white;
+}
+/* `.shell a` (UiV2Page) outranks a single module class; keep link-buttons readable. */
+.primary:any-link {
   color: white;
 }
 .secondary {
@@ -106,7 +117,7 @@
 .row small {
   color: var(--muted);
 }
-.row a {
+.secondaryActions a {
   font-size: 12px;
 }
 .status,
@@ -141,11 +152,13 @@
   .toolbar > button,
   .form label,
   .form .actions > button,
-  .row .actions > button {
+  .row .actions > a,
+  .row .secondaryActions > * {
     width: 100%;
   }
   .row,
-  .row .actions {
+  .row .actions,
+  .row .secondaryActions {
     align-items: stretch;
     width: 100%;
   }

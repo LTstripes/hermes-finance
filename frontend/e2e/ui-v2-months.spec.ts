@@ -5,6 +5,29 @@ const startingMonths = [
   { id: 1, year: 2030, month: 5, status: "closed", snapshot_date: "2030-05-31", source: "manual" },
 ];
 
+async function primaryContrast(locator: import("@playwright/test").Locator) {
+  return locator.evaluate((element) => {
+    const parseChannels = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+    const luminance = (channels: number[]) => {
+      const [r, g, b] = channels.slice(0, 3).map((channel) => {
+        const c = channel / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const styles = getComputedStyle(element);
+    const foreground = luminance(parseChannels(styles.color));
+    const background = luminance(parseChannels(styles.backgroundColor));
+    const [light, dark] =
+      foreground > background ? [foreground, background] : [background, foreground];
+    return {
+      backgroundColor: styles.backgroundColor,
+      color: styles.color,
+      ratio: (light + 0.05) / (dark + 0.05),
+    };
+  });
+}
+
 async function installMonthsApi(page: Page) {
   let rows = [...startingMonths];
   const calls: string[] = [];
@@ -49,6 +72,19 @@ for (const viewport of [
     await page.goto("/v2/data/months?month=2");
     await expect(page.getByRole("heading", { level: 1, name: "Отчётные месяцы" })).toBeVisible();
     await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Открыть месяц", exact: true })).toHaveCount(2);
+    const primaryClose = page.getByRole("link", { name: "Проверить и закрыть", exact: true });
+    await expect(primaryClose).toBeVisible();
+    const normal = await primaryContrast(primaryClose);
+    expect(normal.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(normal.ratio).toBeGreaterThanOrEqual(4.5);
+    await primaryClose.focus();
+    const focused = await primaryContrast(primaryClose);
+    expect(focused.ratio).toBeGreaterThanOrEqual(4.5);
+    await expect(page.getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
+      "href",
+      "/v2",
+    );
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
