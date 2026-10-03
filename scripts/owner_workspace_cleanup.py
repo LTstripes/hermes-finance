@@ -204,6 +204,8 @@ def scan(path, pins, *, shared=False):
             raise Hold("scan_limit")
         pins.pin(child)
         info = inv.plain(child)
+        if child.name == ".env.example" and not stat.S_ISREG(info.st_mode):
+            raise Hold("private_marker")
         if child.name == ".gitmodules" or (
             child.name == ".git" and child.parent != path
         ):
@@ -441,6 +443,8 @@ def remote_main(control):
             [
                 "gh",
                 "api",
+                "--hostname",
+                "github.com",
                 "repos/LTstripes/hermes-finance/git/ref/heads/main",
                 "--jq",
                 ".object.sha",
@@ -540,6 +544,8 @@ def inspect(config, entry, pins, main):
         for n in ("stable", "control", "preview")
     ):
         raise Hold("protected_boundary")
+    if inv.protected(path):
+        raise Hold("private_marker")
     tree = scan(path, pins)
     dotgit = path / ".git"
     info = inv.plain(dotgit)
@@ -602,6 +608,7 @@ def inspect(config, entry, pins, main):
         for p in tree["paths"]
         if p.name == ".env.example"
     ]
+    template_hashes = {}
     for template in templates:
         if git(path, "ls-files", "--error-unmatch", "--", template) != template:
             raise Hold("untracked_template")
@@ -613,6 +620,7 @@ def inspect(config, entry, pins, main):
             ident,
             hashlib.sha256(template_path.read_bytes()).hexdigest(),
         )
+        template_hashes[template] = pins.records[template_path][1]
     head = git(path, "rev-parse", "--verify", "HEAD^{commit}")
     ancestors = set(git(config["control"], "rev-list", main).splitlines())
     if main not in ancestors or not all(SHA.fullmatch(c) for c in ancestors):
@@ -651,6 +659,7 @@ def inspect(config, entry, pins, main):
         "bytes": tree["bytes"],
         "admin": admin_tree["fingerprint"] if admin_tree else None,
         "refs": digest(refs),
+        "templates": digest(template_hashes),
     }
     return evidence, tree["paths"] + (admin_tree["paths"] if admin_tree else [])
 

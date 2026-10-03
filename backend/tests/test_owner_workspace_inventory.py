@@ -739,3 +739,99 @@ def test_cleanup_control_common_pointer_never_executes_git(cleanup_case, tmp_pat
     monkeypatch.setattr(Path, "open", observed)
     with pytest.raises(cleanup.Hold, match="external_or_incomplete_git"):
         cleanup.plan(config)
+
+
+def test_cleanup_template_directory_never_reads_descendants(cleanup_case, monkeypatch):
+    config, path, _ = cleanup_case
+    directory = path / ".env.example"
+    directory.mkdir()
+    (directory / "ordinary-name").write_text("synthetic private content")
+    monkeypatch.setattr(
+        Path, "open", lambda *a, **kw: pytest.fail("template directory content was opened")
+    )
+    monkeypatch.setattr(
+        cleanup, "git", lambda *a, **kw: pytest.fail("template directory started Git")
+    )
+    with cleanup.Pins() as pins, pytest.raises(cleanup.Hold, match="private_marker"):
+        cleanup.inspect(config, config["entries"][0], pins, "0" * 40)
+
+
+def test_cleanup_private_named_task_root_never_reads_contents(cleanup_case, monkeypatch):
+    config, path, _ = cleanup_case
+    private_root = path.with_name("private")
+    path.rename(private_root)
+    config["entries"][0]["path"] = private_root
+    monkeypatch.setattr(Path, "open", lambda *a, **kw: pytest.fail("private task root was read"))
+    with cleanup.Pins() as pins, pytest.raises(cleanup.Hold, match="private_marker"):
+        cleanup.inspect(config, config["entries"][0], pins, "0" * 40)
+
+
+def test_cleanup_remote_host_is_canonical_despite_environment(cleanup_case, monkeypatch):
+    _, _, control = cleanup_case
+    monkeypatch.setenv("GH_HOST", "untrusted.invalid")
+    calls = []
+
+    def run(args, **kw):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=b"a" * 40 + b"\n", stderr=b"")
+
+    monkeypatch.setattr(cleanup.subprocess, "run", run)
+    # Fixture replaced remote_main for offline tests; exercise the actual function.
+    original_spec = importlib.util.spec_from_file_location(
+        "cleanup_remote", SCRIPT.with_name("owner_workspace_cleanup.py")
+    )
+    remote_tool = importlib.util.module_from_spec(original_spec)
+    original_spec.loader.exec_module(remote_tool)
+    assert remote_tool.remote_main(control) == "a" * 40
+    assert calls == [
+        [
+            "gh",
+            "api",
+            "--hostname",
+            "github.com",
+            "repos/LTstripes/hermes-finance/git/ref/heads/main",
+            "--jq",
+            ".object.sha",
+        ]
+    ]
+
+
+def test_cleanup_frozen_template_bytes_survive_git_normalization(cleanup_case):
+    config, path, control = cleanup_case
+    (control / ".gitattributes").write_text("* text=auto eol=lf\n")
+    (control / ".env.example").write_bytes(b"a\r\nb\n")
+    git(control, "add", ".")
+    git(control, "add", "--renormalize", ".")
+    git(
+        control,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.com",
+        "commit",
+        "-qm",
+        "public template",
+    )
+    git(control, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(path, "fetch", str(control), "main")
+    git(path, "merge", "--ff-only", "FETCH_HEAD")
+    template = path / ".env.example"
+    template.write_bytes(b"a\r\nb\n")
+    git(path, "add", ".env.example")  # fixture: refresh cached stat with unchanged normalized blob
+    assert not git(path, "status", "--porcelain")
+    before = template.stat()
+    frozen = cleanup.plan(config)
+    assert frozen["entries"][0]["state"] == "CANDIDATE"
+    template.write_bytes(b"a\nb\r\n")
+    os.utime(template, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert not git(path, "status", "--porcelain")  # normalization-equivalent bytes
+    changed = cleanup.plan(config)
+    assert changed["entries"][0]["state"] == "CANDIDATE"
+    assert (
+        changed["entries"][0]["evidence"]["templates"]
+        != frozen["entries"][0]["evidence"]["templates"]
+    )
+    if os.name == "nt":
+        with pytest.raises(cleanup.Hold, match="candidate_changed"):
+            cleanup.apply(config, frozen, cleanup.digest(frozen))
+        assert path.is_dir()
