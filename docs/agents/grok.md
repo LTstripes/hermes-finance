@@ -14,3 +14,6 @@ Grok follows:
 - the constitution's completion-report rules.
 
 Machine-specific launch paths and config remain local. Do not write them into the repository.
+
+Use [Owner machine layout](../OWNER_MACHINE_LAYOUT.md) for portable role/root boundaries.
+The real registry/inventory remains Owner-local; development uses synthetic fixtures.
