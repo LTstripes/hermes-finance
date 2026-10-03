@@ -220,6 +220,19 @@ Both merged trees are exact-equivalent to the reviewed candidates. The all-event
 
 Review qualification: the #641 report's 'only 3 files' wording refers to a restricted main-side preservation check, not the full main-to-candidate aggregate diff. The Integrator explicitly separated that scope from the accepted Performance feature set and the final 5-file reconciliation. This clarification caused no code change or Worker correction round. These two completed review cases are useful bounded-review evidence, not a universal reviewer ranking or proof of aggregate readiness.
 
+## CI optimization pair — 2026-10-03
+
+Source: the integration assignment for [#671 / PR #681](https://github.com/LTstripes/hermes-finance/pull/681) and [#668 / PR #682](https://github.com/LTstripes/hermes-finance/pull/682), plus each PR's Worker model-evidence block. GitHub had no review objects. The narrative record is `docs/EXECUTION_HISTORY.md`. No usage, cost or time was measured. These are CI/test-infrastructure cases, not financial-write cases.
+
+| Case / role | Model and provider/client | Exact identity | Result at canonical integration |
+| --- | --- | --- | --- |
+| #671 / #681 Worker | **Grok 4.7 / xAI / Grok Build CLI**, worker-reported | Baseline `4a08d234b45b7780ccb6d5157bc203a1ad9ee553`; earlier `a8c7db477ba8f54b0f0f4dc8110e82dcf4afe187`; accepted `392a49f23f496f3b917a0b9b8232297556952fab`; merge `b962c4079019afbe34013371a8f0ffb2f95af362` | **A**. The follow-up is a three-line docstring, not a substantive correction round. Exact-head CI/UI `37135873996` / `37135874002` SUCCESS. Exact-main CI `37138732069` SUCCESS. |
+| #671 Reviewer | **DeepSeek V4.1 Flash / OpenCode**, assignment-reported | ACCEPT on `392a49f23f496f3b917a0b9b8232297556952fab`. No GitHub review object. | Independent ACCEPT supplied for the integrated candidate. No review transcript was archived in the repository. |
+| #668 / #682 Worker | **Grok 4.7 / xAI / Grok Build CLI**, worker-reported | Baseline `4a08d234b45b7780ccb6d5157bc203a1ad9ee553`; accepted `24b0d6eecde217512e264b3886cd37cdde911a64`; merge `12289d4b70a6faf78e274adbafb7a916ca2659c2` | **A**. One commit, 0 substantive correction rounds. Exact-head CI/UI `37135936715` / `37135936689` SUCCESS. Exact-main CI `37139674899` SUCCESS. |
+| #668 Reviewer | **DeepSeek V4.1 Flash / OpenCode**, assignment-reported | ACCEPT on `24b0d6eecde217512e264b3886cd37cdde911a64`. No GitHub review object. | Independent ACCEPT supplied for the integrated candidate. No review transcript was archived in the repository. |
+
+The #682 description wording fix did not change the candidate SHA and is not a Worker correction round. This is one sequential pair, not a blind model comparison. It does not grade either model outside these two infrastructure tasks, and it does not waive review for #669.
+
 ## Lightweight case template
 
 ```text

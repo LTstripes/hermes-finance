@@ -34,6 +34,42 @@ Keep **all candidates**, including rejected ones. Record each candidate's agent/
 
 ---
 
+## 2026-10-03 — CI optimization #671 then #668
+
+Sequential canonical integration. No release, no Stable/Preview update, and #669 was not started.
+
+### #671 / PR #681 — cancel only a superseded ordinary PR run
+
+- **Status:** accepted, integrated and canonically verified. Issue closed completed.
+- **Worker:** Grok 4.7 / xAI Grok Build CLI. Source: the PR model-evidence block (`grok-4.7`, `xAI / Grok Build CLI`), consistent with the integration assignment. Not a separate runtime-prompt capture.
+- **Reviewer:** DeepSeek V4.1 Flash / OpenCode. Source: the integration assignment. The PR had no GitHub review object or review comment.
+- **Integrator:** Grok 4.7 / xAI Grok Build CLI.
+- **Baseline:** `4a08d234b45b7780ccb6d5157bc203a1ad9ee553`.
+- **Branch:** `task/ci-opt-finance-pr-concurrency`.
+- **Earlier SHA:** `a8c7db477ba8f54b0f0f4dc8110e82dcf4afe187`. The accepted follow-up adds three docstring lines only; the cancellation rule is unchanged. No review thread establishes a substantive correction round.
+- **Accepted candidate:** `392a49f23f496f3b917a0b9b8232297556952fab`.
+- **Canonical merge:** `b962c4079019afbe34013371a8f0ffb2f95af362`. Parents `4a08d234b45b7780ccb6d5157bc203a1ad9ee553` + the accepted candidate. The merge tree equals the candidate tree.
+- **Verification:** exact-head CI `37135873996` and UI comparison `37135874002` SUCCESS on the accepted SHA. Exact-main push CI `37138732069` SUCCESS. `Visual audit path filter` skipped because that job is pull_request-only. The other 16 jobs succeeded, including synthetic visual audit and Windows launcher safety.
+- **Delivered:** an ordinary CI or UI-evidence pull_request run cancels only an older attempt of the same repository, workflow and PR. A main push, any other non-PR event, and a PR whose head or base is `integration/*` each get a unique group and are not cancelled or queued behind another run. The release workflow is unchanged. A cancelled run is not success evidence.
+- **Grade at canonical integration:** A. Usage, cost and time were not measured.
+
+### #668 / PR #682 — run replaced visual viewports once
+
+- **Status:** accepted, integrated and canonically verified. Issue closed completed after the main CI below.
+- **Worker:** Grok 4.7 / xAI Grok Build CLI. Source: the PR model-evidence block, consistent with the integration assignment. Not a separate runtime-prompt capture.
+- **Reviewer:** DeepSeek V4.1 Flash / OpenCode. Source: the integration assignment. The PR had no GitHub review object or review comment.
+- **Integrator:** Grok 4.7 / xAI Grok Build CLI.
+- **Baseline at acceptance:** `4a08d234b45b7780ccb6d5157bc203a1ad9ee553`. Integrated onto `b962c4079019afbe34013371a8f0ffb2f95af362` after #671.
+- **Branch:** `task/ci-opt-finance-viewports`.
+- **Accepted candidate:** `24b0d6eecde217512e264b3886cd37cdde911a64`. One commit. Main had advanced, and no new candidate was required: a clean merge changed only the five accepted visual files relative to the #671 main, and differed from the candidate only by the three #671 files.
+- **Canonical merge:** `12289d4b70a6faf78e274adbafb7a916ca2659c2`. Parents `b962c4079019afbe34013371a8f0ffb2f95af362` + the accepted candidate. Tree `f27627ac6d1843021ae1ebf9623a081838f41252`.
+- **Verification:** exact-head CI `37135936715` and UI comparison `37135936689` SUCCESS on the accepted SHA. Exact-main push CI `37139674899` SUCCESS. Skipped on that push: `Visual audit path filter` (pull_request-only) and `Windows launcher safety` (existing path filter; this diff does not touch launcher or workflow files). Synthetic visual audit succeeded.
+- **Delivered:** tests that replace the project viewport run once, on `1440x900`. Tests that use the project viewport still run at `1366x768`, `1440x900` and `1920x1080`. Workers, retries, timeouts, product code and workflows were not changed. The PR reports scheduled executions 345 → 287 (86/115/86), unique scenario titles 115 and evidence grep 97.
+- **PR description:** after acceptance, and without a new code SHA, "same 12 files" was replaced by the assignment's statement that the 1440 evidence selection is unchanged and the 58 screenshot filename set is identical. This session did not recount those filenames.
+- **Grade at canonical integration:** A. Usage, cost and time were not measured.
+
+**Before #669:** use this canonical main, not `4a08d234`. The UI-evidence workflow still runs its own `1440x900` grep on pull_request and checks out the PR head; a main push does not run that workflow. Keep the #671 concurrency groups if `ci.yml` or `ui-v2-evidence.yml` changes. Do not treat a merge-ref screenshot as proof of a different head, restore the removed duplicate viewport executions, or drop project-viewport tests that still run on all three sizes. #670 stays after #669. This record does not start #669.
+
 ## 2026-09-28 — UI v2 parity editor/import checkpoint
 
 - **Status:** editor/import parity wave accepted and integrated to `integration/ui-v2-parity`.
