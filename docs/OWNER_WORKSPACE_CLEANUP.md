@@ -1,6 +1,11 @@
 # Owner-local workspace cleanup — plan/apply (#666)
 
 Only the Owner runs this command on real paths. Agents use synthetic fixtures.
+An explicitly launched Owner-local assignment such as #679 assigns bounded
+structural preparation and accepted-tool execution to its one local Worker;
+the Owner supplies one chat approval of the independently reviewed package.
+That assignment supersedes the manual execution split, not privacy, ancestry,
+TTL, identity or replay guards. See the [operational continuation](OWNER_MACHINE_LAYOUT.md#explicit-operational-continuation-679).
 Keep populated configuration, frozen plans and journals outside Git, runtime
 trees and all agent workspaces. Do not upload them: they contain local paths.
 The [inventory command](OWNER_MACHINE_LAYOUT.md#owner-inventory-command) remains
@@ -45,6 +50,9 @@ candidate/HOLD counts. It does not delete or change inspected directories.
 The plan includes exact configuration, main SHA, object/file identities,
 content fingerprints, HEAD, shared-ref fingerprint and logical size estimate.
 Reasons are fixed codes, with no private payloads or arbitrary Git errors.
+CLI refusal also includes an enumerated `reason`; an unrecognized exception
+becomes `unsafe_or_unresolved`. A Control-level refusal blocks the whole plan,
+and is not evidence that its entries were evaluated or are cleanup candidates.
 Logical bytes are not guaranteed reclaimed disk space.
 
 Eligibility requires a complete code-only scan, no symlink/reparse/junction or

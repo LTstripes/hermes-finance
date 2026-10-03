@@ -7,6 +7,10 @@
 Owner-local path registry, read-only inventory and the proposed Stable/Control/Preview/workspaces
 boundaries are documented in [Owner machine layout](OWNER_MACHINE_LAYOUT.md).
 That inventory/design phase does not relocate or reconfigure these runtime operations.
+An explicitly launched #679 local Worker owns the preparation and approved
+migration execution described there; the Owner need not generate JSON or run
+commands. Existing exact-release, recovery, profile and readiness contracts
+continue to govern every operation.
 
 ## 1. Architecture in one sentence
 

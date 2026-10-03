@@ -19,6 +19,7 @@ authorized by delivering it. Existing [runtime operations](OWNER_RUNTIME_OPERATI
   preview/                KEEP — one dedicated exact-SHA Owner UAT runtime
     code/                 independent clone, pinned candidate SHA
     data/                 Owner-only isolated data, kind=preview
+  owner/                  KEEP — local registry, manifests, recovery and journals
   workspaces/             per-client/per-task code; never Owner runtime/data
     <client>/<task>/       one active task owns one physical clone/worktree
 ```
@@ -37,6 +38,16 @@ hardlinks. Stable stays separate from Control and Preview; development main
 does not become Stable. A completed task does not authorize subtree cleanup.
 
 ## Owner inventory command
+
+For an explicitly launched Owner-local operational assignment such as #679,
+the assigned Worker runs bounded structural preparation through local helpers
+and generates every registry/configuration batch. The manual sequence below
+remains available but is not an Owner prerequisite for that assignment.
+Historical registries locate boundaries only: refresh identities, pins,
+ownership, artifacts and remote preservation before proposing eligibility.
+Unresolved ownership remains ACTIVE/UNKNOWN; no historical `active=false`
+or `artifacts_resolved=true` is fresh clearance. Keep full path mappings and
+helper outputs in protected Owner-local storage; return sanitized evidence only.
 
 Only the Owner runs this on the real machine. Agents develop and test with
 synthetic fixtures; they must not run it against Owner paths or receive the
@@ -152,3 +163,38 @@ accepts the new runtime/data continuity. Never copy Preview data back to Stable.
 Launcher removal #629, other-client reconfiguration and migration execution
 remain separate work. This delivery supplies the template, not real-machine
 inventory or an executable migration.
+
+## Explicit operational continuation (#679)
+
+The #679 assignment supersedes the earlier manual-Owner execution split only
+for its directly launched local Worker. That Worker prepares the source/target
+mapping, references, preserved pins, recovery/restore evidence, dependency
+order, rollback and cleanup groups as one local package. Use existing runtime
+and cleanup primitives; delivering a helper or draft PR is not a completed
+migration. New executable tooling needs independent review and Integrator
+acceptance before live apply.
+
+ACTIVE tasks stay at their current paths. Start new client roots clean; retain
+old Git parents with unresolved dependents. Preserve checkout-relative data
+bindings where sibling code/data separation lacks supported operations.
+Stable remains at its published release, Preview at its selected exact UAT
+pin. Neither migration nor a launcher reference correction promotes a version.
+
+Before any move/delete, runtime stop or existing-client reconfiguration, show
+one independently reviewed package with exact local MOVE/REMOVE/KEEP/HOLD
+lists, reference changes, recovery/restore and rollback proof, package digest
+and validity window. The Owner approves that package once in chat; the Worker
+executes it and reports actual results. No manual JSON or PowerShell is required
+from the Owner. Preserve expiry/replay/identity guards and stop/refreeze on
+changed evidence; never silently refresh an approved digest. A blocked review,
+unproved restore or incomplete reference map prevents READY_FOR_APPROVAL.
+
+The small `scripts/owner_machine_relocation.py` primitive performs one
+same-volume Windows rename using the cleanup tool's existing ancestor/source
+identity guards and a source handle. It refuses replacement and busy or changed
+boundaries; it supplies no CLI or implicit relocation authority. The operational
+caller still owns the reviewed package digest, expiry/replay check, quiescence,
+reference snapshots and readiness checks. Reverse moves use the same directory
+identity after restoring reference bytes. Synthetic tests cover a failure after
+move/reference update, destination collision and an open SQLite connection;
+the Windows production CI lane runs them explicitly.
