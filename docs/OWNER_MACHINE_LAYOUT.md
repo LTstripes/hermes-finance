@@ -1,6 +1,6 @@
 # Owner machine layout — inventory and cleanup planning (#666)
 
-This page owns the portable layout proposal. Real root mappings and local folder
+This page owns the portable layout contract. Real root mappings and local folder
 labels live in an **Owner-local registry outside Git and all agent workspaces**.
 The inventory remains permanently read-only. The separate cleanup command below
 requires exact-plan Owner approval; no real-machine deletion or relocation is
@@ -8,20 +8,23 @@ authorized by delivering it. Existing [runtime operations](OWNER_RUNTIME_OPERATI
 [ADR 0012](adr/0012-runtime-and-agent-workspace-isolation.md) and
 [ADR 0014](adr/0014-launcher-runtime-profile-safety.md) remain authoritative.
 
-## Proposed boundaries
+## Owner-authorized final boundaries (#679)
 
 ```text
 <HERMES_ROOT>/
   stable/                 KEEP — Owner production, published immutable release
-    code/                 independent clone, pinned release SHA
-    data/                 Owner-only DB, sidecars, backups and secrets
-  control/                KEEP — clean trusted canonical main code; no Owner DB
-  preview/                KEEP — one dedicated exact-SHA Owner UAT runtime
-    code/                 independent clone, pinned candidate SHA
-    data/                 Owner-only isolated data, kind=preview
+    backend/, frontend/   existing whole checkout, pinned release SHA
+    data/                 preserved Owner DB, sidecars, backups and secrets
+  main/                   clean trusted canonical main checkout; no Owner DB
+  test/                   one persistent reusable exact-SHA Owner UAT runtime
+    backend/, frontend/   selected UAT checkout; refresh here for future UAT
+    data/                 preserved isolated test data, kind=preview
   owner/                  KEEP — local registry, manifests, recovery and journals
   workspaces/             per-client/per-task code; never Owner runtime/data
-    <client>/<task>/       one active task owns one physical clone/worktree
+    codex/<task>/         one active task owns one physical clone/worktree
+    opencode/<task>/
+    grok/<task>/
+    hermes/<task>/
 ```
 
 ## Shared client workspace contract
@@ -30,8 +33,9 @@ Codex, OpenCode, Grok and Hermes each use an Owner-configured machine-local root
 
 A client writes only its assigned task directory. Another client's physical workspace is not a shared source tree: inspect its delivered work through GitHub PRs/remote refs, or use an explicitly assigned independent review clone/path. Stable, Control and Preview are never client workspace roots.
 
-These are placeholders, not current machine paths. Prefer sibling code/data
-boundaries, but do not change current checkout-relative settings in phase 1.
+These are portable labels; actual machine paths remain Owner-local. Control
+is the role of `main`, and Preview is the role of `test`. Keep existing
+checkout-relative runtime data bindings during whole-directory relocation.
 Any later external-data configuration must use supported runtime operations and
 prove its boundary before Start. Never connect data using junctions, symlinks or
 hardlinks. Stable stays separate from Control and Preview; development main
@@ -165,6 +169,38 @@ remain separate work. This delivery supplies the template, not real-machine
 inventory or an executable migration.
 
 ## Explicit operational continuation (#679)
+
+The authoritative [Owner clarification](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5972086820)
+supersedes the earlier preservation-heavy legacy cleanup assumptions and
+additional package approval round for its explicitly named moves/deletions.
+The Owner directly authorized the Worker to execute that migration. Old named
+Hermes task/recovery/benchmark forests and their local-only commits need no
+preservation. This authorization does not widen the generic plan/apply CLI or
+allow traversal through reparse targets. Already configured new client roots
+are left in place. Busy individual deletion paths are recorded while other
+authorized cleanup continues.
+
+Move the existing Stable whole, preserve its exact published source and DB,
+then move Control to `main` and fast-forward it to canonical origin/main, and
+move Preview to persistent `test` with physically separate data. A moved
+Windows Python environment can retain absolute interpreter paths in console
+entry points. Recreate it with the release's supported locked runtime Prepare
+at its destination before Start; do not blindly reuse those launchers. Keep
+the previous environment available for rollback until readiness succeeds.
+Verify DB identity/content and schema continuity before/after preparation and
+Start. If Stable Start fails, roll Stable back and stop before legacy deletion.
+
+The local Launcher is deprecated for this assignment: remove its old installed
+artifacts/shortcuts/references without repairing or testing it. Repository
+source retirement remains #629; Stable's exact release source is preserved.
+One verified supported Stable backup is sufficient when DB identity is
+unchanged. Reuse existing restore/rollback/review evidence rather than repeat
+it solely for this migration. Concrete completion, failed paths and reclaimed
+space are recorded in #679/#666 and the Owner-local execution report.
+
+The following preparation contract describes the earlier checkpoint. It still
+governs generic package operations, but adds no extra approval gate to the
+Owner-authorized exact migration above.
 
 The #679 assignment supersedes the earlier manual-Owner execution split only
 for its directly launched local Worker. That Worker prepares the source/target
