@@ -49,6 +49,7 @@ import {
   HelpTip,
   Input,
   LoadingState,
+  MoneyAmount,
   OverflowMenu,
   OverflowMenuItem,
   Panel,
@@ -785,7 +786,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
       <Panel
         action={
           <Badge>
-            MV {displayTotal(totals.market)} · {filteredPositions.length} поз.
+            Рыночная стоимость:{" "}
+            <MoneyAmount amount={totals.market} empty="Нет подтверждённой суммы" /> ·{" "}
+            {filteredPositions.length} поз.
           </Badge>
         }
         label="Портфель"

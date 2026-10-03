@@ -1,12 +1,19 @@
 import type { NextMonthOutlook as NextMonthOutlookModel } from "../../api/monthCloseWorkflow";
 import type { CashFlowLadderEvent, MoneyValue, UpcomingEventsWindow } from "../../api/types";
-import { formatDate, formatMoney, formatMonth } from "../../lib/format";
+import { formatDate, formatMonth } from "../../lib/format";
 import { eventLabel as ownerEventLabel, PRINCIPAL_REPAYMENT_LABEL } from "../../ui-v2/uiV2Copy";
-import { DataValue, Panel } from "../ui";
+import { DataValue, MoneyAmount, Panel } from "../ui";
 
-function money(value: MoneyValue | null | undefined, fallback = "Недоступно"): string {
-  if (!value) return fallback;
-  return formatMoney(value.amount, { currency: value.currency === "RUB" ? "₽" : value.currency });
+/** #650: single money presentation shared with FinalMonthReview cards. */
+function moneyValue(value: MoneyValue | null | undefined, fallback = "Недоступно") {
+  if (!value) return <MoneyAmount amount={null} empty={fallback} />;
+  return (
+    <MoneyAmount
+      amount={value}
+      currency={value.currency === "RUB" ? "₽" : value.currency}
+      empty={fallback}
+    />
+  );
 }
 
 function eventLabel(event: CashFlowLadderEvent): string {
@@ -31,12 +38,14 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
     <article className="final-review__event-window">
       <div className="final-review__event-heading">
         <strong>Ближайшие {window.days} дней</strong>
-        <strong>{hasKnownEvents ? money(window.total_cash_flow) : "Событий не известно"}</strong>
+        <strong>
+          {hasKnownEvents ? moneyValue(window.total_cash_flow) : "Событий не известно"}
+        </strong>
       </div>
       <p className="muted tiny">
         {formatDate(window.from_date)} — до {formatDate(window.to_date)} · пассивный доход{" "}
-        {hasKnownEvents ? money(window.passive_income) : "неизвестен"} · возврат основной суммы{" "}
-        {hasKnownEvents ? money(window.redemption_principal) : "неизвестно"}
+        {hasKnownEvents ? moneyValue(window.passive_income) : "неизвестен"} · возврат основной суммы{" "}
+        {hasKnownEvents ? moneyValue(window.redemption_principal) : "неизвестно"}
       </p>
       {hasKnownEvents ? (
         <ul className="final-review__event-list">
@@ -45,7 +54,7 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
               key={`${event.source_kind}-${event.source_id}-${event.expected_date}-${event.component}`}
             >
               <span>{eventLabel(event)}</span>
-              <strong>{money(event.expected_net_amount)}</strong>
+              <strong>{moneyValue(event.expected_net_amount)}</strong>
             </li>
           ))}
         </ul>
@@ -86,20 +95,24 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
         />
         <DataValue
           label="Пассивный доход"
-          value={hasKnownNextMonthEvents ? money(nextMonth?.passive_income) : noKnownEvents}
+          value={hasKnownNextMonthEvents ? moneyValue(nextMonth?.passive_income) : noKnownEvents}
         />
         <DataValue
           label={PRINCIPAL_REPAYMENT_LABEL}
-          value={hasKnownNextMonthEvents ? money(nextMonth?.redemption_principal) : noKnownEvents}
+          value={
+            hasKnownNextMonthEvents ? moneyValue(nextMonth?.redemption_principal) : noKnownEvents
+          }
         />
         <DataValue
           label="Всего денежных потоков"
-          value={hasKnownNextMonthEvents ? money(nextMonth?.total_cash_flow) : noKnownEvents}
+          value={hasKnownNextMonthEvents ? moneyValue(nextMonth?.total_cash_flow) : noKnownEvents}
         />
         <DataValue
           label="Оценка процентов по вкладу"
           value={
-            hasKnownNextMonthEvents ? money(nextMonth?.deposit_interest_estimate) : noKnownEvents
+            hasKnownNextMonthEvents
+              ? moneyValue(nextMonth?.deposit_interest_estimate)
+              : noKnownEvents
           }
         />
       </div>
@@ -110,7 +123,7 @@ export function NextMonthOutlook({ outlook }: { outlook: NextMonthOutlookModel }
               key={`${event.source_kind}-${event.source_id}-${event.expected_date}-${event.component}`}
             >
               <span>{eventLabel(event)}</span>
-              <strong>{money(event.expected_net_amount)}</strong>
+              <strong>{moneyValue(event.expected_net_amount)}</strong>
             </li>
           ))}
         </ul>

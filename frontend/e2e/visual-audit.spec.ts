@@ -35,9 +35,7 @@ const routes: AuditRoute[] = [
     path: "/months/12?section=liabilities",
     prepare: async (page) => {
       await page.getByRole("button", { name: "Изменить связь" }).click();
-      const picker = page.getByRole("combobox", {
-        name: "Счёт для связи с долгом «Синтетическая кредитная карта»",
-      });
+      const picker = page.getByLabel("Счёт для связи с долгом");
       await expect(picker).toBeVisible();
       await expect(picker.locator("option")).toHaveCount(2);
       await expect(

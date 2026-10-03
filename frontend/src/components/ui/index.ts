@@ -4,6 +4,7 @@ export { CloneMonthDialog } from "./CloneMonthDialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { DataValue } from "./DataValue";
 export { Field, Input, MoneyInput, Select } from "./Field";
+export { MoneyAmount } from "./MoneyAmount";
 export { HelpTip } from "./HelpTip";
 export { KpiCard } from "./KpiCard";
 export { OverflowMenu, OverflowMenuItem } from "./OverflowMenu";

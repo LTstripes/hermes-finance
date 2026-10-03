@@ -31,6 +31,7 @@ import {
   HelpTip,
   Input,
   LoadingState,
+  MoneyAmount,
   OverflowMenu,
   OverflowMenuItem,
   Panel,
@@ -494,7 +495,8 @@ export function MonthPositionsSection({
       <Panel
         action={
           <Badge>
-            MV {formatMoney(totals.market)} · {filteredPositions.length} поз.
+            Рыночная стоимость: <MoneyAmount amount={totals.market} /> · {filteredPositions.length}{" "}
+            поз.
           </Badge>
         }
         label="Портфель"

@@ -152,7 +152,8 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
     await waitFor(() => {
       expect(updateDebt).toHaveBeenCalledWith(
         1,
@@ -163,6 +164,8 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
         }),
       );
     });
+    // #650: saved totals stay explicit while dirty, editor is stacked below the row.
+    expect(screen.queryByRole("form", { name: /Редактирование долга/ })).toBeNull();
   });
 
   it("loads current property values and patches on save", async () => {
@@ -235,7 +238,8 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
     const rate = screen.getByDisplayValue("19.90");
     await user.clear(rate);
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    const editor = screen.getByRole("form", { name: /Редактирование долга/ });
+    await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
     await waitFor(() => {
       expect(updateDebt).toHaveBeenCalledWith(1, expect.objectContaining({ annual_rate: null }));
     });
@@ -250,10 +254,7 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     const [debtTable] = await screen.findAllByRole("table");
 
     await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
-      "11",
-    );
+    await user.selectOptions(screen.getByLabelText("Счёт для связи с долгом"), "11");
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
     await waitFor(() => expect(linkDebtToAccount).toHaveBeenCalledWith(1, 11));
 
@@ -261,10 +262,7 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
       expect(within(debtTable).getByRole("button", { name: "Изменить связь" })).toBeInTheDocument(),
     );
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
-      "12",
-    );
+    await user.selectOptions(screen.getByLabelText("Счёт для связи с долгом"), "12");
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
     await waitFor(() => expect(linkDebtToAccount).toHaveBeenLastCalledWith(1, 12));
   });
@@ -275,9 +273,7 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     const [debtTable] = await screen.findAllByRole("table");
 
     await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
-    const picker = screen.getByRole("combobox", {
-      name: "Счёт для связи с долгом «Основная карта»",
-    });
+    const picker = screen.getByLabelText("Счёт для связи с долгом");
     expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
     expect(within(picker).getByRole("option", { name: /Синтетические наличные/ })).toBeEnabled();
     expect(
@@ -311,11 +307,10 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
 
     expect(within(debtTable).getByText(brokerageAccount.name)).toBeInTheDocument();
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
-    const picker = screen.getByRole("combobox", {
-      name: "Счёт для связи с долгом «Основная карта»",
-    });
-    expect(within(picker).getByRole("option", { name: /брокерский/i })).toBeDisabled();
+    const picker = screen.getByLabelText("Счёт для связи с долгом");
+    expect(within(picker).queryByRole("option", { name: /брокерский/i })).toBeNull();
     expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
+    expect(screen.getByText("Текущая связь сохранена", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сохранить связь" })).toBeDisabled();
   });
 
@@ -333,9 +328,7 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     const [debtTable] = await screen.findAllByRole("table");
 
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
-    const picker = screen.getByRole("combobox", {
-      name: "Счёт для связи с долгом «Основная карта»",
-    });
+    const picker = screen.getByLabelText("Счёт для связи с долгом");
     await user.selectOptions(picker, String(alternateAccount.id));
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -380,10 +373,7 @@ describe("MonthLiabilitiesSection R03-14 presentation", () => {
     render(<MonthLiabilitiesSection monthId={7} readOnly={false} />);
     const [debtTable] = await screen.findAllByRole("table");
     await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Счёт для связи с долгом «Основная карта»" }),
-      "11",
-    );
+    await user.selectOptions(screen.getByLabelText("Счёт для связи с долгом"), "11");
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Этот счёт уже связан с другим долгом",
