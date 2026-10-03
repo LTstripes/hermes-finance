@@ -42,6 +42,7 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   expect(before[0].quantity).toMatch(/^9(?:\.0+)?$/);
   const preview = page.getByRole("button", { name: "Получить данные из Альфа PRO" });
   await preview.click();
+  await page.getByLabel("Показывать строки").selectOption("all");
   const row = page.getByRole("checkbox", { name: /Выбрать позицию/ });
   await row.check();
   await page.getByRole("button", { name: "Применить выбранный базовый срез" }).click();
@@ -71,6 +72,9 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   );
 
   await preview.click();
+  // Unchanged matched rows are collapsed by default; the deliberate
+  // re-confirmation path uses the explicit all-rows view.
+  await page.getByLabel("Показывать строки").selectOption("all");
   await row.check();
   await page.screenshot({ path: info.outputPath("desktop-preview.png"), fullPage: true });
   await page.getByRole("button", { name: "Применить выбранный базовый срез" }).click();
@@ -90,6 +94,9 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   await expect(page.getByRole("region", { name: "Актуальные позиции месяца" })).toContainText("10");
   await page.setViewportSize({ width: 390, height: 844 });
   await preview.click();
+  // Unchanged matched rows are collapsed by default; the deliberate
+  // re-confirmation path uses the explicit all-rows view.
+  await page.getByLabel("Показывать строки").selectOption("all");
   await row.check();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
@@ -109,12 +116,18 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   );
   await page.unroute("**/broker-baseline-apply");
   await preview.click();
+  // Unchanged matched rows are collapsed by default; the deliberate
+  // re-confirmation path uses the explicit all-rows view.
+  await page.getByLabel("Показывать строки").selectOption("all");
   await row.check();
   await page.getByRole("button", { name: "Применить выбранный базовый срез" }).click();
   await page.getByRole("button", { name: "Подтвердить базовый срез" }).click();
   await expect(page.getByText("Базовый срез без изменений: 1.", { exact: true })).toBeVisible();
 
   await preview.click();
+  // Unchanged matched rows are collapsed by default; the deliberate
+  // re-confirmation path uses the explicit all-rows view.
+  await page.getByLabel("Показывать строки").selectOption("all");
   await row.check();
   // UI apply is pending while another canonical action closes the month.
   await page.route("**/broker-baseline-apply", async (route) => {

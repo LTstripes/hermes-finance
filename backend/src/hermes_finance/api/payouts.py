@@ -845,6 +845,27 @@ def payout_apply_endpoint(
         position_snapshot_id=payload.position_snapshot_id,
     )
     selections = tuple(_apply_selection(row, context=context) for row in payload.rows)
+
+    def context_is_current() -> bool:
+        # Called after provider I/O under the reporting-month writer reservation.
+        # Never accept a fetch for a mapping/horizon/quantity that changed meanwhile.
+        try:
+            current = _resolve_context(
+                session,
+                reporting_month_id=month_id,
+                account_id=payload.account_id,
+                instrument_id=payload.instrument_id,
+                position_snapshot_id=payload.position_snapshot_id,
+            )
+        except (
+            PayoutMappingRequiredError,
+            PositionSnapshotNotFoundError,
+            ReportingMonthNotFoundError,
+            ValueError,
+        ):
+            return False
+        return current == context
+
     provider, owned_resource = resolve_payout_provider(request)
     try:
         result = apply_payout_preview(
@@ -857,6 +878,7 @@ def payout_apply_endpoint(
             position_snapshot_id=payload.position_snapshot_id,
             forecast_version=payload.forecast_version,
             selections=selections,
+            context_is_current=context_is_current,
         )
     finally:
         close_owned_payout_resource(owned_resource)

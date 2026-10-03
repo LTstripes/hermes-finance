@@ -3,6 +3,14 @@ import { useLocation } from "react-router";
 
 import { createAccount, listAccounts } from "../api/accounts";
 import { ApiClientError, formatApiError } from "../api/client";
+import {
+  deleteInstrumentMapping,
+  deleteInstrumentMappingExclusion,
+  discoverInstrumentMapping,
+  getInstrumentMapping,
+  putInstrumentMapping,
+  putInstrumentMappingExclusion,
+} from "../api/instrumentMappings";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { getMonth } from "../api/months";
 import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
@@ -10,10 +18,14 @@ import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
 import type {
   Account,
   Instrument,
+  InstrumentMarketMapping,
+  MarketDiscoverResult,
+  MarketIdentityWrite,
   PositionSnapshot,
   QuoteApplyResult,
   QuoteApplyRowRequest,
   QuotePreview,
+  QuotePreviewRow,
 } from "../api/types";
 import { formatDate, formatMoney, formatQuantity } from "../lib/format";
 import {
@@ -23,6 +35,10 @@ import {
   PRICE_SOURCE_LABELS,
 } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+import {
+  InstrumentMappingDialog,
+  type InstrumentMappingSubject,
+} from "../components/InstrumentMappingDialog";
 import { QuotePreviewPanel } from "../components/QuotePreviewPanel";
 import {
   Badge,
@@ -170,6 +186,13 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
   const [previewApplying, setPreviewApplying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [mappingRow, setMappingRow] = useState<QuotePreviewRow | null>(null);
+  const [mappingInstrument, setMappingInstrument] = useState<InstrumentMappingSubject | null>(null);
+  const [mappingView, setMappingView] = useState<InstrumentMarketMapping | null>(null);
+  const [mappingLoading, setMappingLoading] = useState(false);
+  const [mappingBusy, setMappingBusy] = useState(false);
+  const [mappingError, setMappingError] = useState<string | null>(null);
+  const [mappingNotice, setMappingNotice] = useState<string | null>(null);
 
   const localDirty = draftTouched || newInstrumentTouched || editingId !== null;
 
@@ -194,6 +217,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     setPreviewLoading(false);
     setPreviewApplying(false);
     setQuotePreview(null);
+    setMappingRow(null);
+    setMappingInstrument(null);
+    setMappingView(null);
+    setMappingError(null);
+    setMappingNotice(null);
     if (readOnly || month.status === "closed") {
       setPendingDelete(null);
       setEditingId(null);
@@ -513,6 +541,125 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     }
   }
 
+  function rememberMapping(view: InstrumentMarketMapping) {
+    setMappingView(view);
+  }
+
+  function invalidatePreviewAfterMapping(firstLine: string) {
+    setQuotePreview(null);
+    setQuoteApplyResult(null);
+    setPreviewError(null);
+    setMappingNotice(
+      `${firstLine} Предпросмотр сброшен: котировки не применяются автоматически. Запроси новый предпросмотр кнопкой «Обновить котировки».`,
+    );
+  }
+
+  async function openQuoteMapping(row: QuotePreviewRow) {
+    if (
+      mappingLoading ||
+      quoteBusy.current ||
+      pending.current ||
+      readOnlyNow.current ||
+      !active.current
+    )
+      return;
+    setMappingLoading(true);
+    setMappingError(null);
+    setActionError(null);
+    try {
+      const view = await getInstrumentMapping(row.instrument_id);
+      if (!active.current || readOnlyNow.current) return;
+      setMappingInstrument({
+        id: row.instrument_id,
+        name: row.instrument_name,
+        instrument_type: row.instrument_type,
+      });
+      setMappingView(view);
+      setMappingRow(row);
+    } catch (err) {
+      if (active.current) setActionError(formatApiError(err));
+    } finally {
+      if (active.current) setMappingLoading(false);
+    }
+  }
+
+  async function handleMappingSave(payload: MarketIdentityWrite) {
+    if (!mappingInstrument) return;
+    setMappingBusy(true);
+    setMappingError(null);
+    try {
+      const view = await putInstrumentMapping(mappingInstrument.id, payload);
+      if (!active.current) return;
+      rememberMapping(view);
+      invalidatePreviewAfterMapping("Сопоставление сохранено.");
+    } catch (err) {
+      setMappingError(formatApiError(err));
+    } finally {
+      if (active.current) setMappingBusy(false);
+    }
+  }
+
+  async function handleMappingClear() {
+    if (!mappingInstrument) return;
+    setMappingBusy(true);
+    setMappingError(null);
+    try {
+      const view = await deleteInstrumentMapping(mappingInstrument.id);
+      if (!active.current) return;
+      rememberMapping(view);
+      invalidatePreviewAfterMapping("Сопоставление удалено.");
+    } catch (err) {
+      setMappingError(formatApiError(err));
+    } finally {
+      if (active.current) setMappingBusy(false);
+    }
+  }
+
+  async function handleMappingExclude() {
+    if (!mappingInstrument) return;
+    setMappingBusy(true);
+    setMappingError(null);
+    try {
+      const view = await putInstrumentMappingExclusion(mappingInstrument.id);
+      if (!active.current) return;
+      rememberMapping(view);
+      invalidatePreviewAfterMapping("Обновление котировок для инструмента отключено.");
+    } catch (err) {
+      setMappingError(formatApiError(err));
+    } finally {
+      if (active.current) setMappingBusy(false);
+    }
+  }
+
+  async function handleMappingClearExclusion() {
+    if (!mappingInstrument) return;
+    setMappingBusy(true);
+    setMappingError(null);
+    try {
+      const view = await deleteInstrumentMappingExclusion(mappingInstrument.id);
+      if (!active.current) return;
+      rememberMapping(view);
+      invalidatePreviewAfterMapping("Обновление котировок для инструмента включено.");
+    } catch (err) {
+      setMappingError(formatApiError(err));
+    } finally {
+      if (active.current) setMappingBusy(false);
+    }
+  }
+
+  async function handleMappingDiscover(query?: string | null): Promise<MarketDiscoverResult> {
+    if (!mappingInstrument) throw new Error("Инструмент не выбран.");
+    try {
+      const normalizedQuery = query?.trim();
+      return await discoverInstrumentMapping(mappingInstrument.id, {
+        provider: "t_invest",
+        ...(normalizedQuery ? { query: normalizedQuery } : {}),
+      });
+    } catch (err) {
+      throw new Error(formatApiError(err));
+    }
+  }
+
   async function handleQuotePreview() {
     if (quoteBusy.current || pending.current || !active.current) return;
     quoteBusy.current = true;
@@ -523,6 +670,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     setPreviewError(null);
     setQuotePreview(null);
     setQuoteApplyResult(null);
+    setMappingNotice(null);
     try {
       const preview = await previewMonthQuotes(monthId, controller.signal);
       if (!active.current || sequence.current !== token) return;
@@ -559,7 +707,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     try {
       await assertDraft();
       if (sequence.current !== token) return;
-      const result = await applyMonthQuotes(monthId, rows, controller.signal);
+      const previewId = quotePreview.preview_id;
+      setQuotePreview(null);
+      const result = await applyMonthQuotes(monthId, rows, controller.signal, previewId);
       if (!active.current || sequence.current !== token) return;
       if (result.reporting_month_id !== monthId)
         throw new Error("Ответ применения относится к другому месяцу.");
@@ -582,10 +732,12 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
         setQuoteApplyResult(result);
     } catch (err) {
       if (!active.current || sequence.current !== token) return;
-      if (err instanceof ApiClientError && err.code === "preview_changed") {
-        setQuotePreview(null);
-      }
-      setPreviewError(formatApiError(err));
+      setQuotePreview(null);
+      setPreviewError(
+        err instanceof ApiClientError && err.status >= 400 && err.status < 500 && err.status !== 408
+          ? formatApiError(err)
+          : "Результат применения не подтверждён. Обнови позиции и проверь сохранённые цены перед новым предпросмотром.",
+      );
     } finally {
       if (request.current === controller) {
         quoteBusy.current = false;
@@ -1119,11 +1271,33 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
           closedMonthHint={readOnly}
           error={previewError}
           loading={previewLoading}
+          mappingNotice={mappingNotice}
           onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
+          onMapInstrument={readOnly ? undefined : (row) => void openQuoteMapping(row)}
           onRefresh={() => void handleQuotePreview()}
           preview={quotePreview}
         />
       </div>
+
+      <InstrumentMappingDialog
+        busy={mappingBusy}
+        error={mappingError}
+        instrument={mappingInstrument}
+        mapping={mappingView}
+        onCancel={() => {
+          if (mappingBusy) return;
+          setMappingRow(null);
+          setMappingInstrument(null);
+          setMappingView(null);
+          setMappingError(null);
+        }}
+        onClear={handleMappingClear}
+        onClearExclusion={handleMappingClearExclusion}
+        onDiscover={handleMappingDiscover}
+        onExclude={handleMappingExclude}
+        onSave={handleMappingSave}
+        open={mappingRow !== null && mappingInstrument !== null}
+      />
 
       <ConfirmDialog
         busy={busy}

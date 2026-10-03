@@ -1,145 +1,106 @@
 # Agent orchestration — Hermes Finance
 
-> **Status:** project-facing execution contract. Local client configuration implements this contract but does not override repository policy.
-
-This project defaults to a single Worker, with independent review added when required. Full orchestration remains an experimental, explicit opt-in capability. The authoritative task specification remains the active GitHub issue, accepted ADR/contract and explicit Integrator notes under the precedence in `AGENTS.md`.
+Integrator procedures and optional explicitly requested orchestration. Ordinary Workers do not need this entire file.
+Shared authority/isolation rules remain in [AGENTS.md](../AGENTS.md); risk/review triggers are owned by `MODEL_ROUTING.md`.
 
 ## Roles
 
-Use the role definitions in [`AGENTS.md`](../AGENTS.md#roles). Root/Worker self-review is not independent review; an Execution Orchestrator has no implicit project acceptance or canonical integration authority.
+**Execution Orchestrator** is an optional execution-local coordinator, not the project Integrator.
+**Delegate** is a bounded helper below a Worker/coordinator, not another self-accepting candidate owner.
+Neither role acquires canonical integration authority; self-review is not independent review.
 
 ## Mode A — single Worker (default)
 
-Normal flow:
-
-`Owner -> Integrator -> authoritative issue -> short launch prompt -> selected Worker -> completion report -> Integrator GitHub review -> FIXES REQUIRED / ACCEPT / REJECT -> Integrator integration`
-
-Examples:
-
-- `дай задачу для Grok` -> manual Grok Worker prompt;
-- `дай задачу для Hermes` -> manual Hermes Worker prompt;
-- `дай задачу для <model/client>` -> manual single-Worker prompt unless the owner explicitly asks for orchestration;
-- `дай задачу для Codex` -> one Codex Worker;
-- `дай серию задач для Codex` -> prepare separate bounded task launches; this alone does not authorize an orchestrated or unattended queue;
-- `Codex без оркестрации` -> Codex acts as a normal single Worker.
-
-The launch prompt is locator/execution context, not a second specification.
-
-The Worker owns investigation -> implementation -> verification -> authorized PR-ready candidate. The current coding session can own this work directly. When independent review is required, add one separate Reviewer against the frozen candidate and return confirmed blockers to the same Worker. This does not require an Execution Orchestrator.
-
-## Mode B — experimental Codex `$delivery-loop` (explicit opt-in)
-
-Activate only when the Owner/Integrator asks to **run** `$delivery-loop` or explicitly requests orchestrated execution for the current task/queue. A mention in quoted evidence, an audit, a skill edit, a request for autonomous implementation, or a request for independent review is not activation. Do not add `$delivery-loop` to an ordinary launch prompt automatically.
-
-Before delegation, record the explicit opt-in and at least one concrete coordination reason:
-
-- two or more independent implementation workstreams with clear ownership;
-- multiple repositories or PRs that require coordinated integration;
-- a dependency graph or large scope with concrete handoff/context boundaries;
-- an explicitly requested orchestration experiment, including a single-task benchmark.
-
-These reasons justify a proposed mode; they never authorize automatic activation. Importance, high risk, frontend plus tests and a need for independent review are insufficient on their own. Without a coordination reason, retain Mode A; an explicit experimental run may still use one Worker.
-
-The launch packet must identify the repo, issue/task list, exact baseline for every task, target/integration context, task branch, physical workspace, queue mode and review requirement.
-
-In orchestrated mode:
-
-1. the root acts as **Execution Orchestrator**;
-2. implementation is delegated to the locally configured **Worker**;
-3. after delegation the root does not duplicate the same write work;
-4. the Worker verifies and returns exact candidate evidence;
-5. the root reviews the actual diff/check evidence;
-6. a separate independent Reviewer is used when `MODEL_ROUTING.md`, an explicit Integrator/owner request, or a justified risk discovered during execution requires one;
-7. justified risk may increase the review bar inside the existing task, but scope/contract expansion still requires STOP + Integrator re-scope;
-8. remediation defaults to one cycle; a second requires explicit launch or subsequent Owner/Integrator authorization and the absolute cap remains two;
-9. internal verdicts are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED`, or `BLOCKED_FOR_INTEGRATION`;
-10. `INTERNAL_ACCEPT` is execution evidence only and never equals project `ACCEPT`.
-
-Canonical/integration merge remains Integrator-controlled unless the launch packet explicitly delegates that operation.
-
-### Overhead budget
-
-Start with one Worker and at most one independent Reviewer role, one candidate review and one remediation cycle with a focused re-review when required. Reuse the same Worker. Additional writers, roles or replacement sessions require a recorded coordination benefit and explicit authorization in the launch or a subsequent instruction; parallel writers also require the existing compatibility/ownership checks.
-
-Do not add readiness-only model turns, nested delegation, speculative explorers or reviewers of reviewers by default. Use cheap environment checks, reuse unchanged readiness evidence, and make the first review inference assess the actual candidate. Separate runtime/release gates remain appropriate where write boundaries are uncertain or explicitly required. Never waive required isolation, review or verification to meet a budget.
-
-Preserve passing checks for an unchanged candidate. Count model sessions (including re-reviews, failed and abandoned starts), handoffs, candidate cycles and wall time. The [2026-09-21 benchmark](experiments/ORCHESTRATION_BENCHMARK_2026-09-21.md) records the evidence and limits behind this routing change.
+Owner/Integrator assigns one bounded issue → selected Worker produces the candidate → Integrator assesses actual diff/evidence and integrates when allowed.
+Add an independent Reviewer only under risk policy or explicit instruction; confirmed blockers return to the same Worker.
+A request for Codex, autonomous implementation, careful review or several task prompts is not a request for an unattended queue.
 
 ## Integrator-owned repository mechanics
 
-When the active Integrator has direct GitHub read/write access and can inspect Actions, routine integration mechanics belong to the Integrator rather than the Owner acting as a human courier.
+With direct GitHub capability, the Integrator performs authorized repository mechanics rather than making the Owner relay commands.
+Existing standing Owner authorization covers this standard flow without repeated approval:
 
-A standing Owner authorization for the **standard integration flow** permits the Integrator to perform the following without asking for repeated confirmation on every step:
+1. Create/update the task issue, PR and repository metadata under the accepted assignment.
+2. Inspect the exact candidate, scope/privacy, contract and required independent-review/UAT evidence.
+3. Diagnose CI; make only clearly mechanical in-scope corrections on the task branch, without a concurrent writer.
+4. Reuse valid evidence and rerun failed checks for an established mechanical/infrastructure cause; follow `VERIFICATION_POLICY.md`, not a second full-suite ritual.
+5. Merge an accepted candidate after required PR CI/review/UAT, with an exact-head guard where supported.
+6. Read back canonical main and verify its exact push CI before reporting integration complete.
+7. Update only durable documentation/history made materially stale by the integrated task.
 
-1. create or update the task PR and its repository metadata;
-2. inspect the exact PR head, diff, scope, privacy boundary and applicable independent-review evidence;
-3. inspect CI and diagnose failures;
-4. apply a clearly mechanical, non-semantic correction on the existing task branch when it stays inside the already accepted scope — for example formatting/lint-only fixes or PR/repository metadata corrections;
-5. rerun applicable failed checks when the failure is mechanical or infrastructure/flaky and no verification gate is being bypassed;
-6. merge only an accepted candidate after required review and PR CI are satisfied, using an exact-head guard when the GitHub surface supports one;
-7. read back canonical `main` after merge;
-8. verify canonical `push` CI/checks for that exact merged SHA before reporting integration complete.
+Tool access alone grants no authority; the standing delegation above does. Workers cannot adopt it by changing their role label.
+A post-review nonsemantic correction may retain earlier semantic review only after the Integrator proves the exact diff changes no executable/product/financial meaning.
+Standard mechanics never authorize new product/financial semantics, architecture/invariants, migration/data reinterpretation,
+privacy/runtime/network-boundary expansion, behavior-changing fixes outside accepted scope or missing review/UAT evidence.
+Those cases return to the task/decision path; a green rerun does not replace a missing decision.
+Force-push, destructive reset/rebase, branch/tag deletion, release publication and repository settings require their separate explicit authority.
 
-A post-review mechanical commit does not require repeating semantic review **only when** its diff is demonstrably non-semantic and does not change executable/product/financial meaning. The Integrator must inspect that exact diff before relying on the earlier semantic review.
+## Staged integration for parallel slices
 
-Standing authorization does **not** authorize the Integrator to silently make or merge:
+Use temporary `integration/*` staging early when sibling tasks overlap shared application structure or must be Owner-UATed together; main remains the only release source.
+- Each task retains its isolated child branch/workspace; Workers do not merge siblings or independently refresh from main.
+- Integrate an exact accepted head promptly and run proportional integration smoke, not a mandatory extra full suite.
+- Later candidates should use the current accepted staging context when practical or prove compatibility; baseline reconciliation is Integrator-owned.
+- Shared routing/navigation/configuration reconciliation has one owner. Prefer leaf changes and additive/declarative registration where appropriate; no permanent list of UI filenames.
+- Preserve each accepted task contract. A semantic conflict returns to an Integrator decision, not a Worker choosing which sibling wins.
+- Owner UAT uses one exact aggregate SHA containing accepted slice ancestry, with its own required CI/evidence.
+- Required financial/mutation/Monthly Close/restore/migration/runtime/provider review and Owner gates still apply before canonical main.
+- After PASS, integrate that tested aggregate tree or a proven exact-equivalent tree, then verify exact-main push CI. Do not reconstruct an unproven aggregate after UAT.
 
-- product or financial-semantic changes;
-- new architecture, invariants or scope expansion;
-- migrations or data reinterpretation;
-- privacy/security or runtime/network-boundary changes;
-- implementation changes that alter executable behavior beyond an already accepted mechanical correction;
-- force-push, destructive reset/rebase, branch/tag deletion or other destructive Git operations;
-- release publication or repository settings changes;
-- a candidate that is missing an independent review required by `MODEL_ROUTING.md` or explicit Owner/Integrator instruction.
+## Mode B — experimental Codex `$delivery-loop` (explicit opt-in)
 
-If CI or review exposes one of those cases, the standard flow stops and returns to the normal task/review decision path. A green rerun never substitutes for missing semantic evidence.
+Only an explicit instruction to run the loop/orchestrated queue activates this mode. Mentioning, auditing or editing it is not activation.
+Record the opt-in and a concrete coordination reason (independent workstreams, multiple repos/PRs, dependencies/context boundaries or an explicit experiment).
+Importance, high risk and a need for review alone are not coordination reasons. An explicit experiment may still have one Worker.
+The launch identifies repo/eligible issues, exact baselines/targets, branches, physical workspaces, queue mode and review requirement.
+
+The root coordinates; after delegating implementation it does not become a second writer. Each Worker owns its frozen candidate and verification.
+The root assesses the actual candidate; required independent review uses a separate Reviewer. Remediation returns to the same Worker.
+One remediation cycle is the default; a second needs explicit authorization, with the existing absolute cap of two.
+Internal outcomes are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED` or `BLOCKED_FOR_INTEGRATION`; none equals project ACCEPT or permission to merge.
+
+### Overhead budget
+
+Start with one Worker and at most one independent Reviewer role. Extra writers/roles/replacement sessions need a concrete coordination benefit and explicit authorization.
+Do not add readiness-only model turns, nested delegation, speculative explorers or reviewers-of-reviewers by default.
+Use small environment checks and existing valid evidence; required safety/review gates are not waived for a session budget.
+Benchmark telemetry is recorded only when explicitly requested and measured; normal completion does not require a phase-by-phase ledger.
 
 ## Queue policy
 
 ### Single
 
-One task is implemented, internally reviewed, reported and then the run stops.
+Implement/report the assigned task, then stop.
 
 ### Independent queue
 
-The Execution Orchestrator may advance only through tasks explicitly listed in the launch packet. Each task has its own task branch, physical writer workspace and exact assigned baseline. A previous candidate is never an implicit baseline for the next task.
-
-A task must reach `INTERNAL_ACCEPT` before the Orchestrator advances to the next eligible item.
+Advance only through explicitly listed eligible tasks, each with its own branch/workspace and exact baseline, after the prior task reaches INTERNAL_ACCEPT.
+An earlier candidate is not an implicit baseline for the next task; do not invent extra backlog work.
 
 ### Dependency / integration block
 
-If task B requires task A to be integrated first and no explicit safe dependency/baseline strategy was supplied, B becomes `BLOCKED_FOR_INTEGRATION`.
-
-That status blocks the affected dependency chain, **not the whole queue**. The Orchestrator may continue unrelated explicitly listed eligible tasks.
-
-It must not invent stacked history, merge an integration branch, or pull new work from the backlog to fill the queue.
+Without an authorized safe baseline/dependency strategy, a dependent task is BLOCKED_FOR_INTEGRATION.
+Only that chain is blocked; unrelated listed tasks may continue. Do not invent stacked history or merge canonical/integration branches to bypass the block.
 
 ## Review triggers
 
-[`MODEL_ROUTING.md`](MODEL_ROUTING.md) is the normative source for independent-review triggers and risk escalation. A review requirement does not activate orchestration or authorize scope/contract expansion.
+Use MODEL_ROUTING risk policy; requiring review does not activate a queue or expand scope.
 
 ## Reporting
 
 ### Per-task report
 
-Use the completion contract in [`AGENTS.md`](../AGENTS.md#completion-reporting). An orchestrated run additionally records mode/remediation rationale and a compact phase ledger with evidence references. Separate wall time from overlapping job durations; usage/cost remains unknown unless measured.
+Use the single completion contract in AGENTS.md. An explicit experiment may add measured experiment evidence, not compulsory unknown telemetry.
 
 ### Final queue report
 
-An orchestrated queue additionally returns one summary containing every listed task and its final internal state (`INTERNAL_ACCEPT`, `BLOCKED`, `BLOCKED_FOR_INTEGRATION`, etc.), candidate SHA where applicable, review path used and unresolved Integrator actions.
-
-The final queue report is not a batch project acceptance.
+List every authorized task, internal status, candidate SHA, review path and unresolved Integrator action. This is not batch project acceptance.
 
 ## Local Codex skills
 
-Local Codex may provide `$delivery-loop` and a thin `hermes-finance` helper skill. Their filesystem paths, model assignments and runtime mechanics are machine-local and are not tracked here.
-
-- `$delivery-loop` owns experimental orchestration mechanics and must disable implicit invocation locally while remaining available for explicit use.
-- `hermes-finance`, when present, may help select Finance-specific verification procedures.
-- Neither skill overrides `AGENTS.md`, `MASTER_SPEC`, ADRs, the active issue, `VERIFICATION_POLICY.md` or `MODEL_ROUTING.md`.
-- Permanent financial semantics belong in repository sources of truth, not in local skills.
+Local `$delivery-loop`/helper skills are optional mechanics, not competing policy. Keep implicit loop invocation disabled.
+Local paths, concrete model choices and config stay machine-local. Changes here do not silently modify installed skills/config.
 
 ## Invariants that automation does not weaken
 
-All existing branch/workspace isolation, private-runtime prohibition, one-writer discipline, exact-money rules, closed-month semantics, verification requirements, STOP conditions and canonical-main controls remain unchanged.
+The shared financial, privacy/runtime, workspace, authority and evidence boundaries apply unchanged to every execution mode.

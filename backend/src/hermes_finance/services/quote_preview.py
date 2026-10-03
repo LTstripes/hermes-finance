@@ -279,6 +279,7 @@ def preview_market_quotes(
     *,
     provider: MarketDataProvider,
     today: date,
+    snapshot_ids: set[int] | None = None,
 ) -> QuotePreviewResult:
     month = get_reporting_month(session, reporting_month_id)
     target_date = quote_refresh_target_date(month.snapshot_date, today=today)
@@ -304,6 +305,8 @@ def preview_market_quotes(
     plans: list[tuple[PositionSnapshot, Instrument, InstrumentMappingView]] = []
 
     for snapshot in snapshots:
+        if snapshot_ids is not None and snapshot.id not in snapshot_ids:
+            continue
         instrument_id = snapshot.instrument_id
         if instrument_id not in instrument_cache:
             instrument_cache[instrument_id] = get_instrument(session, instrument_id)
