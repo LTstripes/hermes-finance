@@ -1,101 +1,36 @@
 # Hermes Finance — owner runtime operations
 
-> Owner-facing operational guide for the proven post-R09 architecture.
->
-> This is not a release checklist. Publication remains documented in `docs/RELEASE_AUTOMATION.md` and controlled through permanent issue #124.
-
-Owner-local path registry, read-only inventory and the proposed Stable/Control/Preview/workspaces
-boundaries are documented in [Owner machine layout](OWNER_MACHINE_LAYOUT.md).
-That inventory/design phase does not relocate or reconfigure these runtime operations.
-An explicitly launched #679 local Worker owns the preparation and approved
-migration execution described there; the Owner need not generate JSON or run
-commands. Existing exact-release, recovery, profile and readiness contracts
-continue to govern every operation.
+Current guide, synchronized 2026-10-03 after completed #679/#666 relocation. Publication is separate: [RELEASE_AUTOMATION](RELEASE_AUTOMATION.md), permanent #124. [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md) owns the current roles and local mapping, including the active deployed Ops directory. Do not restart migration or reinstall Launcher from historical instructions.
 
 ## 1. Architecture in one sentence
 
-Hermes Finance uses small composable owner operations instead of one launcher state machine owning release discovery, Git mutation, backup, dependency preparation and runtime startup.
+Hermes uses separate explicit Prepare/Validate, deterministic Start, exact-SHA Test preparation, backup-first Stable release transition and guarded publication; no Launcher is required.
 
-Accepted model:
+- Prepare/Validate: `scripts/prepare-runtime.ps1`.
+- Start: `scripts/start-local.ps1`.
+- Preview/UAT role in the persistent Test folder: `scripts/prepare-preview.ps1`.
+- Stable release transition: `scripts/update-stable.ps1` from trusted Main/Control.
+- Publication: guarded #124.
 
-- launcher = owner-facing profile/status/Start/Stop shell;
-- Prepare/Validate = `scripts/prepare-runtime.ps1`;
-- deterministic Start = `scripts/start-local.ps1`;
-- exact Preview/UAT = `scripts/prepare-preview.ps1`;
-- Stable release transition = `scripts/update-stable.ps1`;
-- release publication = guarded GitHub Release flow (#124).
-
-This full chain was owner-proven on the real `v0.8.2 -> v0.9.0` transition on 2026-09-17.
+#313 composable-runtime redesign is complete. A failure in one operation does not automatically authorize Start, migration, Test mutation or release publication.
 
 ## 2. Current published Stable
 
-Current published and owner-accepted Stable is **v1.0.0**.
+Published and locally confirmed **v1.1.0**: `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`; annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Expected `/api/health` version is `1.1.0`. Release push CI `36776904188` and Guarded Release `36777962224` succeeded.
 
-Release/source code identity:
+#572 is Owner PASS WITH DOCUMENTED LIMITATIONS. The later filesystem operation moved the same release, preserved DB identity/content/schema, recreated its path-bound Python environment with supported locked preparation and passed Start/readiness. It did not promote current main. [Release record](releases/1.1.0.md); [actual migration/closeout](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455).
 
-`caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`
-
-Annotated tag object:
-
-`f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`
-
-The tag peels exactly to the release/source SHA above.
-
-Owner acceptance:
-
-- OPS03 exact-SHA Preview/UAT: **PASS**;
-- guarded publication: **PASS**;
-- real backup-first OPS02 Stable transition `v0.9.0 -> v1.0.0`: **PASS**;
-- production Stable Start: **PASS**;
-- owner production-data continuity: **PASS**;
-- expected `/api/health` version: `1.0.0`.
-
-Detailed evidence: `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`.
+At closeout, persistent Test retains `d282d09647f129cd83c99e14a10024901a1cf6da` and independent data. Re-preparation/isolation are reported; Test Start was not run simultaneously with Stable on port 8000. A remote docs merge updates neither local Main nor either runtime automatically.
 
 ## 3. Windows launcher
 
-The launcher is a compact shell for already-prepared runtimes. The normal owner surface is intentionally small:
+The installed local Launcher/config/shortcuts were removed by Owner decision. Do not repair/reinstall/test the shell merely to operate the new paths. Direct Start is the normal Owner route. Remaining repository source/package/tests/workflows are tracked by #629; removal must preserve shared runtime/recovery helpers, even when a helper or schema name contains `launcher`.
 
-- choose Stable or isolated Preview;
-- see one concise version/short-SHA + data-boundary line;
-- see one readiness state;
-- use one primary action for that state;
-- `Остановить` is secondary and appears only for a launcher-owned running process;
-- diagnostics/logs stay hidden until requested;
-- setup/reconfigure is primarily a missing/invalid-config recovery path.
-
-It is **not** the canonical Stable release updater and does not move Git or perform OPS01/OPS02/OPS03.
-
-### Reinstall the released launcher
-
-From the published Stable checkout:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
-```
-
-### Try the newer launcher from development `main`
-
-The compact shell from #586 is newer than published v1.0.0 until a later release. To install it without promoting Stable:
-
-1. use a clean trusted/control checkout, **not** the production Stable runtime checkout;
-2. update that checkout to current `main`;
-3. stop Hermes and close the launcher before packaging, because the retained launcher safety harness exercises local process/port behavior;
-4. run:
-
-```powershell
-git switch main
-git pull --ff-only
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\launcher\windows\install.ps1
-```
-
-The installer rebuilds the self-contained launcher, runs the retained launcher safety harness, copies the package to the per-user launcher install directory (by default `%LOCALAPPDATA%\HermesFinance\launcher`) and refreshes Desktop/Start-menu shortcuts. Existing launcher `config.json` is not replaced by the installer.
-
-This updates the launcher package only. It does **not** change the Stable checkout, production database, release tag or prepared-runtime identity.
-
-Do not use the legacy launcher self-update experiment as release-update evidence.
+The old compact-shell/self-updater installation instructions are historical. [R09 closeout](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) retains why operations were separated; no new UI wrapper is authorized here.
 
 ## 4. Prepare an exact checkout
+
+From the selected checkout, using its own scripts:
 
 ```powershell
 $checkout = (Get-Location).Path
@@ -104,17 +39,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtim
   -Prepare
 ```
 
-Prepare:
-
-- installs/synchronizes locked dependencies for that exact checkout;
-- builds the production frontend;
-- writes ignored `.hermes-runtime-prepared.json` proof;
-- does not start Hermes;
-- does not move Git refs;
-- does not follow `main`;
-- does not mutate another checkout.
-
-Validate existing proof:
+Prepare installs/synchronizes locked dependencies, builds the production frontend and records ignored `.hermes-runtime-prepared.json` proof. It does not Start, follow main, move Git refs or mutate another checkout.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtime.ps1 `
@@ -122,67 +47,49 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtim
   -Validate
 ```
 
-If code, lock/build inputs or required artifacts changed, validation fails closed and the owner explicitly prepares again.
+Changed code/build/lock inputs or missing artifacts invalidate preparation. Windows console-script entry points may embed absolute interpreter paths: after an approved move, recreate/reprepare the environment at its destination using the exact release and locked dependencies. Do not hex-edit launchers, use permanent junctions, reuse a moved venv blindly or change DB identity to bypass readiness.
 
 ## 5. Deterministic Start
 
-From an already prepared checkout:
+From an already prepared Stable or Test checkout:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-Ordinary Start:
+Start validates prepared proof, uses the assigned DB boundary, applies only the accepted guarded startup/schema semantics for that DB, binds `127.0.0.1:8000` and checks health. It does not install/build/update Git itself. Only one runtime owns port 8000; stop the owned runtime before switching to Test, never kill an unrelated process by port.
 
-- validates prepared-runtime proof;
-- uses the explicitly selected runtime/database boundary;
-- runs accepted guarded startup/migration semantics for that DB;
-- binds only `127.0.0.1:8000`;
-- performs health checks;
-- does not run dependency sync/build/Git update itself.
-
-Readiness smoke that exits automatically:
+Readiness smoke:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
 
+A source/version-preserving filesystem migration does not authorize a production schema/version upgrade. Normal future release startup follows that release's accepted schema contract.
+
 ## 6. Exact Preview/UAT preparation
 
-Use OPS03 when testing one unreleased candidate SHA before publication.
+The Preview role now uses one persistent Test location. Refresh that location through supported OPS03, not by creating a new top-level stand for every UAT or bypassing its existing-path protections.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-preview.ps1 `
   -CandidateSha <full-40-char-sha> `
-  -PreviewCheckout <preview-checkout-path> `
-  -PreviewDataDirectory <isolated-preview-data-path> `
-  -PreviewDatabase <isolated-preview-db-path> `
+  -PreviewCheckout <test-checkout-path> `
+  -PreviewDataDirectory <isolated-test-data-path> `
+  -PreviewDatabase <isolated-test-db-path> `
   -StableCheckout <stable-checkout-path> `
   -StableDataDirectory <stable-data-path> `
   -StableDatabase <stable-db-path> `
-  -ControlCheckout <trusted-control-checkout>
+  -ControlCheckout <trusted-main-checkout>
 ```
 
-OPS03:
+OPS03 requires a full SHA, independent Git clone and physically separate Test data; it proves the Stable/Main/Test exclusions, composes candidate Prepare/Validate and leaves the exact candidate pinned. No follow-main, Start or direct migration occurs inside it. The historical parameter names remain unchanged; Main is the Control role, Test is Preview.
 
-- requires one explicit full 40-character SHA;
-- creates/uses an independent Preview clone with its own Git directory;
-- proves Preview/Stable/control checkout separation;
-- proves Preview DB cannot alias production DB;
-- composes candidate Prepare + Validate;
-- leaves Preview pinned to the selected SHA;
-- does not follow newer `main`;
-- does not Start or directly migrate.
-
-For owner UAT, populate Preview only with a verified physical copy/synthetic DB after the isolation boundary is prepared. Never point Preview at production SQLite.
-
-The first real release UAT for `v0.9.0` passed on exact SHA `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`.
+Populate Test only through an explicitly approved isolated copy/recovery/synthetic workflow. Never point Test at production SQLite or copy its data back to Stable. Retain needed Test artifacts before a deliberate refresh. No agent receives the private DB/.env/backup contents. Current Owner checks and exact UAT scopes are in [CURRENT_STATUS](CURRENT_STATUS.md).
 
 ## 7. Explicit Stable update
 
-Use only for one real owner-selected **published immutable release**.
-
-Run from a trusted control checkout outside mutable Stable:
+Run OPS02 from trusted canonical Main outside mutable Stable for one Owner-selected published immutable release:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
@@ -190,193 +97,55 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.
   -TargetVersion X.Y.Z
 ```
 
-Optional parameters:
+Optional `-DatabasePath`, `-BackupDirectory` and `-ControlCheckout` retain their supported meanings. The updater proves current Stable and target annotated publication, makes a verified SQLite backup before Git/ref mutation, fetches only the selected tag, pins the exact peeled commit, runs target Prepare/Validate and stops.
 
-- `-DatabasePath <absolute-path>` — explicit production SQLite path;
-- `-BackupDirectory <path>` — explicit backup directory;
-- `-ControlCheckout <path>` — explicit trusted control checkout.
-
-The updater:
-
-1. proves current Stable identity;
-2. proves the target is a published annotated release;
-3. creates a verified SQLite backup before Git/ref/worktree mutation;
-4. fetches only the selected tag;
-5. proves the fetched annotated tag/code identity;
-6. pins Stable to the exact target commit;
-7. runs target Prepare + Validate;
-8. stops.
-
-It never:
-
-- chooses latest automatically;
-- follows `main`;
-- updates Preview;
-- starts Hermes;
-- runs DB migration;
-- creates a tag/release;
-- performs automatic rollback/downgrade.
+It never selects latest, follows main, updates Test, starts Hermes, runs DB migration, publishes a tag/release or automatically rolls back/downgrades. Publication, local update and Start remain separate Owner actions.
 
 ## 8. Proven real OPS02 example
 
-First real owner transition:
-
-`v0.8.2 -> v0.9.0`
-
-Verified owner evidence:
-
-- source HEAD: `a22542d7b20ebdf34e38384004162d409f163ab3` / tag `v0.8.2`;
-- verified backup id: `finance_backup_20260917T144656192481Z`;
-- target HEAD: `c90a842ec5e85fc5ac0de4aedd5d7fd14c09ae36`;
-- `v0.9.0^{}` peeled locally to the same SHA;
-- production DB hash unchanged by OPS02 before explicit Start;
-- target Prepare + Validate passed;
-- no application Start or DB migration occurred inside OPS02.
-
-Then owner explicitly ran deterministic Start:
-
-- readiness smoke: PASS;
-- health: `status=ok`, `version=0.9.0`;
-- owner data continuity: PASS.
-
-This is the canonical evidence that the release-transition flow works on a real owner Stable runtime.
+The first real `v0.8.2 -> v0.9.0` transition and subsequent Start/data-continuity PASS remain recorded in [R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md). They are historical proof, not current version instructions.
 
 ## 8A. Second real owner transition — v1.0.0
 
-The same accepted lifecycle has now also passed a second real production transition:
-
-`v0.9.0 -> v1.0.0`
-
-- exact Owner-tested release SHA: `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`;
-- guarded `v1.0.0` publication: PASS;
-- backup-first OPS02 Stable transition: PASS;
-- explicit production Start: PASS;
-- owner data continuity: PASS.
-
-No private backup identifier or financial values are recorded here.
+The `v0.9.0 -> v1.0.0` backup-first transition, exact-SHA UAT, publication, production Start and data-continuity PASS remain in [R10_RELEASE_CLOSEOUT_2026-09-21](R10_RELEASE_CLOSEOUT_2026-09-21.md). Current Stable is v1.1.0; dated predecessors are not pending updates.
 
 ## 9. Normal future release sequence
 
-For a normal future Stable release:
+Prepare one exact canonical candidate → isolated Test UAT → Owner acceptance → guarded publication through #124 → independent tag/release read-back → stop owned Stable → explicit backup-first OPS02 → target pin/preparation read-back → explicit Start → health/version and data-continuity check.
 
-1. prepare one exact candidate on canonical `main`;
-2. use OPS03 for isolated exact-SHA owner UAT;
-3. owner PASS;
-4. publish that same exact code identity through #124;
-5. independently verify annotated tag + peeled commit + published Release;
-6. stop Stable runtime;
-7. use OPS02 to update Stable to the selected version;
-8. verify target exact pin + backup evidence;
-9. explicitly Start Stable;
-10. verify health/version and owner data continuity.
-
-Publication, Stable mutation and Start are intentionally separate actions.
+Do not call a GitHub merge a release or a runtime update. Filesystem relocation and janitor deployment do not promote code versions.
 
 ## 10. Failure handling
 
-If any operation fails:
+Diagnose the failing bounded operation and preserve the existing backup/error evidence. Do not improvise DB rebinding, refs, runtime profile JSON, another version or an unsafe retry. Ambiguous restore/write outcomes are not success or confirmed failure and must not be blindly replayed. During a relocation, a failed Stable readiness check is resolved or rolled back before unrelated legacy deletion.
 
-- do not improvise by manually editing launcher profile JSON or refs;
-- do not repoint Preview/Stable DB paths to bypass guards;
-- do not retry with another commit/version unless the failure is understood;
-- preserve the verified backup and error output;
-- diagnose the bounded operation that failed.
-
-The architecture is designed so an update failure does not automatically imply Start, migration, Preview mutation or release publication.
+An authorized local operations Worker executes the bounded workflow and reports sanitized results; the Owner is not assigned repeated JSON/PowerShell diagnostic relays. That exception does not grant ordinary development tasks runtime access. Existing exact-release/privacy guards remain authoritative.
 
 ## 11. Launcher state after #585 / #586
 
-The runtime redesign parent #313 remains complete. The later launcher follow-ups are also complete:
-
-- #585 path-gated the heavy Windows launcher safety/package lane so unrelated changes do not spend Windows/.NET time while launcher-relevant changes still run the full retained harness;
-- #586 reduced the owner UI to the compact prepared-runtime shell without changing runtime/profile/process/data safety semantics.
-
-Future launcher work should now be evidence-driven and bounded:
-
-- add only small owner-facing wrappers when a real recurring operation justifies them;
-- diagnosis/recovery may be added if real owner pain appears;
-- do **not** rebuild the old monolithic launcher updater/state machine or re-expand the compact shell into a control dashboard.
+#585 path-gating and #586 compact shell are historical implementation evidence. Local removal is complete; #629 repository retirement remains pending. No further Launcher installation or UX work is implied. Shared direct startup, backup, prepared-runtime and recovery contracts remain in force until their consumers are deliberately reconciled.
 
 ## 12. Safety reminders
 
-- Production Stable data is never an agent/dev workspace.
-- Preview/UAT uses a separate checkout and isolated DB copy/synthetic DB.
-- Do not point arbitrary branches at the production DB.
-- Do not expose production `.env`, DB, backups, exports or credentials to development agents.
-- Stable update remains explicit, backup-first and immutable-release based.
-- Ordinary runtime remains loopback-only.
+Stable/Main/Test/Owner and active Ops are protected, including deployed Ops outside the Hermes root. Do not treat all outside-root folders as old workspaces. Test is isolated from Stable, and main is not a production runtime. No private payloads in Git/CI/Worker artifacts. Stable updates are explicit, backup-first and release-pinned. Normal runtime remains loopback-only.
+
+Daily housekeeping is separate from runtime operations: [WORKSPACE_JANITOR](WORKSPACE_JANITOR.md). The accepted deployment is daily 12:00 local/Apply/7 days, not a new provider refresh or release task. One dry-run passed; future automatic results must be read from the local report, not inferred from deployment.
 
 ## 13. Protected off-site recovery points and DR rehearsal
 
-Two explicit modes are supported. `external_encrypted_destination_v1` remains
-the protected mode. Its configured destination must be the writable view of an
-Owner-managed encrypted container/volume that the Owner has already
-successfully opened or mounted and that is readable and writable by the
-supported workflow. Its encrypted backing storage is synchronized off-device.
-An ordinary Google Drive, OneDrive, Dropbox, Syncthing, NAS, or other synced
-folder is not protected merely because it synchronizes.
+The accepted publisher/rehearsal contracts are unchanged. [ADR 0017](adr/0017-protected-offsite-backup-and-recovery.md) and [Owner durability closeout](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md) are authoritative. The detailed pre-closeout runbook is retained [at its pinned version](https://github.com/LTstripes/hermes-finance/blob/8eb991fc81ebbe63917a9ca1ea204762129c9019/docs/OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal); its old current-version/Launcher-install sections are not today's setup instructions.
 
-`owner_accepted_plaintext` / `synced_filesystem_destination_v1` is the separate
-Owner-accepted plaintext synced-filesystem mode. Use it for an ordinary synced
-folder, including the Owner's Google Drive for desktop folder. Do not describe
-or attest that destination as encrypted or protected-at-rest. Hermes proves
-local publication and read-back for either mode. It does not claim cloud
-delivery; the Owner confirms off-device visibility separately. Existing
-artifacts that claim `external_encrypted_destination_v1` are not reclassified.
+### Modes and Owner preconditions
 
-The managed publisher is an explicit Owner command; it does not perform cloud
-delivery, restore, or disaster-recovery rehearsal. After a replacement is
-fully published and destination-read-back verified, it retains the newest 12
-verified managed recovery points of that same protection pair. A directory
-that contains both accepted pairs keeps 12 verified points per pair. A
-plaintext run does not delete protected points, and a protected run does not
-delete plaintext points. Unknown, partial, corrupt, or foreign files are never
-deleted. A retention failure is reported separately and does not
-invalidate the newly verified point. Do not improvise a raw database copy or
-archive operation.
+`protection_state=protected`, `protection_mode=external_encrypted_destination_v1`, `format_version=1` requires an already opened/mounted readable/writable Owner-managed encrypted container/volume and independently available recovery material. Hermes does not validate/authenticate the key. A plain synced directory is not encrypted merely because it synchronizes.
 
-### Owner preconditions
+The separately Owner-accepted pair is `owner_accepted_plaintext` / `synced_filesystem_destination_v1`. It supports an ordinary synced filesystem destination without claiming protected-at-rest encryption. Do not reclassify existing encrypted attestations. Any other pair fails closed. Aliases remain `protected-destination` and `synced-filesystem-destination`.
 
-Before a real encrypted-mode run, the Owner must attest outside Git that:
-
-1. the existing encrypted container/volume is already successfully
-   opened/mounted and is readable and writable;
-2. recovery material is available independently of the backed-up laptop; and
-3. the destination is not production data, a Stable/Preview/development
-   checkout, the normal local backup directory, or an ambiguous/reparse-linked
-   path.
-
-Before a real plaintext-mode run, the Owner must explicitly select the
-plaintext pair and accept that the destination is an ordinary synced folder.
-The same destination exclusions apply. No encrypted-container attestation is
-required, and the result must not be described as protected.
-
-Hermes records only the selected exact pair:
-
-```text
-protection_state=protected
-protection_mode=external_encrypted_destination_v1
-format_version=1
-```
-
-```text
-protection_state=owner_accepted_plaintext
-protection_mode=synced_filesystem_destination_v1
-format_version=1
-```
-
-Any other state/mode combination fails closed. The plaintext alias is
-`synced-filesystem-destination`. The protected alias remains
-`protected-destination`.
-
-Hermes does not validate or authenticate the key or recovery material.
-Independent availability of recovery material remains an Owner-controlled UAT
-gate. Keys, credentials, full private paths, financial values, and raw
-recovery payloads must never enter Git, CI, logs, or Worker workspaces.
+For either mode the destination must not alias production, Stable/Test/development, local backups or an ambiguous/reparse-linked path. Owner selects and attests the appropriate mode outside Git. Credentials, recovery material and private paths/payloads remain local. Local publication/read-back does not prove cloud delivery; off-device visibility is a separate Owner fact.
 
 ### Publication sequence
 
-From a trusted prepared checkout, invoke the bounded publisher explicitly:
+Use the existing bounded publisher explicitly from its own trusted producing checkout:
 
 ```powershell
 uv run --project backend --locked hermes-finance-protected-backup `
@@ -387,119 +156,19 @@ uv run --project backend --locked hermes-finance-protected-backup `
   --protection-mode external_encrypted_destination_v1
 ```
 
-For the Owner-accepted ordinary synced folder, use the plaintext pair instead:
+For an accepted ordinary synced directory use `--protection-state owner_accepted_plaintext --protection-mode synced_filesystem_destination_v1`. The optional checkout is an identity guard for the executing producer, not a selector for fabricated SHA/schema. Producer SHA and Alembic revisions are derived from the actual checkout and consistent snapshot.
 
-```powershell
-uv run --project backend --locked hermes-finance-protected-backup `
-  --database <trusted-local-database> `
-  --destination <ordinary-synced-filesystem-folder> `
-  --checkout <trusted-producing-checkout> `
-  --protection-state owner_accepted_plaintext `
-  --protection-mode synced_filesystem_destination_v1
-```
+The command locks the destination, creates a consistent SQLite online-backup snapshot, stages uniquely, verifies manifest/hashes/schema/migration identity, exposes atomically on the same filesystem and reads back the final artifact before claiming `published=true`. It reports bounded state/identity/size/time, not payloads or cloud delivery.
 
-The command emits only privacy-safe machine-readable `created`, `verified`,
-`published`, `read_back`, `retention`, and `action_required` state plus
-destination alias, format/protection identity, artifact size, and creation
-time. A successful `published=true` result requires final read-back
-verification. Retention runs only after that verified replacement exists.
-Neither command claims that a cloud provider has delivered the file.
-The command does not accept caller-supplied producer SHA or Alembic revisions;
-those are derived from the executing Hermes checkout and consistent snapshot.
-The optional `--checkout` value is only an identity guard and must resolve to
-that same executing checkout; it cannot select a different producer identity.
-
-Follow this sequence:
-
-1. validate the readable/writable destination boundary for the selected mode
-   and acquire its exclusive publication lock;
-2. create a consistent SQLite snapshot through the accepted online-backup
-   path;
-3. stage under the destination's unique incomplete name;
-4. validate manifest/hashes, SQLite integrity, foreign keys, and
-   schema/migration identity;
-5. atomically expose the exact managed final name on the same filesystem;
-6. read back and fully verify the final artifact;
-7. report `published`/`verified` only after read-back succeeds;
-8. retain the newest 12 verified managed recovery points of the published
-   pair, with no age-based expiry/deletion in v1, only after that verified
-   replacement exists. In a mixed directory the bound is 12 per accepted pair.
-
-Interrupted, stale, corrupt, foreign, or unknown files are never recovery
-points and are never eligible for retention. A failed next run must preserve
-the newest verified point. Lock contention and ambiguous destination identity
-fail closed.
+Only after a verified replacement exists does retention keep the newest 12 verified managed points of the same protection pair. A mixed destination keeps 12 per pair; plaintext cannot remove encrypted-mode points or vice versa. No age expiry in v1. Unknown/partial/corrupt/foreign files remain untouched. Retention failure is separate from successful publication; a failed next run preserves the newest verified point. Do not replace the supported workflow with an improvised raw DB/archive copy.
 
 ### Isolated recovery rehearsal
 
-Canonical durability checkpoint (2026-09-25): #527 / PR #542 is integrated on development `main` `744c613884d074e6f9d35d61523603f257371713`; exact-main CI #947 / `36139627216` is SUCCESS. Owner-live publication, off-device visibility and one clean isolated DR rehearsal have all passed. The procedure below remains the supported way to repeat a future rehearsal.
+Select one readable managed point matching the requested protection pair and one explicit full recovery SHA. Use a clean detached independent code checkout and a fresh Owner-only target, not Stable/Test/development, a source/local-backup alias, linked/reparse path or prior failed target.
 
-The supported rehearsal reads one managed artifact whose recorded protection
-pair matches the requested pair. For the encrypted mode, the container or
-volume must already be opened or mounted and readable, and recovery material
-stays independently available. For the plaintext mode, the ordinary synced
-file must already be readable and the requested pair must be
-`owner_accepted_plaintext` / `synced_filesystem_destination_v1`. The Owner
-explicitly selects one immutable
-full 40-character recovery Git SHA and an independent checkout pinned exactly
-to it; a branch/ref-only, ambiguous, dirty, or non-independent checkout is
-not eligible. The selected recovery SHA may differ from the producer SHA when
-the schema compatibility gate accepts a forward upgrade. Then:
-
-1. verifies the manifest, hashes, producer full SHA, exactly sorted source
-   Alembic revision set, protection state, container readability, SQLite
-   integrity, and foreign keys before any target mutation; Hermes does not
-   validate or authenticate the key or recovery material;
-2. loads the selected checkout's Alembic graph and supported head set and
-   accepts only `same_revision` (source set equals supported heads) or one
-   unambiguous supported `forward_upgrade` path from source set to those
-   heads;
-3. rejects unknown, ahead, divergent, downgrade-required, ambiguous, or
-   multiple unsupported schema paths before target mutation;
-4. restores only into a fresh isolated Finance checkout/profile/data/database
-   boundary;
-5. rejects Stable, Preview, development workspaces, source/local-backup
-   aliases, reparse/linked paths, non-empty targets, and conflicting targets;
-6. preserves the source recovery artifact unchanged;
-7. re-reads the selected checkout SHA and clean state immediately before the
-   restore write; if migration occurs, performs a new re-check immediately
-   before migration; and if Start occurs, performs another new re-check
-   immediately before Start. Any identity change fails closed before target
-   mutation where possible and never proceeds to migration/Start;
-8. validates broad non-private structural counts;
-9. composes ADR 0014 schema-preflight with the exact-checkout
-   Prepare/Validate and deterministic Start/readiness path; and
-10. confirms the restored application can read months and core financial
-   surfaces.
-
-Successful privacy-safe rehearsal evidence binds the managed artifact
-identity/hashes, producer SHA, sorted source revision set, selected recovery
-SHA, selected checkout head set, accepted relationship, and resulting
-readiness/schema/code identity. It contains no financial values, private
-paths, secrets, or recovery material.
-
-Never overwrite Stable, restore through an arbitrary code/schema path, or
-claim cloud delivery or Owner UAT from a local synthetic rehearsal.
-
-After this workflow has passed independent security/recovery review and has
-been integrated, use this exact sequence for one Owner-controlled rehearsal.
-The example values are placeholders; do not put the machine's real paths into
-Git, an issue, or a support transcript.
+The wrapper verifies managed name/manifest/full snapshot hashes, producer SHA/revisions, protection pair and SQLite integrity/foreign keys. Schema must be `same_revision` or one supported unambiguous forward upgrade. Ahead/divergent/downgrade/unknown graphs are refused before target mutation. It preserves the source artifact, rechecks code identity before restore/migration/Start, checks structural counts and composes exact checkout Prepare/Validate/readiness.
 
 ```powershell
-$recoverySha = "<full-40-character-recovery-sha>"
-$recoveryCheckout = "<new-independent-recovery-checkout>"
-$controlCheckout = "<trusted-control-checkout>"
-$runtimeConfig = "<existing-launcher-runtime-config>"
-$recoveryPoint = "<managed-protected-recovery-point>"
-$targetParent = "<existing-empty-recovery-parent>"
-$targetProfile = Join-Path $targetParent "isolated-recovery"
-$targetData = Join-Path $targetProfile "data"
-$targetDatabase = Join-Path $targetData "finance.db"
-
-git clone --no-checkout <canonical-hermes-repository-url> $recoveryCheckout
-git -C $recoveryCheckout switch --detach $recoverySha
-
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File (Join-Path $recoveryCheckout "scripts\recovery-rehearsal.ps1") `
   -RecoveryCheckout $recoveryCheckout `
@@ -514,84 +183,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ProtectionMode external_encrypted_destination_v1
 ```
 
-A plaintext recovery point uses the same command with
-`-ProtectionState owner_accepted_plaintext` and
-`-ProtectionMode synced_filesystem_destination_v1`. The selected pair must
-match the recovery artifact. A mismatch fails closed before target mutation.
+All variables are explicitly verified Owner-local values. For plaintext use the matching accepted pair. Target profile/data/database must not already exist. The runtime-config argument remains an exclusion input of the accepted helper even if its type/name mentions Launcher; use a supported current mapping, never an obsolete deleted shell file or a guessed replacement. #629 must preserve/reconcile this consumer before deleting shared profile/schema helpers. Do not reinstall the GUI just to satisfy an unexplained missing reference.
 
-The recovery checkout must be a clean detached independent clone at the exact
-selected SHA. It must not contain `.env`, private data, or prior runtime data.
-Before the first `uv run`, the repository-owned wrapper proves that Git identity,
-clean/detached state, and the Stable/development/runtime exclusions are valid.
-It establishes the checkout-local `.venv`, holds the mutable Prepare output
-roots against replacement, and owns the entire bootstrap descendant tree under
-one deadline. Do not replace it with a direct inherited-environment `uv run`
-command.
-The launcher runtime config is read only to exclude canonical Stable and every
-configured Preview/experiment boundary; the trusted control checkout supplies
-the development-worktree inventory. The target profile, its `data` directory,
-and its database must not already exist. Do not pre-create or reuse them.
-
-Before creating the target profile, the command verifies the managed name,
-manifest, full artifact and snapshot hashes, the matching protection pair,
-producer identity, SQLite integrity/foreign keys, source Alembic revisions,
-the selected checkout identity, and an exact `same_revision` or unambiguous
-linear `forward_upgrade` relationship. It then restores the already-verified
-snapshot, runs that checkout's existing Prepare and Validate operations, and
-uses its existing bounded Start/readiness smoke. The source recovery point is
-re-read and identity-checked throughout and is never opened for writing. The
-restored database remains bound to the descriptor that wrote staging, and its
-snapshot hash is read back again immediately before Prepare and Start.
-
-Success emits one privacy-safe JSON result that binds artifact/code/schema
-identity and broad structural counts. Failure emits only a bounded stage and
-action required; use another new target after diagnosing a failed mutated
-target. Do not treat a synthetic or Worker-run result as Owner UAT.
+The repository wrapper proves Git/boundaries before its first uv run, establishes its checkout-local environment, pins mutable preparation outputs and owns descendants under a deadline. Do not bypass it with an inherited-environment uv command. Source/target descriptors and snapshot identity are rechecked through preparation/start. A failed or ambiguous mutated target is not reused. Synthetic rehearsal is not Owner UAT or proof of cloud delivery.
 
 ### Restore read-state requirement
 
-After a successful existing in-app restore, the month list must reload from
-the restored database. Keep the selected month only if its ID exists in the
-restored list; otherwise select the allowed restored fallback or clear the
-selection when the list is empty. A stale pre-restore month list or ID must
-not remain visible as current. The focused implementation is integrated through
-#462 / PR #502; this runbook does not add a second UI state system.
+After in-app restore, reread the month list from the restored DB. Keep the selected ID only if it exists; otherwise use the supported restored fallback or clear selection. Do not expose a stale pre-restore month as current (#462/#502). Confirmed-negative versus ambiguous restore outcomes retain #475 semantics.
 
 ### Owner completion evidence
 
-The #417 Owner-live completion gates passed on 2026-09-25:
-
-- one fresh destination-read-back-verified recovery point in the ordinary synced folder, explicitly marked `owner_accepted_plaintext / synced_filesystem_destination_v1`: **PASS**;
-- Owner confirmation that the exact newly published artifact is visible off-device: **PASS**;
-- one clean isolated disaster-recovery rehearsal from that plaintext point: **PASS** — `status=rehearsed`, `source_verified=true`, `source_unchanged=true`, `restored=true`, `prepared=true`, `validated=true`, `readiness=verified`, `schema_relationship=same_revision`.
-
-Privacy-safe broad restored structure was 8 reporting months, 43 user tables, 25 populated user tables, 25 user indexes and 0 user views. No financial values or private paths are recorded.
-
-Parent #417 is closed completed. The encrypted mode remains valid only for a genuinely encrypted destination and is not required for the accepted current Finance workflow. Older encrypted attestations are not reclassified as plaintext.
-
-#543 tracks non-blocking post-closeout hardening only. It does not invalidate the proven recovery workflow or reopen #417.
-
-For future periodic confidence, repeat the same workflow with a fresh managed point and a completely fresh isolated target; never reuse a failed rehearsal target.
-
-Closeout: `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`.
+#417 closed after the 2026-09-25 plaintext managed publication/read-back, separate off-device visibility and clean isolated DR all passed, including `source_unchanged=true`, `readiness=verified`, `schema_relationship=same_revision`. #543 hardening did not reopen it. A future rehearsal needs a fresh managed point and new isolated target, not a repetition mandated by docs editing.
 
 ## References
 
-- #313 — completed launcher/runtime redesign parent
-- #380 / PR #385 — OPS01 Prepare + deterministic Start
-- #386 / PR #393 — OPS02 explicit Stable update
-- #404 / PR #407 — OPS03 exact-SHA Preview/UAT
-- #408 / PR #409 — v0.9.0 release preparation
-- #480 / PR #481 — v1.0.0 release preparation
-- #124 — permanent guarded Release Control
-- #410 — non-blocking v0.9.0 Release-description cleanup
-- `docs/CURRENT_STATUS.md`
-- `docs/R10_RELEASE_CLOSEOUT_2026-09-21.md`
-- `docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`
-- `docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`
-- `docs/RELEASE_AUTOMATION.md`
-- `scripts/prepare-runtime.ps1`
-- `scripts/start-local.ps1`
-- `scripts/prepare-preview.ps1`
-- `scripts/update-stable.ps1`
-- [`ADR 0017`](adr/0017-protected-offsite-backup-and-recovery.md) — protected off-site recovery-point and isolated-DR contract
+- [CURRENT_STATUS](CURRENT_STATUS.md), [SESSION_CLOSEOUT_2026-10-03](SESSION_CLOSEOUT_2026-10-03.md)
+- [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md), [WORKSPACE_JANITOR](WORKSPACE_JANITOR.md)
+- [R09 closeout](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [R10 closeout](R10_RELEASE_CLOSEOUT_2026-09-21.md)
+- [Owner durability closeout](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md), [ADR 0017](adr/0017-protected-offsite-backup-and-recovery.md)
+- #380/#385 OPS01, #386/#393 OPS02, #404/#407 OPS03, #124 publication, #629 repository Launcher retirement
