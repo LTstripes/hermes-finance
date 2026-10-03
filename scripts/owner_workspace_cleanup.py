@@ -213,7 +213,12 @@ def scan(path, pins, *, shared=False):
         # Exact template names only; tracked status is checked after safe Git setup.
         if child != path and inv.protected(child) and child.name != ".env.example":
             raise Hold("private_marker")
-        if child.name.endswith(".lock"):
+        # Legitimate tracked project lockfiles (for example backend/uv.lock)
+        # are ordinary code. Only Git administrative *.lock files indicate an
+        # active repository operation and must block cleanup.
+        if child.name.endswith(".lock") and any(
+            part.lower() == ".git" for part in child.parts
+        ):
             raise Hold("active_lock")
         if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
             raise Hold("unsupported_entry")

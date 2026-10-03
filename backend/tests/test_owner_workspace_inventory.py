@@ -420,6 +420,33 @@ def test_cleanup_tracked_env_example_only_is_allowed(cleanup_case):
     assert tool.protected(path / ".env.example")  # inventory intentionally unchanged
 
 
+def test_cleanup_tracked_project_lockfile_is_allowed(cleanup_case):
+    _, path, control = cleanup_case
+    (control / "backend").mkdir()
+    (control / "backend" / "uv.lock").write_text("version = 1\n")
+    git(control, "add", ".")
+    git(
+        control,
+        "-c",
+        "user.name=Synthetic",
+        "-c",
+        "user.email=synthetic@example.com",
+        "commit",
+        "-qm",
+        "tracked lockfile",
+    )
+    git(control, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(path, "fetch", str(control), "main")
+    git(path, "merge", "--ff-only", "FETCH_HEAD")
+    assert cleanup_row(cleanup_case)["state"] == "CANDIDATE"
+
+
+def test_cleanup_git_admin_lockfile_holds(cleanup_case):
+    _, path, _ = cleanup_case
+    (path / ".git" / "index.lock").write_text("synthetic lock")
+    assert cleanup_row(cleanup_case)["state"] == "HOLD"
+
+
 def make_linked(case):
     config, old, control = case
     path = old.parent / "linked-task"
