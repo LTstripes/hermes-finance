@@ -20,6 +20,13 @@ import owner_workspace_inventory as inv
 TTL = 900
 MAX_OUTPUT = 8 * 1024 * 1024
 SHA = re.compile(r"[0-9a-f]{40}")
+PUBLIC_TRACKED_EXCEPTIONS = {
+    ".env.example",
+    "backend/.env.example",
+    "data",
+    "data/.gitkeep",
+    "sketches/themes/tokens.css",
+}
 
 
 class Hold(Exception):
@@ -204,14 +211,31 @@ def scan(path, pins, *, shared=False):
             raise Hold("scan_limit")
         pins.pin(child)
         info = inv.plain(child)
-        if child.name == ".env.example" and not stat.S_ISREG(info.st_mode):
+        relative = "." if child == path else child.relative_to(path).as_posix()
+        if relative in {".env.example", "backend/.env.example"} and not stat.S_ISREG(
+            info.st_mode
+        ):
+            raise Hold("private_marker")
+        if relative == "data" and not stat.S_ISDIR(info.st_mode):
+            raise Hold("private_marker")
+        if relative == "data/.gitkeep" and not stat.S_ISREG(info.st_mode):
+            raise Hold("private_marker")
+        if relative.startswith("data/") and relative != "data/.gitkeep":
+            # Never inspect arbitrary runtime/Owner payloads merely because they
+            # live beside the tracked public placeholder.
             raise Hold("private_marker")
         if child.name == ".gitmodules" or (
             child.name == ".git" and child.parent != path
         ):
             raise Hold("nested_git")
-        # Exact template names only; tracked status is checked after safe Git setup.
-        if child != path and inv.protected(child) and child.name != ".env.example":
+        # A tiny exact-path allowlist covers public tracked repository names that
+        # intentionally match the broad inventory privacy heuristic. Tracking is
+        # independently proven by verify_index_bytes/status before eligibility.
+        if (
+            child != path
+            and inv.protected(child)
+            and relative not in PUBLIC_TRACKED_EXCEPTIONS
+        ):
             raise Hold("private_marker")
         # Legitimate tracked project lockfiles (for example backend/uv.lock)
         # are ordinary code. Only Git administrative *.lock files indicate an
