@@ -13,6 +13,14 @@ import owner_workspace_cleanup as cleanup
 import owner_workspace_inventory as inventory
 
 
+class RelocationAfterMoveError(cleanup.Hold):
+    """The native rename succeeded; its postcondition is not yet proven.
+
+    Callers must treat the object as potentially moved and verify rollback,
+    never report an unchanged source or a completed rollback from this error.
+    """
+
+
 def rename_bound(source, target, expected):
     source = inventory.absolute(str(source))
     target = inventory.absolute(str(target))
@@ -73,5 +81,10 @@ def rename_bound(source, target, expected):
         )
         if status < 0:
             raise cleanup.Hold("busy_or_inaccessible")
-        if cleanup.identity(inventory.plain(target)) != expected or source.exists():
-            raise cleanup.Hold("path_changed")
+        try:
+            if cleanup.identity(inventory.plain(target)) != expected or source.exists():
+                raise cleanup.Hold("path_changed")
+        except (cleanup.Hold, inventory.InventoryError, OSError) as error:
+            raise RelocationAfterMoveError(
+                "relocation_postcondition_unproven"
+            ) from error

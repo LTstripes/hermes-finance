@@ -88,3 +88,25 @@ def test_cross_parent_rename_and_reverse_preserve_nested_files(tmp_path):
     relocation.rename_bound(target, source, identity)
     assert cleanup.identity(source.stat()) == identity
     assert (nested / "synthetic.txt").read_bytes() == b"synthetic-only"
+
+
+def test_post_move_verification_error_explicitly_signals_moved_object(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    identity = cleanup.identity(source.stat())
+    real_plain = relocation.inventory.plain
+
+    def fail_postcheck(path, **kwargs):
+        if path == target and target.exists():
+            raise OSError("synthetic postcondition failure")
+        return real_plain(path, **kwargs)
+
+    monkeypatch.setattr(relocation.inventory, "plain", fail_postcheck)
+    with pytest.raises(relocation.RelocationAfterMoveError):
+        relocation.rename_bound(source, target, identity)
+    assert target.is_dir() and not source.exists()
+    monkeypatch.setattr(relocation.inventory, "plain", real_plain)
+    relocation.rename_bound(target, source, identity)
+    assert cleanup.identity(source.stat()) == identity
+    assert not target.exists()
