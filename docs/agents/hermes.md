@@ -2,6 +2,7 @@
 
 <a id="workspace-isolation"></a><a id="handoff"></a>
 [AGENTS.md](../../AGENTS.md) is the task entrypoint; Hermes is a first-class Worker client.
+Use the Owner-configured Hermes workspace root under the shared [machine-layout contract](../OWNER_MACHINE_LAYOUT.md); concrete paths remain machine-local.
 
 ## Manual Worker route
 
