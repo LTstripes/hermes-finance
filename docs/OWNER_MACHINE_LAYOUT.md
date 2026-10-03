@@ -1,9 +1,10 @@
-# Owner machine layout — inventory/design, phase 1 (#666)
+# Owner machine layout — inventory and cleanup planning (#666)
 
 This page owns the portable layout proposal. Real root mappings and local folder
 labels live in an **Owner-local registry outside Git and all agent workspaces**.
-No relocation, cleanup, launcher installation or profile change is implemented
-or authorized by this phase. Existing [runtime operations](OWNER_RUNTIME_OPERATIONS.md),
+The inventory remains permanently read-only. The separate cleanup command below
+requires exact-plan Owner approval; no real-machine deletion or relocation is
+authorized by delivering it. Existing [runtime operations](OWNER_RUNTIME_OPERATIONS.md),
 [ADR 0012](adr/0012-runtime-and-agent-workspace-isolation.md) and
 [ADR 0014](adr/0014-launcher-runtime-profile-safety.md) remain authoritative.
 
@@ -118,6 +119,10 @@ exact path and HEAD in a proposed manifest. Owner/Integrator approves that exact
 group. No blanket authorization for the whole workspaces subtree follows.
 
 ## Migration/backup/rollback manifest for separate approval
+
+The bounded cleanup-plan/apply phase is described in
+[Owner workspace cleanup](OWNER_WORKSPACE_CLEANUP.md). It uses a separate
+command and exact-plan approval; the inventory classifier above is unchanged.
 
 After Owner inventory, fill this **locally**, without sharing paths/data:
 
