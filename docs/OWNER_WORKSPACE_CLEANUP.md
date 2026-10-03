@@ -1,5 +1,13 @@
 # Owner-local workspace cleanup — plan/apply (#666)
 
+For the exact #679 filesystem migration, the later authoritative Owner
+clarification directly authorizes the named legacy forest deletion, including
+local-only history, after Stable/Main/Test verification. See the
+[operational continuation](OWNER_MACHINE_LAYOUT.md#explicit-operational-continuation-679).
+That one-time assignment supersedes its earlier preservation-heavy eligibility
+and extra package approval split. It does not change the conservative generic
+CLI rules below. Reparse targets remain outside deletion traversal.
+
 Only the Owner runs this command on real paths. Agents use synthetic fixtures.
 An explicitly launched Owner-local assignment such as #679 assigns bounded
 structural preparation and accepted-tool execution to its one local Worker;
