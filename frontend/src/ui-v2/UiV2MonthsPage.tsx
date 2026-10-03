@@ -15,7 +15,13 @@ import { formatDate, formatMonth } from "../lib/format";
 import { lastDayOfMonth, nextPeriod } from "../lib/period";
 import { queryKeys } from "../queryClient";
 import { UiV2DataFrame } from "./UiV2DataShell";
-import { monthWorkspacePath, resolveMonthSelection, sortReportingMonths } from "./monthSelection";
+import {
+  latestClosedMonth,
+  monthWorkspacePath,
+  resolveMonthSelection,
+  sortReportingMonths,
+} from "./monthSelection";
+import { CURRENT_ROW_ACTION, reportPath } from "./reportsArchive";
 import styles from "./UiV2Months.module.css";
 
 type Target = { year: number; month: number; snapshot_date: string };
@@ -71,6 +77,7 @@ export default function UiV2MonthsPage() {
       ? monthlyCloseReturnPath(closeContext)
       : null;
   const latest = months[0] ?? null;
+  const latestClosed = latestClosedMonth(months);
   const [action, setAction] = useState<Action | null>(null);
   const [target, setTarget] = useState<Target>(initialTarget);
   const [pendingDelete, setPendingDelete] = useState<ReportingMonth | null>(null);
@@ -368,33 +375,8 @@ export default function UiV2MonthsPage() {
                   <small>Снимок {formatDate(month.snapshot_date)}</small>
                 </div>
                 <div className={styles.actions}>
-                  <button
-                    className={styles.secondary}
-                    disabled={busy}
-                    onClick={() => selectMonth(month.id)}
-                    type="button"
-                  >
-                    Выбрать
-                  </button>
-                  <button
-                    className={styles.secondary}
-                    disabled={busy}
-                    onClick={() => startClone(month)}
-                    type="button"
-                  >
-                    Копировать
-                  </button>
-                  {month.status === "draft" ? (
-                    <button
-                      className={styles.danger}
-                      disabled={busy}
-                      onClick={() => setPendingDelete(month)}
-                      type="button"
-                    >
-                      Удалить черновик
-                    </button>
-                  ) : null}
                   <Link
+                    className={styles.primary}
                     to={
                       closeContext?.monthId === month.id
                         ? withMonthlyCloseReturn(
@@ -406,7 +388,7 @@ export default function UiV2MonthsPage() {
                         : `/v2/data/months/${month.id}`
                     }
                   >
-                    {month.status === "draft" ? "Редактировать" : "Данные закрытого месяца"}
+                    Открыть месяц
                   </Link>
                   {month.status === "draft" ? (
                     <Link
@@ -415,15 +397,35 @@ export default function UiV2MonthsPage() {
                     >
                       Проверить и закрыть
                     </Link>
-                  ) : (
-                    <>
-                      <Link to={`/v2/reports/${month.id}`}>Посмотреть отчёт</Link>
-                      <Link to={`/v2/data/months/${month.id}?action=reopen`}>
-                        Открыть для редактирования
-                      </Link>
-                    </>
-                  )}
-                  <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
+                  ) : null}
+                  <div className={styles.secondaryActions}>
+                    {month.status === "closed" ? (
+                      latestClosed?.id === month.id ? (
+                        <Link to="/v2">{CURRENT_ROW_ACTION}</Link>
+                      ) : (
+                        <Link to={reportPath(month.id)}>Посмотреть отчёт</Link>
+                      )
+                    ) : null}
+                    <button
+                      className={styles.secondary}
+                      disabled={busy}
+                      onClick={() => startClone(month)}
+                      type="button"
+                    >
+                      Копировать
+                    </button>
+                    <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
+                    {month.status === "draft" ? (
+                      <button
+                        className={styles.danger}
+                        disabled={busy}
+                        onClick={() => setPendingDelete(month)}
+                        type="button"
+                      >
+                        Удалить черновик
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </li>
             ))}

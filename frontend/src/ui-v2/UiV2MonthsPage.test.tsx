@@ -91,13 +91,13 @@ describe("native month management", () => {
     expect(screen.getAllByRole("button", { name: "Удалить черновик" })).toHaveLength(1);
   });
 
-  it("offers status-specific exact-month actions even for an older reopened draft", async () => {
+  it("offers one exact-month entry with status-specific primary actions", async () => {
     rows.push({ ...draft, id: 9, year: 2029, month: 1 });
     renderPage();
     await screen.findByText("Январь 2029");
     const older = screen.getByText("Январь 2029").closest("li");
     if (!older) throw new Error("Historical draft row missing");
-    expect(within(older).getByRole("link", { name: "Редактировать" })).toHaveAttribute(
+    expect(within(older).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
       "href",
       "/v2/data/months/9",
     );
@@ -107,16 +107,64 @@ describe("native month management", () => {
     );
     const saved = screen.getByText("Май 2030").closest("li");
     if (!saved) throw new Error("Closed row missing");
-    expect(within(saved).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
+    expect(within(saved).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
       "href",
-      "/v2/reports/1",
+      "/v2/data/months/1",
     );
-    expect(within(saved).getByRole("link", { name: "Открыть для редактирования" })).toHaveAttribute(
+    expect(within(saved).getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
       "href",
-      "/v2/data/months/1?action=reopen",
+      "/v2",
     );
+    expect(within(saved).queryByRole("link", { name: "Посмотреть отчёт" })).not.toBeInTheDocument();
+    expect(
+      within(saved).queryByRole("link", { name: "Открыть для редактирования" }),
+    ).not.toBeInTheDocument();
     expect(createMonth).not.toHaveBeenCalled();
     expect(deleteMonth).not.toHaveBeenCalled();
+  });
+
+  it("routes the latest CLOSED month to the current report and older CLOSED months to the archive", async () => {
+    rows = [
+      { ...closed, id: 5, year: 2031, month: 2, snapshot_date: "2031-02-28" },
+      { ...closed, id: 4, year: 2031, month: 1, snapshot_date: "2031-01-31" },
+    ];
+    renderPage();
+    await screen.findByText("Февраль 2031");
+    const latestRow = screen.getByText("Февраль 2031").closest("li");
+    const olderRow = screen.getByText("Январь 2031").closest("li");
+    if (!latestRow || !olderRow) throw new Error("Closed rows missing");
+    expect(
+      within(latestRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
+    ).toHaveAttribute("href", "/v2");
+    expect(
+      within(latestRow).queryByRole("link", { name: "Посмотреть отчёт" }),
+    ).not.toBeInTheDocument();
+    expect(within(olderRow).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
+      "href",
+      "/v2/reports/4",
+    );
+  });
+
+  it("keeps exact-month Data context without a separate choose action", async () => {
+    renderPage("/v2/data/months?month=2");
+    await ready();
+    expect(screen.queryByRole("button", { name: "Выбрать" })).not.toBeInTheDocument();
+    expect(screen.getByText("Выбран")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Источники и актуальность" })).toHaveAttribute(
+      "href",
+      "/v2/data?month=2",
+    );
+  });
+
+  it("carries Close return context into the exact-month entry", async () => {
+    renderPage("/v2/data/months?from=monthly-close-v2&step=readiness&monthId=2");
+    await ready();
+    const row = screen.getByText("Июнь 2030").closest("li");
+    if (!row) throw new Error("Draft row missing");
+    expect(within(row).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
+      "href",
+      "/v2/data/months/2?from=monthly-close-v2&step=readiness&monthId=2",
+    );
   });
 
   it("creates a period once and selects it only after list readback", async () => {

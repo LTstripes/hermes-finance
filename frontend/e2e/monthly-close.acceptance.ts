@@ -221,7 +221,14 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     const oldRow = page
       .getByRole("listitem")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
-    await oldRow.getByRole("link", { name: "Открыть для редактирования", exact: true }).click();
+    await oldRow.getByRole("link", { name: "Открыть месяц", exact: true }).click();
+    await expect(page).toHaveURL(`/v2/data/months/${old}`);
+    await expect(page.getByLabel("Дата снимка")).toBeDisabled();
+    await expect(page.getByRole("link", { name: "Источники и актуальность" })).toHaveAttribute(
+      "href",
+      `/v2/data?month=${old}`,
+    );
+    await page.getByRole("button", { name: "Открыть для редактирования", exact: true }).click();
     await expect(
       page.getByRole("alertdialog", { name: "Открыть месяц для редактирования?" }),
     ).toBeVisible();
@@ -262,7 +269,29 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     const reopened = page
       .getByRole("listitem")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
-    await reopened.getByRole("link", { name: "Проверить и закрыть" }).click();
+    const reopenedPrimary = reopened.getByRole("link", {
+      name: "Проверить и закрыть",
+      exact: true,
+    });
+    await expect(reopenedPrimary).toBeVisible();
+    const reopenedContrast = await reopenedPrimary.evaluate((element) => {
+      const parseChannels = (value: string) => value.match(/[\d.]+/g)?.map(Number) ?? [];
+      const luminance = (channels: number[]) => {
+        const [r, g, b] = channels.slice(0, 3).map((channel) => {
+          const c = channel / 255;
+          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const styles = getComputedStyle(element);
+      const foreground = luminance(parseChannels(styles.color));
+      const background = luminance(parseChannels(styles.backgroundColor));
+      const [light, dark] =
+        foreground > background ? [foreground, background] : [background, foreground];
+      return (light + 0.05) / (dark + 0.05);
+    });
+    expect(reopenedContrast).toBeGreaterThanOrEqual(4.5);
+    await reopenedPrimary.click();
     await page.getByRole("button", { name: "Закрыть месяц", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
