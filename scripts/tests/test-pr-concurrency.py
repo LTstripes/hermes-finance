@@ -4,6 +4,9 @@
 The workflow expression is the source of truth. These tests parse that
 expression and evaluate the cancellation matrix. They do not start runners,
 cancel live runs, or touch product suites.
+
+A later ordinary candidate cancels only the older run of that same
+repository, workflow and PR. The cancelled attempt is not success evidence.
 """
 
 from __future__ import annotations
