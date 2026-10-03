@@ -224,10 +224,13 @@ test("ui-v2 Home linked pair: gross details, fixed residuals and narrow layout",
   await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "issue-651-linked-pair-expanded");
-  await page.setViewportSize({ width: 700, height: 768 });
-  await assertBounded(page);
-  await expect(summary).toBeVisible();
-  await capture(page, testInfo, "issue-651-linked-pair-narrow");
+  // 700×768 replaces the project viewport, so the narrow check is the same on every project.
+  if (testInfo.project.name === "1440x900") {
+    await page.setViewportSize({ width: 700, height: 768 });
+    await assertBounded(page);
+    await expect(summary).toBeVisible();
+    await capture(page, testInfo, "issue-651-linked-pair-narrow");
+  }
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
