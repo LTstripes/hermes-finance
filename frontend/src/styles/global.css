@@ -2189,6 +2189,17 @@ th.num {
   min-width: 0;
 }
 
+.debt-inline-edit > *,
+.debt-inline-edit__grid > *,
+.debt-inline-edit :where(.field, .input, .select) {
+  min-width: 0;
+}
+
+.debt-inline-edit :where(.input, .select) {
+  width: 100%;
+  max-width: 100%;
+}
+
 .debt-inline-edit__actions {
   display: flex;
   flex-wrap: wrap;

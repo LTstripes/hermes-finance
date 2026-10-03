@@ -128,6 +128,20 @@
   min-width: 0;
 }
 
+.stackedEditor > *,
+.stackedEditorGrid > *,
+.stackedEditor :global(.field),
+.stackedEditor :global(.input),
+.stackedEditor :global(.select) {
+  min-width: 0;
+}
+
+.stackedEditor :global(.input),
+.stackedEditor :global(.select) {
+  width: 100%;
+  max-width: 100%;
+}
+
 .stackedCheck {
   display: flex;
   align-items: flex-end;
