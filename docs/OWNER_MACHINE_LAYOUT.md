@@ -22,6 +22,12 @@ or authorized by this phase. Existing [runtime operations](OWNER_RUNTIME_OPERATI
     <client>/<task>/       one active task owns one physical clone/worktree
 ```
 
+## Shared client workspace contract
+
+Codex, OpenCode, Grok and Hermes each use an Owner-configured machine-local root below the logical `workspaces/<client>/` boundary. The concrete root mapping belongs in local client configuration, not Git. Every writing/local-verification task creates one `<issue>-<slug>` directory under its own client root.
+
+A client writes only its assigned task directory. Another client's physical workspace is not a shared source tree: inspect its delivered work through GitHub PRs/remote refs, or use an explicitly assigned independent review clone/path. Stable, Control and Preview are never client workspace roots.
+
 These are placeholders, not current machine paths. Prefer sibling code/data
 boundaries, but do not change current checkout-relative settings in phase 1.
 Any later external-data configuration must use supported runtime operations and

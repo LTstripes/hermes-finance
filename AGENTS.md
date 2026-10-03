@@ -61,6 +61,8 @@ One active writing or local-verification task owns one physical worktree/clone, 
 GitHub-only review needs no local clone; local review/tests need their own isolated workspace when the original tree is active.
 Write only in the assigned task workspace. Do not move, clean, delete or repurpose sibling directories, Owner runtime or other active workspaces.
 
+Each execution client uses one Owner-configured machine-local workspace root. Create each task below that root as `<issue>-<slug>`; concrete absolute roots stay local and are never tracked. Do not inspect or edit another client's physical workspace by default: inspect sibling work through GitHub PRs/remote refs, or use an explicitly assigned independent review clone/path.
+
 ### Standing self-create authorization
 
 With a known configured root and pinned task/branch/baseline/target, create one fresh `workspaces/<agent>/<task>/` worktree/clone yourself.
