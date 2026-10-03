@@ -31,6 +31,7 @@ import {
   HelpTip,
   Input,
   LoadingState,
+  MoneyAmount,
   OverflowMenu,
   OverflowMenuItem,
   Panel,
@@ -146,7 +147,7 @@ export function MonthPositionsSection({
   }, [localDirty, onDirtyChange]);
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, verify = false) => {
       setLoading(true);
       setError(null);
       try {
@@ -182,7 +183,9 @@ export function MonthPositionsSection({
           }
           return next;
         });
+        return rows;
       } catch (err) {
+        if (verify) throw err;
         if (!signal?.aborted) {
           setError(formatApiError(err));
         }
@@ -407,6 +410,7 @@ export function MonthPositionsSection({
     setPreviewLoading(true);
     setPreviewError(null);
     setQuoteApplyResult(null);
+    setQuotePreview(null);
     try {
       setQuotePreview(await previewMonthQuotes(monthId));
     } catch (err) {
@@ -417,22 +421,38 @@ export function MonthPositionsSection({
   }
 
   async function handleQuoteApply(rows: QuoteApplyRowRequest[]) {
-    if (previewApplying || previewLoading || rows.length === 0) {
+    if (previewApplying || previewLoading || !quotePreview || rows.length === 0) {
       return;
     }
     setPreviewApplying(true);
     setPreviewError(null);
     setQuoteApplyResult(null);
     try {
-      const result = await applyMonthQuotes(monthId, rows);
+      const previewId = quotePreview.preview_id;
       setQuotePreview(null);
+      const result = await applyMonthQuotes(monthId, rows, undefined, previewId);
+      setQuotePreview(null);
+      const fresh = await load(undefined, true);
+      if (
+        result.rows.some((applied) => {
+          const position = fresh?.find((row) => row.id === applied.position_snapshot_id);
+          return (
+            !position ||
+            position.price_date !== applied.price_date ||
+            position.market_price_per_unit.amount !== applied.market_price_per_unit.amount ||
+            position.price_source !== applied.price_source
+          );
+        })
+      )
+        throw new Error("Применённые котировки не подтверждены повторной загрузкой.");
       setQuoteApplyResult(result);
-      await load();
     } catch (err) {
-      if (err instanceof ApiClientError && err.code === "preview_changed") {
-        setQuotePreview(null);
-      }
-      setPreviewError(formatApiError(err));
+      setQuotePreview(null);
+      setPreviewError(
+        err instanceof ApiClientError && err.status >= 400 && err.status < 500 && err.status !== 408
+          ? formatApiError(err)
+          : "Результат применения не подтверждён. Обнови позиции и проверь сохранённые цены перед новым предпросмотром.",
+      );
     } finally {
       setPreviewApplying(false);
     }
@@ -475,7 +495,8 @@ export function MonthPositionsSection({
       <Panel
         action={
           <Badge>
-            MV {formatMoney(totals.market)} · {filteredPositions.length} поз.
+            Рыночная стоимость: <MoneyAmount amount={totals.market} /> · {filteredPositions.length}{" "}
+            поз.
           </Badge>
         }
         label="Портфель"

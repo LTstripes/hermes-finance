@@ -1,0 +1,3 @@
+# Store and check out text files as LF so Windows checkouts, Biome
+# format-check and cross-platform diffs agree. Binary files are auto-detected.
+* text=auto eol=lf

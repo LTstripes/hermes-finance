@@ -206,6 +206,30 @@
   line-height: 1.25;
 }
 
+/* #650: money + sign/currency stay one readable unit with stable alignment. */
+.money {
+  display: inline-block;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.money--empty {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.data-value__value .money {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+.num .money {
+  white-space: nowrap;
+}
+
 .data-value--lg .data-value__value {
   font-size: 1.2rem;
 }

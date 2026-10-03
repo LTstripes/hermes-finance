@@ -105,7 +105,7 @@ def _success(
     kopecks: int,
     status: QuoteStatus = QuoteStatus.OK,
     price_date: date = TODAY,
-    quote_kind: QuoteKind = QuoteKind.LAST,
+    quote_kind: QuoteKind = QuoteKind.HISTORY,
 ) -> QuoteSuccess:
     return QuoteSuccess(
         identity=identity,
@@ -127,7 +127,7 @@ def _selection(
     identity: MarketIdentity = STOCK_IDENTITY,
     accept_stale: bool = False,
     price_date: date = TODAY,
-    quote_kind: str = "last",
+    quote_kind: str = "history",
 ) -> QuoteApplySelection:
     return QuoteApplySelection(
         position_snapshot_id=snapshot_id,

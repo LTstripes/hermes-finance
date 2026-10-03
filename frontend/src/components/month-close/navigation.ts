@@ -96,7 +96,7 @@ const V2_ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> 
   open_month: (monthId) => `/v2/data/months/${monthId}`,
   set_snapshot_date: (monthId) => `/v2/data/months/${monthId}?section=general`,
   open_alfa_preview: (monthId) => `/v2/data/alfa-baseline?month=${monthId}`,
-  open_quote_preview: (monthId) => `/v2/data/months/${monthId}?section=positions`,
+  open_quote_preview: (monthId) => `/v2/data/months/${monthId}?section=positions#month-quotes`,
   choose_statement_file: (monthId) => `/v2/data/payouts?month=${monthId}#statement-import`,
   open_payout_batch_preview: (monthId) => `/v2/data/payouts?month=${monthId}`,
   open_reconciliation_preview: (monthId) => `/v2/data/reconciliation?month=${monthId}`,

@@ -14,9 +14,9 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to:
 ];
 
 const NATIVE_DATA_LINKS = [
+  { label: "Отчётные месяцы", to: "/v2/data/months" },
   { label: "Экспорт и копии", to: "/v2/data/files" },
   { label: "Настройки", to: "/v2/data/app" },
-  { label: "Диагностика", to: "/v2/data/app#diagnostics" },
 ];
 
 const LEGACY_LINKS: Array<{ label: string; to: string }> = [

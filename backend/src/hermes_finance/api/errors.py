@@ -33,6 +33,7 @@ from hermes_finance.services.linked_pairs import (
 )
 from hermes_finance.services.payout_preview import PayoutMappingRequiredError
 from hermes_finance.services.quote_apply import PreviewChangedError
+from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceError
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
     ReportingMonthNotFoundError,
@@ -150,6 +151,7 @@ def register_error_handlers(application: FastAPI) -> None:
         return _error_response(422, exc.code, str(exc))
 
     @application.exception_handler(PreviewChangedError)
+    @application.exception_handler(QuotePreviewEvidenceError)
     async def _preview_changed_handler(request: Request, exc: PreviewChangedError) -> JSONResponse:
         logger.info(
             "%s path=%s status=409 code=%s",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   PayoutApplySelection,
@@ -36,6 +36,8 @@ type Props = {
   onApply: (rows: PayoutApplySelection[]) => void;
   /** Opt-in freeze of the version input (used by native v2 payout tool while applying). */
   versionDisabled?: boolean;
+  onSelectionChange?: (rows: PayoutApplySelection[]) => void;
+  selectionCommand?: { revision: number; action: "eligible" | "clear" };
 };
 
 type BadgeTone = "neutral" | "ok" | "draft" | "closed" | "info";
@@ -129,6 +131,8 @@ export function PayoutPreviewPanel({
   onRefresh,
   onApply,
   versionDisabled = false,
+  onSelectionChange,
+  selectionCommand,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [duplicateDrafts, setDuplicateDrafts] = useState<Record<string, DuplicateDraft>>({});
@@ -165,6 +169,40 @@ export function PayoutPreviewPanel({
       row.status === "possible_manual_duplicate" &&
       selectionFor(row, duplicateDrafts[key]) === null,
   );
+  const selectionListener = useRef(onSelectionChange);
+  const lastSelectionCommand = useRef<typeof selectionCommand>(undefined);
+  selectionListener.current = onSelectionChange;
+  const selectionKey = JSON.stringify(applyRows);
+  useEffect(() => {
+    selectionListener.current?.(
+      preview ? (JSON.parse(selectionKey) as PayoutApplySelection[]) : [],
+    );
+  }, [selectionKey, preview]);
+  useEffect(() => {
+    if (
+      !selectionCommand ||
+      selectionCommand === lastSelectionCommand.current ||
+      !preview ||
+      readOnly
+    )
+      return;
+    lastSelectionCommand.current = selectionCommand;
+    setSelected(
+      selectionCommand.action === "clear"
+        ? new Set()
+        : new Set(
+            preview.rows
+              .map((row, index) => ({ row, key: rowKey(row, index) }))
+              .filter(
+                ({ row, key }) =>
+                  row.selectable && selectionFor(row, duplicateDrafts[key]) !== null,
+              )
+              .map(({ key }) => key),
+          ),
+    );
+    // Commands are deliberate toolbar actions. Duplicate drafts are read at
+    // that moment; editing a draft does not itself select or accept anything.
+  }, [selectionCommand, preview, readOnly, duplicateDrafts]);
 
   return (
     <Panel
@@ -265,6 +303,7 @@ export function PayoutPreviewPanel({
                       <input
                         aria-label={`Выбрать выплату ${row.event_kind ?? index + 1}`}
                         checked={selected.has(key)}
+                        disabled={applying}
                         onChange={(event) => {
                           setSelected((current) => {
                             const next = new Set(current);
@@ -315,7 +354,7 @@ export function PayoutPreviewPanel({
                       <div className="stack-8">
                         <Select
                           aria-label={`Решение для дубля ${index + 1}`}
-                          disabled={!selectable}
+                          disabled={!selectable || applying}
                           onChange={(event) =>
                             setDuplicateDrafts((current) => ({
                               ...current,
@@ -338,7 +377,7 @@ export function PayoutPreviewPanel({
                         </Select>
                         <Select
                           aria-label={`Ручная запись для дубля ${index + 1}`}
-                          disabled={!selectable}
+                          disabled={!selectable || applying}
                           onChange={(event) =>
                             setDuplicateDrafts((current) => ({
                               ...current,

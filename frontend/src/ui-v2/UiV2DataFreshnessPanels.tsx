@@ -24,11 +24,97 @@ import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 const FAMILY_CLOSE_STEP: Record<string, GuidedCloseStepId | null> = {
   market_quotes: "market_quotes",
   alfa_pro_positions: "alfa_baseline",
-  t_invest_payouts: "actual_payouts",
+  t_invest_payouts: "future_payouts",
   alfa_statement_payouts: "actual_payouts",
   manual_month_data: null,
   deposit_cash_snapshots: null,
 };
+
+const SAVED_REASON_CODES = new Set([
+  "payout_event_present",
+  "statement_event_present",
+  "alfa_pro_baseline_present",
+  "manual_month_data_present",
+  "deposit_cash_present",
+]);
+
+const EMPTY_REASON_CODES = new Set([
+  "payout_none_for_month",
+  "statement_none_for_month",
+  "manual_month_data_empty",
+  "deposit_cash_empty",
+]);
+
+/** Event/source clocks whose age is deliberately not classified as freshness. */
+const EVENT_FRESHNESS_CLOCKS = new Set(["payment_date", "event_date", "source_as_of"]);
+
+function familyOrigin(family: FreshnessFamily): string {
+  if (family.family_id === "alfa_statement_payouts") return "Загружено из выписки Альфа-Банка";
+  if (family.family_id === "alfa_pro_positions") return "Получено из Alfa PRO";
+  if (family.family_id === "t_invest_payouts") return "Получено из T-Invest";
+  if (family.family_id === "market_quotes") {
+    const providers = family.providers.map(sourceLabel);
+    return providers.length > 0 ? `Получено из ${providers.join(" · ")}` : "Локальные данные";
+  }
+  return "Введено вручную в Hermes";
+}
+
+function familySavedState(family: FreshnessFamily): { label: string; tone: string } {
+  if (family.reasons.some((reason) => SAVED_REASON_CODES.has(reason.code))) {
+    return { label: "Сохранено — можно продолжать", tone: "ok" };
+  }
+  if (family.family_id === "market_quotes") {
+    if (family.coverage.provider_count > 0) {
+      return family.coverage.missing_count > 0
+        ? { label: "Сохранено частично — есть неприменённые привязки", tone: "stale" }
+        : { label: "Сохранено — можно продолжать", tone: "ok" };
+    }
+    if (family.coverage.missing_count > 0) {
+      return { label: "Есть привязки, котировки не применены", tone: "stale" };
+    }
+    if (family.coverage.row_count > 0) {
+      return { label: "Применённых котировок нет", tone: "info" };
+    }
+    return { label: "Нет данных", tone: "missing" };
+  }
+  if (family.reasons.some((reason) => EMPTY_REASON_CODES.has(reason.code))) {
+    return { label: "Ничего не сохранено", tone: "missing" };
+  }
+  if (family.family_id === "alfa_pro_positions") {
+    return { label: "Срез не сохранён", tone: "unknown" };
+  }
+  return { label: "Не подтверждено", tone: "unknown" };
+}
+
+function familyFreshnessLabel(family: FreshnessFamily): string {
+  if (family.status === "not_applicable") {
+    const eventClock = family.items.some(
+      (item) =>
+        item.freshness_status === "not_applicable" &&
+        EVENT_FRESHNESS_CLOCKS.has(item.source_timestamp_kind),
+    );
+    if (eventClock) return "Свежесть по дате не оценивается";
+  }
+  return labelOf(FRESHNESS_STATUS_LABELS, family.status);
+}
+
+function itemFreshnessLabel(item: FreshnessItem): string {
+  if (
+    item.freshness_status === "not_applicable" &&
+    EVENT_FRESHNESS_CLOCKS.has(item.source_timestamp_kind)
+  ) {
+    return "Свежесть по дате не оценивается";
+  }
+  return labelOf(FRESHNESS_STATUS_LABELS, item.freshness_status);
+}
+
+function familyLastApplied(family: FreshnessFamily): string | null {
+  const times = family.items
+    .map((item) => item.import_apply_time)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  return times.length > 0 ? times[times.length - 1] : null;
+}
 
 function statusTone(status: FreshnessStatus): string {
   if (status === "current") return "ok";
@@ -196,19 +282,33 @@ export function CapabilitiesDisclosure({
 
 function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: number }) {
   const step = FAMILY_CLOSE_STEP[family.family_id] ?? null;
+  const savedState = familySavedState(family);
+  const lastApplied = familyLastApplied(family);
   return (
     <article className={dataStyles.family} data-testid={`freshness-family-${family.family_id}`}>
       <div className={dataStyles.familyHeader}>
         <div>
-          <p className={dataStyles.familyMeta}>
-            {family.providers.map(sourceLabel).join(" · ") || "Локальные данные"}
-          </p>
+          <p className={dataStyles.familyMeta}>Происхождение: {familyOrigin(family)}</p>
           <h3>{family.title}</h3>
         </div>
-        <span className={dataStyles.statusBadge} data-tone={statusTone(family.status)}>
-          {labelOf(FRESHNESS_STATUS_LABELS, family.status)}
+        <span className={dataStyles.statusBadge} data-tone={savedState.tone}>
+          {savedState.label}
         </span>
       </div>
+      <dl className={dataStyles.familyState}>
+        <div>
+          <dt>Применение</dt>
+          <dd>
+            {lastApplied
+              ? `Последнее применение: ${formatDateTime(lastApplied)}`
+              : "Время применения не зафиксировано"}
+          </dd>
+        </div>
+        <div>
+          <dt>Свежесть</dt>
+          <dd>{familyFreshnessLabel(family)}</dd>
+        </div>
+      </dl>
       <p className={dataStyles.familyMeta}>
         Строк: {family.coverage.row_count}
         {family.coverage.current_count ? ` · актуальных: ${family.coverage.current_count}` : ""}
@@ -219,7 +319,9 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
       {family.reasons.length > 0 ? (
         <ul className={dataStyles.reasonList}>
           {family.reasons.map((reason) => (
-            <li key={`${family.family_id}-${reason.code}`}>{reason.message}</li>
+            <li data-severity={reason.severity} key={`${family.family_id}-${reason.code}`}>
+              {reason.severity === "warning" ? `Внимание: ${reason.message}` : reason.message}
+            </li>
           ))}
         </ul>
       ) : null}
@@ -231,7 +333,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
               <thead>
                 <tr>
                   <th>Запись</th>
-                  <th>Статус</th>
+                  <th>Свежесть</th>
                   <th>Источник</th>
                   <th>Наблюдение</th>
                   <th>Запрос</th>
@@ -250,7 +352,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
                         className={dataStyles.statusBadge}
                         data-tone={statusTone(item.freshness_status)}
                       >
-                        {labelOf(FRESHNESS_STATUS_LABELS, item.freshness_status)}
+                        {itemFreshnessLabel(item)}
                       </span>
                     </td>
                     <td>{sourceLabel(item.source_kind)}</td>

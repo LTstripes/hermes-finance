@@ -627,6 +627,67 @@ def test_apply_rejects_browser_uid_substitution_before_refetch(tmp_path: Path) -
         database.engine.dispose()
 
 
+@pytest.mark.parametrize("change", ["quantity", "mapping", "closed"])
+def test_apply_revalidates_local_context_under_writer_after_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    database = database_for(tmp_path)
+    provider = RecordingPayoutProvider()
+    try:
+        with database.session_factory() as setup:
+            month_id, account_id, instrument_id, snapshot_id = build_environment(setup)
+        with TestClient(create_app(database, payout_provider=provider)) as client:
+            context = context_payload(account_id, instrument_id, snapshot_id)
+            row = client.post(f"/api/months/{month_id}/payout-preview", json=context).json()[
+                "rows"
+            ][0]
+            real_fetch = provider.fetch_payouts
+
+            def fetch_with_writer(request: PayoutFetchRequest) -> PayoutFetchResult:
+                # A second SQLite writer can commit during provider I/O.
+                with database.session_factory() as writer:
+                    if change == "quantity":
+                        update_position_snapshot(writer, snapshot_id, quantity="3")
+                    elif change == "mapping":
+                        accept_t_invest_mapping(
+                            writer, instrument_id, OTHER_UID, kind=InstrumentType.BOND
+                        )
+                    else:
+                        close_reporting_month(writer, month_id)
+                return real_fetch(request)
+
+            monkeypatch.setattr(provider, "fetch_payouts", fetch_with_writer)
+            response = client.post(
+                f"/api/months/{month_id}/payout-apply",
+                json={
+                    **context,
+                    "rows": [
+                        {
+                            key: row[key]
+                            for key in (
+                                "provider",
+                                "instrument_uid",
+                                "event_kind",
+                                "identity_key",
+                                "fingerprint",
+                            )
+                        }
+                    ],
+                },
+            )
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["success"] is False
+        assert result["error_code"] == ("closed_month" if change == "closed" else "preview_changed")
+        assert result["items"] == []
+        assert len(provider.requests) == 2
+        with database.session_factory() as check:
+            assert check.scalar(select(func.count()).select_from(AppliedProviderPayout)) == 0
+            assert check.scalar(select(func.count()).select_from(AppliedPayoutRevision)) == 0
+    finally:
+        database.engine.dispose()
+
+
 def test_apply_success_stale_preview_guard_and_new_vs_legacy_calendar(tmp_path: Path) -> None:
     database = database_for(tmp_path)
     provider = RecordingPayoutProvider()

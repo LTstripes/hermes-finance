@@ -1,11 +1,11 @@
 # Hermes Finance Frontend
 
-Minimal React, TypeScript and Vite interface for Hermes Finance.
+React, TypeScript and Vite interface for Hermes Finance.
 
 ## Requirements
 
-- Node.js 22.22+
-- npm
+- Node.js **22.23.1** is the tested/recommended version (`.nvmrc`). Other permitted versions are declared in `package.json` `engines.node`; the range is dependency compatibility, not proof of tests on every Node major.
+- npm; `.npmrc` enables `engine-strict`, so unsupported engines stop `npm ci` with `EBADENGINE` and Required/Actual versions. Install the recommended Node version before retrying; do not bypass the guard.
 - backend running at `http://127.0.0.1:8000`
 
 ## Install and run
@@ -20,9 +20,11 @@ Open `http://127.0.0.1:5173`. Vite proxies `/api` requests to the local backend.
 ## Test and build
 
 ```bash
-npm test
+npm test -- --maxWorkers=1
 npm run build
 ```
+
+Use focused tests while iterating and the current [verification policy](../docs/VERIFICATION_POLICY.md). Do not repeat full suites solely because a candidate changes roles.
 
 ## Synthetic visual audit
 

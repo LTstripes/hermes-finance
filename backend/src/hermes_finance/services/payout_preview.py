@@ -134,6 +134,33 @@ def build_payout_preview(
 ) -> PayoutPreviewResult:
     """Build a deterministic payout preview without mutating the session."""
 
+    return build_payout_preview_in_transaction(
+        session,
+        reporting_month_id=reporting_month_id,
+        account_id=account_id,
+        instrument_id=instrument_id,
+        position_snapshot_id=position_snapshot_id,
+        forecast_version=forecast_version,
+        fetch_result=fetch_result,
+    )
+
+
+def build_payout_preview_in_transaction(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    account_id: int,
+    instrument_id: int,
+    position_snapshot_id: int | None,
+    forecast_version: str,
+    fetch_result: PayoutFetchResult,
+) -> PayoutPreviewResult:
+    """Shared calculation; caller owns a coherent read or reserved writer transaction.
+
+    Apply calls this only after reserving the reporting-month writer. This
+    function never opens, commits or releases that caller's transaction.
+    """
+
     version = forecast_version.strip()
     if not version:
         raise PayoutPreviewError("forecast_version must not be empty")

@@ -56,9 +56,9 @@ function taxConfig(overrides: Partial<TaxBracketYearConfig> = {}): TaxBracketYea
   };
 }
 
-function renderPage() {
+function renderPage(path = "/v2/data/app") {
   return render(
-    <MemoryRouter initialEntries={["/v2/data/app"]}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="v2/data/app" element={<UiV2DataAppPage />} />
         <Route path="v2/income" element={<h1>Доход и планы</h1>} />
@@ -90,7 +90,7 @@ describe("UI v2 Data/App", () => {
   it("loads settings, tax metadata and local runtime diagnostics without a competing goal editor", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Приложение" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Настройки" })).toBeInTheDocument();
     expect(await screen.findByDisplayValue("ru-RU")).toBeInTheDocument();
     expect(await screen.findByText("Официальная шкала")).toBeInTheDocument();
     expect(await screen.findByText("0.9.0-dev")).toBeInTheDocument();
@@ -110,6 +110,39 @@ describe("UI v2 Data/App", () => {
     expect(screen.getAllByText("Только локально").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Только чтение").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Изменяет данные").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps the diagnostics deep link selected and focused without a duplicate sidebar entry", async () => {
+    renderPage("/v2/data/app?month=7#diagnostics");
+    const navigation = screen.getByRole("navigation", { name: "Настройки и диагностика" });
+    expect(within(navigation).getByRole("link", { name: "Диагностика" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+    expect(within(navigation).getByRole("link", { name: "Настройки" })).toHaveAttribute(
+      "href",
+      "/v2/data/app?month=7#settings",
+    );
+    expect(screen.getAllByRole("link", { name: "Диагностика" })).toHaveLength(1);
+    expect(document.getElementById("diagnostics")).toHaveFocus();
+    await screen.findByDisplayValue("ru-RU");
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a dirty settings form while switching sections without saving", async () => {
+    const user = userEvent.setup();
+    renderPage("/v2/data/app?month=7");
+    const locale = await screen.findByLabelText("Локаль");
+    await user.clear(locale);
+    await user.type(locale, "en-US");
+    const navigation = screen.getByRole("navigation", { name: "Настройки и диагностика" });
+    await user.click(within(navigation).getByRole("link", { name: "Диагностика" }));
+    expect(locale).not.toBeVisible();
+    expect(screen.getByRole("heading", { name: "Диагностика" })).toBeVisible();
+    await user.click(within(navigation).getByRole("link", { name: "Настройки" }));
+    expect(locale).toBeVisible();
+    expect(locale).toHaveValue("en-US");
+    expect(updateSettingsMock).not.toHaveBeenCalled();
   });
 
   it("sends only changed settings and can clear the history boundary", async () => {
@@ -214,6 +247,12 @@ describe("UI v2 Data/App", () => {
     expect(await screen.findByText("Недоступно")).toBeInTheDocument();
 
     getHealthMock.mockResolvedValueOnce({ status: "ok", version: "0.9.0-retry" });
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Настройки и диагностика" })).getByRole(
+        "link",
+        { name: "Диагностика" },
+      ),
+    );
     await user.click(screen.getByRole("button", { name: "Проверить снова" }));
     expect(await screen.findByText("0.9.0-retry")).toBeInTheDocument();
   });
@@ -234,7 +273,7 @@ describe("UI v2 Data/App", () => {
     renderPage();
 
     const nav = await screen.findByRole("navigation", { name: /Разделы данных/ });
-    expect(within(nav).getByRole("link", { name: "Приложение" })).toHaveAttribute(
+    expect(within(nav).getByRole("link", { name: "Настройки" })).toHaveAttribute(
       "href",
       "/v2/data/app",
     );

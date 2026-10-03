@@ -74,7 +74,7 @@ export function makeUiV2Comparison({
     included_debts: money("390000.00"),
     liquid_capital_net: money("2761300.00"),
   };
-  return {
+  const comparison: ClosedReportComparison = {
     comparison_basis: "latest_closed_to_previous_closed",
     availability: firstClosed ? "previous_closed_report_unavailable" : "available",
     asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -104,7 +104,18 @@ export function makeUiV2Comparison({
     linked_pair_debts_delta: firstClosed ? null : money("0.00"),
     linked_pair_net_contribution_delta: firstClosed ? null : money("0.00"),
     net_liquid_capital_reconciles: firstClosed ? null : true,
+    explanation: null,
   };
+  if (comparison.asset_class_deltas) {
+    comparison.explanation = {
+      pairs: [],
+      noncomparable_account_ids: [],
+      residual_asset_class_deltas: structuredClone(comparison.asset_class_deltas),
+      residual_debt_contribution_delta: money(zero ? "390000.00" : "-10000.00"),
+      reconciles: true,
+    };
+  }
+  return comparison;
 }
 
 export function makeUiV2CapitalHistory({

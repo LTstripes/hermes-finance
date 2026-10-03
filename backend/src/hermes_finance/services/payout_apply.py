@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -21,6 +22,7 @@ from hermes_finance.services.applied_payouts import (
     append_applied_payout_revision,
     create_applied_payout,
     get_applied_payout,
+    get_applied_payout_reconciliation,
     list_applied_payout_revisions,
     set_applied_payout_reconciliation,
 )
@@ -28,7 +30,7 @@ from hermes_finance.services.payout_preview import (
     PayoutPreviewError,
     PayoutPreviewRow,
     PayoutPreviewStatus,
-    build_payout_preview,
+    build_payout_preview_in_transaction,
 )
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
@@ -134,6 +136,7 @@ def apply_payout_preview(
     position_snapshot_id: int,
     forecast_version: str,
     selections: tuple[PayoutApplySelection, ...],
+    context_is_current: Callable[[], bool] | None = None,
     fetched_at: datetime | None = None,
     applied_at: datetime | None = None,
 ) -> PayoutApplyResult:
@@ -219,7 +222,14 @@ def apply_payout_preview(
         )
 
     try:
-        fresh_preview = build_payout_preview(
+        # Network I/O is finished. Reserve the writer BEFORE rereading local
+        # state and building the final plan, using this same provider result.
+        # A competing REVISED apply must observe the winner's committed state.
+        require_editable_reporting_month(session, reporting_month_id)
+        if context_is_current is not None and not context_is_current():
+            session.rollback()
+            return _preview_changed(selected_count)
+        fresh_preview = build_payout_preview_in_transaction(
             session,
             reporting_month_id=reporting_month_id,
             account_id=account_id,
@@ -228,11 +238,27 @@ def apply_payout_preview(
             forecast_version=forecast_version,
             fetch_result=fetch_result,
         )
-    except PayoutPreviewError:
+    except ClosedReportingMonthError:
+        session.rollback()
+        return _failure(
+            selected_count,
+            PayoutApplyFailureCode.CLOSED_MONTH,
+            "closed reporting month must be reopened before payout apply",
+        )
+    except (PayoutPreviewError, ReportingMonthNotFoundError):
+        session.rollback()
         return _preview_changed(selected_count)
+    except Exception:
+        session.rollback()
+        return _failure(
+            selected_count,
+            PayoutApplyFailureCode.PERSISTENCE_ERROR,
+            "payout apply persistence failed",
+        )
 
     plan_result = _build_apply_plan(selections, fresh_preview.rows)
     if isinstance(plan_result, PayoutApplyResult):
+        session.rollback()
         return plan_result
     plans = plan_result
 
@@ -295,7 +321,7 @@ def apply_payout_preview(
                     revision.provider_status = None
                     session.flush()
 
-            link = None
+            link = get_applied_payout_reconciliation(session, payout.id)
             decision = plan.duplicate_decision
             if decision is not None:
                 link = set_applied_payout_reconciliation(

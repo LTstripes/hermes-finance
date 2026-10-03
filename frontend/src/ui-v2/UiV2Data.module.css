@@ -250,6 +250,29 @@
   font-size: 12px;
 }
 
+.familyState {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 18px;
+  margin: 8px 0 0;
+}
+
+.familyState dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.familyState dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.reasonList li[data-severity="warning"] {
+  color: #7a5b18;
+  font-weight: 600;
+}
+
 .reasonList {
   margin: 8px 0 0;
   padding-left: 18px;

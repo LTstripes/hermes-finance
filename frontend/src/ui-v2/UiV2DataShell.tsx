@@ -19,12 +19,12 @@ const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
 ];
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
-  { id: "alfa-baseline", label: "Alfa baseline" },
+  { id: "alfa-baseline", label: "Позиции из Alfa" },
   { id: "payouts", label: "Выплаты" },
   { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
   { id: "files", label: "Файлы" },
-  { id: "app", label: "Приложение" },
+  { id: "app", label: "Настройки" },
 ];
 
 export type DataMonthResolution =
@@ -83,12 +83,7 @@ export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; mo
         </div>
       </div>
       <div className={dataStyles.modeGroup}>
-        <p className={dataStyles.modeLabel}>
-          Изменить · изменяет данные{" "}
-          <span className={`${dataStyles.modeBadge} ${dataStyles.modeBadgeMutate}`}>
-            Изменяет данные
-          </span>
-        </p>
+        <p className={dataStyles.modeLabel}>Заполнить и настроить</p>
         <div className={dataStyles.chips}>
           {MUTATE_SECTIONS.map((section) => (
             <Chip

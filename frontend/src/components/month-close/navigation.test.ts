@@ -103,12 +103,19 @@ describe("monthly close navigation", () => {
   it.each([
     ["open_month", "month_setup", "/v2/data/months/42"],
     ["set_snapshot_date", "month_setup", "/v2/data/months/42?section=general"],
-    ["open_quote_preview", "market_quotes", "/v2/data/months/42?section=positions"],
     ["clone_next_month", "next_month_outlook", "/v2/data/months?month=42"],
   ] as const)("keeps the exact close return on native %s", (action, step, destination) => {
     const separator = destination.includes("?") ? "&" : "?";
     expect(routeForGuidedAction(action, 42, step, "monthly-close-v2")).toBe(
       `${destination}${separator}from=monthly-close-v2&step=${step}&monthId=42`,
+    );
+  });
+
+  it("hands quotes off to the actual quote panel without requesting the provider", () => {
+    expect(
+      routeForGuidedAction("open_quote_preview", 42, "market_quotes", "monthly-close-v2"),
+    ).toBe(
+      "/v2/data/months/42?section=positions&from=monthly-close-v2&step=market_quotes&monthId=42#month-quotes",
     );
   });
 

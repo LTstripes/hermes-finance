@@ -6,17 +6,19 @@ Hermes Finance — локальное однопользовательское W
 
 ## Current status
 
-Published Stable: **v1.1.0** (2026-09-30).
+Published Stable: **v1.1.0** (2026-09-30 UTC).
 
 - released commit: `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, release tree `7f5a3198fa650b71545550301063c9afd887f8f8`;
 - annotated tag `v1.1.0`, tag object `9b402190bafc5d8415b217580da5e18ed35a6331`, peeling exactly to the released commit;
 - GitHub Release `Hermes Finance 1.1.0`: published, not a draft or prerelease;
 - release preparation PR #644, accepted head `f4de8e39217ee0ec73b2524433940674247461f7`; exact-main push CI `36776904188`: SUCCESS; guarded Release run `36777962224`: SUCCESS;
 - release control: [issue #643](https://github.com/LTstripes/hermes-finance/issues/643);
-- local Stable update/Start and real-history acceptance remain explicit Owner operations; publication does not itself update or start Stable. See the [1.1.0 release record](docs/releases/1.1.0.md);
+- Owner confirmed the local Stable checkout at v1.1.0 and completed the first real September close; #572 is CLOSED with **PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use and provider limitations;
 - UI v2 is the primary/default interface at `/`; previous UI remains available at `/v1`.
 
-Owner-authorized UAT deferral for this delivery is **OWNER_AUTHORIZED_UAT_DEFERRAL**, not Owner PASS; [#572](https://github.com/LTstripes/hermes-finance/issues/572) stays open for the ordinary production-use observation.
+The pre-publication `OWNER_AUTHORIZED_UAT_DEFERRAL` is historical. It was superseded by the actual [#572 Owner result](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786), not retroactively relabelled as an earlier PASS.
+
+**Development main is ahead of Stable.** The post-release six-slice wave (#645, #647–#651) passed Owner UAT with documented UX follow-ups and was integrated through #662 at `a0396e9971be119038b8c28d29398191449b0c0c`. This is not a new published release or a local Stable update. Same-day live LAST was not exercised by the September historical quote check; #646 remains a separate Alfa transport investigation. Earlier month-list feedback is retained in #667. See the [post-release closeout](docs/POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md).
 
 The previous release **v1.0.0** (2026-09-21) remains immutable predecessor history:
 
@@ -136,7 +138,7 @@ This slice is currently backend-only; API/UI exposure is a separate future decis
 - Windows 10/11;
 - Python 3.13;
 - [uv](https://docs.astral.sh/uv/);
-- Node.js 22.22+ and npm;
+- Node.js **22.23.1** (tested/recommended, `frontend/.nvmrc`) and npm; other permitted versions are declared in `frontend/package.json`, and `frontend/.npmrc` rejects unsupported engines;
 - modern browser.
 
 Docker/PostgreSQL/public web hosting are not required for the local product.
@@ -271,7 +273,7 @@ The proven sequence is now:
 
 ## Current product surfaces
 
-Published **v1.1.0** is the current release. The accepted native monthly workflow, Performance Phase A, and the post-1.0.0 durability and data-integrity/completeness hardening it packages are described below.
+Published **v1.1.0** is the current release. The accepted native monthly workflow, Performance Phase A, and the post-1.0.0 durability and data-integrity/completeness hardening it packages are described below. Later #662 usability/quote/payout changes are on development main, not in the immutable v1.1.0 tag.
 
 UI v2 is part of the published v1.1.0 release and is the primary/default owner interface at `/`; the previous UI remains available at `/v1`.
 
@@ -316,12 +318,15 @@ There is no remaining default-switch gate. UI v2 is primary at `/`; v1 remains a
 
 Separate future work:
 
+- #666: Owner-prioritized runtime/workspace layout and safe disk cleanup, beginning with a read-only inventory/design; no automatic relocation/deletion;
+- #667: retained month-list usability findings from the completed #662 UAT;
+- #646: separate Alfa transport investigation, not a proven vendor-wide regression;
 - #476 / PR #548 is complete: canonical CI now runs one deterministic synthetic real-backend G04 owner journey;
 - #417 owner durability remains complete; #543 / PR #547 separately completed the non-blocking recovery CLI/retention hardening without reopening it;
 - v1 retirement — only if later real use shows the rollback/legacy layer is no longer needed, via a separate explicit task;
 - future configurable dashboards (#389) remain separate from the completed core UI v2 roadmap.
 
-Release publication for v1.1.0 is complete. The supported backup-first Stable update (`scripts/update-stable.ps1 -TargetVersion 1.1.0`) and explicit Start remain the Owner's local operation; publication does not itself update or start Stable. Future releases continue to use the same exact-SHA OPS03 -> guarded publication -> backup-first OPS02 sequence.
+Release publication for v1.1.0 is complete and its local identity was Owner-confirmed. Updating local Stable to a later release remains a separate backup-first operation; merging development PRs does not update or start it. Future releases continue to use the same exact-SHA OPS03 -> guarded publication -> backup-first OPS02 sequence.
 
 ## Health
 
@@ -361,6 +366,7 @@ Canonical PR CI and exact-main push CI remain mandatory for integrated changes.
 - [`AGENTS.md`](AGENTS.md) — project constitution and execution rules;
 - [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) — business rules / core product semantics;
 - [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md) — current canonical checkpoint;
+- [`docs/POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md`](docs/POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md) — post-release Owner UAT, maintenance triage and model evidence;
 - [`docs/PROJECT_WIKI.md`](docs/PROJECT_WIKI.md) — durable current project context;
 - [`docs/OWNER_RUNTIME_OPERATIONS.md`](docs/OWNER_RUNTIME_OPERATIONS.md) — launcher/runtime owner operations;
 - [`docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md`](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) — proven runtime/release closeout;

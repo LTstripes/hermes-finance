@@ -1,6 +1,7 @@
 import type { BrokerReconciliationResponse } from "../../api/brokerReconciliation";
 import type { BrokerPositionRow, BrokerSnapshotPreview } from "../../api/brokerSnapshot";
 import type { GuidedCloseStep } from "../../api/monthCloseWorkflow";
+import { closeOwnerCopy } from "./ownerCopy";
 import { Badge, DataValue } from "../ui";
 
 export type AlfaSnapshotCounts = {
@@ -243,7 +244,7 @@ export function MonthlyCloseStepSummary({
           className={`monthly-close__step-summary${compact ? " monthly-close__step-summary--compact" : ""}`}
         >
           <Badge tone="info">Нужно действие</Badge>
-          <span>{step.why}</span>
+          <span>{closeOwnerCopy(step.why)}</span>
         </div>
       );
     }
@@ -276,7 +277,7 @@ export function MonthlyCloseStepSummary({
         className={`monthly-close__step-summary${compact ? " monthly-close__step-summary--compact" : ""}`}
       >
         <Badge tone="info">Нужно действие</Badge>
-        <span>{step.why}</span>
+        <span>{closeOwnerCopy(step.why)}</span>
       </div>
     );
   }

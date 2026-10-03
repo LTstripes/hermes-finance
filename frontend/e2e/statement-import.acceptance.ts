@@ -44,13 +44,13 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
   expect(await readFlows(february.id)).toEqual([]);
 
   // The write/import tool mounts only for one explicit valid month.
-  await page.goto("/v2/data/payouts");
+  await page.goto("/v2/data/payouts#statement-import");
   await expect(page.getByRole("heading", { name: "Месяц не выбран" })).toBeVisible();
   await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
   expect(posts).toEqual([]);
 
   // Native workspace pinned to January 2026 with a January + February PDF.
-  await page.goto(`/v2/data/payouts?month=${january.id}`);
+  await page.goto(`/v2/data/payouts?month=${january.id}#statement-import`);
   await expect(page.locator("#statement-import")).toBeVisible();
   await expect(page.getByLabel("Отчётный месяц")).toHaveValue(String(january.id));
   expect(posts).toEqual([]);
@@ -160,7 +160,7 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
   const appliesBeforeClose = posts.filter((call) => call === APPLY).length;
   const close = await request.post(`/api/months/${january.id}/close`);
   expect(close.ok(), await close.text()).toBe(true);
-  await page.goto(`/v2/data/payouts?month=${january.id}`);
+  await page.goto(`/v2/data/payouts?month=${january.id}#statement-import`);
   await expect(
     page.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
   ).toBeVisible();

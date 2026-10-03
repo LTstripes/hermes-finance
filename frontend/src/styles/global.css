@@ -2136,6 +2136,16 @@ th.num {
   background: var(--surface-soft);
 }
 
+/* #650: money stays one typographic unit; cards reduce columns before amounts break. */
+.final-review__kpis .data-value__value,
+.final-review__supporting-values .data-value__value,
+.final-review__status-grid .data-value__value,
+.final-review__card-grid .data-value__value,
+.final-review__event-heading strong:last-child,
+.final-review__event-list strong {
+  min-width: 0;
+}
+
 .final-review__cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2144,6 +2154,7 @@ th.num {
 
 .final-review__card {
   display: grid;
+  min-width: 0;
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -2153,6 +2164,68 @@ th.num {
 
 .final-review__card-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* #650: stacked debt editor reuses the position inline-edit treatment. */
+.debt-inline-edit {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 2px 0 6px;
+}
+
+.debt-inline-edit__identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  min-width: 0;
+}
+
+.debt-inline-edit__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
+  min-width: 0;
+}
+
+.debt-inline-edit > *,
+.debt-inline-edit__grid > *,
+.debt-inline-edit :where(.field, .input, .select) {
+  min-width: 0;
+}
+
+.debt-inline-edit :where(.input, .select) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.debt-inline-edit__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.debt-inline-edit__actions .btn {
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 1150px) {
+  .final-review__kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .final-review__supporting-values,
+  .final-review__status-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .debt-inline-edit__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .final-review__card-actions {
@@ -2266,6 +2339,10 @@ th.num {
   .final-review__cards {
     grid-template-columns: 1fr;
   }
+
+  .debt-inline-edit__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 480px) {
@@ -2278,6 +2355,10 @@ th.num {
   .final-review__status-grid,
   .final-review__card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .debt-inline-edit__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .final-review__header {

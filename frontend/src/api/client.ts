@@ -322,6 +322,8 @@ function localizeApiMessage(error: ApiClientError): string {
       return "Запрошенные данные не найдены.";
     case "preview_changed":
       return "Котировка изменилась после предпросмотра. Обнови предпросмотр и выбери строки заново.";
+    case "preview_evidence_invalid":
+      return "Предпросмотр больше недействителен. Обнови предпросмотр и выбери строки заново.";
     case "payout_mapping_required":
       return "Для выбранного инструмента нет принятого источника T-Invest. Сохрани сопоставление в справочнике инструментов — после этого можно проверять автоматические выплаты.";
     case "instrument_deletion_blocked":
