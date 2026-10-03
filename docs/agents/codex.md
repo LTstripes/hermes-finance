@@ -7,6 +7,9 @@
 The receiving coding session is the Worker unless explicitly assigned another role; no parent coordinator or extra implementation session is required.
 Use the configured workspace root under the standing self-create policy. Local model/effort availability comes from runtime configuration, not repository aliases.
 
+Portable role/root boundaries and the Owner-local registry are in [Owner machine layout](../OWNER_MACHINE_LAYOUT.md).
+The real-machine inventory is Owner-only; agents use synthetic fixtures.
+
 ## Independent review
 
 Give a separate Reviewer the pinned base/candidate, relevant issue/note excerpts, previous findings and existing check evidence.

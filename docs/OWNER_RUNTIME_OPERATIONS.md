@@ -4,6 +4,10 @@
 >
 > This is not a release checklist. Publication remains documented in `docs/RELEASE_AUTOMATION.md` and controlled through permanent issue #124.
 
+Owner-local path registry, read-only inventory and the proposed Stable/Control/Preview/workspaces
+boundaries are documented in [Owner machine layout](OWNER_MACHINE_LAYOUT.md).
+That inventory/design phase does not relocate or reconfigure these runtime operations.
+
 ## 1. Architecture in one sentence
 
 Hermes Finance uses small composable owner operations instead of one launcher state machine owning release discovery, Git mutation, backup, dependency preparation and runtime startup.
