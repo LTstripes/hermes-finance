@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Same ordinary-PR rule as CI, with this workflow's own identity. An integration/*
+# head or base is not cancelled and does not share a pending group.
+concurrency:
+  group: ${{ format('{0}--{1}--ui-v2-evidence.yml--{2}', github.repository, github.workflow, case(github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/'), format('pr-{0}', github.event.pull_request.number || github.run_id), format('run-{0}', github.run_id))) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/') }}
+
 jobs:
   ui-evidence:
     name: Synthetic UI comparison
