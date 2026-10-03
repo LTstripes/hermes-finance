@@ -145,6 +145,30 @@ describe("native month management", () => {
     );
   });
 
+  it("re-maps the current report action when a newer CLOSED month appears", async () => {
+    const { client } = renderPage();
+    await ready();
+    const before = screen.getByText("Май 2030").closest("li");
+    if (!before) throw new Error("Closed row missing");
+    expect(within(before).getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
+      "href",
+      "/v2",
+    );
+    const newerClosed = { ...closed, id: 6, year: 2030, month: 7, snapshot_date: "2030-07-31" };
+    client.setQueryData(queryKeys.months, [newerClosed, ...rows]);
+    const remapped = await screen.findByText("Июль 2030");
+    const previousLatest = screen.getByText("Май 2030").closest("li");
+    const remappedRow = remapped.closest("li");
+    if (!previousLatest || !remappedRow) throw new Error("Rows missing after refresh");
+    expect(
+      within(remappedRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
+    ).toHaveAttribute("href", "/v2");
+    expect(within(previousLatest).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
+      "href",
+      "/v2/reports/1",
+    );
+  });
+
   it("keeps exact-month Data context without a separate choose action", async () => {
     renderPage("/v2/data/months?month=2");
     await ready();
