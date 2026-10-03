@@ -448,18 +448,12 @@ function ChangeBlock({
           <ul className={styles.changeList}>
             {explanation.residual_asset_class_deltas.map((item) => (
               <li key={item.asset_class}>
-                <span>
-                  {ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}
-                  {explanation.pairs.length > 0 ? " · вне сравнимых пар" : ""}
-                </span>
+                <span>{ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}</span>
                 <strong data-tone={tone(item.amount)}>{moneyDelta(item.amount)}</strong>
               </li>
             ))}
             <li className={styles.liabilityChange}>
-              <span>
-                Вклад обязательств
-                {explanation.pairs.length > 0 ? " вне сравнимых пар" : ""}
-              </span>
+              <span>Вклад обязательств</span>
               <strong data-tone={tone(explanation.residual_debt_contribution_delta)}>
                 {moneyDelta(explanation.residual_debt_contribution_delta)}
               </strong>
