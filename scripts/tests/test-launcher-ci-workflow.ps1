@@ -69,7 +69,7 @@ Invoke-Case "heavy launcher job runs only after a positive classification" {
     Assert-True -Condition ($launcherJob -match "needs\.windows-launcher-paths\.result == 'success'") -Message "A failed path filter must not count as an irrelevant diff."
     Assert-True -Condition ($launcherJob -match "needs\.windows-launcher-paths\.outputs\.run == 'true'") -Message "The heavy harness must run only when the classifier returns true."
     Assert-True -Condition ($launcherJob -match 'test-windows-launcher-package\.ps1') -Message "The heavy job must keep the canonical package/install smoke."
-    Assert-True -Condition ($launcherJob -match 'actions/setup-dotnet@v4') -Message "The .NET setup must stay inside the heavy job so irrelevant diffs do not start it."
+    Assert-True -Condition ($launcherJob -match 'actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1') -Message "The .NET setup must stay inside the heavy job so irrelevant diffs do not start it."
     Assert-True -Condition ($launcherJob -notmatch 'continue-on-error') -Message "The launcher safety job must remain a blocking CI check."
     Assert-True -Condition ($workflow -match '(?ms)^  release-safety:.*?test-launcher-ci-workflow\.ps1') -Message "Release safety must verify the launcher workflow contract."
 }
