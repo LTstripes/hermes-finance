@@ -40,8 +40,50 @@ jobs:
       - name: Check UI evidence identity regressions
         run: python3 scripts/tests/test-ui-evidence-identity.py
 
+      - name: Check docs-only classification regressions
+        run: python3 scripts/tests/test-docs-only-ci.py
+
+  # Pull requests only. main pushes do not consult this mode.
+  # Skipped product jobs are an omission, not a passed suite.
+  # ui-v2-evidence.yml keeps its own path filter and does not run for these docs.
+  docs-only-classify:
+    name: Pull request path classification
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Classify the current base and head diff
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mode="full"
+          if classified="$(python3 scripts/docs_only_ci.py classify --base "$BASE_SHA" --head "$HEAD_SHA")"; then
+            if [ "$classified" = "docs-only" ]; then
+              mode="docs-only"
+            fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Classification mode=$mode base=$BASE_SHA head=$HEAD_SHA"
+
   backend-quality:
     name: Backend quality
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -74,6 +116,11 @@ jobs:
 
   backend-tests:
     name: Backend ${{ matrix.lane }}
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -116,6 +163,11 @@ jobs:
 
   backend-timezone-windows:
     name: Backend timezone (Windows tzdata regression)
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: windows-latest
     timeout-minutes: 10
     defaults:
@@ -151,6 +203,11 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -185,6 +242,11 @@ jobs:
 
   g04-browser:
     name: G04 and native v2 real-backend journeys
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -369,6 +431,11 @@ jobs:
 
   release-safety:
     name: Release safety
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: windows-latest
     timeout-minutes: 10
 
@@ -417,6 +484,11 @@ jobs:
               exit $LASTEXITCODE
           }
 
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-docs-only-workflow.ps1
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update.ps1
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
@@ -446,6 +518,11 @@ jobs:
 
   windows-production-smoke:
     name: Windows production smoke
+    needs: docs-only-classify
+    if: >-
+      always() &&
+      !cancelled() &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -591,3 +668,62 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
           }
+
+  docs-fast-path:
+    name: Documentation fast path
+    needs:
+      - docs-only-classify
+      - privacy
+      - visual-audit-paths
+      - windows-launcher-paths
+      - backend-quality
+      - backend-tests
+      - backend-timezone-windows
+      - frontend
+      - g04-browser
+      - visual-audit
+      - release-safety
+      - windows-production-smoke
+      - windows-launcher-safety
+    if: >-
+      always() &&
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      needs.docs-only-classify.result == 'success' &&
+      needs.docs-only-classify.outputs.mode == 'docs-only'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Accept only retained documentation checks
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/docs_only_ci.py verdict \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --job "privacy=${{ needs.privacy.result }}" \
+            --job "visual-audit-paths=${{ needs.visual-audit-paths.result }}" \
+            --job "windows-launcher-paths=${{ needs.windows-launcher-paths.result }}" \
+            --job "backend-quality=${{ needs.backend-quality.result }}" \
+            --job "backend-tests=${{ needs.backend-tests.result }}" \
+            --job "backend-timezone-windows=${{ needs.backend-timezone-windows.result }}" \
+            --job "frontend=${{ needs.frontend.result }}" \
+            --job "g04-browser=${{ needs.g04-browser.result }}" \
+            --job "visual-audit=${{ needs.visual-audit.result }}" \
+            --job "release-safety=${{ needs.release-safety.result }}" \
+            --job "windows-production-smoke=${{ needs.windows-production-smoke.result }}" \
+            --job "windows-launcher-safety=${{ needs.windows-launcher-safety.result }}"
+          {
+            echo "## Documentation fast path"
+            echo "This candidate was classified as safe docs-only and the retained documentation/privacy/diff checks succeeded."
+            echo "Backend, frontend, browser and Windows product suites were intentionally omitted."
+          } >> "$GITHUB_STEP_SUMMARY"

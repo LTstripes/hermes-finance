@@ -67,6 +67,7 @@ Push и PR можно создать для получения CI evidence; по
 
 Успешный exact-candidate CI может быть полным verification gate без его локального дубля, только если проверены нужные jobs, охват и среда.
 Skipped, pending, failed, чужой SHA или отфильтрованный нужный lane не являются этим доказательством.
+Зелёный check `Documentation fast path` у pull request означает только доказанную классификацию обычной неисполняемой документации и успешные сохранённые проверки privacy/diff. Он не доказывает выполнение backend, frontend, browser или Windows product suites. Push в canonical `main` и release gates этот режим не использует: они остаются полными.
 Проверки на новом executable/config/dependency состоянии должны соответствовать этому состоянию; отчёт явно связывает каждый результат с кандидатом/run.
 Для интеграции обязательны зелёный PR CI принятого кандидата и зелёный canonical main push CI точного merge SHA. Ни одно не заменяет другое.
 Эта задача не меняет workflow coverage, filters, assertions или release guards; не обходи существующие required jobs.
