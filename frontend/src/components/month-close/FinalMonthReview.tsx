@@ -12,9 +12,9 @@ import type {
   MoneyValue,
   UpcomingEventsWindow,
 } from "../../api/types";
-import { formatDate, formatMoney, formatMonth, formatPercent } from "../../lib/format";
+import { formatDate, formatMonth, formatPercent } from "../../lib/format";
 import { eventLabel as ownerEventLabel, PRINCIPAL_REPAYMENT_LABEL } from "../../ui-v2/uiV2Copy";
-import { Badge, DataValue, Panel } from "../ui";
+import { Badge, DataValue, MoneyAmount, Panel } from "../ui";
 import { type MonthlyCloseOrigin, withMonthlyCloseReturn } from "./navigation";
 
 const MANUAL_CARD_ORDER = [
@@ -60,14 +60,21 @@ function isMoneyValue(value: unknown): value is MoneyValue {
   );
 }
 
-function money(value: MoneyValue | null | undefined, unavailable = "Недоступно"): string {
-  if (!value) return unavailable;
-  return formatMoney(value.amount, { currency: value.currency === "RUB" ? "₽" : value.currency });
+/** #650: single money presentation for all final-review/summary/next-month cards. */
+function moneyValue(value: MoneyValue | null | undefined, unavailable = "Недоступно") {
+  if (!value) return <MoneyAmount amount={null} empty={unavailable} />;
+  return (
+    <MoneyAmount
+      amount={value}
+      currency={value.currency === "RUB" ? "₽" : value.currency}
+      empty={unavailable}
+    />
+  );
 }
 
-function summaryMoney(summary: Record<string, unknown>, key: string): string {
+function summaryMoney(summary: Record<string, unknown>, key: string) {
   const value = summary[key];
-  return isMoneyValue(value) ? money(value) : "Недоступно";
+  return isMoneyValue(value) ? moneyValue(value) : <MoneyAmount amount={null} empty="Недоступно" />;
 }
 
 function summaryCount(summary: Record<string, unknown>, key: string): string | number {
@@ -214,11 +221,12 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
     <article className="final-review__event-window">
       <div className="final-review__event-heading">
         <strong>Ближайшие {window.days} дней</strong>
-        <strong>{money(window.total_cash_flow)}</strong>
+        <strong>{moneyValue(window.total_cash_flow)}</strong>
       </div>
       <p className="muted tiny">
         {formatDate(window.from_date)} — до {formatDate(window.to_date)} · пассивный доход{" "}
-        {money(window.passive_income)} · возврат основной суммы {money(window.redemption_principal)}
+        {moneyValue(window.passive_income)} · возврат основной суммы{" "}
+        {moneyValue(window.redemption_principal)}
       </p>
       {window.items.length > 0 ? (
         <ul className="final-review__event-list">
@@ -227,7 +235,7 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
               key={`${event.source_kind}-${event.source_id}-${event.expected_date}-${event.component}`}
             >
               <span>{eventLabel(event)}</span>
-              <strong>{money(event.expected_net_amount)}</strong>
+              <strong>{moneyValue(event.expected_net_amount)}</strong>
             </li>
           ))}
         </ul>
@@ -238,7 +246,13 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
   );
 }
 
-function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
+function ReadinessDetails({
+  review,
+  origin,
+}: {
+  review: FinalMonthReviewModel;
+  origin: MonthlyCloseOrigin;
+}) {
   const itemsBySeverity = (severity: CloseReadinessItem["severity"]) =>
     review.close_readiness.items.filter((item) => item.severity === severity);
 
@@ -266,7 +280,7 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
         <summary>Показать причины и диагностику</summary>
         <div className="final-review__details-stack">
           <section>
-            <h3>Close Cockpit</h3>
+            <h3>Готовность к закрытию</h3>
             {review.close_readiness.items.length > 0 ? (
               <ul className="final-review__diagnostic-list">
                 {review.close_readiness.items.map((item) => (
@@ -287,6 +301,12 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
                           : "Контекст"}
                     </Badge>
                     <span>{item.message}</span>
+                    {item.code === "active_account_snapshot_missing" &&
+                    review.month_header.status === "draft" ? (
+                      <Link to={editPath(review.month_header.id, "assets", origin)}>
+                        Заполнить остатки этого месяца
+                      </Link>
+                    ) : null}
                     <code>{item.code}</code>
                   </li>
                 ))}
@@ -374,15 +394,15 @@ function FutureEvents({ review }: { review: FinalMonthReviewModel }) {
         <DataValue label="Известных событий" value={future.known_event_count} />
         <DataValue
           label="Следующий месяц · доход"
-          value={money(future.next_month?.passive_income)}
+          value={moneyValue(future.next_month?.passive_income)}
         />
         <DataValue
           label={<>Следующий месяц · {PRINCIPAL_REPAYMENT_LABEL.toLowerCase()}</>}
-          value={money(future.next_month?.redemption_principal)}
+          value={moneyValue(future.next_month?.redemption_principal)}
         />
         <DataValue
           label="Следующий месяц · всего"
-          value={money(future.next_month?.total_cash_flow)}
+          value={moneyValue(future.next_month?.total_cash_flow)}
         />
       </div>
       <p className="muted final-review__disclosure">
@@ -523,18 +543,22 @@ export function FinalMonthReview({
         <div className="final-review__kpis">
           <DataValue
             label="Ликвидный капитал"
-            value={money(review.kpis.liquid_capital_net)}
+            value={moneyValue(review.kpis.liquid_capital_net)}
             size="lg"
           />
           <DataValue
             label="Деньги сейчас"
-            value={money(review.assets_and_cash.current_cash)}
+            value={moneyValue(review.assets_and_cash.current_cash)}
             size="lg"
           />
           <DataValue
             label="Инвестиции"
             value={
-              review.investments.available ? money(review.investments.market_value) : "Недоступно"
+              review.investments.available ? (
+                moneyValue(review.investments.market_value)
+              ) : (
+                <MoneyAmount amount={null} empty="Недоступно" />
+              )
             }
             meta={
               review.investments.available
@@ -545,16 +569,26 @@ export function FinalMonthReview({
           />
           <DataValue
             label="Пассивный доход · факт"
-            value={money(review.actual_passive_income)}
+            value={moneyValue(review.actual_passive_income)}
             size="lg"
           />
-          <DataValue label="Долги" value={money(review.debts_and_property.debt_total)} size="lg" />
+          <DataValue
+            label="Долги"
+            value={moneyValue(review.debts_and_property.debt_total)}
+            size="lg"
+          />
         </div>
         <div className="final-review__supporting-values">
-          <DataValue label="Цель пассивного дохода" value={money(review.kpis.goal_target)} />
+          <DataValue label="Цель пассивного дохода" value={moneyValue(review.kpis.goal_target)} />
           <DataValue label="Прогресс цели" value={formatPercent(review.kpis.goal_progress_pct)} />
-          <DataValue label="Обязательные расходы" value={money(review.kpis.mandatory_expenses)} />
-          <DataValue label="Ипотека" value={money(review.debts_and_property.mortgage_balance)} />
+          <DataValue
+            label="Обязательные расходы"
+            value={moneyValue(review.kpis.mandatory_expenses)}
+          />
+          <DataValue
+            label="Ипотека"
+            value={moneyValue(review.debts_and_property.mortgage_balance)}
+          />
         </div>
       </Panel>
 
@@ -570,7 +604,7 @@ export function FinalMonthReview({
         origin={origin}
         review={review}
       />
-      <ReadinessDetails review={review} />
+      <ReadinessDetails origin={origin} review={review} />
       <FutureEvents review={review} />
     </section>
   );

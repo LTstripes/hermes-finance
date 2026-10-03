@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
+import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
 import UiV2ClosePage from "../ui-v2/UiV2ClosePage";
 
@@ -111,7 +112,7 @@ function setup(path = "/v2/close") {
       </QueryClientProvider>,
     );
   }
-  return { fetchMock, mount, state };
+  return { client, fetchMock, mount, state };
 }
 
 beforeEach(() => {
@@ -138,7 +139,7 @@ describe("native Monthly Close work mode", () => {
         "/v2/close?month=12&step=alfa_baseline",
       ),
     );
-    expect(screen.getByText("1 из 8 шагов подтверждены сохранёнными фактами")).toBeVisible();
+    expect(screen.getByText(/1 из 8 шагов подтверждены сохранёнными фактами/)).toBeVisible();
     expect(state.writes).toEqual([]);
   });
 
@@ -324,9 +325,10 @@ describe("native Monthly Close work mode", () => {
   it("rechecks before reopen and derives the draft workflow after the persisted command", async () => {
     const { mount, state } = setup("/v2/close?month=91&step=next_month_outlook");
     state.workflow = makeUiV2Workflow({ monthId: 91 });
+    const originalPeriod = { ...state.workflow.month };
     state.finalizeWrite = () => {
       state.workflow = makeUiV2Workflow();
-      state.workflow.month = { ...state.workflow.month, id: 91, status: "draft" };
+      state.workflow.month = { ...originalPeriod, status: "draft" };
       if (state.workflow.final_review.available) {
         state.workflow.final_review.month_header = { ...state.workflow.month };
       }
@@ -346,5 +348,115 @@ describe("native Monthly Close work mode", () => {
     const before = state.workflowReads;
     fireEvent.focus(window);
     await waitFor(() => expect(state.workflowReads).toBeGreaterThan(before));
+  });
+
+  it("keeps final review above collapsed progress with an accessible close and exact-month edit", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close&context=retained");
+    state.workflow = readyForClose();
+    mount();
+    const close = await screen.findByRole("button", { name: "Закрыть месяц" });
+    const edit = screen.getByRole("link", { name: "Редактировать данные месяца" });
+    expect(edit).toHaveAttribute(
+      "href",
+      "/v2/data/months/12?from=monthly-close-v2&step=final_review_close&monthId=12",
+    );
+    const progress = screen
+      .getByText("Шаги закрытия · до закрытия и после него")
+      .closest("details");
+    expect(progress).not.toHaveAttribute("open");
+    const review = document.getElementById("final_review_close");
+    if (!review || !progress) throw new Error("Final review and progress must be present");
+    expect(close.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      review.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId("test-location")).toHaveTextContent("context=retained");
+    await waitFor(() => expect(document.getElementById("v2-close-current-step")).toHaveFocus());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("rejects a reused ID for a different reporting period before sending Close", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const original = readyForClose();
+    const reused = structuredClone(original);
+    reused.month.year += 1;
+    if (reused.final_review.available) reused.final_review.month_header = { ...reused.month };
+    state.workflow = original;
+    state.workflowResponse = (read) => (read >= 3 ? reused : original);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("rejects a foreign final review arriving after the confirmation dialog opens", async () => {
+    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    const original = readyForClose();
+    const foreign = structuredClone(original);
+    if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
+    state.workflow = original;
+    state.workflowResponse = (read) => (read >= 3 ? foreign : original);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(state.writes).toEqual([]);
+  });
+
+  it("pins the original period when both months and workflow refresh to a reused ID", async () => {
+    const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    const originalHeading = `Закрытие месяца · Август ${state.workflow.month.year}`;
+    const view = mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    await screen.findByRole("alertdialog");
+    state.months = state.months.map((month) =>
+      month.id === 12 ? { ...month, year: month.year + 1 } : month,
+    );
+    state.workflow.month.year += 1;
+    if (state.workflow.final_review.available)
+      state.workflow.final_review.month_header = { ...state.workflow.month };
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Период выбранного месяца изменился" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(originalHeading);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
+    expect(state.writes).toEqual([]);
+    // Explicitly leaving and selecting this period again establishes a new identity.
+    view.unmount();
+    mount();
+    expect(await screen.findByRole("button", { name: "Закрыть месяц" })).toBeVisible();
+    expect(state.writes).toEqual([]);
+  });
+
+  it("retains the selected identity while a deleted ID disappears and is recreated", async () => {
+    const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
+    mount();
+    await screen.findByRole("button", { name: "Закрыть месяц" });
+    state.months = state.months.filter((month) => month.id !== 12);
+    await act(async () => {
+      await client.refetchQueries({ queryKey: queryKeys.months });
+    });
+    await screen.findByRole("heading", { name: "Месяц не найден" });
+    state.months = structuredClone(uiV2Months).map((month) =>
+      month.id === 12 ? { ...month, year: month.year + 1 } : month,
+    );
+    state.workflow.month.year += 1;
+    if (state.workflow.final_review.available)
+      state.workflow.final_review.month_header = { ...state.workflow.month };
+    await act(async () => {
+      await client.refetchQueries();
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Период выбранного месяца изменился" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
+    expect(state.writes).toEqual([]);
   });
 });

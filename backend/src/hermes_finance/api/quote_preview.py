@@ -21,6 +21,7 @@ from hermes_finance.api.market_data import (
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import RubleAmount
 from hermes_finance.services.quote_preview import QuotePreviewResult, preview_market_quotes
+from hermes_finance.services.quote_preview_evidence import capture_context
 
 router = APIRouter(prefix="/api/months", tags=["months"])
 
@@ -92,6 +93,7 @@ class QuotePreviewResponse(BaseModel):
     batch_error: str | None
     batch_error_reason: QuoteFailureReason | None
     rows: list[QuotePreviewRowResponse]
+    preview_id: str | None = None
 
 
 def _money(kopecks: int | None) -> MoneyValue | None:
@@ -156,14 +158,19 @@ def preview_month_quotes_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ) -> QuotePreviewResponse:
+    store = request.app.state.quote_preview_evidence
+    start = store.begin(month_id, moscow_today(request))
     provider, owned = resolve_production_provider(request)
     try:
+        context = capture_context(session, month_id)
         result = preview_market_quotes(
             session,
             month_id,
             provider=provider,
-            today=moscow_today(request),
+            today=start.day,
         )
     finally:
         close_owned_provider(provider, owned)
-    return _response(result)
+    response = _response(result)
+    response.preview_id = store.publish(start, context, result, moscow_today(request))
+    return response

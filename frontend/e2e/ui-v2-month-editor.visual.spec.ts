@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const closed = {
@@ -9,7 +11,196 @@ const closed = {
   source: "manual",
 };
 
-async function installApi(page: Page) {
+for (const outcome of ["success", "expired", "ambiguous"] as const) {
+  test(`ui-v2 current-day quote preview ${outcome} is explicit and never blindly retried`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await installApi(page);
+    const money = (amount: string) => ({ amount, currency: "RUB" });
+    const position = {
+      id: 31,
+      reporting_month_id: 7,
+      account_id: 11,
+      instrument_id: 21,
+      quantity: "1.000000",
+      average_cost_per_unit: money("100.00"),
+      market_price_per_unit: money("100.00"),
+      market_value: money("100.00"),
+      cost_basis: money("100.00"),
+      unrealized_result: money("0.00"),
+      accrued_interest: money("15.00"),
+      price_source: "manual",
+      price_date: "2030-04-30",
+      updated_at: "2030-04-30T12:00:00Z",
+      notes: null,
+    };
+    let saved = position;
+    let previewCalls = 0;
+    let applyCalls = 0;
+    await page.route("**/api/months/7", (route) =>
+      route.fulfill({ json: { ...closed, status: "draft" } }),
+    );
+    await page.route("**/api/accounts", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: 11,
+            name: "Synthetic Broker",
+            account_type: "brokerage",
+            status: "active",
+            include_in_capital: true,
+            include_in_returns: true,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/instruments?active=true", (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: 21,
+            name: "Synthetic Stock",
+            ticker: "SYN",
+            instrument_type: "stock",
+            currency: "RUB",
+            is_active: true,
+            manual_price_allowed: true,
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/positions?month_id=7", (route) => route.fulfill({ json: [saved] }));
+    await page.route("**/api/months/7/quote-preview", async (route) => {
+      previewCalls++;
+      await route.fulfill({
+        json: {
+          reporting_month_id: 7,
+          month_status: "draft",
+          target_date: "2030-04-30",
+          month_editable: true,
+          batch_error: null,
+          batch_error_reason: null,
+          preview_id: "synthetic-preview",
+          rows: [
+            {
+              position_snapshot_id: 31,
+              account_id: 11,
+              instrument_id: 21,
+              instrument_name: "Synthetic Stock",
+              instrument_type: "stock",
+              mapping_state: "mapped",
+              identity: {
+                provider: "t_invest",
+                provider_instrument_id: "synthetic",
+                provider_venue_id: null,
+              },
+              current_market_price_per_unit: money("100.00"),
+              current_price_date: "2030-04-30",
+              current_price_source: "manual",
+              proposed_market_price_per_unit: money("110.00"),
+              proposed_price_date: "2030-04-30",
+              proposed_quote_kind: "last",
+              proposed_raw_price: "110.00",
+              proposed_raw_price_basis: "R",
+              fetched_at_utc: "2030-04-30T12:00:00Z",
+              freshness_status: "ok",
+              status: "ok",
+              failure_reason: null,
+              message: null,
+              apply_allowed: true,
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/months/7/quote-apply", async (route) => {
+      applyCalls++;
+      expect(route.request().postDataJSON()).toMatchObject({
+        preview_id: "synthetic-preview",
+        rows: [
+          {
+            position_snapshot_id: 31,
+            expected_market_price_per_unit: money("110.00"),
+            expected_quote_kind: "last",
+          },
+        ],
+      });
+      if (outcome === "expired") {
+        await route.fulfill({
+          status: 409,
+          json: { error: { code: "preview_evidence_invalid", message: "synthetic", details: [] } },
+        });
+        return;
+      }
+      saved = {
+        ...position,
+        market_price_per_unit: money("110.00"),
+        market_value: money("125.00"),
+        price_source: "t_invest",
+      };
+      if (outcome === "ambiguous") {
+        await route.abort("failed");
+        return;
+      }
+      await route.fulfill({
+        json: {
+          reporting_month_id: 7,
+          applied_count: 1,
+          rows: [
+            {
+              position_snapshot_id: 31,
+              market_price_per_unit: saved.market_price_per_unit,
+              price_source: saved.price_source,
+              price_date: saved.price_date,
+              accrued_interest: saved.accrued_interest,
+              market_value: saved.market_value,
+              unrealized_result: money("25.00"),
+              freshness: "ok",
+            },
+          ],
+        },
+      });
+    });
+    await page.goto("/v2/data/months/7?section=positions#month-quotes");
+    await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+    expect(previewCalls).toBe(0);
+    expect(applyCalls).toBe(0);
+    expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
+    await page.getByRole("button", { name: "Обновить котировки" }).click();
+    await page.getByRole("button", { name: "Применить выбранные" }).click();
+    if (outcome === "success") {
+      await expect(page.getByText(/Котировки применены: 1/)).toBeVisible();
+    } else {
+      await expect(
+        page.getByText(
+          outcome === "expired"
+            ? /Предпросмотр больше недействителен/
+            : /Результат применения не подтверждён/,
+        ),
+      ).toBeVisible();
+      await expect(page.getByText(/Котировки применены: 1/)).toHaveCount(0);
+    }
+    await expect(page.getByRole("button", { name: "Применить выбранные" })).toHaveCount(0);
+    expect(applyCalls).toBe(1);
+    expect(previewCalls).toBe(1);
+    const screenshotDir = path.resolve(".visual-audit", testInfo.project.name);
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    await page.screenshot({
+      path: path.join(screenshotDir, `ui-v2-quote-${outcome}.png`),
+      fullPage: true,
+    });
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Обновить котировки" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Применить выбранные" })).toHaveCount(0);
+    expect(previewCalls).toBe(1);
+    expect(applyCalls).toBe(1);
+  });
+}
+
+async function installApi(
+  page: Page,
+  overrides: { debts?: object[]; accounts?: object[]; properties?: object[] } = {},
+) {
   let month = { ...closed };
   const calls: string[] = [];
   const expenses: object[] = [];
@@ -55,6 +246,12 @@ async function installApi(page: Page) {
         expenses.push(row);
         await route.fulfill({ json: row });
       } else await route.fulfill({ json: expenses });
+    } else if (path === "/api/debts" && request.method() === "GET" && overrides.debts) {
+      await route.fulfill({ json: overrides.debts });
+    } else if (path === "/api/accounts" && request.method() === "GET" && overrides.accounts) {
+      await route.fulfill({ json: overrides.accounts });
+    } else if (path === "/api/properties" && request.method() === "GET" && overrides.properties) {
+      await route.fulfill({ json: overrides.properties });
     } else if (
       [
         "/api/incomes",
@@ -279,7 +476,7 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
       return event.defaultPrevented;
     }),
   ).toBe(true);
-  await page.getByRole("link", { name: "← Все месяцы" }).click();
+  await page.getByRole("link", { name: "← Отчётные месяцы" }).click();
   await page.getByRole("button", { name: "Остаться", exact: true }).click();
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.evaluate(() => window.history.back());
@@ -299,3 +496,116 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
   await page.getByRole("button", { name: "Перейти без сохранения", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Депозиты", exact: true })).toBeVisible();
 });
+
+for (const width of [1280, 390]) {
+  test(`#650 debt stacked editor ${width}px keeps Save/Cancel reachable without horizontal page scroll`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const longAccount = `Синтетический очень длинный накопительный счёт ${"· подразделение ".repeat(6)}`;
+    // One catch-all mock serves the #650 fixtures: no overlapping routes.
+    await installApi(page, {
+      debts: [
+        {
+          id: 1,
+          reporting_month_id: 7,
+          debt_type: "credit_card",
+          name: "Основная карта с очень длинным названием для проверки переноса",
+          current_balance: { amount: "1234567890.50", currency: "RUB" },
+          include_in_liquid_capital: true,
+          linked_account_id: null,
+          annual_rate: "19.90",
+          next_due_date: "2030-06-20",
+          contract_end_date: null,
+          notes: null,
+        },
+      ],
+      accounts: [
+        {
+          id: 11,
+          name: longAccount,
+          account_type: "deposit",
+          status: "active",
+          external_code: null,
+          include_in_capital: true,
+          include_in_returns: true,
+          notes: null,
+        },
+      ],
+      properties: [],
+    });
+
+    await page.goto("/v2/data/months");
+    await page.goto("/v2/data/months/7");
+    await page.getByRole("button", { name: "Открыть для редактирования" }).click();
+    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Разделы редактора месяца" })
+      .getByRole("link", { name: "Долги и недвижимость", exact: true })
+      .click();
+    await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
+
+    // Owner language, no technical shorthand; money is one unit.
+    await expect(page.getByText("Кредитные карты:", { exact: false })).toBeVisible();
+    await expect(page.getByText("Долг по кредитным картам:", { exact: false })).toBeVisible();
+    expect(await page.getByText("CC ", { exact: false }).count()).toBe(0);
+    expect(await page.locator(".money").count()).toBeGreaterThan(0);
+
+    // Open the stacked editor below the readonly row.
+    await page.getByRole("button", { name: /Изменить долг/ }).click();
+    const editor = page.getByRole("form", { name: /Редактирование долга/ });
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel("Название долга")).toBeVisible();
+    await expect(editor.getByLabel("Текущий баланс долга")).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+    await expect(
+      page.getByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
+    ).toBeVisible();
+
+    // Save/Cancel are reachable with vertical scroll only: no page-level horizontal scrolling.
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+    for (const label of ["Название долга", "Текущий баланс долга", "Годовая ставка, %"]) {
+      await editor.getByLabel(label).scrollIntoViewIfNeeded();
+      await expect(editor.getByLabel(label)).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+    }
+    await editor.getByRole("button", { name: "Сохранить", exact: true }).scrollIntoViewIfNeeded();
+    await expect(editor.getByRole("button", { name: "Сохранить", exact: true })).toBeVisible();
+    await editor.getByRole("button", { name: "Отмена" }).scrollIntoViewIfNeeded();
+    await expect(editor.getByRole("button", { name: "Отмена" })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+
+    // Keyboard reaches Save/Cancel.
+    await editor.getByLabel("Название долга").focus();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+
+    await page.screenshot({
+      path: testInfo.outputPath(`debt-stacked-editor-${width}.png`),
+      fullPage: true,
+    });
+
+    // Link editor keeps the same reachable treatment with a long account name.
+    await editor.getByRole("button", { name: "Отмена" }).click();
+    await page.getByRole("button", { name: "Связать счёт" }).click();
+    const linkEditor = page.getByRole("form", { name: /Связь долга/ });
+    await expect(linkEditor).toBeVisible();
+    await linkEditor.scrollIntoViewIfNeeded();
+    await expect(linkEditor.getByLabel("Счёт для связи с долгом")).toBeVisible();
+    await expect(linkEditor.getByRole("button", { name: "Сохранить связь" })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`debt-link-editor-${width}.png`),
+      fullPage: true,
+    });
+  });
+}

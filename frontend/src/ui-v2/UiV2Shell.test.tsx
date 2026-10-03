@@ -62,9 +62,10 @@ describe("UiV2Shell rollback", () => {
       "/v2/data/files",
     );
     expect(screen.getByRole("link", { name: "Настройки" })).toHaveAttribute("href", "/v2/data/app");
-    expect(screen.getByRole("link", { name: "Диагностика" })).toHaveAttribute(
+    expect(screen.queryByRole("link", { name: "Диагностика" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Отчётные месяцы" })).toHaveAttribute(
       "href",
-      "/v2/data/app#diagnostics",
+      "/v2/data/months",
     );
     expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
       "href",

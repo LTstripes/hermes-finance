@@ -48,6 +48,7 @@ class QuoteApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     rows: list[QuoteApplyRowRequest] = Field(min_length=1)
+    preview_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class QuoteApplyRowResponse(BaseModel):
@@ -140,6 +141,9 @@ def apply_month_quotes_endpoint(
             [_selection(row) for row in payload.rows],
             provider=provider,
             today=moscow_today(request),
+            evidence_store=request.app.state.quote_preview_evidence,
+            preview_id=payload.preview_id,
+            current_day=lambda: moscow_today(request),
         )
     finally:
         close_owned_provider(provider, owned)

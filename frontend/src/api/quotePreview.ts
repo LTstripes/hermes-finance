@@ -12,10 +12,11 @@ export function applyMonthQuotes(
   monthId: number,
   rows: QuoteApplyRowRequest[],
   signal?: AbortSignal,
+  previewId?: string | null,
 ): Promise<QuoteApplyResult> {
   return apiRequest<QuoteApplyResult>(`/api/months/${monthId}/quote-apply`, {
     method: "POST",
-    body: { rows },
+    body: { rows, ...(previewId ? { preview_id: previewId } : {}) },
     signal,
   });
 }

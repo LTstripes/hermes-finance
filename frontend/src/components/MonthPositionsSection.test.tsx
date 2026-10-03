@@ -449,6 +449,7 @@ describe("MonthPositionsSection G03 component contract", () => {
   });
 
   it("keeps quote Apply separate and shows its result without a hidden second preview", async () => {
+    let saved = false;
     const previewBody = {
       reporting_month_id: 7,
       month_status: "draft",
@@ -488,9 +489,21 @@ describe("MonthPositionsSection G03 component contract", () => {
     };
     const fetchMock = setup(
       {
+        "GET /api/positions?month_id=7": () =>
+          jsonResponse([
+            saved
+              ? {
+                  ...position,
+                  market_price_per_unit: { amount: "1110.00", currency: "RUB" },
+                  price_date: "2031-01-30",
+                  price_source: "t_invest",
+                }
+              : position,
+          ]),
         "POST /api/months/7/quote-preview": () => jsonResponse(previewBody),
-        "POST /api/months/7/quote-apply": () =>
-          jsonResponse({
+        "POST /api/months/7/quote-apply": () => {
+          saved = true;
+          return jsonResponse({
             reporting_month_id: 7,
             applied_count: 1,
             rows: [
@@ -505,7 +518,8 @@ describe("MonthPositionsSection G03 component contract", () => {
                 freshness: "ok",
               },
             ],
-          }),
+          });
+        },
       },
       [position],
     );

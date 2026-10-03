@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -15,6 +15,12 @@ from hermes_finance.persistence import PositionQuoteProvenance, PositionSnapshot
 from hermes_finance.services._guard import require_editable_reporting_month
 from hermes_finance.services.positions import apply_snapshot_market_quote, get_position_snapshot
 from hermes_finance.services.quote_preview import QuotePreviewRow, preview_market_quotes
+from hermes_finance.services.quote_preview_evidence import (
+    QuotePreviewEvidenceError,
+    QuotePreviewEvidenceStore,
+    capture_context,
+    frozen_last,
+)
 
 
 class PreviewChangedError(Exception):
@@ -138,8 +144,11 @@ def apply_market_quotes(
     provider: MarketDataProvider,
     today: date,
     clock: datetime | None = None,
+    evidence_store: QuotePreviewEvidenceStore | None = None,
+    preview_id: str | None = None,
+    current_day: Callable[[], date] | None = None,
 ) -> QuoteApplyResult:
-    """Refetch quotes and apply the selected set in one transaction."""
+    """Claim Q645-C1 evidence; strictly refetch all non-frozen selected rows."""
 
     if not selections:
         raise ValueError("at least one quote row must be selected")
@@ -149,14 +158,36 @@ def apply_market_quotes(
             raise ValueError("duplicate position snapshot in apply selection")
         seen.add(selection.position_snapshot_id)
 
+    evidence = None
+    frozen: dict[int, QuotePreviewRow] = {}
+    if preview_id is not None:
+        if evidence_store is None:
+            raise QuotePreviewEvidenceError()
+        evidence = evidence_store.claim(reporting_month_id, preview_id, today)
+        frozen = {
+            row.position_snapshot_id: row
+            for row in evidence.preview.rows
+            if row.position_snapshot_id in seen
+            and frozen_last(row, evidence.preview.target_date, today)
+        }
+
     require_editable_reporting_month(session, reporting_month_id)
+    session.expire_all()
+    if evidence is not None:
+        actual = capture_context(session, reporting_month_id)
+        if actual.selected(seen) != evidence.context.selected(seen):
+            raise QuotePreviewEvidenceError()
+        if not seen.issubset({row.position_snapshot_id for row in evidence.preview.rows}):
+            raise QuotePreviewEvidenceError()
     preview = preview_market_quotes(
         session,
         reporting_month_id,
         provider=provider,
         today=today,
+        snapshot_ids=seen - frozen.keys(),
     )
     by_snapshot = _preview_by_snapshot(preview.rows)
+    by_snapshot.update(frozen)
     planned: list[tuple[QuoteApplySelection, QuotePreviewRow, PositionSnapshot]] = []
     for selection in selections:
         snapshot = get_position_snapshot(session, selection.position_snapshot_id)
@@ -166,12 +197,22 @@ def apply_market_quotes(
         if row is None:
             raise ValueError("position snapshot has no quote preview row")
         _eligible_preview_row(row, selection)
+        if (
+            frozen_last(row, preview.target_date, today)
+            and selection.position_snapshot_id not in frozen
+        ):
+            raise QuotePreviewEvidenceError()
+        if selection.position_snapshot_id in frozen and selection.expected_quote_kind != "last":
+            raise PreviewChangedError()
         if _materially_changed(row, selection):
             raise PreviewChangedError()
         planned.append((selection, row, snapshot))
 
     applied_at = clock or datetime.now(UTC)
     try:
+        if evidence is not None:
+            assert evidence_store is not None
+            evidence_store.validate_lifetime(evidence, current_day() if current_day else today)
         applied: list[QuoteApplyRowResult] = []
         for _selection, row, snapshot in planned:
             apply_snapshot_market_quote(

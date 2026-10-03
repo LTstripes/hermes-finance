@@ -149,7 +149,7 @@ describe("native month editor frame", () => {
     fireEvent.change(screen.getByLabelText("Дата снимка"), { target: { value: "2030-04-29" } });
     await user.click(screen.getByRole("button", { name: "Сохранить общие данные" }));
     expect(await screen.findByText("save failed")).toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "← Все месяцы" }));
+    await user.click(screen.getByRole("link", { name: "← Отчётные месяцы" }));
     expect(
       screen.getByText("Есть несохранённые изменения. Перейти и потерять их?"),
     ).toBeInTheDocument();
@@ -174,7 +174,7 @@ describe("native month editor frame", () => {
       await screen.findByText("Месяц открыт для редактирования. Данные перечитаны."),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Дата снимка")).toBeEnabled();
-    expect(getMonth).toHaveBeenCalledTimes(2);
+    expect(getMonth).toHaveBeenCalledTimes(3);
   });
 
   it("does not unlock a month on failed reopen", async () => {
@@ -187,6 +187,93 @@ describe("native month editor frame", () => {
     await user.click(screen.getByRole("button", { name: "Открыть месяц" }));
     expect(await screen.findByText("reopen failed")).toBeInTheDocument();
     expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+  });
+
+  it("opens the list handoff as confirmation only and cancellation preserves CLOSED", async () => {
+    const user = userEvent.setup();
+    current = { ...closed };
+    renderPage("/v2/data/months/7?action=reopen");
+    await screen.findByRole("alertdialog", { name: "Открыть месяц для редактирования?" });
+    expect(reopenMonth).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Проверить и закрыть" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=7&step=final_review_close",
+    );
+  });
+
+  it("rereads saved data with feedback while a dirty draft disables the action", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const reread = await screen.findByRole("button", { name: "Перечитать сохранённые данные" });
+    await user.click(reread);
+    expect(
+      await screen.findByText(
+        "Сведения о месяце перечитаны. Сохранённые данные раздела загружаются заново.",
+      ),
+    ).toBeVisible();
+    expect(updateMonth).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Дата снимка"), { target: { value: "2030-04-29" } });
+    expect(reread).toBeDisabled();
+  });
+
+  it("does not reopen a reused month ID for another calendar period", async () => {
+    const user = userEvent.setup();
+    current = { ...closed };
+    renderPage("/v2/data/months/7?action=reopen");
+    await screen.findByRole("alertdialog");
+    current = { ...closed, year: closed.year + 1 };
+    await user.click(screen.getByRole("button", { name: "Открыть месяц" }));
+    expect(await screen.findByText(/Период выбранного месяца изменился/)).toBeVisible();
+    expect(reopenMonth).not.toHaveBeenCalled();
+  });
+
+  it("prevents new edits throughout a delayed saved-data reread", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const date = await screen.findByLabelText("Дата снимка");
+    let finishRead!: (value: ReportingMonth) => void;
+    vi.mocked(getMonth).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    expect(date).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Сохранить общие данные" })).toBeDisabled();
+    await act(async () => {
+      finishRead({ ...draft });
+    });
+    await waitFor(() => expect(screen.getByLabelText("Дата снимка")).toBeEnabled());
+    expect(screen.getByLabelText("Дата снимка")).toHaveValue(draft.snapshot_date);
+    expect(updateMonth).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late reread after navigation without remounting the new month's draft", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByLabelText("Дата снимка");
+    let finishRead!: (value: ReportingMonth) => void;
+    vi.mocked(getMonth).mockImplementation((id) =>
+      id === 7
+        ? new Promise((resolve) => {
+            finishRead = resolve;
+          })
+        : Promise.resolve({ ...draft, id: 8, month: 5, snapshot_date: "2030-05-31" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    await user.click(screen.getByRole("link", { name: "Другой месяц" }));
+    const date = await screen.findByDisplayValue("2030-05-31");
+    fireEvent.change(date, { target: { value: "2030-05-30" } });
+    await act(async () => {
+      finishRead({ ...draft });
+    });
+    expect(date).toHaveValue("2030-05-30");
+    expect(screen.getByText("Есть несохранённые изменения")).toBeVisible();
+    expect(screen.queryByText(/Сведения о месяце перечитаны/)).toBeNull();
+    expect(updateMonth).not.toHaveBeenCalled();
   });
 
   it("saves a note with readback and keeps a draft when save fails", async () => {

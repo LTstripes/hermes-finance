@@ -33,6 +33,7 @@ import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } fro
 
 type DecisionAction = "keep_existing" | "replace" | "";
 type PositionFilter = "all" | "applicable" | "attention";
+type MappingFilter = "attention" | "all" | "confirmed";
 type LocalDecision = {
   averageCost: DecisionAction;
   averageValue: string;
@@ -105,6 +106,44 @@ function needsMappingSelect(status: string, classification?: string): boolean {
   return (
     status === "unmatched" || status === "ambiguous" || status === "conflict" || status === "new"
   );
+}
+
+/** Exception-first bucket. Confirmed rows stay reachable via explicit views;
+ * they are never removed and never redefine apply selection. */
+function mappingBucket(
+  classification: string | undefined,
+  status: string,
+): "confirmed" | "attention" | "other" {
+  if (
+    classification === "reused" ||
+    classification === "deterministic_isin" ||
+    classification === "explicit"
+  ) {
+    return "confirmed";
+  }
+  if (needsMappingSelect(status, classification)) return "attention";
+  if (status === "matched") return "confirmed";
+  return "other";
+}
+
+function visibleMappingRows<T extends { status: string; classification?: string }>(
+  rows: T[],
+  filter: MappingFilter,
+): T[] {
+  return rows.filter((row) => {
+    const bucket = mappingBucket(row.classification, row.status);
+    if (filter === "all") return true;
+    if (filter === "confirmed") return bucket === "confirmed";
+    return bucket !== "confirmed";
+  });
+}
+
+/** Default attention view for positions: unresolved rows, new provider-only
+ * rows and matched rows whose quantity changed or cannot be compared. */
+function positionNeedsAttention(row: BrokerPositionRow): boolean {
+  if (!isApplyablePositionRow(row)) return true;
+  if (row.status === "provider_only") return true;
+  return row.quantity_equal !== true;
 }
 
 function identityLabel(classification: string | undefined, status: string): string {
@@ -311,7 +350,10 @@ export function BrokerSnapshotPanel({
   const [applyOutcome, setApplyOutcome] = useState<AlfaApplyOutcome | null>(null);
   const [diagnosticCopied, setDiagnosticCopied] = useState(false);
   const [identityMappings, setIdentityMappings] = useState<BrokerIdentityMapping[]>([]);
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>("all");
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>("attention");
+  const [accountMappingFilter, setAccountMappingFilter] = useState<MappingFilter>("attention");
+  const [instrumentMappingFilter, setInstrumentMappingFilter] =
+    useState<MappingFilter>("attention");
   const [instrumentToCreate, setInstrumentToCreate] = useState<{
     providerId: string;
     name: string | null;
@@ -409,7 +451,9 @@ export function BrokerSnapshotPanel({
     setConfirmOpen(false);
     setDiagnosticCopied(false);
     setIdentityMappings([]);
-    setPositionFilter("all");
+    setPositionFilter("attention");
+    setAccountMappingFilter("attention");
+    setInstrumentMappingFilter("attention");
   }
 
   async function copyDiagnostic() {
@@ -541,13 +585,31 @@ export function BrokerSnapshotPanel({
         !moneyProviderInstrumentIds.has(row.provider_instrument_id as string),
     ) ?? [];
   const applicablePositionCount = preview?.positions.filter(isApplyablePositionRow).length ?? 0;
+  const unchangedMatchedCount =
+    preview?.positions.filter(
+      (row) =>
+        isApplyablePositionRow(row) && row.status === "matched" && row.quantity_equal === true,
+    ).length ?? 0;
   const visiblePositionRows =
     preview?.positions.filter((row) => {
       if (positionFilter === "applicable") return isApplyablePositionRow(row);
-      if (positionFilter === "attention") return !isApplyablePositionRow(row);
+      if (positionFilter === "attention") return positionNeedsAttention(row);
       return true;
     }) ?? [];
   const groupedPositionRows = groupPositionRows(visiblePositionRows);
+  const confirmedAccountCount =
+    preview?.accounts.filter((row) => mappingBucket(row.classification, row.status) === "confirmed")
+      .length ?? 0;
+  const visibleAccountMappingRows = preview
+    ? visibleMappingRows(preview.accounts, accountMappingFilter)
+    : [];
+  const confirmedInstrumentCount = instrumentMappingRows.filter(
+    (row) => mappingBucket(row.classification, row.status) === "confirmed",
+  ).length;
+  const visibleInstrumentMappingRows = visibleMappingRows(
+    instrumentMappingRows,
+    instrumentMappingFilter,
+  );
 
   const applyReady = Boolean(
     preview?.eligible_for_apply &&
@@ -702,27 +764,44 @@ export function BrokerSnapshotPanel({
                 строки; остальные останутся без изменений.
               </div>
             ) : null}
-            <details>
-              <summary>Безопасная диагностика для поддержки</summary>
-              <div className="stack-8">
-                <p className="muted">
-                  Здесь нет credentials, исходного payload, номеров счетов или финансовых значений.
-                  Этот текст можно передать разработчику.
-                </p>
-                <pre className="diagnostic-output">{preview.diagnostic_report}</pre>
-                <Button
-                  onClick={() => void copyDiagnostic()}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  {diagnosticCopied ? "Скопировано" : "Скопировать диагностику"}
-                </Button>
-              </div>
-            </details>
             {preview.accounts.length > 0 ? (
               <Panel label="Сопоставление" title="Счета Alfa → Hermes">
-                {preview.accounts.map((row) => {
+                <p className="muted">
+                  Подтверждённые сопоставления свёрнуты по умолчанию. Сопоставление счёта не
+                  подтверждает совпадение количеств позиций.
+                </p>
+                <div className="toolbar">
+                  <Field htmlFor="broker-account-mapping-filter" label="Показывать счета">
+                    <Select
+                      id="broker-account-mapping-filter"
+                      value={accountMappingFilter}
+                      onChange={(event) =>
+                        setAccountMappingFilter(event.target.value as MappingFilter)
+                      }
+                    >
+                      <option value="attention">Требуют внимания</option>
+                      <option value="all">Показать все</option>
+                      <option value="confirmed">Подтверждённые</option>
+                    </Select>
+                  </Field>
+                  {confirmedAccountCount > 0 && accountMappingFilter !== "confirmed" ? (
+                    <span className="muted tiny">
+                      Подтверждённых: {confirmedAccountCount}
+                      {accountMappingFilter === "attention" ? " · свёрнуты" : ""}
+                    </span>
+                  ) : null}
+                  {accountMappingFilter === "attention" && confirmedAccountCount > 0 ? (
+                    <Button
+                      onClick={() => setAccountMappingFilter("all")}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Показать все
+                    </Button>
+                  ) : null}
+                </div>
+                {visibleAccountMappingRows.map((row) => {
                   const classification = row.classification ?? "";
                   const stored = effectiveMapping("account", row.provider_account_id);
                   const showSelect = needsMappingSelect(row.status, classification);
@@ -787,6 +866,11 @@ export function BrokerSnapshotPanel({
                     </div>
                   );
                 })}
+                {visibleAccountMappingRows.length === 0 ? (
+                  <p className="muted" role="status">
+                    Нет счетов в выбранном представлении.
+                  </p>
+                ) : null}
               </Panel>
             ) : null}
             {moneyInstrumentRows.length > 0 ? (
@@ -802,7 +886,38 @@ export function BrokerSnapshotPanel({
                   строки можно сопоставить с существующим инструментом Hermes или создать новый
                   инструмент отдельным явным действием.
                 </p>
-                {instrumentMappingRows.map((row) => {
+                <div className="toolbar">
+                  <Field htmlFor="broker-instrument-mapping-filter" label="Показывать инструменты">
+                    <Select
+                      id="broker-instrument-mapping-filter"
+                      value={instrumentMappingFilter}
+                      onChange={(event) =>
+                        setInstrumentMappingFilter(event.target.value as MappingFilter)
+                      }
+                    >
+                      <option value="attention">Требуют внимания</option>
+                      <option value="all">Показать все</option>
+                      <option value="confirmed">Подтверждённые</option>
+                    </Select>
+                  </Field>
+                  {confirmedInstrumentCount > 0 && instrumentMappingFilter !== "confirmed" ? (
+                    <span className="muted tiny">
+                      Подтверждённых: {confirmedInstrumentCount}
+                      {instrumentMappingFilter === "attention" ? " · свёрнуты" : ""}
+                    </span>
+                  ) : null}
+                  {instrumentMappingFilter === "attention" && confirmedInstrumentCount > 0 ? (
+                    <Button
+                      onClick={() => setInstrumentMappingFilter("all")}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Показать все
+                    </Button>
+                  ) : null}
+                </div>
+                {visibleInstrumentMappingRows.map((row) => {
                   const providerId = row.provider_instrument_id as string;
                   const classification = row.classification ?? "";
                   const stored = effectiveMapping("instrument", providerId);
@@ -885,6 +1000,11 @@ export function BrokerSnapshotPanel({
                     </div>
                   );
                 })}
+                {visibleInstrumentMappingRows.length === 0 ? (
+                  <p className="muted" role="status">
+                    Нет инструментов в выбранном представлении.
+                  </p>
+                ) : null}
               </Panel>
             ) : null}
             {mappingDirty ? (
@@ -920,14 +1040,20 @@ export function BrokerSnapshotPanel({
                   value={positionFilter}
                   onChange={(event) => setPositionFilter(event.target.value as PositionFilter)}
                 >
-                  <option value="all">Все строки</option>
-                  <option value="applicable">Только применимые</option>
                   <option value="attention">Требуют внимания</option>
+                  <option value="applicable">Только применимые</option>
+                  <option value="all">Все строки</option>
                 </Select>
               </Field>
               <span className="muted tiny">
                 Выбрано: {selectedRows.length} из {applicablePositionCount} применимых
               </span>
+              {positionFilter === "attention" && unchangedMatchedCount > 0 ? (
+                <span className="muted tiny">
+                  Скрыто неизменённых сопоставленных строк: {unchangedMatchedCount} · доступны в
+                  «Все строки»
+                </span>
+              ) : null}
             </div>
             <Table className="broker-snapshot__table">
               <thead>
@@ -1158,6 +1284,24 @@ export function BrokerSnapshotPanel({
                 ))}
               </tbody>
             </Table>
+            <details>
+              <summary>Безопасная диагностика для поддержки</summary>
+              <div className="stack-8">
+                <p className="muted">
+                  Здесь нет credentials, исходного payload, номеров счетов или финансовых значений.
+                  Этот текст можно передать разработчику.
+                </p>
+                <pre className="diagnostic-output">{preview.diagnostic_report}</pre>
+                <Button
+                  onClick={() => void copyDiagnostic()}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  {diagnosticCopied ? "Скопировано" : "Скопировать диагностику"}
+                </Button>
+              </div>
+            </details>
           </div>
         ) : null}
       </fieldset>

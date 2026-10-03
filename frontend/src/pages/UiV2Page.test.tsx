@@ -33,6 +33,7 @@ function setup(path = "/v2") {
     workflow: makeUiV2Workflow(),
     monthsError: false,
     comparisonError: false,
+    comparisonWait: null as Promise<void> | null,
     capitalError: false,
     passiveError: false,
     goalsError: false,
@@ -51,7 +52,8 @@ function setup(path = "/v2") {
         data = state.months;
         failed = state.monthsError;
       } else if (url.pathname === "/api/analytics/closed-report-comparison") {
-        data = state.comparison;
+        data = structuredClone(state.comparison);
+        await state.comparisonWait;
         failed = state.comparisonError;
       } else if (url.pathname === "/api/analytics/capital-composition") {
         data = state.capital;
@@ -129,9 +131,10 @@ it("renders the latest CLOSED report as a quiet Home with exactly three canonica
     .getByRole("heading", { name: "Где изменились суммы" })
     .closest("section");
   if (!changePanel) throw new Error("Change panel is missing");
-  expect(
-    within(changePanel).getByText("Включённые обязательства").nextElementSibling,
-  ).toHaveAttribute("data-tone", "negative");
+  expect(within(changePanel).getByText("Вклад обязательств").nextElementSibling).toHaveAttribute(
+    "data-tone",
+    "negative",
+  );
   expect(screen.queryByText(/готовност|провайдер|сверк/i)).toBeNull();
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
@@ -149,6 +152,108 @@ it("shows the backend partial-source marker beside the known subtotal and delta"
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getAllByText("Частично: нет снимка счёта")).toHaveLength(2);
+});
+
+it("renders a backend pair once, with gross endpoints and a zero net delta", async () => {
+  const { mount, state } = setup();
+  const explanation = state.comparison.explanation;
+  if (!explanation) throw new Error("Missing explanation");
+  explanation.pairs = [
+    {
+      account_id: 7,
+      account_name: "Synthetic funded account",
+      previous: {
+        debt_id: 5,
+        debt_name: "Synthetic prior card",
+        account_balance: { amount: "100.00", currency: "RUB" },
+        debt_balance: { amount: "80.00", currency: "RUB" },
+        net_contribution: { amount: "20.00", currency: "RUB" },
+      },
+      current: {
+        debt_id: 6,
+        debt_name: "Synthetic current card",
+        account_balance: { amount: "40.00", currency: "RUB" },
+        debt_balance: { amount: "20.00", currency: "RUB" },
+        net_contribution: { amount: "20.00", currency: "RUB" },
+      },
+      net_contribution_delta: { amount: "0.00", currency: "RUB" },
+    },
+  ];
+  explanation.noncomparable_account_ids = [8];
+  explanation.residual_asset_class_deltas[0].amount.amount = "52660.00";
+  explanation.residual_debt_contribution_delta.amount = "-10060.00";
+  mount();
+  const summary = await screen.findByText(/Synthetic funded account · связанный счёт/);
+  expect(screen.getAllByText(/Synthetic funded account · связанный счёт/)).toHaveLength(1);
+  expect(summary.closest("li")).toHaveTextContent("0 ₽");
+  fireEvent.click(summary);
+  expect(screen.getByText(/Synthetic prior card/)).toHaveTextContent("счёт 100 ₽");
+  expect(screen.getByText(/Synthetic current card/)).toHaveTextContent("счёт 40 ₽");
+  expect(screen.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  expect(screen.getByText(/Связь не устанавливает источник погашения/)).toBeVisible();
+});
+
+it("withholds an unavailable or unreconciled explanation", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.explanation) throw new Error("Missing explanation");
+  state.comparison.explanation.reconciles = false;
+  mount();
+  expect(await screen.findByText("Разложение изменения недоступно")).toBeVisible();
+  expect(screen.queryByText("Вклад обязательств")).toBeNull();
+});
+
+it("hides cached pair facts during refetch and shows only the fresh readback", async () => {
+  const { mount, client, state } = setup();
+  mount();
+  await screen.findByText("Вклад обязательств");
+  act(() => {
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: queryKeys.closedReportComparison });
+  });
+  await waitFor(() => expect(screen.queryByText("Вклад обязательств")).toBeNull());
+  if (!state.comparison.explanation) throw new Error("Missing explanation");
+  state.comparison.explanation.noncomparable_account_ids = [77];
+  await act(async () => onlineManager.setOnline(true));
+  expect(await screen.findByText(/Для части счетов нет явной связи/)).toBeVisible();
+});
+
+it("rejects a comparison whose previous CLOSED endpoint is stale", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.previous) throw new Error("Missing previous endpoint");
+  state.comparison.previous.reporting_month_id = 89;
+  mount();
+  await screen.findByRole("heading", { name: "Мои финансы" });
+  await waitFor(() => expect(screen.getByTestId("v2-capital-history")).toBeVisible());
+  expect(screen.queryByText("Вклад обязательств")).toBeNull();
+  expect(screen.queryByTestId("v2-capital-change")).toBeNull();
+});
+
+it("ignores a late old comparison after a corrected readback has settled", async () => {
+  const { mount, client, state, reads } = setup();
+  mount();
+  await screen.findByText("Вклад обязательств");
+  let release!: () => void;
+  state.comparisonWait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const priorReads = reads.length;
+  act(() => {
+    void client.invalidateQueries({ queryKey: queryKeys.closedReportComparison });
+  });
+  await waitFor(() => expect(reads.length).toBeGreaterThan(priorReads));
+  await waitFor(() => expect(screen.queryByText("Вклад обязательств")).toBeNull());
+  if (!state.comparison.explanation) throw new Error("Missing explanation");
+  state.comparison.explanation.noncomparable_account_ids = [77];
+  state.comparisonWait = null;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: queryKeys.closedReportComparison });
+  });
+  expect(await screen.findByText(/Для части счетов нет явной связи/)).toBeVisible();
+  await act(async () => {
+    release();
+  });
+  expect(screen.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  expect(client.getQueryData(queryKeys.closedReportComparison)).toEqual(state.comparison);
 });
 
 it("keeps a newer draft separate and routes its single CTA to the server recommendation", async () => {

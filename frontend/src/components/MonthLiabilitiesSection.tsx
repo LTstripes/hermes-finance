@@ -29,6 +29,7 @@ import {
   Field,
   Input,
   LoadingState,
+  MoneyAmount,
   Panel,
   Select,
   Table,
@@ -38,7 +39,7 @@ import {
   OverflowMenuItem,
 } from "./ui";
 import { LinkedPairContext } from "./LinkedPairContext";
-import { formatDate, formatMoney, formatPercent, normalizeRateInput } from "../lib/format";
+import { formatDate, formatPercent, normalizeRateInput } from "../lib/format";
 import { ACCOUNT_TYPE_LABELS, DEBT_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 
@@ -412,10 +413,19 @@ export function MonthLiabilitiesSection({
       ) : null}
 
       <Panel
-        action={<Badge>CC {formatMoney(cardDebtTotal)}</Badge>}
+        action={
+          <Badge>
+            Кредитные карты: <MoneyAmount amount={cardDebtTotal} />
+          </Badge>
+        }
         label="Обязательства"
         title="Долги"
       >
+        {localDirty ? (
+          <p className="muted tiny" role="note">
+            Итоги ниже посчитаны по сохранённым данным и не учитывают несохранённые правки.
+          </p>
+        ) : null}
         {debts.length === 0 ? (
           <EmptyState description="Долгов нет." inline title="Пусто" />
         ) : (
@@ -435,194 +445,43 @@ export function MonthLiabilitiesSection({
             </thead>
             <tbody>
               {debts.map((row) => {
-                const editing = editingDebtId === row.id && editDebt;
-                const linking = linkingDebtId === row.id;
-                const currentLinkedAccount =
-                  row.linked_account_id == null
-                    ? null
-                    : accounts.find((account) => account.id === row.linked_account_id);
-                const currentLinkedAccountIsEligible =
-                  currentLinkedAccount != null && isLinkableAccount(currentLinkedAccount);
-                const selectedAccountIsEligible = eligibleAccounts.some(
-                  (account) => account.id === Number(linkAccountId),
-                );
-                const canSaveLink = eligibleAccounts.length > 0 && selectedAccountIsEligible;
                 return (
                   <tr key={row.id}>
-                    <Td>
-                      {editing ? (
-                        <Input
-                          aria-label="Название долга"
-                          onChange={(e) => setEditDebt({ ...editDebt, name: e.target.value })}
-                          value={editDebt.name}
-                        />
-                      ) : (
-                        row.name
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <Select
-                          aria-label="Тип долга"
-                          onChange={(e) => setEditDebt({ ...editDebt, debt_type: e.target.value })}
-                          value={editDebt.debt_type}
-                        >
-                          <option value="credit_card">Кредитная карта</option>
-                          <option value="other">Прочее</option>
-                        </Select>
-                      ) : (
-                        labelOf(DEBT_TYPE_LABELS, row.debt_type)
-                      )}
-                    </Td>
+                    <Td>{row.name}</Td>
+                    <Td>{labelOf(DEBT_TYPE_LABELS, row.debt_type)}</Td>
                     <Td numeric>
-                      {editing ? (
-                        <Input
-                          aria-label="Текущий баланс долга"
-                          className="input--money"
-                          onChange={(e) =>
-                            setEditDebt({ ...editDebt, current_balance: e.target.value })
-                          }
-                          value={editDebt.current_balance}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.current_balance))
-                      )}
+                      <MoneyAmount amount={moneyAmount(row.current_balance)} />
                     </Td>
                     <Td>
-                      {editing ? (
-                        <Input
-                          aria-label="Годовая ставка долга"
-                          onChange={(e) =>
-                            setEditDebt({ ...editDebt, annual_rate: e.target.value })
-                          }
-                          placeholder="неизвестно"
-                          value={editDebt.annual_rate}
-                        />
-                      ) : (
-                        <span className="muted tiny">
-                          {formatPercent(row.annual_rate, { digits: 2, empty: "не указано" })}
-                        </span>
-                      )}
+                      <span className="muted tiny">
+                        {formatPercent(row.annual_rate, { digits: 2, empty: "не указано" })}
+                      </span>
                     </Td>
                     <Td>
-                      {editing ? (
-                        <Input
-                          aria-label="Ближайший обязательный платёж"
-                          onChange={(e) =>
-                            setEditDebt({ ...editDebt, next_due_date: e.target.value })
-                          }
-                          type="date"
-                          value={editDebt.next_due_date}
-                        />
-                      ) : (
-                        <span className="muted tiny">{formatDate(row.next_due_date)}</span>
-                      )}
+                      <span className="muted tiny">{formatDate(row.next_due_date)}</span>
                     </Td>
                     <Td>
-                      {editing ? (
-                        <Input
-                          aria-label="Окончание договора"
-                          onChange={(e) =>
-                            setEditDebt({ ...editDebt, contract_end_date: e.target.value })
-                          }
-                          type="date"
-                          value={editDebt.contract_end_date}
-                        />
-                      ) : (
-                        <span className="muted tiny">{formatDate(row.contract_end_date)}</span>
-                      )}
+                      <span className="muted tiny">{formatDate(row.contract_end_date)}</span>
                     </Td>
                     <Td>
-                      {editing ? (
-                        <label className="check-row">
-                          <input
-                            checked={editDebt.include_in_liquid_capital}
-                            onChange={(e) =>
-                              setEditDebt({
-                                ...editDebt,
-                                include_in_liquid_capital: e.target.checked,
-                              })
-                            }
-                            type="checkbox"
-                          />
-                          В капитале
-                        </label>
-                      ) : (
-                        <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
-                          {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
-                        </Badge>
-                      )}
+                      <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
+                        {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
+                      </Badge>
                     </Td>
                     <Td className="month-debts-table__linked">
-                      {linking ? (
-                        <div className="linked-debt-control">
-                          <div className="linked-debt-control__account">
-                            <Badge tone={row.linked_account_id == null ? "neutral" : "ok"}>
-                              {row.linked_account_id == null ? "Не связано" : "Связано"}
-                            </Badge>
-                            {row.linked_account_id != null ? (
-                              <strong>{accountNameFor(row.linked_account_id)}</strong>
-                            ) : null}
-                          </div>
-                          <Select
-                            aria-label={`Счёт для связи с долгом «${row.name}»`}
-                            disabled={busy || readOnly || eligibleAccounts.length === 0}
-                            onChange={(event) => setLinkAccountId(event.target.value)}
-                            value={linkAccountId}
-                          >
-                            <option value="">Выбери счёт</option>
-                            {row.linked_account_id != null && !currentLinkedAccountIsEligible ? (
-                              <option disabled value={row.linked_account_id}>
-                                {currentLinkedAccount
-                                  ? `${accountOptionLabel(currentLinkedAccount)} · текущая связь недоступна для новой связи`
-                                  : "Текущий связанный счёт · недоступен для новой связи"}
-                              </option>
-                            ) : null}
-                            {eligibleAccounts.map((account) => (
-                              <option key={account.id} value={account.id}>
-                                {accountOptionLabel(account)}
-                              </option>
-                            ))}
-                          </Select>
-                          {eligibleAccounts.length === 0 ? (
-                            <span className="linked-debt-control__hint">
-                              {LINK_ACCOUNT_EMPTY_HINT}
-                            </span>
-                          ) : null}
-                          {row.linked_account_id != null && !currentLinkedAccountIsEligible ? (
-                            <span className="linked-debt-control__hint">
-                              {LINK_ACCOUNT_STALE_HINT}
-                            </span>
-                          ) : null}
-                          <div className="linked-debt-control__actions">
-                            <Button
-                              disabled={busy || readOnly || !canSaveLink}
-                              onClick={() => void saveDebtLink(row)}
-                              size="sm"
-                              type="button"
-                              variant="primary"
-                            >
-                              Сохранить связь
-                            </Button>
-                            <Button
-                              disabled={busy}
-                              onClick={cancelLinkingDebt}
-                              size="sm"
-                              type="button"
-                            >
-                              Отмена
-                            </Button>
-                          </div>
-                        </div>
-                      ) : row.linked_account_id != null ? (
-                        <div className="linked-debt-control">
-                          <div className="linked-debt-control__account">
-                            <Badge tone="ok">Связано</Badge>
+                      <div className="linked-debt-control">
+                        <div className="linked-debt-control__account">
+                          <Badge tone={row.linked_account_id == null ? "neutral" : "ok"}>
+                            {row.linked_account_id == null ? "Не связано" : "Связано"}
+                          </Badge>
+                          {row.linked_account_id != null ? (
                             <strong>{accountNameFor(row.linked_account_id)}</strong>
-                          </div>
+                          ) : null}
+                        </div>
+                        {row.linked_account_id != null ? (
                           <div className="linked-debt-control__actions">
                             <Button
-                              disabled={busy || readOnly}
+                              disabled={busy || readOnly || editingDebtId !== null}
                               onClick={() => startLinkingDebt(row)}
                               size="sm"
                               type="button"
@@ -630,7 +489,7 @@ export function MonthLiabilitiesSection({
                               Изменить связь
                             </Button>
                             <Button
-                              disabled={busy || readOnly}
+                              disabled={busy || readOnly || editingDebtId !== null}
                               onClick={() => setPendingUnlinkDebt(row)}
                               size="sm"
                               type="button"
@@ -638,87 +497,64 @@ export function MonthLiabilitiesSection({
                               Отвязать
                             </Button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="linked-debt-control">
-                          <Badge tone="neutral">Не связано</Badge>
-                          {row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
-                            <>
+                        ) : row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
+                          <div className="linked-debt-control">
+                            <div className="linked-debt-control__actions">
                               <Button
-                                disabled={busy || readOnly || eligibleAccounts.length === 0}
+                                disabled={
+                                  busy ||
+                                  readOnly ||
+                                  editingDebtId !== null ||
+                                  eligibleAccounts.length === 0
+                                }
                                 onClick={() => startLinkingDebt(row)}
                                 size="sm"
                                 type="button"
                               >
                                 Связать счёт
                               </Button>
-                              {eligibleAccounts.length === 0 ? (
-                                <span className="linked-debt-control__hint">
-                                  {LINK_ACCOUNT_EMPTY_HINT}
-                                </span>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span className="linked-debt-control__hint">
-                              Связь доступна для кредитки, включённой в ликвидный капитал.
-                            </span>
-                          )}
-                        </div>
-                      )}
+                            </div>
+                            {eligibleAccounts.length === 0 ? (
+                              <span className="linked-debt-control__hint">
+                                {LINK_ACCOUNT_EMPTY_HINT}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="linked-debt-control__hint">
+                            Связь доступна для кредитки, включённой в ликвидный капитал.
+                          </span>
+                        )}
+                      </div>
                     </Td>
                     <Td className="month-debts-table__actions">
                       <div className="row-actions">
-                        {editing ? (
-                          <>
-                            <Button
-                              disabled={busy || readOnly}
-                              onClick={() => void handleSaveDebtEdit()}
-                              size="sm"
-                              type="button"
-                              variant="primary"
-                            >
-                              OK
-                            </Button>
-                            <Button
-                              disabled={busy}
-                              onClick={() => {
-                                setEditingDebtId(null);
-                                setEditDebt(null);
-                              }}
-                              size="sm"
-                              type="button"
-                            >
-                              Отмена
-                            </Button>
-                          </>
-                        ) : (
-                          <OverflowMenu label={`Действия для долга «${row.name}»`}>
-                            <OverflowMenuItem
-                              disabled={busy || readOnly}
-                              onClick={() => {
-                                setEditingDebtId(row.id);
-                                setEditDebt({
-                                  name: row.name,
-                                  debt_type: row.debt_type,
-                                  current_balance: moneyAmount(row.current_balance),
-                                  include_in_liquid_capital: row.include_in_liquid_capital,
-                                  annual_rate: row.annual_rate ?? "",
-                                  next_due_date: row.next_due_date ?? "",
-                                  contract_end_date: row.contract_end_date ?? "",
-                                });
-                              }}
-                            >
-                              Изменить
-                            </OverflowMenuItem>
-                            <OverflowMenuItem
-                              danger
-                              disabled={busy || readOnly}
-                              onClick={() => setDelDebt(row)}
-                            >
-                              Удалить
-                            </OverflowMenuItem>
-                          </OverflowMenu>
-                        )}
+                        <OverflowMenu label={`Действия для долга «${row.name}»`}>
+                          <OverflowMenuItem
+                            disabled={busy || readOnly}
+                            onClick={() => {
+                              setEditingDebtId(row.id);
+                              setEditDebt({
+                                name: row.name,
+                                debt_type: row.debt_type,
+                                current_balance: moneyAmount(row.current_balance),
+                                include_in_liquid_capital: row.include_in_liquid_capital,
+                                annual_rate: row.annual_rate ?? "",
+                                next_due_date: row.next_due_date ?? "",
+                                contract_end_date: row.contract_end_date ?? "",
+                              });
+                            }}
+                          >
+                            Изменить
+                          </OverflowMenuItem>
+                          <OverflowMenuItem
+                            danger
+                            disabled={busy || readOnly}
+                            onClick={() => setDelDebt(row)}
+                          >
+                            Удалить
+                          </OverflowMenuItem>
+                        </OverflowMenu>
                       </div>
                     </Td>
                   </tr>
@@ -727,9 +563,199 @@ export function MonthLiabilitiesSection({
             </tbody>
           </Table>
         )}
+        {(() => {
+          const editingRow = debts.find((candidate) => candidate.id === editingDebtId) ?? null;
+          const linkingRow = debts.find((candidate) => candidate.id === linkingDebtId) ?? null;
+          return (
+            <>
+              {editingRow && editDebt ? (
+                <form
+                  aria-label={`Редактирование долга «${editingRow.name}»`}
+                  className="debt-inline-edit"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSaveDebtEdit();
+                  }}
+                >
+                  <div className="debt-inline-edit__identity">
+                    <strong>Редактирование: {editingRow.name}</strong>
+                    <span className="muted tiny">Черновик</span>
+                  </div>
+                  <p className="muted tiny">
+                    Сохранённые значения строки и итоги ниже не меняются до нажатия «Сохранить».
+                  </p>
+                  <div className="debt-inline-edit__grid">
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-name`} label="Название долга">
+                      <Input
+                        id={`v1-debt-edit-${editingRow.id}-name`}
+                        onChange={(e) => setEditDebt({ ...editDebt, name: e.target.value })}
+                        value={editDebt.name}
+                      />
+                    </Field>
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-type`} label="Тип долга">
+                      <Select
+                        id={`v1-debt-edit-${editingRow.id}-type`}
+                        onChange={(e) => setEditDebt({ ...editDebt, debt_type: e.target.value })}
+                        value={editDebt.debt_type}
+                      >
+                        <option value="credit_card">Кредитная карта</option>
+                        <option value="other">Прочее</option>
+                      </Select>
+                    </Field>
+                    <Field
+                      htmlFor={`v1-debt-edit-${editingRow.id}-balance`}
+                      label="Текущий баланс долга"
+                    >
+                      <Input
+                        className="input--money"
+                        id={`v1-debt-edit-${editingRow.id}-balance`}
+                        onChange={(e) =>
+                          setEditDebt({ ...editDebt, current_balance: e.target.value })
+                        }
+                        value={editDebt.current_balance}
+                      />
+                    </Field>
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-rate`} label="Годовая ставка, %">
+                      <Input
+                        id={`v1-debt-edit-${editingRow.id}-rate`}
+                        onChange={(e) => setEditDebt({ ...editDebt, annual_rate: e.target.value })}
+                        placeholder="неизвестно"
+                        value={editDebt.annual_rate}
+                      />
+                    </Field>
+                    <Field
+                      htmlFor={`v1-debt-edit-${editingRow.id}-due`}
+                      label="Ближайший обязательный платёж"
+                    >
+                      <Input
+                        id={`v1-debt-edit-${editingRow.id}-due`}
+                        onChange={(e) =>
+                          setEditDebt({ ...editDebt, next_due_date: e.target.value })
+                        }
+                        type="date"
+                        value={editDebt.next_due_date}
+                      />
+                    </Field>
+                    <Field htmlFor={`v1-debt-edit-${editingRow.id}-end`} label="Окончание договора">
+                      <Input
+                        id={`v1-debt-edit-${editingRow.id}-end`}
+                        onChange={(e) =>
+                          setEditDebt({ ...editDebt, contract_end_date: e.target.value })
+                        }
+                        type="date"
+                        value={editDebt.contract_end_date}
+                      />
+                    </Field>
+                    <div>
+                      <span className="field__label">Учёт в капитале</span>
+                      <label className="check-row">
+                        <input
+                          checked={editDebt.include_in_liquid_capital}
+                          onChange={(e) =>
+                            setEditDebt({
+                              ...editDebt,
+                              include_in_liquid_capital: e.target.checked,
+                            })
+                          }
+                          type="checkbox"
+                        />
+                        В капитале
+                      </label>
+                    </div>
+                  </div>
+                  <div className="debt-inline-edit__actions">
+                    <Button disabled={busy || readOnly} size="sm" type="submit" variant="primary">
+                      Сохранить
+                    </Button>
+                    <Button
+                      disabled={busy}
+                      onClick={() => {
+                        setEditingDebtId(null);
+                        setEditDebt(null);
+                      }}
+                      size="sm"
+                      type="button"
+                    >
+                      Отмена
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+              {linkingRow && linkingDebtId !== null && editingDebtId === null ? (
+                <form
+                  aria-label={`Связь долга «${linkingRow.name}» со счётом`}
+                  className="debt-inline-edit"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveDebtLink(linkingRow);
+                  }}
+                >
+                  <div className="debt-inline-edit__identity">
+                    <strong>Связь долга: {linkingRow.name}</strong>
+                    <span className="muted tiny">
+                      {linkingRow.linked_account_id == null ? "Не связано" : "Связано"}
+                    </span>
+                  </div>
+                  <p className="muted tiny">
+                    Итоги посчитаны по сохранённой связи и не учитывают несохранённый выбор.
+                  </p>
+                  <div className="debt-inline-edit__grid">
+                    <Field
+                      htmlFor={`v1-debt-link-${linkingRow.id}-account`}
+                      label="Счёт для связи с долгом"
+                    >
+                      <Select
+                        disabled={busy || readOnly || eligibleAccounts.length === 0}
+                        id={`v1-debt-link-${linkingRow.id}-account`}
+                        onChange={(event) => setLinkAccountId(event.target.value)}
+                        value={linkAccountId}
+                      >
+                        <option value="">Выбери счёт</option>
+                        {eligibleAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {accountOptionLabel(account)}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  {eligibleAccounts.length === 0 ? (
+                    <p className="muted tiny">{LINK_ACCOUNT_EMPTY_HINT}</p>
+                  ) : null}
+                  {linkingRow.linked_account_id != null &&
+                  !eligibleAccounts.some(
+                    (account) => account.id === linkingRow.linked_account_id,
+                  ) ? (
+                    <p className="muted tiny">{LINK_ACCOUNT_STALE_HINT}</p>
+                  ) : null}
+                  <div className="debt-inline-edit__actions">
+                    <Button
+                      disabled={
+                        busy ||
+                        readOnly ||
+                        !eligibleAccounts.some((account) => account.id === Number(linkAccountId))
+                      }
+                      size="sm"
+                      type="submit"
+                      variant="primary"
+                    >
+                      Сохранить связь
+                    </Button>
+                    <Button disabled={busy} onClick={cancelLinkingDebt} size="sm" type="button">
+                      Отмена
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+            </>
+          );
+        })()}
         <div className="totals-bar">
           <span>
-            Долг по кредитным картам: <strong>{formatMoney(cardDebtTotal)}</strong>
+            Долг по кредитным картам:{" "}
+            <strong>
+              <MoneyAmount amount={cardDebtTotal} />
+            </strong>
           </span>
         </div>
         {!readOnly ? (
@@ -822,7 +848,11 @@ export function MonthLiabilitiesSection({
       />
 
       <Panel
-        action={<Badge>RE {formatMoney(propertyValueTotal)}</Badge>}
+        action={
+          <Badge>
+            Недвижимость: <MoneyAmount amount={propertyValueTotal} />
+          </Badge>
+        }
         label="Обязательства"
         title="Недвижимость"
       >
@@ -874,7 +904,7 @@ export function MonthLiabilitiesSection({
                           value={editProp.estimated_value}
                         />
                       ) : (
-                        formatMoney(moneyAmount(row.estimated_value))
+                        <MoneyAmount amount={moneyAmount(row.estimated_value)} />
                       )}
                     </Td>
                     <Td numeric>
@@ -888,7 +918,7 @@ export function MonthLiabilitiesSection({
                           value={editProp.mortgage_balance}
                         />
                       ) : (
-                        formatMoney(moneyAmount(row.mortgage_balance))
+                        <MoneyAmount amount={moneyAmount(row.mortgage_balance)} />
                       )}
                     </Td>
                     <Td numeric>
@@ -902,7 +932,7 @@ export function MonthLiabilitiesSection({
                           value={editProp.monthly_payment}
                         />
                       ) : (
-                        formatMoney(moneyAmount(row.monthly_payment))
+                        <MoneyAmount amount={moneyAmount(row.monthly_payment)} />
                       )}
                     </Td>
                     <Td>
@@ -985,13 +1015,22 @@ export function MonthLiabilitiesSection({
         )}
         <div className="totals-bar">
           <span>
-            Стоимость: <strong>{formatMoney(propertyValueTotal)}</strong>
+            Стоимость:{" "}
+            <strong>
+              <MoneyAmount amount={propertyValueTotal} />
+            </strong>
           </span>
           <span>
-            Остаток ипотеки: <strong>{formatMoney(mortgageBalanceTotal)}</strong>
+            Остаток ипотеки:{" "}
+            <strong>
+              <MoneyAmount amount={mortgageBalanceTotal} />
+            </strong>
           </span>
           <span>
-            Платёж: <strong>{formatMoney(paymentTotal)}</strong>
+            Платёж:{" "}
+            <strong>
+              <MoneyAmount amount={paymentTotal} />
+            </strong>
           </span>
         </div>
         <div className="totals-bar">
@@ -1001,7 +1040,7 @@ export function MonthLiabilitiesSection({
           </span>
           <span>
             Недостаток покрытия:{" "}
-            <strong>{mortgage ? formatMoney(moneyAmount(mortgage.gap)) : "—"}</strong>
+            <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
           </span>
           <span>
             Покрытие обязательных расходов:{" "}

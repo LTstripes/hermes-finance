@@ -185,6 +185,53 @@ test("ui-v2 Home partial capital coverage stays beside the known subtotal", asyn
   expect(evidence.errors).toEqual([]);
 });
 
+test("ui-v2 Home linked pair: gross details, fixed residuals and narrow layout", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installApi(page);
+  const comparison = evidence.state.comparison;
+  if (!comparison.explanation || !comparison.current || !comparison.previous)
+    throw new Error("Missing comparison fixture");
+  comparison.explanation.pairs = [
+    {
+      account_id: 7,
+      account_name: "Синтетический накопительный счёт с длинным названием",
+      previous: {
+        debt_id: 5,
+        debt_name: "Синтетическая кредитка ранее",
+        account_balance: { amount: "100.00", currency: "RUB" },
+        debt_balance: { amount: "80.00", currency: "RUB" },
+        net_contribution: { amount: "20.00", currency: "RUB" },
+      },
+      current: {
+        debt_id: 6,
+        debt_name: "Синтетическая кредитка сейчас",
+        account_balance: { amount: "40.00", currency: "RUB" },
+        debt_balance: { amount: "20.00", currency: "RUB" },
+        net_contribution: { amount: "20.00", currency: "RUB" },
+      },
+      net_contribution_delta: { amount: "0.00", currency: "RUB" },
+    },
+  ];
+  comparison.explanation.noncomparable_account_ids = [8];
+  comparison.explanation.residual_asset_class_deltas[0].amount.amount = "52660.00";
+  comparison.explanation.residual_debt_contribution_delta.amount = "-10060.00";
+  await page.goto("/v2");
+  const summary = page.locator("summary").filter({ hasText: "Синтетический накопительный" });
+  await expect(summary).toHaveCount(1);
+  await summary.click();
+  await expect(page.getByText(/Синтетическая кредитка ранее/)).toBeVisible();
+  await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  await assertBounded(page);
+  await capture(page, testInfo, "issue-651-linked-pair-expanded");
+  await page.setViewportSize({ width: 700, height: 768 });
+  await assertBounded(page);
+  await expect(summary).toBeVisible();
+  await capture(page, testInfo, "issue-651-linked-pair-narrow");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
 for (const scene of ["no-closed", "first-closed", "zero", "passive-error"] as const) {
   test(`ui-v2 Home state ${scene}: honest partial result`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "1440x900", "State evidence captured once");
@@ -475,6 +522,7 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   );
   await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
 
+  await page.getByText("Шаги закрытия · до закрытия и после него", { exact: true }).click();
   await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
   await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть месяц" }).click();

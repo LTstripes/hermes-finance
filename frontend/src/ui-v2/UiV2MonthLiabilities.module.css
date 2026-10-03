@@ -83,6 +83,82 @@
   font-size: 13px;
 }
 
+.savedNote {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.linkName {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* #650: stacked full-width debt/link editor below the readonly row. Lives
+   outside .table-wrap so Save/Cancel never depend on horizontal scrolling. */
+.stackedEditor {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.stackedEditorHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stackedEditorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.stackedEditor > *,
+.stackedEditorGrid > *,
+.stackedEditor :global(.field),
+.stackedEditor :global(.input),
+.stackedEditor :global(.select) {
+  min-width: 0;
+}
+
+.stackedEditor :global(.input),
+.stackedEditor :global(.select) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.stackedCheck {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+@media (max-width: 480px) {
+  .stackedEditor {
+    padding: 12px;
+  }
+
+  .stackedEditorGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .checkRow {
   display: flex;
   align-items: center;

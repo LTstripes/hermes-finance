@@ -208,6 +208,12 @@ def linked_pairs_for_months(
     ).all()
 
     account_amounts: dict[tuple[int, int], int] = {}
+    cash_amounts = {
+        (month_id, account_id): int(amount) for month_id, account_id, amount in cash_rows
+    }
+    deposit_amounts = {
+        (month_id, account_id): int(amount) for month_id, account_id, amount in deposit_rows
+    }
     account_fact_keys: set[tuple[int, int]] = set()
     for month_id, account_id, amount in (*cash_rows, *deposit_rows):
         if account_id is None:
@@ -250,6 +256,8 @@ def linked_pairs_for_months(
                 account_name=account_name,
                 account_type=account_type,
                 account_balance=RubleAmount(account_amounts[account_key]),
+                cash_balance=RubleAmount(cash_amounts.get(account_key, 0)),
+                deposit_balance=RubleAmount(deposit_amounts.get(account_key, 0)),
             )
         )
 

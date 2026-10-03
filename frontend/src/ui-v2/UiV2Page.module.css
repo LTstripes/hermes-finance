@@ -593,6 +593,14 @@
   border-top: 1px dashed #cfd6dc;
 }
 
+.changeList details {
+  min-width: 0;
+}
+
+.changeList strong {
+  flex-shrink: 0;
+}
+
 .changeTotal {
   margin-top: 5px;
   border-bottom: 0;
@@ -890,11 +898,30 @@
 .closeStepList {
   display: grid;
   gap: 8px;
-  max-height: min(58vh, 620px);
   margin: 0;
   padding: 0 5px 0 0;
-  overflow: auto;
   list-style: none;
+}
+
+.closeStepsOverview {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+
+.closeStepsOverview > summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.closeLifecyclePanel {
+  position: sticky;
+  top: 12px;
+  z-index: 2;
+  box-shadow: 0 4px 18px rgb(44 74 108 / 12%);
 }
 
 .closeStep {
@@ -1142,16 +1169,19 @@
     padding: 17px;
   }
 
-  .closeCurrentHeading,
   .closeStep {
     grid-template-columns: 28px minmax(0, 1fr);
   }
 
   .closeCurrentHeading {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .closeCurrentHeading .closeStepState,
+  .closeCurrentHeading .closeStepState {
+    grid-column: 1;
+  }
+
   .closeStep > .closeStepState {
     grid-column: 2;
   }
