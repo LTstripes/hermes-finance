@@ -4,17 +4,17 @@ Owner/Integrator session closeout, **2026-10-04**. Live GitHub refs and complete
 
 ## Published Stable and development
 
-Published and locally confirmed Stable remains **v1.1.0**, commit `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, tree `7f5a3198fa650b71545550301063c9afd887f8f8`, annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Release push CI `36776904188` and Guarded Release `36777962224` succeeded. #643/#644 and [the release record](releases/1.1.0.md) retain publication evidence.
+Published release is **v1.2.0**, commit `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, annotated tag object `f9311d26c1aae7295361937096844f4dde615b55`. Canonical exact-main CI `37206069556` completed SUCCESS on rerun attempt 2 after one transient `ECONNRESET` in the G04/Performance job; only that failed job was rerun and passed. Guarded Release `37206660242` succeeded. The last locally confirmed Stable remains **v1.1.0** until the Owner runs backup-first OPS02 for 1.2.0; publication and installation are separate. [Release record](releases/1.2.0.md) retains publication evidence.
 
 #572 is CLOSED: **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use. This is not all-native/all-provider success or proof that every XIRR/TWRR is available on personal history. The pre-publication deferral is historical, superseded by [actual acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786).
 
-Current canonical development checkpoint: `54ddfd940543b5daabb6c6d06aa5a6abe1878408`, the #690 CI/test closeout merge. Exact-main push CI `37188367166` completed SUCCESS. There are no open pull requests at this checkpoint. Published/local Stable is still v1.1.0; no release or Stable promotion follows automatically from the completed post-release, CI/test or Launcher-retirement work.
+Published release checkpoint: `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc` / v1.2.0. Release-preparation PR #693 exact-head CI `37205737199` and UI comparison `37205737191` succeeded; canonical CI and guarded publication are recorded above. Any later docs-only closeout merge may advance `main` without changing the immutable release tag.
 
 ## Owner filesystem and scheduled cleanup — completed
 
 **#679 and #666 are CLOSED / COMPLETE. Do not restart inventory, migration, rollback rehearsals or legacy cleanup.** [Final operational report](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455).
 
-- `<HERMES_ROOT>/stable`: whole production runtime moved; exact v1.1.0, DB identity/content/schema preserved, destination Python environment re-prepared, Start/readiness PASS.
+- `<HERMES_ROOT>/stable`: whole production runtime was moved and last confirmed on exact v1.1.0 with DB identity/content/schema preserved and Start/readiness PASS. Owner-selected v1.2.0 is now published; the local Stable transition is the next explicit backup-first OPS02 operation.
 - `<HERMES_ROOT>/main`: canonical code-only checkout, the former Control role. A remote documentation merge does not automatically update this local checkout.
 - `<HERMES_ROOT>/test`: persistent reusable isolated Preview/UAT folder. Last reported pin remains `d282d09647f129cd83c99e14a10024901a1cf6da`. Data isolation is proven; Test was not started while Stable owned port 8000.
 - `<HERMES_ROOT>/owner` and the four `workspaces/<client>` roots are retained. Client roots were already configured; no reconfiguration is pending.
@@ -25,9 +25,9 @@ Current canonical development checkpoint: `54ddfd940543b5daabb6c6d06aa5a6abe1878
 
 Important exception to the simple root diagram: the deployed janitor and report live under the separate **`<FINANCE_CONTAINER>/ops`** boundary. Preserve this active operational directory. Being outside `<HERMES_ROOT>` is not, by itself, deletion authority. See [machine layout](OWNER_MACHINE_LAYOUT.md) and [janitor](WORKSPACE_JANITOR.md).
 
-## Post-release product wave — integrated, not newly released
+## Post-v1.1.0 product wave — integrated and published in v1.2.0
 
-Owner-tested aggregate `d282d09647f129cd83c99e14a10024901a1cf6da`, tree `cf39e2c933f78691e7ec0db14872f640df903ec5`, passed CI `37108969114` and UI `37108969154`. [#662 Owner acceptance](https://github.com/LTstripes/hermes-finance/pull/662#issuecomment-5967980369) authorized integration with documented UX follow-ups. Merge `a0396e9971be119038b8c28d29398191449b0c0c` passed canonical CI `37114728212`.
+Owner-tested aggregate `d282d09647f129cd83c99e14a10024901a1cf6da`, tree `cf39e2c933f78691e7ec0db14872f640df903ec5`, passed CI `37108969114` and UI `37108969154`. [#662 Owner acceptance](https://github.com/LTstripes/hermes-finance/pull/662#issuecomment-5967980369) authorized integration with documented UX follow-ups. The accepted wave plus later #667, CI/runtime maintenance and Launcher retirement are now packaged in published v1.2.0.
 
 | Slice | Delivered result | Retained limit |
 | --- | --- | --- |
