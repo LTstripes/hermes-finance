@@ -20,6 +20,7 @@ from hermes_finance.api.cash import router as cash_router
 from hermes_finance.api.cash_boundary_coverage import router as cash_boundary_coverage_router
 from hermes_finance.api.cash_flow_ladder import router as cash_flow_ladder_router
 from hermes_finance.api.class_endpoint_eligibility import router as class_evidence_router
+from hermes_finance.api.class_returns import router as class_returns_router
 from hermes_finance.api.close_readiness import router as close_readiness_router
 from hermes_finance.api.comments import router as comments_router
 from hermes_finance.api.dashboard import router as dashboard_router
@@ -149,6 +150,7 @@ def create_app(
     application.include_router(performance_attribution_router)
     application.include_router(portfolio_xirr_router)
     application.include_router(portfolio_twrr_router)
+    application.include_router(class_returns_router)
     application.include_router(broker_snapshot_router)
     application.include_router(broker_identity_mappings_router)
     application.include_router(broker_reconciliation_router)

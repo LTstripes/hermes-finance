@@ -198,6 +198,7 @@ _MIGRATION_FILES = frozenset(
 _PERSISTENCE_FILES = frozenset(
     {
         "test_class_endpoint_eligibility.py",
+        "test_class_returns.py",
         "test_applied_payouts.py",
         "test_backups_api.py",
         "test_protected_backups.py",
