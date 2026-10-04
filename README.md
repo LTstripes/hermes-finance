@@ -14,7 +14,7 @@ Published/local Stable remains **v1.1.0**: released commit `32c905cfc938fd1aeaeb
 
 **Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
 
-Development checkpoint before this CI/test closeout: `main@29b2ecf6c61a86fb5da03c48585b92358f38e890`. Exact-main CI `37187645443` completed SUCCESS. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
+Current development checkpoint: `main@54ddfd940543b5daabb6c6d06aa5a6abe1878408`. Exact-main CI `37188367166` completed SUCCESS and no open pull requests were present at read-back. Live GitHub remains authoritative. This is still ahead of published Stable v1.1.0. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
 
 ## Product/runtime invariants
 
@@ -29,7 +29,7 @@ Development checkpoint before this CI/test closeout: `main@29b2ecf6c61a86fb5da03
 
 ### Monthly Close / UI v2
 
-Native month/editor operations, explicit imports/Preview/Apply/readback, exact-month final review/report/reopen, Goals/Tax/IIS/Scenario and data/application tools are integrated. Home, Capital, Income and Plans, contextual History/Reports and native Monthly Close are primary v2 surfaces. `/v1` and retained legacy deep links remain available; #573 retirement requires a separate Owner decision.
+Native month/editor operations, explicit imports/Preview/Apply/readback, exact-month final review/report/reopen, Goals/Tax/IIS/Scenario and data/application tools are integrated. Home, Capital, Income and Plans, contextual History/Reports and native Monthly Close are primary v2 surfaces. `/v1` and retained legacy deep links remain intentionally available; #573 is CLOSED / NOT_PLANNED unless Owner explicitly revisits retirement later.
 
 The post-release wave adds exact-month navigation, direct final review, saved-only reread, combined Settings/Diagnostics, collapsed bulk/individual future payouts, contextual verified mapping, exception-first Alfa, money/debt-editor readability and linked-pair explanation. Accepted lifecycle/financial boundaries remain unchanged.
 
@@ -43,7 +43,7 @@ Closeout: [Decision Support v1](docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md)
 
 ### Performance and data integrity
 
-Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards and PERF04A monetary bridge are integrated. Performance Phase A adds diagnostics and explicit data preparation; class returns #535/#540 remain a separate Phase B.
+Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards and PERF04A monetary bridge are integrated. Performance Phase A adds diagnostics and explicit data preparation. Exact class returns #535/#540 remain a separate Phase B, currently blocked on #534's accepted evidence prerequisites rather than on UI implementation.
 
 `value_change_after_external_flows` is not return/profit/P&L. The accepted backend-only decomposition `B_portfolio = Σ B_account + Σ T_internal_transfer` has no residual bucket or partial exact split; instrument/class, price/FX, realised/unrealised and cost-basis attribution are unsupported without their own accepted evidence foundation. API/UI exposure of that backend slice is a separate decision.
 
@@ -156,8 +156,9 @@ The sequence remains exact-SHA isolated UAT → Owner acceptance → guarded imm
 ## What comes next
 
 - CI/test optimization #668–#671 and #629 Launcher retirement are complete; there is no dedicated test/CI optimization backlog. See [the closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
-- Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected. Full accepted UAT is not repeated without a new risk.
-- #646 is a separate Alfa investigation. #630 representative fixture is CLOSED / NOT_PLANNED; class returns #535/#540 and #389 composer remain product choices. `/v1` is not retired.
+- Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected; Owner has currently deferred this combined UAT to avoid repeating it before the Alfa follow-up settles.
+- #646 is a separate Alfa PRO compatibility investigation. Current live evidence: Trading core can be switched Online on port 3366 and a read-only token can be issued, but Hermes still rejects the resulting protocol as unrecognized; no accepted token/handshake contract is available yet.
+- #630, #573 and historical roadmap #127 are CLOSED / NOT_PLANNED; #528 is CLOSED / COMPLETED. Class returns #535/#540 and #389 composer remain product choices. `/v1` remains intentionally available.
 - #679/#666 migration and janitor deployment are complete. Daily cleanup eligibility is described in [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md); it does not grant arbitrary manual deletion outside the root.
 
 ## Health
