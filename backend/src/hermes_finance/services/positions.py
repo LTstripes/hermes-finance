@@ -313,12 +313,22 @@ def stage_update_position_snapshot(
         manual_adjustment if manual_adjustment is not None else snapshot.manual_adjustment
     )
     next_notes = notes if notes is not None else snapshot.notes
-    market_value, cost_basis, unrealized_result = _compute_metrics(
-        next_quantity,
-        next_average_cost,
-        next_price,
-        next_accrued_interest,
-    )
+    if not isinstance(historical_instrument_type, _UnchangedIdentity) and all(
+        value is None
+        for value in (quantity, average_cost_per_unit, market_price_per_unit, accrued_interest)
+    ):
+        # C1-only corrections must preserve authoritative stored valuations,
+        # including legacy totals that do not round-trip through per-unit prices.
+        market_value = snapshot.market_value_kopecks
+        cost_basis = snapshot.cost_basis_kopecks
+        unrealized_result = snapshot.unrealized_result_kopecks
+    else:
+        market_value, cost_basis, unrealized_result = _compute_metrics(
+            next_quantity,
+            next_average_cost,
+            next_price,
+            next_accrued_interest,
+        )
     values = {
         "quantity": next_quantity,
         "average_cost_per_unit_kopecks": next_average_cost,

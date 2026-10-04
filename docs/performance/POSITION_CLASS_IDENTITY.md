@@ -37,6 +37,10 @@ explicit NULL withdraws evidence. A CLOSED row must first be reopened, corrected
 and reclosed. Legacy rows can only gain evidence by an explicit correction;
 reopening/reclosing alone does not repair history.
 
+Class-only correction/withdrawal preserves the stored financial totals, including
+legacy totals that do not round-trip through rounded per-unit prices. Supplying
+financial inputs continues to use the existing position recalculation rules.
+
 Migration 0045 adds the nullable checked column without any data UPDATE/default.
 Downgrade succeeds while all evidence is NULL and fails closed if evidence would
 be lost. Old-schema backups require the existing forward recovery route or are

@@ -152,6 +152,46 @@ def test_initial_identity_uses_persisted_catalogue_not_stale_session_object(tmp_
         database.engine.dispose()
 
 
+@pytest.mark.parametrize("corrected_type", ["bond", None])
+def test_class_only_correction_preserves_non_roundtripping_legacy_valuations(
+    tmp_path: Path, corrected_type: str | None
+) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        row = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=3,
+            average_cost_per_unit=3333,
+            market_price_per_unit=6667,
+            price_date=date(2030, 5, 12),
+        )
+        # Legacy import stores original totals alongside rounded per-unit prices.
+        row.historical_instrument_type = None
+        row.market_value_kopecks = 20000
+        row.cost_basis_kopecks = 10000
+        row.unrealized_result_kopecks = 10000
+        session.commit()
+        updated = update_position_snapshot(
+            session,
+            row.id,
+            historical_instrument_type=corrected_type,
+            expected_updated_at=row.updated_at,
+        )
+        assert updated.historical_instrument_type == corrected_type
+        assert (
+            updated.market_value_kopecks,
+            updated.cost_basis_kopecks,
+            updated.unrealized_result_kopecks,
+        ) == (20000, 10000, 10000)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
 def session_for(tmp_path: Path) -> tuple[Session, Database]:
     database = create_database(tmp_path / "positions.db")
     Base.metadata.create_all(database.engine)
