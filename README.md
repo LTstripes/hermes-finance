@@ -89,7 +89,11 @@ or to repair the folder layout.** Direct Prepare/Validate/Start below is the
 normal path. Shared backup-first update (`scripts/launcher-production-backup.py`
 via `update-stable-lib.ps1`), prepared-runtime, recovery rehearsal and
 `RuntimeConfig` identity/exclusion helpers were preserved even where a helper
-or schema name still mentions Launcher. The former compact shell and failed
+or schema name still mentions Launcher. Recovery and cleanup exclusion inputs
+use the direct-operations runtime inventory defined in
+[OWNER_RUNTIME_OPERATIONS §13](docs/OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal)
+([example](docs/runtime-inventory.example.json)); no Launcher shell, config UI
+or installation is involved. The former compact shell and failed
 self-updater are historical: [R09 closeout](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
 
 ## Explicit Prepare + deterministic Start

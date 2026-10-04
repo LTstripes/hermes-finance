@@ -81,9 +81,11 @@ A moved Windows Python environment may retain old interpreter paths; recreate it
 Local Launcher/config/shortcuts have been deleted and repository Launcher
 source/package/tests/jobs are retired by #629. Do not reinstall the shell as
 a prerequisite. Shared backup-first update, prepared-runtime, recovery and
-`RuntimeConfig` identity/exclusion helpers were preserved and reconciled with
-their consumers. Earlier #298/#311/#312 self-update and #585/#586
-compact-shell details are historical, not a new development direction.
+`RuntimeConfig` identity/exclusion helpers were preserved; recovery and cleanup
+exclusion inputs use the direct-operations runtime inventory defined in
+[OWNER_RUNTIME_OPERATIONS §13](OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal)
+([example](runtime-inventory.example.json)). Earlier #298/#311/#312 self-update
+and #585/#586 compact-shell details are historical, not a new development direction.
 
 [Owner runtime operations](OWNER_RUNTIME_OPERATIONS.md) contain current commands and recovery boundaries. #313 composable-runtime redesign remains complete.
 

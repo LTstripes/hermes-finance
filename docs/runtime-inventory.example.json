@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "canonical_production": {
+    "checkout": "<absolute-stable-checkout-path>",
+    "data_dir": "<absolute-stable-data-dir>",
+    "database": "<absolute-stable-database-path>"
+  },
+  "profiles": [
+    {
+      "id": "stable",
+      "type": "stable",
+      "checkout": "<absolute-stable-checkout-path>",
+      "data_dir": "<absolute-stable-data-dir>",
+      "database": "<absolute-stable-database-path>"
+    },
+    {
+      "id": "preview",
+      "type": "preview",
+      "checkout": "<absolute-preview-checkout-path>",
+      "data_dir": "<absolute-preview-data-dir>",
+      "database": "<absolute-preview-database-path>"
+    }
+  ]
+}

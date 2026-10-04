@@ -4,6 +4,12 @@ Safely inventories and removes disposable Hermes Finance Windows workspaces.
 .DESCRIPTION
 Dry-run by default. -Apply repeats every safety check before removal. The
 script never reads .env or SQLite contents; it inspects names and metadata only.
+
+Configured-path exclusions come from the direct-operations runtime inventory
+(see docs/runtime-inventory.example.json): version 1 with canonical_production
+and profiles entries carrying absolute checkout/database paths. Pass its
+Owner-local path via -LauncherConfigPath (name retained for compatibility).
+A missing or invalid inventory fails closed; it never authorizes deletion.
 #>
 [CmdletBinding()]
 param(
