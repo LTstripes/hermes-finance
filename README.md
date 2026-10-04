@@ -14,7 +14,7 @@ Published/local Stable remains **v1.1.0**: released commit `32c905cfc938fd1aeaeb
 
 **Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
 
-Session checkpoint before this documentation sync: `main@8eb991fc81ebbe63917a9ca1ea204762129c9019`, exact-main CI `37150791634` SUCCESS. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md) for completed work, test-stream ownership and remaining Owner checks.
+Development checkpoint before this CI/test closeout: `main@29b2ecf6c61a86fb5da03c48585b92358f38e890`. Exact-main CI `37187645443` is the final pending gate at this draft checkpoint. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
 
 ## Product/runtime invariants
 
@@ -155,10 +155,9 @@ The sequence remains exact-SHA isolated UAT → Owner acceptance → guarded imm
 
 ## What comes next
 
-- Existing CI stream: #671/#681, #668/#682, #669/#683 and #670 docs-only PR fast path are merged. Preserve actual head/merge evidence, unique tests and full canonical main/release gates.
-- #629 repository Launcher retirement is implemented in this change, serialized after the #670 workflow-ownership transfer.
-- Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected. Full accepted UAT is not repeated for this documentation sync.
-- #646 is a separate Alfa investigation. #630 representative fixture, class returns #535/#540 and #389 composer are deferred choices. `/v1` is not retired.
+- CI/test optimization #668–#671 and #629 Launcher retirement are complete at the code/integration checkpoint; there is no dedicated test/CI optimization backlog after the final canonical gate. See [the closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
+- Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected. Full accepted UAT is not repeated without a new risk.
+- #646 is a separate Alfa investigation. #630 representative fixture is CLOSED / NOT_PLANNED; class returns #535/#540 and #389 composer remain product choices. `/v1` is not retired.
 - #679/#666 migration and janitor deployment are complete. Daily cleanup eligibility is described in [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md); it does not grant arbitrary manual deletion outside the root.
 
 ## Health
@@ -177,7 +176,7 @@ Published v1.1.0 reports `status=ok`, `version=1.1.0`. Open `http://127.0.0.1:80
 - [MASTER_SPEC](docs/MASTER_SPEC.md): product semantics; accepted ADRs retain their contracts.
 - [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md): active status/context and restart brief.
 - [OWNER_MACHINE_LAYOUT](docs/OWNER_MACHINE_LAYOUT.md), [OWNER_RUNTIME_OPERATIONS](docs/OWNER_RUNTIME_OPERATIONS.md), [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md): current folders, direct startup and scheduled housekeeping.
-- [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md) and dated closeouts retain history; historical model attribution is not a standing reporting requirement.
+- [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md), [CI/test optimization closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and other dated closeouts retain history; historical model attribution is not a standing reporting requirement.
 - [v1.1.0 release record](docs/releases/1.1.0.md), [v1.1.0 notes](docs/release-notes-1.1.0.md), [v1.0.0 closeout](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md), [v0.9.0 notes](docs/release-notes-0.9.0.md): immutable release-era evidence, not instructions to redo completed work.
 
 ## Privacy

@@ -14,3 +14,8 @@ Authoritative current agent operation:
 Active task scope comes from the assigned task or current release contract, not from these files.
 
 Old model routes and process instructions here must not be reused as current policy.
+
+
+Recent accepted closeout evidence:
+
+- [CI/test optimization closeout — 2026-10-04](CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) — later CI/test simplification and Launcher retirement; historical evidence, not a standing optimization queue.
