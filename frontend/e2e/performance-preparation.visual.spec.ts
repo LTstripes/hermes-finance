@@ -1,6 +1,130 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { classReturnsFixture } from "../src/test/classReturnsFixture";
+
+for (const width of [390, 1366]) {
+  for (const scenario of ["values", "evidence", "xirr-only"] as const) {
+    test(`ui-v2 class returns ${scenario} keyboard and layout ${width}px @viewport-owned`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const start = "2031-05-31";
+      const end = "2031-07-31";
+      const reads: string[] = [];
+      const unexpected: string[] = [];
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.route("**/api/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (!url.pathname.startsWith("/api/")) {
+          await route.continue();
+          return;
+        }
+        if (
+          url.pathname !== "/api/performance/class-returns" ||
+          route.request().method() !== "GET"
+        ) {
+          unexpected.push(`${route.request().method()} ${url.pathname}`);
+          await route.fulfill({ json: [] });
+          return;
+        }
+        const assetClass = url.searchParams.get("asset_class") as string;
+        reads.push(assetClass);
+        expect(url.searchParams.get("start_date")).toBe(start);
+        expect(url.searchParams.get("end_date")).toBe(end);
+        const row = classReturnsFixture(assetClass, start, end);
+        if (scenario === "values") {
+          if (assetClass === "stock") row.xirr.value = row.twrr.value = "0";
+          if (assetClass === "bond") row.xirr.value = row.twrr.value = "-2.75";
+        } else if (scenario === "evidence" && assetClass !== "deposit") {
+          const code =
+            assetClass === "stock"
+              ? "no_crossing_coverage_missing_or_ambiguous"
+              : assetClass === "bond"
+                ? "no_crossing_material_changed"
+                : "not_computable_xirr_root_ambiguity";
+          if (assetClass !== "gold") {
+            row.eligibility_status = "unavailable";
+            row.evidence_reason_codes = [code];
+            row.coverage_state = assetClass === "bond" ? "invalidated" : "unknown";
+            if (assetClass === "stock") row.coverage_provenance = [];
+          }
+          for (const kind of ["twrr", "xirr"] as const)
+            Object.assign(row[kind], {
+              availability: "not_computable",
+              quality: "unavailable",
+              value: null,
+              reason_source: assetClass === "gold" ? "solver" : "evidence",
+              reason_codes: [code],
+            });
+        } else if (scenario === "xirr-only" && assetClass === "stock") {
+          Object.assign(row.twrr, {
+            availability: "not_computable",
+            quality: "unavailable",
+            value: null,
+            reason_source: "solver",
+            reason_codes: ["not_computable_twrr_zero_or_negative_denominator"],
+          });
+        }
+        await route.fulfill({ json: row });
+      });
+      await page.goto(
+        `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+      );
+      const stock = page.getByTestId("class-return-stock");
+      const bond = page.getByTestId("class-return-bond");
+      const gold = page.getByTestId("class-return-gold");
+      const deposit = page.getByTestId("class-return-deposit");
+      await expect(deposit).toContainText("Расчёт не поддерживается");
+      if (scenario === "values") {
+        await expect(stock).toContainText("0,00%");
+        await expect(bond).toContainText("−2,75%");
+      } else if (scenario === "evidence") {
+        await expect(stock).toContainText("Подтверждения неполны");
+        await expect(bond).toContainText("Подтверждения изменены или отозваны");
+        await expect(gold).toContainText("Ограничение расчётного метода");
+      } else {
+        await expect(stock).toContainText("+10,12%");
+        await expect(stock).toContainText("Доходность не определена");
+      }
+      const classes = page.getByRole("button", { name: "По классам", exact: true });
+      await classes.focus();
+      await page.keyboard.press("Enter");
+      await expect(classes).toBeFocused();
+      await expect(classes).toHaveAttribute("aria-pressed", "true");
+      const expand = stock.getByRole("button", { name: /Акции$/ });
+      await expand.focus();
+      await page.keyboard.press("Enter");
+      await expect(expand).toBeFocused();
+      await expect(expand).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByText("Запрошенный период").first()).toBeVisible();
+      await expect(page.getByRole("table")).toBeVisible();
+      await expect(page.getByRole("rowheader")).toHaveCount(4);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      expect(
+        await page
+          .getByRole("table")
+          .evaluate((table) => table.scrollWidth <= table.clientWidth + 1),
+      ).toBe(true);
+      // StrictMode may abort/restart the same read during the initial mount.
+      expect([...new Set(reads)].sort()).toEqual(["bond", "deposit", "gold", "stock"]);
+      expect(unexpected).toEqual([]);
+      expect(errors).toEqual([]);
+      const dir = path.resolve(".visual-audit", testInfo.project.name);
+      fs.mkdirSync(dir, { recursive: true });
+      await page.screenshot({
+        path: path.join(dir, `ui-v2-class-returns-${scenario}-${width}.png`),
+        fullPage: true,
+      });
+      await page.keyboard.press("Enter");
+      await expect(expand).toHaveAttribute("aria-expanded", "false");
+      await expect(expand).toBeFocused();
+    });
+  }
+}
 
 for (const width of [390, 1366]) {
   test(`Owner preparation keyboard and layout ${width}px`, async ({ page }, testInfo) => {

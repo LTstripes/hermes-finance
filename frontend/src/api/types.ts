@@ -1,5 +1,43 @@
 /** Shared API types matching backend contracts. */
 
+/** Accepted #535 read-only class-return projection; decimal percentage points. */
+export type PerformanceAssetClass = "stock" | "bond" | "gold" | "deposit";
+
+export type ClassReturnMetric = {
+  availability: "available" | "not_computable";
+  quality: "exact" | "unavailable";
+  value: string | null;
+  value_unit: "percentage_points";
+  reason_codes: string[];
+  reason_source: "evidence" | "solver" | null;
+};
+
+export type ClassReturns = {
+  asset_class: string;
+  requested_period: { start_date: string; end_date: string };
+  actual_covered_period: { start_date: string | null; end_date: string | null };
+  performance_currency: string;
+  valuation_basis: "persisted_rub_market_value_kopecks";
+  historical_account_ids: number[];
+  coverage_state: string;
+  coverage_provenance: Array<{
+    id: number;
+    revision: number;
+    asset_class: "stock" | "bond" | "gold";
+    covered_from: string;
+    covered_to: string;
+    coverage_state: "complete" | "unknown" | "revoked";
+    provenance_kind: "owner_attestation";
+    provenance_reference: string | null;
+    opening_inventory_complete: boolean;
+    closing_inventory_complete: boolean;
+  }>;
+  eligibility_status: "eligible" | "unavailable" | "unsupported";
+  evidence_reason_codes: string[];
+  xirr: ClassReturnMetric & { annualized: true };
+  twrr: ClassReturnMetric & { annualized: false };
+};
+
 export type ApiErrorDetail = {
   field: string;
   message: string;

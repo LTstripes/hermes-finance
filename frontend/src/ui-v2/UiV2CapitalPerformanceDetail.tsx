@@ -17,6 +17,7 @@ import {
   isReadinessFresh,
   sortDiagnostics,
 } from "./CapitalPerformanceSummary";
+import { ClassReturnsTable } from "./ClassReturnsTable";
 import {
   intervalDays,
   needsAnnualizationWarning,
@@ -361,19 +362,22 @@ function ReadinessBody({
 /**
  * Leaf Performance detail (PUI-03). Mounted by the Integrator at
  * `/v2/capital/performance`; tests mount it directly with a MemoryRouter.
- * No client-side financial math; no class-return UI.
+ * No client-side financial math; class view consumes accepted #535 only.
  */
 export default function UiV2CapitalPerformanceDetail() {
   const [params, setParams] = useSearchParams();
   const [manualStart, setManualStart] = useState("");
   const [manualEnd, setManualEnd] = useState("");
+  const classesView = params.get("view") === "classes";
 
   const accountsQuery = useQuery({
+    enabled: !classesView,
     queryKey: queryKeys.accounts,
     queryFn: ({ signal }) => listAccounts(signal),
     refetchOnWindowFocus: true,
   });
   const monthsQuery = useQuery({
+    enabled: !classesView,
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
     refetchOnWindowFocus: true,
@@ -392,7 +396,7 @@ export default function UiV2CapitalPerformanceDetail() {
   const contextError = parsed.error;
 
   const readinessQuery = useQuery({
-    enabled: context !== null,
+    enabled: context !== null && context.view === "accounts",
     queryKey: queryKeys.performanceReadiness(
       context?.start ?? null,
       context?.end ?? null,
@@ -411,7 +415,7 @@ export default function UiV2CapitalPerformanceDetail() {
   });
 
   const attributionQuery = useQuery({
-    enabled: context !== null && context.scope === "portfolio",
+    enabled: context !== null && context.view === "accounts" && context.scope === "portfolio",
     queryKey: queryKeys.performanceAttribution(context?.start ?? null, context?.end ?? null),
     queryFn: ({ signal }) =>
       getPerformanceAttribution(context?.start as string, context?.end as string, signal),
@@ -436,12 +440,25 @@ export default function UiV2CapitalPerformanceDetail() {
   };
 
   const presets = useMemo(() => {
-    if (context === null || closedSnapshots.length === 0) return [];
+    if (context === null || context.view === "classes" || closedSnapshots.length === 0) return [];
     return periodPresets(context.end, closedSnapshots);
   }, [context, closedSnapshots]);
 
   let content: React.ReactNode;
-  if (contextError !== null) {
+  if (contextError?.code === "class_account_scope") {
+    content = (
+      <UiV2Notice title="По классам — только весь портфель">
+        {contextError.message}{" "}
+        <button
+          className={styles.inlineButton}
+          onClick={() => applyParams({ view: "classes", scope: "portfolio", account_id: null })}
+          type="button"
+        >
+          Перейти к классам портфеля
+        </button>
+      </UiV2Notice>
+    );
+  } else if (contextError !== null) {
     content = (
       <UiV2Notice title="Контекст доходности не задан">
         {contextError.message}{" "}
@@ -453,18 +470,7 @@ export default function UiV2CapitalPerformanceDetail() {
   } else if (context === null) {
     content = <UiV2Loading label="Проверяем контекст доходности…" />;
   } else if (context.view === "classes") {
-    content = (
-      <UiV2Notice title="Разрез по классам ещё не поддерживается">
-        Это не нехватка данных.{" "}
-        <button
-          className={styles.inlineButton}
-          onClick={() => applyParams({ view: "accounts" })}
-          type="button"
-        >
-          Перейти к счетам
-        </button>
-      </UiV2Notice>
-    );
+    content = <ClassReturnsTable start={context.start} end={context.end} />;
   } else if (readinessQuery.isError) {
     content = (
       <UiV2Notice title="Проверка не завершилась" retry={() => void readinessQuery.refetch()}>
@@ -556,6 +562,31 @@ export default function UiV2CapitalPerformanceDetail() {
       v1ReturnPath="/analytics"
     >
       <section aria-label="Период и охват">
+        <fieldset className={styles.viewControl}>
+          <legend>Разрез доходности</legend>
+          <button
+            aria-pressed={!classesView}
+            className={styles.inlineButton}
+            onClick={() =>
+              applyParams(
+                classesView
+                  ? { view: "accounts", scope: "portfolio", account_id: null }
+                  : { view: "accounts" },
+              )
+            }
+            type="button"
+          >
+            По счетам
+          </button>
+          <button
+            aria-pressed={classesView}
+            className={styles.inlineButton}
+            onClick={() => applyParams({ view: "classes", scope: "portfolio", account_id: null })}
+            type="button"
+          >
+            По классам
+          </button>
+        </fieldset>
         <div className={styles.controls}>
           <label>
             Начальная дата снимка
@@ -563,7 +594,7 @@ export default function UiV2CapitalPerformanceDetail() {
               aria-label="Начальная дата снимка"
               onChange={(event) => setManualStart(event.target.value)}
               type="date"
-              value={manualStart || context?.start || ""}
+              value={manualStart || context?.start || params.get("start") || ""}
             />
           </label>
           <label>
@@ -572,53 +603,57 @@ export default function UiV2CapitalPerformanceDetail() {
               aria-label="Конечная дата снимка"
               onChange={(event) => setManualEnd(event.target.value)}
               type="date"
-              value={manualEnd || context?.end || ""}
+              value={manualEnd || context?.end || params.get("end") || ""}
             />
           </label>
-          <label>
-            Охват
-            <select
-              aria-label="Охват"
-              onChange={(event) => {
-                const scope = event.target.value === "account" ? "account" : "portfolio";
-                applyParams({
-                  scope,
-                  account_id: scope === "portfolio" ? null : params.get("account_id"),
-                });
-              }}
-              value={context?.scope ?? "portfolio"}
-            >
-              <option value="portfolio">Портфель</option>
-              <option value="account">Счёт</option>
-            </select>
-          </label>
-          <label>
-            Счёт
-            <select
-              aria-label="Счёт"
-              disabled={context?.scope !== "account"}
-              onChange={(event) => applyParams({ account_id: event.target.value || null })}
-              value={
-                context?.accountId !== null && context?.accountId !== undefined
-                  ? String(context.accountId)
-                  : ""
-              }
-            >
-              <option value="">Выберите счёт</option>
-              {(accounts ?? []).map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!classesView ? (
+            <label>
+              Охват
+              <select
+                aria-label="Охват"
+                onChange={(event) => {
+                  const scope = event.target.value === "account" ? "account" : "portfolio";
+                  applyParams({
+                    scope,
+                    account_id: scope === "portfolio" ? null : params.get("account_id"),
+                  });
+                }}
+                value={context?.scope ?? "portfolio"}
+              >
+                <option value="portfolio">Портфель</option>
+                <option value="account">Счёт</option>
+              </select>
+            </label>
+          ) : null}
+          {!classesView ? (
+            <label>
+              Счёт
+              <select
+                aria-label="Счёт"
+                disabled={context?.scope !== "account"}
+                onChange={(event) => applyParams({ account_id: event.target.value || null })}
+                value={
+                  context?.accountId !== null && context?.accountId !== undefined
+                    ? String(context.accountId)
+                    : ""
+                }
+              >
+                <option value="">Выберите счёт</option>
+                {(accounts ?? []).map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className={`${styles.actionRow} ${styles.controlsFull}`}>
             <button
               className={styles.inlineButton}
               onClick={() =>
                 applyParams({
-                  start: manualStart || context?.start || null,
-                  end: manualEnd || context?.end || null,
+                  start: manualStart || context?.start || params.get("start"),
+                  end: manualEnd || context?.end || params.get("end"),
                 })
               }
               type="button"
@@ -646,7 +681,7 @@ export default function UiV2CapitalPerformanceDetail() {
         ) : null}
       </section>
       {content}
-      {context !== null ? (
+      {context !== null && context.view === "accounts" ? (
         <ObservedValuationCapture
           key={[
             context.start,

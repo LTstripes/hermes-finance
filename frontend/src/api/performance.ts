@@ -1,11 +1,30 @@
 import { apiRequest } from "./client";
 import type {
+  ClassReturns,
+  PerformanceAssetClass,
   PerformanceAttribution,
   PerformanceReadiness,
   PerformanceReadinessScope,
   PortfolioTwrr,
   PortfolioXirr,
 } from "./types";
+
+export function getClassReturns(
+  assetClass: PerformanceAssetClass,
+  startDate: string,
+  endDate: string,
+  signal?: AbortSignal,
+): Promise<ClassReturns> {
+  const query = new URLSearchParams({
+    asset_class: assetClass,
+    start_date: startDate,
+    end_date: endDate,
+  });
+  return apiRequest<ClassReturns>(`/api/performance/class-returns?${query.toString()}`, {
+    method: "GET",
+    signal,
+  });
+}
 
 export function getPerformanceAttribution(
   startDate: string,

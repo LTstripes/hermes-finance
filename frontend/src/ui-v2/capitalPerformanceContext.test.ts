@@ -118,6 +118,17 @@ describe("parsePerformanceContext", () => {
       ).error?.code,
     ).toBe("portfolio_account_mismatch");
   });
+
+  it.each(["", "&account_id=3"])(
+    "rejects classes with account scope%s before reading account data",
+    (account) => {
+      const result = parsePerformanceContext(
+        params(`start=2031-05-31&end=2031-07-31&view=classes&scope=account${account}`),
+      );
+      expect(result.context).toBeNull();
+      expect(result.error?.code).toBe("class_account_scope");
+    },
+  );
 });
 
 describe("performanceDetailHref", () => {
