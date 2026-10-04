@@ -30,6 +30,16 @@ Normal records do not collect model/provider identity, benchmark grades, tokens,
 
 ---
 
+## 2026-10-04 — Hermes Finance v1.2.0 publication
+
+- **Owner decision:** #554 explicitly selected v1.2.0 and chose several days of ordinary Stable use as the next real-history validation path; Alfa #646 remains a documented external/provider limitation.
+- **Release preparation:** PR #693, exact accepted head `a159796a979ac1d5af597c2d98b0b7e9240cc587`; exact-head CI `37205737199` SUCCESS and UI comparison `37205737191` SUCCESS.
+- **Canonical release commit:** merge `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`.
+- **Canonical CI:** run `37206069556`. Attempt 1 had one transient Playwright/API `ECONNRESET` during the Performance reopen request while the same exact candidate had passed in PR CI. No code changed; only the failed G04/native-v2 job was rerun. Attempt 2 completed that job and the overall canonical run SUCCESS.
+- **Publication:** Guarded Release `37206660242` SUCCESS.
+- **Published identity:** annotated tag `v1.2.0`, tag object `f9311d26c1aae7295361937096844f4dde615b55`, peeled commit `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; GitHub Release `Hermes Finance 1.2.0`, draft=false, prerelease=false.
+- **Runtime boundary:** publication did not mutate Owner data or Stable. The last locally confirmed Stable remains v1.1.0 until explicit backup-first OPS02 → v1.2.0 and explicit Start.
+
 ## 2026-10-04 — CI/test optimization closeout and Launcher retirement
 
 - **Scope:** complete the later CI/test optimization wave after #668/#671, retire the obsolete Launcher maintenance surface, and preserve full canonical-main/release/runtime guarantees.

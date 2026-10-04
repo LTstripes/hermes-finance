@@ -6,15 +6,15 @@ Hermes Finance — локальное однопользовательское W
 
 ## Current status
 
-Published/local Stable remains **v1.1.0**: released commit `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, tree `7f5a3198fa650b71545550301063c9afd887f8f8`, annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Publication was 2026-09-30 UTC; release push CI `36776904188` and Guarded Release `36777962224` succeeded. #643/#644 and the [release record](docs/releases/1.1.0.md) own the publication evidence.
+Published release is **v1.2.0** at `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; annotated tag object `f9311d26c1aae7295361937096844f4dde615b55` peels to that exact commit. Canonical CI `37206069556` is SUCCESS after a single failed G04 job was retried in isolation and passed; Guarded Release `37206660242` succeeded. The last locally confirmed Stable is still v1.1.0 until the Owner performs backup-first OPS02 to 1.2.0. [Release record](docs/releases/1.2.0.md).
 
 #572 is CLOSED with **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use and provider limitations. The earlier pre-publication deferral is historical, superseded by [actual Owner acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786), not retroactively relabelled as an earlier PASS. UI v2 is primary at `/`; the previous UI stays at `/v1`.
 
-**Development main is ahead of Stable.** The post-release six-slice wave (#645, #647–#651) passed Owner UAT with documented follow-ups and was integrated through #662. #672 removed repeated Home qualifiers; #667/#674 implemented the month-list follow-up. This is not a new release or a Stable version upgrade. Historical September quotes do not prove live same-day LAST; #646 remains a separate Alfa transport question.
+**v1.2.0 now contains the accepted post-v1.1.0 product wave and maintenance line.** #662 plus #667/#674, CI/test optimization #668–#671 and repository Launcher retirement #629 are in the published release. #646 remains a separate Alfa PRO compatibility limitation and is not claimed fixed by publication.
 
 **Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
 
-Current development checkpoint: `main@54ddfd940543b5daabb6c6d06aa5a6abe1878408`. Exact-main CI `37188367166` completed SUCCESS and no open pull requests were present at read-back. Live GitHub remains authoritative. This is still ahead of published Stable v1.1.0. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
+Release checkpoint: `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; exact-main CI `37206069556` SUCCESS, Guarded Release `37206660242` SUCCESS. Any later main movement from release closeout docs does not change the immutable v1.2.0 tag. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md) and [v1.2.0 release record](docs/releases/1.2.0.md).
 
 ## Product/runtime invariants
 
@@ -169,7 +169,7 @@ After a successful local start:
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Published v1.1.0 reports `status=ok`, `version=1.1.0`. Open `http://127.0.0.1:8000`.
+Published v1.2.0 reports `status=ok`, `version=1.2.0` after the local Stable update. Open `http://127.0.0.1:8000`.
 
 ## Documentation map
 
@@ -178,7 +178,7 @@ Published v1.1.0 reports `status=ok`, `version=1.1.0`. Open `http://127.0.0.1:80
 - [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md): active status/context and restart brief.
 - [OWNER_MACHINE_LAYOUT](docs/OWNER_MACHINE_LAYOUT.md), [OWNER_RUNTIME_OPERATIONS](docs/OWNER_RUNTIME_OPERATIONS.md), [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md): current folders, direct startup and scheduled housekeeping.
 - [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md), [CI/test optimization closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and other dated closeouts retain history; historical model attribution is not a standing reporting requirement.
-- [v1.1.0 release record](docs/releases/1.1.0.md), [v1.1.0 notes](docs/release-notes-1.1.0.md), [v1.0.0 closeout](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md), [v0.9.0 notes](docs/release-notes-0.9.0.md): immutable release-era evidence, not instructions to redo completed work.
+- [v1.2.0 release record](docs/releases/1.2.0.md), [v1.2.0 notes](docs/release-notes-1.2.0.md), [v1.1.0 release record](docs/releases/1.1.0.md), [v1.0.0 closeout](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md): immutable release-era evidence, not instructions to redo completed work.
 
 ## Privacy
 
