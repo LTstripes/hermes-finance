@@ -24,6 +24,8 @@ export const queryKeys = {
   properties: (monthId: number | null) => ["properties", monthId] as const,
   performanceAttribution: (startDate: string | null, endDate: string | null) =>
     ["performance-attribution", startDate, endDate] as const,
+  classReturns: (assetClass: string, startDate: string, endDate: string) =>
+    ["class-returns", assetClass, startDate, endDate] as const,
   portfolioXirr: (startDate: string | null, endDate: string | null) =>
     ["portfolio-xirr", startDate, endDate] as const,
   portfolioTwrr: (startDate: string | null, endDate: string | null) =>

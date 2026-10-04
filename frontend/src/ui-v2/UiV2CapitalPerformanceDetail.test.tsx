@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../queryClient";
+import { classReturnsFixture } from "../test/classReturnsFixture";
 import UiV2CapitalPerformanceDetail from "./UiV2CapitalPerformanceDetail";
 
 const START = "2031-05-31";
@@ -105,6 +106,9 @@ function setup(path: string, months?: Array<Record<string, unknown>>) {
       reads.push(`${options?.method ?? "GET"} ${url.pathname}${url.search}`);
       let data: unknown;
       switch (url.pathname) {
+        case "/api/performance/class-returns":
+          data = classReturnsFixture(url.searchParams.get("asset_class") as string, START, END);
+          break;
         case "/api/accounts":
           data = [
             { id: 1, name: "Депозитный счёт", account_type: "cash", status: "active" },
@@ -241,14 +245,48 @@ describe("UiV2CapitalPerformanceDetail", () => {
     expect(await screen.findByText(/недоступен.*Портфель не подставляется/i)).toBeVisible();
   });
 
-  it("reports the classes view as unsupported with a way back to accounts", async () => {
-    const { mount } = setup(`${PORTFOLIO_PATH}&view=classes`);
+  it("offers an explicit portfolio action for an incompatible classes account URL", async () => {
+    const { mount } = setup(
+      `${PORTFOLIO_PATH}&view=classes`.replace("scope=portfolio", "scope=account&account_id=3"),
+    );
     mount();
 
-    expect(await screen.findByText(/Разрез по классам ещё не поддерживается/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Перейти к счетам" }));
+    expect(await screen.findByText(/По классам — только весь портфель/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "По счетам" }));
     await screen.findByTestId("performance-accounts-table");
     expect(screen.getByTestId("test-location")).toHaveTextContent("view=accounts");
+    expect(screen.getByTestId("test-location")).toHaveTextContent("scope=portfolio");
+    expect(screen.getByTestId("test-location")).not.toHaveTextContent("account_id");
+    fireEvent.click(screen.getByRole("button", { name: "По классам" }));
+    expect(screen.getByTestId("test-location")).toHaveTextContent("view=classes");
+    expect(screen.getByTestId("test-location")).toHaveTextContent(`start=${START}&end=${END}`);
+    await waitFor(() =>
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+    );
+  });
+
+  it("switches a normal account view to portfolio classes and back with exact dates", async () => {
+    const { mount, reads } = setup(
+      PORTFOLIO_PATH.replace("scope=portfolio", "scope=account&account_id=3"),
+    );
+    mount();
+    expect(await screen.findByTestId("performance-detail-xirr")).toHaveTextContent("+8,00%");
+    fireEvent.click(screen.getByRole("button", { name: "По классам" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+    );
+    expect(screen.getByTestId("test-location")).toHaveTextContent("scope=portfolio");
+    expect(screen.getByTestId("test-location")).not.toHaveTextContent("account_id");
+    expect(screen.queryByTestId("performance-detail-xirr")).toBeNull();
+    expect(screen.queryByTestId("performance-detail-bridge")).toBeNull();
+    const readCount = reads.length;
+    await waitFor(() => expect(reads.length).toBe(readCount));
+    fireEvent.click(screen.getByRole("button", { name: "По счетам" }));
+    await screen.findByTestId("performance-accounts-table");
+    expect(screen.getByTestId("test-location")).toHaveTextContent(
+      `start=${START}&end=${END}&scope=portfolio&view=accounts`,
+    );
+    expect(screen.queryByTestId("class-return-stock")).toBeNull();
   });
 
   it("disables a preset without an exact snapshot date", async () => {

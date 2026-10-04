@@ -22,6 +22,7 @@ export type PerformanceContextError = {
     | "missing_account"
     | "portfolio_account_mismatch"
     | "unknown_account"
+    | "class_account_scope"
     | "invalid_view";
   message: string;
 };
@@ -129,6 +130,17 @@ export function parsePerformanceContext(
       error: {
         code: "reversed_interval",
         message: "Начальная дата позже конечной: поменяйте даты местами.",
+      },
+    };
+  }
+
+  if (scope === "account" && view === "classes") {
+    return {
+      context: null,
+      error: {
+        code: "class_account_scope",
+        message:
+          "Доходность по классам доступна только для всего портфеля. Выбранный счёт не подставляется в этот расчёт.",
       },
     };
   }
