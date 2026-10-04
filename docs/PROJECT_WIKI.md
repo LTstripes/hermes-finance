@@ -1,6 +1,6 @@
 # Finance Dashboard — Project Wiki
 
-Durable Hermes Finance context, synchronized **2026-10-03**. Current moving state belongs to GitHub and [CURRENT_STATUS](CURRENT_STATUS.md). Detailed milestones remain in [EXECUTION_HISTORY](EXECUTION_HISTORY.md), dated closeouts and Git history. This page is not a second task specification or a store for personal financial data.
+Durable Hermes Finance context, synchronized **2026-10-04**. Current moving state belongs to GitHub and [CURRENT_STATUS](CURRENT_STATUS.md). Detailed milestones remain in [EXECUTION_HISTORY](EXECUTION_HISTORY.md), dated closeouts and Git history. This page is not a second task specification or a store for personal financial data.
 
 ## 1. Product
 
@@ -18,7 +18,7 @@ One writing/local-verification task owns one physical workspace. Short prompts l
 
 Published/local Stable is **v1.1.0**, source `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Release push CI `36776904188` and Guarded Release `36777962224` succeeded. #572 is Owner PASS WITH DOCUMENTED LIMITATIONS, not universal provider or real-history returns availability.
 
-Development main includes the post-release #662 six-slice product wave, #663/#664/#665 maintenance, #672/#674 follow-ups, #680 migration tooling, #684 layout closeout, #685 janitor, and the merged #671/#668/#669 test optimizations. Checkpoint before this docs sync: `8eb991fc81ebbe63917a9ca1ea204762129c9019`, main CI `37150791634` SUCCESS. It is not a new release and does not promote local Stable.
+Development main includes the post-release #662 six-slice product wave, #663/#664/#665 maintenance, #672/#674 follow-ups, #680 migration tooling, #684 layout closeout, #685 janitor, the completed #668–#671 CI/test optimization wave and #629 repository Launcher retirement. Current checkpoint: `54ddfd940543b5daabb6c6d06aa5a6abe1878408`, exact-main CI `37188367166` SUCCESS, with no open pull requests at read-back. It is not yet a new published release and does not promote local Stable.
 
 Historical v1.0.0 remains at `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`, tag object `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`. Historical v0.9.0 and the accepted release-transition evidence are unchanged: [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [v1.1.0](releases/1.1.0.md).
 
@@ -42,7 +42,7 @@ References: [Decision Support](DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md), [UI 
 
 Portfolio/account XIRR, exact TWRR, cash-boundary coverage, external/internal flows, transit/transfer reconciliation, valuation/membership/in-kind guards and PERF04A `value_change_after_external_flows` are delivered. XIRR is annualized; TWRR is for the selected period. Availability is metric-specific. Real PRE/POST history cannot be fabricated to turn an unavailable rate into an exact one.
 
-Phase A portfolio/account UI and data preparation are delivered. #541 retains remaining verification/Phase B scope. #535/#540 class returns are not inferred from allocation or money-result class tables. [Performance v1 closeout](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
+Phase A portfolio/account UI and data preparation are delivered; #541/#528 are closed for that coordination. Future focused real-history verification, if selected, is coordinated through #554. #535/#540 exact class returns remain deferred because #534 accepted **BLOCK ON EVIDENCE**: historical class identity, class-boundary events/coverage, exact class valuation, class PRE/POST for TWRR and currency/correction lifecycle must exist before class rates can be called exact. [Performance v1 closeout](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
 
 ### Component attribution boundary
 
@@ -97,10 +97,10 @@ Deployment read-back and one dry-run passed: 8 preserved, 0 removed. The first s
 
 ## 8. Next work, not an automatic queue
 
-The post-release six-slice wave is accepted, not a task list to repeat. #667 code is integrated, but no later focused Owner retest is invented. Historical quote PASS is not live #645 same-day LAST evidence. #646 remains a separate Alfa transport question.
+The post-release six-slice wave is accepted, not a task list to repeat. #667 code is integrated; the prepared focused Owner retest is currently deferred to avoid duplicate UAT. Historical quote PASS is not live #645 same-day LAST evidence. #646 remains a separate Alfa PRO compatibility question: Owner can switch the new Trading core Online on port 3366 and issue a read-only token, but Hermes still receives an unrecognized protocol; token/handshake semantics are not yet publicly established.
 
 The CI/test optimization stream is complete: #671/#681 concurrency, #668/#682 fixed-viewport deduplication, #669/#683 exact-head evidence deduplication, #670/#686 docs-only fast path and #629/#689 Launcher CI/source retirement are integrated. Full canonical main/release gates and shared Windows/runtime/recovery coverage remain. See [the 2026-10-04 closeout](history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
 
-There is no dedicated test/CI optimization task queued after this wave. A single frozen Test refresh for remaining narrow Owner checks is optional when selected. #630 representative fixture is CLOSED / NOT_PLANNED. Other product choices remain #535/#540 class returns, #646 Alfa investigation and #389 composer; SQLite date-binding warnings, OpenAPI/pyright pilots and branch inventory are optional ideas. #573 /v1 retirement is not authorized. #124 is permanent infrastructure; #127/#528/#554 coordinate decisions.
+There is no dedicated test/CI optimization task queued after this wave. A single frozen Test refresh for remaining narrow Owner checks is available when selected, but is currently deferred. #630, #573 and historical roadmap #127 are CLOSED / NOT_PLANNED; #528 is CLOSED / COMPLETED. Current product choices remain #535/#540 class returns, #646 Alfa investigation and #389 composer; SQLite date-binding warnings, OpenAPI/pyright pilots and branch inventory are optional ideas. `/v1` remains intentionally available. #124 is permanent infrastructure; #554 coordinates current decisions.
 
 Full restart brief and source evidence: [SESSION_CLOSEOUT_2026-10-03](SESSION_CLOSEOUT_2026-10-03.md). Dated historical documents retain their original evidence; they do not supersede later accepted results.
