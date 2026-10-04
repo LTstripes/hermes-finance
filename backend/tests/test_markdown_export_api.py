@@ -206,6 +206,42 @@ def test_json_export_downloads_money_safe_raw_and_derived_data(
     assert_no_binary_float(payload)
 
 
+@pytest.mark.parametrize("historical_type", ["bond", None])
+def test_json_export_preserves_snapshot_identity_without_catalogue_fallback(
+    app_context: tuple[TestClient, Database], historical_type: str | None
+) -> None:
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.services.positions import create_position_snapshot
+    from hermes_finance.services.reporting_months import close_reporting_month
+
+    client, database = app_context
+    month_id = _create_month(client)
+    with database.session_factory() as session:
+        account = create_account(session, name="Synthetic", account_type="brokerage")
+        instrument = create_instrument(session, name="Synthetic", instrument_type="bond")
+        row = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            quantity=1,
+            average_cost_per_unit="100.00",
+            market_price_per_unit="110.00",
+            price_date=date(2032, 7, 31),
+        )
+        row.historical_instrument_type = historical_type
+        session.commit()
+        close_reporting_month(session, month_id)
+        instrument.instrument_type = "stock"
+        session.commit()
+    response = client.post(f"/api/months/{month_id}/export/json")
+    assert response.status_code == 200, response.text
+    exported = response.json()["raw"]["position_snapshots"]
+    assert len(exported) == 1
+    assert exported[0]["historical_instrument_type"] == historical_type
+
+
 def test_json_export_missing_month_uses_unified_not_found_error(
     app_context: tuple[TestClient, Database],
 ) -> None:

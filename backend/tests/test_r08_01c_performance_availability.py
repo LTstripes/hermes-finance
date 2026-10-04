@@ -24,6 +24,7 @@ from hermes_finance.persistence import (
     CashBalance,
     Instrument,
     InvestmentCashFlow,
+    PositionSnapshot,
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.cash import create_cash_balance
@@ -167,13 +168,27 @@ def test_portfolio_scope_uses_historical_membership_not_current_account_flag(
         before = performance_availability_for_interval(
             session, start_date=START, end_date=END, scope="portfolio"
         )
+        account_before = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
         current_account = session.get(Account, account_id)
         assert current_account is not None
         current_account.include_in_returns = False
+        current_account.include_in_capital = False
+        session.scalar(select(Instrument)).instrument_type = "stock"
         session.commit()
         after = performance_availability_for_interval(
             session, start_date=START, end_date=END, scope="portfolio"
         )
+        account_after = performance_availability_for_interval(
+            session, start_date=START, end_date=END, scope="account", account_id=account_id
+        )
+        assert after == before
+        assert account_after == account_before
+        assert list(session.scalars(select(PositionSnapshot.historical_instrument_type))) == [
+            "bond",
+            "bond",
+        ]
 
         assert before.availability is PerformanceAvailabilityStatus.AVAILABLE
         assert after.availability is PerformanceAvailabilityStatus.AVAILABLE

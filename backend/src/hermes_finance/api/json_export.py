@@ -128,6 +128,7 @@ class RawPositionSnapshot(ExportModel):
     reporting_month_id: int
     account_id: int
     instrument_id: int
+    historical_instrument_type: str | None
     quantity: str
     average_cost_per_unit: MoneyValue
     market_price_per_unit: MoneyValue
@@ -507,6 +508,7 @@ def build_raw_source_data(
                 reporting_month_id=item.reporting_month_id,
                 account_id=item.account_id,
                 instrument_id=item.instrument_id,
+                historical_instrument_type=item.historical_instrument_type,
                 quantity=_quantity(item.quantity),
                 average_cost_per_unit=_required_money(item.average_cost_per_unit_kopecks),
                 market_price_per_unit=_required_money(item.market_price_per_unit_kopecks),

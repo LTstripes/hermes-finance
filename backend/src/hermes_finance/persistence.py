@@ -693,6 +693,11 @@ class PositionSnapshot(Base):
     __tablename__ = "position_snapshots"
     __table_args__ = (
         CheckConstraint(
+            "historical_instrument_type IS NULL OR "
+            "historical_instrument_type IN ('stock', 'bond', 'fund', 'currency', 'gold')",
+            name="ck_position_snapshots_historical_instrument_type",
+        ),
+        CheckConstraint(
             "(reporting_month_id IS NULL AND archived_from_period IS NOT NULL) OR "
             "(reporting_month_id IS NOT NULL AND archived_from_period IS NULL)",
             name="ck_position_snapshots_archive_scope",
@@ -741,6 +746,8 @@ class PositionSnapshot(Base):
         ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=False
     )
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    # Snapshot-scoped C1 evidence. No default or catalogue fallback for legacy rows.
+    historical_instrument_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     average_cost_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     market_price_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     accrued_interest_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

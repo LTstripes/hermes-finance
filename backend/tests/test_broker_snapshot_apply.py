@@ -356,10 +356,15 @@ def persisted_text(database_path: Path) -> str:
 # --- 1. matched existing quantity update with explicit keep-existing ---
 
 
-def test_matched_quantity_update_keeps_existing_local_inputs(tmp_path: Path) -> None:
+@pytest.mark.parametrize("historical_type", ["bond", "gold", None])
+def test_matched_quantity_update_keeps_existing_local_inputs(
+    tmp_path: Path, historical_type: str | None
+) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, instrument_id, snapshot = build_matched(session)
+        snapshot.historical_instrument_type = historical_type
+        session.commit()
         create_cash_balance(session, reporting_month_id=month_id, name="RUB cash", amount="1000.00")
         reviewed = complete_snapshot(quantity=Decimal("15"))
         mapping = mapping_for(account_id)
@@ -393,6 +398,9 @@ def test_matched_quantity_update_keeps_existing_local_inputs(tmp_path: Path) -> 
         assert item.market_value_kopecks == 225_000
         assert item.cost_basis_kopecks == 150_000
         assert item.unrealized_result_kopecks == 75_000
+        assert (
+            session.get(PositionSnapshot, snapshot.id).historical_instrument_type == historical_type
+        )
         assert item.price_source == PriceSource.MANUAL.value
         assert counts(session) == before
         cash = session.scalar(select(CashBalance))
@@ -662,6 +670,10 @@ def test_provider_only_create_with_required_owner_inputs(tmp_path: Path) -> None
         assert result.success is True
         item = result.items[0]
         assert item.action is BrokerSnapshotApplyItemAction.CREATED
+        assert (
+            session.get(PositionSnapshot, item.position_snapshot_id).historical_instrument_type
+            == "bond"
+        )
         assert item.quantity == Decimal("8")
         assert item.average_cost_per_unit_kopecks == 5_000
         assert item.market_price_per_unit_kopecks == 6_000

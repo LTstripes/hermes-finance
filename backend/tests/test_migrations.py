@@ -15,6 +15,70 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 FINANCIAL_CONTEXT_PARENT_REVISION = "0036_broker_baseline_provenance"
 
 
+def test_position_class_migration_leaves_closed_legacy_unknown_and_guards_loss(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "class-migration.db"
+    parent = "0044_observed_valuation_material_signature"
+    result = run_alembic(path, "upgrade", parent)
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO reporting_months (id, year, month, period_start, period_end, "
+            "snapshot_date, status, source, created_at, updated_at) VALUES "
+            "(1, 2031, 1, '2031-01-01', '2031-01-31', '2031-01-31', 'closed', "
+            "'manual', '2031-01-31', '2031-01-31')"
+        )
+        connection.execute(
+            "INSERT INTO accounts (id, name, account_type, status, include_in_capital, "
+            "include_in_returns) VALUES (1, 'Synthetic', 'brokerage', 'active', 1, 1)"
+        )
+        connection.execute(
+            "INSERT INTO instruments (id, name, instrument_type, currency, is_active, "
+            "manual_price_allowed) VALUES (1, 'Synthetic', 'stock', 'RUB', 1, 1)"
+        )
+        connection.execute(
+            "INSERT INTO position_snapshots (id, reporting_month_id, account_id, "
+            "instrument_id, quantity, average_cost_per_unit_kopecks, "
+            "market_price_per_unit_kopecks, market_value_kopecks, cost_basis_kopecks, "
+            "unrealized_result_kopecks, price_date, price_source, manual_adjustment, "
+            "updated_at) VALUES (1, 1, 1, 1, 1, 10000, 11000, 11000, 10000, 1000, "
+            "'2031-01-31', 'manual', 0, '2031-01-31')"
+        )
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT historical_instrument_type, market_value_kopecks FROM position_snapshots"
+        ).fetchall() == [(None, 11000)]
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode == 0, result.stderr
+    assert revision_rows(path) == [parent]
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        for invalid in ("other", "equity", "BOND", "bond ", ""):
+            try:
+                connection.execute(
+                    "UPDATE position_snapshots SET historical_instrument_type = ?", (invalid,)
+                )
+            except sqlite3.IntegrityError:
+                connection.rollback()
+            else:
+                raise AssertionError(f"invalid class evidence accepted: {invalid!r}")
+        connection.execute("UPDATE position_snapshots SET historical_instrument_type = 'bond'")
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode != 0
+    assert "while evidence exists" in result.stderr
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT historical_instrument_type FROM position_snapshots"
+        ).fetchall() == [("bond",)]
+
+
 def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) -> None:
     database_path = tmp_path / "nested" / "migration-smoke.db"
 
@@ -118,6 +182,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "notes",
             "updated_at",
             "archived_from_period",
+            "historical_instrument_type",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(deposit_snapshots)")] == [
             "id",
@@ -587,8 +652,8 @@ def test_boundary_migration_downgrade_refuses_observed_data(tmp_path: Path) -> N
 
     assert downgraded.returncode != 0
     assert "while evidence exists" in downgraded.stderr
-    # 0044 must retain binding before any older migration can drop the rows.
-    assert revision_rows(database_path) == ["0044_observed_valuation_material_signature"]
+    # The entire downgrade rolls back, including the newer nullable C1 column.
+    assert revision_rows(database_path) == [REVISION]
     connection = sqlite3.connect(database_path)
     try:
         assert connection.execute(

@@ -85,6 +85,7 @@ def _copy_positions(session: Session, *, source_id: int, target_id: int) -> None
                 reporting_month_id=target_id,
                 account_id=row.account_id,
                 instrument_id=row.instrument_id,
+                historical_instrument_type=row.historical_instrument_type,
                 quantity=row.quantity,
                 average_cost_per_unit_kopecks=row.average_cost_per_unit_kopecks,
                 market_price_per_unit_kopecks=row.market_price_per_unit_kopecks,

@@ -24,6 +24,7 @@ POSITION_KEYS = {
     "reporting_month_id",
     "account_id",
     "instrument_id",
+    "historical_instrument_type",
     "quantity",
     "average_cost_per_unit",
     "market_price_per_unit",
@@ -151,6 +152,60 @@ def _create_deposit(
 
 
 # --- positions ---
+
+
+def test_historical_class_patch_is_explicit_guarded_and_concurrent(client: TestClient) -> None:
+    month_id = _create_month(client)
+    account = _create_account(client)
+    instrument = _create_instrument(client, instrument_type="bond")
+    position = _create_position(
+        client, month_id=month_id, account_id=account["id"], instrument_id=instrument["id"]
+    )
+    assert position["historical_instrument_type"] == "bond"
+    path = f"/api/positions/{position['id']}"
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    assert (
+        client.patch(
+            path,
+            json={"historical_instrument_type": "stock"},
+            headers={"If-Match": position["updated_at"]},
+        ).status_code
+        == 409
+    )
+    assert client.post(f"/api/months/{month_id}/reopen").status_code == 200
+    corrected = client.patch(
+        path,
+        json={"historical_instrument_type": "stock"},
+        headers={"If-Match": position["updated_at"]},
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["historical_instrument_type"] == "stock"
+    assert (
+        client.patch(
+            path,
+            json={"historical_instrument_type": "gold"},
+            headers={"If-Match": position["updated_at"]},
+        ).status_code
+        == 409
+    )
+    invalid = client.patch(
+        path,
+        json={"historical_instrument_type": "equity"},
+        headers={"If-Match": corrected.json()["updated_at"]},
+    )
+    assert invalid.status_code == 422
+    withdrawn = client.patch(
+        path,
+        json={"historical_instrument_type": None},
+        headers={"If-Match": corrected.json()["updated_at"]},
+    )
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["historical_instrument_type"] is None
+    unchanged = client.patch(
+        path, json={"notes": "synthetic"}, headers={"If-Match": withdrawn.json()["updated_at"]}
+    )
+    assert unchanged.status_code == 200
+    assert unchanged.json()["historical_instrument_type"] is None
 
 
 def test_position_create_recalculates_metrics(client: TestClient) -> None:
