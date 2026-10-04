@@ -4,20 +4,44 @@
 
 ## [Unreleased]
 
-Development `main` after the published Stable `v1.0.0`. Published Stable remains unchanged; the following accepted post-release work is not yet a new release.
+На момент подготовки v1.2.0 новых изменений сверх опубликованного ниже набора не заявлено.
 
-### Data integrity and financial completeness
+## [1.2.0] — 2026-10-04
 
-- completed the Astra-audit hardening wave #484–#498 and completeness follow-ups #536–#539;
-- made covered financial writes atomic against the state they validated, including month-close, statement, linked-debt, transfer, salary and clone races;
-- added coherent composite SQLite read snapshots so one result cannot mix several committed database moments;
-- preserved payout/reconciliation/revision audit history across supported DRAFT corrections;
-- hardened Performance evidence invalidation/version binding so stale evidence cannot recreate false exact XIRR/TWRR;
-- preserved real versus unassigned cash identity through AI/export;
-- implemented canonical portfolio-source coverage across AI bundle/reviews/goals/allocation and owner-facing capital/history UI, keeping exact known subtotals separate from completeness and never zero-filling missing accounts;
-- canonical Alembic head advanced to `0044_observed_valuation_material_signature`.
+Owner-selected release of the accepted development line after v1.1.0. Publication remains local-first and explicit; the Owner chose ordinary Stable use over several days as the next real-history validation path instead of repeating the already-covered focused Test route before the Alfa PRO situation settles.
 
-Final aggregate PR #509 merged as canonical `main` `b6f3ff1aff93f06ae0a563ba8704b91086a80924`; merge-ref CI, UI comparison and exact-main push CI all passed. See `docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md`.
+### Added / improved owner workflow
+
+- delivered the accepted post-v1.1.0 six-slice UX wave: exact-month navigation/final review, collapsed future-payout groups with bulk and individual Apply, contextual provider mapping/provenance, clearer money/debt/link editing and linked-pair explanation;
+- completed #667 month-list follow-up: one primary exact-month entry, clearer secondary actions and truthful latest/older report routing;
+- added server-owned same-day quote Preview evidence and retained fail-closed Apply semantics rather than trusting browser-supplied prices;
+- preserved explicit Preview → Apply → authoritative reread for provider and payout operations.
+
+### Performance and financial correctness
+
+- portfolio/account XIRR and exact TWRR Phase A remain delivered with explicit preparation/availability diagnostics and correction/invalidation guards;
+- accepted data-integrity hardening keeps month/Close/evidence races atomic, coherent SQLite reads, exact coverage/provenance and unknown/unavailable distinct from zero;
+- asset-class XIRR/TWRR is still not implemented: #534 accepted BLOCK ON EVIDENCE and #535/#540 remain deferred until historical class identity, class-boundary events/coverage, exact class valuations, class PRE/POST evidence and lifecycle/currency rules are funded.
+
+### Runtime, recovery and repository maintenance
+
+- completed the Owner filesystem migration/legacy cleanup and daily workspace janitor deployment while preserving Stable/Main/Test/Owner/Ops boundaries;
+- retired the Windows Launcher GUI/package/tests/jobs from the repository; direct Prepare/Validate/Start is the supported runtime path;
+- preserved backup-first immutable Stable update, Windows production smoke, recovery rehearsal and direct-operations runtime inventory protections.
+
+### CI/test maintenance
+
+- ordinary superseded PR runs now cancel safely without affecting canonical main/release/protected integration work;
+- removed duplicate fixed-viewport executions while retaining unique visual coverage;
+- deduplicated overlapping visual CI only when exact tree identity is proven;
+- added fail-closed docs-only PR fast path while canonical main and release gates remain full.
+
+### Known limitations / unchanged boundaries
+
+- Alfa PRO build 5.26.6.594 exposes a new Trading core on port 3366 and read-only API tokens, but the public token/handshake contract is not established; current Hermes may report an unrecognized protocol. This remains #646 and is not represented as resolved by v1.2.0;
+- /v1 remains intentionally available;
+- class returns #535/#540 and configurable dashboard #389 remain outside this release;
+- local single-user Windows-first runtime remains loopback-only at 127.0.0.1:8000, with no cloud account/auth/telemetry/trading/background provider refresh.
 
 ## [1.0.0] — 2026-09-21
 
