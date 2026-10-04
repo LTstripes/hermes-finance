@@ -31,12 +31,12 @@ _PROSE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*\.md$")
 _RELEASE_NOTES = re.compile(r"^docs/release-notes-.+\.md$")
 
 # Ordinary prose at a known path. This is not "any markdown" and not docs/**.
+# backend/README.md stays full: Hatchling reads it as the package readme.
 EXACT_DOCS = frozenset(
     {
         "AGENTS.md",
         "CHANGELOG.md",
         "README.md",
-        "backend/README.md",
         "docs/336-financial-context-contract.md",
         "docs/AGENT_ORCHESTRATION.md",
         "docs/AI_ANALYSIS_BUNDLE.md",
