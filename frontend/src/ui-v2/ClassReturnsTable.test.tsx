@@ -20,6 +20,7 @@ function LocationProbe() {
 function setup(
   transform: (row: ClassReturns) => ClassReturns | Promise<ClassReturns> = (row) => row,
   path = PATH,
+  snapshots: string[] = [],
 ) {
   const reads: URL[] = [];
   const client = createQueryClient();
@@ -29,8 +30,20 @@ function setup(
       const url = new URL(String(input), "http://localhost");
       reads.push(url);
       expect(init?.method).toBe("GET");
-      if (url.pathname === "/api/accounts" || url.pathname === "/api/months")
-        return new Response("[]");
+      if (url.pathname === "/api/accounts") return new Response("[]");
+      if (url.pathname === "/api/months")
+        return new Response(
+          JSON.stringify(
+            snapshots.map((date, index) => ({
+              id: index + 1,
+              year: Number(date.slice(0, 4)),
+              month: Number(date.slice(5, 7)),
+              snapshot_date: date,
+              status: "closed",
+              source: "manual",
+            })),
+          ),
+        );
       if (url.pathname !== "/api/performance/class-returns")
         throw new Error(`Unexpected API ${url.pathname}`);
       const row = await transform(
@@ -61,7 +74,7 @@ afterEach(() => {
 });
 
 describe("class returns in existing Performance detail", () => {
-  it("reads just the four ordered classes; explains actual evidence without write actions", async () => {
+  it("reads the four ordered classes and months context; explains evidence without write actions", async () => {
     const { reads } = setup();
     const stock = await screen.findByTestId("class-return-stock");
     await waitFor(() => expect(stock).toHaveTextContent("+10,12%"));
@@ -88,11 +101,78 @@ describe("class returns in existing Performance detail", () => {
     expect(explanation).toHaveTextContent("Подтверждение владельца · версия 2");
     expect(explanation).toHaveTextContent("Полный состав на начало: подтверждён");
     expect(explanation).toHaveTextContent("Полный состав на конец: подтверждён");
-    expect(reads.map((url) => url.pathname)).toEqual(
-      Array(4).fill("/api/performance/class-returns"),
-    );
+    expect(
+      reads.filter((url) => url.pathname !== "/api/months").map((url) => url.pathname),
+    ).toEqual(Array(4).fill("/api/performance/class-returns"));
+    expect(reads.filter((url) => url.pathname === "/api/months")).toHaveLength(1);
     expect(screen.queryByText("Добавить операцию")).toBeNull();
     expect(screen.queryByText("Наблюдения PRE/POST")).toBeNull();
+  });
+
+  it("applies an exact month preset in Classes, preserving view/scope and refetching each class", async () => {
+    const target = "2031-06-30";
+    const { reads } = setup(
+      (row) => {
+        if (row.asset_class === "stock" && row.requested_period.start_date === target)
+          row.xirr.value = "21";
+        return row;
+      },
+      PATH,
+      [START, target, END],
+    );
+    const preset = await screen.findByRole("button", { name: "1 мес." });
+    expect(preset).toBeEnabled();
+    expect(preset).toHaveAttribute("title", `Начало: ${target}`);
+    fireEvent.click(preset);
+    await waitFor(() =>
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+21,00%"),
+    );
+    const params = new URLSearchParams(screen.getByTestId("location").textContent as string);
+    expect(params.get("start")).toBe(target);
+    expect(params.get("end")).toBe(END);
+    expect(params.get("view")).toBe("classes");
+    expect(params.get("scope")).toBe("portfolio");
+    expect(params.has("account_id")).toBe(false);
+    const freshReads = reads.filter(
+      (url) =>
+        url.pathname === "/api/performance/class-returns" &&
+        url.searchParams.get("start_date") === target,
+    );
+    expect(freshReads.map((url) => url.searchParams.get("asset_class")).sort()).toEqual([
+      "bond",
+      "deposit",
+      "gold",
+      "stock",
+    ]);
+    expect(freshReads.every((url) => url.searchParams.get("end_date") === END)).toBe(true);
+    expect(
+      reads.every((url) =>
+        ["/api/months", "/api/performance/class-returns"].includes(url.pathname),
+      ),
+    ).toBe(true);
+    expect(screen.queryByTestId("performance-detail-xirr")).toBeNull();
+    expect(screen.queryByTestId("performance-detail-bridge")).toBeNull();
+    expect(screen.queryByText("Добавить операцию")).toBeNull();
+    expect(screen.queryByText("Наблюдения PRE/POST")).toBeNull();
+  });
+
+  it("keeps an unavailable exact preset disabled in Classes without a nearest-date fallback", async () => {
+    const { reads } = setup((row) => row, PATH, [START, "2031-06-29", END]);
+    const preset = await screen.findByRole("button", { name: "1 мес." });
+    expect(preset).toBeDisabled();
+    expect(preset).toHaveAttribute(
+      "title",
+      expect.stringContaining("Нет снимка на точную дату 2031-06-30"),
+    );
+    fireEvent.click(preset);
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `start=${START}&end=${END}&scope=portfolio&view=classes`,
+    );
+    expect(
+      reads
+        .filter((url) => url.pathname === "/api/performance/class-returns")
+        .every((url) => url.searchParams.get("start_date") === START),
+    ).toBe(true);
   });
 
   it("keeps XIRR visible independently, preserves zero/loss and separates undefined from solver limits", async () => {
@@ -203,7 +283,7 @@ describe("class returns in existing Performance detail", () => {
       PATH.replace("scope=portfolio", "scope=account&account_id=77"),
     );
     expect(screen.getByText("По классам — только весь портфель")).toBeVisible();
-    expect(reads).toEqual([]);
+    expect(reads.every((url) => url.pathname === "/api/months")).toBe(true);
     expect(screen.getByTestId("location")).toHaveTextContent("account_id=77");
     fireEvent.click(screen.getByRole("button", { name: "Перейти к классам портфеля" }));
     await waitFor(() =>

@@ -377,7 +377,6 @@ export default function UiV2CapitalPerformanceDetail() {
     refetchOnWindowFocus: true,
   });
   const monthsQuery = useQuery({
-    enabled: !classesView,
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
     refetchOnWindowFocus: true,
@@ -440,7 +439,7 @@ export default function UiV2CapitalPerformanceDetail() {
   };
 
   const presets = useMemo(() => {
-    if (context === null || context.view === "classes" || closedSnapshots.length === 0) return [];
+    if (context === null || closedSnapshots.length === 0) return [];
     return periodPresets(context.end, closedSnapshots);
   }, [context, closedSnapshots]);
 

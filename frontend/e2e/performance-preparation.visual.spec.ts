@@ -11,7 +11,9 @@ for (const width of [390, 1366]) {
       await page.setViewportSize({ width, height: 900 });
       const start = "2031-05-31";
       const end = "2031-07-31";
+      const presetStart = "2031-06-30";
       const reads: string[] = [];
+      const presetReads: string[] = [];
       const unexpected: string[] = [];
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -19,6 +21,19 @@ for (const width of [390, 1366]) {
         const url = new URL(route.request().url());
         if (!url.pathname.startsWith("/api/")) {
           await route.continue();
+          return;
+        }
+        if (url.pathname === "/api/months" && route.request().method() === "GET") {
+          await route.fulfill({
+            json: [start, presetStart, end].map((date, index) => ({
+              id: index + 1,
+              year: 2031,
+              month: Number(date.slice(5, 7)),
+              snapshot_date: date,
+              status: "closed",
+              source: "manual",
+            })),
+          });
           return;
         }
         if (
@@ -30,10 +45,12 @@ for (const width of [390, 1366]) {
           return;
         }
         const assetClass = url.searchParams.get("asset_class") as string;
+        const requestedStart = url.searchParams.get("start_date") as string;
         reads.push(assetClass);
-        expect(url.searchParams.get("start_date")).toBe(start);
+        expect([start, presetStart]).toContain(requestedStart);
+        if (requestedStart === presetStart) presetReads.push(assetClass);
         expect(url.searchParams.get("end_date")).toBe(end);
-        const row = classReturnsFixture(assetClass, start, end);
+        const row = classReturnsFixture(assetClass, requestedStart, end);
         if (scenario === "values") {
           if (assetClass === "stock") row.xirr.value = row.twrr.value = "0";
           if (assetClass === "bond") row.xirr.value = row.twrr.value = "-2.75";
@@ -77,6 +94,11 @@ for (const width of [390, 1366]) {
       const gold = page.getByTestId("class-return-gold");
       const deposit = page.getByTestId("class-return-deposit");
       await expect(deposit).toContainText("Расчёт не поддерживается");
+      await expect(page.getByRole("button", { name: "1 мес." })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "3 мес." })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "12 мес." })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "С начала года" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Вся история" })).toBeEnabled();
       if (scenario === "values") {
         await expect(stock).toContainText("0,00%");
         await expect(bond).toContainText("−2,75%");
@@ -122,6 +144,25 @@ for (const width of [390, 1366]) {
       await page.keyboard.press("Enter");
       await expect(expand).toHaveAttribute("aria-expanded", "false");
       await expect(expand).toBeFocused();
+      if (scenario === "values") {
+        const preset = page.getByRole("button", { name: "1 мес." });
+        await preset.focus();
+        await page.keyboard.press("Enter");
+        await expect
+          .poll(() => [...new Set(presetReads)].sort())
+          .toEqual(["bond", "deposit", "gold", "stock"]);
+        const params = new URL(page.url()).searchParams;
+        expect(params.get("start")).toBe(presetStart);
+        expect(params.get("end")).toBe(end);
+        expect(params.get("view")).toBe("classes");
+        expect(params.get("scope")).toBe("portfolio");
+        expect(params.has("account_id")).toBe(false);
+        await expect(page.getByTestId("performance-detail-period")).toContainText(
+          "30.06.2031 — 31.07.2031",
+        );
+        expect(unexpected).toEqual([]);
+        expect(errors).toEqual([]);
+      }
     });
   }
 }
