@@ -93,7 +93,6 @@ class AllowlistTests(unittest.TestCase):
             "README.md",
             "AGENTS.md",
             "CHANGELOG.md",
-            "backend/README.md",
             "frontend/README.md",
             "docs/VERIFICATION_POLICY.md",
             "docs/WORKSPACE_JANITOR.md",
@@ -125,6 +124,7 @@ class AllowlistTests(unittest.TestCase):
 
     def test_unsafe_and_unknown_paths_are_full(self) -> None:
         unsafe = [
+            "backend/README.md",
             "backend/src/hermes_finance/api/app.py",
             "frontend/src/App.tsx",
             "frontend/src/ui-v2/MonthEditorIntegration.md",
@@ -372,6 +372,16 @@ class RepositoryTests(unittest.TestCase):
 
             binary = _commit_bytes(repo, "docs/history/README.md", b"prose\0hidden\n")
             self.assertEqual(classify_repo(repo, submodule, binary), "full")
+
+    def test_backend_readme_change_is_full_and_history_prose_stays_docs_only(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp) / "repo"
+            _git_repo(repo)
+            base = _commit(repo, "README.md", "base\n")
+            backend_readme = _commit(repo, "backend/README.md", "Package readme.\n")
+            self.assertEqual(classify_repo(repo, base, backend_readme), "full")
+            history = _commit(repo, "docs/history/README.md", "A harmless archive note.\n")
+            self.assertEqual(classify_repo(repo, backend_readme, history), "docs-only")
 
     def test_tracked_prose_directories_match_the_allowlist(self) -> None:
         tracked = subprocess.check_output(["git", "-C", str(ROOT), "ls-files", "-z"])
