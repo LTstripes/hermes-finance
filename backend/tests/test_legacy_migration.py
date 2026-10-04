@@ -139,6 +139,11 @@ def test_applies_legacy_migration_with_backup_and_nullable_isin(tmp_path: Path) 
     assert (tmp_path / "migration-report.json").is_file()
 
     with database.session_factory() as session:
+        assert list(session.scalars(select(PositionSnapshot.historical_instrument_type))) == [
+            None,
+            None,
+            None,
+        ]
         nullable = session.scalar(select(Instrument).where(Instrument.isin.is_(None)))
         assert nullable is not None
         assert nullable.name == "Synthetic stock"

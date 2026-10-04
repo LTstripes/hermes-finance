@@ -158,6 +158,7 @@ def test_remove_draft_position_archives_payout_without_active_capital(tmp_path: 
 
         assert snapshot_id not in [row.id for row in list_position_snapshots(session)]
         assert session.get(PositionSnapshot, snapshot_id).archived_from_period == "2030-05"
+        assert session.get(PositionSnapshot, snapshot_id).historical_instrument_type == "bond"
         archived = session.get(AppliedProviderPayout, payout_id)
         assert archived.reporting_month_id is None
         assert archived.archived_from_period == "2030-05"
@@ -249,6 +250,7 @@ def test_corrected_position_reuses_manual_flow_without_losing_reconciliation_his
         )
         assert session.get(AppliedProviderPayout, old_id).archived_from_period == "2030-05"
         assert session.get(PositionSnapshot, snapshot_id).archived_from_period == "2030-05"
+        assert session.get(PositionSnapshot, snapshot_id).historical_instrument_type == "bond"
         assert [row.id for row in list_applied_payout_revisions(session, old_id)] == old_revisions
         assert old_link.id == old_link_id
         assert old_link.expected_cash_flow_id == manual_id
@@ -333,6 +335,7 @@ def test_delete_draft_month_retains_payout_revision_and_reconciliation(
         assert session.get(AppliedPayoutReconciliation, link.id).archived_from_period == "2030-05"
         assert session.get(ExpectedCashFlow, manual.id).archived_from_period == "2030-05"
         assert session.get(PositionSnapshot, snapshot_id).archived_from_period == "2030-05"
+        assert session.get(PositionSnapshot, snapshot_id).historical_instrument_type == "bond"
         assert session.get(PositionSnapshot, snapshot_id).account_id == account_id
         _assert_valid_fks(database)
     finally:

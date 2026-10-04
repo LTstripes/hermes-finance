@@ -34,6 +34,58 @@ def _set_locale(database: Database, locale: str) -> None:
         update_settings(session, locale=locale)
 
 
+@pytest.mark.parametrize("historical_type", ["bond", None])
+def test_restore_preserves_position_class_evidence_and_closed_status(
+    tmp_path: Path, historical_type: str | None
+) -> None:
+    from datetime import date
+
+    from hermes_finance.persistence import Instrument, PositionSnapshot, ReportingMonth
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.services.positions import create_position_snapshot
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        create_reporting_month,
+    )
+
+    database = create_database(tmp_path / "data" / "class-restore.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with database.session_factory() as session:
+            month = create_reporting_month(
+                session, year=2031, month=1, snapshot_date=date(2031, 1, 31)
+            )
+            account = create_account(session, name="Synthetic", account_type="brokerage")
+            instrument = create_instrument(session, name="Synthetic", instrument_type="bond")
+            row = create_position_snapshot(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=1,
+                average_cost_per_unit="100.00",
+                market_price_per_unit="110.00",
+                price_date=month.snapshot_date,
+            )
+            row.historical_instrument_type = historical_type
+            session.commit()
+            close_reporting_month(session, month.id)
+            row_id, month_id, instrument_id = row.id, month.id, instrument.id
+        backup = create_backup(database)
+        with database.session_factory() as session:
+            session.get(Instrument, instrument_id).instrument_type = "stock"
+            session.commit()
+        restore_backup(database, backup.id)
+        with database.session_factory() as session:
+            assert (
+                session.get(PositionSnapshot, row_id).historical_instrument_type == historical_type
+            )
+            assert session.get(ReportingMonth, month_id).status == "closed"
+    finally:
+        database.engine.dispose()
+
+
 def _make_candidate_backup(
     database: Database,
     tmp_path: Path,

@@ -24,13 +24,27 @@ class PositionSnapshotNotFoundError(LookupError):
     pass
 
 
+class _UnchangedIdentity:
+    """Distinguish omitted correction from explicit withdrawal (NULL)."""
+
+
+UNCHANGED_IDENTITY = _UnchangedIdentity()
+
+
+def _historical_type(value: InstrumentType | str | None) -> str | None:
+    if value is None:
+        return None
+    kind = InstrumentType(value)
+    return None if kind is InstrumentType.OTHER else kind.value
+
+
 def _require_account(session: Session, account_id: int) -> None:
     if session.get(Account, account_id) is None:
         raise AccountNotFoundError(f"account {account_id} was not found")
 
 
 def _require_instrument(session: Session, instrument_id: int) -> Instrument:
-    instrument = session.get(Instrument, instrument_id)
+    instrument = session.get(Instrument, instrument_id, populate_existing=True)
     if instrument is None:
         raise InstrumentNotFoundError(f"instrument {instrument_id} was not found")
     return instrument
@@ -179,6 +193,7 @@ def stage_create_position_snapshot(
         reporting_month_id=reporting_month_id,
         account_id=account_id,
         instrument_id=instrument_id,
+        historical_instrument_type=_historical_type(instrument.instrument_type),
         quantity=quantity,
         average_cost_per_unit_kopecks=average_cost,
         market_price_per_unit_kopecks=market_price,
@@ -249,6 +264,10 @@ def stage_update_position_snapshot(
     manual_adjustment: bool | None = None,
     notes: str | None = None,
     expected_updated_at: datetime | None = None,
+    historical_instrument_type: InstrumentType
+    | str
+    | None
+    | _UnchangedIdentity = UNCHANGED_IDENTITY,
 ) -> PositionSnapshot:
     """Validate and stage an existing snapshot mutation. Caller owns the transaction.
 
@@ -313,6 +332,10 @@ def stage_update_position_snapshot(
         "manual_adjustment": next_manual_adjustment,
         "notes": next_notes,
     }
+    # Ordinary quantity/quote edits must not repair legacy history or silently
+    # adopt a changed catalogue. Only an explicit DRAFT correction can do so.
+    if not isinstance(historical_instrument_type, _UnchangedIdentity):
+        values["historical_instrument_type"] = _historical_type(historical_instrument_type)
     if expected_updated_at is not None:
         atomic_compare_and_update(
             session,
@@ -343,6 +366,10 @@ def update_position_snapshot(
     manual_adjustment: bool | None = None,
     notes: str | None = None,
     expected_updated_at: datetime | None = None,
+    historical_instrument_type: InstrumentType
+    | str
+    | None
+    | _UnchangedIdentity = UNCHANGED_IDENTITY,
 ) -> PositionSnapshot:
     snapshot = stage_update_position_snapshot(
         session,
@@ -356,6 +383,7 @@ def update_position_snapshot(
         manual_adjustment=manual_adjustment,
         notes=notes,
         expected_updated_at=expected_updated_at,
+        historical_instrument_type=historical_instrument_type,
     )
     session.commit()
     session.refresh(snapshot)

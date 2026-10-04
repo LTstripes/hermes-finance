@@ -59,6 +59,54 @@ from hermes_finance.services.reporting_months import (
 )
 
 
+@pytest.mark.parametrize("historical_type", ["bond", None])
+def test_clone_preserves_class_evidence_without_catalogue_fallback(
+    tmp_path: Path, historical_type: str | None
+) -> None:
+    from hermes_finance.persistence import Instrument
+
+    database = create_database(tmp_path / "class-clone.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with database.session_factory() as session:
+            source = create_reporting_month(
+                session, year=2031, month=1, snapshot_date=date(2031, 1, 31)
+            )
+            account = create_account(session, name="Synthetic", account_type="brokerage")
+            instrument = create_instrument(session, name="Synthetic", instrument_type="bond")
+            row = create_position_snapshot(
+                session,
+                reporting_month_id=source.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=1,
+                average_cost_per_unit="100.00",
+                market_price_per_unit="110.00",
+                price_date=source.snapshot_date,
+            )
+            row.historical_instrument_type = historical_type
+            session.commit()
+            close_reporting_month(session, source.id)
+            session.get(Instrument, instrument.id).instrument_type = "stock"
+            session.commit()
+            target = clone_reporting_month(
+                session,
+                source.id,
+                target_year=2031,
+                target_month=2,
+                snapshot_date=date(2031, 2, 28),
+            )
+            copied = session.scalar(
+                select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == target.id)
+            )
+            assert copied.historical_instrument_type == historical_type
+            close_reporting_month(session, target.id)
+            assert copied.historical_instrument_type == historical_type
+            assert row.historical_instrument_type == historical_type
+    finally:
+        database.engine.dispose()
+
+
 def _session(tmp_path: Path) -> tuple[Session, object]:
     database = create_database(tmp_path / "clone.db")
     Base.metadata.create_all(database.engine)

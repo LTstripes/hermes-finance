@@ -14,8 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
-from hermes_finance.domain import PriceSource, RubleAmount
+from hermes_finance.domain import InstrumentType, PriceSource, RubleAmount
 from hermes_finance.services.positions import (
+    UNCHANGED_IDENTITY,
     create_position_snapshot,
     delete_position_snapshot,
     get_position_snapshot_by_key,
@@ -51,6 +52,7 @@ class PositionUpdate(BaseModel):
     price_source: str | None = Field(default=None, min_length=1, max_length=16)
     price_date: date | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    historical_instrument_type: InstrumentType | None = None
 
 
 class PositionResponse(BaseModel):
@@ -60,6 +62,7 @@ class PositionResponse(BaseModel):
     reporting_month_id: int
     account_id: int
     instrument_id: int
+    historical_instrument_type: InstrumentType | None
     quantity: str
     average_cost_per_unit: MoneyValue
     market_price_per_unit: MoneyValue
@@ -97,6 +100,7 @@ def _response_from_snapshot(snapshot: object) -> PositionResponse:
         reporting_month_id=snapshot.reporting_month_id,
         account_id=snapshot.account_id,
         instrument_id=snapshot.instrument_id,
+        historical_instrument_type=snapshot.historical_instrument_type,
         quantity=str(snapshot.quantity),
         average_cost_per_unit=MoneyValue(
             amount=RubleAmount(snapshot.average_cost_per_unit_kopecks).to_api(),
@@ -218,6 +222,9 @@ def update_position_endpoint(
         price_source=payload.price_source,
         notes=payload.notes,
         expected_updated_at=expected_updated_at,
+        historical_instrument_type=payload.historical_instrument_type
+        if "historical_instrument_type" in payload.model_fields_set
+        else UNCHANGED_IDENTITY,
     )
     return _response_from_snapshot(snapshot)
 

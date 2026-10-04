@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import Database, create_database
 from hermes_finance.domain import AccountType, InstrumentType, PriceSource
-from hermes_finance.persistence import Base, PositionQuoteProvenance
+from hermes_finance.persistence import Base, Instrument, PositionQuoteProvenance
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.instruments import create_instrument
@@ -26,6 +26,130 @@ from hermes_finance.services.positions import (
     update_position_snapshot,
 )
 from hermes_finance.services.reporting_months import create_reporting_month
+
+
+@pytest.mark.parametrize("kind", list(InstrumentType))
+def test_new_position_freezes_snapshot_type_independently_of_catalogue(
+    tmp_path: Path, kind: InstrumentType
+) -> None:
+    from hermes_finance.services.reporting_months import (
+        ClosedReportingMonthError,
+        close_reporting_month,
+        reopen_reporting_month,
+    )
+
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session, instrument_type=kind)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=1,
+            average_cost_per_unit="100.00",
+            market_price_per_unit="110.00",
+            price_date=date(2030, 5, 12),
+        )
+        expected = None if kind is InstrumentType.OTHER else kind.value
+        assert snapshot.historical_instrument_type == expected
+        close_reporting_month(session, month_id)
+        instrument = session.get(Instrument, instrument_id)
+        instrument.instrument_type = "stock" if kind is not InstrumentType.STOCK else "bond"
+        session.commit()
+        session.expire_all()
+        assert get_position_snapshot(session, snapshot.id).historical_instrument_type == expected
+        close_reporting_month(session, month_id)  # idempotent close cannot recapture type
+        with pytest.raises(ClosedReportingMonthError):
+            update_position_snapshot(session, snapshot.id, historical_instrument_type="gold")
+        reopen_reporting_month(session, month_id)
+        # Reopen alone, quantity/notes and quote updates preserve historical identity.
+        update_position_snapshot(session, snapshot.id, quantity=2, notes="synthetic correction")
+        apply_snapshot_market_quote(
+            session,
+            snapshot,
+            market_price_per_unit_kopecks=12000,
+            price_date=date(2030, 5, 13),
+            price_source=PriceSource.MANUAL,
+        )
+        session.commit()
+        assert snapshot.historical_instrument_type == expected
+        update_position_snapshot(
+            session,
+            snapshot.id,
+            historical_instrument_type="gold",
+            expected_updated_at=snapshot.updated_at,
+        )
+        close_reporting_month(session, month_id)
+        assert snapshot.historical_instrument_type == "gold"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_legacy_unknown_is_not_repaired_by_close_reopen_or_ordinary_updates(tmp_path: Path) -> None:
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        reopen_reporting_month,
+    )
+
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        snapshot = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=1,
+            average_cost_per_unit="100.00",
+            market_price_per_unit="110.00",
+            price_date=date(2030, 5, 12),
+        )
+        # Synthetic legacy row, as left by migration/import.
+        snapshot.historical_instrument_type = None
+        session.commit()
+        close_reporting_month(session, month_id)
+        reopen_reporting_month(session, month_id)
+        update_position_snapshot(session, snapshot.id, market_price_per_unit="120.00")
+        close_reporting_month(session, month_id)
+        assert snapshot.historical_instrument_type is None
+        reopen_reporting_month(session, month_id)
+        update_position_snapshot(session, snapshot.id, historical_instrument_type="bond")
+        close_reporting_month(session, month_id)
+        assert snapshot.historical_instrument_type == "bond"
+        reopen_reporting_month(session, month_id)
+        update_position_snapshot(session, snapshot.id, historical_instrument_type=None)
+        close_reporting_month(session, month_id)
+        assert snapshot.historical_instrument_type is None
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_initial_identity_uses_persisted_catalogue_not_stale_session_object(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id = build_environment(session)
+        stale = session.get(Instrument, instrument_id)
+        assert stale.instrument_type == "bond"
+        with database.session_factory() as catalogue_session:
+            catalogue_session.get(Instrument, instrument_id).instrument_type = "gold"
+            catalogue_session.commit()
+        row = create_position_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=1,
+            average_cost_per_unit="100.00",
+            market_price_per_unit="110.00",
+            price_date=date(2030, 5, 12),
+        )
+        assert row.historical_instrument_type == "gold"
+    finally:
+        session.close()
+        database.engine.dispose()
 
 
 def session_for(tmp_path: Path) -> tuple[Session, Database]:
