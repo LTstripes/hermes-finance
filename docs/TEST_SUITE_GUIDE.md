@@ -5,6 +5,18 @@ additive: the existing regression tests remain in place, and the full test
 commands still collect every existing test. The guide does not authorize
 renaming, moving, merging, or deleting test files.
 
+## Current CI topology — 2026-10-04
+
+The optimization wave is complete; this is the supported topology, not a queue for further speed work.
+
+- **Ordinary PR concurrency (#671):** only a newer run of the same repository/workflow/PR cancels its predecessor. Canonical main, release and protected integration/UAT work use independent groups.
+- **Visual ownership (#668):** tests that replace the project viewport execute once on the 1440 reference project; tests that genuinely use project viewport still retain the required 1366/1440/1920 coverage.
+- **Exact-head UI evidence (#669):** the UI-evidence workflow still checks out the PR head and owns its screenshots, production dist build and provenance. Normal PR CI may omit the overlapping 1440 grep only when head, merge and checkout tree identity is proven; uncertainty falls back to full execution.
+- **Docs-only PRs (#670):** the workflow always runs. A narrow fail-closed classifier permits the fast path only for explicitly allowlisted non-executable prose. Unknown/mixed/executable/build/test/release inputs, mode changes, rename/delete and classifier/workflow changes stay full. backend/README.md is deliberately full because Hatchling consumes it as package metadata. Canonical main pushes are always full.
+- **Launcher retirement (#629):** the Launcher GUI/C# harness/package/install and launcher-only CI path/safety jobs are gone. Windows production smoke, direct start-local/prepared-runtime regressions, recovery, backup-first update and other shared runtime protections remain.
+
+A green Documentation fast path means only that the candidate was proven safe docs-only and the retained classification/privacy/diff checks succeeded. It never claims that omitted product suites passed.
+
 ## Add a regression to the semantic owner
 
 When a regression belongs to an existing behavior, add it to that behavior's
@@ -182,9 +194,9 @@ final-gate rules. When a task changes only docs or test organization, review
 the diff and run the policy-relevant checks; do not rerun unrelated full
 product suites merely because a release-ID file still exists.
 
-## Deferred to Phase 2B
+## Optional future coverage work — not active backlog
 
-The following require a node-level coverage map and owner/integrator decision:
+No issue is queued for the items below. Reopen one only when a product/risk need justifies a node-level coverage map and Owner/Integrator decision:
 
 - rehoming or renaming release/task-ID files and payout suffix fragments;
 - deciding whether G02/G08 are distinct acceptance evidence or overlap with
