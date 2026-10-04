@@ -16,11 +16,11 @@ One writing/local-verification task owns one physical workspace. Short prompts l
 
 ## 3. Release and development identity
 
-Published/local Stable is **v1.1.0**, source `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`, annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Release push CI `36776904188` and Guarded Release `36777962224` succeeded. #572 is Owner PASS WITH DOCUMENTED LIMITATIONS, not universal provider or real-history returns availability.
+Published release is **v1.2.0**, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, annotated tag object `f9311d26c1aae7295361937096844f4dde615b55`; canonical CI `37206069556` and Guarded Release `37206660242` succeeded. The last locally confirmed Stable remains v1.1.0 until explicit backup-first OPS02 updates it. #572 remains Owner PASS WITH DOCUMENTED LIMITATIONS, not universal provider or real-history returns availability.
 
-Development main includes the post-release #662 six-slice product wave, #663/#664/#665 maintenance, #672/#674 follow-ups, #680 migration tooling, #684 layout closeout, #685 janitor, the completed #668–#671 CI/test optimization wave and #629 repository Launcher retirement. Current checkpoint: `54ddfd940543b5daabb6c6d06aa5a6abe1878408`, exact-main CI `37188367166` SUCCESS, with no open pull requests at read-back. It is not yet a new published release and does not promote local Stable.
+v1.2.0 includes the accepted post-v1.1.0 #662 product wave, #667/#674 follow-up, maintenance #663/#664/#665/#672, completed #668–#671 CI/test optimization and #629 repository Launcher retirement. The immutable release commit is `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; later documentation closeout on `main` does not alter that release identity.
 
-Historical v1.0.0 remains at `caf4fdad99cc02f5bc171ec3b1d726b8516ad45e`, tag object `f99ee8ecac1acde7f559d92ee8f45ddcfcdfaa47`. Historical v0.9.0 and the accepted release-transition evidence are unchanged: [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [v1.1.0](releases/1.1.0.md).
+Historical v1.1.0 remains immutable at `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`. Earlier v1.0.0/v0.9.0 release-transition evidence is unchanged: [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [v1.1.0](releases/1.1.0.md), [v1.2.0](releases/1.2.0.md).
 
 ## 4. Financial and privacy invariants
 
