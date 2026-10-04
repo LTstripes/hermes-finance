@@ -346,6 +346,13 @@ def stage_update_position_snapshot(
     # adopt a changed catalogue. Only an explicit DRAFT correction can do so.
     if not isinstance(historical_instrument_type, _UnchangedIdentity):
         values["historical_instrument_type"] = _historical_type(historical_instrument_type)
+        from hermes_finance.services.class_endpoint_eligibility import (
+            invalidate_class_coverages_for_identity_correction,
+        )
+
+        invalidate_class_coverages_for_identity_correction(
+            session, snapshot, values["historical_instrument_type"]
+        )
     if expected_updated_at is not None:
         atomic_compare_and_update(
             session,
