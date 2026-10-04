@@ -5,7 +5,6 @@ Revises: 0045_position_historical_instrument_type
 """
 
 import sqlalchemy as sa
-
 from alembic import op
 
 revision = "0046_class_no_crossing_coverage"
