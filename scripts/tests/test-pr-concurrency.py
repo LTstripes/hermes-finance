@@ -404,8 +404,8 @@ class PullRequestConcurrencyTests(unittest.TestCase):
             self.ui,
         )
         self.assertNotIn("\n  push:\n", self.ui)
-        self.assertEqual(self.ci.count("uses: actions/checkout@"), 14)
-        self.assertEqual(self.ci.count(CHECKOUT_PIN), 14)
+        self.assertEqual(self.ci.count("uses: actions/checkout@"), 12)
+        self.assertEqual(self.ci.count(CHECKOUT_PIN), 12)
         self.assertEqual(self.ui.count(CHECKOUT_PIN), 1)
         self.assertEqual(self.release.count(CHECKOUT_PIN), 1)
         self.assertIn("name: ui-v2-evidence-${{ github.event.pull_request.head.sha }}", self.ui)

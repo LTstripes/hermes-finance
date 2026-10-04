@@ -22,9 +22,15 @@ Published and locally confirmed **v1.1.0**: `32c905cfc938fd1aeaeb67643eb6fa77e86
 
 At closeout, persistent Test retains `d282d09647f129cd83c99e14a10024901a1cf6da` and independent data. Re-preparation/isolation are reported; Test Start was not run simultaneously with Stable on port 8000. A remote docs merge updates neither local Main nor either runtime automatically.
 
-## 3. Windows launcher
+## 3. Windows launcher — retired
 
-The installed local Launcher/config/shortcuts were removed by Owner decision. Do not repair/reinstall/test the shell merely to operate the new paths. Direct Start is the normal Owner route. Remaining repository source/package/tests/workflows are tracked by #629; removal must preserve shared runtime/recovery helpers, even when a helper or schema name contains `launcher`.
+The installed local Launcher/config/shortcuts were removed by Owner decision,
+and #629 retired the remaining repository source/package/tests/workflows.
+Do not repair/reinstall/test the shell merely to operate the new paths.
+Direct Start is the normal Owner route. Shared backup-first update,
+prepared-runtime, recovery rehearsal and `RuntimeConfig` identity/exclusion
+helpers were preserved and reconciled with their consumers, even where a
+helper or schema name still mentions `launcher`.
 
 The old compact-shell/self-updater installation instructions are historical. [R09 closeout](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) retains why operations were separated; no new UI wrapper is authorized here.
 
@@ -121,9 +127,13 @@ Diagnose the failing bounded operation and preserve the existing backup/error ev
 
 An authorized local operations Worker executes the bounded workflow and reports sanitized results; the Owner is not assigned repeated JSON/PowerShell diagnostic relays. That exception does not grant ordinary development tasks runtime access. Existing exact-release/privacy guards remain authoritative.
 
-## 11. Launcher state after #585 / #586
+## 11. Launcher state after #585 / #586 and #629
 
-#585 path-gating and #586 compact shell are historical implementation evidence. Local removal is complete; #629 repository retirement remains pending. No further Launcher installation or UX work is implied. Shared direct startup, backup, prepared-runtime and recovery contracts remain in force until their consumers are deliberately reconciled.
+#585 path-gating and #586 compact shell are historical implementation evidence.
+Local removal is complete and #629 retired the repository source/package/tests/jobs.
+No further Launcher installation or UX work is implied. Shared direct startup,
+backup, prepared-runtime and recovery contracts remain in force; their
+`RuntimeConfig`/`launcher-production-backup` consumers were reconciled, not deleted.
 
 ## 12. Safety reminders
 
@@ -183,7 +193,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ProtectionMode external_encrypted_destination_v1
 ```
 
-All variables are explicitly verified Owner-local values. For plaintext use the matching accepted pair. Target profile/data/database must not already exist. The runtime-config argument remains an exclusion input of the accepted helper even if its type/name mentions Launcher; use a supported current mapping, never an obsolete deleted shell file or a guessed replacement. #629 must preserve/reconcile this consumer before deleting shared profile/schema helpers. Do not reinstall the GUI just to satisfy an unexplained missing reference.
+All variables are explicitly verified Owner-local values. For plaintext use the matching accepted pair. Target profile/data/database must not already exist. The runtime-config argument remains an exclusion input of the accepted helper even if its type/name mentions Launcher; use a supported current mapping, never an obsolete deleted shell file or a guessed replacement. #629 preserved and reconciled this consumer instead of deleting shared profile/schema helpers. Do not reinstall the GUI just to satisfy an unexplained missing reference.
 
 The repository wrapper proves Git/boundaries before its first uv run, establishes its checkout-local environment, pins mutable preparation outputs and owns descendants under a deadline. Do not bypass it with an inherited-environment uv command. Source/target descriptors and snapshot identity are rechecked through preparation/start. A failed or ambiguous mutated target is not reused. Synthetic rehearsal is not Owner UAT or proof of cloud delivery.
 
@@ -201,4 +211,4 @@ After in-app restore, reread the month list from the restored DB. Keep the selec
 - [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md), [WORKSPACE_JANITOR](WORKSPACE_JANITOR.md)
 - [R09 closeout](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [R10 closeout](R10_RELEASE_CLOSEOUT_2026-09-21.md)
 - [Owner durability closeout](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md), [ADR 0017](adr/0017-protected-offsite-backup-and-recovery.md)
-- #380/#385 OPS01, #386/#393 OPS02, #404/#407 OPS03, #124 publication, #629 repository Launcher retirement
+- #380/#385 OPS01, #386/#393 OPS02, #404/#407 OPS03, #124 publication, #629 Launcher retirement (repository source retired; direct operations preserved)

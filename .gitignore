@@ -60,11 +60,3 @@ Desktop.ini
 
 # Owner runtime preparation proof (generated in a runtime checkout)
 .hermes-runtime-prepared.json*
-
-# Windows launcher package output
-launcher/windows/artifacts/
-launcher/windows/.dotnet/
-launcher/windows/.dotnet-home/
-launcher/windows/.test-tmp/
-launcher/windows/**/bin/
-launcher/windows/**/obj/

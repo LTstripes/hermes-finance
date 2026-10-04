@@ -12,7 +12,7 @@ Published/local Stable remains **v1.1.0**: released commit `32c905cfc938fd1aeaeb
 
 **Development main is ahead of Stable.** The post-release six-slice wave (#645, #647–#651) passed Owner UAT with documented follow-ups and was integrated through #662. #672 removed repeated Home qualifiers; #667/#674 implemented the month-list follow-up. This is not a new release or a Stable version upgrade. Historical September quotes do not prove live same-day LAST; #646 remains a separate Alfa transport question.
 
-**Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Local Launcher/config/shortcuts were removed. Repository Launcher retirement is still #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
+**Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
 
 Session checkpoint before this documentation sync: `main@8eb991fc81ebbe63917a9ca1ea204762129c9019`, exact-main CI `37150791634` SUCCESS. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md) for completed work, test-stream ownership and remaining Owner checks.
 
@@ -80,11 +80,17 @@ Set-Location ..
 
 Dependencies remain locked by `backend/uv.lock` and `frontend/package-lock.json`. Each client creates task copies only under its configured workspace root; shared rules are in [AGENTS.md](AGENTS.md).
 
-## Windows launcher — retired locally
+## Windows launcher — retired
 
-The Owner removed the installed Launcher/config and shortcuts during #679. **Do not reinstall it to run Hermes or to repair the new folder layout.** Direct Prepare/Validate/Start is the normal path. #629 removes remaining repository Launcher source/package/tests/workflows after checking shared runtime/recovery consumers. Their presence in source or an old release does not make installation a current requirement.
-
-The former compact shell and failed self-updater are historical: [R09 closeout](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md). Local shell removal does not permit deleting shared backup, prepared-runtime or recovery helpers just because their names mention Launcher.
+The Windows Launcher GUI, package/install scripts and launcher-only
+tests/CI jobs were removed from the repository by #629 after the Owner
+removed the installed shell during #679. **Do not reinstall it to run Hermes
+or to repair the folder layout.** Direct Prepare/Validate/Start below is the
+normal path. Shared backup-first update (`scripts/launcher-production-backup.py`
+via `update-stable-lib.ps1`), prepared-runtime, recovery rehearsal and
+`RuntimeConfig` identity/exclusion helpers were preserved even where a helper
+or schema name still mentions Launcher. The former compact shell and failed
+self-updater are historical: [R09 closeout](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
 
 ## Explicit Prepare + deterministic Start
 
@@ -145,8 +151,8 @@ The sequence remains exact-SHA isolated UAT → Owner acceptance → guarded imm
 
 ## What comes next
 
-- Existing CI stream: #671/#681, #668/#682 and #669/#683 are merged; #670 docs-only PR fast path remains. Preserve actual head/merge evidence, unique tests and full canonical main/release gates.
-- #629 repository Launcher retirement is the next technical candidate, serialized with shared CI changes.
+- Existing CI stream: #671/#681, #668/#682, #669/#683 and #670 docs-only PR fast path are merged. Preserve actual head/merge evidence, unique tests and full canonical main/release gates.
+- #629 repository Launcher retirement is implemented in this change, serialized after the #670 workflow-ownership transfer.
 - Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected. Full accepted UAT is not repeated for this documentation sync.
 - #646 is a separate Alfa investigation. #630 representative fixture, class returns #535/#540 and #389 composer are deferred choices. `/v1` is not retired.
 - #679/#666 migration and janitor deployment are complete. Daily cleanup eligibility is described in [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md); it does not grant arbitrary manual deletion outside the root.

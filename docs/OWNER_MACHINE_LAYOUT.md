@@ -91,6 +91,6 @@ A Windows Python environment may retain absolute interpreter bindings. Recreate/
 
 Historical authorization: [Owner clarification 5972086820](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5972086820). It changed retention of named old technical forests and removed the extra approval loop for those exact actions; it did not authorize other-project deletion or future unrestricted cleanup. Later execution and residual closeout completed it.
 
-One verified supported backup was reused for the move when applicable; already valid restore/rollback evidence was not repeated. The initial path-bound Python startup failure was rolled back, then resolved by destination preparation. Local Launcher removal is complete; repository source retirement remains #629, with shared runtime/recovery consumers protected.
+One verified supported backup was reused for the move when applicable; already valid restore/rollback evidence was not repeated. The initial path-bound Python startup failure was rolled back, then resolved by destination preparation. Installed Launcher removal and #629 repository source retirement are complete, with shared runtime/recovery consumers preserved.
 
 The detailed earlier preparation narrative remains in [the pre-closeout document](https://github.com/LTstripes/hermes-finance/blob/8eb991fc81ebbe63917a9ca1ea204762129c9019/docs/OWNER_MACHINE_LAYOUT.md) and issue history. It is historical evidence, not a standing request to redo #679.

@@ -193,8 +193,8 @@ production runtime, `.env`, an owner database, or live provider data.
 ## Owner runtime updates
 
 Launcher Stable self-update is not a proven canonical release/update path until the #313 redesign is accepted.
-Use documented small Owner operations and recovery. Launcher removal approval (#629) alone does not retire shared backup/recovery/runtime protection.
-While Launcher remains supported, it selects prepared checkout/code/data runtime profiles, not arbitrary branches against one database; ADR 0014 governs this boundary.
+Use documented small Owner operations and recovery. Launcher retirement (#629) did not retire shared backup/recovery/runtime protection.
+The retired shell selected prepared checkout/code/data runtime profiles, not arbitrary branches against one database; ADR 0014 governs this boundary as historical contract plus still-active isolation/recovery rules.
 
 ## Manual fallback
 
