@@ -6,7 +6,7 @@ This is the closeout for the later Hermes Finance CI/test simplification wave. T
 
 - Development main checkpoint: 29b2ecf6c61a86fb5da03c48585b92358f38e890 (#629 / PR #689 merge).
 - #629 exact candidate: 377290aa2ac303a949755c92ccda003bff50b7c7; exact-head CI 37186535246 SUCCESS.
-- Canonical exact-main CI 37187645443 is the final pending gate at this draft checkpoint. #629 is not administratively complete until that run succeeds.
+- Canonical exact-main CI 37187645443 completed SUCCESS. #629 is CLOSED / COMPLETE.
 - No release, Stable/Test promotion, financial-semantic change or Owner-private data action is part of this wave.
 
 ## What changed

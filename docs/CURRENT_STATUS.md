@@ -8,7 +8,7 @@ Published and locally confirmed Stable remains **v1.1.0**, commit `32c905cfc938f
 
 #572 is CLOSED: **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use. This is not all-native/all-provider success or proof that every XIRR/TWRR is available on personal history. The pre-publication deferral is historical, superseded by [actual acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786).
 
-Development checkpoint before this documentation closeout: `29b2ecf6c61a86fb5da03c48585b92358f38e890`, the #629 Launcher-retirement merge. Exact-main push CI `37187645443` is the final canonical gate and is still pending at this draft checkpoint. This is a milestone, not a moving HEAD alias. No new release or Stable version promotion follows from the CI/test or Launcher-retirement work.
+Development checkpoint before this documentation closeout: `29b2ecf6c61a86fb5da03c48585b92358f38e890`, the #629 Launcher-retirement merge. Exact-main push CI `37187645443` completed SUCCESS. This is a milestone, not a moving HEAD alias. No new release or Stable version promotion follows from the CI/test or Launcher-retirement work.
 
 ## Owner filesystem and scheduled cleanup — completed
 
@@ -42,7 +42,7 @@ Native parity #570/#571/#643 and original #572 are complete. Portfolio/account P
 
 ## Tests/CI — optimization wave complete
 
-The 2026-10-03/04 CI/test stream is complete apart from the final canonical verification of the already merged #629 checkpoint noted above. No separate test/CI implementation issue remains queued after that gate.
+The 2026-10-03/04 CI/test stream is complete. No separate test/CI implementation issue remains queued after this closeout.
 
 | Item | Final state |
 | --- | --- |

@@ -14,7 +14,7 @@ Published/local Stable remains **v1.1.0**: released commit `32c905cfc938fd1aeaeb
 
 **Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
 
-Development checkpoint before this CI/test closeout: `main@29b2ecf6c61a86fb5da03c48585b92358f38e890`. Exact-main CI `37187645443` is the final pending gate at this draft checkpoint. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
+Development checkpoint before this CI/test closeout: `main@29b2ecf6c61a86fb5da03c48585b92358f38e890`. Exact-main CI `37187645443` completed SUCCESS. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md), the [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and the [2026-10-03 session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md).
 
 ## Product/runtime invariants
 
@@ -155,7 +155,7 @@ The sequence remains exact-SHA isolated UAT → Owner acceptance → guarded imm
 
 ## What comes next
 
-- CI/test optimization #668–#671 and #629 Launcher retirement are complete at the code/integration checkpoint; there is no dedicated test/CI optimization backlog after the final canonical gate. See [the closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
+- CI/test optimization #668–#671 and #629 Launcher retirement are complete; there is no dedicated test/CI optimization backlog. See [the closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
 - Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected. Full accepted UAT is not repeated without a new risk.
 - #646 is a separate Alfa investigation. #630 representative fixture is CLOSED / NOT_PLANNED; class returns #535/#540 and #389 composer remain product choices. `/v1` is not retired.
 - #679/#666 migration and janitor deployment are complete. Daily cleanup eligibility is described in [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md); it does not grant arbitrary manual deletion outside the root.
