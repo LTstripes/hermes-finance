@@ -5,6 +5,7 @@ import type { ClassReturns, PerformanceAssetClass } from "../api/types";
 import { formatDate } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { formatPerformancePercent } from "./CapitalPerformanceSummary";
+import { ClassEvidencePreparation } from "./ClassEvidencePreparation";
 import { needsAnnualizationWarning } from "./capitalPerformanceContext";
 import {
   classCoverageCopy,
@@ -226,6 +227,7 @@ export function ClassReturnsTable({ start, end }: { start: string; end: string }
           ))}
         </tbody>
       </table>
+      <ClassEvidencePreparation start={start} end={end} />
     </section>
   );
 }

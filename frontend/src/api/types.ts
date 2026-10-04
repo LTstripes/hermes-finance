@@ -1004,6 +1004,7 @@ export type PositionSnapshot = {
   reporting_month_id: number;
   account_id: number;
   instrument_id: number;
+  historical_instrument_type?: HistoricalInstrumentType | null;
   quantity: string;
   average_cost_per_unit: MoneyValue;
   market_price_per_unit: MoneyValue;
@@ -1031,6 +1032,7 @@ export type PositionCreate = {
 };
 
 export type PositionUpdate = {
+  historical_instrument_type?: HistoricalInstrumentType | null;
   quantity?: string;
   average_cost_per_unit?: MoneyValue;
   market_price_per_unit?: MoneyValue;
@@ -1039,6 +1041,8 @@ export type PositionUpdate = {
   price_date?: string;
   notes?: string | null;
 };
+
+export type HistoricalInstrumentType = "stock" | "bond" | "gold" | "fund" | "currency";
 
 export type StatementLink = {
   applied_statement_event_id: number;

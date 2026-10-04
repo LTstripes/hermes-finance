@@ -307,3 +307,158 @@ for (const width of [390, 1366]) {
     expect(writes).toEqual(["/api/external-flows"]);
   });
 }
+
+for (const width of [390, 1366]) {
+  test(`ui-v2 class Owner preparation keyboard and lifecycle ${width}px @viewport-owned`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const start = "2030-01-31";
+    const end = "2030-02-28";
+    let identity: string | null = null;
+    let coverage: Record<string, unknown> | null = null;
+    let closed = false;
+    const writes: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/api/**", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const method = request.method();
+      if (url.pathname === "/api/months") {
+        await route.fulfill({
+          json: [start, end].map((date, i) => ({
+            id: i + 1,
+            year: 2030,
+            month: i + 1,
+            snapshot_date: date,
+            status: closed ? "closed" : "draft",
+            source: "manual",
+          })),
+        });
+      } else if (url.pathname === "/api/performance/class-returns") {
+        const cls = url.searchParams.get("asset_class") as string;
+        const row = classReturnsFixture(cls, start, end);
+        if (cls !== "deposit" && !closed) {
+          row.eligibility_status = "unavailable";
+          row.coverage_state = coverage ? "complete" : "unknown";
+          row.evidence_reason_codes = identity
+            ? ["reporting_month_not_closed"]
+            : ["historical_class_unknown", "reporting_month_not_closed"];
+          for (const kind of ["xirr", "twrr"] as const)
+            Object.assign(row[kind], {
+              availability: "not_computable",
+              quality: "unavailable",
+              value: null,
+              reason_source: "evidence",
+              reason_codes: row.evidence_reason_codes,
+            });
+        }
+        await route.fulfill({ json: row });
+      } else if (url.pathname === "/api/accounts") {
+        await route.fulfill({ json: [{ id: 3, name: "Synthetic Broker" }] });
+      } else if (url.pathname === "/api/instruments") {
+        await route.fulfill({
+          json: [{ id: 4, name: "Synthetic Security", instrument_type: "bond" }],
+        });
+      } else if (url.pathname === "/api/positions" || url.pathname === "/api/positions/7") {
+        if (method === "PATCH") {
+          expect(request.headers()["if-match"]).toBe("2030-03-01T00:00:00");
+          expect(request.postDataJSON()).toEqual({ historical_instrument_type: "stock" });
+          identity = "stock";
+          writes.push("C1");
+        }
+        const position = {
+          id: 7,
+          reporting_month_id: 1,
+          account_id: 3,
+          instrument_id: 4,
+          historical_instrument_type: identity,
+          updated_at: identity ? "2030-03-02T00:00:00" : "2030-03-01T00:00:00",
+        };
+        await route.fulfill({
+          json:
+            method === "PATCH"
+              ? position
+              : url.searchParams.get("month_id") === "1"
+                ? [position]
+                : [],
+        });
+      } else if (url.pathname === "/api/class-evidence/coverages") {
+        if (method === "POST") {
+          const body = request.postDataJSON();
+          expect(body).toMatchObject({
+            asset_class: "stock",
+            covered_from: start,
+            covered_to: end,
+            coverage_state: "complete",
+            opening_inventory_complete: true,
+            closing_inventory_complete: true,
+          });
+          coverage = { ...body, id: 5, revision: 1 };
+          writes.push("coverage");
+        }
+        await route.fulfill({ json: method === "POST" ? coverage : coverage ? [coverage] : [] });
+      } else {
+        if (method !== "GET") writes.push(`unexpected ${method} ${url.pathname}`);
+        await route.fulfill({ json: [] });
+      }
+    });
+    await page.goto(
+      `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+    );
+    const prepare = page.locator("summary", { hasText: "Подготовить подтверждения классов" });
+    await prepare.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("historical_class_unknown", { exact: true }).last()).toBeVisible();
+    await page.getByText("Исторический класс C1: все наблюдаемые строки интервала").click();
+    await expect(page.getByText(/Позиция 7 · Synthetic Broker · Synthetic Security/)).toBeVisible();
+    await expect(page.getByText(/Не подтверждён \/ неизвестно/)).toBeVisible();
+    const identitySelect = page.getByRole("combobox", {
+      name: "Исторический класс позиции 7",
+      exact: true,
+    });
+    await identitySelect.focus();
+    await identitySelect.selectOption("stock");
+    await page.getByLabel("Я сверил(а) исторический класс позиции 7 с источником").check();
+    const saveIdentity = page.getByRole("button", { name: "Сохранить C1 позиции 7" });
+    await saveIdentity.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(/Данные перечитаны/)).toBeVisible();
+    await expect(page.getByText(/Данные перечитаны/)).toBeFocused();
+    const saveCoverage = page.getByRole("button", { name: "Сохранить подтверждение класса" });
+    await expect(saveCoverage).toBeDisabled();
+    await page
+      .getByRole("combobox", { name: "Состояние подтверждения", exact: true })
+      .selectOption("complete");
+    await page.getByLabel(/пересечений границы класса/).check();
+    await page.getByLabel(/Полный состав класса на начало/).check();
+    await page.getByLabel(/Полный состав класса на конец/).check();
+    await page
+      .getByLabel("Подтверждаю выбранное состояние и обе декларации состава", { exact: true })
+      .check();
+    await saveCoverage.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText(/Исправление \/ отзыв подтверждения 5 · версия 1/)).toBeVisible();
+    await expect(saveCoverage).toBeDisabled();
+    // The existing month lifecycle owns Close; this UI only rereads its committed outcome.
+    closed = true;
+    await page.getByRole("button", { name: "Перечитать подготовку класса" }).click();
+    await expect(page.getByTestId("class-return-stock")).toContainText("+10,12%");
+    await expect(page.getByText(/Сначала явно откройте все CLOSED/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Сохранить подтверждение класса" }),
+    ).toBeDisabled();
+    expect(writes).toEqual(["C1", "coverage"]);
+    expect(errors).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    const dir = path.resolve(".visual-audit", testInfo.project.name);
+    fs.mkdirSync(dir, { recursive: true });
+    await page.screenshot({
+      path: path.join(dir, `ui-v2-class-owner-preparation-${width}.png`),
+      fullPage: true,
+    });
+  });
+}
