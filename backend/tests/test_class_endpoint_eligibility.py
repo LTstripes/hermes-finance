@@ -10,7 +10,9 @@ from sqlalchemy import event, select, text
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
+    APP_SETTINGS_ID,
     Account,
+    AppSettings,
     Base,
     ClassNoCrossingCoverage,
     Instrument,
@@ -70,6 +72,8 @@ def env(tmp_path):
 
 
 def attest(env, asset_class="stock", **kwargs):
+    kwargs.setdefault("opening_inventory_complete", True)
+    kwargs.setdefault("closing_inventory_complete", True)
     return save_no_crossing_coverage(
         env[0],
         asset_class=asset_class,
@@ -176,7 +180,11 @@ def test_bad_whole_class_material_rejects_attestation_and_blocks_read(env, mutat
     elif mutation == "reclassify":
         row.historical_instrument_type = "bond"
     else:
-        session.get(Instrument, env[4]).currency = "USD"
+        settings = session.get(AppSettings, APP_SETTINGS_ID)
+        if settings is None:
+            session.add(AppSettings(id=APP_SETTINGS_ID, base_currency="USD"))
+        else:
+            settings.base_currency = "USD"
     session.commit()
     with pytest.raises(ValueError, match=reason):
         attest(env)
@@ -245,21 +253,8 @@ def test_internal_same_class_transfer_requires_exact_reconciliation(env, ambiguo
     closing = positions(env)[1]
     session.delete(closing)
     session.commit()
-    # Both accounts have a persisted position inventory at both endpoints;
-    # missing class rows are explained only by the explicit transfer below.
-    ancillary = create_instrument(session, name="Synthetic transfer gold", instrument_type="gold")
-    for account_id in (env[3], destination.id):
-        for month in env[2]:
-            create_position_snapshot(
-                session,
-                reporting_month_id=month.id,
-                account_id=account_id,
-                instrument_id=ancillary.id,
-                quantity=1,
-                average_cost_per_unit="10.00",
-                market_price_per_unit="10.00",
-                price_date=month.snapshot_date,
-            )
+    # Zero requested-class inventory on either account needs the explicit
+    # whole-universe attestation, never ancillary other-class footprints.
     create_position_snapshot(
         session,
         reporting_month_id=env[2][1].id,
@@ -420,6 +415,8 @@ def test_api_create_revision_correction_and_endpoint_contract(env):
         coverage_state="complete",
         provenance_kind="owner_attestation",
         provenance_reference="synthetic-owner-reference",
+        opening_inventory_complete=True,
+        closing_inventory_complete=True,
     )
     with TestClient(create_app(database=env[1])) as client:
         response = client.post("/api/class-evidence/coverages", json=body)
@@ -495,15 +492,112 @@ def test_composite_read_pins_one_committed_snapshot_during_correction(env):
     assert read(env)["status"] == "unavailable"
 
 
-def test_clean_subset_cannot_hide_an_included_account_without_endpoint_positions(env):
+@pytest.mark.parametrize("other_class_footprint", [False, True])
+@pytest.mark.parametrize("opening, closing", [(False, False), (True, False), (False, True)])
+def test_clean_subset_needs_both_explicit_whole_universe_inventory_claims(
+    env, other_class_footprint, opening, closing
+):
     account = create_account(env[0], name="Synthetic missing inventory", account_type="brokerage")
     env[0].add(
         Membership(account_id=account.id, effective_from=date(2029, 1, 1), include_in_returns=True)
     )
     env[0].commit()
-    with pytest.raises(ValueError, match="endpoint_account_positions_missing"):
-        attest(env)
+    if other_class_footprint:
+        bond = create_instrument(env[0], name="Synthetic unrelated bond", instrument_type="bond")
+        for month in env[2]:
+            create_position_snapshot(
+                env[0],
+                reporting_month_id=month.id,
+                account_id=account.id,
+                instrument_id=bond.id,
+                quantity=1,
+                average_cost_per_unit="10.00",
+                market_price_per_unit="10.00",
+                price_date=month.snapshot_date,
+            )
+    # Explicit C2 no-crossing alone, even beside unrelated position footprints,
+    # cannot prove that account B's stock inventory was fully captured.
+    coverage = attest(env, opening_inventory_complete=opening, closing_inventory_complete=closing)
+    coverage_id = coverage.id
     close(env)
     result = read(env)
-    assert "endpoint_account_positions_missing" in result["reason_codes"]
+    assert result["status"] == "unavailable"
+    assert result["historical_account_ids"] == (env[3], account.id)
+    assert ("opening_class_inventory_not_complete" in result["reason_codes"]) is (not opening)
+    assert ("closing_class_inventory_not_complete" in result["reason_codes"]) is (not closing)
     assert result["opening_value_kopecks"] is None
+    assert result["closing_value_kopecks"] is None
+    for month in env[2]:
+        reopen_reporting_month(env[0], month.id)
+    # Owner explicitly confirms the WHOLE stock inventory (including B's empty
+    # stock inventory) at both dates. No snapshot or missing row implies this.
+    attest(
+        env,
+        coverage_id=coverage_id,
+        expected_revision=env[0].get(ClassNoCrossingCoverage, coverage_id).revision,
+    )
+    close(env)
+    assert read(env)["status"] == "eligible"
+    assert (read(env)["opening_value_kopecks"], read(env)["closing_value_kopecks"]) == (
+        20000,
+        22000,
+    )
+
+
+@pytest.mark.parametrize("initial_currency", ["RUB", "USD"])
+def test_catalogue_currency_edits_do_not_rewrite_persisted_rub_endpoints(env, initial_currency):
+    instrument = env[0].get(Instrument, env[4])
+    instrument.currency = initial_currency
+    env[0].commit()
+    coverage = attest(env)
+    signature = coverage.material_signature
+    close(env)
+    before = read(env)
+    assert before["status"] == "eligible"
+    assert before["currency"] == "RUB"
+    for currency in ("USD", "RUB", "EUR"):
+        instrument.currency = currency
+        env[0].commit()
+        assert read(env) == before
+        assert env[0].get(ClassNoCrossingCoverage, coverage.id).material_signature == signature
+
+
+def test_inventory_claims_cannot_be_changed_without_rebinding_material(env):
+    coverage = attest(env, opening_inventory_complete=False)
+    close(env)
+    coverage.opening_inventory_complete = True
+    env[0].commit()
+    result = read(env)
+    assert result["status"] == "unavailable"
+    assert "no_crossing_material_changed" in result["reason_codes"]
+
+
+def test_api_omitted_inventory_claims_stay_unknown_and_require_explicit_booleans(env):
+    body = dict(
+        asset_class="stock",
+        covered_from=str(START),
+        covered_to=str(END),
+        coverage_state="complete",
+        provenance_kind="owner_attestation",
+    )
+    with TestClient(create_app(database=env[1])) as client:
+        assert (
+            client.post(
+                "/api/class-evidence/coverages", json=dict(body, opening_inventory_complete="true")
+            ).status_code
+            == 422
+        )
+        response = client.post("/api/class-evidence/coverages", json=body)
+        assert response.status_code == 201, response.text
+        row = response.json()
+        assert row["opening_inventory_complete"] is row["closing_inventory_complete"] is False
+        close(env)
+        result = client.get(
+            "/api/class-evidence/endpoints",
+            params={"asset_class": "stock", "start_date": str(START), "end_date": str(END)},
+        ).json()
+        assert result["status"] == "unavailable"
+        assert result["reason_codes"] == [
+            "closing_class_inventory_not_complete",
+            "opening_class_inventory_not_complete",
+        ]

@@ -18,7 +18,6 @@ from hermes_finance.persistence import (
     AppSettings,
     ClassNoCrossingCoverage,
     InKindMovement,
-    Instrument,
     InvestmentCashFlow,
     PositionSnapshot,
     ReportingMonth,
@@ -114,9 +113,6 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     relevant = [p for p in history if p.historical_instrument_type in (asset_class, None)]
     if any(p in archived for p in relevant):
         reasons.add("archived_position_incomplete")
-    instruments = {p.instrument_id: session.get(Instrument, p.instrument_id) for p in relevant}
-    if any(i is None or i.currency != "RUB" for i in instruments.values()):
-        reasons.add("unsupported_currency")
 
     def event_class(instrument_id: int | None) -> str | None:
         kinds = identities.get(instrument_id, set())
@@ -222,15 +218,6 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     values = [None, None]
     for index, group in enumerate(endpoints):
         if len(group) == 1:
-            represented_accounts = {
-                p.account_id for p in positions if p.reporting_month_id == group[0].id
-            }
-            if set(accounts) - represented_accounts:
-                # No position inventory for an included account is unknown,
-                # not proof of an empty requested class. Use the existing
-                # persisted position footprint, without pulling cash/deposits
-                # into security values or falling back to account flags.
-                reasons.add("endpoint_account_positions_missing")
             component_rows = [
                 p
                 for p in positions
@@ -245,6 +232,9 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
         "class": asset_class,
         "dates": (start, end),
         "currency": currency,
+        # The accepted PositionSnapshot money path persists RUB totals, including
+        # its existing bond accrued-interest basis. Catalogue currency is metadata.
+        "valuation_basis": "persisted_rub_market_value_kopecks",
         "accounts": accounts,
         "memberships": [
             (r.id, r.account_id, r.effective_from, r.effective_to, r.include_in_returns)
@@ -265,9 +255,6 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
             )
             for p in relevant
         ],
-        "currencies": sorted(
-            (key, None if value is None else value.currency) for key, value in instruments.items()
-        ),
         "flows": [
             (
                 f.id,
@@ -312,6 +299,16 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     )
 
 
+def _coverage_signature(material_signature: str, opening: bool, closing: bool) -> str:
+    """Bind both explicit whole-class inventory claims to the same exact material."""
+    return sha256(
+        json.dumps(
+            ["whole_class_historical_account_universe_v1", material_signature, opening, closing],
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+
 @coherent_read_operation
 def class_endpoint_eligibility(
     session: Session,
@@ -354,12 +351,21 @@ def class_endpoint_eligibility(
     # First slice requires exactly the asserted interval, never unions/subsets.
     if len(rows) != 1 or (rows[0].covered_from, rows[0].covered_to) != (start_date, end_date):
         reasons.add("no_crossing_coverage_missing_or_ambiguous")
+        reasons.update(
+            {"opening_class_inventory_not_complete", "closing_class_inventory_not_complete"}
+        )
     else:
         row = rows[0]
         result["coverage_state"] = row.coverage_state
+        if not row.opening_inventory_complete:
+            reasons.add("opening_class_inventory_not_complete")
+        if not row.closing_inventory_complete:
+            reasons.add("closing_class_inventory_not_complete")
         if row.coverage_state != "complete" or row.provenance_kind != "owner_attestation":
             reasons.add("no_crossing_coverage_not_complete")
-        elif row.material_signature != signature:
+        elif row.material_signature != _coverage_signature(
+            signature, row.opening_inventory_complete, row.closing_inventory_complete
+        ):
             result["coverage_state"] = "invalidated"
             reasons.add("no_crossing_material_changed")
     result["coverage_provenance"] = [coverage_response(row) for row in rows]
@@ -385,6 +391,8 @@ def coverage_response(row: ClassNoCrossingCoverage) -> dict:
             "coverage_state",
             "provenance_kind",
             "provenance_reference",
+            "opening_inventory_complete",
+            "closing_inventory_complete",
             "revision",
         )
     }
@@ -412,6 +420,8 @@ def save_no_crossing_coverage(
     coverage_state: str,
     provenance_kind: str = "owner_attestation",
     provenance_reference: str | None = None,
+    opening_inventory_complete: bool = False,
+    closing_inventory_complete: bool = False,
     coverage_id: int | None = None,
     expected_revision: int | None = None,
 ) -> ClassNoCrossingCoverage:
@@ -427,6 +437,8 @@ def save_no_crossing_coverage(
         raise ValueError("unsupported class or coverage state")
     if provenance_kind != "owner_attestation":
         raise ValueError("only explicit owner_attestation is supported")
+    if type(opening_inventory_complete) is not bool or type(closing_inventory_complete) is not bool:
+        raise ValueError("inventory completeness requires explicit booleans")
     if provenance_reference is not None and (
         not provenance_reference.strip() or len(provenance_reference) > 128
     ):
@@ -460,7 +472,9 @@ def save_no_crossing_coverage(
                 raise ValueError(
                     "no-crossing assertion contradicted: " + ", ".join(sorted(reasons))
                 )
-            signature = facts["material_signature"]
+            signature = _coverage_signature(
+                facts["material_signature"], opening_inventory_complete, closing_inventory_complete
+            )
         if row is None:
             row = ClassNoCrossingCoverage(revision=1)
             session.add(row)
@@ -469,6 +483,8 @@ def save_no_crossing_coverage(
         row.asset_class, row.covered_from, row.covered_to = asset_class, covered_from, covered_to
         row.coverage_state, row.provenance_kind = coverage_state, provenance_kind
         row.provenance_reference, row.material_signature = provenance_reference, signature
+        row.opening_inventory_complete = opening_inventory_complete
+        row.closing_inventory_complete = closing_inventory_complete
         session.commit()
         session.refresh(row)
         return row

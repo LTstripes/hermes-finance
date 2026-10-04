@@ -4,7 +4,7 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,8 @@ class CoverageWrite(BaseModel):
     coverage_state: Literal["complete", "unknown", "revoked"]
     provenance_kind: Literal["owner_attestation"]
     provenance_reference: str | None = Field(default=None, min_length=1, max_length=128)
+    opening_inventory_complete: StrictBool = False
+    closing_inventory_complete: StrictBool = False
 
 
 class CoverageResponse(CoverageWrite):

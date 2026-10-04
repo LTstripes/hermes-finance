@@ -15,15 +15,16 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 def test_class_coverage_migration_has_no_backfill_and_refuses_loss(tmp_path: Path) -> None:
     path = tmp_path / "synthetic-class-coverage.db"
     parent = "0045_position_historical_instrument_type"
+    c2_revision = "0046_class_no_crossing_coverage"
     assert run_alembic(path, "upgrade", parent).returncode == 0
-    result = run_alembic(path, "upgrade", "head")
+    result = run_alembic(path, "upgrade", c2_revision)
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(path) as connection:
         assert connection.execute(
             "SELECT count(*) FROM class_no_crossing_coverages"
         ).fetchone() == (0,)
     assert run_alembic(path, "downgrade", parent).returncode == 0
-    assert run_alembic(path, "upgrade", "head").returncode == 0
+    assert run_alembic(path, "upgrade", c2_revision).returncode == 0
     with sqlite3.connect(path) as connection:
         connection.execute(
             "INSERT INTO class_no_crossing_coverages "
@@ -45,7 +46,40 @@ def test_class_coverage_migration_has_no_backfill_and_refuses_loss(tmp_path: Pat
     result = run_alembic(path, "downgrade", parent)
     assert result.returncode != 0
     assert "cannot discard class no-crossing evidence" in result.stderr
-    assert revision_rows(path) == [REVISION]
+    assert revision_rows(path) == [c2_revision]
+
+
+def test_endpoint_inventory_upgrade_does_not_attest_existing_c2_and_guards_loss(tmp_path):
+    path = tmp_path / "synthetic-inventory-coverage.db"
+    parent = "0046_class_no_crossing_coverage"
+    assert run_alembic(path, "upgrade", parent).returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO class_no_crossing_coverages "
+            "(asset_class, covered_from, covered_to, coverage_state, provenance_kind, "
+            "material_signature, revision) VALUES "
+            "('stock', '2030-01-31', '2030-02-28', 'complete', 'owner_attestation', ?, 1)",
+            ("a" * 64,),
+        )
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT coverage_state, opening_inventory_complete, closing_inventory_complete, "
+            "material_signature, revision FROM class_no_crossing_coverages"
+        ).fetchone() == ("complete", 0, 0, "a" * 64, 1)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert run_alembic(path, "downgrade", parent).returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    for column in ("opening_inventory_complete", "closing_inventory_complete"):
+        with sqlite3.connect(path) as connection:
+            connection.execute(f"UPDATE class_no_crossing_coverages SET {column} = 1")
+        result = run_alembic(path, "downgrade", parent)
+        assert result.returncode != 0
+        assert "cannot discard class endpoint inventory evidence" in result.stderr
+        assert revision_rows(path) == [REVISION]
+        with sqlite3.connect(path) as connection:
+            connection.execute(f"UPDATE class_no_crossing_coverages SET {column} = 0")
 
 
 # Immediate parent of REVISION: used to prove the #336 add-on is additive.

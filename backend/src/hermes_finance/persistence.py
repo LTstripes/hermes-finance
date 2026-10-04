@@ -224,6 +224,12 @@ class ClassNoCrossingCoverage(Base):
     provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
     material_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    opening_inventory_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    closing_inventory_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 

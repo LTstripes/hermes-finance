@@ -13,6 +13,14 @@ reference label, revision and material signature. There is no statement-verified
 source in this slice and no free-form notes. References must be privacy-safe
 labels, never private payloads or credentials.
 
+Migration 0047 adds `opening_inventory_complete` and `closing_inventory_complete`.
+Each is an explicit Owner claim that **every holding of the requested class in
+every historically included account** is represented at that exact endpoint,
+including accounts with no holdings of that class. Both default to false;
+upgrade preserves existing C2 records without manufacturing inventory claims.
+The same Owner action may affirm no-crossing and both inventory claims. No
+position footprint, other-class row, importer success or empty query sets them.
+
 `POST /api/class-evidence/coverages` creates an explicit assertion.
 `PUT /api/class-evidence/coverages/{id}` supplies its complete replacement,
 including `unknown`/`revoked`, with required `If-Match` integer revision.
@@ -33,7 +41,9 @@ not alone assert security purchases or sales. Known events on either covered
 date are checked; unknown ordering at the opening date is not inferred.
 
 COMPLETE is bound to persisted membership, exact reporting identities, class
-positions/quantities/values/currencies and relevant known flows/movements.
+positions/quantities/values and relevant known flows/movements. Both inventory
+claims are included in this binding, scoped to the same class, exact dates and
+entire historical account universe; neither is a claim about only clean rows.
 Current account flags, current instrument type, quotes and metadata are not
 historical proof and cannot rewrite the binding. Reads compare this signature
 to current committed material every time; there is no result cache.
@@ -44,6 +54,8 @@ mismatch is exposed as effective `invalidated` with the stored provenance/state
 still visible; explicit reaffirmation replaces the binding in DRAFT.
 Close never attests or repairs evidence. Whole-file backup/restore carries the
 table; an old-schema recovery upgrade creates no assertions.
+Downgrade refuses to discard either persisted affirmative inventory claim,
+including claims on revoked/unknown records.
 
 ## Exact endpoint read
 
@@ -60,12 +72,23 @@ date. All observed interval snapshots must be CLOSED. Only persisted
 `historical_instrument_type` class identity and `market_value_kopecks` are used;
 NULL never falls back to today's catalogue. Stored bond value already carries
 its existing accrued-interest basis; no recomputation/addition occurs here.
+The accepted PositionSnapshot write path normalizes monetary inputs through
+`RubleAmount`, and its existing API returns `market_value_kopecks` in RUB.
+That persisted RUB total is the endpoint valuation basis. Current mutable
+`Instrument.currency` is neither historical currency proof nor signature
+material: a catalogue currency edit cannot change historical eligibility.
+No foreign amount is converted or valued here; the non-RUB base-currency gate
+remains unsupported. This does not introduce FX or a foreign valuation path.
 
 Unknown historical identities block completeness. Appearance/disappearance,
 quantity changes, reclassification and relevant archived history fail closed.
-Every historically included account must have a persisted position footprint
-at both endpoints; an entirely missing account inventory cannot be interpreted
-as an empty class. Cash/deposit rows do not repair this security-position gap.
+Both explicit inventory claims must be true on the single matching, complete,
+material-bound Owner assertion. A position footprint proves only presence of
+that row. For example, account B's bond rows cannot prove B's stock inventory
+complete, even when account A has stable stock rows. Absent endpoint claims
+keep both values unavailable until explicit attestation; cash/deposit rows
+cannot repair the missing evidence. An Owner claim cannot override known NULL
+identity, quantity changes or other contradictions.
 All observed intermediate snapshots are checked as well as endpoints.
 No trades/corporate actions are invented from deltas. The only accepted
 quantity redistribution uses explicit existing `internal_transfer` markers
@@ -84,7 +107,7 @@ funds, FX/currency, deposits/savings and `gold_other` remain unsupported.
 | Code | Meaning |
 | --- | --- |
 | `unsupported_class` | Outside stock/bond/gold capability. |
-| `unsupported_currency` | Non-RUB setting or relevant instrument currency. |
+| `unsupported_currency` | Non-RUB base-currency setting; persisted endpoint valuation is RUB. |
 | `membership_incomplete_or_changed` | Missing/overlapping/gapped/changing historical scope. |
 | `historical_universe_empty` | No continuously included historical account universe. |
 | `exact_endpoint_missing_or_ambiguous` | Requested snapshot date does not identify exactly one month. |
@@ -93,7 +116,8 @@ funds, FX/currency, deposits/savings and `gold_other` remain unsupported.
 | `historical_class_reclassified` | Observed instrument identities cross the requested class. |
 | `archived_position_incomplete` | Relevant archived history cannot prove complete active endpoints. |
 | `class_endpoint_empty` | No requested-class component at an exact endpoint. |
-| `endpoint_account_positions_missing` | An included account lacks a persisted endpoint position inventory. |
+| `opening_class_inventory_not_complete` | No explicit whole-class, whole-universe opening inventory claim. |
+| `closing_class_inventory_not_complete` | No explicit whole-class, whole-universe closing inventory claim. |
 | `position_set_changed` / `position_quantity_changed` | Quantities are not stable or exactly explained by accepted internal markers. |
 | `known_cash_crossing` / `cash_flow_class_unknown` | Known class cash contradiction or unresolved class attribution. |
 | `external_in_kind_crossing` / `in_kind_class_unknown` | Known external movement or missing historical movement identity. |
