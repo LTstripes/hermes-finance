@@ -4,11 +4,11 @@
 
 ## [Unreleased]
 
-На момент подготовки v1.2.0 новых изменений сверх опубликованного ниже набора не заявлено.
+После публикации v1.2.0 новых продуктовых изменений пока не заявлено.
 
 ## [1.2.0] — 2026-10-04
 
-Owner-selected release of the accepted development line after v1.1.0. Publication remains local-first and explicit; the Owner chose ordinary Stable use over several days as the next real-history validation path instead of repeating the already-covered focused Test route before the Alfa PRO situation settles.
+Published 2026-10-04 as GitHub Release `Hermes Finance 1.2.0`. Annotated tag object `f9311d26c1aae7295361937096844f4dde615b55` peels to exact released commit `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; canonical CI `37206069556` and Guarded Release `37206660242` succeeded. The Owner chose ordinary Stable use over several days as the next real-history validation path instead of repeating the already-covered focused Test route before the Alfa PRO situation settles.
 
 ### Added / improved owner workflow
 
