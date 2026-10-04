@@ -91,8 +91,9 @@ Invoke-Case "product suites run unless classification succeeded as docs-only" {
         Assert-True -Condition ($job -match '!cancelled\(\)') -Message "$jobId must not start after cancellation."
         Assert-True -Condition ($job -match [regex]::Escape($condition)) -Message "$jobId must fail closed to the full suite."
     }
-    $launcher = Get-Job "windows-launcher-paths"
-    Assert-True -Condition ($launcher -notmatch 'docs-only') -Message "The existing launcher path filter stays unchanged."
+    Assert-True -Condition ($workflow -notmatch 'windows-launcher-paths') -Message "Launcher path-filter job must be removed."
+    Assert-True -Condition ($workflow -notmatch 'windows-launcher-safety') -Message "Launcher safety job must be removed."
+    Assert-True -Condition ($workflow -notmatch 'launcher_ci_paths') -Message "Launcher path classifier must be removed."
     $visual = Get-Job "visual-audit"
     Assert-True -Condition ($visual -match "github\.event_name == 'push' \|\| needs\.visual-audit-paths\.outputs\.run == 'true'") -Message "The visual audit gate stays intact."
     Assert-True -Condition ($visual -match 'scripts/ui_evidence_identity\.py trees') -Message "Exact-head identity proof stays inside the visual audit."
@@ -107,14 +108,12 @@ Invoke-Case "docs-only success cannot be a skipped or failed retained check" {
     foreach ($jobId in @(
         "privacy",
         "visual-audit-paths",
-        "windows-launcher-paths",
         "backend-quality",
         "frontend",
         "g04-browser",
         "visual-audit",
         "release-safety",
-        "windows-production-smoke",
-        "windows-launcher-safety"
+        "windows-production-smoke"
     )) {
         $needle = '--job "' + $jobId + '=${{ needs.' + $jobId + '.result }}"'
         Assert-True -Condition ($fast.Contains($needle)) -Message "Fast path must read $jobId."

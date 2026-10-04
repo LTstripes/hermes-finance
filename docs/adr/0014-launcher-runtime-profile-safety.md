@@ -1,11 +1,18 @@
 # ADR 0014 — Launcher runtime-profile safety contract
 
-- **Status:** Accepted
+- **Status:** Accepted (historical contract; Launcher shell retired by #629)
 - **Date:** 2026-08-26
 - **Release line:** `r07` desktop / launcher track
 - **Source task:** R07-D01, parent roadmap #127
 - **Implementation follow-up:** R07-D02 / issue #144
 - **Related:** [`AGENTS.md`](../../AGENTS.md), [ADR 0001](0001-architecture.md), [ADR 0004](0004-localhost-request-security.md), [ADR 0012](0012-runtime-and-agent-workspace-isolation.md)
+
+> **Retirement note (#629):** the Windows Launcher GUI, C# setup/config/profile
+> validation, package/install scripts and launcher-only CI were removed. The
+> profile-isolation, prepared-runtime identity, forbidden checkout/data/database
+> boundaries, loopback-only and recovery-exclusion rules below remain active
+> for direct Prepare/Validate/Start, backup-first Stable update and isolated
+> recovery rehearsal. Do not read this ADR as authorization to reinstall the shell.
 
 ## Problem
 

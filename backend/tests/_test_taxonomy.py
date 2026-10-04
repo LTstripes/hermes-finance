@@ -235,7 +235,6 @@ _RUNTIME_FILES = frozenset(
         "test_app_settings.py",
         "test_cli.py",
         "test_health.py",
-        "test_launcher_schema_check.py",
         "test_local_security.py",
         "test_moscow_tz.py",
         "test_settings.py",
@@ -263,7 +262,6 @@ _BENCHMARK_FILES = frozenset(
 )
 _WINDOWS_FILES = frozenset(
     {
-        "test_launcher_schema_check.py",
         "test_moscow_tz.py",
         "test_r04_08_windows_launcher_path.py",
         "test_recovery_process.py",

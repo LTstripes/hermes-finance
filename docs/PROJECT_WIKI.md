@@ -78,7 +78,14 @@ Direct composable operations remain:
 
 A moved Windows Python environment may retain old interpreter paths; recreate its generated environment/entry points with the exact release's supported locked preparation without rewriting the production DB. Stable remains the published release, not whatever is currently main.
 
-Local Launcher/config/shortcuts have been deleted. Do not reinstall them as a prerequisite. #629 still owns repository Launcher code/tests/jobs retirement; preserve shared runtime/recovery helpers until their consumers are established. Earlier #298/#311/#312 self-update and #585/#586 compact-shell details are historical, not a new development direction.
+Local Launcher/config/shortcuts have been deleted and repository Launcher
+source/package/tests/jobs are retired by #629. Do not reinstall the shell as
+a prerequisite. Shared backup-first update, prepared-runtime, recovery and
+`RuntimeConfig` identity/exclusion helpers were preserved; recovery and cleanup
+exclusion inputs use the direct-operations runtime inventory defined in
+[OWNER_RUNTIME_OPERATIONS §13](OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal)
+([example](runtime-inventory.example.json)). Earlier #298/#311/#312 self-update
+and #585/#586 compact-shell details are historical, not a new development direction.
 
 [Owner runtime operations](OWNER_RUNTIME_OPERATIONS.md) contain current commands and recovery boundaries. #313 composable-runtime redesign remains complete.
 
@@ -92,8 +99,8 @@ Deployment read-back and one dry-run passed: 8 preserved, 0 removed. The first s
 
 The post-release six-slice wave is accepted, not a task list to repeat. #667 code is integrated, but no later focused Owner retest is invented. Historical quote PASS is not live #645 same-day LAST evidence. #646 remains a separate Alfa transport question.
 
-The parallel test stream has merged #671/#681 concurrency, #668/#682 fixed-viewport deduplication and #669/#683 exact-head evidence deduplication. Remaining #670 docs-only fast path keeps full canonical main/release gates. Recheck live ownership before changing workflows; serialize #629 Launcher CI removal with this work.
+The parallel test stream has merged #671/#681 concurrency, #668/#682 fixed-viewport deduplication, #669/#683 exact-head evidence deduplication and #670 docs-only fast path. #629 retires the Launcher CI jobs on top of that fast path and keeps full canonical main/release gates. Recheck live ownership before changing workflows further.
 
-Recommended next technical candidate is #629, then one frozen Test refresh for the remaining narrow Owner checks if selected. Deferred: #630 representative fixture, SQLite date-binding warnings, OpenAPI/pyright pilots, branch inventory, #535/#540 class returns and #389 composer. #573 /v1 retirement is not authorized. #124 is permanent infrastructure; #127/#528/#554 coordinate decisions.
+Recommended next technical candidate after #629 is one frozen Test refresh for the remaining narrow Owner checks if selected. Deferred: #630 representative fixture, SQLite date-binding warnings, OpenAPI/pyright pilots, branch inventory, #535/#540 class returns and #389 composer. #573 /v1 retirement is not authorized. #124 is permanent infrastructure; #127/#528/#554 coordinate decisions.
 
 Full restart brief and source evidence: [SESSION_CLOSEOUT_2026-10-03](SESSION_CLOSEOUT_2026-10-03.md). Dated historical documents retain their original evidence; they do not supersede later accepted results.

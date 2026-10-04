@@ -111,7 +111,7 @@ REGULAR_FILE = "100644"
 ABSENT_MODE = "000000"
 
 # Product jobs that must not run for a proven docs-only pull request.
-# Path-filtered visual and launcher jobs stay on their existing gates.
+# The visual audit keeps its existing path gate.
 OMITTED_JOBS = (
     "backend-quality",
     "backend-tests",
@@ -121,14 +121,12 @@ OMITTED_JOBS = (
     "visual-audit",
     "release-safety",
     "windows-production-smoke",
-    "windows-launcher-safety",
 )
 
 # Cheap checks that must actually succeed. A skip is not success.
 RETAINED_JOBS = (
     "privacy",
     "visual-audit-paths",
-    "windows-launcher-paths",
 )
 
 SUCCESS_TEXT = (

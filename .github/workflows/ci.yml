@@ -31,9 +31,6 @@ jobs:
       - name: Check visual-audit path-filter regressions
         run: python3 scripts/tests/test-visual-audit-paths.py
 
-      - name: Check launcher path-filter regressions
-        run: python3 scripts/tests/test-launcher-ci-paths.py
-
       - name: Check ordinary pull request concurrency regressions
         run: python3 scripts/tests/test-pr-concurrency.py
 
@@ -479,11 +476,6 @@ jobs:
               exit $LASTEXITCODE
           }
 
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-launcher-ci-workflow.ps1
-          if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-          }
-
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-docs-only-workflow.ps1
           if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
@@ -586,87 +578,12 @@ jobs:
           }
 
           if (-not (Test-Path $env:HERMES_FINANCE_DATABASE_PATH -PathType Leaf)) {
-              throw "Canonical launcher did not create the temporary SQLite database."
+              throw "Canonical startup did not create the temporary SQLite database."
           }
 
           $listener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
           if ($null -ne $listener) {
-              throw "Canonical launcher left port 8000 listening after -ExitAfterReady."
-          }
-
-  # Job condition, not an `on.paths` filter: a workflow path filter leaves a
-  # required check pending, while a skipped job reports a terminal success.
-  windows-launcher-paths:
-    name: Windows launcher path filter
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    outputs:
-      run: ${{ steps.filter.outputs.run }}
-
-    steps:
-      - name: Check out repository history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-      - name: Determine whether launcher-relevant paths changed
-        id: filter
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
-          PUSH_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
-          elif [ "$EVENT_NAME" = "push" ]; then
-            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              echo "Push has no previous commit. Running launcher safety fail-closed."
-              echo "run=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            git diff --name-only --no-renames "$BEFORE_SHA" "$PUSH_SHA" > "$RUNNER_TEMP/changed-files.txt"
-          else
-            echo "Unknown event ${EVENT_NAME}. Running launcher safety fail-closed."
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Changed paths:"
-          cat "$RUNNER_TEMP/changed-files.txt"
-          should_run=$(python3 scripts/launcher_ci_paths.py --from-file "$RUNNER_TEMP/changed-files.txt")
-          echo "run=$should_run" >> "$GITHUB_OUTPUT"
-
-  windows-launcher-safety:
-    name: Windows launcher safety
-    needs: windows-launcher-paths
-    if: >-
-      always() &&
-      !cancelled() &&
-      needs.windows-launcher-paths.result == 'success' &&
-      needs.windows-launcher-paths.outputs.run == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up .NET 8 SDK
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Run launcher safety harness and package/install smoke
-        shell: pwsh
-        run: |
-          # package.ps1 runs the full safety harness before publishing the launcher.
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-windows-launcher-package.ps1
-          if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
+              throw "Canonical startup left port 8000 listening after -ExitAfterReady."
           }
 
   docs-fast-path:
@@ -675,7 +592,6 @@ jobs:
       - docs-only-classify
       - privacy
       - visual-audit-paths
-      - windows-launcher-paths
       - backend-quality
       - backend-tests
       - backend-timezone-windows
@@ -684,7 +600,6 @@ jobs:
       - visual-audit
       - release-safety
       - windows-production-smoke
-      - windows-launcher-safety
     if: >-
       always() &&
       !cancelled() &&
@@ -712,7 +627,6 @@ jobs:
             --head "$HEAD_SHA" \
             --job "privacy=${{ needs.privacy.result }}" \
             --job "visual-audit-paths=${{ needs.visual-audit-paths.result }}" \
-            --job "windows-launcher-paths=${{ needs.windows-launcher-paths.result }}" \
             --job "backend-quality=${{ needs.backend-quality.result }}" \
             --job "backend-tests=${{ needs.backend-tests.result }}" \
             --job "backend-timezone-windows=${{ needs.backend-timezone-windows.result }}" \
@@ -720,8 +634,7 @@ jobs:
             --job "g04-browser=${{ needs.g04-browser.result }}" \
             --job "visual-audit=${{ needs.visual-audit.result }}" \
             --job "release-safety=${{ needs.release-safety.result }}" \
-            --job "windows-production-smoke=${{ needs.windows-production-smoke.result }}" \
-            --job "windows-launcher-safety=${{ needs.windows-launcher-safety.result }}"
+            --job "windows-production-smoke=${{ needs.windows-production-smoke.result }}"
           {
             echo "## Documentation fast path"
             echo "This candidate was classified as safe docs-only and the retained documentation/privacy/diff checks succeeded."

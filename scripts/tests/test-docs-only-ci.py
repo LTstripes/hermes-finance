@@ -430,8 +430,9 @@ class WorkflowContractTests(unittest.TestCase):
         privacy = _job(self.ci, "privacy")
         self.assertNotIn("docs-only-classify", privacy)
         self.assertIn("python3 scripts/tests/test-docs-only-ci.py", privacy)
-        launcher = _job(self.ci, "windows-launcher-paths")
-        self.assertNotIn("mode != 'docs-only'", launcher)
+        self.assertNotIn("windows-launcher-paths", self.ci)
+        self.assertNotIn("windows-launcher-safety", self.ci)
+        self.assertNotIn("launcher_ci_paths", self.ci)
         visual = _job(self.ci, "visual-audit")
         self.assertIn(
             "github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true'",

@@ -37,10 +37,10 @@ excludes tests from the normal full suite.
 | `integration` | Alfa, broker, T-Invest, quote, payout, market, provider, reconciliation, and forecast/dashboard integration suites | Provider/integration boundaries | Accepted provider and read-only integration ADRs |
 | `import_export` | Statement import, Markdown export, AI bundle, private-seed, and legacy interchange suites | Import/export boundary | Export/import contracts and privacy rules |
 | `legacy` | `test_legacy_*.py` | Supported legacy compatibility | Legacy CLI and explicit mapping contracts |
-| `runtime` | Startup, settings, local security, static app, CLI, timezone, and launcher schema suites | Runtime safety | Loopback/offline startup and launcher contracts |
+| `runtime` | Startup, settings, local security, static app, CLI, and timezone suites | Runtime safety | Loopback/offline startup and direct-operation contracts |
 | `release` | Release verification plus F05/G02/G08 acceptance and Windows release-path checks | Release/task gate | Release workflow and task acceptance contracts |
 | `benchmark` | `test_long_history_benchmark.py` and `test_historical_batch_reads.py` | Explicit performance lane | Long-history benchmark contract |
-| `windows` | Windows launcher path, timezone, and launcher schema suites | Windows/runtime lane | Windows process/path/timezone behavior |
+| `windows` | Windows direct-runtime path (spaced/Cyrillic via `start-local`), timezone suites | Windows/runtime lane | Windows process/path/timezone behavior |
 | `network_free` | Synthetic provider, startup, and release offline-boundary suites | Offline safety | No live provider or external network during the test |
 
 The semantic mapping is intentionally not a mass classification of every flat
@@ -128,7 +128,6 @@ ownership map:
 | `frontend/src/pages/` and `frontend/src/app/` | Page and routing flows |
 | `frontend/e2e/` | Synthetic smoke and visual behavior |
 | `scripts/tests/` | Release, workflow, and changed-path contracts |
-| `launcher/windows/` safety harness | Windows process/filesystem safety |
 
 Keep frontend tests in the existing API/lib/component/page split; do not add
 backend-style directories only to make the trees look symmetrical.
@@ -160,13 +159,12 @@ mandatory handoff command. It checks the backend lockfile/full tests and
 frontend tests/build. The canonical CI matrix
 also runs Ruff, Biome, the Windows timezone subset, the G04 synthetic
 real-backend owner journey, synthetic visual audit, privacy/path checks,
-release PowerShell contracts, production smoke, and the .NET launcher safety
-harness. The launcher harness is path-gated: it runs when
-`launcher/windows/**`, `scripts/launcher-schema-check.py`, the package/install
-smoke, the path classifier, or `.github/workflows/ci.yml` changes. Frontend,
-financial/backend domain, and `start-local` / `prepare-runtime` changes do not
-start it; Windows production smoke remains their runtime lane. These are
-complementary lanes, not duplicate test files.
+release PowerShell contracts and production smoke (direct `start-local` /
+`prepare-runtime` prepared-runtime lane). The retired Windows Launcher GUI,
+C# safety harness, package/install smoke and its path-gated CI jobs were
+removed by #629; `test_r04_08_windows_launcher_path.py` remains because it
+covers the direct PowerShell runtime and spaced/Cyrillic paths, not the
+retired shell.
 
 The G04 browser gate is intentionally not path-filtered: it runs on every pull
 request and canonical `main` push because either frontend routing/editor
