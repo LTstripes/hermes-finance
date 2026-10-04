@@ -36,13 +36,13 @@ Propose in plain Russian:
 5. One short copyable launch: repo/issue/note, role, exact baseline/target, task branch/workspace policy, intended result and authorized delivery.
 
 The issue/accepted contract holds acceptance criteria; do not duplicate it in the prompt.
+**Owner preference: normally 5–10 lines for a Worker launch or remediation prompt.** Link the exact issue/review note instead of copying its requirements, test matrix or invariants. New-session prompts point to the latest closeout and pending decisions, not a second project manual. Longer prompts require a specific request or genuinely missing authoritative scope.
 Use standing workspace self-create where applicable; do not invent a root, SHA or missing safety-critical authorization.
 Choose one execution route at launch. An alternative may be unavailable/not recommended; say so rather than manufacture a choice.
 
-
 Model choice is routing only. Normal task handoffs do not request or persist runtime model/provider identity, benchmark grades or usage telemetry.
 
-<a id="codex-local-orchestration"></a><a id="manual-execution-remains-supported"></a>
+<a id="codex-local-orchestration"></a>
 ## Execution modes
 
 Ordinary execution is one Worker; special queue/delegation mechanics live only in `AGENT_ORCHESTRATION.md`.

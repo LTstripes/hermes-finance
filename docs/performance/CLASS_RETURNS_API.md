@@ -1,5 +1,7 @@
 # Exact no-crossing class returns (#535 Phase 1C)
 
+**Status: accepted and integrated** via #700; read-only UI consumer #540/#701 is also integrated. This is post-v1.2.0 development. Canonical milestone and pending Owner UAT: [session closeout](../SESSION_CLOSEOUT_2026-10-04.md).
+
 `GET /api/performance/class-returns?asset_class=stock&start_date=2030-01-31&end_date=2031-01-31`
 
 This combined read-only endpoint supports `stock`, `bond` and `gold` over the
@@ -7,7 +9,7 @@ portfolio-wide historical Performance account universe, in RUB only. It consumes
 the accepted [class endpoint eligibility](CLASS_NO_CROSSING_ENDPOINTS.md) result
 once, under that reader's coherent committed snapshot. It does not reconstruct
 evidence, select nearby dates or change portfolio/account `PerformanceScope`.
-No new schema, writes, provider calls or result cache are introduced.
+No new schema, writes, provider calls or result cache are introduced by #535.
 
 ## Response
 
@@ -70,9 +72,17 @@ opening and zero closing gives unavailable XIRR and exact −100% TWRR. These ar
 numerical outcomes with complete evidence, not evidence gaps.
 
 Two endpoint flows have at most one sign variation, so ROOT_AMBIGUITY normally
-does not arise here. Generic reason propagation still preserves it or future
-solver limitations without inventing flows or changing solver semantics.
+does not arise here. Generic reason propagation preserves it or future solver
+limitations without invented flows or changed numerical semantics.
 
-Statement-backed crossings, FX, deposits/savings, instrument returns and UI
-remain outside this slice. Independent financial/numerical review and Integrator
-acceptance remain required before integration.
+## Delivered UI and remaining boundary
+
+The existing Performance detail now presents Accounts/Classes with exact-date
+presets, independent rates/reasons, safe provenance and responsive keyboard
+support. `deposit` remains a truthful unsupported row. This UI reads the API;
+it does not create class attestations or repair legacy C1 evidence.
+
+Statement-backed crossings, FX, deposits/savings and instrument-level returns
+remain outside this slice. #702 researches the next proposed statement-backed
+contract without changing this API. Owner UAT and any new release/local update
+remain separate from technical integration.
