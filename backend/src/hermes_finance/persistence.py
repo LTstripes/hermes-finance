@@ -195,6 +195,38 @@ class AccountPerformanceScopeMembership(Base):
     include_in_returns: Mapped[bool] = mapped_column(nullable=False)
 
 
+class ClassNoCrossingCoverage(Base):
+    """Whole-portfolio C2 assertion, bound to explicit historical material."""
+
+    __tablename__ = "class_no_crossing_coverages"
+    __table_args__ = (
+        CheckConstraint("asset_class IN ('stock', 'bond', 'gold')", name="ck_class_coverage_class"),
+        CheckConstraint("covered_to > covered_from", name="ck_class_coverage_interval"),
+        CheckConstraint(
+            "coverage_state IN ('complete', 'unknown', 'revoked')", name="ck_class_coverage_state"
+        ),
+        CheckConstraint(
+            "provenance_kind = 'owner_attestation'", name="ck_class_coverage_provenance"
+        ),
+        CheckConstraint("revision > 0", name="ck_class_coverage_revision"),
+        CheckConstraint(
+            "coverage_state <> 'complete' OR "
+            "(material_signature IS NOT NULL AND length(material_signature) = 64)",
+            name="ck_class_coverage_material",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asset_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    provenance_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    material_signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class CashBoundaryCoverage(Base):
     """Affirmative completeness evidence for one account/date interval.
 

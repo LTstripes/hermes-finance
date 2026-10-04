@@ -11,6 +11,43 @@ from _migration_helpers import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
+
+def test_class_coverage_migration_has_no_backfill_and_refuses_loss(tmp_path: Path) -> None:
+    path = tmp_path / "synthetic-class-coverage.db"
+    parent = "0045_position_historical_instrument_type"
+    assert run_alembic(path, "upgrade", parent).returncode == 0
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM class_no_crossing_coverages"
+        ).fetchone() == (0,)
+    assert run_alembic(path, "downgrade", parent).returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO class_no_crossing_coverages "
+            "(asset_class, covered_from, covered_to, coverage_state, provenance_kind, revision) "
+            "VALUES ('stock', '2030-01-31', '2030-02-28', 'revoked', 'owner_attestation', 1)"
+        )
+        for sql in (
+            "UPDATE class_no_crossing_coverages SET asset_class = 'fund'",
+            "UPDATE class_no_crossing_coverages SET coverage_state = 'complete'",
+            "UPDATE class_no_crossing_coverages SET provenance_kind = 'statement_verified'",
+            "UPDATE class_no_crossing_coverages SET revision = 0",
+        ):
+            try:
+                connection.execute(sql)
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                raise AssertionError("invalid class assertion accepted")
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode != 0
+    assert "cannot discard class no-crossing evidence" in result.stderr
+    assert revision_rows(path) == [REVISION]
+
+
 # Immediate parent of REVISION: used to prove the #336 add-on is additive.
 FINANCIAL_CONTEXT_PARENT_REVISION = "0036_broker_baseline_provenance"
 
@@ -20,6 +57,7 @@ def test_position_class_migration_leaves_closed_legacy_unknown_and_guards_loss(
 ) -> None:
     path = tmp_path / "class-migration.db"
     parent = "0044_observed_valuation_material_signature"
+    c1_revision = "0045_position_historical_instrument_type"
     result = run_alembic(path, "upgrade", parent)
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(path) as connection:
@@ -45,9 +83,9 @@ def test_position_class_migration_leaves_closed_legacy_unknown_and_guards_loss(
             "updated_at) VALUES (1, 1, 1, 1, 1, 10000, 11000, 11000, 10000, 1000, "
             "'2031-01-31', 'manual', 0, '2031-01-31')"
         )
-    result = run_alembic(path, "upgrade", "head")
+    result = run_alembic(path, "upgrade", c1_revision)
     assert result.returncode == 0, result.stderr
-    assert revision_rows(path) == [REVISION]
+    assert revision_rows(path) == [c1_revision]
     with sqlite3.connect(path) as connection:
         assert connection.execute(
             "SELECT historical_instrument_type, market_value_kopecks FROM position_snapshots"
@@ -56,7 +94,7 @@ def test_position_class_migration_leaves_closed_legacy_unknown_and_guards_loss(
     result = run_alembic(path, "downgrade", parent)
     assert result.returncode == 0, result.stderr
     assert revision_rows(path) == [parent]
-    result = run_alembic(path, "upgrade", "head")
+    result = run_alembic(path, "upgrade", c1_revision)
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(path) as connection:
         for invalid in ("other", "equity", "BOND", "bond ", ""):
@@ -72,7 +110,7 @@ def test_position_class_migration_leaves_closed_legacy_unknown_and_guards_loss(
     result = run_alembic(path, "downgrade", parent)
     assert result.returncode != 0
     assert "while evidence exists" in result.stderr
-    assert revision_rows(path) == [REVISION]
+    assert revision_rows(path) == [c1_revision]
     with sqlite3.connect(path) as connection:
         assert connection.execute(
             "SELECT historical_instrument_type FROM position_snapshots"

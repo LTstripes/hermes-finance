@@ -259,6 +259,16 @@ def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
 
 def reopen_reporting_month(session: Session, month_id: int) -> ReportingMonth:
     reporting_month = get_reporting_month(session, month_id)
+    from hermes_finance.services._guard import reserve_reporting_month_interval_writer
+    from hermes_finance.services.class_endpoint_eligibility import (
+        invalidate_class_coverages_for_reopen,
+    )
+
+    reserve_reporting_month_interval_writer(
+        session, covered_from=reporting_month.period_start, covered_to=reporting_month.period_end
+    )
+    session.refresh(reporting_month)
+    invalidate_class_coverages_for_reopen(session, reporting_month)
     reporting_month.status = ReportingMonthStatus.DRAFT.value
     session.commit()
     session.refresh(reporting_month)
