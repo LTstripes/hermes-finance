@@ -6,69 +6,71 @@ Hermes Finance — локальное однопользовательское W
 
 ## Current status
 
-Published release is **v1.2.0** at `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; annotated tag object `f9311d26c1aae7295361937096844f4dde615b55` peels to that exact commit. Canonical CI `37206069556` is SUCCESS after a single failed G04 job was retried in isolation and passed; Guarded Release `37206660242` succeeded. The last locally confirmed Stable is still v1.1.0 until the Owner performs backup-first OPS02 to 1.2.0. [Release record](docs/releases/1.2.0.md).
+Published release is **v1.2.0** at `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; annotated tag object `f9311d26c1aae7295361937096844f4dde615b55` peels to that exact commit. Canonical CI `37206069556` and Guarded Release `37206660242` succeeded. Last locally confirmed Stable is v1.1.0; the authorized backup-first update to 1.2.0 has not been reported complete here. [Release record](docs/releases/1.2.0.md).
 
-#572 is CLOSED with **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use and provider limitations. The earlier pre-publication deferral is historical, superseded by [actual Owner acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786), not retroactively relabelled as an earlier PASS. UI v2 is primary at `/`; the previous UI stays at `/v1`.
+**Development code milestone:** `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4` (merge #701), exact-main CI `37226437369` SUCCESS. Class-return Phase 1 (#696/#698/#535/#540) is integrated on main **after v1.2.0**, not in that published release or automatically installed in Stable/Test. Live GitHub remains authoritative; later documentation commits may advance main.
 
-**v1.2.0 now contains the accepted post-v1.1.0 product wave and maintenance line.** #662 plus #667/#674, CI/test optimization #668–#671 and repository Launcher retirement #629 are in the published release. #646 remains a separate Alfa PRO compatibility limitation and is not claimed fixed by publication.
+#572 is CLOSED with **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use and provider limitations. The earlier deferral is historical, superseded by [actual acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786), not retroactively relabelled PASS. UI v2 is primary at `/`; `/v1` remains available.
 
-**Filesystem migration is complete:** #679/#666 moved Stable/Main/persistent Test, removed the authorized legacy forest and deployed daily workspace cleanup through #685. Installed Launcher/config/shortcuts were removed and repository Launcher source/package/tests/workflows are retired by #629. The [machine-layout contract](docs/OWNER_MACHINE_LAYOUT.md) also protects the separate active Ops installation; outside the Hermes root does not automatically mean disposable.
+v1.2.0 includes the accepted #662 post-v1.1.0 product wave, #667/#674, CI optimization #668–#671 and repository Launcher retirement #629. #646 remains a separate Alfa compatibility limitation. #679/#666 migration/legacy cleanup and #685 janitor deployment are complete; [machine layout](docs/OWNER_MACHINE_LAYOUT.md) protects the separate active Ops installation.
 
-Release checkpoint: `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; exact-main CI `37206069556` SUCCESS, Guarded Release `37206660242` SUCCESS. Any later main movement from release closeout docs does not change the immutable v1.2.0 tag. Live GitHub remains authoritative. See [CURRENT_STATUS](docs/CURRENT_STATUS.md) and [v1.2.0 release record](docs/releases/1.2.0.md).
+Current detail: [CURRENT_STATUS](docs/CURRENT_STATUS.md). Restart brief: [SESSION_CLOSEOUT_2026-10-04](docs/SESSION_CLOSEOUT_2026-10-04.md).
 
 ## Product/runtime invariants
 
-- Windows 10/11, single user, local-only, local SQLite; normal endpoint `127.0.0.1:8000`.
+- Windows 10/11, single user, local SQLite; normal endpoint `127.0.0.1:8000`.
 - No cloud account, auth, telemetry, trading or background provider refresh. Provider/network reads require explicit Owner actions.
-- Production and Test data, `.env`, backups, credentials and private exports never enter development workspaces or CI.
-- CLOSED months remain immutable until explicit Reopen. Backend/domain is the financial source of truth.
-- Exact money uses Decimal / integer minor units. Unknown/unavailable is never silently converted to zero.
-- Filesystem housekeeping does not refresh providers, change financial data or promote a release.
+- Production/Test data, .env, backups, credentials and private exports never enter development workspaces or CI.
+- CLOSED months are immutable until explicit Reopen. Backend/domain is the financial source of truth.
+- Exact money uses Decimal / integer minor units. Unknown/unavailable is not zero.
+- Housekeeping does not refresh providers, change financial data or promote releases.
 
 ## Major completed lines
 
 ### Monthly Close / UI v2
 
-Native month/editor operations, explicit imports/Preview/Apply/readback, exact-month final review/report/reopen, Goals/Tax/IIS/Scenario and data/application tools are integrated. Home, Capital, Income and Plans, contextual History/Reports and native Monthly Close are primary v2 surfaces. `/v1` and retained legacy deep links remain intentionally available; #573 is CLOSED / NOT_PLANNED unless Owner explicitly revisits retirement later.
+Native month/editor operations, explicit imports/Preview/Apply/readback, exact-month final review/report/Reopen, Goals/Tax/IIS/Scenario and data/application tools are integrated. Home, Capital, Income and Plans, contextual History/Reports and Monthly Close are primary v2 surfaces. `/v1` and retained deep links remain intentional; #573 is CLOSED / NOT_PLANNED unless Owner revisits retirement.
 
-The post-release wave adds exact-month navigation, direct final review, saved-only reread, combined Settings/Diagnostics, collapsed bulk/individual future payouts, contextual verified mapping, exception-first Alfa, money/debt-editor readability and linked-pair explanation. Accepted lifecycle/financial boundaries remain unchanged.
+The accepted product wave adds exact-month navigation, saved-only reread, Settings/Diagnostics, collapsed bulk/individual future payouts, contextual verified mapping, exception-first Alfa, money/debt readability and linked-pair explanation. Lifecycle/financial boundaries are unchanged.
 
 Evidence: [UI completion](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md), [default switch](docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md), [post-release UAT](docs/POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md).
 
 ### Decision Support v1
 
-AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance, Reconciliation, current-state Tax/IIS, deterministic Insights and Scenario Lab v1 are integrated. Scenario Lab is deterministic/read-only, not a market forecast. The AI export format has independent `schema_version=1.3.0`.
+AI Analysis Bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance, Reconciliation, current-state Tax/IIS, deterministic Insights and Scenario Lab are integrated. Scenario Lab is deterministic/read-only, not a market forecast. AI export `schema_version=1.3.0` is independent of the application release.
 
 Closeout: [Decision Support v1](docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md).
 
 ### Performance and data integrity
 
-Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards and PERF04A monetary bridge are integrated. Performance Phase A adds diagnostics and explicit data preparation. Exact class returns #535/#540 remain a separate Phase B, currently blocked on #534's accepted evidence prerequisites rather than on UI implementation.
+Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards, diagnostics/preparation and PERF04A monetary bridge are delivered.
 
-`value_change_after_external_flows` is not return/profit/P&L. The accepted backend-only decomposition `B_portfolio = Σ B_account + Σ T_internal_transfer` has no residual bucket or partial exact split; instrument/class, price/FX, realised/unrealised and cost-basis attribution are unsupported without their own accepted evidence foundation. API/UI exposure of that backend slice is a separate decision.
+**Class-return Phase 1 is integrated in development main.** The existing Performance detail now has Accounts/Classes, exact-date presets and independent annualized XIRR / period TWRR. Stock/bond/gold require historical C1 identity, explicit no-crossing coverage, both full endpoint inventory claims and exact persisted RUB valuations. Deposits are visibly unsupported. Evidence gaps and numerical limitations remain distinct.
 
-Data-integrity #484–#498/#536–#539 and later #621–#624 preserve atomic writes, coherent SQLite reads, correct provenance, source coverage and stale-evidence invalidation. Missing accounts/periods are not zero-filled.
+This first slice does not import purchases/sales/distributions, implement flow-bearing class TWRR/FX, or provide a class-attestation input form. Legacy C1 remains unknown, not backfilled. The read-only class table does not imply that personal history already has computable percentages. [Class contract](docs/performance/ASSET_CLASS_RETURNS_CONTRACT.md), [endpoint evidence](docs/performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](docs/performance/CLASS_RETURNS_API.md).
 
-Evidence: [Performance v1](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md), [component contract](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md), [data-integrity closeout](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
+`value_change_after_external_flows` is not return/profit/P&L. The backend-only decomposition `B_portfolio = Σ B_account + Σ T_internal_transfer` has no residual bucket or partial exact split. Class return does not implement additive class attribution, price/FX decomposition or cost-basis accounting. [PERF04B contract](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
+
+Data-integrity #484–#498/#536–#539 and #621–#624 preserve atomic writes, coherent SQLite reads, source coverage and stale-evidence invalidation. Missing accounts/periods are not zero-filled. [Performance v1](docs/PERFORMANCE_V1_CLOSEOUT_2026-09-12.md), [integrity closeout](docs/DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
 
 ### Recovery and durability
 
-#417 is complete: explicit managed recovery-point publication/read-back, bounded per-protection-pair retention, isolated DR rehearsal, post-restore state reload and truthful ambiguous outcomes. Both the encrypted-destination contract and separately Owner-accepted plaintext synced-filesystem mode remain distinct. A synchronized folder is not automatically encrypted or proven delivered off-device. #543/PR #547 completed the separate CLI/retention hardening without reopening #417.
+#417 is complete: explicit recovery-point publication/read-back, bounded retention, isolated DR, post-restore reload and truthful ambiguous outcomes. Encrypted and separately Owner-accepted plaintext synced-filesystem modes remain distinct. A synchronized folder is not automatically encrypted or proven off-device. #543/PR #547 completed separate CLI/retention hardening.
 
-Evidence and supported commands: [durability closeout](docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md), [Owner runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md).
+Evidence and commands: [durability closeout](docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md), [runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md).
 
 ## Requirements
 
 - Windows 10/11;
 - Python 3.13 and [uv](https://docs.astral.sh/uv/);
-- Node.js **22.23.1** (tested/recommended, `frontend/.nvmrc`) and npm; other permitted versions are declared by `frontend/package.json`, and `frontend/.npmrc` rejects unsupported engines;
+- Node.js **22.23.1** (tested/recommended, `frontend/.nvmrc`) and npm; permitted versions are declared in `frontend/package.json`, with `.npmrc` enforcement;
 - modern browser.
 
 Docker/PostgreSQL/public web hosting are not required.
 
 ## Development installation
 
-From an isolated clean development checkout, never production Stable:
+From an isolated development checkout, never production Stable:
 
 ```powershell
 Set-Location backend
@@ -78,23 +80,13 @@ npm ci
 Set-Location ..
 ```
 
-Dependencies remain locked by `backend/uv.lock` and `frontend/package-lock.json`. Each client creates task copies only under its configured workspace root; shared rules are in [AGENTS.md](AGENTS.md).
+Dependencies remain locked by `backend/uv.lock` and `frontend/package-lock.json`. Clients create task copies below their configured roots; see [AGENTS](AGENTS.md).
 
 ## Windows launcher — retired
 
-The Windows Launcher GUI, package/install scripts and launcher-only
-tests/CI jobs were removed from the repository by #629 after the Owner
-removed the installed shell during #679. **Do not reinstall it to run Hermes
-or to repair the folder layout.** Direct Prepare/Validate/Start below is the
-normal path. Shared backup-first update (`scripts/launcher-production-backup.py`
-via `update-stable-lib.ps1`), prepared-runtime, recovery rehearsal and
-`RuntimeConfig` identity/exclusion helpers were preserved even where a helper
-or schema name still mentions Launcher. Recovery and cleanup exclusion inputs
-use the direct-operations runtime inventory defined in
-[OWNER_RUNTIME_OPERATIONS §13](docs/OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal)
-([example](docs/runtime-inventory.example.json)); no Launcher shell, config UI
-or installation is involved. The former compact shell and failed
-self-updater are historical: [R09 closeout](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
+The Launcher GUI/package/install/tests/jobs were retired by #629 after Owner-local removal during #679. **Do not reinstall it to run Hermes or repair layout.** Direct Prepare/Validate/Start is the supported route. Shared `launcher-production-backup.py` through `update-stable-lib.ps1`, prepared-runtime, recovery and RuntimeConfig protections remain even where a helper name is historical.
+
+Recovery/cleanup exclusions use the direct-operations inventory: [OWNER_RUNTIME_OPERATIONS §13](docs/OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal), [example](docs/runtime-inventory.example.json). Earlier shell/self-updater work is historical: [R09](docs/R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md).
 
 ## Explicit Prepare + deterministic Start
 
@@ -109,17 +101,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-runtim
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-Short readiness smoke:
+Readiness smoke:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
 
-Prepare installs required locked dependencies, builds the frontend and records ignored exact-build proof. Start validates the proof; it does not silently install/build or move Git refs. A moved Windows Python environment can contain absolute interpreter paths: re-prepare its destination rather than blindly reusing console launchers. Never change the production DB binding to get around a startup failure.
+Prepare installs locked dependencies, builds the frontend and records ignored exact-build proof. Start validates it without silently installing/building or moving refs. Re-prepare a relocated Windows Python environment rather than reusing old absolute interpreter entry points. Never change production DB binding to bypass startup failure.
 
 ## Explicit Stable release update
 
-Run OPS02 from trusted canonical Main/Control, outside mutable Stable:
+Run OPS02 from trusted Main/Control, outside mutable Stable:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
@@ -127,11 +119,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.
   -TargetVersion X.Y.Z
 ```
 
-It proves one published annotated release, makes a verified SQLite backup before Git mutation, pins that exact target, runs target Prepare + Validate and stops. It never chooses `latest`, follows main, starts Hermes, updates Test, publishes a release, runs DB migration or automatically rolls back/downgrades.
+It proves a published annotated release, makes a verified SQLite backup before Git mutation, pins the exact target, runs Prepare + Validate and stops. It never chooses latest, follows main, starts Hermes, updates Test, publishes a release, runs DB migration or automatically rolls back/downgrades.
 
 ## Exact Preview/UAT preparation
 
-Use the persistent Test location for the Preview role, with its own isolated data and one explicit candidate:
+Use persistent Test with isolated data and an explicit candidate:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-preview.ps1 `
@@ -145,21 +137,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-previe
   -ControlCheckout <main-checkout-path>
 ```
 
-Existing-path guards remain authoritative; reuse the role/location, not an unsafe overwrite of Test data. Stop the owned runtime before changing its checkout. Only one runtime owns port 8000. [Owner runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md) describe the supported boundaries.
+Existing-path guards remain authoritative. Reuse the role/location, not an unsafe overwrite. Stop the owned runtime before changing its checkout; only one runtime owns port 8000. Operational preparation belongs to an explicitly authorized local Worker. [Runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md).
 
 ## Release publication
 
-Publication is separate from local installation. Permanent guarded Owner endpoint: **#124**; see [RELEASE_AUTOMATION](docs/RELEASE_AUTOMATION.md).
+Publication is separate from installation. Permanent guarded Owner endpoint: **#124**; see [RELEASE_AUTOMATION](docs/RELEASE_AUTOMATION.md).
 
-The sequence remains exact-SHA isolated UAT → Owner acceptance → guarded immutable publication → explicit backup-first OPS02 → explicit Start and health/data-continuity verification. The historical v0.9.0/v1.0.0 transitions remain proven; no new release follows automatically from a merged PR or a folder move.
+The normal sequence remains exact-SHA isolated UAT → Owner acceptance → guarded publication → explicit backup-first OPS02 → Start and continuity verification. Release-specific Owner decisions are recorded in their release record; they are not standing waivers for future versions. No release follows automatically from a merged PR or folder move.
 
 ## What comes next
 
-- CI/test optimization #668–#671 and #629 Launcher retirement are complete; there is no dedicated test/CI optimization backlog. See [the closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
-- Focused #667 month-list retest and remaining portfolio/account Performance Owner checks can share one refreshed Test when selected; Owner has currently deferred this combined UAT to avoid repeating it before the Alfa follow-up settles.
-- #646 is a separate Alfa PRO compatibility investigation. Current live evidence: Trading core can be switched Online on port 3366 and a read-only token can be issued, but Hermes still rejects the resulting protocol as unrecognized; no accepted token/handshake contract is available yet.
-- #630, #573 and historical roadmap #127 are CLOSED / NOT_PLANNED; #528 is CLOSED / COMPLETED. Class returns #535/#540 and #389 composer remain product choices. `/v1` remains intentionally available.
-- #679/#666 migration and janitor deployment are complete. Daily cleanup eligibility is described in [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md); it does not grant arbitrary manual deletion outside the root.
+- **#702 read-only statement-backed class-event research** is selected and can run independently of Owner UAT. Its output is a proposed contract/source matrix and ordered implementation slices, not code delivery.
+- Owner plans UAT tomorrow or in the following days. Class-return testing needs an explicitly prepared post-#701 candidate: published v1.2.0 does not contain it. No UAT PASS or local deployment is implied. The missing class-attestation/legacy-identity UI remains a product gap; do not assign Owner database/JSON/PowerShell workarounds.
+- #646 Alfa remains a known limitation: Trading core UI Online on 3366 and read-only token issued, but Hermes reports unrecognized protocol. No new token/handshake contract is proven. Owner elected to wait several days/about a week before support. This does not block statement research.
+- #389 composer is deferred. #630/#573/#127 are closed not-planned; #528/#541 are closed coordination. `/v1` stays.
+- CI/test optimization #668–#671/#629 is complete; #691 was NO-GO with no delivered change. [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
+- Migration/janitor setup #679/#666 is complete. Preserve the active separate Ops installation; [janitor rules](docs/WORKSPACE_JANITOR.md) do not grant arbitrary deletion.
 
 ## Health
 
@@ -169,17 +162,17 @@ After a successful local start:
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-Published v1.2.0 reports `status=ok`, `version=1.2.0` after the local Stable update. Open `http://127.0.0.1:8000`.
+Published v1.2.0 reports `status=ok`, `version=1.2.0` after actual local update. Health version alone does not prove a later development SHA; check exact Git/runtime identity for post-release UAT. Open `http://127.0.0.1:8000`.
 
 ## Documentation map
 
-- [AGENTS.md](AGENTS.md): shared task entrypoint; [verification](docs/VERIFICATION_POLICY.md) and [routing](docs/MODEL_ROUTING.md) own their procedures.
-- [MASTER_SPEC](docs/MASTER_SPEC.md): product semantics; accepted ADRs retain their contracts.
-- [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [session closeout](docs/SESSION_CLOSEOUT_2026-10-03.md): active status/context and restart brief.
-- [OWNER_MACHINE_LAYOUT](docs/OWNER_MACHINE_LAYOUT.md), [OWNER_RUNTIME_OPERATIONS](docs/OWNER_RUNTIME_OPERATIONS.md), [WORKSPACE_JANITOR](docs/WORKSPACE_JANITOR.md): current folders, direct startup and scheduled housekeeping.
-- [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md), [CI/test optimization closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) and other dated closeouts retain history; historical model attribution is not a standing reporting requirement.
-- [v1.2.0 release record](docs/releases/1.2.0.md), [v1.2.0 notes](docs/release-notes-1.2.0.md), [v1.1.0 release record](docs/releases/1.1.0.md), [v1.0.0 closeout](docs/R10_RELEASE_CLOSEOUT_2026-09-21.md): immutable release-era evidence, not instructions to redo completed work.
+- [AGENTS](AGENTS.md), [verification](docs/VERIFICATION_POLICY.md), [routing](docs/MODEL_ROUTING.md): authority and proportional procedures. Worker prompts normally stay 5–10 lines and reference the task instead of duplicating it.
+- [MASTER_SPEC](docs/MASTER_SPEC.md), accepted ADRs and linked task contracts: product semantics.
+- [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [latest closeout](docs/SESSION_CLOSEOUT_2026-10-04.md): active state and restart brief.
+- [Layout](docs/OWNER_MACHINE_LAYOUT.md), [runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md), [janitor](docs/WORKSPACE_JANITOR.md): folders and direct operations.
+- [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md) and dated closeouts preserve history; old model attribution is not reporting policy.
+- [v1.2.0 record](docs/releases/1.2.0.md), [v1.2.0 notes](docs/release-notes-1.2.0.md), [v1.1.0 record](docs/releases/1.1.0.md): release-era evidence, not instructions to repeat completed work.
 
 ## Privacy
 
-Never commit real `.env`, production/Test DBs, SQLite sidecars/backups, provider credentials, private exports/PDFs or reconstructive personal datasets. Development and CI use synthetic fixtures. Ordinary model handoffs do not request or record model/provider identity or benchmarks.
+Never commit real .env, production/Test DBs, SQLite sidecars/backups, provider credentials, private exports/PDFs or reconstructive personal datasets. Development/CI use synthetic fixtures. Normal model handoffs do not request or record runtime model/provider identity or benchmarks.
