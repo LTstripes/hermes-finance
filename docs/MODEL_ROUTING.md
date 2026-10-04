@@ -42,7 +42,7 @@ Choose one execution route at launch. An alternative may be unavailable/not reco
 
 Model choice is routing only. Normal task handoffs do not request or persist runtime model/provider identity, benchmark grades or usage telemetry.
 
-<a id="codex-local-orchestration"></a>
+<a id="codex-local-orchestration"></a><a id="manual-execution-remains-supported"></a>
 ## Execution modes
 
 Ordinary execution is one Worker; special queue/delegation mechanics live only in `AGENT_ORCHESTRATION.md`.
