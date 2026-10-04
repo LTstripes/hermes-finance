@@ -2,7 +2,7 @@
 
 Issue: #534. Parent: #528. Date: 2026-09-27.
 
-**Status: CANDIDATE / independent financial-semantics review required.**
+**Status: ACCEPTED.** Original BLOCK ON EVIDENCE decision independently accepted 2026-09-27 (#534 comment 5855432534). Owner accepted the metric-specific sequencing amendment below on 2026-10-04 after independent re-review.
 
 ## Decision
 
@@ -12,7 +12,30 @@ This is not a statement that Hermes lacks useful class analytics. It means the c
 
 Phase A portfolio/account Performance is unaffected and should not wait for this contract.
 
-Do not start #535/#540 as implementation from this candidate until an independent review and an explicit Owner/Integrator decision accept the prerequisites below.
+
+## 0. Accepted 2026-10-04 sequencing amendment
+
+The original decision remains correct: the evidence available when #534 was accepted did **not** support exact asset-class returns. The amendment changes the implementation sequencing, not that conclusion.
+
+The prerequisites are **metric-specific**:
+
+| Prerequisite | Exact class XIRR | Exact class TWRR |
+| --- | --- | --- |
+| C1 — historical class identity | Required for endpoint membership and every relevant event | Required at endpoints and every valuation boundary |
+| C2 — class-boundary events / coverage | Required: complete dated crossings **or affirmative no-crossing coverage** | Required with sufficient ordering/grouping |
+| C3 — class valuation | Exact opening and closing values are sufficient for XIRR | Endpoints plus exact class values at segmentation boundaries |
+| C4 — class PRE/POST evidence | **Not required** | Required when crossings require segmentation; vacuous for a proven no-crossing interval |
+| C5 — currency / corrections / lifecycle | Required; first implementation may be RUB-only | Required and extended to invalidate dependent boundary observations |
+
+This permits a bounded first subset once new evidence exists: historical class identity + affirmative whole-interval no-crossing coverage + exact endpoint valuations + C5. Such an interval may support both XIRR and TWRR without inventing PRE/POST observations.
+
+A transaction-lot/FIFO/average-cost subsystem is **not** a prerequisite for class XIRR/TWRR. The return inputs require complete class-boundary amounts, historical membership and valid valuations. Tax-lot accounting is a different product problem.
+
+Statements are the preferred durable automation source for historical transactions and coverage. A documented provider API may later provide equivalent evidence, but class returns must not depend on undocumented Alfa PRO token/handshake behaviour. Routine purchases/sales should be imported and normalised rather than manually re-entered one by one; Owner input is reserved for mappings, ambiguous events, unsupported off-platform evidence and narrowly defined attestations.
+
+Solver availability is separate from evidence availability. Current XIRR intentionally returns `not_computable_xirr_root_ambiguity` when the normalised dated series has more than one sign variation before root scanning. A complete evidence series can therefore still be solver-unsupported. UI/API reasons must distinguish evidence gaps from numerical limitations; a solver limitation must never tell the Owner to import more transactions.
+
+Do not infer class returns from current allocation, account returns or monetary-result grouping. Implementation may proceed only for explicitly accepted class/interval/evidence capabilities under the metric-specific gates below; unsupported cases remain unavailable.
 
 ## 1. Three different quantities must stay separate
 
@@ -98,9 +121,9 @@ Monthly endpoint snapshots alone cannot prove intra-period class PRE/POST orderi
 
 Do not extend `ObservedValuationPoint` to an asset-class scope ad hoc inside #535. The class identity, target signature, grouping, correction/invalidation and closed-month lifecycle must be frozen first.
 
-## 6. Required prerequisites before any GO
+## 6. Evidence prerequisites
 
-A future implementation may proceed only after these evidence slices are accepted.
+These slices remain the canonical evidence capabilities. They are not a single global all-or-nothing gate: each metric/class/interval may proceed only when the prerequisites applicable to that capability are satisfied.
 
 ### C1 — historical class identity
 
@@ -128,15 +151,15 @@ Must cover, where applicable:
 
 A missing trade ledger cannot be replaced by owner attestation that only covers account-level external cash.
 
-### C3 — class valuation service
+### C3 — class valuation
 
-Provide exact opening/closing class values with complete component coverage and historical class identity.
+Provide exact opening/closing class values with complete component coverage and historical class identity. A general daily valuation service is not required for XIRR; TWRR with crossings additionally needs exact class valuation at each accepted segmentation boundary.
 
 No current-weight backfill, no survivor-only composition and no partial-as-complete result.
 
 ### C4 — class PRE/POST boundary evidence for TWRR
 
-Provide exact class-specific pre/post observations or an equally strong accepted transaction-aware valuation source for every class crossing that requires segmentation.
+Provide exact class-specific pre/post observations or an equally strong accepted transaction-aware valuation source for every class crossing that requires segmentation. C4 is not an XIRR prerequisite and is vacuous for an affirmatively proven no-crossing interval.
 
 ### C5 — currency / correction / lifecycle
 
@@ -144,15 +167,19 @@ First version may remain RUB-only. Any foreign-currency component without accept
 
 All material corrections must invalidate dependent class evidence; closed-month rules remain fail-closed.
 
-## 7. Can a smaller exact subset ship first?
+## 7. Smaller exact subset
 
-**Not from current evidence alone.**
+**Current persisted evidence alone still does not create a free PARTIAL GO.** A visually flow-free chart or empty transaction query is not proof of no crossings.
 
-Even a visually “flow-free” interval cannot be called exact because the current model cannot affirmatively prove that no buy/sell/class crossing occurred inside the interval.
+However, a deliberately implemented bounded subset **is accepted** once it establishes:
+- C1 historical identity for the whole measured class;
+- C2 affirmative coverage that proves no class crossings for the complete interval;
+- C3 exact opening/closing valuations;
+- C5 currency/correction/lifecycle rules.
 
-A future bounded subset could become possible only after C1 plus an affirmative class-boundary coverage contract. Example: stable historical class identity + exact endpoints + explicit “no class crossings in this interval” evidence. That is a new evidence feature, not a free calculation over today's monthly snapshots.
+For that subset, XIRR may reuse the existing endpoint construction and TWRR may use its no-boundary path; C4 is not needed because no segmentation event exists.
 
-This contract therefore does **not** grant a current PARTIAL GO.
+“No crossings” includes purchases, sales, class transfers/reclassification, distributions leaving the class, redemption/maturity principal, attributable fees/taxes that cross the declared boundary and in-kind movements. Net-zero crossings are still crossings. Contradictory known evidence defeats an Owner attestation.
 
 ## 8. Reference vectors for future prerequisites
 
@@ -178,23 +205,27 @@ If instrument returns are revisited, use on-demand drill-down from a supported c
 
 ## 10. Product sequencing
 
-Recommended sequence:
+Phase A portfolio/account UX is complete. The accepted Phase B sequence is now:
 
-1. finish Phase A portfolio/account UX (#529–#533 / #541 A);
-2. keep #575 monthly monetary result as the useful class-style breakdown already supported by current evidence;
-3. leave #535/#540 blocked;
-4. only create C1–C5 implementation issues if the Owner explicitly chooses to invest in exact class-return evidence.
+1. **Phase 1A — historical class identity.** Freeze immutable/effective historical class evidence without retroactively treating today's catalogue as historical truth.
+2. **Phase 1B — affirmative no-crossing coverage + endpoint eligibility.** Add the minimum C2/C3/C5 evidence needed for qualifying RUB intervals.
+3. **Phase 1C — #535 backend/API.** Expose exact class XIRR/TWRR only for supported class/interval/evidence capabilities; XIRR and TWRR availability remain independent.
+4. **Phase 1D — #540 UI.** Compact “По классам” presentation with explicit coverage, dates, basis and distinct evidence-versus-solver reasons.
+5. **Phase 2 — statement-backed class XIRR with crossings.** Extend one bounded report family at a time with executed purchases/sales/principal/cash-routing evidence; do not require C4.
+6. **Later — flow-bearing exact class TWRR.** Add C4/equivalent boundary valuation evidence and then broaden currencies/corporate actions as separately accepted.
 
-This keeps the new Performance UI useful without turning an interface task into an unplanned transaction-ledger rewrite.
+#575 remains useful monetary-result analytics but is never a class-return input. Alfa PRO is optional and must not block statement-backed history.
 
 ## 11. Review / completion
 
-This candidate changes documentation only.
+The original 2026-09-27 candidate was independently accepted as BLOCK ON EVIDENCE. The 2026-10-04 independent re-review challenged sequencing and was accepted by the Owner/Integrator as the amendment above.
 
-Independent financial-semantics review must verify:
-- historical-classification reasoning;
-- class-boundary flow semantics;
-- no conflict with PERF04A/B, #575 or existing account/portfolio returns;
-- prerequisite sufficiency and whether any smaller exact subset is actually supportable.
+Implementation still requires independent review appropriate to the changed financial/data surface. New evidence/schema/import slices stay separately bounded; #535 remains the read-model/adapter/API task and must not hide a transaction-ledger rewrite. #540 remains presentation-only and may show XIRR when TWRR is unavailable.
 
-No production code/schema/API/provider call or Owner data is changed by this contract candidate.
+No class-return implementation may:
+- change existing portfolio/account return semantics;
+- infer trades/flows from capital deltas or current weights;
+- relabel P&L, YTM or #575 monetary result as total return;
+- treat partial supported holdings as the whole class;
+- erase sold holdings, unsupported events or contradictory coverage;
+- convert solver limitations into “missing data” instructions.
