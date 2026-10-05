@@ -24,6 +24,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.mybroker_import import unresolved_class_source_ids
 from hermes_finance.services.performance_availability import (
     _membership_at,
     _scope_membership_coverage,
@@ -58,6 +59,9 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     )
     if not accounts:
         reasons.add("historical_universe_empty")
+    source_ids = unresolved_class_source_ids(session, membership.account_ids, start, end)
+    if source_ids:
+        reasons.add("mybroker_class_reconciliation_required")
     months = list(
         session.scalars(
             select(ReportingMonth)
@@ -284,6 +288,8 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
             for m in relevant_movements
         ],
     }
+    if source_ids:
+        material["unresolved_mybroker_import_ids"] = source_ids
     signature = sha256(
         json.dumps(material, default=str, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
