@@ -8,6 +8,7 @@ ordinals or financial payout tables. S1 does not attest portfolio completeness.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -28,6 +29,7 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     ReportingMonth,
 )
+from hermes_finance.services.performance_availability import _membership_at
 from hermes_finance.statement_import.mybroker import (
     PARSER,
     PROVIDER,
@@ -42,12 +44,16 @@ def _imports(session: Session) -> list[MyBrokerImport]:
     return list(session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id)))
 
 
-def _material(trade: dict) -> dict:
-    return {
-        key: value
-        for key, value in trade.items()
-        if key not in {"section", "ordinal", "cash_available", "blockers"}
-    }
+# The parser's core is immutable. These source fields may be absent in a
+# narrower occurrence; two present values within one state must still agree.
+# Pending dates are plans, so only settled observations enrich settled evidence.
+ENRICHABLE_FIELDS = (
+    "settlement_date",
+    "depo_settlement_date",
+    "settlement_time",
+    "bank_commission",
+    "accrued_interest",
+)
 
 
 def _crosses_cutoff(trade: dict, start: str, end: str) -> bool:
@@ -67,44 +73,114 @@ def _crosses_cutoff(trade: dict, start: str, end: str) -> bool:
 
 
 def _reduce(documents: list[dict]) -> tuple[dict[str, dict], list[str]]:
-    trades = {}
-    origins = {}
-    conflicts = []
-    for document in documents:
-        current = {}
+    """Reduce a document set by source endpoints, independently of upload order."""
+    ordered = sorted(
+        documents, key=lambda d: (d["covered_to"], d["covered_from"], d["document_sha256"])
+    )
+    observations = defaultdict(list)
+    document_identities = [{t["identity"] for t in d["trades"] if t["identity"]} for d in ordered]
+    for index, document in enumerate(ordered):
         for trade in document["trades"]:
-            if trade["identity"] is None:
-                continue
-            identity = trade["identity"]
-            previous = current.get(identity) or trades.get(identity)
-            if previous is not None:
-                if previous["core"] != trade["core"]:
-                    conflicts.append("immutable_trade_conflict")
-                elif previous["state"] == "settled" and trade["state"] == "pending":
-                    conflicts.append("settled_to_pending_conflict")
-                elif previous["state"] == trade["state"] and _material(previous) != _material(
-                    trade
+            if trade["identity"]:
+                observations[trade["identity"]].append((index, trade))
+    trades = {}
+    conflicts = set()
+    for identity, occurrences in sorted(observations.items()):
+        identity_conflicts = set()
+        if len({canonical(t["core"]) for _, t in occurrences}) != 1:
+            identity_conflicts.add("immutable_trade_conflict")
+        settled = [(i, t) for i, t in occurrences if t["state"] == "settled"]
+        pending = [(i, t) for i, t in occurrences if t["state"] == "pending"]
+        for index, trade in pending:
+            origin = ordered[index]
+            # Equal endpoints give no source order, even if covered_from differs.
+            if any(ordered[i]["covered_to"] <= origin["covered_to"] for i, _ in settled):
+                identity_conflicts.add("settled_to_pending_conflict")
+            # Check absence against every overlapping document, including those
+            # earlier in source chronology and those uploaded before this one.
+            for other_index, other in enumerate(ordered):
+                if (
+                    other_index != index
+                    and (
+                        trade["core"]["source_account"] in other["source_accounts"]
+                        or origin["filename_account"] == other["filename_account"]
+                    )
+                    and other["covered_from"]
+                    <= trade["core"]["trade_time"][:10]
+                    <= other["covered_to"]
+                    and identity not in document_identities[other_index]
                 ):
-                    conflicts.append("trade_material_conflict")
-            current[identity] = trade
-        # Pending disappearance is evaluated per account and confirmed report range.
-        accounts = set(document["source_accounts"])
-        for identity, previous in trades.items():
-            if (
-                previous["state"] == "pending"
-                and (
-                    previous["core"]["source_account"] in accounts
-                    or origins[identity] == document["filename_account"]
-                )
-                and document["covered_from"]
-                <= previous["core"]["trade_time"][:10]
-                <= document["covered_to"]
-                and identity not in current
-            ):
-                conflicts.append("pending_disappeared")
-        trades.update(current)
-        origins.update({identity: document["filename_account"] for identity in current})
-    return trades, sorted(set(conflicts))
+                    identity_conflicts.add("pending_disappeared")
+        for state_occurrences in (pending, settled):
+            for field in ENRICHABLE_FIELDS:
+                if len({t[field] for _, t in state_occurrences if t[field] is not None}) > 1:
+                    identity_conflicts.add("trade_material_conflict")
+            # Visibility of a money row is occurrence lineage, but disagreement
+            # between two present sets of legs of the same kind is material.
+            for kind in ("settlement", "commission"):
+                present = {
+                    canonical(sorted(legs, key=canonical))
+                    for _, t in state_occurrences
+                    if (legs := [leg for leg in t.get("cash_legs", []) if leg["kind"] == kind])
+                }
+                if len(present) > 1:
+                    identity_conflicts.add("trade_material_conflict")
+        chosen = settled or pending
+        chosen = sorted(chosen, key=lambda item: (item[0], canonical(item[1])))
+        # Copy: projection enrichment must never rewrite occurrence lineage.
+        result = json.loads(canonical(chosen[-1][1]))
+        for field in ENRICHABLE_FIELDS:
+            present = [t[field] for _, t in chosen if t[field] is not None]
+            result[field] = present[-1] if present else None
+        result["repo_observed"] = any(t["repo_observed"] for _, t in occurrences)
+        result["cash_legs"] = []
+        for kind in ("settlement", "commission"):
+            present = [
+                legs
+                for _, t in chosen
+                if (legs := [leg for leg in t.get("cash_legs", []) if leg["kind"] == kind])
+            ]
+            if present:
+                result["cash_legs"].extend(json.loads(canonical(present[-1])))
+        result["cash_legs"].sort(key=canonical)
+        result["blockers"] = _cash_reasons(result) + sorted(identity_conflicts)
+        result["cash_available"] = not result["blockers"]
+        trades[identity] = result
+        conflicts.update(identity_conflicts)
+    return trades, sorted(conflicts)
+
+
+def _cash_reasons(trade: dict) -> list[str]:
+    legs = trade["cash_legs"]
+    reasons = []
+    if trade["identity"] is None:
+        reasons.append("trade_ids_incomplete")
+    if trade["state"] == "pending":
+        reasons.append("pending_not_cash")
+    settlement = [leg for leg in legs if leg["kind"] == "settlement"]
+    commission = [leg for leg in legs if leg["kind"] == "commission"]
+    if len(settlement) != 1:
+        reasons.append("settlement_cash_missing_or_ambiguous")
+    else:
+        qty = Decimal(trade["core"]["quantity"])
+        cash = Decimal(settlement[0]["amount"])
+        if qty * cash >= 0:
+            reasons.append("trade_cash_direction_conflict")
+        if (
+            settlement[0]["currency"] != trade["core"]["currency"]
+            or settlement[0]["date"] != trade["settlement_date"]
+        ):
+            reasons.append("settlement_cash_conflict")
+    # No commission embedding convention was supplied. Preserve, never count twice.
+    if trade["bank_commission"] is None:
+        reasons.append("commission_missing")
+    elif commission or Decimal(trade["bank_commission"]):
+        reasons.append("commission_basis_unresolved")
+    if trade["repo_observed"]:
+        reasons.append("repo_semantics_unsupported")
+    if trade["core"]["currency"] != "RUB":
+        reasons.append("currency_unsupported")
+    return reasons
 
 
 def _attach_cash(document: dict, prior: dict[str, dict]) -> list[str]:
@@ -136,41 +212,13 @@ def _attach_cash(document: dict, prior: dict[str, dict]) -> list[str]:
         elif matches[0] is None:
             blockers.append("money_link_incomplete_identity")
         for trade in document["trades"]:
-            if len(matches) == 1 and trade["identity"] == matches[0]:
+            if len(matches) == 1 and matches[0] is not None and trade["identity"] == matches[0]:
                 trade["cash_legs"].append(
                     {key: row[key] for key in ("kind", "date", "amount", "currency")}
                 )
     for trade in document["trades"]:
-        legs = trade["cash_legs"]
-        legs.sort(key=canonical)
-        reasons = []
-        if trade["identity"] is None:
-            reasons.append("trade_ids_incomplete")
-        if trade["state"] == "pending":
-            reasons.append("pending_not_cash")
-        settlement = [leg for leg in legs if leg["kind"] == "settlement"]
-        commission = [leg for leg in legs if leg["kind"] == "commission"]
-        if len(settlement) != 1:
-            reasons.append("settlement_cash_missing_or_ambiguous")
-        else:
-            qty = Decimal(trade["core"]["quantity"])
-            cash = Decimal(settlement[0]["amount"])
-            if qty * cash >= 0:
-                reasons.append("trade_cash_direction_conflict")
-            if (
-                settlement[0]["currency"] != trade["core"]["currency"]
-                or settlement[0]["date"] != trade["settlement_date"]
-            ):
-                reasons.append("settlement_cash_conflict")
-        # No commission embedding convention was supplied. Preserve, never count twice.
-        if trade["bank_commission"] is None:
-            reasons.append("commission_missing")
-        elif commission or Decimal(trade["bank_commission"]):
-            reasons.append("commission_basis_unresolved")
-        if trade["repo_observed"]:
-            reasons.append("repo_semantics_unsupported")
-        if trade["core"]["currency"] != "RUB":
-            reasons.append("currency_unsupported")
+        trade["cash_legs"].sort(key=canonical)
+        reasons = _cash_reasons(trade)
         trade["cash_available"] = not reasons
         trade["blockers"] = reasons
         blockers.extend(reasons)
@@ -264,6 +312,71 @@ def _state(session: Session) -> tuple[dict, list[BrokerIdentityMapping]]:
     return state, mappings
 
 
+def _historical_bound_accounts(
+    session: Session, bindings: list[dict], start: date, end: date
+) -> tuple[int, ...]:
+    rows = defaultdict(list)
+    targets = {b["hermes_id"] for b in bindings if b["kind"] == "account"}
+    for row in session.scalars(
+        select(AccountPerformanceScopeMembership).where(
+            AccountPerformanceScopeMembership.account_id.in_(targets)
+        )
+    ):
+        rows[row.account_id].append(row)
+    return tuple(
+        account
+        for account in sorted(targets)
+        if _membership_at(rows[account], start) is True
+        and _membership_at(rows[account], end) is True
+    )
+
+
+def _source_affects_interval(
+    document: dict,
+    bindings: list[dict],
+    account_ids: tuple[int, ...],
+    start: date,
+    end: date,
+    trades: dict[str, dict],
+) -> bool:
+    # No source event-C1 exists in S1. An in-universe source event can affect any
+    # class; neither today's catalogue nor a snapshot labels that trade's C1.
+    accounts = {
+        b["identity"] for b in bindings if b["kind"] == "account" and b["hermes_id"] in account_ids
+    }
+    if not accounts:
+        return False
+    start_day, end_day = start.isoformat(), end.isoformat()
+    relevant_trades = [t for t in document["trades"] if t["core"]["source_account"] in accounts]
+    if document["covered_to"] >= start_day and document["covered_from"] <= end_day:
+        if (
+            relevant_trades
+            or any(m["source_account"] in accounts for m in document["money"])
+            or document["syntax_blockers"]
+            or any(
+                p["source_account"] in accounts
+                and Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
+                for p in document["positions"]
+            )
+        ):
+            return True
+    return any(
+        _crosses_cutoff(projection := trades.get(t["identity"], t), start_day, end_day)
+        or (
+            t["core"]["trade_time"][:10] <= end_day
+            and set(projection.get("blockers", [])).intersection(
+                {
+                    "immutable_trade_conflict",
+                    "trade_material_conflict",
+                    "pending_disappeared",
+                    "settled_to_pending_conflict",
+                }
+            )
+        )
+        for t in relevant_trades
+    )
+
+
 def _prepare(session: Session, document: dict) -> dict:
     state, registry = _state(session)
     accounts = sorted(
@@ -322,6 +435,7 @@ def _prepare(session: Session, document: dict) -> dict:
         (row for row in imports if row.document_sha256 == document["document_sha256"]), None
     )
     conflicts = []
+    reduced, reduction_conflicts = _reduce(prior_documents + [document])
     if same:
         old = json.loads(same.normalized_json)
         if any(
@@ -332,7 +446,7 @@ def _prepare(session: Session, document: dict) -> dict:
         if json.loads(same.mappings_json) != bindings:
             conflicts.append("accepted_mapping_conflict")
     else:
-        _, conflicts = _reduce(prior_documents + [document])
+        conflicts.extend(reduction_conflicts)
         # A new second native ID must not make an already accepted primary-only
         # cash linkage ambiguous. Revalidate stored links against the full union.
         union = dict(prior)
@@ -351,24 +465,22 @@ def _prepare(session: Session, document: dict) -> dict:
                     conflicts.append("money_link_ambiguous")
     if "money_link_ambiguous" in blockers:
         conflicts.append("money_link_ambiguous")
-    # Unknown historical class prevents safe narrowing of contradictory evidence.
-    material = bool(document["trades"] or document["money"] or blockers)
-    if not same and material:
+    if not same:
         complete = session.scalars(
             select(ClassNoCrossingCoverage).where(
                 ClassNoCrossingCoverage.coverage_state == "complete"
             )
         )
         if any(
-            (
-                coverage.covered_to.isoformat() >= document["covered_from"]
-                and coverage.covered_from.isoformat() <= document["covered_to"]
-            )
-            or any(
-                _crosses_cutoff(
-                    t, coverage.covered_from.isoformat(), coverage.covered_to.isoformat()
-                )
-                for t in document["trades"]
+            _source_affects_interval(
+                document,
+                bindings,
+                _historical_bound_accounts(
+                    session, bindings, coverage.covered_from, coverage.covered_to
+                ),
+                coverage.covered_from,
+                coverage.covered_to,
+                reduced,
             )
             for coverage in complete
         ):
@@ -518,28 +630,6 @@ def unresolved_class_source_ids(
     trades, _ = _reduce(documents)
     for row, document in zip(rows, documents, strict=True):
         bindings = json.loads(row.mappings_json)
-        if not any(b["kind"] == "account" and b["hermes_id"] in account_ids for b in bindings):
-            continue
-        if (
-            row.covered_to >= start
-            and row.covered_from <= end
-            and (
-                document["trades"]
-                or document["money"]
-                or document["syntax_blockers"]
-                or any(
-                    Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
-                    for p in document["positions"]
-                )
-            )
-        ):
+        if _source_affects_interval(document, bindings, account_ids, start, end, trades):
             ids.add(row.id)
-        # A pending identity survives its report range until an explicit settled
-        # occurrence resolves it. Planned dates never prove settlement. Also
-        # inspect actual settlement/depo cutoffs of settled source occurrences.
-        for occurrence in document["trades"]:
-            identity = occurrence["identity"]
-            trade = trades.get(identity) if identity else occurrence
-            if _crosses_cutoff(trade, start.isoformat(), end.isoformat()):
-                ids.add(row.id)
     return sorted(ids)

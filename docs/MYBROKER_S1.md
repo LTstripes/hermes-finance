@@ -32,11 +32,22 @@ facts or historical months are created, overwritten or backfilled.
 Economic identity is provider + source `acc_code` + both native trade IDs;
 document/section/ordinal identifies an occurrence. Identical settled material
 adds occurrences without another trade. Pending advances to settled only with
-unchanged economic core. Material changes, settled-to-pending, pending
+unchanged economic core and a later source endpoint, independent of upload order.
+Equal endpoints with different lifecycle states conflict even when range starts
+differ. Pending absence is checked against every account-scoped confirmed report
+covering the trade timestamp, in both chronology and upload directions.
+The immutable economic core must always agree. Present settlement/depo dates,
+settlement time, commission and accrued-interest evidence must agree within each
+state; absence may be enriched and pending plans never replace settled evidence.
+Occurrence cash visibility alone is not material disagreement, but contradictory
+present settlement/commission legs still conflict. Projection enrichment does
+not rewrite persisted occurrences. Material changes, settled-to-pending, pending
 disappearance in an overlapping confirmed report, and ambiguous primary-only
 money linkage require reconciliation. A new trade also cannot make a previously
 accepted money linkage ambiguous. Incomplete IDs retain observations without
 authoritative trade identity.
+Money rows linked to incomplete IDs retain their visible blocker and attach to
+no identity-less trade.
 
 Source settlement/commission legs remain source evidence. No buy/sell principal
 is relabeled as payout or realized profit; missing tax stays unknown, accrued
@@ -56,6 +67,13 @@ An unresolved pending trade survives the filename range until an explicit
 settled occurrence resolves it. Actual settlement/depo dates crossing later
 cutoffs are checked too; a new import surfaces impact on already accepted later
 intervals before writing. Planned dates never clear an unsettled cutoff.
+Both source guards use the membership-derived account universe at the interval
+endpoints and the explicit source-account bindings; an unrelated, excluded or
+historically uncovered account contributes no MyBroker blocker. Existing missing
+membership guards remain independent. Within an included account S1 still has
+no event-C1 proof, so it cannot safely restrict a source event to stock/bond/gold
+from today's catalogue or a position's class. All potentially affected classes
+remain guarded there; this does not assign or backfill a trade class.
 
 Historical reconstruction (#709), trade-to-manual-fact reconciliation, historical
 valuation/class evidence, bond returns, transfer semantics and payout-kind

@@ -59,7 +59,7 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     )
     if not accounts:
         reasons.add("historical_universe_empty")
-    source_ids = unresolved_class_source_ids(session, membership.account_ids, start, end)
+    source_ids = unresolved_class_source_ids(session, accounts, start, end)
     if source_ids:
         reasons.add("mybroker_class_reconciliation_required")
     months = list(

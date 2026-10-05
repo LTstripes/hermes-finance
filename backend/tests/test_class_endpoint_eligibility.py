@@ -143,6 +143,72 @@ def test_no_empty_query_attestation_or_nearest_date(env):
     assert "exact_endpoint_missing_or_ambiguous" in result["reason_codes"]
 
 
+@pytest.mark.parametrize("membership", ["excluded", "missing", "later"])
+def test_mybroker_outside_historical_universe_does_not_affect_class_guards(env, membership):
+    from test_statement_import_mybroker import ACCOUNT, ISIN, apply, fixture, preview
+
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    session = env[0]
+    if membership != "excluded":
+        attest(env)
+        close(env)
+    outside = create_account(session, name="Synthetic outside account", account_type="brokerage")
+    if membership != "missing":
+        session.add(
+            Membership(
+                account_id=outside.id,
+                effective_from=date(2031, 1, 1) if membership == "later" else date(2029, 1, 1),
+                include_in_returns=membership != "excluded",
+            )
+        )
+        session.commit()
+    if membership == "excluded":
+        attest(env)
+        close(env)
+    for identity in ("1234567", ACCOUNT):
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="account",
+            provider_identity=identity,
+            hermes_target_id=outside.id,
+        )
+    confirm_mapping(
+        session,
+        provider=PROVIDER,
+        subject_kind="instrument",
+        provider_identity=ISIN,
+        hermes_target_id=env[4],
+        observed_isin=ISIN,
+    )
+    before = {kind: read(env, kind) for kind in ("stock", "bond", "gold")}
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    xml = fixture(pending=True)
+    p = preview(session, xml, filename)
+    assert "accepted_class_coverage_requires_reconciliation" not in p["conflicts"]
+    apply(session, xml, p, filename)
+    for kind in before:
+        after = read(env, kind)
+        assert "mybroker_class_reconciliation_required" not in after["reason_codes"]
+        assert after == before[kind]
+    for month in env[2]:
+        reopen_reporting_month(session, month.id)
+    coverage = session.scalar(
+        select(ClassNoCrossingCoverage).where(ClassNoCrossingCoverage.asset_class == "stock")
+    )
+    correction = {"coverage_id": coverage.id, "expected_revision": coverage.revision}
+    if membership == "excluded":
+        assert before["stock"]["status"] == "eligible"
+        assert attest(env, **correction).coverage_state == "complete"
+    else:
+        # Existing missing/partial membership guards still apply independently.
+        with pytest.raises(ValueError) as error:
+            attest(env, **correction)
+        assert "mybroker_class_reconciliation_required" not in str(error.value)
+
+
 @pytest.mark.parametrize(
     "mutation, reason",
     [
