@@ -50,6 +50,22 @@ def _material(trade: dict) -> dict:
     }
 
 
+def _crosses_cutoff(trade: dict, start: str, end: str) -> bool:
+    traded = trade["core"]["trade_time"][:10]
+    if traded > end:
+        return False
+    if trade["state"] == "pending":
+        return True
+    return any(
+        traded <= cutoff
+        and any(
+            trade[field] is None or trade[field] > cutoff
+            for field in ("settlement_date", "depo_settlement_date")
+        )
+        for cutoff in (start, end)
+    )
+
+
 def _reduce(documents: list[dict]) -> tuple[dict[str, dict], list[str]]:
     trades = {}
     origins = {}
@@ -340,12 +356,22 @@ def _prepare(session: Session, document: dict) -> dict:
     if not same and material:
         complete = session.scalars(
             select(ClassNoCrossingCoverage).where(
-                ClassNoCrossingCoverage.coverage_state == "complete",
-                ClassNoCrossingCoverage.covered_to >= date.fromisoformat(document["covered_from"]),
-                ClassNoCrossingCoverage.covered_from <= date.fromisoformat(document["covered_to"]),
+                ClassNoCrossingCoverage.coverage_state == "complete"
             )
         )
-        if any(complete):
+        if any(
+            (
+                coverage.covered_to.isoformat() >= document["covered_from"]
+                and coverage.covered_from.isoformat() <= document["covered_to"]
+            )
+            or any(
+                _crosses_cutoff(
+                    t, coverage.covered_from.isoformat(), coverage.covered_to.isoformat()
+                )
+                for t in document["trades"]
+            )
+            for coverage in complete
+        ):
             conflicts.append("accepted_class_coverage_requires_reconciliation")
     account_targets = {b["identity"]: b["hermes_id"] for b in bindings if b["kind"] == "account"}
     instrument_targets = {
@@ -486,24 +512,34 @@ def unresolved_class_source_ids(
     Use accepted explicit account bindings and the caller's historical universe,
     never current flags/catalogue class. Quiet reports do not prove inventory zero.
     """
-    ids = []
-    for row in session.scalars(
-        select(MyBrokerImport).where(
-            MyBrokerImport.covered_to >= start, MyBrokerImport.covered_from <= end
-        )
-    ):
+    ids = set()
+    rows = _imports(session)
+    documents = [json.loads(row.normalized_json) for row in rows]
+    trades, _ = _reduce(documents)
+    for row, document in zip(rows, documents, strict=True):
         bindings = json.loads(row.mappings_json)
         if not any(b["kind"] == "account" and b["hermes_id"] in account_ids for b in bindings):
             continue
-        document = json.loads(row.normalized_json)
         if (
-            document["trades"]
-            or document["money"]
-            or document["syntax_blockers"]
-            or any(
-                Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
-                for p in document["positions"]
+            row.covered_to >= start
+            and row.covered_from <= end
+            and (
+                document["trades"]
+                or document["money"]
+                or document["syntax_blockers"]
+                or any(
+                    Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
+                    for p in document["positions"]
+                )
             )
         ):
-            ids.append(row.id)
+            ids.add(row.id)
+        # A pending identity survives its report range until an explicit settled
+        # occurrence resolves it. Planned dates never prove settlement. Also
+        # inspect actual settlement/depo cutoffs of settled source occurrences.
+        for occurrence in document["trades"]:
+            identity = occurrence["identity"]
+            trade = trades.get(identity) if identity else occurrence
+            if _crosses_cutoff(trade, start.isoformat(), end.isoformat()):
+                ids.add(row.id)
     return sorted(ids)

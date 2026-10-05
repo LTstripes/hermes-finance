@@ -52,6 +52,10 @@ accepted source evidence against the historical account universe, preventing a
 later assertion from ignoring unresolved event-C1. Existing source-free Phase 1
 material signatures and solver behavior are unchanged. Reconciliation/C5 and
 Reopen remain prerequisites where already required; S1 cannot perform them.
+An unresolved pending trade survives the filename range until an explicit
+settled occurrence resolves it. Actual settlement/depo dates crossing later
+cutoffs are checked too; a new import surfaces impact on already accepted later
+intervals before writing. Planned dates never clear an unsettled cutoff.
 
 Historical reconstruction (#709), trade-to-manual-fact reconciliation, historical
 valuation/class evidence, bond returns, transfer semantics and payout-kind

@@ -434,6 +434,57 @@ def test_new_trade_cannot_make_an_accepted_primary_cash_link_ambiguous(database)
         assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 1
 
 
+def test_pending_survives_old_report_range_until_explicit_settlement(database):
+    from hermes_finance.services.mybroker_import import unresolved_class_source_ids
+
+    with database.session_factory() as session:
+        pending = fixture(pending=True)
+        p = preview(session, pending)
+        account = next(b["hermes_id"] for b in p["mappings"] if b["kind"] == "account")
+        apply(session, pending, p)
+        assert unresolved_class_source_ids(session, (account,), date(2030, 2, 1), date(2030, 2, 28))
+        session.rollback()
+        settled = fixture()
+        apply(session, settled, preview(session, settled))
+        assert not unresolved_class_source_ids(
+            session, (account,), date(2030, 2, 1), date(2030, 2, 28)
+        )
+
+
+def test_actual_settlement_crossing_cutoff_remains_blocker_beyond_report_range(database):
+    from hermes_finance.services.mybroker_import import unresolved_class_source_ids
+
+    xml = fixture().replace(b"17.01.2030", b"17.03.2030")
+    with database.session_factory() as session:
+        p = preview(session, xml)
+        account = next(b["hermes_id"] for b in p["mappings"] if b["kind"] == "account")
+        apply(session, xml, p)
+        assert unresolved_class_source_ids(session, (account,), date(2030, 2, 1), date(2030, 2, 28))
+
+
+@pytest.mark.parametrize("pending", [True, False])
+def test_preview_surfaces_cutoff_impact_on_already_accepted_later_interval(database, pending):
+    with database.session_factory() as session:
+        session.add(
+            ClassNoCrossingCoverage(
+                asset_class="stock",
+                covered_from=date(2030, 2, 1),
+                covered_to=date(2030, 2, 28),
+                coverage_state="complete",
+                provenance_kind="owner_attestation",
+                material_signature="a" * 64,
+                revision=1,
+            )
+        )
+        session.commit()
+        xml = fixture(pending=pending).replace(b"17.01.2030", b"17.03.2030")
+        p = preview(session, xml)
+        assert "accepted_class_coverage_requires_reconciliation" in p["conflicts"]
+        with pytest.raises(MyBrokerError, match="reconciliation_required"):
+            apply(session, xml, p)
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+
+
 def test_concurrent_apply_reserves_writer_before_authoritative_recheck(database):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
