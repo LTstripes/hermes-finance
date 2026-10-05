@@ -324,6 +324,10 @@ for (const width of [390, 1366]) {
     await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
+      if (!url.pathname.startsWith("/api/")) {
+        await route.continue();
+        return;
+      }
       const method = request.method();
       if (url.pathname === "/api/months") {
         await route.fulfill({
