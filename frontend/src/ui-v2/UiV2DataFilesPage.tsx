@@ -12,6 +12,7 @@ import {
 } from "../api/exports";
 import { listMonths } from "../api/months";
 import type { BackupMetadata, ReportingMonth, RestoreResponse } from "../api/types";
+import { MyBrokerImportPanel } from "../components/MyBrokerImportPanel";
 import { PortfolioReviewPackagePanel } from "../components/PortfolioReviewPackagePanel";
 import { ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
@@ -444,6 +445,7 @@ export default function UiV2DataFilesPage() {
       v1ReturnPath="/export"
     >
       <div className={styles.surfaceStack} data-testid="data-files-page">
+        <MyBrokerImportPanel />
         <section
           aria-labelledby="files-exports-title"
           className={styles.surface}

@@ -12,6 +12,32 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_mybroker_lineage_upgrade_is_empty_preserves_facts_and_guards_downgrade(tmp_path):
+    path = tmp_path / "synthetic-mybroker-migration.db"
+    parent = "0047_class_endpoint_inventory"
+    assert run_alembic(path, "upgrade", parent).returncode == 0
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT count(*) FROM mybroker_imports").fetchone() == (0,)
+        assert connection.execute("SELECT count(*) FROM reporting_months").fetchone() == (0,)
+        assert connection.execute("SELECT count(*) FROM investment_cash_flows").fetchone() == (0,)
+    assert run_alembic(path, "downgrade", parent).returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO mybroker_imports "
+            "(document_sha256, covered_from, covered_to, parser_version, confirmation_digest, "
+            "normalized_json, mappings_json, accepted_at) VALUES "
+            "(?, '2030-01-01', '2030-01-31', 'mybroker-s1-v1', ?, '{}', '[]', '2030-02-01')",
+            ("a" * 64, "b" * 64),
+        )
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode != 0
+    assert "cannot discard MyBroker import lineage" in result.stderr
+    assert revision_rows(path) == [REVISION]
+
+
 def test_class_coverage_migration_has_no_backfill_and_refuses_loss(tmp_path: Path) -> None:
     path = tmp_path / "synthetic-class-coverage.db"
     parent = "0045_position_historical_instrument_type"

@@ -1,0 +1,92 @@
+import { apiMultipart, apiRequest } from "./client";
+
+export type MyBrokerBinding = {
+  kind: "account" | "instrument";
+  identity: string;
+  mapping_id: number;
+  hermes_id: number;
+};
+export type MyBrokerTrade = {
+  section: string;
+  ordinal: number;
+  identity: string | null;
+  ids: string[];
+  state: "pending" | "settled";
+  core: {
+    source_account: string;
+    isin: string;
+    trade_time: string;
+    quantity: string;
+    price: string;
+    trade_amount: string;
+    currency: string;
+  };
+  blockers: string[];
+};
+export type MyBrokerDocument = {
+  provider: string;
+  parser: string;
+  document_sha256: string;
+  filename_account: string;
+  covered_from: string;
+  covered_to: string;
+  source_accounts: string[];
+  section_inventory: Record<string, number>;
+  trades: MyBrokerTrade[];
+  positions: {
+    ordinal: number;
+    source_account: string;
+    isin: string;
+    actual_quantity: string;
+    forward_quantity: string;
+  }[];
+  money: {
+    ordinal: number;
+    kind: string;
+    source_account: string;
+    amount: string;
+    currency: string;
+  }[];
+};
+export type MyBrokerPreview = {
+  document: MyBrokerDocument;
+  mappings: MyBrokerBinding[];
+  missing_mappings: { kind: "account" | "instrument"; identity: string }[];
+  confirmation_digest: string;
+  conflicts: string[];
+  blockers: string[];
+  coverage_state: "unknown";
+  can_apply: boolean;
+};
+export type MyBrokerImport = {
+  import_id: number;
+  document: MyBrokerDocument;
+  mappings: MyBrokerBinding[];
+  confirmation_digest: string;
+  coverage_state: "unknown";
+};
+
+export function previewMyBroker(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiMultipart<MyBrokerPreview>("/api/mybroker-import/preview", form);
+}
+
+export function applyMyBroker(file: File, preview: MyBrokerPreview) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append(
+    "confirmation",
+    JSON.stringify({
+      confirmation_digest: preview.confirmation_digest,
+      covered_from: preview.document.covered_from,
+      covered_to: preview.document.covered_to,
+      mappings: preview.mappings,
+    }),
+  );
+  return apiMultipart<MyBrokerImport>("/api/mybroker-import/apply", form);
+}
+
+export function readMyBrokerImport(id: number) {
+  return apiRequest<MyBrokerImport>(`/api/mybroker-import/${id}`);
+}

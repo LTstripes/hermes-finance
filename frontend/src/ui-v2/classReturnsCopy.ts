@@ -12,6 +12,11 @@ const STATE_LABELS: Record<State, string> = {
 
 // Exact accepted codes, never substring classification or financial inference.
 const REASONS: Record<string, { state: State; detail: string }> = {
+  mybroker_class_reconciliation_required: {
+    state: "incomplete",
+    detail:
+      "Данные MyBroker требуют исторической сверки операций и их класса. Импорт отчёта сам по себе не подтверждает интервал без движений.",
+  },
   unsupported_class: {
     state: "unsupported",
     detail:

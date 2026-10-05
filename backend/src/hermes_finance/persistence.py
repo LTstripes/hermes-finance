@@ -34,6 +34,32 @@ class Base(DeclarativeBase):
     pass
 
 
+class MyBrokerImport(Base):
+    """Append-only normalized S1 evidence, separate from financial facts.
+
+    No raw XML, filenames, security names or arbitrary provider comments.
+    A document's confirmed interval cannot be silently revised on reimport.
+    """
+
+    __tablename__ = "mybroker_imports"
+    __table_args__ = (
+        UniqueConstraint("document_sha256", name="uq_mybroker_import_document"),
+        CheckConstraint("length(document_sha256) = 64", name="ck_mybroker_import_hash"),
+        CheckConstraint("covered_to >= covered_from", name="ck_mybroker_import_range"),
+        CheckConstraint("length(confirmation_digest) = 64", name="ck_mybroker_confirmation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    normalized_json: Mapped[str] = mapped_column(Text, nullable=False)
+    mappings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AppSettings(Base):
     __tablename__ = "app_settings"
     __table_args__ = (
