@@ -18,8 +18,8 @@ from xml.etree import ElementTree as ET
 PROVIDER = "alfa_mybroker"
 PARSER = "mybroker-s1-v2"
 NS = {"m": "MyBroker"}
-# Accepted #716 currency-row conjunction; the manifest confirms these values,
-# not whether the type attribute sits on the row or its active_type group.
+# Accepted #716 currency-row conjunction; only the exact row-level placement is
+# accepted, and anything else stays a visible fail-closed blocker.
 CURRENCY_TYPE = "Валюта"
 CURRENCY_NAME = "RUB"
 SCHEMA = (
@@ -266,8 +266,8 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
     position_groups = sections["Positions"].findall(
         "m:Tablix1/m:active_type_Collection/m:active_type", NS
     )
-    for i, (group, row) in enumerate(
-        (group, row)
+    for i, row in enumerate(
+        row
         for group in position_groups
         for row in group.findall("m:Details_Collection/m:Details", NS)
     ):
@@ -291,13 +291,11 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
             if position["beginning_value"] is None or position["ending_value"] is None:
                 endpoint_blockers.add("endpoint_value_unavailable")
             continue
-        # The accepted conjunction is active_type=Валюта + active_name=RUB +
-        # empty ISIN1. Anything else stays a visible, fail-closed blocker.
-        active_type = single(row.get("active_type"), optional=True) or single(
-            group.get("active_type"), optional=True
-        )
+        # The accepted conjunction is row-level: active_type=Валюта +
+        # active_name=RUB + empty ISIN1. There is no inherited group placement;
+        # anything else stays a visible, fail-closed blocker.
         if (
-            active_type == CURRENCY_TYPE
+            single(row.get("active_type"), optional=True) == CURRENCY_TYPE
             and single(row.get("active_name"), optional=True) == CURRENCY_NAME
         ):
             rub_money.append(
@@ -400,7 +398,7 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
         )
         if observed != parsed_count:
             blockers.append("unparsed_source_rows")
-    if len(positions) + len(rub_money) + len(trades) + len(money) > MAX_ROWS:
+    if consumed_positions + len(trades) + len(money) > MAX_ROWS:
         raise MyBrokerError("row_limit_exceeded")
     return {
         "provider": PROVIDER,

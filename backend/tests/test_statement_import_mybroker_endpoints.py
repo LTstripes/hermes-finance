@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 from test_statement_import_mybroker import (
     ACCOUNT,
     FILENAME,
+    ISIN,
     apply,
     fixture,
     node,
@@ -87,6 +88,30 @@ def positions_only(document: bytes) -> bytes:
     return ET.tostring(root, encoding="utf-8")
 
 
+def limit_xml(*, security: int, unclassified: int) -> bytes:
+    """Exact-position row counts for the consumed-row bound, no trades/money."""
+    root = ET.fromstring(positions_only(endpoint_xml(rub=False)))
+    group = root.find(".//{MyBroker}Positions").find(".//{MyBroker}active_type")
+    collection = group.find("{MyBroker}Details_Collection")
+    for row in collection.findall("{MyBroker}Details"):
+        collection.remove(row)
+    for _ in range(security):
+        node(
+            collection,
+            "Details",
+            acc_code=ACCOUNT,
+            ISIN1=ISIN,
+            real_rest="1",
+            forward_rest="1",
+            income_rest="1",
+            income_volume="1",
+            real_volume="1",
+        )
+    for _ in range(unclassified):
+        node(collection, "Details", acc_code=ACCOUNT)
+    return ET.tostring(root, encoding="utf-8")
+
+
 def test_endpoint_fields_are_normalized_without_derivation():
     document = parse_mybroker(
         endpoint_xml(beginning="8.00", rub_amounts=("500.50", "-400.00")), FILENAME
@@ -117,16 +142,20 @@ def test_endpoint_fields_are_normalized_without_derivation():
     assert "Synthetic name" not in json.dumps(document)
 
 
-def test_currency_row_requires_the_accepted_conjunction():
+def test_currency_row_requires_the_accepted_row_level_conjunction():
     root = ET.fromstring(endpoint_xml(rub=False))
     security = root.find(".//{MyBroker}Positions").find(".//{MyBroker}Details")
     security.set("active_type", "Валюта")
     security.set("active_name", "RUB")
     document = parse_mybroker(ET.tostring(root, encoding="utf-8"), FILENAME)
     assert len(document["positions"]) == 1 and document["rub_money"] == []
+    assert "position_row_unclassified" not in document["endpoint_blockers"]
 
-    wrapper_scoped = parse_mybroker(endpoint_xml(rub_on_group=True), FILENAME)
-    assert [row["ending_amount"] for row in wrapper_scoped["rub_money"]] == ["400"]
+    # Group-only currency typing is not accepted placement evidence.
+    group_only = parse_mybroker(endpoint_xml(rub_on_group=True), FILENAME)
+    assert group_only["rub_money"] == []
+    assert "position_row_unclassified" in group_only["endpoint_blockers"]
+    assert "rub_money_unavailable" in group_only["endpoint_blockers"]
 
     unclassified = parse_mybroker(endpoint_xml(rub=False, unclassified=True), FILENAME)
     assert "position_row_unclassified" in unclassified["endpoint_blockers"]
@@ -160,6 +189,25 @@ def test_incomplete_rub_row_is_a_blocker_and_multiple_rows_conflict():
     assert ambiguous["endpoint_conflicts"] == ["rub_money_ambiguous"]
     assert len(ambiguous["rub_money"]) == 2
     assert ambiguous["endpoint_blockers"] == []
+
+
+def test_row_limit_counts_all_consumed_position_rows():
+    allowed = parse_mybroker(limit_xml(security=10000, unclassified=0), FILENAME)
+    assert len(allowed["positions"]) == 10000
+    with pytest.raises(MyBrokerError, match="row_limit_exceeded"):
+        parse_mybroker(limit_xml(security=10001, unclassified=0), FILENAME)
+
+    allowed = parse_mybroker(limit_xml(security=0, unclassified=10000), FILENAME)
+    assert allowed["positions"] == [] and allowed["rub_money"] == []
+    assert "position_row_unclassified" in allowed["endpoint_blockers"]
+    with pytest.raises(MyBrokerError, match="row_limit_exceeded"):
+        parse_mybroker(limit_xml(security=0, unclassified=10001), FILENAME)
+
+    allowed = parse_mybroker(limit_xml(security=5000, unclassified=5000), FILENAME)
+    assert len(allowed["positions"]) == 5000
+    assert "position_row_unclassified" in allowed["endpoint_blockers"]
+    with pytest.raises(MyBrokerError, match="row_limit_exceeded"):
+        parse_mybroker(limit_xml(security=5000, unclassified=5001), FILENAME)
 
 
 def test_endpoint_evidence_preview_apply_and_financial_boundary(database):
