@@ -60,6 +60,94 @@ class MyBrokerImport(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ExecutedTrade(Base):
+    """Frozen S2-A economic core and accepted source alias/bindings.
+
+    Decimal source quantities/prices are losslessly stored as canonical strings
+    in core_json; monetary authority is integer minor units in revision evidence.
+    No lifecycle update rewrites this economic identity.
+    """
+
+    __tablename__ = "executed_trades"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "source_account",
+            "primary_id",
+            "secondary_id",
+            name="uq_executed_trade_alias",
+        ),
+        UniqueConstraint("source_identity", name="uq_executed_trade_source_identity"),
+        CheckConstraint("length(source_identity) = 64", name="ck_executed_trade_identity"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_account: Mapped[str] = mapped_column(String(128), nullable=False)
+    primary_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    secondary_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+    core_json: Mapped[str] = mapped_column(Text, nullable=False)
+    bindings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExecutedTradeOccurrence(Base):
+    """Source document/section/ordinal is lineage, never another execution."""
+
+    __tablename__ = "executed_trade_occurrences"
+    __table_args__ = (
+        UniqueConstraint("import_id", "section", "ordinal", name="uq_trade_occurrence"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("executed_trades.id"), nullable=False)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), nullable=False)
+    section: Mapped[str] = mapped_column(String(16), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ExecutedTradeRevision(Base):
+    """Append-only lifecycle, readiness, cash-leg and event-C1 evidence."""
+
+    __tablename__ = "executed_trade_revisions"
+    __table_args__ = (
+        UniqueConstraint("trade_id", "revision", name="uq_trade_revision"),
+        CheckConstraint("revision > 0", name="ck_trade_revision_positive"),
+        CheckConstraint("lifecycle IN ('pending', 'settled')", name="ck_trade_lifecycle"),
+        CheckConstraint(
+            "fee_basis IN ('zero', 'separate', 'embedded', 'unknown')", name="ck_trade_fee_basis"
+        ),
+        CheckConstraint(
+            "acceptance_state IN ('active', 'superseded', 'retracted')", name="ck_trade_acceptance"
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("executed_trades.id"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(16), nullable=False)
+    acceptance_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    fee_basis: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_c1_json: Mapped[str | None] = mapped_column(Text)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExecutedTradeApply(Base):
+    """Idempotent acceptance receipt for an entire selected set."""
+
+    __tablename__ = "executed_trade_applies"
+    __table_args__ = (UniqueConstraint("request_id", name="uq_trade_apply_request"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    trade_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AppSettings(Base):
     __tablename__ = "app_settings"
     __table_args__ = (

@@ -28,6 +28,7 @@ from hermes_finance.api.debts import router as debts_router
 from hermes_finance.api.deposits import router as deposits_router
 from hermes_finance.api.deterministic_insights import router as deterministic_insights_router
 from hermes_finance.api.errors import register_error_handlers
+from hermes_finance.api.executed_trades import router as executed_trades_router
 from hermes_finance.api.expected_flows import router as expected_flows_router
 from hermes_finance.api.expenses import router as expenses_router
 from hermes_finance.api.exports import router as exports_router
@@ -157,6 +158,7 @@ def create_app(
     application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(mybroker_import_router)
+    application.include_router(executed_trades_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
     application.include_router(accounts_router)
