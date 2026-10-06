@@ -17,6 +17,7 @@ from hermes_finance.persistence import (
     APP_SETTINGS_ID,
     AppSettings,
     ClassNoCrossingCoverage,
+    ExecutedTradeRevision,
     InKindMovement,
     InvestmentCashFlow,
     PositionSnapshot,
@@ -24,6 +25,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.concurrency import ConcurrencyError
+from hermes_finance.services.executed_trades import unresolved_execution_ids
 from hermes_finance.services.mybroker_import import unresolved_class_source_ids
 from hermes_finance.services.performance_availability import (
     _membership_at,
@@ -61,6 +63,9 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
         reasons.add("historical_universe_empty")
     source_ids = unresolved_class_source_ids(session, accounts, start, end)
     if source_ids:
+        reasons.add("mybroker_class_reconciliation_required")
+    execution_ids = unresolved_execution_ids(session, accounts, start, end)
+    if execution_ids:
         reasons.add("mybroker_class_reconciliation_required")
     months = list(
         session.scalars(
@@ -290,6 +295,15 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     }
     if source_ids:
         material["unresolved_mybroker_import_ids"] = source_ids
+    if execution_ids:
+        material["unresolved_executions"] = [
+            (r.trade_id, r.revision, r.material_fingerprint, r.acceptance_state, r.event_c1_json)
+            for r in session.scalars(
+                select(ExecutedTradeRevision)
+                .where(ExecutedTradeRevision.trade_id.in_(execution_ids))
+                .order_by(ExecutedTradeRevision.trade_id, ExecutedTradeRevision.revision)
+            )
+        ]
     signature = sha256(
         json.dumps(material, default=str, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()

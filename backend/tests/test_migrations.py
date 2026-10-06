@@ -12,6 +12,52 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_executed_trade_upgrade_empty_preserves_sources_and_guards_loss(tmp_path):
+    path = tmp_path / "synthetic-executed-trade-migration.db"
+    parent = "0048_mybroker_import_lineage"
+    assert run_alembic(path, "upgrade", parent).returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO mybroker_imports "
+            "(document_sha256, covered_from, covered_to, parser_version, confirmation_digest, "
+            "normalized_json, mappings_json, accepted_at) VALUES "
+            "(?, '2030-01-01', '2030-01-31', 'mybroker-s1-v2', ?, '{}', '[]', '2030-02-01')",
+            ("a" * 64, "b" * 64),
+        )
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        for table in (
+            "executed_trades",
+            "executed_trade_revisions",
+            "executed_trade_occurrences",
+            "executed_trade_applies",
+            "reporting_months",
+            "position_snapshots",
+            "cash_balances",
+            "investment_cash_flows",
+            "external_flows",
+        ):
+            assert connection.execute(f"SELECT count(*) FROM {table}").fetchone() == (0,)
+        assert connection.execute("SELECT normalized_json FROM mybroker_imports").fetchone() == (
+            "{}",
+        )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert run_alembic(path, "downgrade", parent).returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO executed_trade_applies "
+            "(request_id, request_fingerprint, trade_ids_json, accepted_at) "
+            "VALUES ('synthetic', ?, '[]', '2030-02-01')",
+            ("a" * 64,),
+        )
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode != 0
+    assert "cannot discard canonical executed-trade truth" in result.stderr
+    assert revision_rows(path) == [REVISION]
+
+
 def test_mybroker_lineage_upgrade_is_empty_preserves_facts_and_guards_downgrade(tmp_path):
     path = tmp_path / "synthetic-mybroker-migration.db"
     parent = "0047_class_endpoint_inventory"
