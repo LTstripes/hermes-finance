@@ -35,6 +35,9 @@ primary-only linkage remain conflicts; split/refund cases are not aggregated.
 Identical repeated money rows within a single document retain observed
 multiplicity and all row references; they never prove a single settlement or
 single economic cost. Cross-document repetition remains occurrence lineage.
+Money-row ownership is recomputed from source account and primary native ID
+across the full accepted union before using any stored linkage, including null
+links. An incomplete-ID observation competing with a full identity is ambiguous.
 
 ## Lifecycle and evidence
 
@@ -89,9 +92,12 @@ block affected historical account intervals for all potentially affected classes
 while event-C1 is unresolved. Pending persists through later cutoffs; actual
 cash/depo/fee dates remain distinct. Missing/changed source support cannot restore
 no-crossing by disappearance. Class material signatures additionally bind
-canonical revisions when relevant. Read blocking does not mutate CLOSED months,
-coverage claims or endpoint facts, and source-only append-only promotion does
-not authorize financial correction through CLOSED history.
+canonical revisions when relevant. Dependency guards remain anchored to the
+latest accepted canonical revision; newer S1 evidence can strengthen blocking
+but cannot relax it until S2 Apply explicitly accepts the enrichment.
+Read blocking does not mutate CLOSED months, coverage claims or endpoint facts,
+and source-only append-only promotion does not authorize financial correction
+through CLOSED history.
 
 Coverage remains `unknown`. No ReportingMonth, PositionSnapshot, CashBalance,
 InvestmentCashFlow, ExternalFlow, payout, transfer or UFSR fact is created or

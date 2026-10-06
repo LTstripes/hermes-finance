@@ -119,7 +119,10 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 conflicts.add("accepted_mapping_conflict")
             bindings.append(sorted(selected, key=canonical))
         for leg in document["money"]:
-            if leg.get("trade_identity") != identity:
+            if (
+                leg["source_account"] != source["core"]["source_account"]
+                or leg["primary_id"] != source["ids"][0]
+            ):
                 continue
             # Revalidate primary-only linkage against the entire accepted union,
             # including incomplete identities; stored linkage is never authority.
@@ -133,6 +136,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             }
             if candidates != {identity}:
                 conflicts.add("money_link_ambiguous")
+                continue
             if leg["kind"] in ("settlement", "commission"):
                 material = {k: leg[k] for k in ("kind", "date", "amount", "currency")}
                 money[canonical(material)].append(
@@ -543,13 +547,16 @@ def unresolved_execution_ids(
         if not revisions:
             ids.append(trade.id)
             continue
-        evidence = current["evidence"]
-        dates = [evidence.get("settlement_date"), evidence.get("depo_settlement_date")]
-        dates.extend(leg["effective_date"] for leg in evidence["cash_legs"])
-        if (
-            traded >= start
-            or evidence["lifecycle"] == "pending"
-            or any(day is None or day >= start.isoformat() for day in dates)
-        ):
-            ids.append(trade.id)
+        # S1 enrichment is only a candidate for the next explicit S2 Apply.
+        # It may strengthen dependency blocking, never relax accepted truth.
+        for evidence in (json.loads(revisions[-1].evidence_json), current["evidence"]):
+            dates = [evidence.get("settlement_date"), evidence.get("depo_settlement_date")]
+            dates.extend(leg["effective_date"] for leg in evidence["cash_legs"])
+            if (
+                traded >= start
+                or evidence["lifecycle"] == "pending"
+                or any(day is None or day >= start.isoformat() for day in dates)
+            ):
+                ids.append(trade.id)
+                break
     return ids

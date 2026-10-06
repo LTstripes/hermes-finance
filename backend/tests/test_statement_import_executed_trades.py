@@ -178,6 +178,58 @@ def test_primary_id_ambiguity_across_full_union_blocks_selected_set(database):
         assert count(session, ExecutedTrade) == 0
 
 
+def test_incomplete_id_money_then_complete_identity_refuses_entire_selected_set(database):
+    with database.session_factory() as session:
+        xml = fixture(missing_id=True)
+        source_preview = preview(session, xml)
+        assert "money_link_incomplete_identity" in source_preview["blockers"]
+        incomplete = apply(session, xml, source_preview)
+        old_money = incomplete["document"]["money"][0]
+        assert old_money["trade_identity"] is None
+        assert incomplete["document"]["trades"][0]["identity"] is None
+        full = identity(accept_source(session, fixture(money=False)))
+        clean = identity(accept_source(session, fixture(primary="10000000002", money=False)))
+        assert preview_executed_trades(session, [clean])["can_apply"]
+        reviewed = preview_executed_trades(session, [full, clean])
+        selected = next(t for t in reviewed["candidates"] if t["source_identity"] == full)
+        assert "money_link_ambiguous" in selected["conflicts"]
+        assert selected["evidence"]["cash_legs"] == []
+        assert not reviewed["can_apply"]
+        with pytest.raises(MyBrokerError, match="reconciliation_required"):
+            promote(session, [full, clean], reviewed=reviewed)
+        for model in (
+            ExecutedTrade,
+            ExecutedTradeRevision,
+            ExecutedTradeOccurrence,
+            ExecutedTradeApply,
+        ):
+            assert count(session, model) == 0
+        assert session.get(MyBrokerImport, incomplete["import_id"]).normalized_json == canonical(
+            incomplete["document"]
+        )
+
+
+def test_unresolved_money_link_is_recomputed_when_full_union_has_one_owner(database):
+    root = ET.fromstring(fixture())
+    root.find(
+        ".//{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    ).clear()
+    with database.session_factory() as session:
+        old = accept_source(session, ET.tostring(root))
+        assert not old["document"]["trades"]
+        assert old["document"]["money"][0]["trade_identity"] is None
+        key = identity(accept_source(session, fixture(money=False)))
+        reviewed = preview_executed_trades(session, [key])
+        assert reviewed["can_apply"]
+        evidence = reviewed["candidates"][0]["evidence"]
+        assert evidence["readiness"]["settlement"] == []
+        assert evidence["cash_legs"][0]["occurrences"][0]["import_id"] == old["import_id"]
+        assert promote(session, [key], reviewed=reviewed)["trades"][0]["evidence"] == evidence
+        assert session.get(MyBrokerImport, old["import_id"]).normalized_json == canonical(
+            old["document"]
+        )
+
+
 def test_changed_immutable_core_never_overwrites_accepted_trade_and_blocks_reads(database):
     with database.session_factory() as session:
         source = accept_source(session)
@@ -266,6 +318,72 @@ def test_pending_and_actual_settlement_cutoff_block_all_classes_in_historical_un
                 end_date=date(2030, 2, 28),
             )
             assert "mybroker_class_reconciliation_required" in result["reason_codes"]
+
+
+def test_accepted_pending_guard_survives_s1_settlement_until_explicit_s2_apply(database):
+    start, end = date(2030, 2, 1), date(2030, 2, 28)
+    with database.session_factory() as session:
+        account_id = include_source_account(session)
+        key = identity(
+            accept_source(
+                session, fixture(pending=True), "Брокерский 1234567 (01.01.30-16.01.30).xml"
+            )
+        )
+        accepted = promote(session, [key])["trades"][0]
+        trade_id = accepted["trade_id"]
+        assert unresolved_execution_ids(session, (account_id,), start, end) == [trade_id]
+        accept_source(session)  # Settled Jan evidence is accepted only by S1.
+        reread = read_executed_trades(session)["trades"][0]
+        assert reread["revision"] == 1
+        assert reread["evidence"]["lifecycle"] == "pending"
+        assert "source_enrichment_not_accepted" in reread["conflicts"]
+        assert unresolved_execution_ids(session, (account_id,), start, end) == [trade_id]
+        for asset_class in ("stock", "bond", "gold"):
+            result = class_endpoint_eligibility(
+                session, asset_class=asset_class, start_date=start, end_date=end
+            )
+            assert "mybroker_class_reconciliation_required" in result["reason_codes"]
+        enriched = promote(session, [key])["trades"][0]
+        assert enriched["revision"] == 2
+        assert enriched["evidence"]["lifecycle"] == "settled"
+        assert enriched["evidence"]["settlement_date"] == "2030-01-17"
+        assert enriched["revisions"][0] == accepted["revisions"][0]
+        assert unresolved_execution_ids(session, (account_id,), start, end) == []
+        for asset_class in ("stock", "bond", "gold"):
+            result = class_endpoint_eligibility(
+                session, asset_class=asset_class, start_date=start, end_date=end
+            )
+            assert "mybroker_class_reconciliation_required" not in result["reason_codes"]
+        assert not enriched["financial_ready"]
+
+
+def test_unaccepted_s1_fee_evidence_can_strengthen_accepted_settled_guard(database):
+    start, end = date(2030, 2, 1), date(2030, 2, 28)
+    root = ET.fromstring(fixture())
+    root.find(
+        ".//{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    ).clear()
+    root.find(".//{MyBroker}Trades2//{MyBroker}settlement_date").set(
+        "settlement_date", "2030-02-17T00:00:00"
+    )
+    root.find(".//{MyBroker}Trades2//{MyBroker}rn").set("last_update", "2030-02-17T10:00:00")
+    root.find(".//{MyBroker}Trades2//{MyBroker}comment").set(
+        "comment", "Комиссия по сделке 10000000001"
+    )
+    root.find(".//{MyBroker}Trades2//{MyBroker}p_code/{MyBroker}p_code").set("volume", "-1.25")
+    with database.session_factory() as session:
+        account_id = include_source_account(session)
+        key = identity(accept_source(session))
+        accepted = promote(session, [key])["trades"][0]
+        assert unresolved_execution_ids(session, (account_id,), start, end) == []
+        accept_source(session, ET.tostring(root), "Брокерский 1234567 (01.02.30-28.02.30).xml")
+        reread = read_executed_trades(session)["trades"][0]
+        assert reread["revision"] == 1
+        assert reread["evidence"] == accepted["evidence"]
+        assert "source_enrichment_not_accepted" in reread["conflicts"]
+        assert unresolved_execution_ids(session, (account_id,), start, end) == [
+            accepted["trade_id"]
+        ]
 
 
 def test_accepted_no_crossing_contradiction_refuses_even_closed_financial_state(database):
