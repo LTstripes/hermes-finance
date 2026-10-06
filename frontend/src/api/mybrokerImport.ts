@@ -23,6 +23,23 @@ export type MyBrokerTrade = {
   };
   blockers: string[];
 };
+export type MyBrokerPosition = {
+  ordinal: number;
+  source_account: string;
+  isin: string;
+  actual_quantity: string;
+  forward_quantity: string;
+  beginning_actual_quantity?: string | null;
+  beginning_value?: string | null;
+  ending_value?: string | null;
+};
+export type MyBrokerRubMoney = {
+  ordinal: number;
+  source_account: string;
+  currency: string;
+  beginning_amount?: string | null;
+  ending_amount?: string | null;
+};
 export type MyBrokerDocument = {
   provider: string;
   parser: string;
@@ -33,13 +50,11 @@ export type MyBrokerDocument = {
   source_accounts: string[];
   section_inventory: Record<string, number>;
   trades: MyBrokerTrade[];
-  positions: {
-    ordinal: number;
-    source_account: string;
-    isin: string;
-    actual_quantity: string;
-    forward_quantity: string;
-  }[];
+  positions: MyBrokerPosition[];
+  rub_money?: MyBrokerRubMoney[];
+  endpoint_basis?: { beginning_value: string; ending_value: string };
+  endpoint_blockers?: string[];
+  endpoint_conflicts?: string[];
   money: {
     ordinal: number;
     kind: string;

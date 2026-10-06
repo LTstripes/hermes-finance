@@ -157,4 +157,66 @@ describe("MyBroker explicit Preview Apply", () => {
       verifyMyBrokerReadback(preview, imported, { ...imported, mappings: [] }),
     ).toThrow();
   });
+
+  it("shows endpoint quantities, values and RUB money evidence", async () => {
+    vi.mocked(previewMyBroker).mockResolvedValueOnce({
+      ...structuredClone(preview),
+      document: {
+        ...preview.document,
+        positions: [
+          {
+            ordinal: 0,
+            source_account: "1234567-000",
+            isin: "RU000A000000",
+            actual_quantity: "10",
+            forward_quantity: "10",
+            beginning_actual_quantity: "8",
+            beginning_value: "800",
+            ending_value: "1000",
+          },
+        ],
+        rub_money: [
+          {
+            ordinal: 1,
+            source_account: "1234567-000",
+            currency: "RUB",
+            beginning_amount: "500",
+            ending_amount: "400",
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    render(<MyBrokerImportPanel />);
+    await inspect(user);
+    expect(screen.getByText("8 / 10")).toBeVisible();
+    expect(screen.getByText("800 / 1000")).toBeVisible();
+    expect(screen.getByText("500")).toBeVisible();
+    expect(screen.getByText("400")).toBeVisible();
+    expect(screen.getByText(/деньги RUB: 1/)).toBeVisible();
+  });
+
+  it("renders legacy readbacks without endpoint keys", async () => {
+    vi.mocked(previewMyBroker).mockResolvedValueOnce({
+      ...structuredClone(preview),
+      document: {
+        ...preview.document,
+        positions: [
+          {
+            ordinal: 0,
+            source_account: "1234567-000",
+            isin: "RU000A000000",
+            actual_quantity: "10",
+            forward_quantity: "10",
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    render(<MyBrokerImportPanel />);
+    await inspect(user);
+    expect(screen.getByText("— / 10")).toBeVisible();
+    expect(screen.getByText("— / —")).toBeVisible();
+    expect(screen.getByText(/деньги RUB: 0/)).toBeVisible();
+  });
 });

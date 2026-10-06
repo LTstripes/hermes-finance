@@ -63,6 +63,16 @@ const REASONS: Record<string, string> = {
   accepted_class_coverage_requires_reconciliation:
     "Данные могут противоречить принятому подтверждению периода. Сначала нужна сверка этого подтверждения.",
   accepted_endpoint_quantity_conflict: "Количество бумаг расходится с принятым месячным срезом.",
+  accepted_parser_version_conflict:
+    "Документ уже сохранён другой версией разбора: загрузи отдельный отчёт за этот период.",
+  endpoint_beginning_quantity_unavailable:
+    "Нет начального количества позиции: endpoint-доказательства неполны.",
+  endpoint_value_unavailable:
+    "Нет начальной или конечной стоимости позиции: оценка не подтверждена.",
+  rub_money_unavailable: "Строка RUB-остатка не наблюдалась: остаток неизвестен, а не ноль.",
+  rub_money_incomplete: "В строке RUB-остатка отсутствует сумма начала или конца.",
+  position_row_unclassified: "Есть строка позиции без подтверждённого типа: она не сохранена.",
+  rub_money_ambiguous: "Найдено несколько строк RUB-остатка: однозначная сумма недоступна.",
 };
 
 export function MyBrokerImportPanel() {
@@ -156,7 +166,8 @@ export function MyBrokerImportPanel() {
             </ul>
           </details>
           <p>
-            Позиции: {preview.document.positions.length}, сделки: {preview.document.trades.length},
+            Позиции: {preview.document.positions.length}, деньги RUB:{" "}
+            {preview.document.rub_money?.length ?? 0}, сделки: {preview.document.trades.length},
             денежные строки: {preview.document.money.length}.
           </p>
           <Table>
@@ -191,7 +202,8 @@ export function MyBrokerImportPanel() {
             <thead>
               <tr>
                 <Th>Позиция: счёт / ISIN</Th>
-                <Th>Фактически</Th>
+                <Th>Количество: начало / конец</Th>
+                <Th>Стоимость: начало / конец</Th>
                 <Th>Ожидается</Th>
               </tr>
             </thead>
@@ -201,12 +213,37 @@ export function MyBrokerImportPanel() {
                   <Td>
                     {position.source_account} / {position.isin}
                   </Td>
-                  <Td>{position.actual_quantity}</Td>
+                  <Td>
+                    {position.beginning_actual_quantity ?? "—"} / {position.actual_quantity}
+                  </Td>
+                  <Td>
+                    {position.beginning_value ?? "—"} / {position.ending_value ?? "—"}
+                  </Td>
                   <Td>{position.forward_quantity}</Td>
                 </tr>
               ))}
             </tbody>
           </Table>
+          {(preview.document.rub_money?.length ?? 0) > 0 && (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Деньги RUB: счёт</Th>
+                  <Th>На начало</Th>
+                  <Th>На конец</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.document.rub_money?.map((row) => (
+                  <tr key={row.ordinal}>
+                    <Td>{row.source_account}</Td>
+                    <Td>{row.beginning_amount ?? "—"}</Td>
+                    <Td>{row.ending_amount ?? "—"}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
           <Table>
             <thead>
               <tr>

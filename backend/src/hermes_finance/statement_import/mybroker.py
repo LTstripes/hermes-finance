@@ -1,7 +1,9 @@
-"""Bounded MyBroker S1 syntax. No payouts, class inference or financial writes.
+"""Bounded MyBroker S1 syntax with endpoint evidence. No financial writes.
 
-The constants come from the sanitized Integrator manifest for issue #708.
-Only normalized source facts are returned; names/comments/raw XML are discarded.
+The constants come from the sanitized Integrator manifests for issues #708 and
+#716. Positions expose the accepted boundary quantities/values and the RUB
+currency row; only normalized source facts are returned, and names/comments/raw
+XML are discarded. No class inference, payout or bond arithmetic.
 """
 
 from __future__ import annotations
@@ -14,8 +16,12 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 PROVIDER = "alfa_mybroker"
-PARSER = "mybroker-s1-v1"
+PARSER = "mybroker-s1-v2"
 NS = {"m": "MyBroker"}
+# Accepted #716 currency-row conjunction; the manifest confirms these values,
+# not whether the type attribute sits on the row or its active_type group.
+CURRENCY_TYPE = "Валюта"
+CURRENCY_NAME = "RUB"
 SCHEMA = (
     "MyBroker http://reporting.alfadirect.ru/ReportServer?"
     "%2FCabinet%2FRelease%2FMyBroker&rs%3AFormat=XML&rc%3ASchema=True"
@@ -253,20 +259,69 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
     if any(child.tag not in {f"{{MyBroker}}{name}" for name in SECTIONS} for child in root):
         blockers.append("unknown_section")
     positions = []
-    position_rows = sections["Positions"].findall(
-        "m:Tablix1/m:active_type_Collection/m:active_type/m:Details_Collection/m:Details", NS
+    rub_money = []
+    endpoint_blockers = set()
+    endpoint_conflicts = set()
+    consumed_positions = 0
+    position_groups = sections["Positions"].findall(
+        "m:Tablix1/m:active_type_Collection/m:active_type", NS
     )
-    for i, row in enumerate(position_rows):
-        positions.append(
-            {
+    for i, (group, row) in enumerate(
+        (group, row)
+        for group in position_groups
+        for row in group.findall("m:Details_Collection/m:Details", NS)
+    ):
+        consumed_positions = i + 1
+        isin = single(row.get("ISIN1"), optional=True)
+        if isin is not None:
+            position = {
                 "section": "positions",
                 "ordinal": i,
                 "source_account": single(row.get("acc_code")),
-                "isin": single(row.get("ISIN1")),
+                "isin": isin,
                 "actual_quantity": decimal(row.get("real_rest")),
                 "forward_quantity": decimal(row.get("forward_rest")),
+                "beginning_actual_quantity": decimal(row.get("income_rest"), optional=True),
+                "beginning_value": decimal(row.get("income_volume"), optional=True),
+                "ending_value": decimal(row.get("real_volume"), optional=True),
             }
+            positions.append(position)
+            if position["beginning_actual_quantity"] is None:
+                endpoint_blockers.add("endpoint_beginning_quantity_unavailable")
+            if position["beginning_value"] is None or position["ending_value"] is None:
+                endpoint_blockers.add("endpoint_value_unavailable")
+            continue
+        # The accepted conjunction is active_type=Валюта + active_name=RUB +
+        # empty ISIN1. Anything else stays a visible, fail-closed blocker.
+        active_type = single(row.get("active_type"), optional=True) or single(
+            group.get("active_type"), optional=True
         )
+        if (
+            active_type == CURRENCY_TYPE
+            and single(row.get("active_name"), optional=True) == CURRENCY_NAME
+        ):
+            rub_money.append(
+                {
+                    "section": "rub_money",
+                    "ordinal": i,
+                    "source_account": single(row.get("acc_code")),
+                    "currency": "RUB",
+                    "beginning_amount": decimal(row.get("income_rest"), optional=True),
+                    "ending_amount": decimal(row.get("real_rest"), optional=True),
+                }
+            )
+            continue
+        endpoint_blockers.add("position_row_unclassified")
+    if positions and not rub_money:
+        # Absence is not observed zero RUB money.
+        endpoint_blockers.add("rub_money_unavailable")
+    if rub_money and any(
+        row["beginning_amount"] is None or row["ending_amount"] is None for row in rub_money
+    ):
+        endpoint_blockers.add("rub_money_incomplete")
+    if len(rub_money) > 1:
+        # Multiple matching currency rows give no unambiguous RUB money evidence.
+        endpoint_conflicts.add("rub_money_ambiguous")
     trades = []
     for pending, path in (
         (False, "m:Tablix2/m:Details_Collection/m:Details"),
@@ -326,8 +381,10 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
         if len(sections[outer]):
             blockers.append(f"{SECTIONS[outer]}_unsupported")
     # Any Details/rn outside the frozen paths is material, never silently complete.
+    # Every Positions Details row is consumed above (security, RUB currency or a
+    # visible unclassified blocker), so only truly unvisited nodes remain unparsed.
     for outer, parsed_count, tag in (
-        ("Positions", len(positions), "Details"),
+        ("Positions", consumed_positions, "Details"),
         ("Trades", len(trades), None),
         ("Trades2", sum(len(g.findall("m:rn_Collection/m:rn", NS)) for g in groups), "rn"),
     ):
@@ -343,7 +400,7 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
         )
         if observed != parsed_count:
             blockers.append("unparsed_source_rows")
-    if len(positions) + len(trades) + len(money) > MAX_ROWS:
+    if len(positions) + len(rub_money) + len(trades) + len(money) > MAX_ROWS:
         raise MyBrokerError("row_limit_exceeded")
     return {
         "provider": PROVIDER,
@@ -353,6 +410,13 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
         "covered_from": start.isoformat(),
         "covered_to": end.isoformat(),
         "positions": positions,
+        "rub_money": rub_money,
+        "endpoint_basis": {
+            "beginning_value": "previous_day_eod",
+            "ending_value": "covered_to_eod",
+        },
+        "endpoint_blockers": sorted(endpoint_blockers),
+        "endpoint_conflicts": sorted(endpoint_conflicts),
         "trades": trades,
         "money": money,
         "section_inventory": {
