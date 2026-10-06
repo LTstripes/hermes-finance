@@ -192,6 +192,9 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
 
         # The evidence check and bulk leg deletion must share one writer reservation.
         require_editable_reporting_month(session, month_id)
+        from hermes_finance.services.historical_endpoints import retire_dependencies
+
+        retire_dependencies(session, month_id=month_id, reason="month_deleted")
         require_no_transfer_reconciliation_evidence_for_month_deletion(session, month_id)
 
         # Collect cash-boundary intersections before set-based child deletion.

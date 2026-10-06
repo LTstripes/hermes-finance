@@ -60,6 +60,66 @@ class MyBrokerImport(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HistoricalEndpointRevision(Base):
+    """Append-only acceptance of S1 evidence; never a month-owned snapshot."""
+
+    __tablename__ = "historical_endpoint_revisions"
+    __table_args__ = (
+        UniqueConstraint("endpoint_key", "revision", name="uq_historical_endpoint_revision"),
+        CheckConstraint("revision > 0", name="ck_historical_endpoint_revision"),
+        CheckConstraint("basis = 'eod' AND currency = 'RUB'", name="ck_historical_endpoint_basis"),
+        CheckConstraint(
+            "operation IN ('accept', 'reaffirm', 'retire', 'revoke')",
+            name="ck_historical_endpoint_operation",
+        ),
+        CheckConstraint(
+            "(operation IN ('accept', 'reaffirm') AND acceptance_state = 'accepted' "
+            "AND reason_code IS NULL) OR (operation = 'retire' AND acceptance_state = 'retired' "
+            "AND reason_code IS NOT NULL) OR (operation = 'revoke' AND acceptance_state = 'revoked' "
+            "AND reason_code IS NOT NULL)",
+            name="ck_historical_endpoint_state",
+        ),
+        CheckConstraint("length(material_signature) = 64", name="ck_historical_endpoint_material"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    endpoint_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    valuation_date: Mapped[date] = mapped_column(Date, nullable=False)
+    basis: Mapped[str] = mapped_column(String(8), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("historical_endpoint_revisions.id"), nullable=True
+    )
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    acceptance_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HistoricalEndpointApply(Base):
+    """Receipt also for a successful fresh-key no-op; no raw request payload."""
+
+    __tablename__ = "historical_endpoint_applies"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_historical_endpoint_request"),
+        CheckConstraint(
+            "result_action IN ('created', 'reaffirmed', 'revoked', 'noop')",
+            name="ck_historical_endpoint_result",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision_id: Mapped[int] = mapped_column(ForeignKey("historical_endpoint_revisions.id"))
+    result_action: Mapped[str] = mapped_column(String(16), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ExecutedTrade(Base):
     """Frozen S2-A economic core and accepted source alias/bindings.
 
