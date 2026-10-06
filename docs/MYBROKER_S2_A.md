@@ -32,6 +32,9 @@ another execution or cash leg. Distinct native pairs with identical economics
 stay distinct. Exact settlement/commission material has one canonical leg with
 all supporting S1 money-row references. Multiple differing legs and ambiguous
 primary-only linkage remain conflicts; split/refund cases are not aggregated.
+Identical repeated money rows within a single document retain observed
+multiplicity and all row references; they never prove a single settlement or
+single economic cost. Cross-document repetition remains occurrence lineage.
 
 ## Lifecycle and evidence
 

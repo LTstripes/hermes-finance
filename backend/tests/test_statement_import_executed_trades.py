@@ -503,3 +503,16 @@ def test_exact_cash_consistency_and_zero_do_not_infer_direction(database, amount
         if amount == "0":
             assert evidence["cash_legs"][0]["direction"] is None
             assert "trade_cash_direction_conflict" in evidence["readiness"]["settlement"]
+
+
+def test_identical_money_rows_within_one_document_do_not_prove_one_settlement(database):
+    root = ET.fromstring(fixture())
+    collection = root.find(".//{MyBroker}Trades2//{MyBroker}rn_Collection")
+    collection.append(deepcopy(collection.find("{MyBroker}rn")))
+    with database.session_factory() as session:
+        key = identity(accept_source(session, ET.tostring(root)))
+        evidence = promote(session, [key])["trades"][0]["evidence"]
+        assert evidence["cash_legs"][0]["observed_multiplicity"] == 2
+        assert len(evidence["cash_legs"][0]["occurrences"]) == 2
+        assert "settlement_cash_missing_or_ambiguous" in evidence["readiness"]["settlement"]
+        assert evidence["readiness"]["cash_ownership"] == ["cash_leg_multiplicity_unresolved"]

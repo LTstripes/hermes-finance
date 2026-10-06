@@ -7,7 +7,7 @@ the full source union; accepted bindings/core are frozen, never last-upload-wins
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
@@ -175,8 +175,11 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
     actual = source["state"] == "settled"
     legs = []
     leg_groups = defaultdict(list)
+    repeated_money_rows = False
     for material, provenance in sorted(money.items()):
         leg = json.loads(material)
+        multiplicity = max(Counter(p["import_id"] for p in provenance).values())
+        repeated_money_rows |= multiplicity > 1
         leg_groups[leg["kind"]].append(leg)
         signed = Decimal(leg["amount"])
         legs.append(
@@ -189,6 +192,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 "direction": ("debit" if signed < 0 else "credit") if signed else None,
                 "source_amount": leg["amount"],
                 "occurrences": provenance,
+                "observed_multiplicity": multiplicity,
             }
         )
     settlement_reasons = []
@@ -197,7 +201,9 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
     if not actual or not source["settlement_date"] or not source["depo_settlement_date"]:
         settlement_reasons.append("actual_settlement_missing")
     settlements = leg_groups["settlement"]
-    if len(settlements) != 1:
+    if len(settlements) != 1 or any(
+        leg["role"] == "settlement" and leg["observed_multiplicity"] > 1 for leg in legs
+    ):
         settlement_reasons.append("settlement_cash_missing_or_ambiguous")
         if len(settlements) > 1:
             conflicts.add("trade_material_conflict")
@@ -250,6 +256,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             "unsupported": sorted(
                 set(source["blockers"]) & {"currency_unsupported", "repo_semantics_unsupported"}
             ),
+            "cash_ownership": ["cash_leg_multiplicity_unresolved"] if repeated_money_rows else [],
         },
     }
     if latest:
