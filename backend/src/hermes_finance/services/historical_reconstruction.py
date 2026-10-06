@@ -121,6 +121,14 @@ def _exposure(trades: list[dict], cutoff: date) -> list[str]:
                     blockers.add("actual_settlement_date_unknown")
                 elif date.fromisoformat(actual) > cutoff:
                     blockers.add("settlement_crosses_cutoff")
+            for leg in evidence.get("cash_legs", []):
+                # S1 uses date; S2-A keeps actual leg dates as effective_date.
+                # Planned pending dates/legs never establish actual settlement.
+                actual = leg.get("effective_date", leg.get("date"))
+                if actual is None:
+                    blockers.add("actual_cash_leg_date_unknown")
+                elif date.fromisoformat(actual) > cutoff:
+                    blockers.add("cash_leg_crosses_cutoff")
         if trade.get("conflicts") or any(
             b in trade.get("blockers", [])
             for b in ("immutable_trade_conflict", "trade_material_conflict", "pending_disappeared")
@@ -246,7 +254,7 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         memberships = [
             r for r in tables[AccountPerformanceScopeMembership] if r.account_id == account_id
         ]
-        docs, endpoints, operations, events, account_source_trades = [], [], [], [], []
+        docs, endpoints, operations, events = [], [], [], []
         account_aliases = {
             b["identity"]
             for row in context["imports"]
@@ -258,6 +266,16 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
             for t in context["projections"].values()
             if t["core"]["source_account"] in account_aliases
         ]
+        current_candidates = []
+        for source in cutoff_trades:
+            identity = source["identity"]
+            if identity not in candidates:
+                candidates[identity] = _candidate(session, context, identity)
+            current_candidates.append(candidates[identity])
+        # The S2 candidate also sees money-only S1 enrichment across the full
+        # union. It strengthens exposure alongside, never instead of, frozen
+        # accepted canonical evidence.
+        cutoff_trades += current_candidates
         cutoff_trades += [
             t
             for d in context["documents"]
@@ -300,12 +318,6 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
                 common.add("repo_semantics_unsupported")
             if any(t["identity"] is None for t in source_trades):
                 common.add("trade_ids_incomplete")
-            reduced = [
-                t for t in context["projections"].values() if t["core"]["source_account"] in aliases
-            ]
-            # Identity-less observations must remain visible and cannot be promoted.
-            reduced += [t for t in source_trades if t["identity"] is None]
-            account_source_trades.extend(reduced)
             constraints = cutoff_trades
             sides = [
                 _endpoint(document, row.id, aliases, side, sorted(common), constraints, memberships)
@@ -436,16 +448,14 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
                 )
         own_canonical = [t for t in canonical if t["account_id"] == account_id]
         executions = [
-            t["core"]["trade_time"][:10]
-            for t in own_canonical
-            if t["acceptance_state"] == "active" and t["evidence"]["lifecycle"] == "settled"
+            t["core"]["trade_time"][:10] for t in own_canonical if t["acceptance_state"] == "active"
         ]
         blockers = {b for d in docs for b in d["blockers"] if d["intersects_request"]}
         if not docs:
             blockers.add("accepted_source_unavailable")
         if history_gaps or membership_overlaps:
             blockers.add("historical_membership_unknown")
-        blockers.update(_exposure(account_source_trades + own_canonical, end))
+        blockers.update(_exposure(cutoff_trades, end))
         accounts.append(
             {
                 "account_id": account_id,

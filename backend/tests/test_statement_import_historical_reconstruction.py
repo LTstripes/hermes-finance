@@ -1,6 +1,7 @@
 """Private-free H0 acceptance vectors over real synthetic S1/S2 entrypoints."""
 
 import json
+from copy import deepcopy
 from datetime import date
 from xml.etree import ElementTree as ET
 
@@ -18,6 +19,7 @@ from hermes_finance.persistence import (
     Base,
     BrokerIdentityMapping,
     CashBalance,
+    ExecutedTradeRevision,
     MyBrokerImport,
     ReportingMonth,
 )
@@ -154,6 +156,109 @@ def test_source_settled_cannot_relax_accepted_pending_until_canonical_enrichment
         reread = inventory(session)
         assert "pending_at_cutoff" not in endpoint(reread, "ending", later["import_id"])["blockers"]
         assert reread["preview_digest"] != old_digest
+
+
+def test_pending_only_accepted_canonical_execution_retains_earliest_date(database):
+    with database.session_factory() as session:
+        include_source_account(session)
+        source = accept_source(session, fixture(pending=True))
+        accepted = promote(session, [identity(source)])["trades"][0]
+        assert accepted["acceptance_state"] == "active"
+        assert accepted["evidence"]["lifecycle"] == "pending"
+        before = all_tables(session)
+        report = inventory(session)
+        account = report["accounts"][0]
+        assert account["earliest_accepted_canonical_execution"] == "2030-01-15"
+        assert account["canonical_executions"][0]["lifecycle"] == "pending"
+        assert "pending_at_cutoff" in endpoint(report, "ending")["blockers"]
+        assert account["availability"]["financial_coverage"] == "unknown"
+        assert not report["financial_apply_available"]
+        assert all_tables(session) == before
+
+
+def commission_xml(*, money_only=False, commission_date="2030-02-03"):
+    """Actual synthetic commission; its date differs from trade and custody."""
+    root = ET.fromstring(mutate(fixture(), bank_tax="5"))
+    groups = root.find(".//{MyBroker}Trades2//{MyBroker}settlement_date_Collection")
+    leg = deepcopy(groups.find("{MyBroker}settlement_date"))
+    leg.set("settlement_date", commission_date + "T00:00:00")
+    leg.find(".//{MyBroker}rn").set("last_update", commission_date + "T10:00:00")
+    leg.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
+    leg.find(".//{MyBroker}p_code/{MyBroker}p_code").set("volume", "-5")
+    groups.append(leg)
+    if money_only:
+        groups.remove(groups.find("{MyBroker}settlement_date"))
+        root.find(".//{MyBroker}Positions/{MyBroker}Report").clear()
+        root.find(".//{MyBroker}Positions/{MyBroker}Report").set("Name", "1_Positions")
+        root.find(".//{MyBroker}Trades/{MyBroker}Report").clear()
+        root.find(".//{MyBroker}Trades/{MyBroker}Report").set("Name", "2_Trades")
+    return ET.tostring(root)
+
+
+@pytest.mark.parametrize("source_mode", ["source_only", "accepted", "money_only"])
+@pytest.mark.parametrize("commission_date,blocked", [("2030-01-31", False), ("2030-02-03", True)])
+def test_actual_commission_cash_leg_cutoff_from_s1_and_s2(
+    database, source_mode, commission_date, blocked
+):
+    with database.session_factory() as session:
+        include_source_account(session)
+        cutoff_source = accept_source(session, positions_only(endpoint_xml()))
+        if source_mode == "money_only":
+            base = accept_source(session, mutate(fixture(), bank_tax="5"))
+            accepted = promote(session, [identity(base)])["trades"][0]
+            assert accepted["evidence"]["cash_legs"][0]["effective_date"] == "2030-01-17"
+        source = accept_source(
+            session,
+            commission_xml(money_only=source_mode == "money_only", commission_date=commission_date),
+            "Брокерский 1234567 (01.01.30-28.02.30).xml",
+        )
+        if source_mode == "accepted":
+            accepted = promote(session, [identity(source)])["trades"][0]
+            assert accepted["evidence"]["settlement_date"] == "2030-01-17"
+            assert accepted["evidence"]["depo_settlement_date"] == "2030-01-17"
+            assert (
+                next(
+                    leg for leg in accepted["evidence"]["cash_legs"] if leg["role"] == "commission"
+                )["effective_date"]
+                == commission_date
+            )
+        before = all_tables(session)
+        report = inventory(session, end=date(2030, 1, 31))
+        closing = endpoint(report, "ending", cutoff_source["import_id"])
+        assert ("cash_leg_crosses_cutoff" in closing["blockers"]) is blocked
+        assert ("cash_leg_crosses_cutoff" in report["accounts"][0]["blockers"]) is blocked
+        assert "settlement_crosses_cutoff" not in closing["blockers"]
+        assert not closing["financial_apply_available"]
+        assert all_tables(session) == before
+
+
+def test_unaccepted_source_cannot_relax_accepted_later_commission_cash_leg(database):
+    with database.session_factory() as session:
+        include_source_account(session)
+        cutoff_source = accept_source(session, positions_only(endpoint_xml()))
+        source = accept_source(
+            session, commission_xml(), "Брокерский 1234567 (01.01.30-28.02.30).xml"
+        )
+        accepted = promote(session, [identity(source)])["trades"][0]
+        # Adversarial synthetic withdrawal/dispute: canonical accepted revision
+        # remains immutable even when current S1 no longer supports the cash leg.
+        row = session.get(MyBrokerImport, source["import_id"])
+        document = json.loads(row.normalized_json)
+        document["money"] = [leg for leg in document["money"] if leg["kind"] != "commission"]
+        for trade in document["trades"]:
+            trade["cash_legs"] = [leg for leg in trade["cash_legs"] if leg["kind"] != "commission"]
+        row.normalized_json = canonical(document)
+        session.commit()
+        before = all_tables(session)
+        report = inventory(session, end=date(2030, 1, 31))
+        closing = endpoint(report, "ending", cutoff_source["import_id"])
+        assert "cash_leg_crosses_cutoff" in closing["blockers"]
+        assert "execution_reconciliation_required" in closing["blockers"]
+        assert "cash_leg_crosses_cutoff" in report["accounts"][0]["blockers"]
+        assert session.scalar(select(ExecutedTradeRevision)).evidence_json == canonical(
+            accepted["evidence"]
+        )
+        assert all_tables(session) == before
 
 
 @pytest.mark.parametrize(

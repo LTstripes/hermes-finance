@@ -26,8 +26,9 @@ The response exposes structural evidence only:
 - Confirmed source report ranges, their inclusive gaps/overlaps inside the
   request, and dated observed event ranges. Confirmed quiet ranges do not prove
   economic completeness. Earliest source event and earliest active accepted
-  settled canonical execution are separate, across all accepted history for the
-  selected account. Accepted executions retain current conflict disclosures.
+  canonical execution are separate, across all accepted history for the selected
+  account. `earliest_accepted_canonical_execution` includes active accepted pending
+  and settled identities; lifecycle and current conflicts remain separately visible.
 - Beginning and ending observations are evaluated independently. Beginning uses
   the actual previous-day EOD, including leap-day; ending uses report-end EOD.
   Both boundaries of an intersecting report remain visible even outside the
@@ -38,8 +39,10 @@ The response exposes structural evidence only:
   mapping blockers, opaque Transfers/UFSR/unknown sections, repo/incomplete IDs,
   negative states and pending/forward/cash/custody exposure. Opening settled
   inventory is unproven even when ending actual and forward quantities agree.
-  Current S1 projections cannot clear frozen canonical pending exposure until
-  explicit S2-A enrichment. Planned settlement dates never clear a pending cut.
+  Actual S1/S2-A cash-leg dates, including later commissions and money-only
+  source enrichment, independently constrain the cutoff. Current source candidates
+  may strengthen blocking but cannot clear frozen canonical cash/pending exposure
+  until explicit S2-A enrichment. Planned dates never clear a pending cut.
 - Historical membership intervals, gaps/overlaps and cutoff inclusion, without
   using today's account inclusion or instrument class as historical evidence.
 - Existing month-owned fact categories for the account, month status and exact
