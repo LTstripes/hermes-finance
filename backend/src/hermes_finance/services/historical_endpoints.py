@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, localcontext
 
@@ -196,8 +197,20 @@ def _overlap(session, intent, positions, cash, blockers):
             continue
         month = months.get(row.reporting_month_id)
         if month is None:
-            if row.price_date == day:
+            # Archives retain a reporting label, not an immutable snapshot date.
+            # Quote date cannot prove the original actual date. A later reporting
+            # period is provably irrelevant; older/unresolvable provenance blocks.
+            period = row.archived_from_period or ""
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}", period):
                 archived.append(row)
+            else:
+                try:
+                    earliest = date.fromisoformat(period + "-01")
+                except ValueError:
+                    archived.append(row)
+                else:
+                    if earliest <= day:
+                        archived.append(row)
         elif month.snapshot_date == day:
             by_month.setdefault(month.id, {"positions": [], "cash": [], "deposits": []})[
                 "positions"
@@ -351,6 +364,11 @@ def _source_union(session, intent, selected, blockers):
             blockers.update(
                 set(document.get("endpoint_blockers", [])) & {"position_row_unclassified"}
             )
+        if row.covered_to <= intent.valuation_date and any(
+            Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
+            for p in document["positions"]
+        ):
+            blockers.add("unresolved_source_forward_exposure")
         if row.covered_to == intent.valuation_date and row.id != selected.id:
             other_bindings = _bindings(session, row, blockers, scoped_bindings)
             if row.parser_version != "mybroker-s1-v2":
@@ -849,6 +867,7 @@ def retire_dependencies(
     cash_id=None,
     deposit_id=None,
     trade_id=None,
+    overlap_account_id=None,
     reason="dependency_changed",
 ):
     """Append lifecycle loss of authority only for exact frozen dependencies."""
@@ -860,6 +879,8 @@ def retire_dependencies(
             latest[row.endpoint_key] = row
     for current in latest.values():
         if current.acceptance_state != "accepted":
+            continue
+        if overlap_account_id is not None and current.account_id != overlap_account_id:
             continue
         evidence = json.loads(current.evidence_json)
         dependencies = evidence["dependencies"]

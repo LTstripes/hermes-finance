@@ -841,3 +841,124 @@ def test_overlap_envelope_contains_no_unrelated_narratives_or_costs(database):
         assert "cost_basis" not in encoded
         assert "market_price_per_unit" not in encoded
         assert "unrealized_result" not in encoded
+
+
+@pytest.mark.parametrize("component", ["position", "cash", "unowned-cash", "deposit"])
+def test_component_add_remove_cannot_silently_restore_authority(database, component):
+    from hermes_finance.services.instruments import create_instrument
+
+    with database.session_factory() as session:
+        intent, instrument = setup_source(session)
+        month_id = matching_month(session, intent, instrument)
+        key = accept(session, attest(session, intent))["readback"]["endpoint_key"]
+        if component == "position":
+            other = create_instrument(
+                session, name="Synthetic extra security", instrument_type="stock"
+            )
+            extra = PositionSnapshot(
+                reporting_month_id=month_id,
+                account_id=intent.account_id,
+                instrument_id=other.id,
+                quantity=Decimal("1"),
+                market_value_kopecks=1,
+                average_cost_per_unit_kopecks=0,
+                market_price_per_unit_kopecks=0,
+                cost_basis_kopecks=0,
+                unrealized_result_kopecks=0,
+                price_date=DAY,
+            )
+        elif component == "deposit":
+            extra = DepositSnapshot(
+                reporting_month_id=month_id,
+                account_id=intent.account_id,
+                name="Synthetic deposit",
+                deposit_type="deposit",
+                balance_kopecks=1,
+                annual_rate_basis_points=0,
+                expected_monthly_interest_kopecks=0,
+            )
+        else:
+            extra = CashBalance(
+                reporting_month_id=month_id,
+                account_id=None if component == "unowned-cash" else intent.account_id,
+                name="Synthetic extra cash",
+                amount_kopecks=1,
+                currency="RUB",
+            )
+        session.add(extra)
+        session.commit()
+        assert read_historical_endpoint(session, key)["effective_state"] == "retired"
+        session.delete(extra)
+        session.commit()
+        result = read_historical_endpoint(session, key)
+        assert result["effective_state"] == "retired" and result["revision"] == 2
+        assert result["total_value_kopecks"] is None
+        renewed = attest(
+            session, intent.model_copy(update={"operation": "reaffirm", "expected_revision": 2})
+        )
+        assert (
+            accept(session, renewed, "explicit-renew")["readback"]["total_value_kopecks"] == 10001
+        )
+
+
+@pytest.mark.parametrize(
+    "period,blocked", [("2030-01", True), ("2029-12", True), ("2030-02", False)]
+)
+def test_archive_quote_date_never_substitutes_for_snapshot_date(database, period, blocked):
+    with database.session_factory() as session:
+        intent, instrument = setup_source(session)
+        session.add(
+            PositionSnapshot(
+                reporting_month_id=None,
+                archived_from_period=period,
+                account_id=intent.account_id,
+                instrument_id=instrument,
+                quantity=Decimal("4"),
+                market_value_kopecks=10002,
+                average_cost_per_unit_kopecks=0,
+                market_price_per_unit_kopecks=0,
+                cost_basis_kopecks=0,
+                unrealized_result_kopecks=0,
+                price_date=date(2029, 12, 1),
+            )
+        )
+        session.commit()
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        assert ("overlap_ambiguous_or_archived" in plan["blockers"]) == blocked
+
+
+def test_earlier_forward_disagreement_survives_later_clean_report(database):
+    with database.session_factory() as session:
+        old_raw = positions_only(endpoint_xml(forward="20"))
+        earlier = "Брокерский 1234567 (01.01.30-16.01.30).xml"
+        apply(session, old_raw, preview(session, old_raw, earlier), earlier)
+        intent, _ = setup_source(session)
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        assert "unresolved_source_forward_exposure" in plan["blockers"]
+        assert not plan["can_apply"]
+
+
+def test_component_addition_for_other_account_does_not_retire_frozen_overlap(database):
+    from hermes_finance.services.accounts import create_account
+
+    with database.session_factory() as session:
+        intent, instrument = setup_source(session)
+        month_id = matching_month(session, intent, instrument)
+        key = accept(session, attest(session, intent))["readback"]["endpoint_key"]
+        other = create_account(
+            session, name="Synthetic unrelated account", account_type="brokerage"
+        )
+        session.add(
+            DepositSnapshot(
+                reporting_month_id=month_id,
+                account_id=other.id,
+                name="Synthetic unrelated deposit",
+                deposit_type="deposit",
+                balance_kopecks=1,
+                annual_rate_basis_points=0,
+                expected_monthly_interest_kopecks=0,
+            )
+        )
+        session.commit()
+        result = read_historical_endpoint(session, key)
+        assert result["effective_state"] == "accepted" and result["revision"] == 1

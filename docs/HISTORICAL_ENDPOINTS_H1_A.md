@@ -64,10 +64,16 @@ owned RUB cash and additional components, including DRAFT/CLOSED material and
 archived provenance. Matching totals cannot conceal offsetting differences.
 Identical overlap corroborates and never adds another amount. Unknown archive/date
 or ownership relationships fail closed.
+An archive's reporting label and quote date do not prove its original snapshot
+date. Potentially relevant unresolved archival dates block acceptance. Earlier
+source actual/forward disagreements remain unresolved across later cutoffs; a
+later clean report alone cannot settle position-level exposure.
 
 `retire` is dependency lifecycle loss of authority; `revoke` is a reviewed Owner
 action. Frozen mapping, membership, canonical execution revision and month-owned
 overlap changes append retirement transactionally with sanctioned writers.
+Component-set additions/removals also retire the frozen account/month dependency;
+removing a newly added conflicting component cannot silently revive acceptance.
 Reopen/date-change/delete uses exact frozen month dependencies; an independent
 endpoint inside a month's calendar dates is not retired merely by those dates.
 Ordinary Close changes no acceptance. Dependency correction requires applicable

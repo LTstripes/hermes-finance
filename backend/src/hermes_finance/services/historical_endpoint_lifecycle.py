@@ -7,6 +7,7 @@ from hermes_finance.persistence import (
     AccountPerformanceScopeMembership,
     BrokerIdentityMapping,
     CashBalance,
+    DepositSnapshot,
     ExecutedTradeRevision,
     HistoricalEndpointApply,
     HistoricalEndpointRevision,
@@ -22,6 +23,13 @@ def _before_flush(session, _context, _instances):
     for row in session.new:
         if isinstance(row, ExecutedTradeRevision):
             changes.append({"trade_id": row.trade_id})
+        elif (
+            isinstance(row, (PositionSnapshot, CashBalance, DepositSnapshot))
+            and row.reporting_month_id is not None
+        ):
+            changes.append(
+                {"month_id": row.reporting_month_id, "overlap_account_id": row.account_id}
+            )
     for row in (*session.dirty, *session.deleted):
         if isinstance(row, (HistoricalEndpointRevision, HistoricalEndpointApply)):
             raise ValueError("historical endpoint history is append-only")
@@ -64,6 +72,10 @@ def _before_flush(session, _context, _instances):
                 )
             ):
                 changes.append({"position_id": row.id})
+                if row.reporting_month_id is not None:
+                    changes.append(
+                        {"month_id": row.reporting_month_id, "overlap_account_id": row.account_id}
+                    )
         elif isinstance(row, CashBalance):
             if deleted or any(
                 state.attrs[field].history.has_changes()
@@ -76,6 +88,15 @@ def _before_flush(session, _context, _instances):
                 )
             ):
                 changes.append({"cash_id": row.id})
+                changes.append(
+                    {"month_id": row.reporting_month_id, "overlap_account_id": row.account_id}
+                )
+        elif isinstance(row, DepositSnapshot):
+            if deleted or session.is_modified(row):
+                changes.append({"deposit_id": row.id})
+                changes.append(
+                    {"month_id": row.reporting_month_id, "overlap_account_id": row.account_id}
+                )
     if changes:
         if not inspect(session.connection()).has_table("historical_endpoint_revisions"):
             return
