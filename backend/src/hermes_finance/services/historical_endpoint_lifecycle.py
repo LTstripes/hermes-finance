@@ -11,6 +11,7 @@ from hermes_finance.persistence import (
     ExecutedTradeRevision,
     HistoricalEndpointApply,
     HistoricalEndpointRevision,
+    Instrument,
     PositionSnapshot,
     ReportingMonth,
 )
@@ -56,6 +57,9 @@ def _before_flush(session, _context, _instances):
         elif isinstance(row, AccountPerformanceScopeMembership):
             if deleted or session.is_modified(row):
                 changes.append({"membership_id": row.id})
+        elif isinstance(row, Instrument):
+            if deleted or state.attrs.isin.history.has_changes():
+                changes.append({"instrument_id": row.id})
         elif isinstance(row, ExecutedTradeRevision):
             if deleted or session.is_modified(row):
                 changes.append({"trade_id": row.trade_id})

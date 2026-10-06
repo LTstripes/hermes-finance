@@ -867,6 +867,7 @@ def retire_dependencies(
     cash_id=None,
     deposit_id=None,
     trade_id=None,
+    instrument_id=None,
     overlap_account_id=None,
     reason="dependency_changed",
 ):
@@ -886,6 +887,10 @@ def retire_dependencies(
         dependencies = evidence["dependencies"]
         match = mapping_id is not None and any(
             b["mapping_id"] == mapping_id for b in evidence["bindings"]
+        )
+        match |= instrument_id is not None and any(
+            b["kind"] == "instrument" and b["hermes_id"] == instrument_id
+            for b in evidence["bindings"]
         )
         match |= membership_id is not None and any(
             m["id"] == str(membership_id) for m in evidence["membership"]

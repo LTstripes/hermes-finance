@@ -962,3 +962,41 @@ def test_component_addition_for_other_account_does_not_retire_frozen_overlap(dat
         session.commit()
         result = read_historical_endpoint(session, key)
         assert result["effective_state"] == "accepted" and result["revision"] == 1
+
+
+def test_instrument_identity_change_restore_requires_explicit_reaffirm(database):
+    from hermes_finance.services.instruments import update_instrument
+
+    with database.session_factory() as session:
+        intent, instrument_id = setup_source(session)
+        intent = attest(session, intent)
+        key = accept(session, intent)["readback"]["endpoint_key"]
+        original = session.get(Instrument, instrument_id).isin
+        update_instrument(session, instrument_id, isin="RU000A000001")
+        assert read_historical_endpoint(session, key)["effective_state"] == "retired"
+        update_instrument(session, instrument_id, isin=original)
+        result = read_historical_endpoint(session, key)
+        assert result["effective_state"] == "retired" and result["total_value_kopecks"] is None
+        renewed = attest(
+            session, intent.model_copy(update={"operation": "reaffirm", "expected_revision": 2})
+        )
+        assert (
+            accept(session, renewed, "identity-reaffirm")["readback"]["total_value_kopecks"]
+            == 10001
+        )
+
+
+def test_closed_dependency_blocks_instrument_identity_retirement(database):
+    from hermes_finance.services.instruments import update_instrument
+
+    with database.session_factory() as session:
+        intent, instrument = setup_source(session)
+        month_id = matching_month(session, intent, instrument)
+        key = accept(session, attest(session, intent))["readback"]["endpoint_key"]
+        close_reporting_month(session, month_id)
+        original = session.get(Instrument, instrument).isin
+        with pytest.raises(MyBrokerError, match="reopen_required"):
+            update_instrument(session, instrument, isin="RU000A000001")
+        session.rollback()
+        assert session.get(Instrument, instrument).isin == original
+        assert read_historical_endpoint(session, key)["revision"] == 1

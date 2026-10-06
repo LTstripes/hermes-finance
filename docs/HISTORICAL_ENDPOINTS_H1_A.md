@@ -70,7 +70,7 @@ source actual/forward disagreements remain unresolved across later cutoffs; a
 later clean report alone cannot settle position-level exposure.
 
 `retire` is dependency lifecycle loss of authority; `revoke` is a reviewed Owner
-action. Frozen mapping, membership, canonical execution revision and month-owned
+action. Frozen mapping/instrument identity, membership, canonical execution revision and month-owned
 overlap changes append retirement transactionally with sanctioned writers.
 Component-set additions/removals also retire the frozen account/month dependency;
 removing a newly added conflicting component cannot silently revive acceptance.
