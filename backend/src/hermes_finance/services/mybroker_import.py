@@ -382,6 +382,7 @@ def _prepare(session: Session, document: dict) -> dict:
     accounts = sorted(
         {document["filename_account"]}
         | {p["source_account"] for p in document["positions"]}
+        | {r["source_account"] for r in document["rub_money"]}
         | {t["core"]["source_account"] for t in document["trades"]}
         | {m["source_account"] for m in document["money"]}
     )
@@ -423,6 +424,7 @@ def _prepare(session: Session, document: dict) -> dict:
     prior_documents = [json.loads(row.normalized_json) for row in imports]
     prior, _ = _reduce(prior_documents)
     blockers = list(document["syntax_blockers"])
+    blockers.extend(document["endpoint_blockers"])
     blockers.extend(_attach_cash(document, prior))
     if not accounts:
         blockers.append("source_account_unobserved")
@@ -434,13 +436,15 @@ def _prepare(session: Session, document: dict) -> dict:
     same = next(
         (row for row in imports if row.document_sha256 == document["document_sha256"]), None
     )
-    conflicts = []
+    conflicts = list(document["endpoint_conflicts"])
     reduced, reduction_conflicts = _reduce(prior_documents + [document])
     if same:
         old = json.loads(same.normalized_json)
+        # A changed parser shape cannot silently reinterpret an accepted document.
+        if old["parser"] != document["parser"]:
+            conflicts.append("accepted_parser_version_conflict")
         if any(
-            old[key] != document[key]
-            for key in ("covered_from", "covered_to", "filename_account", "parser")
+            old[key] != document[key] for key in ("covered_from", "covered_to", "filename_account")
         ):
             conflicts.append("document_coverage_conflict")
         if json.loads(same.mappings_json) != bindings:

@@ -1,9 +1,12 @@
 # MyBroker S1 normalization and import lineage
 
-Authority: [#708 accepted contract](https://github.com/LTstripes/hermes-finance/issues/708#issuecomment-5999540552)
-and the Owner-supplied sanitized Integrator syntax manifest. Parser constants and
-hand-built synthetic fixtures record that manifest; they do not claim public
-format stability. No Owner XML is used in implementation or tests.
+Authority: [#708 accepted contract](https://github.com/LTstripes/hermes-finance/issues/708#issuecomment-5999540552),
+the accepted [#713 endpoint disposition](https://github.com/LTstripes/hermes-finance/issues/713#issuecomment-6020928890)
+and the [#716 implementation plan](https://github.com/LTstripes/hermes-finance/issues/716#issuecomment-6021176561)
+with its Owner-local [gate confirmation](https://github.com/LTstripes/hermes-finance/issues/716#issuecomment-6021302431).
+Parser constants and hand-built synthetic fixtures record the sanitized Integrator
+manifests; they do not claim public format stability. No Owner XML or report value
+is used in implementation or tests.
 
 Upload is available under **Data → Files**, independently of a reporting month.
 The multipart API is `/api/mybroker-import/preview` and `/apply`; `/{import_id}`
@@ -74,6 +77,35 @@ membership guards remain independent. Within an included account S1 still has
 no event-C1 proof, so it cannot safely restrict a source event to stock/bond/gold
 from today's catalogue or a position's class. All potentially affected classes
 remain guarded there; this does not assign or backfill a trade class.
+
+## Endpoint evidence (parser `mybroker-s1-v2`)
+
+`mybroker-s1-v2` adds the accepted #716 Positions evidence without financial
+writes. Security rows carry beginning/ending actual quantity, beginning value and
+ending value beside the unchanged ending actual/forward quantity keys. Values
+keep the source-native basis labels (beginning `previous_day_eod`, ending
+`covered_to_eod`) as document `endpoint_basis`; no price is derived, and no bond
+nominal/NKD/clean-dirty semantics are introduced.
+
+The RUB currency row is recognized only by the accepted conjunction
+`active_type=Валюта`, `active_name=RUB`, empty `ISIN1`, and is normalized
+separately as `rub_money` beginning/ending money amounts. Its absence is never
+zero RUB. Multiple matching rows are a blocking conflict (`rub_money_ambiguous`);
+unclassified Positions rows stay visible blockers and are not stored.
+
+Evidence gaps are document-level `endpoint_blockers`
+(`endpoint_beginning_quantity_unavailable`, `endpoint_value_unavailable`,
+`rub_money_unavailable`, `rub_money_incomplete`, `position_row_unclassified`).
+They remain visible in Preview and committed readback but do not refuse a source
+import; conflicts still refuse the whole Apply. Same-date accepted quantity
+conflicts are unchanged, and this slice does not compare source values with
+accepted snapshots.
+
+A document already accepted under `mybroker-s1-v1` with the same bytes is an
+explicit `accepted_parser_version_conflict`, never a silent re-interpretation or
+rewrite; endpoint evidence for those bytes needs a distinct report. Coverage stays
+`unknown`, and quotes, C1, historical backfill and #715 trade-ledger semantics
+remain outside this slice.
 
 Historical reconstruction (#709), trade-to-manual-fact reconciliation, historical
 valuation/class evidence, bond returns, transfer semantics and payout-kind
