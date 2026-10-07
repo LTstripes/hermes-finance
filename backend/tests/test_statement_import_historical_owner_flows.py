@@ -96,7 +96,8 @@ def test_b_repo_outside_owner_flow_source_scope_does_not_block(database, unrelat
             read_historical_owner_flow(session, accepted["flow_id"])["effective_state"]
             == "accepted"
         )
-        assert preview_historical_owner_flow(session, attest(session, intent))["can_apply"]
+        reaffirm = attest(session, target(intent, accepted))
+        assert preview_historical_owner_flow(session, reaffirm)["can_apply"]
 
 
 def xml(
