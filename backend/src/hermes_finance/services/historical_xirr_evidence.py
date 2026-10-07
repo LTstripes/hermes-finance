@@ -118,8 +118,9 @@ def historical_xirr_evidence(
             else:
                 totals[index] += amount
 
-        # H2-A2 owns the exact window and validates every H2-A1 revision/occurrence.
-        # Source-free attestations, overlaps, gaps and ineffective revisions fail.
+        # The shared assessor validates the effective COMPLETE union for this
+        # exact window, including every H2-A1 revision/occurrence. Adjacent slices
+        # are valid; source-free evidence, overlaps, gaps and retired rows fail.
         window_start = start_date + timedelta(days=1)
         coverage = cash_boundary_coverage_for_interval(
             session,
@@ -131,11 +132,7 @@ def historical_xirr_evidence(
             ledger_binding=COMPATIBLE_FLOW_CONTRACT,
         )
         reasons.update(coverage.reason_codes)
-        if (
-            len(coverage.evidence) != 1
-            or coverage.evidence[0].covered_from != window_start
-            or coverage.evidence[0].covered_to != end_date
-        ):
+        if coverage.status != "complete":
             reasons.add("not_computable_external_flows_incomplete")
 
     statement = (

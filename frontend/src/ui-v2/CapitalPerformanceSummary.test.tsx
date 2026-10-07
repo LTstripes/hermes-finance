@@ -203,6 +203,22 @@ describe("CapitalPerformanceSummary", () => {
     expect(screen.getByRole("link", { name: "Проверить данные" })).toHaveAttribute("href", HREF);
   });
 
+  it.each([
+    ["historical_endpoint", "Историческая оценка на границе не подтверждена"],
+    ["historical_account_flow", "Исторический денежный поток счёта не подтверждён"],
+    ["historical_portfolio_flow", "Роль исторического потока в портфеле не подтверждена"],
+  ])("renders %s as a specific source limitation without a repair button", (key, title) => {
+    renderSummary(
+      baseProps({
+        readiness: readinessFixture(null, "6.10", [diagnostic(key, ["xirr"], "source_required")]),
+      }),
+    );
+    expect(screen.getByTestId("capital-performance-xirr")).toHaveTextContent(title);
+    expect(screen.getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
+    expect(screen.queryByText(/не умеет подробнее/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /проверить|исправить/i })).toBeNull();
+  });
+
   it("shows at most two priority reasons with a path to all of them", () => {
     renderSummary(
       baseProps({

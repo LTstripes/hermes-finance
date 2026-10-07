@@ -87,6 +87,9 @@ Current account inclusion flags cannot supply that universe.
 
 Each required account needs effective H2-A2 COMPLETE coverage for the exact
 `[start_date + 1 day, end_date]` window, bound to the compatible H2-A1 ledger.
+The shared COMPLETE assessor accepts a gap-free, nonoverlapping union of adjacent
+effective source-aware rows; it does not require one row for the whole window.
+Gaps, UNKNOWN/retired rows, overlaps and source-free assertions remain refusals.
 The existing in-kind and currency gates remain affirmative. Each effective H2-A1
 event with `start_date < event_date <= end_date` enters once with the same investor
 sign convention. Portfolio events additionally require effective H2-B1 EXTERNAL
@@ -103,6 +106,10 @@ series uses the unchanged solver and retains its numerical reason codes.
 No intermediate month-end, ReportingMonth creation, ledger/schema change or
 financial write is required. The month-owned availability API, class returns and
 TWRR keep their existing evidence requirements; H3 does not promote them.
+The existing readiness projection presents final H3 XIRR independently of legacy
+monthly availability/TWRR. Ineffective historical endpoints, ineffective account
+flows and unknown portfolio-flow authority have specific source-required
+diagnostics, with no supported in-page repair action implied.
 
 ### Numerical limitations
 

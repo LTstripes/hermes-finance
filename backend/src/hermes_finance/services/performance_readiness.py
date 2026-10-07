@@ -114,6 +114,21 @@ _RULES: dict[str, tuple[str, ActionKind, Capability]] = {
         "not_implemented",
     ),
     R.CURRENCY_CONVERSION_INCOMPLETE: ("historical_fx", "review_fx", "unsupported"),
+    "not_computable_historical_endpoint_ineffective": (
+        "historical_endpoint",
+        "inspect_result",
+        "source_required",
+    ),
+    "not_computable_historical_owner_flow_ineffective": (
+        "historical_account_flow",
+        "inspect_result",
+        "source_required",
+    ),
+    "not_computable_historical_portfolio_flow_unknown": (
+        "historical_portfolio_flow",
+        "inspect_result",
+        "source_required",
+    ),
     "not_computable_xirr_no_valid_root": ("xirr_no_root", "inspect_result", "unsupported"),
     "not_computable_xirr_root_ambiguity": ("xirr_ambiguous", "inspect_result", "unsupported"),
     "not_computable_xirr_convergence_failed": ("xirr_convergence", "inspect_result", "unsupported"),

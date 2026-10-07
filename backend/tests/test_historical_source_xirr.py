@@ -38,6 +38,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.broker_identity_mappings import confirm_mapping
+from hermes_finance.services.cash_boundary_coverage import cash_boundary_coverage_for_interval
 from hermes_finance.services.historical_endpoints import endpoint_key
 from hermes_finance.services.historical_portfolio_flows import (
     apply_historical_portfolio_flow,
@@ -48,6 +49,7 @@ from hermes_finance.services.performance_availability import performance_availab
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.portfolio_xirr import xirr_for_interval
 from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.source_cash_coverage import read_source_cash_coverage
 from hermes_finance.statement_import.mybroker import PROVIDER
 
 A, B, DAY = date(2030, 1, 16), date(2030, 1, 31), date(2030, 1, 17)
@@ -168,6 +170,204 @@ def result(session, account_id=None):
         scope="account" if account_id else "portfolio",
         account_id=account_id,
     )
+
+
+def adjacent_coverage(session, prepared, *, defect=None):
+    """Accept immutable H2-A2 slices through their real Preview/Apply path."""
+    account_id, _, amounts = prepared
+    split = date(2030, 1, 22)
+    first = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=split)
+    first_view = certify(session, claims(session, first, zero=not amounts), f"first-{account_id}")[
+        "readback"
+    ]
+    second_start = date(2030, 1, 23) if defect == "gap" else split
+    second = SourceCashIntent(account_id=account_id, opening_date=second_start, closing_date=B)
+    if defect == "source_free":
+        session.add(
+            CashBoundaryCoverage(
+                account_id=account_id,
+                covered_from=date(2030, 1, 23),
+                covered_to=B,
+                coverage_state="complete",
+                provenance_kind="owner_attested_cash_history",
+            )
+        )
+        session.commit()
+        return
+    accepted = certify(session, claims(session, second, zero=True), f"second-{account_id}")[
+        "readback"
+    ]
+    if defect == "retired":
+        # A→B→A in the second slice retires it permanently; the first stays effective.
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=B)
+        changed = ExternalFlow(
+            reporting_month_id=month.id,
+            account_id=account_id,
+            event_date=B,
+            boundary_amount_kopecks=1,
+            direction="contribution",
+            kind="external_contribution",
+            source="synthetic",
+        )
+        session.add(changed)
+        session.commit()
+        session.delete(changed)
+        session.commit()
+        assert (
+            read_source_cash_coverage(session, accepted["coverage_id"])["acceptance_state"]
+            == "retired"
+        )
+        assert (
+            read_source_cash_coverage(session, first_view["coverage_id"])["coverage_state"]
+            == "complete"
+        )
+    elif defect == "unknown":
+        session.get(CashBoundaryCoverage, accepted["coverage_id"]).coverage_state = "unknown"
+        session.commit()
+    elif defect == "overlap":
+        # Corrupt/legacy overlap must remain a refusal even beside accepted slices.
+        session.add(
+            CashBoundaryCoverage(
+                account_id=account_id,
+                covered_from=split,
+                covered_to=date(2030, 1, 23),
+                coverage_state="complete",
+                provenance_kind="owner_attested_source_cash_history",
+            )
+        )
+        session.commit()
+
+
+@pytest.mark.parametrize("scope", ["account", "portfolio"])
+@pytest.mark.parametrize("defect", [None, "gap", "retired", "unknown", "overlap", "source_free"])
+def test_adjacent_effective_source_coverage_uses_shared_assessor(
+    database, monkeypatch, scope, defect
+):
+    with database.session_factory() as session:
+        first = prepare(session, amounts=("100.00",), closing="1200.00")
+        accounts = [first]
+        if scope == "portfolio":
+            accounts.append(prepare(session, other=True, opening="500.00", closing="550.00"))
+        flows = []
+        for index, prepared in enumerate(accounts):
+            flows.extend(accept_inputs(session, prepared, coverage=False))
+            adjacent_coverage(session, prepared, defect=defect if index == 0 else None)
+        if scope == "portfolio":
+            portfolio_authority(session, flows)
+        membership = list(session.scalars(select(AccountPerformanceScopeMembership)))
+        coverage = cash_boundary_coverage_for_interval(
+            session,
+            scope="account",
+            account_id=first[0],
+            start_date=DAY,
+            end_date=B,
+            rows_by_account={first[0]: membership},
+            ledger_binding=COMPATIBLE_FLOW_CONTRACT,
+        )
+        assert coverage.status == ("unknown" if defect else "complete")
+        if defect:
+
+            def forbidden(*_args, **_kwargs):
+                pytest.fail("incomplete source coverage must precede solver")
+
+            monkeypatch.setattr("hermes_finance.services.portfolio_xirr.calculate_xirr", forbidden)
+        actual = result(session, first[0] if scope == "account" else None)
+        if defect:
+            assert not actual.is_available
+            assert "not_computable_external_flows_incomplete" in actual.reason_codes
+        else:
+            assert len(coverage.evidence) == 2
+            opening, closing = (100000, 120000) if scope == "account" else (150000, 175000)
+            expected = calculate_xirr(
+                [XirrCashFlow(A, -opening), XirrCashFlow(DAY, -10000), XirrCashFlow(B, closing)]
+            )
+            assert actual.is_available and actual.quality.value == "exact"
+            assert actual.annualized_rate == expected.annualized_rate
+
+
+@pytest.mark.parametrize("scope", ["account", "portfolio"])
+def test_real_readiness_composes_source_xirr_without_promoting_legacy_or_twrr(database, scope):
+    with database.session_factory() as session:
+        prepared = prepare(session, amounts=("100.00",), closing="1200.00")
+        flows = accept_inputs(session, prepared, coverage=False)
+        adjacent_coverage(session, prepared)
+        if scope == "portfolio":
+            portfolio_authority(session, flows)
+        expected = result(session, prepared[0] if scope == "account" else None)
+    params = {"start_date": str(A), "end_date": str(B), "scope": scope}
+    if scope == "account":
+        params["account_id"] = prepared[0]
+    before = list(database.engine.raw_connection().iterdump())
+    with TestClient(create_app(database=database)) as client:
+        response = client.get("/api/performance/readiness", params=params)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["xirr"]["value"] == str(expected.value)
+        assert body["xirr"]["availability"] == "available" and body["xirr"]["quality"] == "exact"
+        assert body["twrr"]["availability"] == "not_computable"
+        assert body["evidence"]["xirr"]["availability"] == "not_computable"
+        assert body["diagnostics"] and all(
+            diagnostic["affected_metrics"] == ["twrr"] for diagnostic in body["diagnostics"]
+        )
+    assert list(database.engine.raw_connection().iterdump()) == before
+
+
+@pytest.mark.parametrize("authority", ["endpoint", "account_flow", "portfolio_flow"])
+def test_real_readiness_explains_historical_authority_refusal(database, authority):
+    with database.session_factory() as session:
+        prepared = prepare(session, amounts=("100.00",), closing="1200.00")
+        flows = accept_inputs(session, prepared)
+        if authority == "endpoint":
+            accept_endpoint(
+                session,
+                EndpointIntent(
+                    operation="revoke",
+                    account_id=prepared[0],
+                    valuation_date=A,
+                    expected_revision=1,
+                    reason_code="owner_withdrawal",
+                ),
+                "readiness-revoke-endpoint",
+            )
+            key, code = "historical_endpoint", "not_computable_historical_endpoint_ineffective"
+        elif authority == "account_flow":
+            accept_flow(
+                session,
+                OwnerFlowIntent(
+                    operation="revoke",
+                    flow_id=flows[0]["flow_id"],
+                    expected_revision=1,
+                    reason_code="attestation_withdrawn",
+                ),
+                "readiness-revoke-flow",
+            )
+            key, code = (
+                "historical_account_flow",
+                "not_computable_historical_owner_flow_ineffective",
+            )
+        else:
+            key, code = (
+                "historical_portfolio_flow",
+                "not_computable_historical_portfolio_flow_unknown",
+            )
+    params = {"start_date": str(A), "end_date": str(B)}
+    if authority != "portfolio_flow":
+        params.update(scope="account", account_id=prepared[0])
+    before = list(database.engine.raw_connection().iterdump())
+    with TestClient(create_app(database=database)) as client:
+        response = client.get("/api/performance/readiness", params=params)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["xirr"]["availability"] == "not_computable"
+        assert code in body["xirr"]["reason_codes"]
+        diagnostic = next(d for d in body["diagnostics"] if code in d["reason_codes"])
+        assert diagnostic["key"] == key
+        assert diagnostic["affected_metrics"] == ["xirr"]
+        assert diagnostic["category"] == "limitation"
+        assert diagnostic["action"]["kind"] == "inspect_result"
+        assert diagnostic["action"]["capability"] == "source_required"
+        assert all(d["key"] != "unknown_reason" for d in body["diagnostics"])
+    assert list(database.engine.raw_connection().iterdump()) == before
 
 
 @pytest.mark.parametrize(
