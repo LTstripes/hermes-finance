@@ -29,6 +29,7 @@ from hermes_finance.domain.xirr import (
     XirrQuality,
     calculate_xirr,
 )
+from hermes_finance.services.historical_xirr_evidence import historical_xirr_evidence
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
 )
@@ -98,29 +99,49 @@ def _cash_flows_from_availability(
     if closing is None or closing.total_value is None or not result.closing_valuation.is_available:
         return (AvailabilityReasonCode.CLOSING_VALUATION_MISSING.value,)
 
+    return _cash_flows_from_evidence(
+        start_date=result.start_date,
+        end_date=result.end_date,
+        opening_kopecks=opening.total_value.kopecks,
+        closing_kopecks=closing.total_value.kopecks,
+        flows=(
+            (flow.event_date, flow.classification, flow.boundary_amount_kopecks)
+            for flow in result.external_flows.flows
+        ),
+    )
+
+
+def _cash_flows_from_evidence(
+    *,
+    start_date: date,
+    end_date: date,
+    opening_kopecks: int,
+    closing_kopecks: int,
+    flows: Iterable[tuple[date, ExternalFlowClassification, int]],
+) -> tuple[XirrCashFlow, ...] | tuple[str, ...]:
+    """Shared investor sign translation for both accepted evidence paths."""
     cash_flows = [
         XirrCashFlow(
-            event_date=result.start_date,
-            amount_kopecks=-opening.total_value.kopecks,
+            event_date=start_date,
+            amount_kopecks=-opening_kopecks,
         )
     ]
-    for flow in result.external_flows.flows:
-        amount = flow.boundary_amount_kopecks
+    for event_date, classification, amount in flows:
         if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
             return (AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value,)
-        if flow.classification is ExternalFlowClassification.EXTERNAL_CONTRIBUTION:
+        if classification is ExternalFlowClassification.EXTERNAL_CONTRIBUTION:
             signed_amount = -amount
-        elif flow.classification is ExternalFlowClassification.EXTERNAL_WITHDRAWAL:
+        elif classification is ExternalFlowClassification.EXTERNAL_WITHDRAWAL:
             signed_amount = amount
-        elif flow.classification is ExternalFlowClassification.INTERNAL_TRANSFER:
+        elif classification is ExternalFlowClassification.INTERNAL_TRANSFER:
             continue
         else:
             return (AvailabilityReasonCode.EXTERNAL_FLOWS_INCOMPLETE.value,)
-        cash_flows.append(XirrCashFlow(event_date=flow.event_date, amount_kopecks=signed_amount))
+        cash_flows.append(XirrCashFlow(event_date=event_date, amount_kopecks=signed_amount))
     cash_flows.append(
         XirrCashFlow(
-            event_date=result.end_date,
-            amount_kopecks=closing.total_value.kopecks,
+            event_date=end_date,
+            amount_kopecks=closing_kopecks,
         )
     )
     return tuple(cash_flows)
@@ -144,17 +165,32 @@ def _xirr_for_scope_interval(
         scope=scope,
         account_id=account_id,
     )
-    if not availability.xirr.is_available:
-        return _unavailable(
-            scope=scope,
-            account_id=account_id,
-            start_date=start_date,
-            end_date=end_date,
-            performance_currency=availability.performance_currency,
-            reason_codes=availability.xirr.reason_codes,
+    if availability.xirr.is_available:
+        cash_flows = _cash_flows_from_availability(availability)
+    else:
+        historical = historical_xirr_evidence(
+            session, start_date=start_date, end_date=end_date, scope=scope, account_id=account_id
         )
+        if historical is not None and not historical.reason_codes:
+            cash_flows = _cash_flows_from_evidence(
+                start_date=start_date,
+                end_date=end_date,
+                opening_kopecks=historical.opening_kopecks,
+                closing_kopecks=historical.closing_kopecks,
+                flows=historical.flows,
+            )
+        else:
+            return _unavailable(
+                scope=scope,
+                account_id=account_id,
+                start_date=start_date,
+                end_date=end_date,
+                performance_currency=availability.performance_currency,
+                reason_codes=(
+                    historical.reason_codes if historical else availability.xirr.reason_codes
+                ),
+            )
 
-    cash_flows = _cash_flows_from_availability(availability)
     if cash_flows and isinstance(cash_flows[0], str):
         return _unavailable(
             scope=scope,
