@@ -58,6 +58,11 @@ components. Historical membership must be unambiguous; explicit exclusion stays
 excluded. Stock admissibility is endpoint-only Owner evidence. It establishes no
 C1 or class/return coverage; `endpoint_c1` remains null. Generic interval fee/cash
 limitations remain separate from endpoint blockers.
+Trade conflicts block only identities observed at/before the EOD cutoff; every
+occurrence is checked so a disputed timestamp cannot hide earlier exposure.
+Strictly later trade conflicts and generic Money remain return limitations.
+Later source-linked settlement/commission cash for a pre-cutoff execution still
+blocks, including cash legs supplied by a separate accepted report.
 
 Overlap compares exact snapshot dates, full instrument/quantity/value composition,
 owned RUB cash and additional components, including DRAFT/CLOSED material and

@@ -534,6 +534,155 @@ def test_generic_interval_fee_limit_does_not_block_supported_ending(database):
         assert "commission_basis_unresolved" in plan["return_limitations"]
 
 
+def store_source_observation(session, raw, filename):
+    """Seed contradictory accepted lineage without weakening S1's Apply guards."""
+    from hermes_finance.statement_import.mybroker import canonical
+
+    reviewed = preview(session, raw, filename)
+    document = reviewed["document"]
+    session.add(
+        MyBrokerImport(
+            document_sha256=document["document_sha256"],
+            covered_from=date.fromisoformat(document["covered_from"]),
+            covered_to=date.fromisoformat(document["covered_to"]),
+            parser_version=document["parser"],
+            confirmation_digest=reviewed["confirmation_digest"],
+            normalized_json=canonical(document),
+            mappings_json=canonical(reviewed["mappings"]),
+            accepted_at=session.scalar(select(MyBrokerImport.accepted_at)),
+        )
+    )
+    session.commit()
+
+
+def temporal_trade_xml(day, *, pending=False, price="100.00"):
+    root = ET.fromstring(fixture(pending=pending, money=False))
+    trade = root.find(".//{MyBroker}Details2" if pending else ".//{MyBroker}Details[@trade_no]")
+    suffix = "2" if pending else ""
+    trade.set("db_time" + suffix, f"{day} 23:59:59\r\n{day} 23:59:59")
+    trade.set("Price" + suffix, price)
+    trade.set("save_settlement_date3" if pending else "save_settlement_date", day)
+    trade.set("save_depo_settlement_date3" if pending else "save_depo_settlement_date", day)
+    trade.set("settlement_time" + suffix, f"{day} 23:59:59")
+    return ET.tostring(root)
+
+
+@pytest.mark.parametrize("day", ["30.01.2030", "31.01.2030", "01.02.2030"])
+@pytest.mark.parametrize(
+    "conflict",
+    ["immutable_trade_conflict", "trade_material_conflict", "settled_to_pending_conflict"],
+)
+def test_trade_conflicts_only_block_identities_at_or_before_cutoff(database, day, conflict):
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        accepted = accept(session, attest(session, intent))["readback"]
+        first = temporal_trade_xml(day)
+        second = ET.fromstring(
+            temporal_trade_xml(
+                day,
+                pending=conflict == "settled_to_pending_conflict",
+                price="101.00" if conflict == "immutable_trade_conflict" else "100.00",
+            )
+        )
+        if conflict == "trade_material_conflict":
+            second.find(".//{MyBroker}Details[@trade_no]").set("bank_tax", "1")
+        store_source_observation(session, first, filename)
+        store_source_observation(session, ET.tostring(second), filename)
+        intent = intent.model_copy(update={"operation": "reaffirm", "expected_revision": 1})
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        assert conflict in plan["return_limitations"]
+        readback = read_historical_endpoint(session, accepted["endpoint_key"])
+        if day == "01.02.2030":
+            assert plan["can_apply"], plan["blockers"]
+            assert conflict not in plan["blockers"]
+            assert readback["total_value_kopecks"] == 10001
+        else:
+            assert conflict in plan["blockers"]
+            assert not plan["can_apply"]
+            assert readback["total_value_kopecks"] is None
+
+
+def test_conflicting_identity_cannot_move_pre_cutoff_execution_to_future(database):
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        store_source_observation(session, temporal_trade_xml("31.01.2030"), filename)
+        store_source_observation(session, temporal_trade_xml("01.02.2030"), filename)
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        assert "immutable_trade_conflict" in plan["blockers"]
+        assert not plan["can_apply"]
+
+
+@pytest.mark.parametrize("cash_day", ["2030-01-30", "2030-01-31", "2030-02-01"])
+def test_generic_money_remains_interval_limit_at_any_cutoff_side(database, cash_day):
+    root = ET.fromstring(fixture())
+    root.find("{MyBroker}Trades/{MyBroker}Report").remove(
+        root.find("{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2")
+    )
+    root.find(".//{MyBroker}settlement_date").set("settlement_date", cash_day + "T00:00:00")
+    root.find(".//{MyBroker}comment").set("comment", "Synthetic owner contribution")
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        raw = ET.tostring(root)
+        apply(session, raw, preview(session, raw, filename), filename)
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        assert plan["can_apply"], plan["blockers"]
+        assert "money_semantics_unsupported" in plan["return_limitations"]
+        assert accept(session, attest(session, intent))["readback"]["total_value_kopecks"] == 10001
+
+
+@pytest.mark.parametrize("cash_day", ["2030-01-30", "2030-01-31", "2030-02-01"])
+@pytest.mark.parametrize("kind", ["settlement", "commission"])
+@pytest.mark.parametrize("separate_document", [False, True])
+def test_linked_cash_after_cutoff_blocks_pre_cutoff_execution(
+    database, cash_day, kind, separate_document
+):
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    root = ET.fromstring(fixture())
+    root.find(".//{MyBroker}settlement_date").set("settlement_date", cash_day + "T00:00:00")
+    if kind == "commission":
+        root.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        if separate_document:
+            trade_only = fixture(money=False)
+            apply(session, trade_only, preview(session, trade_only, filename), filename)
+            root.find("{MyBroker}Trades/{MyBroker}Report").remove(
+                root.find("{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2")
+            )
+        raw = ET.tostring(root)
+        apply(session, raw, preview(session, raw, filename), filename)
+        plan = preview_historical_endpoint(session, attest(session, intent))
+        if cash_day > DAY.isoformat():
+            assert "unresolved_cutoff_cash_date" in plan["blockers"]
+            assert not plan["can_apply"]
+            assert plan["total_value_kopecks"] is None
+        else:
+            assert plan["can_apply"], plan["blockers"]
+            assert (
+                accept(session, attest(session, intent))["readback"]["total_value_kopecks"] == 10001
+            )
+
+
+@pytest.mark.parametrize("kind", ["settlement", "commission"])
+def test_future_execution_linked_cash_does_not_block_earlier_endpoint(database, kind):
+    root = ET.fromstring(temporal_trade_xml("01.02.2030"))
+    money = ET.fromstring(fixture()).find("{MyBroker}Trades2/{MyBroker}Report")
+    money.find(".//{MyBroker}settlement_date").set("settlement_date", "2030-02-02T00:00:00")
+    if kind == "commission":
+        money.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
+    root.find("{MyBroker}Trades2").remove(root.find("{MyBroker}Trades2/{MyBroker}Report"))
+    root.find("{MyBroker}Trades2").append(money)
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        raw = ET.tostring(root)
+        apply(session, raw, preview(session, raw, filename), filename)
+        assert accept(session, attest(session, intent))["readback"]["total_value_kopecks"] == 10001
+
+
 @pytest.mark.parametrize("membership", ["missing", "ambiguous", "excluded"])
 def test_membership_never_inferred_or_promoted(database, membership):
     with database.session_factory() as session:

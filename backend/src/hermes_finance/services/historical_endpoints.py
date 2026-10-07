@@ -313,7 +313,6 @@ def _overlap(session, intent, positions, cash, blockers):
 def _source_union(session, intent, selected, blockers):
     """New relevant observations strengthen guards; none can relax accepted S2 truth."""
     docs, dependencies = [], []
-    aliases = set()
     for row in _rows(session, MyBrokerImport):
         bindings = json.loads(row.mappings_json)
         relevant = any(
@@ -327,7 +326,6 @@ def _source_union(session, intent, selected, blockers):
             for b in bindings
             if b["kind"] == "account" and b["hermes_id"] == intent.account_id
         }
-        aliases.update(scoped_aliases)
         document = {**document, "source_accounts": sorted(scoped_aliases)}
         for section in ("positions", "rub_money", "money"):
             document[section] = [
@@ -355,10 +353,6 @@ def _source_union(session, intent, selected, blockers):
                 and (_crosses_cutoff(trade, day, day) or trade["repo_observed"])
             ):
                 blockers.add("unresolved_cutoff_identity")
-        if row.covered_from <= intent.valuation_date and any(
-            m["date"] > day for m in document["money"]
-        ):
-            blockers.add("unresolved_cutoff_cash_date")
         if row.covered_from <= intent.valuation_date:
             blockers.update(document["syntax_blockers"])
             blockers.update(
@@ -405,18 +399,40 @@ def _source_union(session, intent, selected, blockers):
                 if _economics(p, c) != _economics(sp, sc):
                     blockers.add("reconciliation_required")
     trades, conflicts = _reduce(docs)
-    blockers.update(conflicts)
     limitations = set()
     day = intent.valuation_date.isoformat()
-    for trade in trades.values():
-        # Proven other-account rows do not contaminate this endpoint.
-        if trade["core"]["source_account"] not in aliases or trade["core"]["trade_time"][:10] > day:
+    # Retain the complete reducer context (including pending-disappearance
+    # evidence), but assign its conflicts to identities observed by the cutoff.
+    # Check every occurrence: a disputed core must not move an earlier trade
+    # into the future merely because the reducer selected its later observation.
+    cutoff_observations = [
+        t for document in docs for t in document["trades"] if t["core"]["trade_time"][:10] <= day
+    ]
+    cutoff_identities = {t["identity"] for t in cutoff_observations if t["identity"]}
+    cutoff_cash_links = {
+        (t["core"]["source_account"], t["ids"][0]) for t in cutoff_observations if t["ids"]
+    }
+    for document in docs:
+        for money in document["money"]:
+            if money["kind"] == "unsupported":
+                limitations.add("money_semantics_unsupported")
+            elif (
+                money["kind"] in {"settlement", "commission"}
+                and money["date"] > day
+                and (money["source_account"], money["primary_id"]) in cutoff_cash_links
+            ):
+                # Native trade linkage also covers money-only later reports;
+                # generic interval cash never proves unsettled cutoff exposure.
+                blockers.add("unresolved_cutoff_cash_date")
+    for identity, trade in trades.items():
+        limitations.update(trade["blockers"])
+        if identity not in cutoff_identities:
             continue
+        blockers.update(set(trade["blockers"]) & set(conflicts))
         if _crosses_cutoff(trade, day, day):
             blockers.add("unresolved_cutoff_trade")
         if trade["repo_observed"] or trade["core"]["currency"] != "RUB":
             blockers.add("unsupported_cutoff_exposure")
-        limitations.update(trade["blockers"])
     execution_dependencies = []
     context = None
     for trade in _rows(session, ExecutedTrade):
