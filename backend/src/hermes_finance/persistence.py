@@ -549,6 +549,62 @@ class CashBoundaryCoverage(Base):
         return self.coverage_state
 
 
+class SourceCashCoverageRevision(Base):
+    """Append-only acceptance attached to the existing account/day identity."""
+
+    __tablename__ = "source_cash_coverage_revisions"
+    __table_args__ = (
+        UniqueConstraint("coverage_id", "revision", name="uq_source_cash_revision"),
+        CheckConstraint("revision > 0", name="ck_source_cash_revision"),
+        CheckConstraint("length(material_signature) = 64", name="ck_source_cash_material"),
+        CheckConstraint(
+            "(operation IN ('accept', 'reaffirm') AND acceptance_state = 'accepted' "
+            "AND reason_code IS NULL) OR (operation = 'retire' AND acceptance_state = 'retired' "
+            "AND reason_code IS NOT NULL) OR (operation = 'revoke' AND acceptance_state = 'revoked' "
+            "AND reason_code IS NOT NULL)",
+            name="ck_source_cash_revision_state",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    coverage_id: Mapped[int] = mapped_column(
+        ForeignKey("cash_boundary_coverages.id"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_cash_coverage_revisions.id"), nullable=True
+    )
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    acceptance_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_projection_json: Mapped[str] = mapped_column(Text, nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SourceCashCoverageApply(Base):
+    __tablename__ = "source_cash_coverage_applies"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_source_cash_request"),
+        CheckConstraint(
+            "result_action IN ('created', 'reaffirmed', 'revoked', 'noop')",
+            name="ck_source_cash_apply_result",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    coverage_id: Mapped[int] = mapped_column(
+        ForeignKey("cash_boundary_coverages.id"), nullable=False
+    )
+    revision_id: Mapped[int] = mapped_column(
+        ForeignKey("source_cash_coverage_revisions.id"), nullable=False
+    )
+    result_action: Mapped[str] = mapped_column(String(16), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class InKindBoundaryCoverage(Base):
     """Affirmative completeness evidence for one account/date interval.
 

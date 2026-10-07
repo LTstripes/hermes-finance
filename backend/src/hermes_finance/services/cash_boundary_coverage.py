@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,9 +15,14 @@ from hermes_finance.domain import (
     CoverageStatus,
     PerformanceScope,
 )
+from hermes_finance.domain.historical_owner_flows import (
+    COMPATIBLE_FLOW_CONTRACT,
+    SOURCE_CASH_PROVENANCE,
+)
 from hermes_finance.persistence import (
     Account,
     ReportingMonth,
+    SourceCashCoverageRevision,
 )
 from hermes_finance.persistence import (
     CashBoundaryCoverage as CashBoundaryCoverageRecord,
@@ -152,6 +158,8 @@ def stage_create_cash_boundary_coverage(
     _require_account(session, account_id)
     normalized_state = _coerce_state(coverage_state)
     normalized_provenance = _normalize_text(provenance_kind, field="provenance_kind", max_length=64)
+    if normalized_provenance == SOURCE_CASH_PROVENANCE:
+        raise ValueError("source cash coverage requires Preview/Apply")
     normalized_reference = (
         None
         if provenance_reference is None
@@ -205,6 +213,7 @@ def attest_cash_boundary_history(
         )
     )
     if existing is not None:
+        _require_legacy_mutable(session, existing)
         existing.coverage_state = CashBoundaryCoverageState.COMPLETE.value
         existing.provenance_kind = _DEFAULT_PROVENANCE_KIND
         existing.provenance_reference = (
@@ -248,6 +257,9 @@ def stage_update_cash_boundary_coverage(
     # Another writer may have moved this row after the initial read. Refresh
     # under the reservation before checking the actual old and requested new intervals.
     session.refresh(coverage)
+    _require_legacy_mutable(session, coverage)
+    if provenance_kind is not None and provenance_kind.strip() == SOURCE_CASH_PROVENANCE:
+        raise ValueError("source cash coverage requires Preview/Apply")
     new_from = coverage.covered_from if covered_from is None else covered_from
     new_to = coverage.covered_to if covered_to is None else covered_to
     _validate_interval(new_from, new_to)
@@ -385,11 +397,38 @@ def _required_account_ids(
     )
 
 
+def _require_legacy_mutable(session, row):
+    from hermes_finance.services.source_cash_coverage import latest
+
+    if row.provenance_kind == SOURCE_CASH_PROVENANCE or latest(session, row.id) is not None:
+        raise ValueError("source cash coverage requires Preview/Apply")
+
+
+def effective_cash_boundary_row(session, row, *, bound_ids=None):
+    from hermes_finance.services.source_cash_coverage import latest, read_source_cash_coverage
+
+    bound = row.id in bound_ids if bound_ids is not None else latest(session, row.id) is not None
+    if row.provenance_kind != SOURCE_CASH_PROVENANCE and not bound:
+        return row
+    view = read_source_cash_coverage(session, row.id)
+    return SimpleNamespace(
+        id=row.id,
+        account_id=row.account_id,
+        covered_from=row.covered_from,
+        covered_to=row.covered_to,
+        coverage_state=view["coverage_state"],
+        provenance_kind=SOURCE_CASH_PROVENANCE,
+        provenance_reference=row.provenance_reference,
+        notes=row.notes,
+    )
+
+
 def _account_is_covered(
     rows: list[CashBoundaryCoverageRecord],
     *,
     start_date: date,
     end_date: date,
+    provenance_kinds=ACCEPTED_AUTHORITATIVE_PROVENANCE_KINDS,
 ) -> bool:
     relevant = sorted(
         (row for row in rows if _overlaps(row, start_date=start_date, end_date=end_date)),
@@ -397,7 +436,7 @@ def _account_is_covered(
     )
     if not relevant or any(
         row.coverage_state != CashBoundaryCoverageState.COMPLETE.value
-        or row.provenance_kind not in ACCEPTED_AUTHORITATIVE_PROVENANCE_KINDS
+        or row.provenance_kind not in provenance_kinds
         for row in relevant
     ):
         return False
@@ -421,7 +460,39 @@ def cash_boundary_coverage_for_interval(
     start_date: date,
     end_date: date,
     rows_by_account: dict[int, list[object]],
+    ledger_binding: str = "external_flow",
 ) -> CashBoundaryCoverage:
+    from hermes_finance.database import coherent_read_snapshot
+
+    if ledger_binding == COMPATIBLE_FLOW_CONTRACT:
+        if PerformanceScope(scope) != PerformanceScope.ACCOUNT or account_id is None:
+            raise ValueError("source cash coverage supports account scope only")
+        with coherent_read_snapshot(session):
+            return _assess_interval(
+                session,
+                scope=scope,
+                account_id=account_id,
+                start_date=start_date,
+                end_date=end_date,
+                rows_by_account=rows_by_account,
+                ledger_binding=ledger_binding,
+            )
+    if ledger_binding != "external_flow":
+        raise ValueError("unsupported cash coverage ledger binding")
+    return _assess_interval(
+        session,
+        scope=scope,
+        account_id=account_id,
+        start_date=start_date,
+        end_date=end_date,
+        rows_by_account=rows_by_account,
+        ledger_binding=ledger_binding,
+    )
+
+
+def _assess_interval(
+    session, *, scope, account_id, start_date, end_date, rows_by_account, ledger_binding
+):
     """Assess only affirmative evidence; absence is always UNKNOWN."""
 
     normalized_scope = PerformanceScope(scope)
@@ -432,6 +503,8 @@ def cash_boundary_coverage_for_interval(
         end_date=end_date,
         rows_by_account=rows_by_account,
     )
+    if ledger_binding == COMPATIBLE_FLOW_CONTRACT:
+        required_ids = (account_id,)
     if not required_ids:
         return CashBoundaryCoverage(
             status=CoverageStatus.COMPLETE.value,
@@ -457,6 +530,24 @@ def cash_boundary_coverage_for_interval(
     rows_by_required_account: dict[int, list[CashBoundaryCoverageRecord]] = {
         current_account_id: [] for current_account_id in required_ids
     }
+    # Validate bound projections in one discovery query, not an N+1 lookup for
+    # every legacy assertion in existing long-history readers.
+    bound_ids = set(
+        session.scalars(
+            select(SourceCashCoverageRevision.coverage_id)
+            .join(
+                CashBoundaryCoverageRecord,
+                CashBoundaryCoverageRecord.id == SourceCashCoverageRevision.coverage_id,
+            )
+            .where(
+                CashBoundaryCoverageRecord.account_id.in_(required_ids),
+                CashBoundaryCoverageRecord.covered_to >= start_date,
+                CashBoundaryCoverageRecord.covered_from <= end_date,
+            )
+            .distinct()
+        )
+    )
+    rows = [effective_cash_boundary_row(session, row, bound_ids=bound_ids) for row in rows]
     for row in rows:
         rows_by_required_account[row.account_id].append(row)
 
@@ -467,6 +558,11 @@ def cash_boundary_coverage_for_interval(
             rows_by_required_account[current_account_id],
             start_date=start_date,
             end_date=end_date,
+            provenance_kinds=(
+                {SOURCE_CASH_PROVENANCE}
+                if ledger_binding == COMPATIBLE_FLOW_CONTRACT
+                else ACCEPTED_AUTHORITATIVE_PROVENANCE_KINDS
+            ),
         )
     )
     evidence = tuple(

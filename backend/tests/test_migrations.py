@@ -12,6 +12,70 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_source_cash_upgrade_empty_preserves_v1_and_legacy_and_guards_identity_history(tmp_path):
+    import pytest
+
+    path = tmp_path / "synthetic-source-cash-migration.db"
+    parent = "0051_historical_owner_flows"
+    assert run_alembic(path, "upgrade", parent).returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO accounts(id,name,account_type) VALUES(1,'Synthetic','brokerage')"
+        )
+        connection.execute(
+            "INSERT INTO cash_boundary_coverages(id,account_id,covered_from,covered_to,coverage_state,provenance_kind,created_at,updated_at) VALUES(1,1,'2030-01-17','2030-01-17','unknown','owner_attestation','2030-02-01','2030-02-01')"
+        )
+        connection.execute(
+            "INSERT INTO historical_owner_flows VALUES('synthetic',1,'2030-01-17','RUB','12.34','contribution',1234)"
+        )
+        connection.execute(
+            "INSERT INTO historical_owner_flow_revisions VALUES(1,'synthetic',1,NULL,'accept','accepted',?, ?,NULL,'2030-02-01')",
+            ('{"contract_version":"h2-a1-owner-rub-v1"}', "a" * 64),
+        )
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        for table in (
+            "source_cash_coverage_revisions",
+            "source_cash_coverage_applies",
+            "reporting_months",
+            "external_flows",
+        ):
+            assert connection.execute(f"SELECT count(*) FROM {table}").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT evidence_json FROM historical_owner_flow_revisions"
+        ).fetchone() == ('{"contract_version":"h2-a1-owner-rub-v1"}',)
+        assert connection.execute(
+            "SELECT coverage_state,provenance_kind FROM cash_boundary_coverages"
+        ).fetchone() == ("unknown", "owner_attestation")
+    assert run_alembic(path, "downgrade", parent).returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute(
+            "INSERT INTO source_cash_coverage_revisions VALUES(1,1,1,NULL,'accept','accepted','{}',?,'null',NULL,'2030-02-01')",
+            ("b" * 64,),
+        )
+        connection.execute(
+            "INSERT INTO source_cash_coverage_applies VALUES(1,'synthetic',?,?,1,1,'created','2030-02-01')",
+            ("c" * 64, "d" * 64),
+        )
+        for table in ("source_cash_coverage_revisions", "source_cash_coverage_applies"):
+            for operation in (f"UPDATE {table} SET id=id", f"DELETE FROM {table}"):
+                with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+                    connection.execute(operation)
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            connection.execute("UPDATE cash_boundary_coverages SET covered_to='2030-01-18'")
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute("DELETE FROM cash_boundary_coverages")
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    result = run_alembic(path, "downgrade", parent)
+    assert (
+        result.returncode != 0 and "cannot discard source cash coverage acceptance" in result.stderr
+    )
+    assert revision_rows(path) == [REVISION]
+
+
 def test_executed_trade_upgrade_empty_preserves_sources_and_guards_loss(tmp_path):
     path = tmp_path / "synthetic-executed-trade-migration.db"
     parent = "0048_mybroker_import_lineage"

@@ -6,6 +6,10 @@ from datetime import date
 from sqlalchemy import event, inspect, text
 from sqlalchemy.orm import Session
 
+from hermes_finance.domain.historical_owner_flows import (
+    COMPATIBLE_FLOW_CONTRACT,
+    SOURCE_CASH_PROVENANCE,
+)
 from hermes_finance.persistence import (
     Account,
     AccountPerformanceScopeMembership,
@@ -45,6 +49,25 @@ def _values(row, name):
 def _affects(row, core, evidence):
     account_id, day = core.account_id, core.event_date
     deps = evidence["dependencies"]
+    if (
+        isinstance(row, CashBoundaryCoverage)
+        and evidence["contract_version"] == COMPATIBLE_FLOW_CONTRACT
+    ):
+
+        def old(name):
+            values = inspect(row).attrs[name].history.deleted
+            return values[0] if values else getattr(row, name)
+
+        legacy_complete = (
+            row.provenance_kind != SOURCE_CASH_PROVENANCE and row.coverage_state == "complete"
+        )
+        was_legacy_complete = (
+            row not in inspect(row).session.new
+            and old("provenance_kind") != SOURCE_CASH_PROVENANCE
+            and old("coverage_state") == "complete"
+        )
+        if not legacy_complete and not was_legacy_complete:
+            return False
     if isinstance(row, BrokerIdentityMapping):
         return any(
             any(a["mapping_id"] == row.id for a in b["accepted"]) for b in deps["bindings"]

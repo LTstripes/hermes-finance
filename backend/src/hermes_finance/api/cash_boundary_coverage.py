@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.performance_evidence_guard import preparation_session
+from hermes_finance.api.settings import session_for_request
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import CashBoundaryCoverageState
+from hermes_finance.domain.source_cash_coverage import SourceCashApplyRequest, SourceCashIntent
 from hermes_finance.persistence import CashBoundaryCoverage as CashBoundaryCoverageRecord
 from hermes_finance.services.cash_boundary_coverage import (
     create_cash_boundary_coverage,
@@ -17,6 +20,13 @@ from hermes_finance.services.cash_boundary_coverage import (
     list_cash_boundary_coverages,
     update_cash_boundary_coverage,
 )
+from hermes_finance.services.source_cash_coverage import (
+    apply_source_cash_coverage,
+    latest,
+    preview_source_cash_coverage,
+    read_source_cash_coverage,
+)
+from hermes_finance.statement_import.mybroker import MyBrokerError
 
 router = APIRouter(prefix="/api/cash-boundary-coverages", tags=["cash-boundary-coverage"])
 
@@ -56,18 +66,26 @@ class CashBoundaryCoverageResponse(BaseModel):
     provenance_kind: str
     provenance_reference: str | None
     notes: str | None
+    source_acceptance: dict | None = None
 
 
-def _response(row: CashBoundaryCoverageRecord) -> CashBoundaryCoverageResponse:
+def _response(row: CashBoundaryCoverageRecord, session=None) -> CashBoundaryCoverageResponse:
+    acceptance = None
+    if session is not None:
+        from hermes_finance.domain.historical_owner_flows import SOURCE_CASH_PROVENANCE
+
+        if row.provenance_kind == SOURCE_CASH_PROVENANCE or latest(session, row.id):
+            acceptance = read_source_cash_coverage(session, row.id)
     return CashBoundaryCoverageResponse(
         id=row.id,
         account_id=row.account_id,
         covered_from=row.covered_from,
         covered_to=row.covered_to,
-        coverage_state=row.coverage_state,
-        provenance_kind=row.provenance_kind,
+        coverage_state=acceptance["coverage_state"] if acceptance else row.coverage_state,
+        provenance_kind=SOURCE_CASH_PROVENANCE if acceptance else row.provenance_kind,
         provenance_reference=row.provenance_reference,
         notes=row.notes,
+        source_acceptance=acceptance,
     )
 
 
@@ -76,7 +94,11 @@ def list_cash_boundary_coverages_endpoint(
     account_id: int | None = Query(default=None),
     session: Session = Depends(preparation_session),
 ) -> list[CashBoundaryCoverageResponse]:
-    return [_response(row) for row in list_cash_boundary_coverages(session, account_id=account_id)]
+    with coherent_read_snapshot(session):
+        return [
+            _response(row, session)
+            for row in list_cash_boundary_coverages(session, account_id=account_id)
+        ]
 
 
 @router.post("", response_model=CashBoundaryCoverageResponse, status_code=status.HTTP_201_CREATED)
@@ -98,12 +120,41 @@ def create_cash_boundary_coverage_endpoint(
     )
 
 
+@router.post("/preview")
+def preview_source_endpoint(
+    request: SourceCashIntent, session: Session = Depends(session_for_request)
+):
+    try:
+        return preview_source_cash_coverage(session, request)
+    except MyBrokerError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+@router.post("/apply")
+def apply_source_endpoint(
+    request: SourceCashApplyRequest, session: Session = Depends(preparation_session)
+):
+    intent = SourceCashIntent.model_validate(
+        request.model_dump(exclude={"request_id", "confirmation_digest"})
+    )
+    try:
+        return apply_source_cash_coverage(
+            session,
+            intent,
+            confirmation_digest=request.confirmation_digest,
+            request_id=request.request_id,
+        )
+    except MyBrokerError as error:
+        raise HTTPException(409, str(error)) from None
+
+
 @router.get("/{coverage_id}", response_model=CashBoundaryCoverageResponse)
 def get_cash_boundary_coverage_endpoint(
     coverage_id: int,
     session: Session = Depends(preparation_session),
 ) -> CashBoundaryCoverageResponse:
-    return _response(get_cash_boundary_coverage(session, coverage_id))
+    with coherent_read_snapshot(session):
+        return _response(get_cash_boundary_coverage(session, coverage_id), session)
 
 
 @router.patch("/{coverage_id}", response_model=CashBoundaryCoverageResponse)
