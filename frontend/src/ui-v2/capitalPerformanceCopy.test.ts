@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 
 describe("diagnosticCopy", () => {
+  it.each([
+    ["historical_endpoint", "Историческая оценка"],
+    ["historical_account_flow", "денежный поток счёта"],
+    ["historical_portfolio_flow", "потока в портфеле"],
+  ])("explains %s without inventing an action or target", (key, label) => {
+    const copy = diagnosticCopy(key);
+    expect(copy.title).toContain(label);
+    expect(copy.detail).not.toContain("не умеет подробнее");
+    expect(copy.detail).not.toMatch(/нажмите|автоматически|счёт \d+|\d{4}-\d{2}-\d{2}/i);
+    expect(hasWorkingAction("source_required")).toBe(false);
+  });
   it("maps exact keys without substring heuristics", () => {
     expect(diagnosticCopy("cash_history").title).toContain("денежной истории");
     expect(diagnosticCopy("in_kind_history").title).toContain("неденежных");

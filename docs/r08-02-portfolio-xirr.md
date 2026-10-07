@@ -75,6 +75,44 @@ Portfolio scope semantics and reason codes are unchanged.
 
 ## Fail-closed calculation
 
+### Historical source bridge (#734)
+
+When month-owned XIRR prerequisites are available, the existing path takes
+precedence unchanged. Otherwise the same route and `xirr_for_interval` can consume
+effective H1/H2 evidence. Both boundaries must be accepted exact account/date EOD
+RUB endpoints; a source boundary is never mixed with a month-owned boundary.
+Portfolio totals sum both endpoints for every historically included account,
+using the existing gap-free dated membership and membership-transition gates.
+Current account inclusion flags cannot supply that universe.
+
+Each required account needs effective H2-A2 COMPLETE coverage for the exact
+`[start_date + 1 day, end_date]` window, bound to the compatible H2-A1 ledger.
+The shared COMPLETE assessor accepts a gap-free, nonoverlapping union of adjacent
+effective source-aware rows; it does not require one row for the whole window.
+Gaps, UNKNOWN/retired rows, overlaps and source-free assertions remain refusals.
+The existing in-kind and currency gates remain affirmative. Each effective H2-A1
+event with `start_date < event_date <= end_date` enters once with the same investor
+sign convention. Portfolio events additionally require effective H2-B1 EXTERNAL
+authority; explicit NOT_IN_SCOPE adds no amount. Unknown authority or suspected
+tracked-account transfers block. Existing portfolio transit safety also applies
+at the requested boundaries. No pairing or netting is introduced.
+
+The complete read uses one committed snapshot. Every read revalidates the frozen
+endpoint, flow, coverage and portfolio authority through their existing lifecycle
+readers. Retired, revoked or invalidated evidence remains unavailable after old
+amounts are restored. Evidence refusal precedes solver execution; an eligible
+series uses the unchanged solver and retains its numerical reason codes.
+
+No intermediate month-end, ReportingMonth creation, ledger/schema change or
+financial write is required. The month-owned availability API, class returns and
+TWRR keep their existing evidence requirements; H3 does not promote them.
+The existing readiness projection presents final H3 XIRR independently of legacy
+monthly availability/TWRR. Ineffective historical endpoints, ineffective account
+flows and unknown portfolio-flow authority have specific source-required
+diagnostics, with no supported in-page repair action implied.
+
+### Numerical limitations
+
 The solver uses the date-only XIRR equation with a 365-day year and a
 deterministic bracketed Decimal search.  Before accepting a visible bracket,
 it applies an exact sign-variation certificate: with
