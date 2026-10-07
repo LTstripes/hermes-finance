@@ -27,6 +27,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
+from hermes_finance.statement_import.mybroker import decimal as source_decimal
 
 CONTRACT = "h2-a1-owner-rub-v1"
 MAX_MINOR = 2**63 - 1
@@ -52,6 +53,12 @@ def _latest(session, flow_id):
 def _money_core(account_id, row, blockers):
     try:
         day = date.fromisoformat(row["date"])
+        if (
+            row["date"] != day.isoformat()
+            or not isinstance(row["amount"], str)
+            or source_decimal(row["amount"]) != row["amount"]
+        ):
+            raise ValueError("noncanonical_source_money")
         value = Decimal(row["amount"])
         if not value.is_finite():
             raise InvalidOperation
@@ -74,7 +81,7 @@ def _money_core(account_id, row, blockers):
                 "direction": "contribution" if value > 0 else "withdrawal",
                 "boundary_amount_kopecks": int(minor),
             }
-    except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError):
+    except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError, MyBrokerError):
         blockers.add("source_money_invalid")
         return None
 
@@ -314,6 +321,87 @@ def _ownership(session, occurrences):
     ]
 
 
+def _withdrawal_context(session, flow, evidence):
+    """Bind live dependencies without requiring positive/valid source support.
+
+    Retired/revoked flows can acquire new evidence without another revision.
+    Include their current account/date union and retained frozen dependencies;
+    malformed source metadata stays opaque and cannot prevent withdrawal.
+    """
+    account_id, day = flow.account_id, flow.event_date
+    deps = evidence["dependencies"]
+    registry = _rows(session, BrokerIdentityMapping)
+    aliases = {b["alias"] for b in deps["bindings"]} | {
+        m.provider_identity
+        for m in registry
+        if m.provider == PROVIDER
+        and m.subject_kind == "account"
+        and m.status == "effective"
+        and m.hermes_account_id == account_id
+    }
+    mapping_ids = {a["mapping_id"] for b in deps["bindings"] for a in b["accepted"]}
+    source_ids = {s["import_id"] for s in deps["sources"]}
+    sources = []
+    for source in _rows(session, MyBrokerImport):
+        relevant = source.id in source_ids
+        if source.covered_from <= day <= source.covered_to:
+            try:
+                relevant |= any(
+                    b["kind"] == "account"
+                    and (b["hermes_id"] == account_id or b["identity"] in aliases)
+                    for b in json.loads(source.mappings_json)
+                )
+            except (ValueError, TypeError, KeyError):
+                relevant = True
+        if relevant:
+            sources.append(_material(source))
+    legacy = [
+        f
+        for f in _rows(session, ExternalFlow)
+        if f.account_id == account_id
+        and f.event_date == day
+        or any(f.id == int(old["id"]) for old in deps["legacy_flows"])
+    ]
+    links = {f.transfer_link_id for f in legacy} | {int(t["id"]) for t in deps["transfer_links"]}
+    account = session.get(Account, account_id)
+    return {
+        "sources": sources,
+        "mappings": [
+            _material(m)
+            for m in registry
+            if m.id in mapping_ids
+            or m.provider == PROVIDER
+            and m.subject_kind == "account"
+            and (m.provider_identity in aliases or m.hermes_account_id == account_id)
+        ],
+        "membership": [
+            _material(m)
+            for m in _rows(session, AccountPerformanceScopeMembership)
+            if m.account_id == account_id
+            and m.effective_from <= day
+            and (m.effective_to is None or m.effective_to >= day)
+            or any(m.id == int(old["id"]) for old in deps["membership"])
+        ],
+        "account": _material(account, ("id", "account_type")) if account else None,
+        "legacy_flows": [_material(f) for f in legacy],
+        "transfer_links": [
+            _material(t) for t in _rows(session, ExternalTransferLink) if t.id in links
+        ],
+        "cash_coverage": [
+            _material(c)
+            for c in _rows(session, CashBoundaryCoverage)
+            if c.account_id == account_id
+            and c.covered_from <= day <= c.covered_to
+            or any(c.id == int(old["id"]) for old in deps["cash_coverage"])
+        ],
+        "occurrence_owners": [
+            _material(o)
+            for o in _rows(session, HistoricalOwnerFlowOccurrence)
+            if o.flow_id == flow.id
+        ],
+    }
+
+
 def _plan(session, intent):
     flow = session.get(HistoricalOwnerFlow, intent.flow_id) if intent.flow_id else None
     current = _latest(session, intent.flow_id) if flow else None
@@ -322,10 +410,11 @@ def _plan(session, intent):
         blockers.add("flow_not_found")
     if current and current.revision != intent.expected_revision:
         blockers.add("stale_flow_revision")
-    source_set = review_context = None
+    source_set = review_context = withdrawal_context = None
     if intent.operation == "revoke":
         evidence = json.loads(current.evidence_json) if current else None
-        owners = []
+        withdrawal_context = _withdrawal_context(session, flow, evidence) if evidence else None
+        owners = withdrawal_context["occurrence_owners"] if withdrawal_context else []
         action = "noop" if current and current.acceptance_state == "revoked" else "revoked"
     else:
         evidence, reasons, source_set, review_context = _build(session, intent)
@@ -378,6 +467,7 @@ def _plan(session, intent):
         "evidence": evidence,
         "source_set_fingerprint": source_set,
         "review_context_digest": review_context,
+        "withdrawal_context": withdrawal_context,
         "missing_claims": [
             n for n in CLAIMS if intent.claims is None or not getattr(intent.claims, n)
         ]

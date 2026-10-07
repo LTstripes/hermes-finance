@@ -739,3 +739,112 @@ def test_backup_restore_preserves_core_occurrences_retirement_and_receipt(databa
             request_id="synthetic-apply",
         )
         assert replay["readback"] == recovered
+
+
+@pytest.mark.parametrize("change", ["mapping", "source", "legacy"])
+def test_retired_revoke_binds_current_dependencies_without_requiring_valid_support(
+    database, change
+):
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping, revoke_mapping
+
+    with database.session_factory() as session:
+        intent = attest(session, source(session))
+        first = accept(session, intent)["readback"]
+        mapping = session.scalar(
+            select(BrokerIdentityMapping).where(BrokerIdentityMapping.subject_kind == "account")
+        )
+        alias = mapping.provider_identity
+        # Material source support is now broken; withdrawal must remain possible.
+        revoke_mapping(session, mapping.id)
+        retired = read_historical_owner_flow(session, first["flow_id"])
+        revoke = OwnerFlowIntent(
+            operation="revoke",
+            flow_id=first["flow_id"],
+            expected_revision=retired["revision"],
+            reason_code="evidence_disputed",
+        )
+        old = preview_historical_owner_flow(session, revoke)
+        assert old["can_apply"]
+        if change == "mapping":
+            confirm_mapping(
+                session,
+                provider="alfa_mybroker",
+                subject_kind="account",
+                provider_identity=alias,
+                hermes_target_id=intent.account_id,
+            )
+        elif change == "source":
+            # Incoming immutable support while retired does not append another retirement.
+            confirm_mapping(
+                session,
+                provider="alfa_mybroker",
+                subject_kind="account",
+                provider_identity=alias,
+                hermes_target_id=intent.account_id,
+            )
+            source(session, stamp="11")
+        else:
+            month = ReportingMonth(
+                year=2030,
+                month=1,
+                period_start=date(2030, 1, 1),
+                period_end=date(2030, 1, 31),
+                snapshot_date=date(2030, 1, 31),
+            )
+            session.add(month)
+            session.flush()
+            session.add(
+                ExternalFlow(
+                    reporting_month_id=month.id,
+                    account_id=intent.account_id,
+                    event_date=DAY,
+                    boundary_amount_kopecks=1,
+                    direction="contribution",
+                    kind="external_contribution",
+                    source="manual",
+                )
+            )
+            session.commit()
+        assert (
+            read_historical_owner_flow(session, first["flow_id"])["revision"] == retired["revision"]
+        )
+        new = preview_historical_owner_flow(session, revoke)
+        assert new["confirmation_digest"] != old["confirmation_digest"]
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_historical_owner_flow(
+                session,
+                revoke,
+                confirmation_digest=old["confirmation_digest"],
+                request_id="stale-revoke",
+            )
+        assert count(session, HistoricalOwnerFlowApply) == 1
+        assert accept(session, revoke, "fresh-revoke")["readback"]["effective_state"] == "revoked"
+
+
+@pytest.mark.parametrize("amount", [0.25, 12, True, "NaN", "Infinity", "1e0", "01.00"])
+def test_noncanonical_corrupt_source_payload_never_commits_financial_history(database, amount):
+    import json
+
+    from hermes_finance.persistence import MyBrokerImport
+
+    with database.session_factory() as session:
+        intent = source(session, amount="0.25")
+        row = session.get(MyBrokerImport, intent.seed.import_id)
+        document = json.loads(row.normalized_json)
+        document["money"][0]["amount"] = amount
+        row.normalized_json = json.dumps(document)
+        session.commit()
+        intent = attest(session, intent)
+        plan = preview_historical_owner_flow(session, intent)
+        assert "source_money_invalid" in plan["blockers"]
+        with pytest.raises(MyBrokerError, match="source_money_invalid"):
+            apply_historical_owner_flow(
+                session,
+                intent,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="corrupt-source",
+            )
+        assert count(session, HistoricalOwnerFlow) == 0
+        assert count(session, HistoricalOwnerFlowOccurrence) == 0
+        assert count(session, HistoricalOwnerFlowRevision) == 0
+        assert count(session, HistoricalOwnerFlowApply) == 0
