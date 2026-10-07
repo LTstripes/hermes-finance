@@ -60,6 +60,92 @@ class MyBrokerImport(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HistoricalOwnerFlow(Base):
+    """Immutable account-boundary core. Its tuple is not an economic identity."""
+
+    __tablename__ = "historical_owner_flows"
+    __table_args__ = (
+        CheckConstraint("currency = 'RUB'", name="ck_owner_flow_currency"),
+        CheckConstraint("boundary_amount_kopecks > 0", name="ck_owner_flow_amount"),
+        CheckConstraint(
+            "direction IN ('contribution', 'withdrawal')", name="ck_owner_flow_direction"
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    signed_source_amount: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    boundary_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class HistoricalOwnerFlowOccurrence(Base):
+    """Permanent source ownership, including after retirement/revocation."""
+
+    __tablename__ = "historical_owner_flow_occurrences"
+    __table_args__ = (
+        UniqueConstraint("import_id", "section", "ordinal", name="uq_owner_flow_occurrence"),
+        CheckConstraint("section = 'money' AND ordinal >= 0", name="ck_owner_flow_occurrence"),
+        CheckConstraint("length(row_fingerprint) = 64", name="ck_owner_flow_row_fingerprint"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_id: Mapped[str] = mapped_column(ForeignKey("historical_owner_flows.id"), nullable=False)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), nullable=False)
+    section: Mapped[str] = mapped_column(String(16), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class HistoricalOwnerFlowRevision(Base):
+    __tablename__ = "historical_owner_flow_revisions"
+    __table_args__ = (
+        UniqueConstraint("flow_id", "revision", name="uq_owner_flow_revision"),
+        CheckConstraint("revision > 0", name="ck_owner_flow_revision"),
+        CheckConstraint(
+            "(operation IN ('accept', 'corroborate', 'reaffirm') AND acceptance_state = 'accepted' "
+            "AND reason_code IS NULL) OR (operation = 'retire' AND acceptance_state = 'retired' "
+            "AND reason_code IS NOT NULL) OR (operation = 'revoke' AND acceptance_state = 'revoked' "
+            "AND reason_code IS NOT NULL)",
+            name="ck_owner_flow_revision_state",
+        ),
+        CheckConstraint("length(material_signature) = 64", name="ck_owner_flow_material"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_id: Mapped[str] = mapped_column(ForeignKey("historical_owner_flows.id"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("historical_owner_flow_revisions.id"), nullable=True
+    )
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    acceptance_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HistoricalOwnerFlowApply(Base):
+    __tablename__ = "historical_owner_flow_applies"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_owner_flow_request"),
+        CheckConstraint(
+            "result_action IN ('created', 'corroborated', 'reaffirmed', 'revoked', 'noop')",
+            name="ck_owner_flow_apply_result",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    flow_id: Mapped[str] = mapped_column(ForeignKey("historical_owner_flows.id"), nullable=False)
+    revision_id: Mapped[int] = mapped_column(
+        ForeignKey("historical_owner_flow_revisions.id"), nullable=False
+    )
+    result_action: Mapped[str] = mapped_column(String(16), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class HistoricalEndpointRevision(Base):
     """Append-only acceptance of S1 evidence; never a month-owned snapshot."""
 
