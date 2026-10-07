@@ -35,6 +35,7 @@ from hermes_finance.api.exports import router as exports_router
 from hermes_finance.api.external_flows import router as external_flows_router
 from hermes_finance.api.freshness_provenance import router as freshness_provenance_router
 from hermes_finance.api.goals import router as goals_router
+from hermes_finance.api.historical_endpoints import router as historical_endpoints_router
 from hermes_finance.api.historical_membership import router as historical_membership_router
 from hermes_finance.api.historical_reconstruction import router as historical_reconstruction_router
 from hermes_finance.api.iis import router as iis_router
@@ -159,6 +160,7 @@ def create_app(
     application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(mybroker_import_router)
+    application.include_router(historical_endpoints_router)
     application.include_router(executed_trades_router)
     application.include_router(historical_reconstruction_router)
     application.include_router(dashboard_router)
