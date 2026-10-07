@@ -446,13 +446,10 @@ def _plan(session, intent):
             if intent.operation == "corroborate" and current.acceptance_state == "revoked":
                 blockers.add("reviewed_reaffirmation_required")
         elif evidence["core"]:
-            # Equal cores are comparison cohorts, never independent IDs. A changed
-            # core on this account/date requires the deferred reconciliation route.
+            # Equal account/date/currency/signed-amount cores form a comparison
+            # cohort, never an economic ID. Distinct same-day cores remain eligible.
             for other in _rows(session, HistoricalOwnerFlow):
-                if (
-                    other.account_id == intent.account_id
-                    and other.event_date.isoformat() == evidence["core"]["event_date"]
-                ):
+                if _core(other) == evidence["core"]:
                     blockers.add("existing_event_reconciliation_required")
     day = evidence["core"]["event_date"] if evidence and evidence.get("core") else None
     months = [

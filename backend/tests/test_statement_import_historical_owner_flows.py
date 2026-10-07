@@ -48,6 +48,7 @@ def xml(
     money=True,
     cash_day="2030-01-17",
     pending=False,
+    extra_amounts=(),
 ):
     root = ET.fromstring(fixture(unsupported=opaque, pending=False))
     for report in root.findall("{MyBroker}Trades/{MyBroker}Report"):
@@ -65,6 +66,10 @@ def xml(
     volume.set("p_code", currency)
     if duplicate:
         root.find(".//{MyBroker}rn_Collection").append(copy.deepcopy(rn))
+    for extra_amount in extra_amounts:
+        extra = copy.deepcopy(rn)
+        extra.find(".//{MyBroker}p_code[@volume]").set("volume", extra_amount)
+        root.find(".//{MyBroker}rn_Collection").append(extra)
     if not money:
         for report in root.findall("{MyBroker}Trades2/{MyBroker}Report"):
             for child in list(report):
@@ -579,7 +584,7 @@ def test_writer_reservation_precedes_authoritative_reads(database):
         assert any(s.startswith("SELECT") for s in statements[1:])
 
 
-def test_changed_core_target_and_fresh_identity_are_refused(database):
+def test_changed_core_target_and_conflicting_source_are_refused(database):
     with database.session_factory() as session:
         intent = attest(session, source(session))
         first = accept(session, intent)["readback"]
@@ -591,7 +596,7 @@ def test_changed_core_target_and_fresh_identity_are_refused(database):
         )
         fresh = attest(session, changed)
         assert (
-            "existing_event_reconciliation_required"
+            "overlapping_source_event_missing"
             in preview_historical_owner_flow(session, fresh)["blockers"]
         )
         assert count(session, HistoricalOwnerFlow) == 1
@@ -848,3 +853,129 @@ def test_noncanonical_corrupt_source_payload_never_commits_financial_history(dat
         assert count(session, HistoricalOwnerFlowOccurrence) == 0
         assert count(session, HistoricalOwnerFlowRevision) == 0
         assert count(session, HistoricalOwnerFlowApply) == 0
+
+
+@pytest.mark.parametrize(
+    "second_amount,direction,minor",
+    [
+        ("56.78", "contribution", 5678),
+        ("-56.78", "withdrawal", 5678),
+        ("-12.34", "withdrawal", 1234),
+    ],
+)
+def test_distinct_same_day_signatures_are_independently_accepted(
+    database, second_amount, direction, minor
+):
+    with database.session_factory() as session:
+        first_intent = source(session, extra_amounts=(second_amount,))
+        first = accept(session, attest(session, first_intent))["readback"]
+        second_intent = first_intent.model_copy(
+            update={
+                "seed": first_intent.seed.model_copy(update={"ordinal": 1}),
+            }
+        )
+        # A second eligible row cannot replace the frozen economics of the first.
+        replacement = attest(session, target(second_intent, first))
+        blocked = preview_historical_owner_flow(session, replacement)
+        assert "changed_core_unsupported" in blocked["blockers"]
+        with pytest.raises(MyBrokerError, match="changed_core_unsupported"):
+            apply_historical_owner_flow(
+                session,
+                replacement,
+                confirmation_digest=blocked["confirmation_digest"],
+                request_id="replacement",
+            )
+        assert count(session, HistoricalOwnerFlowApply) == 1
+        second_intent = attest(session, second_intent)
+        second = accept(session, second_intent, "second-event")["readback"]
+        assert first["flow_id"] != second["flow_id"]
+        assert second["core"]["account_id"] == first["core"]["account_id"]
+        assert second["core"]["event_date"] == first["core"]["event_date"] == DAY.isoformat()
+        assert second["core"]["signed_source_amount"] == second_amount
+        assert second["core"]["direction"] == direction
+        assert second["boundary_amount_kopecks"] == minor
+        assert second["revision"] == first["revision"] == 1
+        assert read_historical_owner_flow(session, first["flow_id"]) == first
+        assert read_historical_owner_flow(session, second["flow_id"]) == second
+        assert first["owned_occurrences"][0]["ordinal"] == "0"
+        assert second["owned_occurrences"][0]["ordinal"] == "1"
+        for flow in (first, second):
+            assert flow["account_scope"]["status"] == "authoritative"
+            assert flow["portfolio_scope"]["status"] == flow["cash_coverage"] == "unknown"
+        for model in (
+            HistoricalOwnerFlow,
+            HistoricalOwnerFlowOccurrence,
+            HistoricalOwnerFlowRevision,
+            HistoricalOwnerFlowApply,
+        ):
+            assert count(session, model) == 2
+        assert (
+            count(session, ReportingMonth)
+            == count(session, ExternalFlow)
+            == count(session, CashBoundaryCoverage)
+            == 0
+        )
+
+
+@pytest.mark.parametrize("ordinal", [0, 1])
+def test_same_signature_row_cohort_is_still_ambiguous_and_cannot_create_money(database, ordinal):
+    with database.session_factory() as session:
+        intent = source(session, extra_amounts=("12.34",))
+        intent = intent.model_copy(
+            update={"seed": intent.seed.model_copy(update={"ordinal": ordinal})}
+        )
+        intent = attest(session, intent)
+        plan = preview_historical_owner_flow(session, intent)
+        assert "same_report_multiplicity" in plan["blockers"]
+        assert len(plan["evidence"]["occurrences"]) == 2
+        with pytest.raises(MyBrokerError, match="same_report_multiplicity"):
+            apply_historical_owner_flow(
+                session,
+                intent,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="ambiguous",
+            )
+        for model in (
+            HistoricalOwnerFlow,
+            HistoricalOwnerFlowOccurrence,
+            HistoricalOwnerFlowRevision,
+            HistoricalOwnerFlowApply,
+        ):
+            assert count(session, model) == 0
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_same_signature_existing_owner_blocks_fresh_create_even_after_revoke(database, revoke):
+    with database.session_factory() as session:
+        intent = source(session)
+        first = accept(session, attest(session, intent))["readback"]
+        if revoke:
+            withdrawal = OwnerFlowIntent(
+                operation="revoke",
+                flow_id=first["flow_id"],
+                expected_revision=first["revision"],
+                reason_code="attestation_withdrawn",
+            )
+            first = accept(session, withdrawal, "revoke")["readback"]
+        fresh = attest(session, intent)
+        plan = preview_historical_owner_flow(session, fresh)
+        assert "existing_event_reconciliation_required" in plan["blockers"]
+        assert "occurrence_already_owned" in plan["blockers"]
+        with pytest.raises(MyBrokerError, match="occurrence_already_owned"):
+            apply_historical_owner_flow(
+                session,
+                fresh,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="competing-owner",
+            )
+        assert read_historical_owner_flow(session, first["flow_id"]) == first
+        assert (
+            count(session, HistoricalOwnerFlow)
+            == count(session, HistoricalOwnerFlowOccurrence)
+            == 1
+        )
+        assert (
+            count(session, HistoricalOwnerFlowApply)
+            == count(session, HistoricalOwnerFlowRevision)
+            == (2 if revoke else 1)
+        )
