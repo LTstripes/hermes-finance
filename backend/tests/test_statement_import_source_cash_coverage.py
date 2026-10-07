@@ -371,6 +371,156 @@ def test_exact_existing_trade_link_excludes_non_owner_cash_binds_trade_lifecycle
         assert row["linked_trade"]["cash_available"]
 
 
+def trade_cash_with_commission_limitation(*, missing=False, commission_row=False):
+    from copy import deepcopy
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(fixture())
+    trade = root.find(".//{MyBroker}Details[@trade_no]")
+    if missing:
+        del trade.attrib["bank_tax"]
+    else:
+        trade.set("bank_tax", "1.23")
+    if commission_row:
+        row = deepcopy(root.find(".//{MyBroker}rn"))
+        row.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
+        row.find(".//{MyBroker}p_code[@volume]").set("volume", "-1.23")
+        root.find(".//{MyBroker}rn_Collection").append(row)
+    return ET.tostring(root, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "missing,commission_row,limitation,kinds",
+    [
+        (True, False, "commission_missing", ["settlement"]),
+        (False, False, "commission_basis_unresolved", ["settlement"]),
+        (False, True, "commission_basis_unresolved", ["settlement", "commission"]),
+    ],
+)
+def test_exact_settled_trade_cash_preserves_commission_limitations_without_owner_crossing(
+    database, missing, commission_row, limitation, kinds
+):
+    with database.session_factory() as session:
+        document = trade_cash_with_commission_limitation(
+            missing=missing, commission_row=commission_row
+        )
+        reviewed = preview(session, document)
+        assert limitation in reviewed["blockers"] and reviewed["can_apply"]
+        result = apply(session, document, reviewed)
+        account_id = result["mappings"][0]["hermes_id"]
+        continuous_membership(session, account_id)
+        raw = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=B)
+        intent = claims(session, raw, zero=True)
+        plan = preview_source_cash_coverage(session, intent)
+        assert plan["can_apply"], plan["blockers"]
+        rows = plan["evidence"]["dependencies"]["money_dispositions"]
+        assert [row["row"]["kind"] for row in rows] == kinds
+        for row in rows:
+            assert row["disposition"] == "accepted_non_owner_trade_cash"
+            assert row["owners"] == []
+            assert not row["linked_trade"]["cash_available"]
+            assert row["linked_trade"]["blockers"] == [limitation]
+        first = certify(session, intent)["readback"]
+        assert first["coverage_state"] == "complete"
+        assert first["evidence"]["dependencies"]["money_dispositions"] == rows
+        assert first["evidence"]["dependencies"]["effective_flow_ids"] == []
+        assert count(session, HistoricalOwnerFlowOccurrence) == 0
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "incomplete",
+        "missing",
+        "pending",
+        "ambiguous",
+        "settlement_missing",
+        "direction",
+        "date",
+        "currency",
+        "repo",
+    ],
+)
+def test_commission_limitation_does_not_dismiss_material_trade_linkage_blockers(database, problem):
+    from copy import deepcopy
+    from xml.etree import ElementTree as ET
+
+    with database.session_factory() as session:
+        root = ET.fromstring(trade_cash_with_commission_limitation(commission_row=True))
+        trade = root.find(".//{MyBroker}Details[@trade_no]")
+        if problem == "incomplete":
+            trade.set("trade_no", "10000000001")
+        elif problem in ("missing", "pending"):
+            report = root.find("{MyBroker}Trades/{MyBroker}Report")
+            for child in list(report):
+                report.remove(child)
+            if problem == "pending":
+                pending = ET.fromstring(fixture(pending=True))
+                report.append(pending.find(".//{MyBroker}Tablix3"))
+                report.find(".//{MyBroker}Details2").set("bank_tax2", "1.23")
+        elif problem == "ambiguous":
+            root.find(".//{MyBroker}rn_Collection").append(deepcopy(root.find(".//{MyBroker}rn")))
+        elif problem == "settlement_missing":
+            root.find(".//{MyBroker}rn_Collection").remove(root.find(".//{MyBroker}rn"))
+        elif problem == "direction":
+            root.find(".//{MyBroker}p_code[@volume]").set("volume", "1000.00")
+        elif problem == "date":
+            trade.set("save_settlement_date", "18.01.2030")
+        elif problem == "currency":
+            trade.set("curr_calc", "USD")
+        else:
+            trade.set("repo_no", "123")
+        document = ET.tostring(root, encoding="utf-8")
+        result = apply(session, document, preview(session, document))
+        account_id = result["mappings"][0]["hermes_id"]
+        continuous_membership(session, account_id)
+        raw = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=B)
+        plan = preview_source_cash_coverage(session, claims(session, raw, zero=True))
+        assert not plan["can_apply"]
+        assert "money_disposition_unresolved" in plan["blockers"]
+        rows = plan["evidence"]["dependencies"]["money_dispositions"]
+        assert all(row["disposition"] == "unresolved" for row in rows)
+        assert count(session, SourceCashCoverageRevision) == 0
+
+
+@pytest.mark.parametrize("conflict", ["primary_identity_ambiguous", "immutable_trade_conflict"])
+def test_commission_limited_cash_fails_closed_on_conflicting_accepted_trade_support(
+    database, conflict
+):
+    import json
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker import PROVIDER, canonical, digest
+
+    with database.session_factory() as session:
+        document = trade_cash_with_commission_limitation(commission_row=True)
+        result = apply(session, document, preview(session, document))
+        account_id = result["mappings"][0]["hermes_id"]
+        continuous_membership(session, account_id)
+        source_row = session.get(MyBrokerImport, result["import_id"])
+        accepted = json.loads(source_row.normalized_json)
+        conflicting = deepcopy(accepted["trades"][0])
+        if conflict == "primary_identity_ambiguous":
+            conflicting["ids"][1] = "2000000002"
+            conflicting["identity"] = digest(
+                [PROVIDER, conflicting["core"]["source_account"], conflicting["ids"]]
+            )
+        else:
+            conflicting["core"]["price"] = "101.00"
+        accepted["trades"].append(conflicting)
+        # Simulate contradictory persisted support; Preview cannot trust old linkage.
+        source_row.normalized_json = canonical(accepted)
+        session.commit()
+        raw = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=B)
+        plan = preview_source_cash_coverage(session, claims(session, raw, zero=True))
+        assert not plan["can_apply"]
+        assert "money_disposition_unresolved" in plan["blockers"]
+        rows = plan["evidence"]["dependencies"]["money_dispositions"]
+        assert all(row["disposition"] == "unresolved" for row in rows)
+        if conflict == "immutable_trade_conflict":
+            assert "immutable_trade_conflict" in rows[0]["linked_trade"]["blockers"]
+
+
 @pytest.mark.parametrize(
     "change",
     [

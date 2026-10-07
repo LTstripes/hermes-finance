@@ -48,6 +48,10 @@ from hermes_finance.services.performance_availability import _history_covers_int
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
 CONTRACT = "h2-a2-source-cash-rub-v1"
+# These accounting limitations do not contradict exact non-owner linkage.
+# Keep them in linked_trade evidence; every other (including future) blocker
+# still prevents excluding Money from Owner boundary crossings.
+_NON_OWNER_TRADE_CASH_LIMITATIONS = frozenset({"commission_basis_unresolved", "commission_missing"})
 
 
 def latest(session, coverage_id):
@@ -376,8 +380,7 @@ def inventory(session, account_id, a, b, *, retained=None):
                 trade
                 and len(matches) == 1
                 and trade["state"] == "settled"
-                and trade["cash_available"]
-                and not trade["blockers"]
+                and not (set(trade["blockers"]) - _NON_OWNER_TRADE_CASH_LIMITATIONS)
                 and leg in trade["cash_legs"]
             ):
                 occurrence["disposition"] = "accepted_non_owner_trade_cash"
