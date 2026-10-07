@@ -9,13 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.performance_evidence_guard import preparation_session
+from hermes_finance.api.settings import session_for_request
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import CashBoundaryCoverageState
 from hermes_finance.domain.source_cash_coverage import SourceCashApplyRequest, SourceCashIntent
 from hermes_finance.persistence import CashBoundaryCoverage as CashBoundaryCoverageRecord
 from hermes_finance.services.cash_boundary_coverage import (
     create_cash_boundary_coverage,
-    effective_cash_boundary_row,
     get_cash_boundary_coverage,
     list_cash_boundary_coverages,
     update_cash_boundary_coverage,
@@ -76,14 +76,13 @@ def _response(row: CashBoundaryCoverageRecord, session=None) -> CashBoundaryCove
 
         if row.provenance_kind == SOURCE_CASH_PROVENANCE or latest(session, row.id):
             acceptance = read_source_cash_coverage(session, row.id)
-            row = effective_cash_boundary_row(session, row)
     return CashBoundaryCoverageResponse(
         id=row.id,
         account_id=row.account_id,
         covered_from=row.covered_from,
         covered_to=row.covered_to,
-        coverage_state=row.coverage_state,
-        provenance_kind=row.provenance_kind,
+        coverage_state=acceptance["coverage_state"] if acceptance else row.coverage_state,
+        provenance_kind=SOURCE_CASH_PROVENANCE if acceptance else row.provenance_kind,
         provenance_reference=row.provenance_reference,
         notes=row.notes,
         source_acceptance=acceptance,
@@ -123,7 +122,7 @@ def create_cash_boundary_coverage_endpoint(
 
 @router.post("/preview")
 def preview_source_endpoint(
-    request: SourceCashIntent, session: Session = Depends(preparation_session)
+    request: SourceCashIntent, session: Session = Depends(session_for_request)
 ):
     try:
         return preview_source_cash_coverage(session, request)

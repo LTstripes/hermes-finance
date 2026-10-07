@@ -1024,3 +1024,18 @@ def test_no_account_source_authority_or_portfolio_binding_from_missing_history(d
                 rows_by_account={},
                 ledger_binding=COMPATIBLE_FLOW_CONTRACT,
             )
+
+
+def test_source_preview_stays_read_only_with_legacy_preparation_header(database):
+    from hermes_finance.api.performance_evidence_guard import evidence_signature
+
+    with database.session_factory() as session:
+        intent = quiet_intent(session)
+        legacy_token = evidence_signature(session)
+    client = TestClient(create_app(database=database))
+    response = client.post(
+        "/api/cash-boundary-coverages/preview",
+        json=intent.model_dump(mode="json"),
+        headers={"X-Performance-Evidence": legacy_token},
+    )
+    assert response.status_code == 200, response.text
