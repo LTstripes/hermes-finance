@@ -146,6 +146,70 @@ class HistoricalOwnerFlowApply(Base):
     committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HistoricalPortfolioDependencyChange(Base):
+    """Monotonic SQL-writer evidence. Only structural keys/date ranges."""
+
+    __tablename__ = "historical_portfolio_dependency_changes"
+    __table_args__ = {"sqlite_autoincrement": True}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    flow_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mapping_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    covered_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    covered_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class HistoricalPortfolioFlowRevision(Base):
+    __tablename__ = "historical_portfolio_flow_revisions"
+    __table_args__ = (
+        UniqueConstraint("flow_id", "revision", name="uq_portfolio_flow_revision"),
+        CheckConstraint("revision > 0", name="ck_portfolio_flow_revision"),
+        CheckConstraint(
+            "(operation IN ('accept', 'reaffirm') AND acceptance_state = 'accepted' "
+            "AND reason_code IS NULL) OR (operation = 'retire' AND acceptance_state = 'retired' "
+            "AND reason_code IS NOT NULL) OR (operation = 'revoke' AND acceptance_state = 'revoked' "
+            "AND reason_code IS NOT NULL)",
+            name="ck_portfolio_flow_revision_state",
+        ),
+        CheckConstraint("length(material_signature) = 64", name="ck_portfolio_flow_material"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    flow_id: Mapped[str] = mapped_column(ForeignKey("historical_owner_flows.id"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("historical_portfolio_flow_revisions.id"), nullable=True
+    )
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    acceptance_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HistoricalPortfolioFlowApply(Base):
+    __tablename__ = "historical_portfolio_flow_applies"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_portfolio_flow_request"),
+        CheckConstraint(
+            "result_action IN ('accepted', 'reaffirmed', 'revoked', 'noop')",
+            name="ck_portfolio_flow_apply_result",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    flow_id: Mapped[str] = mapped_column(ForeignKey("historical_owner_flows.id"), nullable=False)
+    revision_id: Mapped[int] = mapped_column(
+        ForeignKey("historical_portfolio_flow_revisions.id"), nullable=False
+    )
+    result_action: Mapped[str] = mapped_column(String(16), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class HistoricalEndpointRevision(Base):
     """Append-only acceptance of S1 evidence; never a month-owned snapshot."""
 

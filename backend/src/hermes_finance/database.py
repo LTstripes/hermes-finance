@@ -281,11 +281,15 @@ def coherent_read_operation(
 def create_database(database_path: Path) -> Database:
     from hermes_finance.services.historical_endpoint_lifecycle import install_hooks
     from hermes_finance.services.historical_owner_flow_lifecycle import install_hooks as owner_hooks
+    from hermes_finance.services.historical_portfolio_flow_lifecycle import (
+        install_hooks as portfolio_hooks,
+    )
     from hermes_finance.services.source_cash_coverage_lifecycle import install_hooks as cash_hooks
 
     install_hooks()
     owner_hooks()
     cash_hooks()
+    portfolio_hooks()
     resolved_path = database_path.expanduser().resolve()
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
