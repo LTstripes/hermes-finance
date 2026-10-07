@@ -18,6 +18,7 @@ from test_statement_import_mybroker import (
     fixture,
     include_source_account,
     preview,
+    repo_fixture,
 )
 from test_statement_import_mybroker import database as database
 
@@ -84,6 +85,22 @@ def mutate(xml, **fields):
 
 def count(session, model):
     return session.scalar(select(func.count()).select_from(model))
+
+
+def test_b_repo_observations_have_no_s2_identity_or_cash_and_regular_trade_survives(database):
+    with database.session_factory() as session:
+        source = accept_source(session, repo_fixture(pair=True, mixed=True, duplicate=True))
+        rows = source["document"]["trades"]
+        key = rows[-1]["identity"]
+        assert all(t["identity"] is None for t in rows[:-1])
+        assert all(t["cash_legs"] == [] for t in rows[:-1])
+        with pytest.raises(MyBrokerError, match="source_trade_not_found"):
+            preview_executed_trades(session, ["B1001"])
+        trade = promote(session, [key])["trades"][0]
+        assert trade["source_identity"] == key
+        assert len(trade["evidence"]["cash_legs"]) == 1
+        assert count(session, ExecutedTrade) == 1
+        assert count(session, ExecutedTradeOccurrence) == 1
 
 
 def test_overlapping_duplicate_is_one_execution_one_cash_leg_separate_occurrences(database):

@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
-from test_statement_import_mybroker import apply, fixture, preview
+from test_statement_import_mybroker import apply, fixture, preview, repo_fixture
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import endpoint_xml, positions_only
 
@@ -38,6 +38,23 @@ from hermes_finance.services.reporting_months import close_reporting_month, reop
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 DAY = date(2030, 1, 31)
+
+
+def test_b_repo_observation_blocks_endpoint_even_with_affirmative_claims(database):
+    with database.session_factory() as session:
+        root = ET.fromstring(endpoint_xml())
+        root.remove(root.find("{MyBroker}Trades"))
+        root.append(ET.fromstring(repo_fixture(pair=True)).find("{MyBroker}Trades"))
+        intent, _ = setup_source(session, xml=ET.tostring(root), keep_trades=True)
+        intent = attest(session, intent)
+        plan = preview_historical_endpoint(session, intent)
+        assert "unresolved_cutoff_identity" in plan["blockers"]
+        assert not plan["can_apply"]
+        with pytest.raises(MyBrokerError, match="unresolved_cutoff_identity"):
+            apply_historical_endpoint(
+                session, intent, confirmation_digest=plan["confirmation_digest"], request_id="repo"
+            )
+        assert count(session, HistoricalEndpointRevision) == 0
 
 
 def setup_source(

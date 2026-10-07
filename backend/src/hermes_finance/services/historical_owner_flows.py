@@ -205,6 +205,17 @@ def _build(session, intent):
             ):
                 blockers.add("source_integrity_or_version")
             blockers.update(other["syntax_blockers"])
+            # S1 discards arbitrary money comments, including B-linked REPO
+            # text. An unsupported one-part REPO observation in this account's
+            # scoped source set cannot therefore be reinterpreted as owner cash
+            # through an affirmative claim. No partner/settlement inference.
+            if any(
+                t["core"]["source_account"] in aliases
+                and t["repo_observed"]
+                and t["identity"] is None
+                for t in other["trades"]
+            ):
+                blockers.update({"repo_semantics_unsupported", "trade_ids_incomplete"})
             money = [r for r in other["money"] if r["source_account"] in aliases]
             if source.id == selected.id and seed["source_account"] not in aliases:
                 blockers.add("selected_account_mapping_mismatch")
