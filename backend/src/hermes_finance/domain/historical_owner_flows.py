@@ -6,6 +6,9 @@ from pydantic import Field, model_validator
 
 from hermes_finance.domain.historical_endpoints import Digest, Label, StrictModel
 
+SOURCE_CASH_PROVENANCE = "owner_attested_source_cash_history"
+COMPATIBLE_FLOW_CONTRACT = "h2-a1-owner-rub-v2"
+
 
 class MoneyOccurrence(StrictModel):
     import_id: int = Field(gt=0, strict=True)
@@ -37,6 +40,7 @@ CLAIMS = tuple(
 
 
 class OwnerFlowIntent(StrictModel):
+    evidence_version: Literal["h2-a1-owner-rub-v1", "h2-a1-owner-rub-v2"] = "h2-a1-owner-rub-v1"
     operation: Literal["accept", "corroborate", "reaffirm", "revoke"] = "accept"
     account_id: int | None = Field(default=None, gt=0, strict=True)
     seed: MoneyOccurrence | None = None

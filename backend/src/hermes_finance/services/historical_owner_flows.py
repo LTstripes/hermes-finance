@@ -11,7 +11,12 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
-from hermes_finance.domain.historical_owner_flows import CLAIMS, OwnerFlowIntent
+from hermes_finance.domain.historical_owner_flows import (
+    CLAIMS,
+    COMPATIBLE_FLOW_CONTRACT,
+    SOURCE_CASH_PROVENANCE,
+    OwnerFlowIntent,
+)
 from hermes_finance.persistence import (
     Account,
     AccountPerformanceScopeMembership,
@@ -31,6 +36,13 @@ from hermes_finance.statement_import.mybroker import decimal as source_decimal
 
 CONTRACT = "h2-a1-owner-rub-v1"
 MAX_MINOR = 2**63 - 1
+
+
+def _intent_dump(intent):
+    # The v1 wire identity predates evidence_version; preserve existing receipts.
+    return intent.model_dump(
+        mode="json", exclude={"evidence_version"} if intent.evidence_version == CONTRACT else set()
+    )
 
 
 def _rows(session, model):
@@ -146,7 +158,7 @@ def _build(session, intent):
         if core is None:
             # Inspection still returns source financial observations on rejection.
             return (
-                {"intent": intent.model_dump(mode="json"), "core": None, "seed": seed},
+                {"intent": _intent_dump(intent), "core": None, "seed": seed},
                 sorted(blockers),
                 None,
                 None,
@@ -262,7 +274,12 @@ def _build(session, intent):
         coverage = [
             _material(c)
             for c in _rows(session, CashBoundaryCoverage)
-            if c.account_id == intent.account_id and c.covered_from <= day <= c.covered_to
+            if c.account_id == intent.account_id
+            and c.covered_from <= day <= c.covered_to
+            and not (
+                intent.evidence_version == COMPATIBLE_FLOW_CONTRACT
+                and (c.provenance_kind == SOURCE_CASH_PROVENANCE or c.coverage_state != "complete")
+            )
         ]
         if legacy:
             blockers.add("legacy_flow_or_transfer_overlap")
@@ -278,7 +295,9 @@ def _build(session, intent):
             "cash_coverage": coverage,
         }
         source_set = digest({"core": core, "sources": sources, "occurrences": occurrences})
-        review_context = digest({"contract": CONTRACT, "core": core, "dependencies": dependencies})
+        review_context = digest(
+            {"contract": intent.evidence_version, "core": core, "dependencies": dependencies}
+        )
         claims = intent.claims
         if claims is None:
             blockers.add("owner_cash_claims_missing")
@@ -294,8 +313,8 @@ def _build(session, intent):
                 if not getattr(claims, name):
                     blockers.add(name + "_unconfirmed")
         evidence = {
-            "contract_version": CONTRACT,
-            "intent": intent.model_dump(mode="json"),
+            "contract_version": intent.evidence_version,
+            "intent": _intent_dump(intent),
             "core": core,
             "occurrences": occurrences,
             "dependencies": dependencies,
@@ -390,9 +409,15 @@ def _withdrawal_context(session, flow, evidence):
         "cash_coverage": [
             _material(c)
             for c in _rows(session, CashBoundaryCoverage)
-            if c.account_id == account_id
-            and c.covered_from <= day <= c.covered_to
-            or any(c.id == int(old["id"]) for old in deps["cash_coverage"])
+            if not (
+                evidence["contract_version"] == COMPATIBLE_FLOW_CONTRACT
+                and (c.provenance_kind == SOURCE_CASH_PROVENANCE or c.coverage_state != "complete")
+            )
+            and (
+                c.account_id == account_id
+                and c.covered_from <= day <= c.covered_to
+                or any(c.id == int(old["id"]) for old in deps["cash_coverage"])
+            )
         ],
         "occurrence_owners": [
             _material(o)
@@ -427,6 +452,11 @@ def _plan(session, intent):
             if _core(flow) != evidence["core"]:
                 blockers.add("changed_core_unsupported")
             old = json.loads(current.evidence_json)
+            if (
+                old["contract_version"] != intent.evidence_version
+                and intent.operation != "reaffirm"
+            ):
+                blockers.add("reviewed_version_reaffirmation_required")
             if any(o not in evidence.get("occurrences", []) for o in old["occurrences"]):
                 blockers.add("owned_occurrence_disappeared_or_changed")
             identical = _support(old) == _support(evidence)
@@ -481,7 +511,7 @@ def _plan(session, intent):
         "cash_coverage": "unknown",
     }
     result["confirmation_digest"] = digest(
-        {"contract": CONTRACT, "intent": intent.model_dump(mode="json"), "plan": result}
+        {"contract": CONTRACT, "intent": _intent_dump(intent), "plan": result}
     )
     return result
 
@@ -493,6 +523,11 @@ def preview_historical_owner_flow(session: Session, intent: OwnerFlowIntent):
 
 @coherent_read_operation
 def read_historical_owner_flow(session: Session, flow_id: str):
+    return _read_historical_owner_flow(session, flow_id)
+
+
+def _read_historical_owner_flow(session: Session, flow_id: str):
+    """Builder for an already-owned coherent snapshot or reserved writer."""
     flow = session.get(HistoricalOwnerFlow, flow_id)
     current = _latest(session, flow_id)
     if flow is None or current is None:
@@ -501,7 +536,7 @@ def read_historical_owner_flow(session: Session, flow_id: str):
     state, blockers = current.acceptance_state, []
     try:
         frozen = OwnerFlowIntent.model_validate(evidence["intent"])
-        if evidence["contract_version"] != CONTRACT or frozen.claims is None:
+        if evidence["contract_version"] != frozen.evidence_version or frozen.claims is None:
             raise ValueError("invalid_acceptance")
         rebuilt, reasons, _, _ = _build(session, frozen)
         blockers.extend(reasons)
@@ -529,6 +564,7 @@ def read_historical_owner_flow(session: Session, flow_id: str):
         "flow_id": flow_id,
         "core": _core(flow),
         "revision_id": current.id,
+        "material_signature": current.material_signature,
         "revision": current.revision,
         "acceptance_state": current.acceptance_state,
         "effective_state": state,
@@ -580,7 +616,7 @@ def _append(session, flow_id, current, evidence, operation, state, reason=None):
 def apply_historical_owner_flow(session, intent, *, confirmation_digest, request_id):
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("clean_session_required")
-    intent_digest = digest(intent.model_dump(mode="json"))
+    intent_digest = digest(_intent_dump(intent))
     try:
         # Reserve SQLite's writer before any authoritative read, even for a replay.
         session.execute(
