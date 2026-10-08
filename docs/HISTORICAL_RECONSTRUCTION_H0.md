@@ -126,3 +126,11 @@ success does not prove financial completeness or Owner UAT.
 This patch does not bound every remaining hot loop or promise a universal
 45-second completion time. It preserves full union/Skip/REPO evidence and the
 financial guards without schema, source semantics or deadline changes.
+
+## Owner-local Test H0 speed acceptance (2026-10-08)
+
+The exact optimization candidate in [PR #741](https://github.com/LTstripes/hermes-finance/pull/741), `9f028150475bb14dfb3c43c8bdbb9d6e2512e2fc`, passed independent read-only review [5461891387](https://github.com/LTstripes/hermes-finance/pull/741#pullrequestreview-5461891387) and exact-candidate [CI 37831179270](https://github.com/LTstripes/hermes-finance/actions/runs/37831179270). Canonical merge: `e2864668a7357365656ace4ac681288313d0ee9f`; exact push CI [37835529213](https://github.com/LTstripes/hermes-finance/actions/runs/37835529213) is a separate gate, whose live result should be checked before calling integration complete.
+
+Owner-local isolated Test on the exact candidate (reported by the local operator, not independently rerun by the Integrator) used the original H0 Preview API in SQLite read-only mode with an unchanged 45-second caller deadline. Both complete HTTP 200 responses took **0.538s / 0.524s** and their full bodies and `preview_digest` matched. Test schema `0054`, all database tables/file bytes, 18 prior report responses and three source GETs (Skip/REPO included) were unchanged; zero SQL writes, no reimport or migration. Protected isolation, fresh verified backup and OPS03 Prepare/Validate passed; no listener remained.
+
+The old timed-out attempt left **no complete H0 response** for old-vs-new payload comparison. The exact cause of the earlier private timeout cannot be established from a missing result, and ordinary Start/shutdown smoke was not repeated. These constraints do not invalidate the bounded successful read-only inventory UAT. H0 has **no financial Apply** and does not accept actual endpoint valuations, owner cash-flow completeness or real XIRR/TWRR. Parent #709 remains open for that separate financial proof.
