@@ -23,6 +23,7 @@ from hermes_finance.persistence import (
     ExecutedTradeRevision,
     Instrument,
 )
+from hermes_finance.services.mybroker_dispositions import REASON, excluded_trade, resolve
 from hermes_finance.services.mybroker_import import (
     _historical_bound_accounts,
     _imports,
@@ -55,6 +56,9 @@ def _context(session: Session) -> dict:
     state["source_material"] = [
         [row.id, row.parser_version, row.normalized_json, row.mappings_json] for row in imports
     ]
+    exclusions = [i for row in imports for i in resolve(session, row)]
+    if exclusions:
+        state["instrument_dispositions"] = exclusions
     for model in (ExecutedTrade, ExecutedTradeOccurrence, ExecutedTradeRevision):
         state[model.__tablename__] = [
             [str(getattr(row, column.name)) for column in model.__table__.columns]
@@ -90,6 +94,8 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         "settled_to_pending_conflict",
         "pending_disappeared",
     }
+    if excluded_trade(session, identity):
+        conflicts.add(REASON)
     occurrences = []
     bindings = []
     money = defaultdict(list)

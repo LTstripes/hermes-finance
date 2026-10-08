@@ -63,6 +63,8 @@ class InKindBoundaryCoverageResponse(BaseModel):
     provenance_kind: str
     provenance_reference: str | None
     notes: str | None
+    exclusion_blockers: list[str] = Field(default_factory=list)
+    recorded_coverage_state: str | None = None
 
 
 class InKindMovementCreate(BaseModel):
@@ -96,13 +98,20 @@ class InKindMovementResponse(BaseModel):
     notes: str | None
 
 
-def _coverage_response(row: InKindBoundaryCoverageRecord) -> InKindBoundaryCoverageResponse:
+def _coverage_response(
+    row: InKindBoundaryCoverageRecord, session
+) -> InKindBoundaryCoverageResponse:
+    from hermes_finance.services.mybroker_dispositions import REASON, impact
+
+    excluded = bool(impact(session, (row.account_id,)))
     return InKindBoundaryCoverageResponse(
         id=row.id,
         account_id=row.account_id,
         covered_from=row.covered_from,
         covered_to=row.covered_to,
-        coverage_state=row.coverage_state,
+        coverage_state="unknown" if excluded else row.coverage_state,
+        exclusion_blockers=[REASON] if excluded else [],
+        recorded_coverage_state=row.coverage_state if excluded else None,
         provenance_kind=row.provenance_kind,
         provenance_reference=row.provenance_reference,
         notes=row.notes,
@@ -136,7 +145,7 @@ def list_in_kind_boundary_coverages_endpoint(
     session: Session = Depends(preparation_session),
 ) -> list[InKindBoundaryCoverageResponse]:
     return [
-        _coverage_response(row)
+        _coverage_response(row, session)
         for row in list_in_kind_boundary_coverages(session, account_id=account_id)
     ]
 
@@ -148,7 +157,9 @@ def create_in_kind_boundary_coverage_endpoint(
     payload: InKindBoundaryCoverageCreate,
     session: Session = Depends(preparation_session),
 ) -> InKindBoundaryCoverageResponse:
-    return _coverage_response(create_in_kind_boundary_coverage(session, **payload.model_dump()))
+    return _coverage_response(
+        create_in_kind_boundary_coverage(session, **payload.model_dump()), session
+    )
 
 
 @coverage_router.get("/{coverage_id}", response_model=InKindBoundaryCoverageResponse)
@@ -156,7 +167,7 @@ def get_in_kind_boundary_coverage_endpoint(
     coverage_id: int,
     session: Session = Depends(preparation_session),
 ) -> InKindBoundaryCoverageResponse:
-    return _coverage_response(get_in_kind_boundary_coverage(session, coverage_id))
+    return _coverage_response(get_in_kind_boundary_coverage(session, coverage_id), session)
 
 
 @coverage_router.patch("/{coverage_id}", response_model=InKindBoundaryCoverageResponse)
@@ -168,7 +179,8 @@ def update_in_kind_boundary_coverage_endpoint(
     return _coverage_response(
         update_in_kind_boundary_coverage(
             session, coverage_id, **payload.model_dump(exclude_unset=True)
-        )
+        ),
+        session,
     )
 
 

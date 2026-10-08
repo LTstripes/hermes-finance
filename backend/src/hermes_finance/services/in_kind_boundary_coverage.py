@@ -31,6 +31,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
     ReportingMonthNotFoundError,
@@ -172,6 +173,8 @@ def stage_create_in_kind_boundary_coverage(
     )
     _require_account(session, account_id)
     normalized_state = _coerce_state(coverage_state)
+    if normalized_state.value == "complete" and impact(session, (account_id,)):
+        raise ValueError(REASON)
     normalized_provenance = _normalize_text(provenance_kind, field="provenance_kind", max_length=64)
     _validate_authoritative(normalized_state, normalized_provenance)
     normalized_reference = (
@@ -267,6 +270,8 @@ def stage_update_in_kind_boundary_coverage(
         else _normalize_text(provenance_kind, field="provenance_kind", max_length=64)
     )
     _validate_authoritative(new_state, new_provenance)
+    if new_state.value == "complete" and impact(session, (coverage.account_id,)):
+        raise ValueError(REASON)
     coverage.coverage_state = new_state.value
     coverage.provenance_kind = new_provenance
     if provenance_reference is not None:
@@ -607,10 +612,14 @@ def in_kind_boundary_coverage_for_interval(
     }
     for row in rows:
         rows_by_required_account[row.account_id].append(row)
+    excluded_accounts = {
+        b["hermes_id"] for i in impact(session, required_ids) for b in i["accounts"]
+    }
     missing = tuple(
         current_account_id
         for current_account_id in required_ids
-        if not _account_is_covered(
+        if current_account_id in excluded_accounts
+        or not _account_is_covered(
             rows_by_required_account[current_account_id],
             start_date=start_date,
             end_date=end_date,
@@ -657,6 +666,8 @@ def in_kind_boundary_coverage_for_interval(
     )
     known_movements = tuple(_movement_evidence(row) for row in movements)
     reasons: set[str] = set()
+    if excluded_accounts:
+        reasons.add(REASON)
     if missing:
         reasons.add(_COVERAGE_REASON)
     if known_movements:

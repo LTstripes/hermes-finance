@@ -44,6 +44,7 @@ from hermes_finance.services.historical_owner_flows import (
     _rows,
     read_historical_owner_flow,
 )
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
 CONTRACT = "h2-b1-non-transfer-rub-v1"
@@ -324,6 +325,10 @@ def _build(session, flow, intent):
         blockers.add("source_account_not_in_scope")
     elif flow.account_id not in included:
         blockers.add("source_account_inclusion_unproven")
+    exclusions = impact(session, included)
+    if exclusions:
+        blockers.add(REASON)
+        deps["instrument_dispositions"] = exclusions
     context = digest(
         {
             "contract": CONTRACT,

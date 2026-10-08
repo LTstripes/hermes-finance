@@ -31,6 +31,7 @@ from hermes_finance.persistence import (
     MyBrokerImport,
     ReportingMonth,
 )
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 from hermes_finance.statement_import.mybroker import decimal as source_decimal
 
@@ -294,6 +295,10 @@ def _build(session, intent):
             "transfer_links": links,
             "cash_coverage": coverage,
         }
+        exclusions = impact(session, (intent.account_id,))
+        if exclusions:
+            blockers.add(REASON)
+            dependencies["instrument_dispositions"] = exclusions
         source_set = digest({"core": core, "sources": sources, "occurrences": occurrences})
         review_context = digest(
             {"contract": intent.evidence_version, "core": core, "dependencies": dependencies}

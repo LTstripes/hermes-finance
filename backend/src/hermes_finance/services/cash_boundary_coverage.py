@@ -29,6 +29,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.reporting_months import ClosedReportingMonthError
 
 _COVERAGE_REASON = "not_computable_external_flows_incomplete"
@@ -157,6 +158,8 @@ def stage_create_cash_boundary_coverage(
     )
     _require_account(session, account_id)
     normalized_state = _coerce_state(coverage_state)
+    if normalized_state.value == "complete" and impact(session, (account_id,)):
+        raise ValueError(REASON)
     normalized_provenance = _normalize_text(provenance_kind, field="provenance_kind", max_length=64)
     if normalized_provenance == SOURCE_CASH_PROVENANCE:
         raise ValueError("source cash coverage requires Preview/Apply")
@@ -213,6 +216,8 @@ def attest_cash_boundary_history(
         )
     )
     if existing is not None:
+        if impact(session, (account_id,)):
+            raise ValueError(REASON)
         _require_legacy_mutable(session, existing)
         existing.coverage_state = CashBoundaryCoverageState.COMPLETE.value
         existing.provenance_kind = _DEFAULT_PROVENANCE_KIND
@@ -274,6 +279,8 @@ def stage_update_cash_boundary_coverage(
     coverage.covered_to = new_to
     if coverage_state is not None:
         coverage.coverage_state = _coerce_state(coverage_state).value
+    if coverage.coverage_state == "complete" and impact(session, (coverage.account_id,)):
+        raise ValueError(REASON)
     if provenance_kind is not None:
         coverage.provenance_kind = _normalize_text(
             provenance_kind, field="provenance_kind", max_length=64
@@ -551,10 +558,14 @@ def _assess_interval(
     for row in rows:
         rows_by_required_account[row.account_id].append(row)
 
+    excluded_accounts = {
+        b["hermes_id"] for i in impact(session, required_ids) for b in i["accounts"]
+    }
     missing = tuple(
         current_account_id
         for current_account_id in required_ids
-        if not _account_is_covered(
+        if current_account_id in excluded_accounts
+        or not _account_is_covered(
             rows_by_required_account[current_account_id],
             start_date=start_date,
             end_date=end_date,
@@ -577,7 +588,11 @@ def _assess_interval(
         )
         for row in rows
     )
-    reasons = (_COVERAGE_REASON,) if missing else ()
+    reasons = tuple(
+        sorted(
+            ({_COVERAGE_REASON} if missing else set()) | ({REASON} if excluded_accounts else set())
+        )
+    )
     return CashBoundaryCoverage(
         status=(CoverageStatus.UNKNOWN.value if missing else CoverageStatus.COMPLETE.value),
         account_ids=required_ids,
