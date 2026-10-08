@@ -470,3 +470,109 @@ def test_invalid_service_selection_is_sanitized(database):
     with database.session_factory() as session:
         with pytest.raises(MyBrokerError, match="selection_invalid"):
             inventory(session, start=date(2030, 3, 31), end=date(2030, 1, 1))
+
+
+@pytest.mark.parametrize("changed_state", ["revoked", "retired", "invalid"])
+def test_dispositions_resolved_once_per_snapshot_keep_full_multi_account_evidence(
+    database, monkeypatch, changed_state
+):
+    from test_statement_import_mybroker_dispositions import SKIP, accept, mixed_xml
+
+    from hermes_finance.services import executed_trades, mybroker_dispositions
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+
+    with database.session_factory() as session:
+        first = accept_source(session)
+        promote(session, [identity(first)])
+        skipped = accept(session, mixed_xml())
+        accept_source(
+            session, fixture(primary="10000000003"), "Брокерский 1234567 (01.01.30-31.03.30).xml"
+        )
+        other = create_account(session, name="Synthetic second", account_type="brokerage")
+        for alias in ("7654321", "7654321-000"):
+            confirm_mapping(
+                session,
+                provider="alfa_mybroker",
+                subject_kind="account",
+                provider_identity=alias,
+                hermes_target_id=other.id,
+            )
+        for xml in (repo_fixture(pair=True, mixed=True), fixture(primary="10000000004")):
+            accept_source(
+                session,
+                xml.replace(ACCOUNT.encode(), b"7654321-000"),
+                "Брокерский 7654321 (01.01.30-31.03.30).xml",
+            )
+        import_ids = list(session.scalars(select(MyBrokerImport.id).order_by(MyBrokerImport.id)))
+        resolved = []
+        original = mybroker_dispositions.resolve
+
+        def counted(session, source):
+            resolved.append(source.id)
+            return original(session, source)
+
+        monkeypatch.setattr(mybroker_dispositions, "resolve", counted)
+        monkeypatch.setattr(executed_trades, "resolve", counted)
+        before = all_tables(session)
+        report = inventory(session, [1, other.id])
+        assert resolved == import_ids
+        assert all_tables(session) == before
+        left, right = report["accounts"]
+        assert [len(a["documents"]) for a in report["accounts"]] == [3, 2]
+        assert [len(a["endpoints"]) for a in report["accounts"]] == [6, 4]
+        assert [len(a["source_range_overlaps"]) for a in report["accounts"]] == [3, 1]
+        assert left["excluded_source_revisions"][0]["state"] == "accepted"
+        assert left["canonical_executions"][0]["source_identity"] == identity(first)
+        skipped_identity = skipped["document"]["trades"][1]["identity"]
+        operation = next(
+            o for o in left["candidate_operations"] if o["source_identity"] == skipped_identity
+        )
+        assert mybroker_dispositions.REASON in operation["blockers"]
+        assert mybroker_dispositions.REASON not in right["blockers"]
+        assert {"repo_semantics_unsupported", "trade_ids_incomplete"} <= set(right["blockers"])
+        assert any(o["source_identity"] is None for o in right["candidate_operations"])
+        assert report["coverage_state"] == "unknown" and not report["financial_apply_available"]
+
+        # A reused Session must build a fresh cache after committed lifecycle changes.
+        with database.session_factory() as writer:
+            if changed_state == "revoked":
+                intent = dict(
+                    import_id=skipped["import_id"],
+                    isin=SKIP,
+                    operation="revoke",
+                    expected_revision=1,
+                )
+                reviewed = mybroker_dispositions.lifecycle_preview(writer, **intent)
+                mybroker_dispositions.apply_lifecycle(
+                    writer,
+                    request_id="synthetic-h0-revoke",
+                    confirmation_digest=reviewed["confirmation_digest"],
+                    **intent,
+                )
+            elif changed_state == "retired":
+                mapping = writer.scalar(
+                    select(BrokerIdentityMapping).where(
+                        BrokerIdentityMapping.provider_identity == ACCOUNT
+                    )
+                )
+                revoke_mapping(writer, mapping.id, reason="synthetic")
+            else:
+                source = writer.get(MyBrokerImport, skipped["import_id"])
+                document = json.loads(source.normalized_json)
+                document["syntax_blockers"].append("synthetic_source_dispute")
+                source.normalized_json = canonical(document)
+                writer.commit()
+        resolved.clear()
+        before = all_tables(session)
+        changed = inventory(session, [1, other.id])
+        assert resolved == import_ids
+        assert all_tables(session) == before
+        assert changed["preview_digest"] != report["preview_digest"]
+        assert changed["accounts"][0]["excluded_source_revisions"][0]["state"] == changed_state
+        assert mybroker_dispositions.REASON in changed["accounts"][0]["blockers"]
+        operation = next(
+            o
+            for o in changed["accounts"][0]["candidate_operations"]
+            if o["source_identity"] == skipped_identity
+        )
+        assert mybroker_dispositions.REASON in operation["blockers"]

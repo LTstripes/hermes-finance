@@ -23,7 +23,7 @@ from hermes_finance.persistence import (
     ExecutedTradeRevision,
     Instrument,
 )
-from hermes_finance.services.mybroker_dispositions import REASON, excluded_trade, resolve
+from hermes_finance.services.mybroker_dispositions import REASON, resolve
 from hermes_finance.services.mybroker_import import (
     _historical_bound_accounts,
     _imports,
@@ -70,6 +70,12 @@ def _context(session: Session) -> dict:
         "projections": projections,
         "state": state,
         "registry": registry,
+        # Request-local full-union evidence. Never retain this across snapshots
+        # or filter revoked/retired/invalid revisions: their impact is permanent.
+        "exclusions": exclusions,
+        "excluded_trade_identities": {
+            identity for item in exclusions for identity in item["trade_identities"]
+        },
         "trades": {t.source_identity: t for t in _rows(session, ExecutedTrade)},
         "revisions": _rows(session, ExecutedTradeRevision),
         "occurrences": _rows(session, ExecutedTradeOccurrence),
@@ -94,7 +100,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         "settled_to_pending_conflict",
         "pending_disappeared",
     }
-    if excluded_trade(session, identity):
+    if identity in context["excluded_trade_identities"]:
         conflicts.add(REASON)
     occurrences = []
     bindings = []

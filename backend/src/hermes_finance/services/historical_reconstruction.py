@@ -35,7 +35,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.executed_trades import _candidate, _context, _read
-from hermes_finance.services.mybroker_dispositions import REASON, impact
+from hermes_finance.services.mybroker_dispositions import REASON
 from hermes_finance.services.performance_availability import _membership_at
 from hermes_finance.statement_import.mybroker import PARSER, MyBrokerError, digest
 
@@ -252,7 +252,11 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         ]
     accounts = []
     for account_id in account_ids:
-        exclusions = impact(session, (account_id,))
+        exclusions = [
+            item
+            for item in context["exclusions"]
+            if any(b["hermes_id"] == account_id for b in item["accounts"])
+        ]
         memberships = [
             r for r in tables[AccountPerformanceScopeMembership] if r.account_id == account_id
         ]
