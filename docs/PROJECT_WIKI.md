@@ -1,6 +1,6 @@
 # Finance Dashboard — Project Wiki
 
-Durable Hermes Finance context, synchronized **2026-10-04**. Moving state belongs to live GitHub and [CURRENT_STATUS](CURRENT_STATUS.md). Latest restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md). Dated closeouts and [EXECUTION_HISTORY](EXECUTION_HISTORY.md) retain historical evidence, not standing orders.
+Durable Hermes Finance context, synchronized **2026-10-08**. Moving state belongs to live GitHub and [CURRENT_STATUS](CURRENT_STATUS.md). Latest restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md). Dated closeouts and [EXECUTION_HISTORY](EXECUTION_HISTORY.md) retain historical evidence, not standing orders.
 
 ## 1. Product
 
@@ -20,9 +20,9 @@ Independent review follows risk, not file count. Use targeted checks and actual 
 
 Published release: **v1.2.0**, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, annotated tag object `f9311d26c1aae7295361937096844f4dde615b55`. Release CI `37206069556` and Guarded Release `37206660242` succeeded. [Release record](releases/1.2.0.md).
 
-The last locally confirmed Stable remains v1.1.0. Owner authorized v1.2.0 and received backup-first OPS02 instructions; completion of local installation is not recorded here. Publication is not installation. Last reported Test pin remains `d282d09647f129cd83c99e14a10024901a1cf6da`.
+Owner-local preflight has since confirmed the **Stable code checkout** matches published v1.2.0, but production Start/health/data-continuity acceptance is not separately on record. Publication/code pin is not full runtime acceptance. Most recent protected Test pin was #741 candidate `9f028150475bb14dfb3c43c8bdbb9d6e2512e2fc` with separate schema 0054 DB and read-only H0 UAT PASS. See live [CURRENT_STATUS](CURRENT_STATUS.md) for subsequent changes.
 
-Development code milestone after #701: `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4`, canonical CI `37226437369` SUCCESS. **Class-return Phase 1 is integrated after v1.2.0 and is not in that published release.** Later documentation commits may advance main; they do not promote Stable/Test or move the release tag.
+The original class-return Phase 1 code milestone after #701 was `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4`, canonical CI `37226437369` SUCCESS. Development main later integrated #706 Owner preparation, #740 MyBroker REPO/Skip and #741 read-only H0 scaling (merge `e2864668a7357365656ace4ac681288313d0ee9f`). **None is part of published v1.2.0.** Live main/CI in [CURRENT_STATUS](CURRENT_STATUS.md) are authoritative; no git merge automatically promotes Stable.
 
 v1.2.0 contains the accepted #662 product wave, #667/#674, maintenance #663/#664/#665/#672, #668–#671 CI work and #629 Launcher retirement. Prior v1.1.0 remains at `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`. Historical transition records: [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [v1.1.0](releases/1.1.0.md).
 
@@ -54,7 +54,7 @@ C1 uses persisted historical position identity, not current catalogue type; lega
 
 The read-only API uses existing numerical primitives: two endpoint cash flows for XIRR and no boundaries for TWRR. Frontend Accounts/Classes view preserves dates/presets, zero/loss, independent metric states and safe provenance. Deposits are visible as unsupported. Numerical limits are not missing-data instructions.
 
-**This is not complete automated class history.** Purchases/sales/distributions, deposits, FX and flow-bearing TWRR remain outside Phase 1. A class-attestation UI and automatic legacy C1 repair are not delivered. The current screen reads existing evidence; a visible table does not promise percentages on personal history. Owner UAT is still pending.
+**This is not complete automated class history.** Purchases/sales/distributions, deposits, FX and flow-bearing TWRR remain unsupported without exact source evidence. #705/#706 later delivered bounded C1 correction and no-crossing/inventory evidence preparation UI; automatic legacy C1 repair is still not delivered. The class-return screen and preparation path still need their own focused Owner UAT, and a visible table does not promise historical percentages.
 
 Sources: [class contract](performance/ASSET_CLASS_RETURNS_CONTRACT.md), [C1](performance/POSITION_CLASS_IDENTITY.md), [endpoint evidence](performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](performance/CLASS_RETURNS_API.md).
 
@@ -90,9 +90,9 @@ Janitor schedule: daily 12:00 local, Apply, retention 7 days, fixed client roots
 
 ## 7. Next work
 
-**#702 is the next selected read-only research task:** actual statement sources/coverage, minimal class-boundary events and a proposed statement-backed XIRR path for one report family. It is independent of docs and Owner UAT. No implementation is authorized by research completion; the next Integrator reviews the proposal first.
+#702 read-only statement-backed class-flow source research is completed. #708 delivered S1 MyBroker import; #709 is the active historical reconstruction/evidence program, with H0 inventory/speed verified on protected Test but financial completion and exact historical XIRR still pending. #711/#714 coordinate future source-first bank/deposit work; research alone does not grant implementation semantics.
 
-Owner plans UAT tomorrow or in the next few days; development need not wait. The class screen requires an exact post-#701 candidate, not v1.2.0. The missing evidence-entry/legacy-identity UI needs an explicit product path, not Owner SQL/JSON/PowerShell chores. Do not repeat the full #662 UAT.
+Owner-local original XML source import and H0 performance UAT have passed on isolated Test; a financial XIRR number was not proven. The class returns and bounded C1/no-crossing UI still need focused Owner review on an exact post-#706 Test code pin. Do not ask for manual SQL/JSON/PowerShell or repeat the full already accepted #662/#572 route.
 
 #646: the Trading core UI can be switched Online on 3366 and a read-only token exists, but Hermes still reports unrecognized protocol. A token handshake is a hypothesis, not established wire evidence. Owner chose a several-day/about-week wait before support; Alfa is optional for statement research. No provider fix or automatic monitoring is claimed.
 
