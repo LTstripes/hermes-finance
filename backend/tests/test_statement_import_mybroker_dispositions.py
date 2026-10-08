@@ -934,3 +934,52 @@ def test_preparation_readback_exposes_current_exclusions_and_rejects_stale_cover
             headers={"X-Performance-Evidence": before["evidence_token"]},
         )
         assert stale.status_code == 409
+
+
+def test_skip_cannot_hide_quantity_conflict_with_closed_snapshot(database):
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        create_reporting_month,
+    )
+
+    with database.session_factory() as session:
+        account = include_source_account(session)
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=B)
+        instrument = session.scalar(select(Instrument))
+        position = PositionSnapshot(
+            reporting_month_id=month.id,
+            account_id=account,
+            instrument_id=instrument.id,
+            quantity=9,
+            average_cost_per_unit_kopecks=0,
+            market_price_per_unit_kopecks=0,
+            market_value_kopecks=0,
+            cost_basis_kopecks=0,
+            unrealized_result_kopecks=0,
+            price_date=B,
+        )
+        session.add(position)
+        session.commit()
+        close_reporting_month(session, month.id)
+        raw = fixture()
+        p = preview_mybroker(
+            session, document=raw, filename=FILENAME, skipped_isins=(ISIN,), owner_reviewed=True
+        )
+        assert "accepted_endpoint_quantity_conflict" in p["conflicts"] and not p["can_apply"]
+        assert all(b["kind"] == "account" for b in p["mappings"])
+        with pytest.raises(MyBrokerError, match="reconciliation_required"):
+            apply_mybroker(
+                session,
+                document=raw,
+                filename=FILENAME,
+                confirmation_digest=p["confirmation_digest"],
+                confirmed_range=(p["document"]["covered_from"], p["document"]["covered_to"]),
+                confirmed_mappings=p["mappings"],
+                skipped_isins=(ISIN,),
+                owner_reviewed=True,
+                request_id="synthetic-closed-conflict",
+            )
+        session.refresh(month)
+        session.refresh(position)
+        assert month.status == "closed" and position.quantity == 9
+        assert count(session, MyBrokerImport) == count(session, MyBrokerDispositionRevision) == 0

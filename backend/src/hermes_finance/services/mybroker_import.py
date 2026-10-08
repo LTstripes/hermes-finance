@@ -422,6 +422,7 @@ def _prepare(
     bindings = []
     missing = []
     decision_conflicts = []
+    reconciliation_instruments = {}
     for kind, identities in (("account", accounts), ("instrument", instruments)):
         for identity in identities:
             matches = [
@@ -438,6 +439,8 @@ def _prepare(
                     target = session.get(Instrument, matches[0].hermes_target_id)
                     if target is None or target.isin not in (None, identity):
                         decision_conflicts.append("accepted_mapping_conflict")
+                    else:
+                        reconciliation_instruments[identity] = target.id
                 continue
             if len(matches) == 1:
                 mapping = matches[0]
@@ -570,6 +573,8 @@ def _prepare(
     instrument_targets = {
         b["identity"]: b["hermes_id"] for b in bindings if b["kind"] == "instrument"
     }
+    # Skip removes projection authority, never existing reconciliation guards.
+    instrument_targets.update(reconciliation_instruments)
     for position in document["positions"]:
         accepted = session.scalars(
             select(PositionSnapshot)
