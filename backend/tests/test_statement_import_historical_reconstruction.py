@@ -9,7 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 from test_statement_import_executed_trades import accept_source, identity, mutate, promote
-from test_statement_import_mybroker import ACCOUNT, ISIN, fixture, include_source_account
+from test_statement_import_mybroker import (
+    ACCOUNT,
+    ISIN,
+    fixture,
+    include_source_account,
+    repo_fixture,
+)
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import endpoint_xml, positions_only
 
@@ -33,6 +39,18 @@ def inventory(session, ids=None, start=date(2029, 12, 31), end=date(2030, 3, 31)
     return preview_historical_reconstruction(
         session, account_ids=ids or [1], requested_from=start, requested_to=end
     )
+
+
+def test_b_repo_observations_remain_typed_unpromotable_history(database):
+    with database.session_factory() as session:
+        include_source_account(session)
+        accept_source(session, repo_fixture(pair=True, mixed=True))
+        report = inventory(session)
+        account = report["accounts"][0]
+        assert "repo_semantics_unsupported" in account["blockers"]
+        assert "trade_ids_incomplete" in account["blockers"]
+        assert not report["financial_apply_available"]
+        assert report["coverage_state"] == "unknown"
 
 
 def all_tables(session):

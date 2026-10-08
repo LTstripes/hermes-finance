@@ -162,6 +162,55 @@ def test_explicit_skip_preserves_whole_evidence_without_catalogue_or_financial_w
         assert "<" not in source.normalized_json and "Synthetic name" not in source.normalized_json
 
 
+@pytest.mark.parametrize("repo_skipped", [False, True])
+def test_combined_b_repo_and_archived_skip_preserve_both_financial_guards(database, repo_skipped):
+    from test_statement_import_historical_owner_flows import attest
+    from test_statement_import_mybroker import repo_fixture
+
+    from hermes_finance.domain.historical_owner_flows import OwnerFlowIntent
+    from hermes_finance.services.historical_owner_flows import preview_historical_owner_flow
+
+    root = ET.fromstring(mixed_xml())
+    # Select the trade collection explicitly; position collections use the same tag.
+    collection = root.find(
+        "{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    )
+    for row in ET.fromstring(repo_fixture(pair=True, duplicate=True)).findall(
+        ".//{MyBroker}Details[@trade_no]"
+    ):
+        if repo_skipped:
+            row.set("isin_reg", SKIP)
+        collection.append(row)
+    raw = ET.tostring(root, encoding="utf-8")
+    with database.session_factory() as session:
+        reviewed = inspect(session, raw)
+        assert reviewed["can_apply"]
+        assert {"repo_semantics_unsupported", "trade_ids_incomplete"} <= set(reviewed["blockers"])
+        saved = accept(session, raw, reviewed)
+        fetched = read_mybroker_import(session, saved["import_id"])
+        assert fetched["document"] == reviewed["document"]
+        assert fetched["document"]["document_sha256"] == digest_bytes(raw)
+        repo = [t for t in fetched["document"]["trades"] if t["repo_observed"]]
+        assert len(repo) == 3
+        assert all(t["identity"] is None and t["cash_legs"] == [] for t in repo)
+        assert fetched["instrument_dispositions"][0]["effective_state"] == "accepted"
+        assert accept(session, raw, request="synthetic-reimport")["duplicate"]
+        account_id = next(m["hermes_id"] for m in fetched["mappings"] if m["kind"] == "account")
+        intent = attest(
+            session,
+            OwnerFlowIntent(
+                account_id=account_id, seed={"import_id": saved["import_id"], "ordinal": 0}
+            ),
+        )
+        owner_flow = preview_historical_owner_flow(session, intent)
+        assert not owner_flow["can_apply"]
+        assert {REASON, "repo_semantics_unsupported", "trade_ids_incomplete"} <= set(
+            owner_flow["blockers"]
+        )
+        for model in (ExecutedTrade, InvestmentCashFlow, PositionSnapshot, ReportingMonth):
+            assert count(session, model) == 0
+
+
 def digest_bytes(raw):
     from hashlib import sha256
 

@@ -33,6 +33,7 @@ from hermes_finance.statement_import.mybroker import (
     SCHEMA,
     SECTIONS,
     MyBrokerError,
+    digest,
     parse_mybroker,
 )
 
@@ -41,8 +42,180 @@ ACCOUNT = "1234567-000"
 ISIN = "RU000A000000"
 
 
+@pytest.mark.parametrize("pair,duplicate", [(False, False), (True, False), (True, True)])
+def test_b_repo_rows_are_blocked_one_part_observations(database, pair, duplicate):
+    xml = repo_fixture(pair=pair, duplicate=duplicate, mixed=True)
+    with database.session_factory() as session:
+        reviewed = preview(session, xml)
+        assert reviewed["can_apply"]
+        assert {
+            "repo_semantics_unsupported",
+            "trade_ids_incomplete",
+            "money_semantics_unsupported",
+        } <= set(reviewed["blockers"])
+        rows = reviewed["document"]["trades"]
+        for row in rows[:-1]:
+            assert len(row["ids"]) == 1 and row["ids"][0].startswith("B")
+            assert row["identity"] is None and row["repo_observed"]
+            assert not row["cash_available"] and row["cash_legs"] == []
+        assert rows[-1]["identity"] is not None and rows[-1]["cash_available"]
+        cash = reviewed["document"]["money"][0]
+        assert cash["kind"] == "unsupported" and cash["primary_id"] is None
+        result = apply(session, xml, reviewed)
+        reread = read_mybroker_import(session, result["import_id"])
+        assert reread["document"] == reviewed["document"] == result["document"]
+        assert reread["coverage_state"] == "unknown"
+        assert apply(session, xml, preview(session, xml))["duplicate"]
+        lineage = read_mybroker_lineage(session)
+        assert len(lineage["trades"]) == 1
+        assert lineage["trades"][0]["identity"] == rows[-1]["identity"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("trade_no", "B"),
+        ("trade_no", "B1x"),
+        ("trade_no", "b1001"),
+        ("trade_no", "B1001\n1002"),
+        ("trade_no", "B1001\nB1001"),
+        ("trade_no", "A1001"),
+        ("trade_no", "B" + "1" * 128),
+        ("repo_no", None),
+        ("repo_no", ""),
+        ("repo_no", "1002"),
+        ("repo_no", "B1001"),
+        ("repo_no", "B1002\nB1003"),
+        ("repo_no", "B1002x"),
+        ("repo_no", "B" + "1" * 128),
+        ("comment", None),
+        ("comment", "репо"),
+        ("comment", "репо ч.3"),
+        ("comment", "репо ч.1\nрепо ч.2"),
+    ],
+)
+def test_b_repo_refuses_malformed_or_unguarded_rows(field, value):
+    root = ET.fromstring(repo_fixture())
+    row = root.find(".//{MyBroker}Details[@trade_no]")
+    if value is None:
+        row.attrib.pop(field)
+    else:
+        row.set(field, value)
+    with pytest.raises(MyBrokerError, match="trade_ids_ambiguous"):
+        parse_mybroker(ET.tostring(root), FILENAME)
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({}, "2d53ed849c49f4489ebe0e04bce990a70a48f69c826fcb0468185318d1822d26"),
+        ({"pending": True}, "82064e8e243302ebc611ae307ce282799a4ffd18c6eb84d51f77a503bf485a0b"),
+        ({"missing_id": True}, "fa01f30b6488ad0d80a5def089030c3ba178976c4ded93692432033f8a0290a7"),
+        ({"duplicate": True}, "359132aaa76468a46c2304c4e6c8c2788cf105e0953401de9d54dcbc17857b2f"),
+        ({"quiet": True}, "4c326662c4bcda60ef6a1c3e2099ffc1e12274dc7bbd7a561eb5dbe51562b7f1"),
+    ],
+)
+def test_s1_v2_accepted_normalization_is_byte_compatible(kwargs, expected):
+    # Captured from canonical main before #736; bind the entire parsed contract.
+    assert digest(parse_mybroker(fixture(**kwargs), FILENAME)) == expected
+
+
+def test_b_repo_import_does_not_reinterpret_accepted_s1_v2_lineage(database):
+    with database.session_factory() as session:
+        original = apply(session, fixture(), preview(session, fixture()))
+        stored = session.get(MyBrokerImport, original["import_id"]).normalized_json
+        raw = repo_fixture(pair=True, mixed=True)
+        apply(session, raw, preview(session, raw))
+        assert (
+            read_mybroker_import(session, original["import_id"])["document"] == original["document"]
+        )
+        assert apply(session, fixture(), preview(session, fixture()))["duplicate"]
+        assert session.get(MyBrokerImport, original["import_id"]).normalized_json == stored
+
+
+def test_b_repo_pending_shape_is_not_authorized():
+    root = ET.fromstring(fixture(pending=True, primary="B1001", missing_id=True))
+    row = root.find(".//{MyBroker}Details2")
+    row.set("repo_no1", "B1002")
+    row.set("comment", "репо ч.1")
+    with pytest.raises(MyBrokerError, match="trade_ids_ambiguous"):
+        parse_mybroker(ET.tostring(root), FILENAME)
+
+
+def test_b_repo_http_reparse_stale_privacy_and_committed_readback(database):
+    client = TestClient(create_app(database=database))
+    xml = repo_fixture(pair=True, mixed=True, duplicate=True)
+    files = {"file": (FILENAME, xml, "application/xml")}
+    response = client.post("/api/mybroker-import/preview", files=files)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    confirmation = {
+        "confirmation_digest": body["confirmation_digest"],
+        "covered_from": body["document"]["covered_from"],
+        "covered_to": body["document"]["covered_to"],
+        "mappings": body["mappings"],
+    }
+    # Even a guard-only partner change is bound through the authoritative bytes.
+    changed = xml.replace(b'repo_no="B1002"', b'repo_no="B1003"')
+    stale = client.post(
+        "/api/mybroker-import/apply",
+        files={"file": (FILENAME, changed, "application/xml")},
+        data={"confirmation": json.dumps(confirmation)},
+    )
+    assert stale.status_code == 409 and "preview_stale" in stale.text
+    applied = client.post(
+        "/api/mybroker-import/apply", files=files, data={"confirmation": json.dumps(confirmation)}
+    )
+    assert applied.status_code == 200, applied.text
+    reread = client.get(f"/api/mybroker-import/{applied.json()['import_id']}")
+    assert reread.status_code == 200
+    assert reread.json()["document"] == applied.json()["document"] == body["document"]
+    assert reread.json()["document"]["parser"] == "mybroker-s1-v2"
+    for row in reread.json()["document"]["trades"][:-1]:
+        assert {"repo_semantics_unsupported", "trade_ids_incomplete"} <= set(row["blockers"])
+    assert reread.json()["coverage_state"] == "unknown"
+    for private_text in (
+        "Synthetic name never retained",
+        "репо ч.1",
+        "Расчеты по сделке",
+        FILENAME,
+    ):
+        assert private_text not in reread.text
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 1
+        for model in (InvestmentCashFlow, ReportingMonth):
+            assert session.scalar(select(func.count()).select_from(model)) == 0
+
+
 def node(parent, tag, **attrs):
     return ET.SubElement(parent, "{MyBroker}" + tag, attrs)
+
+
+def repo_fixture(*, pair=False, mixed=False, duplicate=False, money=True):
+    """Fabricated #736 completed one-part REPO observations; no economic pairing."""
+    from copy import deepcopy
+
+    root = ET.fromstring(fixture(money=money, primary="B1001", missing_id=True))
+    collection = root.find(
+        "{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    )
+    row = collection.find("{MyBroker}Details")
+    row.set("repo_no", "B1002")
+    row.set("comment", "репо ч.1")
+    if duplicate:
+        collection.append(deepcopy(row))
+    if pair:
+        partner = deepcopy(row)
+        partner.set("trade_no", "B1002")
+        partner.set("repo_no", "B1001")
+        partner.set("comment", "репо ч.2")
+        collection.append(partner)
+    if mixed:
+        regular = ET.fromstring(fixture())
+        collection.append(deepcopy(regular.find(".//{MyBroker}Details[@trade_no]")))
+        group = root.find(".//{MyBroker}rn_Collection")
+        group.append(deepcopy(regular.find(".//{MyBroker}rn")))
+    return ET.tostring(root, encoding="utf-8")
 
 
 def fixture(

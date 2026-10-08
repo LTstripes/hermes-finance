@@ -146,7 +146,22 @@ def _trade(row: ET.Element, *, pending: bool, ordinal: int) -> dict:
     def get(key: str) -> str | None:
         return row.get(names[key])
 
-    ids = _ids(get("ids"))
+    # #736 sanitized manifest: only a completed one-part B ID with an explicit
+    # REPO-leg marker and a distinct, unambiguous B partner is accepted here.
+    # The partner is a guard, never the missing second native economic ID.
+    source_ids = lines(get("ids"))
+    if not pending and len(source_ids) == 1 and re.fullmatch(r"B[0-9]{1,127}", source_ids[0]):
+        partners = lines(get("repo"))
+        if (
+            len(partners) != 1
+            or not re.fullmatch(r"B[0-9]{1,127}", partners[0])
+            or partners[0] == source_ids[0]
+            or row.get("comment") not in {"репо ч.1", "репо ч.2"}
+        ):
+            raise MyBrokerError("trade_ids_ambiguous")
+        ids = source_ids
+    else:
+        ids = _ids(get("ids"))
     account = single(get("account"))
     core = {
         "source_account": account,
