@@ -1,10 +1,10 @@
-# MyBroker archived-instrument disposition — contract proposal
+# MyBroker archived-instrument disposition — accepted bounded v1 contract
 
 Assignment: [#738](https://github.com/LTstripes/hermes-finance/issues/738).
 Baseline: `main@7de6031fe8a24dad60cd1647e5768bb7f9ec255a`.
-Status: proposed; independent financial/data review and authoritative contract
-acceptance are required before implementation. This document grants no financial
-authority and changes no existing accepted record.
+Status: ACCEPT AS AMENDED by [Integrator comment 6058010476](https://github.com/LTstripes/hermes-finance/issues/738#issuecomment-6058010476).
+This freezes the implementation contract, not implementation acceptance, CI, UAT
+or merge. It grants no financial authority and changes no existing accepted record.
 
 Governing source contract: [S1](MYBROKER_S1.md), especially the accepted
 [#708 contract](https://github.com/LTstripes/hermes-finance/issues/708#issuecomment-5999540552)
@@ -22,12 +22,12 @@ observations is permitted. The original whole-file SHA-256, parser identity,
 normalized document, source occurrence ordinals, native trade identities,
 monetary observations and provenance remain unchanged by a skip.
 
-The accepted S1 contract deliberately does not store raw XML, names, arbitrary
-comments, filenames or private paths. Whether #738 requires new byte-for-byte
-durable XML storage is an unresolved Owner decision. Such retention would amend
-S1 and requires a separately accepted storage/privacy/recovery contract; it must
-not be introduced implicitly by this proposal. Legacy records cannot acquire
-missing bytes retrospectively.
+Keep accepted S1 retention: persist only the whole-file hash, parser identity,
+full normalized source facts/ordinals and disposition provenance. Never add
+raw XML storage, an archive, source names/paths/private comments or XML backups.
+The original bytes remain intact for Preview and authoritative Apply reparse;
+source preservation means evidence fidelity, not bytes stored in the database.
+Previously accepted S1 v2 records remain unchanged.
 
 ## 2. Smallest identity and acceptance scope
 
@@ -81,8 +81,9 @@ Changing a skipped source instrument into mapped economic authority, changing an
 accepted mapped instrument into skipped evidence, or replacing source economics
 requires a separately reviewed correction/reconciliation contract. Those requests
 fail closed in this slice, preserving existing C5 and CLOSED/Reopen guards.
-The decision to defer these corrections requires Integrator acceptance; the
-Worker cannot claim that a refused correction implements an accepted correction.
+Integrator accepts this bounded deferral. Every attempted skip↔map correction,
+including retrospective plain-S1 skips and mixed cross-report economic support,
+is explicitly refused as reconciliation required; revoke/reaffirm cannot bypass it.
 
 ## 4. Projection and evidence rules
 
@@ -122,25 +123,31 @@ tracking must prevent disappearance, A→B→A restoration or an old receipt fro
 reviving authority. Reads may invalidate authority without changing CLOSED facts;
 protected dependency correction still requires the existing explicit Reopen.
 
-## 5. Date/scope proof boundary
+## 5. Frozen scope-only irrelevance proof
 
-First restrict by immutable accepted account aliases and the caller's explicit
-historical account universe. Demonstrably unrelated accounts do not acquire new
-blockers. Unknown/ambiguous membership remains blocked by its existing guard.
+The only positive irrelevant case in v1 is disjoint historical account scope:
+using effective immutable source account bindings and exact dated membership/
+universe evidence, no affected mapped source account belongs to the requested
+account/class/portfolio scope. Current account flags do not supply dated proof.
+Portfolio/cross-account queries also require their independent tracked-transfer,
+in-kind and roster gates. Unrelated independently evidenced scopes stay unchanged.
 
-For an included account, report overlap alone is insufficient to prove exclusion
-irrelevant. Inspect both exact position boundaries, actual/forward quantities,
-every execution occurrence, unresolved lifecycle, actual settlement/depo/commission
-dates and linked Money across the whole source union. Pending and unresolved
-position exposure persist beyond filename ranges. Opaque transfer/unsupported
-evidence cannot be assigned an invented ISIN, timestamp, class or expiry.
+For a scope containing an affected account, there is no positive same-account
+date-window irrelevance claim. Skipped settled position/value/unknown carry-forward
+can affect any cutoff. Report non-overlap, earliest observation, later quiet
+reports, absent/zero rows, equal actual/forward, old completed trades, catalogue
+state and Owner skip do not establish lifetime, disposal or complete absence.
+Relevant historical source-dependent endpoint, cash/in-kind/class completeness,
+XIRR/TWRR and legacy/fallback eligibility remain partial/UNKNOWN/NOT_COMPUTABLE
+with a specific excluded-source-impact reason. No guessed exposure expiry.
 
-A window may be called unrelated only when existing exact source evidence
-independently proves that excluded evidence affects neither boundary nor any
-flow in the interval. No catalogue absence, later clean report, zero default,
-range non-overlap or Owner skip attestation supplies that proof. Otherwise keep
-the explicit exclusion-impact blocker. The sufficient exact proof predicate and
-its account/interval boundaries remain to be frozen by financial contract review.
+Full trades/Money/unsupported observations continue participating in identity,
+link ambiguity, pending lifecycle and settlement/custody checks. Skip-linked
+settled Money stays unresolved in H2-A2 even with valid native identity or mapped
+support in another report. Preserve source Apply reconciliation refusal for
+pre-existing COMPLETE claims; never silently downgrade or overwrite CLOSED facts.
+A future independently accepted proof contract may relax same-account windows;
+it is not a prerequisite for reviewed source Apply.
 
 ## 6. UI and synthetic acceptance
 
@@ -162,7 +169,7 @@ Synthetic acceptance must cover:
 - Overlapping repeated identities with consistent and mixed decisions; excluded
   Money remains identifiable and cannot establish complete coverage.
 - Relevant H0/H1/H2/H3, legacy/class XIRR/TWRR and monthly eligibility refusal,
-  plus a positively proven unrelated account/window; unresolved future pending,
+  plus a positively proven disjoint historical account scope; unresolved future pending,
   custody/settlement/commission and opaque transfer exposure remain guarded.
 - Revoke/reaffirm, dependency retirement and SQL A→B→A protection; CLOSED/Reopen
   behavior; empty migration, append-only guards, populated downgrade refusal and
