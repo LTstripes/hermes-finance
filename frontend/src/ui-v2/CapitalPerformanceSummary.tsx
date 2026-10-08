@@ -11,18 +11,19 @@ import {
   VALUE_BRIDGE_DISCLAIMER,
   VALUE_BRIDGE_LABEL,
 } from "../lib/performanceMessages";
-import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 import {
   intervalDays,
   isZeroPercent,
   needsAnnualizationWarning,
 } from "./capitalPerformanceContext";
+import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
 import styles from "./UiV2CapitalPerformance.module.css";
 import { UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyDeltaText as moneyDelta } from "./valueFormat";
 
 /** Presentation order only (contract priority); never gates availability. */
 const DIAGNOSTIC_PRIORITY: Record<string, number> = {
+  excluded_source: 0,
   opening_valuation: 10,
   closing_valuation: 10,
   reporting_month: 20,

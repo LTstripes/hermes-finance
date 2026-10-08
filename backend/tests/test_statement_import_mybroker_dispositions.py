@@ -763,6 +763,75 @@ def test_independently_evidenced_disjoint_account_xirr_stays_available(database)
         assert impact(session, (prepared[0],)) == []
 
 
+@pytest.mark.parametrize("membership", ["missing", "included", "gap", "excluded"])
+@pytest.mark.parametrize("h1", [False, True])
+def test_exclusion_diagnostic_survives_missing_membership_h1_h2_through_public_reads(
+    database, membership, h1
+):
+    from test_historical_source_xirr import A as start
+    from test_historical_source_xirr import B as end
+    from test_historical_source_xirr import accept_inputs, prepare
+
+    from hermes_finance.persistence import Account, AccountPerformanceScopeMembership
+
+    with database.session_factory() as session:
+        account_id = session.scalar(select(Account.id))
+        if h1:
+            prepared = prepare(session)
+            # H1 identities select the historical path, with no H2 cash authority.
+            accept_inputs(session, prepared, coverage=False)
+        rows = list(session.scalars(select(AccountPerformanceScopeMembership)))
+        for row in rows:
+            session.delete(row)
+        if membership != "missing":
+            session.add(
+                AccountPerformanceScopeMembership(
+                    account_id=account_id,
+                    effective_from=start if membership != "gap" else end,
+                    effective_to=end,
+                    include_in_returns=membership != "excluded",
+                )
+            )
+        session.commit()
+        accept(session, mixed_xml(trades=False))
+        other = create_account(session, name="Synthetic unrelated", account_type="brokerage")
+        other_id = other.id
+
+    with TestClient(create_app(database=database)) as client:
+        for scope, identity in (
+            ("account", account_id),
+            ("portfolio", None),
+            ("account", other_id),
+        ):
+            params = {"start_date": start.isoformat(), "end_date": end.isoformat(), "scope": scope}
+            if identity is not None:
+                params["account_id"] = identity
+            affected = identity == account_id or (scope == "portfolio" and membership != "excluded")
+            for endpoint in ("availability", "xirr", "twrr", "readiness"):
+                response = client.get(f"/api/performance/{endpoint}", params=params)
+                assert response.status_code == 200, response.text
+                body = response.json()
+                metrics = (
+                    [body["xirr"], body["twrr"]]
+                    if endpoint in ("availability", "readiness")
+                    else [body]
+                )
+                for metric in metrics:
+                    assert metric["availability"] == "not_computable"
+                    assert (REASON in metric["reason_codes"]) is affected
+                    assert len(metric["reason_codes"]) == len(set(metric["reason_codes"]))
+                    if endpoint != "availability":
+                        assert metric["value"] is None and metric["quality"] == "unavailable"
+                if endpoint == "readiness":
+                    diagnostic = [d for d in body["diagnostics"] if d["key"] == "excluded_source"]
+                    assert bool(diagnostic) is affected
+                    if affected:
+                        assert diagnostic[0]["affected_metrics"] == ["xirr", "twrr"]
+                        assert diagnostic[0]["action"]["capability"] == "source_required"
+                        assert len(body["diagnostics"]) > 1
+                    assert SKIP not in response.text and '"import_id"' not in response.text
+
+
 def test_skip_preserves_closed_facts_and_reopen_does_not_remove_blockers(database):
     from hermes_finance.services.reporting_months import (
         close_reporting_month,
@@ -890,7 +959,8 @@ def test_new_skip_invalidates_existing_h1_h2_h3_and_h0_discloses_only_structure(
             assert flow["effective_state"] != "accepted" and REASON in flow["blockers"]
         coverage = read_source_cash_coverage(session, coverage_id)
         assert coverage["coverage_state"] == "unknown" and REASON in coverage["blockers"]
-        assert not result(session, prepared[0]).is_available
+        actual = result(session, prepared[0])
+        assert not actual.is_available and REASON in actual.reason_codes
         h0 = preview_historical_reconstruction(
             session, account_ids=[prepared[0]], requested_from=start, requested_to=end
         )

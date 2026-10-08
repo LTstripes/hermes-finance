@@ -62,6 +62,7 @@ from hermes_finance.services.external_flows import (
 from hermes_finance.services.in_kind_boundary_coverage import (
     in_kind_boundary_coverage_for_interval,
 )
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.transfer_reconciliation import (
     iter_transfer_reconciliation_evidence,
 )
@@ -277,6 +278,38 @@ def _scope_membership_coverage(
         ),
         rows_by_account,
     )
+
+
+def _excluded_source_reason_codes(
+    session: Session,
+    *,
+    scope: PerformanceScope,
+    membership: ScopeMembershipCoverage,
+    rows_by_account: dict[int, list[AccountPerformanceScopeMembership]],
+    start_date: date,
+    end_date: date,
+) -> set[str]:
+    """Source bindings prove impact even when financial prerequisite evidence is absent.
+
+    Only complete, unambiguous exclusion from the portfolio for the entire window
+    proves an account disjoint. Missing history or today's checkbox cannot do so.
+    Permanent source impact retains the resolver's conservative date semantics.
+    """
+    account_ids = tuple(
+        identity
+        for identity in membership.account_ids
+        if scope is PerformanceScope.ACCOUNT
+        or not _history_covers_interval(
+            rows_by_account.get(identity, []), start_date=start_date, end_date=end_date
+        )
+        or any(
+            row.include_in_returns
+            and row.effective_from <= end_date
+            and (row.effective_to is None or row.effective_to >= start_date)
+            for row in rows_by_account.get(identity, [])
+        )
+    )
+    return {REASON} if impact(session, account_ids) else set()
 
 
 def _boundary_reason(role: str) -> str:
@@ -1388,6 +1421,16 @@ def performance_availability_for_interval(
     )
 
     xirr_reasons = set(currency_reasons)
+    xirr_reasons.update(
+        _excluded_source_reason_codes(
+            session,
+            scope=normalized_scope,
+            membership=membership,
+            rows_by_account=rows_by_account,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    )
     xirr_reasons.update(membership.reason_codes)
     xirr_reasons.update(cash_boundary_coverage.reason_codes)
     xirr_reasons.update(in_kind_boundary_coverage.reason_codes)

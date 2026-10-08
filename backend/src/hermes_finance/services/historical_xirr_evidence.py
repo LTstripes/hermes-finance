@@ -15,6 +15,7 @@ from hermes_finance.services.historical_owner_flows import read_historical_owner
 from hermes_finance.services.historical_portfolio_flows import read_historical_portfolio_flow
 from hermes_finance.services.in_kind_boundary_coverage import in_kind_boundary_coverage_for_interval
 from hermes_finance.services.performance_availability import (
+    _excluded_source_reason_codes,
     _performance_currency,
     _portfolio_transfer_safety,
     _scope_membership_coverage,
@@ -62,6 +63,16 @@ def historical_xirr_evidence(
         return None
 
     currency, reasons = _performance_currency(session)
+    reasons.update(
+        _excluded_source_reason_codes(
+            session,
+            scope=scope,
+            membership=membership,
+            rows_by_account=rows_by_account,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    )
     reasons.update(membership.reason_codes)
     required_ids = (
         (account_id,)
