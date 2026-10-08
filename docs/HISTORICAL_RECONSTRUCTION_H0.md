@@ -74,3 +74,55 @@ and structural flags support Owner-local review. Do not publish Owner-local
 reports or responses as agent/GitHub artifacts; synthetic tests supply evidence.
 Independent candidate review, Integrator acceptance and applicable Owner UAT
 remain separate from CI and from this read-only Preview.
+
+## Synthetic timeout diagnosis (#709)
+
+The [bounded Integrator assignment](https://github.com/LTstripes/hermes-finance/issues/709#issuecomment-6067013225)
+was reproduced from main `5144b71b05537a540b2ac11ae9e66ea751bb1446`
+with four synthetic accepted S1 imports, two explicitly mapped accounts and
+500 distinct settled trades with settlement money rows per import. All four
+reports covered January through March 2030; H0 selected both accounts from
+2029-12-31 through 2030-03-31. Setup used the existing fabricated XML fixture,
+cloned its trade/money rows with distinct two-part IDs and accepted the reports
+through S1 Preview/Apply. No Owner/runtime data were read.
+
+| Measurement, same committed synthetic database | Baseline | Fixed |
+| --- | ---: | ---: |
+| Loopback HTTP backend duration, without profiler | 66.44 s | 4.50 s |
+| Client, unchanged 45-second read deadline | ReadTimeout at 45.36 s | HTTP 200 at 4.77 s |
+| Profiled service duration | 76.53 s | 5.92 s |
+| Service SELECT statements | 22,067 | 4,050 |
+| Disposition resolver calls in profiled service | 8,012 | 4 |
+| Candidate operations returned per account | 1,000 / 1,000 | 1,000 / 1,000 |
+
+On the baseline, `excluded_trade()` reloaded and decoded the full import union
+for every S2 candidate; that path consumed 67.53 s of the profiled request.
+H0 also resolved the same dispositions again per selected account. The fix
+reuses the complete disposition evidence already resolved by the request's
+S2 context. Its identity set and account filtering live only in that context,
+inside the existing coherent read snapshot. The next request resolves anew.
+Accepted, revoked, retired and invalid exclusions all retain their impact;
+there is no date expiry or successful-state filter.
+
+The complete H0 response, including `preview_digest`, was equal before/after
+on the same database. All persisted tables remained equal, and both HTTP
+probes recorded no INSERT/UPDATE/DELETE/REPLACE. Normal CI regressions in
+`test_statement_import_historical_reconstruction.py` check one resolver call
+per import with five imports/two accounts, accepted canonical evidence,
+overlaps, both endpoint sides, skipped trades, identity-less B REPO and fresh
+revoked/retired/invalid evidence through a reused Session. The baseline failed
+the call-count assertion (42 calls instead of five); the fix passed. Existing
+source/canonical/financial guard tests remain applicable.
+
+This proves a backend scaling cause for the synthetic timeout. The H0 route
+has no 45-second backend deadline; the frontend has no H0 consumer or built-in
+45-second request deadline. The original private Test caller's deadline,
+workload and process lifecycle were not inspected, so its precise cause and
+successful H0 completion remain unverified. A separate protected Owner-local
+read-only validation must record the exact candidate, selected accounts/range,
+client deadline, elapsed time and complete structural readback. Synthetic
+success does not prove financial completeness or Owner UAT.
+
+This patch does not bound every remaining hot loop or promise a universal
+45-second completion time. It preserves full union/Skip/REPO evidence and the
+financial guards without schema, source semantics or deadline changes.
