@@ -241,9 +241,21 @@ def test_exact_receipt_duplicate_changed_range_choices_and_plain_s1_corrections(
     xml = mixed_xml()
     with database.session_factory() as session:
         p = inspect(session, xml)
-        accept(session, xml, p)
+        saved = accept(session, xml, p)
         assert accept(session, xml, p)["duplicate"]
-        assert accept(session, xml, request="synthetic-fresh")["duplicate"]
+        # A fresh panel starts without local decisions, then reviews the exact
+        # persisted choices via GET and binds them to a new Preview/request.
+        fresh = preview(session, xml)
+        assert fresh["already_imported"] == saved["import_id"] and not fresh["can_apply"]
+        recorded = read_mybroker_import(session, fresh["already_imported"])
+        skips = tuple(i["isin"] for i in recorded["instrument_choices"] if i["choice"] == "skip")
+        replay = preview_mybroker(
+            session, document=xml, filename=FILENAME, skipped_isins=skips, owner_reviewed=True
+        )
+        assert replay["can_apply"] and replay["document"] == recorded["document"]
+        repeated = accept(session, xml, replay, request="synthetic-fresh")
+        assert repeated["duplicate"] and repeated["import_id"] == saved["import_id"]
+        assert read_mybroker_import(session, repeated["import_id"]) == recorded
         assert (
             count(session, MyBrokerImport) == 1 and count(session, MyBrokerDispositionRevision) == 1
         )
