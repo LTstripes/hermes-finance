@@ -1,6 +1,6 @@
 # Hermes Finance — current status
 
-Owner/Integrator closeout, **2026-10-04**. Live GitHub refs and completed CI are authoritative. Current coordination: [#554](https://github.com/LTstripes/hermes-finance/issues/554). Restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md).
+Owner/Integrator status refreshed **2026-10-08** after the #740/#741 historical-source integration and protected Test UAT. Live GitHub refs and completed CI are authoritative. Current coordination: [#554](https://github.com/LTstripes/hermes-finance/issues/554). Restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md).
 
 ## Release, development and local runtime are separate
 
@@ -8,9 +8,9 @@ Owner/Integrator closeout, **2026-10-04**. Live GitHub refs and completed CI are
 | --- | --- |
 | Published release | **v1.2.0**, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, annotated tag object `f9311d26c1aae7295361937096844f4dde615b55`; not draft/prerelease |
 | Release checks | Exact-main CI `37206069556` SUCCESS on attempt 2 after a targeted transient `ECONNRESET` retry; Guarded Release `37206660242` SUCCESS |
-| Development code | `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4`, merge #701; exact-main push CI `37226437369` SUCCESS. This is the code milestone, not a moving HEAD alias |
-| Local Stable | Last confirmed installation is v1.1.0. Owner authorized v1.2.0 and received OPS02 instructions, but an installation/readiness completion report is not recorded here. Do not infer installation from publication |
-| Persistent Test | Last reported pin `d282d09647f129cd83c99e14a10024901a1cf6da`; not refreshed by this session |
+| Development main | `e2864668a7357365656ace4ac681288313d0ee9f`, merge #741; code-only H0 optimization after #740. Exact #740 post-main CI `37827387788` SUCCESS; [#741 post-main push CI](https://github.com/LTstripes/hermes-finance/actions/runs/37835529213) must be checked live before citing its result |
+| Local Stable | Later isolated Owner-local preflight observed the Stable **checkout code SHA** `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, matching published v1.2.0. A separate production Start/health/data-continuity completion record remains unavailable; code pin alone does not prove runtime readiness |
+| Persistent Test | Owner-local #741 H0 UAT reported code pin `9f028150475bb14dfb3c43c8bdbb9d6e2512e2fc`, independent DB on schema `0054`, read-only complete H0 Preview twice under 45s with no DB changes. Test is not Stable and remains separate |
 
 **Class-return Phase 1 is integrated in development main, not in published v1.2.0 or automatically in Stable/Test.** A documentation closeout may advance main without changing the code milestone or release tag. [Release record](releases/1.2.0.md) retains publication evidence.
 
@@ -26,21 +26,22 @@ Owner/Integrator closeout, **2026-10-04**. Live GitHub refs and completed CI are
 | #535 / #700 | Read-only `/api/performance/class-returns`; independent annualized XIRR and period TWRR | `c3ee0cc0215fa650e80de04f8aa38346ce8c3ae3` / `37222285255` SUCCESS |
 | #540 / #701 | Existing Performance detail: Accounts/Classes, four visible rows, independent states, provenance, exact-date presets, 390px/keyboard support | `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4` / `37226437369` SUCCESS |
 
-All four implementation issues are CLOSED / COMPLETED after independent review and canonical checks. No open PR existed at the code milestone. Migrations 0045–0047 belong to this development wave, not v1.2.0.
+At the dated class-return code milestone, all four implementation issues were CLOSED / COMPLETED after independent review and canonical checks. Later source-first/H0 integration is tracked separately in #709. Migrations 0045–0047 belong to this development wave, not v1.2.0.
 
 The supported capability is **whole-portfolio RUB stock/bond/gold over an affirmatively proven no-crossing interval**. Both exact endpoint inventories must be explicitly complete. Current `instrument_type`/`Instrument.currency` are not historical proof; persisted RUB market values preserve the existing accrued-interest basis. XIRR uses only negative opening and positive closing; TWRR uses the no-boundary path. Evidence and solver limitations stay separate.
 
-**Not delivered:** statement-backed purchases/sales/distributions, deposits/savings class returns, flow-bearing class TWRR, FX conversion, or an Owner-facing class-attestation form. The deposit UI row is deliberately unsupported. Backend evidence writes exist, but the class screen is read-only; legacy C1 is not automatically repaired. Owner UAT may therefore correctly show unavailable values, not percentages for every class/month.
+**Not delivered:** universally complete statement-backed purchases/sales/distributions, deposits/savings class returns, flow-bearing class TWRR or FX conversion. The deposit row is deliberately unsupported. Bounded C1 correction and no-crossing/endpoint inventory preparation UI from #705/#706 has since been integrated, but this does not automatically repair legacy C1 or create full history. Dedicated Owner class-return UI UAT remains pending; unavailable percentages are correct when proof is missing.
 
 Canonical detail: [class contract](performance/ASSET_CLASS_RETURNS_CONTRACT.md), [C1](performance/POSITION_CLASS_IDENTITY.md), [C2/C3/C5](performance/CLASS_NO_CROSSING_ENDPOINTS.md), [return API](performance/CLASS_RETURNS_API.md).
 
 ## Owner actions and next work
 
-- **Owner UAT is pending**, planned by the Owner for tomorrow or the following days. Development continues meanwhile. No automatic UAT PASS, local Test refresh, new release or Stable promotion follows from this closeout.
-- To test class returns, first use an explicitly prepared exact development candidate on persistent Test (or a separately authorized later release). v1.2.0 cannot show this post-release feature. Preparation is a bounded local Worker operation, not an Owner JSON/PowerShell exercise. Do not repeat the full accepted #662 UAT.
-- [#702](https://github.com/LTstripes/hermes-finance/issues/702) is the selected next task: **read-only Phase 2A statement/event contract research**, pinned to the verified code milestone. Produce a source/coverage matrix and the smallest proposed statement-backed class XIRR path. It can run independently of documentation and Owner UAT; it does not authorize implementation.
-- Record the missing class-attestation/legacy-C1 repair UI as a product dependency where needed. Do not substitute manual database edits or promise universal historical returns.
-- #646 remains external Alfa PRO follow-up. Owner elected to wait several days/about a week for documentation before support/probing; no automatic monitoring or support submission is claimed. #389 composer remains deferred. #124 is permanent release control; #554 coordinates current work.
+- **#709 source-first historical reconstruction remains OPEN.** #708's MyBroker import is integrated; #736/#738 B-REPO and reviewed archived-instrument Skip shipped in combined [PR #740](https://github.com/LTstripes/hermes-finance/pull/740). Protected original XML 1/2/4 source replay and Performance reason/display Owner-local UAT passed, with exact-main CI [37827387788](https://github.com/LTstripes/hermes-finance/actions/runs/37827387788) SUCCESS. A skipped historical instrument never proves an unaffected financial scope or a zero position.
+- **H0 Preview performance is repaired in development main via [PR #741](https://github.com/LTstripes/hermes-finance/pull/741).** Independent read-only code review ACCEPT, exact-head CI [37831179270](https://github.com/LTstripes/hermes-finance/actions/runs/37831179270) SUCCESS. On the preserved Test DB, the original read-only H0 API returned complete HTTP 200 in 0.538s and 0.524s with equal response/digest, no writes or migration, and existing 18 reports and three imports unchanged. The original timed-out H0 response cannot be compared; ordinary Start/shutdown smoke was not repeated.
+- **Financial XIRR/TWRR truth is still separate:** use H0's account/date/source-range/endpoint structural inventory to identify exactly which H1, H2-B1, H2 cash/in-kind, H3, membership and valuation evidence is missing. Do not infer amounts, full coverage, missing owner flows, prices, class returns or positive historical returns. H0 does not calculate XIRR. Full #709 Owner financial acceptance remains pending.
+- **Focused Owner UI follow-up:** actual-history «Капитал → Доходность → По классам» plus C1/no-crossing preparation from #705/#706 need their own no-write acceptance. Do not replay the already accepted full #572 monthly UI route.
+- **Local/release boundary:** current published v1.2.0 is not current development main. Future Stable promotion requires a separately authorized release and backup-first OPS02, then explicitly reviewed source mappings and fresh real XML upload in Stable. Do not copy Test SQLite. Established exact Owner account identity decisions are retained privately and must not be replaced by a general suffix heuristic.
+- #702 source research is CLOSED; #711 source-first ingestion roadmap and #714 deposit/savings research remain OPEN. #646 Alfa PRO is waiting for a documented supported token contract, not guessed protocol changes. #389 composer is deferred; #124 is permanent release control; #554 coordinates ongoing work.
 
 Worker launch prompts stay short (normally 5–10 lines): issue/latest note, role, baseline, result and delivery. Acceptance criteria stay in the issue/contract, not a second prompt specification. No Model evidence, benchmark collection or reporting telemetry.
 
