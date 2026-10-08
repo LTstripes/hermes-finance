@@ -63,7 +63,20 @@ export type MyBrokerDocument = {
     currency: string;
   }[];
 };
-export type MyBrokerPreview = {
+export type MyBrokerDisposition = {
+  isin: string;
+  source_set_fingerprint: string;
+  revision_id?: number | null;
+  revision?: number;
+  effective_state?: "accepted" | "retired" | "revoked" | "invalid";
+};
+export type MyBrokerChoices = {
+  instrument_choices?: { isin: string; choice: "map" | "skip" | "undecided" }[];
+  instrument_dispositions?: MyBrokerDisposition[];
+  counts?: { mapped: number; skipped: number; unsupported: number };
+  already_imported?: number | null;
+};
+export type MyBrokerPreview = MyBrokerChoices & {
   document: MyBrokerDocument;
   mappings: MyBrokerBinding[];
   missing_mappings: { kind: "account" | "instrument"; identity: string }[];
@@ -73,7 +86,7 @@ export type MyBrokerPreview = {
   coverage_state: "unknown";
   can_apply: boolean;
 };
-export type MyBrokerImport = {
+export type MyBrokerImport = MyBrokerChoices & {
   import_id: number;
   document: MyBrokerDocument;
   mappings: MyBrokerBinding[];
@@ -81,9 +94,13 @@ export type MyBrokerImport = {
   coverage_state: "unknown";
 };
 
-export function previewMyBroker(file: File) {
+export function previewMyBroker(file: File, skippedIsins: string[] = []) {
   const form = new FormData();
   form.append("file", file);
+  form.append(
+    "decisions",
+    JSON.stringify({ skipped_isins: skippedIsins, owner_reviewed: skippedIsins.length > 0 }),
+  );
   return apiMultipart<MyBrokerPreview>("/api/mybroker-import/preview", form);
 }
 
@@ -97,6 +114,10 @@ export function applyMyBroker(file: File, preview: MyBrokerPreview) {
       covered_from: preview.document.covered_from,
       covered_to: preview.document.covered_to,
       mappings: preview.mappings,
+      skipped_isins:
+        preview.instrument_choices?.filter((i) => i.choice === "skip").map((i) => i.isin) ?? [],
+      owner_reviewed: (preview.counts?.skipped ?? 0) > 0,
+      request_id: crypto.randomUUID(),
     }),
   );
   return apiMultipart<MyBrokerImport>("/api/mybroker-import/apply", form);

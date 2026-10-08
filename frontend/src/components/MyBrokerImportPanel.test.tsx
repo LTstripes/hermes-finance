@@ -220,3 +220,80 @@ describe("MyBroker explicit Preview Apply", () => {
     expect(screen.getByText(/деньги RUB: 0/)).toBeVisible();
   });
 });
+
+it("reviews an archived ISIN skip without creating a mapping and verifies its GET", async () => {
+  const isin = "RU000A000001";
+  const document = {
+    ...preview.document,
+    positions: [
+      {
+        ordinal: 0,
+        source_account: "1234567-000",
+        isin,
+        actual_quantity: "10",
+        forward_quantity: "10",
+      },
+    ],
+  };
+  const reviewed: MyBrokerPreview = {
+    ...preview,
+    document,
+    instrument_choices: [{ isin, choice: "skip" }],
+    instrument_dispositions: [{ isin, source_set_fingerprint: "c".repeat(64) }],
+    counts: { mapped: 0, skipped: 1, unsupported: 0 },
+  };
+  vi.mocked(previewMyBroker)
+    .mockResolvedValueOnce({
+      ...reviewed,
+      can_apply: false,
+      instrument_choices: [{ isin, choice: "undecided" }],
+      instrument_dispositions: [],
+      counts: { mapped: 0, skipped: 0, unsupported: 0 },
+      missing_mappings: [{ kind: "instrument", identity: isin }],
+    })
+    .mockResolvedValueOnce(reviewed);
+  const saved: MyBrokerImport = {
+    ...imported,
+    document,
+    counts: reviewed.counts,
+    instrument_choices: reviewed.instrument_choices,
+    instrument_dispositions: [
+      {
+        isin,
+        source_set_fingerprint: "c".repeat(64),
+        revision_id: 1,
+        revision: 1,
+        effective_state: "accepted",
+      },
+    ],
+  };
+  vi.mocked(applyMyBroker).mockResolvedValue(saved);
+  vi.mocked(readMyBrokerImport).mockResolvedValue(saved);
+  const user = userEvent.setup();
+  render(<MyBrokerImportPanel />);
+  await inspect(user);
+  expect(screen.getByRole("checkbox")).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Пропустить (не учитывать)" }));
+  await waitFor(() => expect(previewMyBroker).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(previewMyBroker).mock.calls[1][1]).toEqual([isin]);
+  expect(confirmBrokerIdentityMapping).not.toHaveBeenCalled();
+  await screen.findByText(/Источник сохранён; для затронутой/);
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Сохранить данные отчёта" }));
+  await screen.findByRole("status");
+  expect(() =>
+    verifyMyBrokerReadback(reviewed, saved, {
+      ...saved,
+      instrument_dispositions: [
+        { isin, source_set_fingerprint: "c".repeat(64), effective_state: "retired" },
+      ],
+    }),
+  ).toThrow();
+  expect(() =>
+    verifyMyBrokerReadback(reviewed, saved, {
+      ...saved,
+      instrument_choices: [{ isin, choice: "map" }],
+    }),
+  ).toThrow();
+});

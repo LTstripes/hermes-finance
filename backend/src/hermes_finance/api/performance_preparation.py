@@ -100,12 +100,12 @@ def read_preparation(
                 if start_date <= f.event_date <= end_date
             ],
             cash_coverages=[
-                coverage_response(r)
+                coverage_response(r, session)
                 for r in list_cash_boundary_coverages(session, account_id=account_id)
                 if r.covered_from <= end_date and r.covered_to >= start_date
             ],
             in_kind_coverages=[
-                _coverage_response(r)
+                _coverage_response(r, session)
                 for r in list_in_kind_boundary_coverages(session, account_id=account_id)
                 if r.covered_from <= end_date and r.covered_to >= start_date
             ],

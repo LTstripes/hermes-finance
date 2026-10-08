@@ -30,6 +30,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.executed_trades import _candidate, _context
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.mybroker_import import _crosses_cutoff, _reduce
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
@@ -126,6 +127,7 @@ def _components(document, bindings, import_id, side, blockers):
         instrument_id = instruments.get(row["isin"])
         if instrument_id is None:
             blockers.add("instrument_mapping_missing")
+            continue
         if instrument_id in seen:
             blockers.add("duplicate_position")
         seen.add(instrument_id)
@@ -479,6 +481,9 @@ def _source_union(session, intent, selected, blockers):
 
 def _build(session, intent):
     blockers = set()
+    exclusions = impact(session, (intent.account_id,))
+    if exclusions:
+        blockers.add(REASON)
     row = session.get(MyBrokerImport, intent.source_import_id)
     if row is None:
         raise MyBrokerError("source_import_not_found")
@@ -590,6 +595,9 @@ def _build(session, intent):
             "archived": archived,
         },
     }
+    if exclusions:
+        evidence["dependencies"]["instrument_dispositions"] = exclusions
+        total = None
     return evidence, sorted(blockers), limitations, comparisons, total, source_set
 
 

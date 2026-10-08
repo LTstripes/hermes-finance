@@ -74,7 +74,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0053_historical_portfolio_flows",
+        "revision": "0054_mybroker_dispositions",
         "months_status": 200,
     }
 
@@ -104,7 +104,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0053_historical_portfolio_flows"}
+    assert observed == {"revision": "0054_mybroker_dispositions"}
     assert starts == 2
 
 

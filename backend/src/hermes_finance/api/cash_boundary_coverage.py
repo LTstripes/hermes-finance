@@ -67,6 +67,8 @@ class CashBoundaryCoverageResponse(BaseModel):
     provenance_reference: str | None
     notes: str | None
     source_acceptance: dict | None = None
+    exclusion_blockers: list[str] = Field(default_factory=list)
+    recorded_coverage_state: str | None = None
 
 
 def _response(row: CashBoundaryCoverageRecord, session=None) -> CashBoundaryCoverageResponse:
@@ -76,12 +78,21 @@ def _response(row: CashBoundaryCoverageRecord, session=None) -> CashBoundaryCove
 
         if row.provenance_kind == SOURCE_CASH_PROVENANCE or latest(session, row.id):
             acceptance = read_source_cash_coverage(session, row.id)
+    from hermes_finance.services.mybroker_dispositions import REASON, impact
+
+    excluded = bool(session is not None and impact(session, (row.account_id,)))
     return CashBoundaryCoverageResponse(
         id=row.id,
         account_id=row.account_id,
         covered_from=row.covered_from,
         covered_to=row.covered_to,
-        coverage_state=acceptance["coverage_state"] if acceptance else row.coverage_state,
+        coverage_state="unknown"
+        if excluded
+        else acceptance["coverage_state"]
+        if acceptance
+        else row.coverage_state,
+        exclusion_blockers=[REASON] if excluded else [],
+        recorded_coverage_state=row.coverage_state if excluded else None,
         provenance_kind=SOURCE_CASH_PROVENANCE if acceptance else row.provenance_kind,
         provenance_reference=row.provenance_reference,
         notes=row.notes,
@@ -116,7 +127,8 @@ def create_cash_boundary_coverage_endpoint(
             provenance_kind=payload.provenance_kind,
             provenance_reference=payload.provenance_reference,
             notes=payload.notes,
-        )
+        ),
+        session,
     )
 
 
@@ -168,5 +180,6 @@ def update_cash_boundary_coverage_endpoint(
             session,
             coverage_id,
             **payload.model_dump(exclude_unset=True),
-        )
+        ),
+        session,
     )

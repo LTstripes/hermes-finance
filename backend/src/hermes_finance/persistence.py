@@ -60,6 +60,62 @@ class MyBrokerImport(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MyBrokerDispositionSet(Base):
+    """Immutable initial skip manifest; absent on legacy fully mapped S1."""
+
+    __tablename__ = "mybroker_disposition_sets"
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), primary_key=True)
+    skipped_isins_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class MyBrokerDispositionRevision(Base):
+    __tablename__ = "mybroker_disposition_revisions"
+    __table_args__ = (
+        UniqueConstraint("import_id", "isin", "revision", name="uq_mybroker_disposition_revision"),
+        CheckConstraint("revision > 0", name="ck_mybroker_disposition_revision"),
+        CheckConstraint("state IN ('accepted','retired','revoked')", name="ck_mybroker_skip_state"),
+        CheckConstraint(
+            "operation IN ('accept','retire','revoke','reaffirm')",
+            name="ck_mybroker_skip_operation",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    import_id: Mapped[int] = mapped_column(
+        ForeignKey("mybroker_disposition_sets.import_id"), nullable=False
+    )
+    isin: Mapped[str] = mapped_column(String(128), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mybroker_disposition_revisions.id")
+    )
+    operation: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MyBrokerDispositionApply(Base):
+    __tablename__ = "mybroker_disposition_applies"
+    request_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class MyBrokerDispositionChange(Base):
+    """Monotonic dependency loss, with only structural Hermes keys."""
+
+    __tablename__ = "mybroker_disposition_changes"
+    __table_args__ = {"sqlite_autoincrement": True}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    import_id: Mapped[int] = mapped_column(
+        ForeignKey("mybroker_disposition_sets.import_id"), nullable=False
+    )
+
+
 class HistoricalOwnerFlow(Base):
     """Immutable account-boundary core. Its tuple is not an economic identity."""
 

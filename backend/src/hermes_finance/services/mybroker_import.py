@@ -25,9 +25,17 @@ from hermes_finance.persistence import (
     ClassNoCrossingCoverage,
     Instrument,
     InvestmentCashFlow,
+    MyBrokerDispositionApply,
     MyBrokerImport,
     PositionSnapshot,
     ReportingMonth,
+)
+from hermes_finance.services.mybroker_dispositions import (
+    counts,
+    impact,
+    initial_accept,
+    occurrence_evidence,
+    resolve,
 )
 from hermes_finance.services.performance_availability import _membership_at
 from hermes_finance.statement_import.mybroker import (
@@ -338,6 +346,7 @@ def _source_affects_interval(
     start: date,
     end: date,
     trades: dict[str, dict],
+    skipped_isins: tuple[str, ...] = (),
 ) -> bool:
     # No source event-C1 exists in S1. An in-universe source event can affect any
     # class; neither today's catalogue nor a snapshot labels that trade's C1.
@@ -346,6 +355,15 @@ def _source_affects_interval(
     }
     if not accounts:
         return False
+    # Excluded inventory/activity has no accepted lifetime proof in bounded v1.
+    if any(
+        p["isin"] in skipped_isins and p["source_account"] in accounts
+        for p in document["positions"]
+    ) or any(
+        t["core"]["isin"] in skipped_isins and t["core"]["source_account"] in accounts
+        for t in document["trades"]
+    ):
+        return True
     start_day, end_day = start.isoformat(), end.isoformat()
     relevant_trades = [t for t in document["trades"] if t["core"]["source_account"] in accounts]
     if document["covered_to"] >= start_day and document["covered_from"] <= end_day:
@@ -377,7 +395,12 @@ def _source_affects_interval(
     )
 
 
-def _prepare(session: Session, document: dict) -> dict:
+def _prepare(
+    session: Session,
+    document: dict,
+    skipped_isins: tuple[str, ...] = (),
+    owner_reviewed: bool = False,
+) -> dict:
     state, registry = _state(session)
     accounts = sorted(
         {document["filename_account"]}
@@ -392,8 +415,14 @@ def _prepare(session: Session, document: dict) -> dict:
     instruments = sorted(
         {p["isin"] for p in document["positions"]} | {t["core"]["isin"] for t in document["trades"]}
     )
+    if len(set(skipped_isins)) != len(skipped_isins) or set(skipped_isins) - set(instruments):
+        raise MyBrokerError("instrument_decision_invalid")
+    if skipped_isins and not owner_reviewed:
+        raise MyBrokerError("skip_owner_review_required")
     bindings = []
     missing = []
+    decision_conflicts = []
+    reconciliation_instruments = {}
     for kind, identities in (("account", accounts), ("instrument", instruments)):
         for identity in identities:
             matches = [
@@ -403,6 +432,16 @@ def _prepare(session: Session, document: dict) -> dict:
                 and m.subject_kind == kind
                 and m.provider_identity == identity
             ]
+            if kind == "instrument" and identity in skipped_isins:
+                if len(matches) > 1:
+                    decision_conflicts.append("accepted_mapping_conflict")
+                if len(matches) == 1:
+                    target = session.get(Instrument, matches[0].hermes_target_id)
+                    if target is None or target.isin not in (None, identity):
+                        decision_conflicts.append("accepted_mapping_conflict")
+                    else:
+                        reconciliation_instruments[identity] = target.id
+                continue
             if len(matches) == 1:
                 mapping = matches[0]
                 if kind == "instrument":
@@ -436,9 +475,49 @@ def _prepare(session: Session, document: dict) -> dict:
     same = next(
         (row for row in imports if row.document_sha256 == document["document_sha256"]), None
     )
-    conflicts = list(document["endpoint_conflicts"])
+    conflicts = list(document["endpoint_conflicts"]) + decision_conflicts
+    # An overlapping occurrence is not a correction route. Keep both source
+    # acceptance and downstream projection closed to mixed economic support.
+    incoming_trades = {
+        t["identity"]: t["core"]["isin"] in skipped_isins
+        for t in document["trades"]
+        if t["identity"]
+    }
+
+    def position_support(doc, exclusions):
+        support = {}
+        for p in doc["positions"]:
+            days = [doc["covered_to"]]
+            if (
+                p.get("beginning_actual_quantity") is not None
+                or p.get("beginning_value") is not None
+            ):
+                days.append(date.fromisoformat(doc["covered_from"]).toordinal() - 1)
+            for day in days:
+                cutoff = date.fromordinal(day).isoformat() if isinstance(day, int) else day
+                support[p["source_account"], p["isin"], cutoff] = p["isin"] in exclusions
+        return support
+
+    incoming_positions = position_support(document, skipped_isins)
+    for source, previous_document in zip(imports, prior_documents, strict=True):
+        excluded = {i["isin"] for i in resolve(session, source)}
+        if any(
+            t["identity"] in incoming_trades
+            and incoming_trades[t["identity"]] != (t["core"]["isin"] in excluded)
+            for t in previous_document["trades"]
+            if t["identity"]
+        ) or any(
+            key in incoming_positions and incoming_positions[key] != skipped
+            for key, skipped in position_support(previous_document, excluded).items()
+        ):
+            conflicts.append("instrument_disposition_reconciliation_required")
     reduced, reduction_conflicts = _reduce(prior_documents + [document])
     if same:
+        accepted_skips = sorted(i["isin"] for i in resolve(session, same))
+        if accepted_skips != sorted(skipped_isins):
+            conflicts.append("instrument_disposition_reconciliation_required")
+        elif any(i["effective_state"] != "accepted" for i in resolve(session, same)):
+            conflicts.append("instrument_disposition_reconciliation_required")
         old = json.loads(same.normalized_json)
         # A changed parser shape cannot silently reinterpret an accepted document.
         if old["parser"] != document["parser"]:
@@ -485,6 +564,7 @@ def _prepare(session: Session, document: dict) -> dict:
                 coverage.covered_from,
                 coverage.covered_to,
                 reduced,
+                skipped_isins,
             )
             for coverage in complete
         ):
@@ -493,6 +573,8 @@ def _prepare(session: Session, document: dict) -> dict:
     instrument_targets = {
         b["identity"]: b["hermes_id"] for b in bindings if b["kind"] == "instrument"
     }
+    # Skip removes projection authority, never existing reconciliation guards.
+    instrument_targets.update(reconciliation_instruments)
     for position in document["positions"]:
         accepted = session.scalars(
             select(PositionSnapshot)
@@ -505,11 +587,31 @@ def _prepare(session: Session, document: dict) -> dict:
         )
         if any(row.quantity != Decimal(position["actual_quantity"]) for row in accepted):
             conflicts.append("accepted_endpoint_quantity_conflict")
-    confirmation = digest({"document": document, "bindings": bindings, "state": state})
+    # Preserve exact legacy confirmation material when there are no exclusions.
+    material = {"document": document, "bindings": bindings, "state": state}
+    decisions = [occurrence_evidence(document, bindings, isin) for isin in sorted(skipped_isins)]
+    existing_impact = impact(session, [b["hermes_id"] for b in bindings if b["kind"] == "account"])
+    if decisions or existing_impact:
+        material["instrument_dispositions"] = decisions
+        material["disposition_state"] = existing_impact
+    confirmation = digest(material)
     return {
         "document": document,
         "mappings": bindings,
         "missing_mappings": missing,
+        "instrument_choices": [
+            {
+                "isin": isin,
+                "choice": "skip"
+                if isin in skipped_isins
+                else "map"
+                if any(b["kind"] == "instrument" and b["identity"] == isin for b in bindings)
+                else "undecided",
+            }
+            for isin in instruments
+        ],
+        "instrument_dispositions": decisions,
+        "counts": counts(document, bindings, skipped_isins),
         "conflicts": sorted(set(conflicts)),
         "blockers": sorted(set(blockers)),
         "confirmation_digest": confirmation,
@@ -519,10 +621,17 @@ def _prepare(session: Session, document: dict) -> dict:
     }
 
 
-def preview_mybroker(session: Session, *, document: bytes, filename: str) -> dict:
+def preview_mybroker(
+    session: Session,
+    *,
+    document: bytes,
+    filename: str,
+    skipped_isins: tuple[str, ...] = (),
+    owner_reviewed: bool = False,
+) -> dict:
     parsed = parse_mybroker(document, filename)
     with coherent_read_snapshot(session):
-        return _prepare(session, parsed)
+        return _prepare(session, parsed, skipped_isins, owner_reviewed)
 
 
 def read_mybroker_import(session: Session, import_id: int) -> dict:
@@ -530,7 +639,23 @@ def read_mybroker_import(session: Session, import_id: int) -> dict:
         row = session.get(MyBrokerImport, import_id, populate_existing=True)
         if row is None:
             raise MyBrokerError("import_not_found")
+        dispositions = resolve(session, row)
+        bindings = json.loads(row.mappings_json)
+        document = json.loads(row.normalized_json)
+        instruments = sorted(
+            {p["isin"] for p in document["positions"]}
+            | {t["core"]["isin"] for t in document["trades"]}
+        )
         return {
+            "instrument_dispositions": dispositions,
+            "instrument_choices": [
+                {
+                    "isin": isin,
+                    "choice": "skip" if any(i["isin"] == isin for i in dispositions) else "map",
+                }
+                for isin in instruments
+            ],
+            "counts": counts(document, bindings, dispositions),
             "import_id": row.id,
             "document": json.loads(row.normalized_json),
             "mappings": json.loads(row.mappings_json),
@@ -547,6 +672,9 @@ def apply_mybroker(
     confirmation_digest: str,
     confirmed_range: tuple[str, str],
     confirmed_mappings: list[dict],
+    skipped_isins: tuple[str, ...] = (),
+    owner_reviewed: bool = False,
+    request_id: str | None = None,
 ) -> dict:
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("session_has_pending_changes")
@@ -559,7 +687,32 @@ def apply_mybroker(
             update(MyBrokerImport).where(MyBrokerImport.id == -1).values(id=MyBrokerImport.id)
         )
         session.expire_all()
-        preview = _prepare(session, parsed)
+        intent_digest = digest(
+            [
+                parsed["document_sha256"],
+                [parsed["covered_from"], parsed["covered_to"], parsed["filename_account"]],
+                list(confirmed_range),
+                confirmed_mappings,
+                sorted(skipped_isins),
+                owner_reviewed,
+            ]
+        )
+        if skipped_isins and not request_id:
+            raise MyBrokerError("skip_request_id_required")
+        receipt = session.get(MyBrokerDispositionApply, request_id) if request_id else None
+        if receipt:
+            if (
+                receipt.intent_digest != intent_digest
+                or receipt.confirmation_digest != confirmation_digest
+            ):
+                raise MyBrokerError("idempotency_conflict")
+            session.rollback()
+            return {
+                **read_mybroker_import(session, receipt.import_id),
+                "duplicate": True,
+                "committed_revision_ids": json.loads(receipt.revision_ids_json),
+            }
+        preview = _prepare(session, parsed, skipped_isins, owner_reviewed)
         if (
             confirmation_digest != preview["confirmation_digest"]
             or list(confirmed_range) != [parsed["covered_from"], parsed["covered_to"]]
@@ -583,6 +736,23 @@ def apply_mybroker(
             session.add(row)
             session.flush()
             import_id = row.id
+            if skipped_isins:
+                revision_ids = initial_accept(session, row, skipped_isins, confirmation_digest)
+        if skipped_isins:
+            if preview["already_imported"] is not None:
+                revision_ids = [
+                    i["revision_id"]
+                    for i in resolve(session, session.get(MyBrokerImport, import_id))
+                ]
+            session.add(
+                MyBrokerDispositionApply(
+                    request_id=request_id,
+                    import_id=import_id,
+                    intent_digest=intent_digest,
+                    confirmation_digest=confirmation_digest,
+                    revision_ids_json=canonical(revision_ids),
+                )
+            )
         session.commit()
     except Exception:
         session.rollback()
@@ -611,13 +781,14 @@ def read_mybroker_lineage(session: Session) -> dict:
                             "covered_to": document["covered_to"],
                         }
                     )
-    return {
-        "provider": PROVIDER,
-        "trades": list(trades.values()),
-        "source_ranges": ranges,
-        "conflicts": conflicts,
-        "coverage_state": "unknown",
-    }
+        return {
+            "provider": PROVIDER,
+            "instrument_dispositions": [i for row in rows for i in resolve(session, row)],
+            "trades": list(trades.values()),
+            "source_ranges": ranges,
+            "conflicts": conflicts,
+            "coverage_state": "unknown",
+        }
 
 
 def unresolved_class_source_ids(
@@ -628,7 +799,7 @@ def unresolved_class_source_ids(
     Use accepted explicit account bindings and the caller's historical universe,
     never current flags/catalogue class. Quiet reports do not prove inventory zero.
     """
-    ids = set()
+    ids = {i["import_id"] for i in impact(session, account_ids)}
     rows = _imports(session)
     documents = [json.loads(row.normalized_json) for row in rows]
     trades, _ = _reduce(documents)

@@ -35,6 +35,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.executed_trades import _candidate, _context, _read
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.performance_availability import _membership_at
 from hermes_finance.statement_import.mybroker import PARSER, MyBrokerError, digest
 
@@ -251,6 +252,7 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         ]
     accounts = []
     for account_id in account_ids:
+        exclusions = impact(session, (account_id,))
         memberships = [
             r for r in tables[AccountPerformanceScopeMembership] if r.account_id == account_id
         ]
@@ -293,6 +295,8 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
             if not aliases:
                 continue
             common = set(document["syntax_blockers"]) | set(document.get("endpoint_conflicts", []))
+            if exclusions:
+                common.add(REASON)
             common.update(_mapping_blockers(session, context, bindings))
             required = (
                 {("account", a) for a in document["source_accounts"]}
@@ -451,6 +455,8 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
             t["core"]["trade_time"][:10] for t in own_canonical if t["acceptance_state"] == "active"
         ]
         blockers = {b for d in docs for b in d["blockers"] if d["intersects_request"]}
+        if exclusions:
+            blockers.add(REASON)
         if not docs:
             blockers.add("accepted_source_unavailable")
         if history_gaps or membership_overlaps:
@@ -459,6 +465,14 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         accounts.append(
             {
                 "account_id": account_id,
+                "excluded_source_revisions": [
+                    {
+                        "import_id": i["import_id"],
+                        "revision_id": i["revision_id"],
+                        "state": i["effective_state"],
+                    }
+                    for i in exclusions
+                ],
                 "documents": docs,
                 "source_range_gaps": _gaps(start, end, ranges),
                 "source_range_overlaps": overlaps,
