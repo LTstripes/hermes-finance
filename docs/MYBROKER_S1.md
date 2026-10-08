@@ -52,6 +52,25 @@ authoritative trade identity.
 Money rows linked to incomplete IDs retain their visible blocker and attach to
 no identity-less trade.
 
+The [#736 compatibility repair](https://github.com/LTstripes/hermes-finance/issues/736)
+also accepts the sanitized completed REPO observation shape at
+`Trades/Report/Tablix2/Details_Collection/Details`: exactly one `trade_no`
+matching `B[0-9]+`, a distinct single `repo_no` matching `B[0-9]+`, and
+`comment` exactly `репо ч.1` or `репо ч.2`. IDs remain bounded to 128 characters.
+The partner and marker validate syntax only; no pairing or financial semantics
+are derived. The original one-part `ids` remains an observation with
+`identity=null`, `repo_observed=true`, `trade_ids_incomplete` and
+`repo_semantics_unsupported`. Reciprocal rows and duplicate occurrences never
+manufacture a second native ID or an S2 execution.
+
+The parser identity and normalized shape remain `mybroker-s1-v2`; previously
+accepted numeric-ID documents normalize identically. Malformed B IDs, ambiguous
+partners, absent/inconsistent markers and pending B rows refuse parsing.
+B-linked money comments remain unsupported and unlinked. Because S1 does not
+retain arbitrary money comments, H2 owner-cash claims cannot override an
+identity-less REPO observation in the account's scoped source set. H0/H1,
+source-cash coverage and XIRR continue to refuse unresolved affected evidence.
+
 Source settlement/commission legs remain source evidence. No buy/sell principal
 is relabeled as payout or realized profit; missing tax stays unknown, accrued
 interest stays evidence, and unknown commission embedding never yields an

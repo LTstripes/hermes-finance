@@ -88,6 +88,7 @@ class ReadinessRequestError(ValueError):
 
 # Exact canonical codes only. These keys classify presentation, never availability.
 _RULES: dict[str, tuple[str, ActionKind, Capability]] = {
+    "mybroker_excluded_source_impact": ("excluded_source", "inspect_result", "source_required"),
     R.OPENING_VALUATION_MISSING: ("opening_valuation", "select_interval", "available"),
     R.CLOSING_VALUATION_MISSING: ("closing_valuation", "select_interval", "available"),
     R.REPORTING_MONTH_NOT_CLOSED: ("reporting_month", "review_month", "available"),

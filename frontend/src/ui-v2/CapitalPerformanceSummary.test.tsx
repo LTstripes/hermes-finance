@@ -237,6 +237,32 @@ describe("CapitalPerformanceSummary", () => {
     expect(screen.queryByText("unknown_future_code")).toBeNull();
   });
 
+  it("keeps the exclusion explanation visible alongside earlier evidence blockers", () => {
+    renderSummary(
+      baseProps({
+        readiness: readinessFixture(null, null, [
+          diagnostic("opening_valuation", ["xirr", "twrr"]),
+          diagnostic("closing_valuation", ["xirr", "twrr"]),
+          diagnostic("membership_history", ["xirr", "twrr"]),
+          diagnostic("excluded_source", ["xirr", "twrr"], "source_required"),
+        ]),
+      }),
+    );
+    expect(
+      screen.getByText(
+        "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.",
+      ),
+    ).toBeVisible();
+    for (const name of ["xirr", "twrr"]) {
+      expect(screen.getByTestId(`capital-performance-${name}`)).toHaveTextContent(
+        "Исторические данные исключены из расчёта",
+      );
+      expect(screen.getByTestId(`capital-performance-${name}`)).not.toHaveTextContent(/\d[,.]\d+%/);
+    }
+    expect(screen.getByText(/Показаны 2 приоритетные причины из 4/)).toBeVisible();
+    expect(screen.queryByText("mybroker_excluded_source_impact")).toBeNull();
+  });
+
   it("distinguishes an exact zero from a loss", () => {
     renderSummary(
       baseProps({

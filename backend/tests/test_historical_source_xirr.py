@@ -16,7 +16,7 @@ from test_statement_import_historical_owner_flows import attest as attest_flow
 from test_statement_import_historical_owner_flows import xml as cash_xml
 from test_statement_import_historical_portfolio_flows import accept as accept_portfolio
 from test_statement_import_historical_portfolio_flows import attest as attest_portfolio
-from test_statement_import_mybroker import ACCOUNT, apply, preview
+from test_statement_import_mybroker import ACCOUNT, FILENAME, apply, preview, repo_fixture
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import endpoint_xml, positions_only
 from test_statement_import_source_cash_coverage import certify, claims
@@ -170,6 +170,19 @@ def result(session, account_id=None):
         scope="account" if account_id else "portfolio",
         account_id=account_id,
     )
+
+
+def test_b_repo_source_invalidates_exact_xirr_without_inventing_owner_cash(database):
+    with database.session_factory() as session:
+        prepared = prepare(session)
+        accept_inputs(session, prepared)
+        assert result(session, prepared[0]).is_available
+        raw = repo_fixture(pair=True)
+        apply(session, raw, preview(session, raw, FILENAME), FILENAME)
+        actual = result(session, prepared[0])
+        assert not actual.is_available
+        assert "not_computable_historical_endpoint_ineffective" in actual.reason_codes
+        assert "not_computable_external_flows_incomplete" in actual.reason_codes
 
 
 def adjacent_coverage(session, prepared, *, defect=None):

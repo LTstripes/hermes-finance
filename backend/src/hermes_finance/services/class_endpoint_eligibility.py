@@ -26,6 +26,7 @@ from hermes_finance.persistence import (
 from hermes_finance.services._guard import reserve_reporting_month_interval_writer
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.executed_trades import unresolved_execution_ids
+from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.mybroker_import import unresolved_class_source_ids
 from hermes_finance.services.performance_availability import (
     _membership_at,
@@ -61,6 +62,9 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     )
     if not accounts:
         reasons.add("historical_universe_empty")
+    exclusions = impact(session, accounts)
+    if exclusions:
+        reasons.add(REASON)
     source_ids = unresolved_class_source_ids(session, accounts, start, end)
     if source_ids:
         reasons.add("mybroker_class_reconciliation_required")
@@ -293,6 +297,8 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
             for m in relevant_movements
         ],
     }
+    if exclusions:
+        material["instrument_dispositions"] = exclusions
     if source_ids:
         material["unresolved_mybroker_import_ids"] = source_ids
     if execution_ids:

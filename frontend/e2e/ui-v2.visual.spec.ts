@@ -561,7 +561,14 @@ test("ui-v2 Monthly Close narrow: current action and collapsed step list stay bo
   expect(evidence.errors).toEqual([]);
 });
 
-type CapitalScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial" | "coverage";
+type CapitalScene =
+  | "normal"
+  | "no-closed"
+  | "first-closed"
+  | "zero"
+  | "partial"
+  | "coverage"
+  | "excluded";
 
 /** Coherent readiness projection mirroring the synthetic performance fixture. */
 function makeReadinessBody(performance: ReturnType<typeof makeUiV2Performance>) {
@@ -603,6 +610,85 @@ function makeReadinessBody(performance: ReturnType<typeof makeUiV2Performance>) 
       },
     },
     diagnostics: [],
+  };
+}
+
+function makeExcludedReadiness(performance: ReturnType<typeof makeUiV2Performance>, url: URL) {
+  const body = makeReadinessBody(performance);
+  const scope = url.searchParams.get("scope") === "account" ? "account" : "portfolio";
+  const accountId = scope === "account" ? Number(url.searchParams.get("account_id")) : null;
+  const reasons = [
+    "not_computable_opening_valuation_missing",
+    "not_computable_closing_valuation_missing",
+    "not_computable_scope_membership_history_missing",
+    "mybroker_excluded_source_impact",
+  ];
+  for (const metric of [body.xirr, body.twrr]) {
+    Object.assign(metric, {
+      scope,
+      account_id: accountId,
+      value: null,
+      availability: "not_computable",
+      quality: "unavailable",
+      reason_codes: reasons,
+    });
+  }
+  const refs = {
+    account_ids: [],
+    reporting_month_ids: [],
+    external_flow_ids: [],
+    legacy_flow_ids: [],
+    movement_ids: [],
+    boundary_group_ids: [],
+    dates: [],
+  };
+  return {
+    ...body,
+    scope,
+    account_id: accountId,
+    evidence: {
+      ...body.evidence,
+      scope,
+      account_id: accountId,
+      availability: "not_computable",
+      reason_codes: reasons,
+      scope_membership: {
+        status: "unknown",
+        account_ids: [3],
+        missing_or_ambiguous_account_ids: [3],
+        reason_codes: [reasons[2]],
+      },
+      cash_boundary_coverage: {
+        status: "unknown",
+        account_ids: [],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+      in_kind_boundary_coverage: {
+        status: "unknown",
+        account_ids: [],
+        missing_or_incomplete_account_ids: [],
+        reason_codes: [],
+      },
+    },
+    diagnostics: [
+      "opening_valuation",
+      "closing_valuation",
+      "membership_history",
+      "excluded_source",
+    ].map((key, index) => ({
+      key,
+      reason_codes: [reasons[index]],
+      affected_metrics: ["xirr", "twrr"],
+      category: "limitation",
+      refs,
+      action: {
+        kind: "inspect_result",
+        capability: "source_required",
+        params: refs,
+        verify: "reread_readiness",
+      },
+    })),
   };
 }
 
@@ -697,6 +783,52 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       json = state.performance.attribution;
     } else if (url.pathname === "/api/performance/readiness") {
       json = makeReadinessBody(state.performance);
+      if (scene === "excluded") json = makeExcludedReadiness(state.performance, url);
+    } else if (
+      scene === "excluded" &&
+      [
+        "/api/performance/valuation-captures",
+        "/api/performance/membership",
+        "/api/performance/preparation",
+      ].includes(url.pathname)
+    ) {
+      const readiness = makeExcludedReadiness(state.performance, url);
+      const context = {
+        scope: readiness.scope,
+        account_id: readiness.account_id,
+        start_date: readiness.start_date,
+        end_date: readiness.end_date,
+      };
+      if (url.pathname.endsWith("valuation-captures")) {
+        json = {
+          ...context,
+          schema_version: 1,
+          performance_currency: "RUB",
+          targets: [],
+          captured: null,
+          readiness,
+        };
+      } else if (url.pathname.endsWith("membership")) {
+        json = {
+          ...context,
+          rows: [],
+          identity: "synthetic-history",
+          form_token: "synthetic-form",
+          readiness,
+        };
+      } else {
+        json = {
+          ...context,
+          evidence_token: "synthetic",
+          flows: [],
+          transfer_links: [],
+          cash_coverages: [],
+          in_kind_coverages: [],
+          movements: [],
+          cash_balances: [],
+          months: [],
+        };
+      }
     } else {
       unexpected.push(`${request.method()} ${url.pathname}`);
       status = 404;
@@ -711,6 +843,62 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     });
   });
   return { errors, reads, state, unexpected };
+}
+
+for (const width of [1440, 390]) {
+  test(`ui-v2 excluded source remains visible in Performance ${width}px @viewport-owned`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const evidence = await installCapitalApi(page, "excluded");
+    const explanation =
+      "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.";
+    await page.goto("/v2/capital");
+    await expect(page.getByText(explanation)).toBeVisible();
+    for (const metric of ["xirr", "twrr"]) {
+      await expect(page.getByTestId(`capital-performance-${metric}`)).toContainText(
+        "Исторические данные исключены из расчёта",
+      );
+      await expect(page.getByTestId(`capital-performance-${metric}`)).not.toContainText(
+        /\d[,.]\d+%/,
+      );
+    }
+    await expect(page.getByText(/Показаны 2 приоритетные причины из 4/)).toBeVisible();
+    expect(
+      await page.getByTestId("capital-performance-xirr").evaluate((element) => ({
+        radius: getComputedStyle(element).borderRadius,
+        grid: getComputedStyle(element.parentElement as HTMLElement).display,
+      })),
+    ).toEqual({ radius: "10px", grid: "grid" });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await capture(page, testInfo, `ui-v2-excluded-summary-${width}`);
+    for (const scope of ["portfolio", "account"]) {
+      await page.goto(
+        `/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=${scope}${scope === "account" ? "&account_id=3" : ""}`,
+      );
+      await expect(page.getByText(explanation)).toBeVisible();
+      await capture(page, testInfo, `ui-v2-excluded-detail-${scope}-collapsed-${width}`);
+      const expand = page.getByRole("button", { name: /Все причины/ });
+      await expand.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("button", { name: "Скрыть полный список" })).toBeFocused();
+      await expect(
+        page.getByText("Выберите другую конечную дату либо откройте отчёт из данных границы."),
+      ).toBeVisible();
+      await expect(page.getByText(explanation)).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await expect(page.getByText("mybroker_excluded_source_impact", { exact: true })).toHaveCount(
+        0,
+      );
+      await capture(page, testInfo, `ui-v2-excluded-detail-${scope}-${width}`);
+    }
+    expect(evidence.errors).toEqual([]);
+    expect(evidence.unexpected).toEqual([]);
+  });
 }
 
 test("ui-v2 Capital desktop: closed composition, accounts and performance stay bounded", async ({

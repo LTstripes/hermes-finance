@@ -35,6 +35,17 @@ export function verifyMyBrokerReadback(
     applied.confirmation_digest !== reread.confirmation_digest ||
     stable(preview.document) !== stable(reread.document) ||
     stable(preview.mappings) !== stable(reread.mappings) ||
+    stable(preview.instrument_choices ?? []) !== stable(reread.instrument_choices ?? []) ||
+    stable(preview.counts ?? null) !== stable(reread.counts ?? null) ||
+    stable(applied.instrument_dispositions ?? []) !==
+      stable(reread.instrument_dispositions ?? []) ||
+    (reread.instrument_dispositions ?? []).some((i) => i.effective_state !== "accepted") ||
+    stable(
+      (preview.instrument_dispositions ?? []).map((i) => [i.isin, i.source_set_fingerprint]),
+    ) !==
+      stable(
+        (reread.instrument_dispositions ?? []).map((i) => [i.isin, i.source_set_fingerprint]),
+      ) ||
     reread.coverage_state !== "unknown"
   ) {
     throw new Error("Сохранённые данные не совпали с предпросмотром. Проверь отчёт повторно.");
@@ -42,6 +53,10 @@ export function verifyMyBrokerReadback(
 }
 
 const REASONS: Record<string, string> = {
+  instrument_disposition_reconciliation_required:
+    "Изменение принятого решения об инструменте требует отдельной сверки.",
+  mybroker_excluded_source_impact:
+    "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.",
   pending_not_cash: "Есть нерассчитанная сделка: фактического денежного потока пока нет.",
   endpoint_unsettled: "Фактическое и ожидаемое количество бумаг на конец периода различаются.",
   trade_ids_incomplete:
@@ -81,6 +96,8 @@ export function MyBrokerImportPanel() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [choices, setChoices] = useState<Record<string, string>>({});
+  const [skippedIsins, setSkippedIsins] = useState<string[]>([]);
+  const [recordedImport, setRecordedImport] = useState<MyBrokerImport | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -105,14 +122,46 @@ export function MyBrokerImportPanel() {
     }
   }
 
-  async function inspect() {
+  async function inspect(skips: string[] = skippedIsins) {
     if (!file) return;
     const [result, accountList, instrumentList] = await Promise.all([
-      previewMyBroker(file),
+      previewMyBroker(file, skips),
       listAccounts(),
       listInstruments(),
     ]);
+    const recorded = result.already_imported
+      ? await readMyBrokerImport(result.already_imported)
+      : null;
+    if (recorded) {
+      const previousSkips = recorded.instrument_choices?.filter((i) => i.choice === "skip") ?? [];
+      const dispositions = recorded.instrument_dispositions ?? [];
+      if (
+        recorded.import_id !== result.already_imported ||
+        stable(recorded.document) !== stable(result.document) ||
+        recorded.instrument_choices?.some((i) => i.choice === "undecided") ||
+        previousSkips.length !== dispositions.length ||
+        previousSkips.some(
+          (i) =>
+            dispositions.filter((d) => d.isin === i.isin && d.effective_state === "accepted")
+              .length !== 1,
+        ) ||
+        (skips.length > 0 &&
+          (stable(recorded.instrument_choices) !== stable(result.instrument_choices) ||
+            stable(recorded.mappings) !== stable(result.mappings) ||
+            stable(dispositions.map((i) => [i.isin, i.source_set_fingerprint])) !==
+              stable(
+                (result.instrument_dispositions ?? []).map((i) => [
+                  i.isin,
+                  i.source_set_fingerprint,
+                ]),
+              )))
+      ) {
+        throw new Error("Прежние решения изменились или недействуют. Требуется отдельная сверка.");
+      }
+    }
+    setRecordedImport(recorded);
     setPreview(result);
+    setSkippedIsins(skips);
     setAccounts(accountList);
     setInstruments(instrumentList);
     setChoices({});
@@ -132,6 +181,8 @@ export function MyBrokerImportPanel() {
           disabled={busy}
           onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
+            setSkippedIsins([]);
+            setRecordedImport(null);
             setPreview(null);
             setConfirmed(false);
             setSuccess(null);
@@ -139,7 +190,7 @@ export function MyBrokerImportPanel() {
           }}
         />
       </Field>
-      <Button disabled={!file || busy} onClick={() => void run(inspect)}>
+      <Button disabled={!file || busy} onClick={() => void run(() => inspect())}>
         Проверить XML
       </Button>
       {error && <p role="alert">Результат сохранения не подтверждён. {error}</p>}
@@ -154,6 +205,88 @@ export function MyBrokerImportPanel() {
             Счета источника: {preview.document.source_accounts.join(", ")}. Семейство:{" "}
             {preview.document.provider}; разбор: {preview.document.parser}.
           </p>
+          {preview.counts && (
+            <p>
+              Сопоставлено: {preview.counts.mapped}, пропущено: {preview.counts.skipped},
+              неподдерживаемые наблюдения: {preview.counts.unsupported}.
+            </p>
+          )}
+          {(preview.counts?.skipped ?? 0) > 0 && (
+            <p>
+              Источник сохранён; для затронутой исторической доходности требуется полное
+              подтверждение.
+            </p>
+          )}
+          <ul>
+            {preview.instrument_choices?.map((item) => (
+              <li key={item.isin}>
+                {item.isin}:{" "}
+                {item.choice === "skip"
+                  ? "Пропустить (не учитывать)"
+                  : item.choice === "map"
+                    ? "Сопоставить"
+                    : "Решение не принято"}
+                {item.choice !== "undecided" && !preview.already_imported && (
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() =>
+                        inspect(
+                          item.choice === "skip"
+                            ? skippedIsins.filter((i) => i !== item.isin)
+                            : [...skippedIsins, item.isin],
+                        ),
+                      )
+                    }
+                  >
+                    {item.choice === "skip" ? "Сопоставить" : "Пропустить (не учитывать)"}{" "}
+                    {item.isin}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {recordedImport &&
+            skippedIsins.length === 0 &&
+            recordedImport.instrument_choices?.some((i) => i.choice === "skip") && (
+              <div>
+                <p>
+                  Для этого же документа ранее подтверждены решения «не учитывать»:{" "}
+                  {recordedImport.instrument_choices
+                    .filter((i) => i.choice === "skip")
+                    .map((i) => i.isin)
+                    .join(", ")}
+                  . Повторное подтверждение сохранит прежние решения и заново проверит документ.
+                </p>
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const current = await readMyBrokerImport(recordedImport.import_id);
+                      if (
+                        stable(current.document) !== stable(recordedImport.document) ||
+                        stable(current.mappings) !== stable(recordedImport.mappings) ||
+                        stable(current.instrument_choices) !==
+                          stable(recordedImport.instrument_choices) ||
+                        stable(current.instrument_dispositions) !==
+                          stable(recordedImport.instrument_dispositions)
+                      ) {
+                        throw new Error(
+                          "Прежние решения изменились или недействуют. Проверь отчёт повторно.",
+                        );
+                      }
+                      await inspect(
+                        current.instrument_choices
+                          ?.filter((i) => i.choice === "skip")
+                          .map((i) => i.isin) ?? [],
+                      );
+                    })
+                  }
+                >
+                  Подтверждаю прежние решения — проверить повторно
+                </Button>
+              </div>
+            )}
           <details>
             <summary>Документ и состав разделов</summary>
             <p style={{ overflowWrap: "anywhere" }}>SHA-256: {preview.document.document_sha256}</p>
@@ -288,9 +421,12 @@ export function MyBrokerImportPanel() {
                 >
                   <Select
                     id={`mybroker-${key}`}
-                    disabled={busy}
+                    disabled={busy || Boolean(preview.already_imported)}
                     value={choices[key] ?? ""}
-                    onChange={(event) => setChoices({ ...choices, [key]: event.target.value })}
+                    onChange={(event) => {
+                      setChoices({ ...choices, [key]: event.target.value });
+                      setConfirmed(false);
+                    }}
                   >
                     <option value="">Выбери явно</option>
                     {(missing.kind === "account" ? accounts : instruments).map((target) => (
@@ -301,7 +437,7 @@ export function MyBrokerImportPanel() {
                   </Select>
                 </Field>
                 <Button
-                  disabled={busy || !choices[key]}
+                  disabled={busy || Boolean(preview.already_imported) || !choices[key]}
                   onClick={() =>
                     void run(async () => {
                       await confirmBrokerIdentityMapping({
@@ -319,6 +455,14 @@ export function MyBrokerImportPanel() {
                 >
                   Подтвердить сопоставление
                 </Button>
+                {missing.kind === "instrument" && !preview.already_imported && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => void run(() => inspect([...skippedIsins, missing.identity]))}
+                  >
+                    Пропустить (не учитывать)
+                  </Button>
+                )}
               </div>
             );
           })}
@@ -334,7 +478,8 @@ export function MyBrokerImportPanel() {
               disabled={busy || !preview.can_apply}
               onChange={(event) => setConfirmed(event.target.checked)}
             />{" "}
-            Подтверждаю период из имени файла и все показанные сопоставления для этого документа
+            Подтверждаю период из имени файла, все сопоставления и решения «не учитывать» для этого
+            документа
           </label>
           <Button
             disabled={busy || !confirmed || !preview.can_apply}

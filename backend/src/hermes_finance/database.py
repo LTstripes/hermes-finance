@@ -284,8 +284,10 @@ def create_database(database_path: Path) -> Database:
     from hermes_finance.services.historical_portfolio_flow_lifecycle import (
         install_hooks as portfolio_hooks,
     )
+    from hermes_finance.services.mybroker_dispositions import install_hooks as skip_hooks
     from hermes_finance.services.source_cash_coverage_lifecycle import install_hooks as cash_hooks
 
+    skip_hooks()
     install_hooks()
     owner_hooks()
     cash_hooks()

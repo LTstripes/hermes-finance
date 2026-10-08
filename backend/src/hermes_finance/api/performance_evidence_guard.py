@@ -44,6 +44,12 @@ def evidence_signature(session: Session) -> str:
         digest.update(table.name.encode())
         for row in session.execute(select(table).order_by(table.c.id)):
             digest.update(json.dumps(tuple(row), default=str, ensure_ascii=True).encode())
+    from hermes_finance.services.mybroker_dispositions import impact
+
+    exclusions = impact(session, session.scalars(select(Account.id)))
+    if exclusions:
+        digest.update(b"mybroker-instrument-skip-v1")
+        digest.update(json.dumps(exclusions, sort_keys=True).encode())
     return digest.hexdigest()
 
 

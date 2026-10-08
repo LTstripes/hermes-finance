@@ -43,6 +43,7 @@ from hermes_finance.services.historical_owner_flows import (
     _read_historical_owner_flow,
     _rows,
 )
+from hermes_finance.services.mybroker_dispositions import REASON, excluded_trade, impact
 from hermes_finance.services.mybroker_import import _reduce
 from hermes_finance.services.performance_availability import _history_covers_interval
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
@@ -378,6 +379,7 @@ def inventory(session, account_id, a, b, *, retained=None):
             occurrence["linked_trade"] = trade
             if (
                 trade
+                and not excluded_trade(session, identity)
                 and len(matches) == 1
                 and trade["state"] == "settled"
                 and not (set(trade["blockers"]) - _NON_OWNER_TRADE_CASH_LIMITATIONS)
@@ -429,7 +431,10 @@ def inventory(session, account_id, a, b, *, retained=None):
     ]
     if coverage:
         blockers.add("overlapping_cash_coverage")
-    return {
+    exclusions = impact(session, (account_id,))
+    if exclusions:
+        blockers.add(REASON)
+    result = {
         "account": _material(account, ("id", "account_type")) if account else None,
         "aliases": sorted(aliases),
         "sources": sources,
@@ -452,6 +457,9 @@ def inventory(session, account_id, a, b, *, retained=None):
         "competing_coverage": [_material(c) for c in coverage],
         "blockers": sorted(blockers),
     }
+    if exclusions:
+        result["instrument_dispositions"] = exclusions
+    return result
 
 
 def _support(evidence):

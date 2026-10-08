@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import event, func, select, text
-from test_statement_import_mybroker import apply, fixture, preview
+from test_statement_import_mybroker import apply, fixture, preview, repo_fixture
 from test_statement_import_mybroker import database as database
 
 from hermes_finance.domain.historical_owner_flows import CLAIMS, OwnerFlowIntent
@@ -35,6 +35,69 @@ from hermes_finance.services.historical_owner_flows import (
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 DAY = date(2030, 1, 17)
+
+
+def test_b_repo_cash_cannot_be_attested_as_owner_flow(database):
+    with database.session_factory() as session:
+        raw = repo_fixture(pair=True)
+        result = apply(session, raw, preview(session, raw))
+        account_id = next(b["hermes_id"] for b in result["mappings"] if b["kind"] == "account")
+        intent = OwnerFlowIntent(
+            account_id=account_id, seed={"import_id": result["import_id"], "ordinal": 0}
+        )
+        intent = attest(session, intent)
+        plan = preview_historical_owner_flow(session, intent)
+        assert "repo_semantics_unsupported" in plan["blockers"]
+        assert not plan["can_apply"]
+        with pytest.raises(MyBrokerError, match="repo_semantics_unsupported"):
+            apply_historical_owner_flow(
+                session, intent, confirmation_digest=plan["confirmation_digest"], request_id="repo"
+            )
+        for model in (HistoricalOwnerFlow, ExternalFlow, InvestmentCashFlow):
+            assert count(session, model) == 0
+
+
+@pytest.mark.parametrize("unrelated", ["account", "range"])
+def test_b_repo_outside_owner_flow_source_scope_does_not_block(database, unrelated):
+    from test_statement_import_mybroker import ACCOUNT, FILENAME
+
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+
+    with database.session_factory() as session:
+        intent = attest(session, source(session))
+        accepted = accept(session, intent)["readback"]
+        root = ET.fromstring(repo_fixture(pair=True))
+        filename = FILENAME
+        if unrelated == "account":
+            other = create_account(session, name="Synthetic other", account_type="brokerage")
+            for alias in ("7654321", "7654321-000"):
+                confirm_mapping(
+                    session,
+                    provider="alfa_mybroker",
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_target_id=other.id,
+                )
+            for row in root.iter():
+                if row.get("acc_code") == ACCOUNT:
+                    row.set("acc_code", "7654321-000")
+            filename = FILENAME.replace("1234567", "7654321")
+        else:
+            filename = "Брокерский 1234567 (01.02.30-28.02.30).xml"
+            for row in root.findall(".//{MyBroker}Details[@trade_no]"):
+                row.set("db_time", "15.02.2030 9:00:00")
+                row.set("save_settlement_date", "17.02.2030")
+                row.set("save_depo_settlement_date", "17.02.2030")
+            root.find(".//{MyBroker}settlement_date").set("settlement_date", "2030-02-17T00:00:00")
+        raw = ET.tostring(root)
+        apply(session, raw, preview(session, raw, filename), filename)
+        assert (
+            read_historical_owner_flow(session, accepted["flow_id"])["effective_state"]
+            == "accepted"
+        )
+        reaffirm = attest(session, target(intent, accepted))
+        assert preview_historical_owner_flow(session, reaffirm)["can_apply"]
 
 
 def xml(

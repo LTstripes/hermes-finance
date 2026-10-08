@@ -11,6 +11,11 @@ export type DiagnosticCopy = {
 };
 
 const DIAGNOSTIC_COPY: Record<string, DiagnosticCopy> = {
+  excluded_source: {
+    title: "Исторические данные исключены из расчёта",
+    detail:
+      "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.",
+  },
   opening_valuation: {
     title: "Нет подтверждённой оценки на начальную дату",
     detail: "Выберите другую начальную дату либо откройте отчёт из данных границы.",

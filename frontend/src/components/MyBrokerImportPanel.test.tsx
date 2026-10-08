@@ -220,3 +220,249 @@ describe("MyBroker explicit Preview Apply", () => {
     expect(screen.getByText(/деньги RUB: 0/)).toBeVisible();
   });
 });
+
+it("reviews an archived ISIN skip without creating a mapping and verifies its GET", async () => {
+  const isin = "RU000A000001";
+  const document = {
+    ...preview.document,
+    positions: [
+      {
+        ordinal: 0,
+        source_account: "1234567-000",
+        isin,
+        actual_quantity: "10",
+        forward_quantity: "10",
+      },
+    ],
+  };
+  const reviewed: MyBrokerPreview = {
+    ...preview,
+    document,
+    instrument_choices: [{ isin, choice: "skip" }],
+    instrument_dispositions: [{ isin, source_set_fingerprint: "c".repeat(64) }],
+    counts: { mapped: 0, skipped: 1, unsupported: 0 },
+  };
+  vi.mocked(previewMyBroker)
+    .mockResolvedValueOnce({
+      ...reviewed,
+      can_apply: false,
+      instrument_choices: [{ isin, choice: "undecided" }],
+      instrument_dispositions: [],
+      counts: { mapped: 0, skipped: 0, unsupported: 0 },
+      missing_mappings: [{ kind: "instrument", identity: isin }],
+    })
+    .mockResolvedValueOnce(reviewed);
+  const saved: MyBrokerImport = {
+    ...imported,
+    document,
+    counts: reviewed.counts,
+    instrument_choices: reviewed.instrument_choices,
+    instrument_dispositions: [
+      {
+        isin,
+        source_set_fingerprint: "c".repeat(64),
+        revision_id: 1,
+        revision: 1,
+        effective_state: "accepted",
+      },
+    ],
+  };
+  vi.mocked(applyMyBroker).mockResolvedValue(saved);
+  vi.mocked(readMyBrokerImport).mockResolvedValue(saved);
+  const user = userEvent.setup();
+  render(<MyBrokerImportPanel />);
+  await inspect(user);
+  expect(screen.getByRole("checkbox")).toBeDisabled();
+  expect(readMyBrokerImport).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Пропустить (не учитывать)" }));
+  await waitFor(() => expect(previewMyBroker).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(previewMyBroker).mock.calls[1][1]).toEqual([isin]);
+  expect(confirmBrokerIdentityMapping).not.toHaveBeenCalled();
+  await screen.findByText(/Источник сохранён; для затронутой/);
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Сохранить данные отчёта" }));
+  await screen.findByRole("status");
+  expect(() =>
+    verifyMyBrokerReadback(reviewed, saved, {
+      ...saved,
+      instrument_dispositions: [
+        { isin, source_set_fingerprint: "c".repeat(64), effective_state: "retired" },
+      ],
+    }),
+  ).toThrow();
+  expect(() =>
+    verifyMyBrokerReadback(reviewed, saved, {
+      ...saved,
+      instrument_choices: [{ isin, choice: "map" }],
+    }),
+  ).toThrow();
+});
+
+const replayIsin = "RU000A000001";
+const replayPreview: MyBrokerPreview = {
+  ...preview,
+  already_imported: 1,
+  instrument_choices: [{ isin: replayIsin, choice: "skip" }],
+  instrument_dispositions: [{ isin: replayIsin, source_set_fingerprint: "c".repeat(64) }],
+  counts: { mapped: 0, skipped: 1, unsupported: 0 },
+};
+const replayImport: MyBrokerImport = {
+  ...imported,
+  instrument_choices: replayPreview.instrument_choices,
+  counts: replayPreview.counts,
+  instrument_dispositions: [
+    {
+      isin: replayIsin,
+      source_set_fingerprint: "c".repeat(64),
+      revision_id: 1,
+      revision: 1,
+      effective_state: "accepted",
+    },
+  ],
+};
+const undecidedReplay: MyBrokerPreview = {
+  ...replayPreview,
+  instrument_choices: [{ isin: replayIsin, choice: "undecided" }],
+  instrument_dispositions: [],
+  counts: { mapped: 0, skipped: 0, unsupported: 0 },
+  missing_mappings: [{ kind: "instrument", identity: replayIsin }],
+  conflicts: ["instrument_disposition_reconciliation_required"],
+  can_apply: false,
+};
+const replayButton = "Подтверждаю прежние решения — проверить повторно";
+
+it("replays GET-reviewed skip after fresh mount and file reselection with a new Preview and GET", async () => {
+  vi.mocked(previewMyBroker)
+    .mockResolvedValueOnce({ ...undecidedReplay, already_imported: null, conflicts: [] })
+    .mockResolvedValueOnce({ ...replayPreview, already_imported: null })
+    .mockResolvedValueOnce(undecidedReplay)
+    .mockResolvedValueOnce(replayPreview)
+    .mockResolvedValueOnce(undecidedReplay)
+    .mockResolvedValueOnce(replayPreview);
+  vi.mocked(applyMyBroker).mockResolvedValue(replayImport);
+  vi.mocked(readMyBrokerImport).mockResolvedValue(replayImport);
+  const user = userEvent.setup();
+  const first = render(<MyBrokerImportPanel />);
+  await inspect(user);
+  expect(readMyBrokerImport).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Пропустить (не учитывать)" }));
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Сохранить данные отчёта" }));
+  await screen.findByRole("status");
+  expect(readMyBrokerImport).toHaveBeenCalledTimes(1);
+  first.unmount();
+  render(<MyBrokerImportPanel />);
+
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await inspect(user);
+    expect(vi.mocked(previewMyBroker).mock.calls[2 + repeat * 2][1]).toEqual([]);
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Пропустить (не учитывать)" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Подтвердить сопоставление" })).toBeDisabled();
+    await user.click(await screen.findByRole("button", { name: replayButton }));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toBeEnabled());
+    expect(vi.mocked(previewMyBroker).mock.calls[3 + repeat * 2][1]).toEqual([replayIsin]);
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Сохранить данные отчёта" }));
+    await screen.findByRole("status");
+    expect(vi.mocked(applyMyBroker).mock.calls[repeat + 1][1]).toEqual(replayPreview);
+  }
+  expect(applyMyBroker).toHaveBeenCalledTimes(3);
+  expect(readMyBrokerImport).toHaveBeenCalledTimes(9);
+  expect(confirmBrokerIdentityMapping).not.toHaveBeenCalled();
+  vi.mocked(previewMyBroker).mockResolvedValue({
+    ...undecidedReplay,
+    already_imported: null,
+    conflicts: [],
+    document: { ...preview.document, document_sha256: "d".repeat(64) },
+  });
+  await user.upload(
+    screen.getByLabelText("XML MyBroker"),
+    new File(["new synthetic document"], "new.xml", { type: "text/xml" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить XML" }));
+  await screen.findByText(/Период: 2030-01-01/);
+  expect(vi.mocked(previewMyBroker).mock.calls[6][1]).toEqual([]);
+  expect(readMyBrokerImport).toHaveBeenCalledTimes(9);
+  expect(screen.queryByRole("button", { name: replayButton })).toBeNull();
+  expect(screen.getByRole("checkbox")).toBeDisabled();
+});
+
+it.each(["retired", "revoked", "invalid", "changed", "document"])(
+  "refuses %s authoritative replay evidence before confirmation",
+  async (state) => {
+    vi.mocked(previewMyBroker).mockResolvedValue(undecidedReplay);
+    const invalid = structuredClone(replayImport);
+    if (state === "changed") invalid.instrument_choices = [{ isin: replayIsin, choice: "map" }];
+    else if (state === "document") invalid.document.document_sha256 = "d".repeat(64);
+    else if (invalid.instrument_dispositions)
+      invalid.instrument_dispositions[0].effective_state = state as
+        | "retired"
+        | "revoked"
+        | "invalid";
+    vi.mocked(readMyBrokerImport).mockResolvedValue(invalid);
+    const user = userEvent.setup();
+    render(<MyBrokerImportPanel />);
+    await user.upload(
+      screen.getByLabelText("XML MyBroker"),
+      new File(["synthetic"], "report.xml", { type: "text/xml" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Проверить XML" }));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: replayButton })).toBeNull();
+    expect(applyMyBroker).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["changed", "retired", "changed-preview", "stale-preview", "stale-apply"])(
+  "does not bypass %s after showing recorded choices",
+  async (failure) => {
+    vi.mocked(previewMyBroker)
+      .mockResolvedValueOnce(undecidedReplay)
+      .mockResolvedValue(replayPreview);
+    vi.mocked(readMyBrokerImport).mockResolvedValue(replayImport);
+    const user = userEvent.setup();
+    render(<MyBrokerImportPanel />);
+    await inspect(user);
+    if (failure === "changed" || failure === "retired") {
+      const changed = structuredClone(replayImport);
+      if (failure === "changed") changed.instrument_choices = [{ isin: replayIsin, choice: "map" }];
+      else if (changed.instrument_dispositions)
+        changed.instrument_dispositions[0].effective_state = "retired";
+      vi.mocked(readMyBrokerImport).mockResolvedValue(changed);
+    } else if (failure === "changed-preview") {
+      vi.mocked(previewMyBroker).mockResolvedValue({
+        ...replayPreview,
+        instrument_choices: [{ isin: replayIsin, choice: "map" }],
+      });
+    } else if (failure === "stale-preview") {
+      vi.mocked(previewMyBroker).mockResolvedValue({
+        ...replayPreview,
+        can_apply: false,
+        conflicts: ["accepted_mapping_conflict"],
+      });
+    } else vi.mocked(applyMyBroker).mockRejectedValue(new Error("confirmation_stale"));
+    await user.click(screen.getByRole("button", { name: replayButton }));
+    if (failure === "stale-preview") {
+      await waitFor(() => expect(previewMyBroker).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole("checkbox")).toBeDisabled();
+      expect(applyMyBroker).not.toHaveBeenCalled();
+    } else {
+      if (failure === "stale-apply") {
+        await waitFor(() => expect(screen.getByRole("checkbox")).toBeEnabled());
+        await user.click(screen.getByRole("checkbox"));
+        await user.click(screen.getByRole("button", { name: "Сохранить данные отчёта" }));
+      }
+      await screen.findByRole("alert");
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.queryByRole("checkbox")).toBeNull();
+      if (failure !== "stale-apply") {
+        expect(previewMyBroker).toHaveBeenCalledTimes(failure === "changed-preview" ? 2 : 1);
+        expect(applyMyBroker).not.toHaveBeenCalled();
+      }
+    }
+    expect(confirmBrokerIdentityMapping).not.toHaveBeenCalled();
+  },
+);
