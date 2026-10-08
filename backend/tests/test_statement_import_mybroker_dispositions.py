@@ -893,3 +893,44 @@ def test_source_mutation_requires_reconciliation_and_source_aba_cannot_revive(da
         assert (
             restored["trade_identities"] == saved["instrument_dispositions"][0]["trade_identities"]
         )
+
+
+def test_preparation_readback_exposes_current_exclusions_and_rejects_stale_coverage_token(database):
+    from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
+    from hermes_finance.services.in_kind_boundary_coverage import create_in_kind_boundary_coverage
+
+    with database.session_factory() as session:
+        account = include_source_account(session)
+        cash = create_cash_boundary_coverage(
+            session, account_id=account, covered_from=A, covered_to=B
+        )
+        create_in_kind_boundary_coverage(session, account_id=account, covered_from=A, covered_to=B)
+        cash_id = cash.id
+    with TestClient(create_app(database=database)) as client:
+        params = {"account_id": account, "start_date": A.isoformat(), "end_date": B.isoformat()}
+        original = client.get("/api/performance/preparation", params=params)
+        assert original.status_code == 200
+        before = original.json()
+        assert (
+            before["cash_coverages"][0]["coverage_state"]
+            == before["in_kind_coverages"][0]["coverage_state"]
+            == "complete"
+        )
+        with database.session_factory() as session:
+            accept(session, mixed_xml(trades=False))
+        response = client.get("/api/performance/preparation", params=params)
+        assert response.status_code == 200
+        after = response.json()
+        assert after["evidence_token"] != before["evidence_token"]
+        for key in ("cash_coverages", "in_kind_coverages"):
+            row = after[key][0]
+            assert (
+                row["coverage_state"] == "unknown" and row["recorded_coverage_state"] == "complete"
+            )
+            assert row["exclusion_blockers"] == [REASON]
+        stale = client.patch(
+            f"/api/cash-boundary-coverages/{cash_id}",
+            json={"coverage_state": "unknown"},
+            headers={"X-Performance-Evidence": before["evidence_token"]},
+        )
+        assert stale.status_code == 409
