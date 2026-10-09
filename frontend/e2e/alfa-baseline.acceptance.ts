@@ -76,7 +76,10 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop keyboard", 
   // re-confirmation path uses the explicit all-rows view.
   await page.getByLabel("Показывать строки").selectOption("all");
   await row.check();
-  await page.screenshot({ path: info.outputPath("desktop-preview.png"), fullPage: true });
+  await page.screenshot({
+    path: info.outputPath("desktop-reconfirmation-preview.png"),
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Применить выбранный базовый срез" }).click();
   await page.getByRole("button", { name: "Подтвердить базовый срез" }).dblclick();
   await expect(page.getByText("Базовый срез применён. Позиций: 1.", { exact: true })).toBeVisible();

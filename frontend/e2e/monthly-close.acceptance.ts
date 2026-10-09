@@ -148,7 +148,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
-  await page.screenshot({ path: info.outputPath("closed-desktop.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("closed-return-desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Открыть месяц заново" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
