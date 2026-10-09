@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { listAccounts } from "../api/accounts";
 import {
   type ClassCoverage,
@@ -27,6 +27,16 @@ const labels: Record<HistoricalInstrumentType, string> = {
   fund: "Фонд",
   currency: "Валюта",
 };
+
+// Only these accepted reasons have an evidence control on this surface.
+const ownerReasons = new Set([
+  "historical_class_unknown",
+  "no_crossing_coverage_missing_or_ambiguous",
+  "no_crossing_coverage_not_complete",
+  "no_crossing_material_changed",
+  "opening_class_inventory_not_complete",
+  "closing_class_inventory_not_complete",
+]);
 
 // ReportingMonth periods are calendar months; snapshot dates may lie outside them.
 function intersects(month: ReportingMonth, start: string, end: string) {
@@ -71,7 +81,7 @@ function IdentityForm({
         );
       }}
     >
-      <fieldset disabled={closed || locked} className={styles.compositionBlock}>
+      <fieldset disabled={closed} className={styles.compositionBlock}>
         <legend>
           Позиция {row.id} · {description}
         </legend>
@@ -82,7 +92,7 @@ function IdentityForm({
             : "Не подтверждён / неизвестно"}
           . Месяц {row.reporting_month_id}.
         </p>
-        <label>
+        <label className={styles.preparationField}>
           Исторический класс позиции {row.id}
           <select
             value={identity}
@@ -99,7 +109,7 @@ function IdentityForm({
             ))}
           </select>
         </label>
-        <label>
+        <label className={styles.attestation}>
           <input
             type="checkbox"
             checked={attested}
@@ -110,12 +120,14 @@ function IdentityForm({
         <button
           className={styles.inlineButton}
           type="submit"
-          disabled={!attested || identity === (row.historical_instrument_type ?? "")}
+          disabled={locked || !attested || identity === (row.historical_instrument_type ?? "")}
         >
           Сохранить C1 позиции {row.id}
         </button>
       </fieldset>
-      {closed ? <p>Для исправления C1 сначала явно откройте месяц.</p> : null}
+      {closed ? (
+        <p>CLOSED — только чтение. Исправление C1 требует отдельного решения о Reopen.</p>
+      ) : null}
     </form>
   );
 }
@@ -176,12 +188,19 @@ function CoverageForm({
         save(() => saveClassCoverage(body, row));
       }}
     >
-      <fieldset disabled={locked} className={styles.compositionBlock}>
+      <fieldset disabled={closed} className={styles.compositionBlock}>
         <legend>
           {row
             ? `Исправление / отзыв подтверждения ${row.id} · версия ${row.revision}`
             : "Новое подтверждение класса"}
         </legend>
+        {closed ? (
+          <p role="alert" className={styles.readOnlyNotice}>
+            CLOSED — только чтение: сохранение для затронутых закрытых месяцев заблокировано. Reopen
+            требует отдельного решения об исправлении истории и не устраняет отсутствующие
+            источники, ограничения расчёта или противоречия. Ссылки ниже открывают просмотр месяца.
+          </p>
+        ) : null}
         <div className={styles.controls} onChange={() => setConfirmed(false)}>
           <label>
             Начало подтверждения
@@ -211,7 +230,7 @@ function CoverageForm({
               }}
             />
           </label>
-          <label>
+          <label className={styles.controlsFull}>
             Состояние подтверждения
             <select
               value={state}
@@ -227,31 +246,48 @@ function CoverageForm({
               <option value="revoked">Отозвано</option>
             </select>
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={noCrossing}
-              onChange={(e) => setNoCrossing(e.target.checked)}
-            />
-            Я проверил(а): пересечений границы класса за весь интервал не было
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={opening}
-              onChange={(e) => setOpening(e.target.checked)}
-            />
-            Полный состав класса на начало {from} во всех исторически включённых счетах подтверждён
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={closing}
-              onChange={(e) => setClosing(e.target.checked)}
-            />
-            Полный состав класса на конец {to} во всех исторически включённых счетах подтверждён
-          </label>
         </div>
+        <h4>Отсутствие пересечений за весь интервал</h4>
+        <label className={styles.attestation}>
+          <input
+            type="checkbox"
+            disabled={state !== "complete"}
+            checked={noCrossing}
+            onChange={(e) => {
+              setNoCrossing(e.target.checked);
+              setConfirmed(false);
+            }}
+          />
+          Я проверил(а): пересечений границы класса за весь интервал не было
+        </label>
+        <h4>Независимые подтверждения состава на границах</h4>
+        <p>
+          Начало и конец подтверждаются отдельно. Их можно сохранить при состоянии «Не проверено»
+          или «Отозвано»: это не подтверждает отсутствие пересечений и не делает доходность
+          доступной.
+        </p>
+        <label className={styles.attestation}>
+          <input
+            type="checkbox"
+            checked={opening}
+            onChange={(e) => {
+              setOpening(e.target.checked);
+              setConfirmed(false);
+            }}
+          />
+          Полный состав класса на начало {from} во всех исторически включённых счетах подтверждён
+        </label>
+        <label className={styles.attestation}>
+          <input
+            type="checkbox"
+            checked={closing}
+            onChange={(e) => {
+              setClosing(e.target.checked);
+              setConfirmed(false);
+            }}
+          />
+          Полный состав класса на конец {to} во всех исторически включённых счетах подтверждён
+        </label>
         <p>
           Проверка охватывает покупки, продажи, смену класса, выплаты дохода за границу класса,
           погашения, комиссии, налоги и внешние неденежные движения. Нулевой итог движений не
@@ -263,7 +299,18 @@ function CoverageForm({
           {row?.closing_inventory_complete ? "подтверждено" : "не подтверждено"}. При сохранении они
           заменяются выбранными выше утверждениями.
         </p>
-        <label>
+        <p aria-live="polite">
+          Будет сохранено: интервал {from} — {to}; отсутствие пересечений —{" "}
+          {state === "complete"
+            ? "подтверждено"
+            : state === "revoked"
+              ? "отозвано"
+              : "не проверено"}
+          ; состав на начало — {opening ? "подтверждён" : "не подтверждён"}; состав на конец —{" "}
+          {closing ? "подтверждён" : "не подтверждён"}. Доступность XIRR/TWRR определит
+          перечитывание.
+        </p>
+        <label className={styles.attestation}>
           <input
             type="checkbox"
             checked={confirmed}
@@ -271,12 +318,6 @@ function CoverageForm({
           />
           Подтверждаю выбранное состояние и обе декларации состава
         </label>
-        {closed ? (
-          <p role="alert">
-            Сначала явно откройте все CLOSED месяцы исходного и нового интервала через ссылки ниже,
-            затем перечитайте данные.
-          </p>
-        ) : null}
         <ul>
           {months
             .filter(
@@ -285,13 +326,13 @@ function CoverageForm({
             )
             .map((m) => (
               <li key={m.id}>
-                <Link to={`/months/${m.id}`}>
+                <Link to={`/v2/data/months/${m.id}`}>
                   Месяц {m.year}-{String(m.month).padStart(2, "0")} · {m.status.toUpperCase()}
                 </Link>
               </li>
             ))}
         </ul>
-        <button type="submit" className={styles.inlineButton} disabled={closed || !valid}>
+        <button type="submit" className={styles.inlineButton} disabled={locked || closed || !valid}>
           Сохранить подтверждение класса
         </button>
       </fieldset>
@@ -313,8 +354,13 @@ function Preparation({
   const [blocked, setBlocked] = useState(false);
   const [message, setMessage] = useState("");
   const notice = useRef<HTMLParagraphElement>(null);
+  const focusNotice = useRef(false);
+  const [readGeneration, setReadGeneration] = useState(0);
   useEffect(() => {
-    if (message && !blocked) notice.current?.focus({ preventScroll: true });
+    if (message && !blocked && focusNotice.current) {
+      notice.current?.focus({ preventScroll: true });
+      focusNotice.current = false;
+    }
   }, [message, blocked]);
   const [selected, setSelected] = useState("");
   const query = useQuery({
@@ -346,13 +392,29 @@ function Preparation({
       };
     },
   });
-  const data = isQueryReady(query) ? query.data : undefined;
+  // Keep the last read mounted during a refetch/error, but never writable until settled.
+  const data = query.data;
+  // Bind drafts to evidence content, not fetch time. A benign focus read preserves DOM/focus.
+  const evidence = JSON.stringify(data);
+  const [snapshot, setSnapshot] = useState({ evidence, version: 0 });
+  if (snapshot.evidence !== evidence) {
+    setSnapshot({ evidence, version: snapshot.version + 1 });
+  }
+  const previousEvidence = useRef(evidence);
+  useEffect(() => {
+    if (previousEvidence.current && evidence !== previousEvidence.current && !busy.current) {
+      setMessage(
+        "Исходные данные изменились. Черновик сброшен; заново проверьте и выберите подтверждения.",
+      );
+    }
+    previousEvidence.current = evidence;
+  }, [evidence]);
   const targets = data?.coverages ?? [];
   const exact = targets.filter((c) => c.covered_from === start && c.covered_to === end);
   const chosenId = selected || (exact.length === 1 ? String(exact[0].id) : "new");
   const row = targets.find((c) => String(c.id) === chosenId);
-  const locked = blocked || busy.current || !data;
-  const reread = async () => {
+  const locked = blocked || busy.current || !isQueryReady(query);
+  const reread = async (resetDraft = blocked) => {
     if (busy.current) return;
     busy.current = true;
     setBlocked(true);
@@ -372,8 +434,15 @@ function Preparation({
       });
       const fresh = await query.refetch();
       if (fresh.isError) throw fresh.error;
+      previousEvidence.current = JSON.stringify(fresh.data);
+      if (resetDraft) setReadGeneration((value) => value + 1);
       setBlocked(false);
-      setMessage("Данные перечитаны. Проверьте актуальные строки и версии перед новым действием.");
+      focusNotice.current = true;
+      setMessage(
+        resetDraft || JSON.stringify(fresh.data) !== evidence
+          ? "Данные перечитаны. Черновик сброшен; проверьте актуальные строки и версии перед новым действием."
+          : "Данные перечитаны. Черновик сохранён; проверьте актуальные строки и версии перед новым действием.",
+      );
     } catch {
       setMessage("Не удалось перечитать данные. Запись заблокирована до успешного чтения.");
     } finally {
@@ -381,7 +450,7 @@ function Preparation({
     }
   };
   const save: Save = async (write) => {
-    if (busy.current || blocked || !data) return;
+    if (busy.current || blocked || !isQueryReady(query)) return;
     busy.current = true;
     setBlocked(true);
     try {
@@ -391,20 +460,21 @@ function Preparation({
       setMessage(
         error instanceof ApiClientError && [409, 412].includes(error.status)
           ? "Форма устарела: перечитайте ревизии. Запись не повторяется автоматически."
-          : "Запись не подтверждена: проверьте данные перечитыванием. Закрытый месяц требует явного Reopen; противоречия нельзя устранить декларацией.",
+          : "Запись не подтверждена: проверьте данные перечитыванием. CLOSED блокирует исправления; противоречия нельзя устранить декларацией.",
       );
       busy.current = false;
       return;
     }
     busy.current = false;
-    await reread();
+    await reread(true);
   };
   return (
     <div className={styles.preparation}>
       <p>
-        Весь исторический портфель · {labels[assetClass]} · {start} — {end}. Изменение C1 и Reopen
-        обесценивают зависимые подтверждения. Порядок: явно открыть затронутые месяцы → исправить C1
-        → подтвердить интервал и состав → явно закрыть месяцы → перечитать результат.
+        Весь исторический портфель · {labels[assetClass]} · {start} — {end}. Сначала проверьте
+        ограничения ниже. Изменение исторического класса и Reopen обесценивают зависимые
+        подтверждения. Выбор «Не проверено», галочки и импорт файлов не доказывают полноту и не
+        открывают XIRR/TWRR.
       </p>
       <p>
         Депозиты, FX и истории с пересечениями границы класса здесь не поддерживаются. Декларация не
@@ -432,13 +502,53 @@ function Preparation({
           <h4>
             Авторитетные ограничения: {labels[assetClass]} · {start} — {end}
           </h4>
-          <ul>
-            {data.result.evidence_reason_codes.map((code) => (
-              <li key={code}>
-                {classReasonCopy(code)} <code>{code}</code>
-              </li>
-            ))}
-          </ul>
+          <p>
+            Готовность по последнему успешному чтению; запись ниже не заменяет источники. Пока
+            чтение идёт или завершилось ошибкой, сохранение заблокировано.
+          </p>
+          {[
+            ["Можно подтвердить вручную после проверки источника", true],
+            ["Требуется источник, отдельный процесс или поддержка расчёта", false],
+          ].map(([title, owner]) => {
+            const codes = [
+              ...new Set([
+                ...data.result.evidence_reason_codes,
+                ...data.result.xirr.reason_codes,
+                ...data.result.twrr.reason_codes,
+              ]),
+            ].filter((code) => ownerReasons.has(code) === owner);
+            return codes.length ? (
+              <div key={String(title)}>
+                <h4>{title}</h4>
+                <ul>
+                  {codes.map((code) => (
+                    <li key={code}>{classReasonCopy(code)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })}
+          <p>
+            XIRR: {data.result.xirr.availability === "available" ? "доступен" : "недоступен"}; TWRR:{" "}
+            {data.result.twrr.availability === "available" ? "доступен" : "недоступен"}. Итог
+            определяется авторитетным ответом, а не состоянием формы.
+          </p>
+          <details>
+            <summary>Технические причины недоступности</summary>
+            <ul>
+              {[
+                ...new Set([
+                  ...data.result.evidence_reason_codes,
+                  ...data.result.xirr.reason_codes,
+                  ...data.result.twrr.reason_codes,
+                ]),
+              ].map((code) => (
+                <li key={code}>
+                  <code>{code}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
           <p>
             Исторически включённые счета:{" "}
             {data.result.historical_account_ids.join(", ") || "не подтверждены"}. Строки ниже
@@ -454,11 +564,11 @@ function Preparation({
               )
               .map((m) => (
                 <li key={m.id}>
-                  <Link to={`/months/${m.id}`}>
+                  <Link to={`/v2/data/months/${m.id}`}>
                     Месяц {m.year}-{String(m.month).padStart(2, "0")} · снимок {m.snapshot_date} ·{" "}
                     {m.status === "closed"
-                      ? "CLOSED — явно открыть"
-                      : "DRAFT — закрыть после подготовки"}
+                      ? "CLOSED — только чтение"
+                      : "DRAFT — исправления доступны после проверки"}
                   </Link>
                 </li>
               ))}
@@ -467,7 +577,7 @@ function Preparation({
             <summary>Исторический класс C1: все наблюдаемые строки интервала</summary>
             {data.positions.map((p) => (
               <IdentityForm
-                key={`${p.id}:${query.dataUpdatedAt}`}
+                key={`${p.id}:${snapshot.version}:${readGeneration}`}
                 row={p}
                 description={`${data.accounts.find((a) => a.id === p.account_id)?.name ?? `Счёт ${p.account_id}`} · ${data.instruments.find((i) => i.id === p.instrument_id)?.name ?? `Инструмент ${p.instrument_id}`} · ${data.months.find((m) => m.id === p.reporting_month_id)?.snapshot_date ?? "дата неизвестна"}`}
                 closed={data.months.find((m) => m.id === p.reporting_month_id)?.status !== "draft"}
@@ -479,11 +589,11 @@ function Preparation({
               <p>Наблюдаемых позиций нет; это не подтверждение нулевого состава.</p>
             ) : null}
           </details>
-          <label>
+          <label className={styles.preparationField}>
             Запись подтверждения
             <select
               value={chosenId}
-              disabled={locked}
+              disabled={blocked || query.isPending || query.isError}
               onChange={(e) => setSelected(e.target.value)}
             >
               <option value="new">Создать для выбранного интервала</option>
@@ -496,7 +606,7 @@ function Preparation({
             </select>
           </label>
           <CoverageForm
-            key={`${chosenId}:${query.dataUpdatedAt}`}
+            key={`${chosenId}:${snapshot.version}:${readGeneration}`}
             assetClass={assetClass}
             start={start}
             end={end}
@@ -512,14 +622,34 @@ function Preparation({
 }
 
 export function ClassEvidencePreparation({ start, end }: { start: string; end: string }) {
-  const [assetClass, setAssetClass] = useState<AssetClass>("stock");
-  const [open, setOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Existing history entry only: browser Back retains context without new query semantics.
+  const context = location.state?.classPreparation;
+  const samePeriod = context?.start === start && context?.end === end;
+  const assetClass: AssetClass =
+    samePeriod && ["stock", "bond", "gold"].includes(context.assetClass)
+      ? context.assetClass
+      : "stock";
+  const open = samePeriod && context.open === true;
+  const remember = (assetClass: AssetClass, open: boolean) =>
+    navigate(location, {
+      replace: true,
+      preventScrollReset: true,
+      state: { ...location.state, classPreparation: { assetClass, open, start, end } },
+    });
   return (
-    <details className={styles.compositionBlock} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details
+      className={styles.compositionBlock}
+      open={open}
+      onToggle={(e) => {
+        if (e.currentTarget.open !== open) remember(assetClass, e.currentTarget.open);
+      }}
+    >
       <summary>Подготовить подтверждения классов</summary>
-      <label>
+      <label className={styles.preparationField}>
         Класс для подготовки
-        <select value={assetClass} onChange={(e) => setAssetClass(e.target.value as AssetClass)}>
+        <select value={assetClass} onChange={(e) => remember(e.target.value as AssetClass, open)}>
           {(["stock", "bond", "gold"] as const).map((key) => (
             <option value={key} key={key}>
               {labels[key]}
