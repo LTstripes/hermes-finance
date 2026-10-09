@@ -173,7 +173,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.controls label {
+.controls label,
+.preparationField {
   display: grid;
   gap: 4px;
   font-size: 12px;
@@ -181,8 +182,29 @@
   min-width: 0;
 }
 
+.preparationField {
+  margin-block: 10px;
+}
+
+.compositionBlock .readOnlyNotice {
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 4px;
+  background: #eef3f9;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.preparation .inlineButton:disabled {
+  background: #eef2f6;
+  color: #526278;
+  border-color: #cad3df;
+  cursor: not-allowed;
+}
+
 .controls input,
-.controls select {
+.controls select,
+.preparationField select {
   min-width: 0;
   width: 100%;
   max-width: 100%;

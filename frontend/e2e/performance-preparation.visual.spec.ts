@@ -417,6 +417,12 @@ for (const width of [390, 1440]) {
     await prepare.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText(/Авторитетные ограничения: Акции/)).toBeVisible();
+    for (const name of ["Класс для подготовки", "Запись подтверждения"]) {
+      const field = page.getByRole("combobox", { name, exact: true });
+      expect(
+        await field.evaluate((element) => element.getBoundingClientRect().height),
+      ).toBeGreaterThanOrEqual(34);
+    }
     await expect(
       page.getByText("Можно подтвердить вручную после проверки источника"),
     ).toBeVisible();
@@ -489,6 +495,16 @@ for (const width of [390, 1440]) {
     await page.getByRole("button", { name: "Перечитать подготовку класса" }).click();
     await expect(page.getByTestId("class-return-stock")).toContainText("+10,12%");
     await expect(page.getByText(/CLOSED — только чтение: сохранение/)).toBeVisible();
+    const closedNotice = await page.getByText(/CLOSED — только чтение: сохранение/).boundingBox();
+    const firstCoverageField = await page
+      .getByLabel("Начало подтверждения", { exact: true })
+      .boundingBox();
+    expect(
+      closedNotice &&
+        firstCoverageField &&
+        closedNotice.y + closedNotice.height <= firstCoverageField.y,
+    ).toBe(true);
+    await expect(saveCoverage).toHaveCSS("cursor", "not-allowed");
     await expect(
       page.getByRole("button", { name: "Сохранить подтверждение класса" }),
     ).toBeDisabled();

@@ -92,7 +92,7 @@ function IdentityForm({
             : "Не подтверждён / неизвестно"}
           . Месяц {row.reporting_month_id}.
         </p>
-        <label>
+        <label className={styles.preparationField}>
           Исторический класс позиции {row.id}
           <select
             value={identity}
@@ -194,6 +194,13 @@ function CoverageForm({
             ? `Исправление / отзыв подтверждения ${row.id} · версия ${row.revision}`
             : "Новое подтверждение класса"}
         </legend>
+        {closed ? (
+          <p role="alert" className={styles.readOnlyNotice}>
+            CLOSED — только чтение: сохранение для затронутых закрытых месяцев заблокировано. Reopen
+            требует отдельного решения об исправлении истории и не устраняет отсутствующие
+            источники, ограничения расчёта или противоречия. Ссылки ниже открывают просмотр месяца.
+          </p>
+        ) : null}
         <div className={styles.controls} onChange={() => setConfirmed(false)}>
           <label>
             Начало подтверждения
@@ -311,13 +318,6 @@ function CoverageForm({
           />
           Подтверждаю выбранное состояние и обе декларации состава
         </label>
-        {closed ? (
-          <p role="alert">
-            CLOSED — только чтение: сохранение для затронутых закрытых месяцев заблокировано. Reopen
-            требует отдельного решения об исправлении истории и не устраняет отсутствующие
-            источники, ограничения расчёта или противоречия. Ссылки ниже открывают просмотр месяца.
-          </p>
-        ) : null}
         <ul>
           {months
             .filter(
@@ -589,7 +589,7 @@ function Preparation({
               <p>Наблюдаемых позиций нет; это не подтверждение нулевого состава.</p>
             ) : null}
           </details>
-          <label>
+          <label className={styles.preparationField}>
             Запись подтверждения
             <select
               value={chosenId}
@@ -647,7 +647,7 @@ export function ClassEvidencePreparation({ start, end }: { start: string; end: s
       }}
     >
       <summary>Подготовить подтверждения классов</summary>
-      <label>
+      <label className={styles.preparationField}>
         Класс для подготовки
         <select value={assetClass} onChange={(e) => remember(e.target.value as AssetClass, open)}>
           {(["stock", "bond", "gold"] as const).map((key) => (
