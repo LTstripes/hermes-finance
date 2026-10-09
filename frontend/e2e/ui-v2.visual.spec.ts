@@ -185,9 +185,7 @@ test("ui-v2 Home partial capital coverage stays beside the known subtotal", asyn
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Home linked pair: gross details, fixed residuals and narrow layout", async ({
-  page,
-}, testInfo) => {
+test("ui-v2 Home linked pair: gross details and fixed residuals", async ({ page }, testInfo) => {
   const evidence = await installApi(page);
   const comparison = evidence.state.comparison;
   if (!comparison.explanation || !comparison.current || !comparison.previous)
@@ -224,13 +222,6 @@ test("ui-v2 Home linked pair: gross details, fixed residuals and narrow layout",
   await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "issue-651-linked-pair-expanded");
-  // 700×768 replaces the project viewport, so the narrow check is the same on every project.
-  if (testInfo.project.name === "1440x900") {
-    await page.setViewportSize({ width: 700, height: 768 });
-    await assertBounded(page);
-    await expect(summary).toBeVisible();
-    await capture(page, testInfo, "issue-651-linked-pair-narrow");
-  }
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -319,6 +310,12 @@ test("ui-v2 back to top desktop: appears after meaningful scroll and restores ma
   await page.evaluate(() => window.scrollTo({ top: 360, behavior: "auto" }));
   await expect(backToTop).toBeVisible();
   await expect(backToTop).toHaveAttribute("aria-controls", "v2-main");
+  const box = await backToTop.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Back-to-top button has no visible bounding box");
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(1440);
+  await assertBounded(page);
 
   await capture(page, testInfo, "ui-v2-back-to-top-desktop");
   await backToTop.focus();
@@ -332,54 +329,20 @@ test("ui-v2 back to top desktop: appears after meaningful scroll and restores ma
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 back to top narrow: remains inside the viewport and keyboard usable", async ({
+test("ui-v2 Home desktop long values: hierarchy and actions remain operable", async ({
   page,
 }, testInfo) => {
-  test.skip(
-    !["chromium", "1440x900"].includes(testInfo.project.name),
-    "Back-to-top browser evidence runs once per desktop harness",
-  );
-  const evidence = await installApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2");
-  await expect(page.getByRole("heading", { name: "Мои финансы" })).toBeVisible();
-
-  await page.evaluate(() => window.scrollTo({ top: 360, behavior: "auto" }));
-  const backToTop = page.getByRole("button", { name: "Наверх" });
-  await expect(backToTop).toBeVisible();
-  const box = await backToTop.boundingBox();
-  expect(box).not.toBeNull();
-  if (!box) throw new Error("Back-to-top button has no visible bounding box");
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(390);
-  await assertBounded(page);
-
-  await capture(page, testInfo, "ui-v2-back-to-top-narrow");
-  await backToTop.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#v2-main")).toBeFocused();
-  await expect
-    .poll(() => page.evaluate(() => Math.max(window.scrollY, document.documentElement.scrollTop)))
-    .toBeLessThan(320);
-
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Home narrow: hierarchy, long values and actions remain operable", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
   const evidence = await installApi(page);
   if (!evidence.state.comparison.current)
     throw new Error("Synthetic comparison has no current report");
   evidence.state.comparison.current.liquid_capital_net.amount = "9876543210123.45";
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2");
   await expect(page.getByTestId("v2-capital")).toContainText("9 876 543 210 123,45 ₽");
   await expect(page.getByTestId("v2-draft-action")).toBeVisible();
   await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-home-narrow");
+  await capture(page, testInfo, "ui-v2-home-desktop-long-values");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -544,19 +507,19 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Monthly Close narrow: current action and collapsed step list stay bounded", async ({
+test("ui-v2 Monthly Close desktop payout step: current action and collapsed step list stay bounded", async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
   const evidence = await installCloseApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=12&step=actual_payouts");
   await expect(page.getByRole("heading", { name: "Проверить полученные выплаты" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toBeVisible();
   const steps = page.locator("details").filter({ hasText: "Шаги закрытия" });
   await expect(steps).not.toHaveAttribute("open", "");
   await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-close-narrow");
+  await capture(page, testInfo, "ui-v2-close-desktop-payout-step");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -845,7 +808,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
   return { errors, reads, state, unexpected };
 }
 
-for (const width of [1440, 390]) {
+for (const width of [1440]) {
   test(`ui-v2 excluded source remains visible in Performance ${width}px @viewport-owned`, async ({
     page,
   }, testInfo) => {
@@ -953,15 +916,15 @@ test("ui-v2 Capital partial coverage keeps the known net", async ({ page }, test
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Capital narrow: long values and compact performance stay operable", async ({
+test("ui-v2 Capital desktop long values: compact performance stay operable", async ({
   page,
 }, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
+  test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
   const evidence = await installCapitalApi(page);
   if (!evidence.state.comparison.current)
     throw new Error("Synthetic comparison has no current report");
   evidence.state.comparison.current.liquid_capital_net.amount = "9876543210123.45";
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
   // Compact XIRR/TWRR summary is visible by default; only the secondary bridge is disclosed.
@@ -970,7 +933,7 @@ test("ui-v2 Capital narrow: long values and compact performance stay operable", 
   const bridge = page.locator('details:has([data-testid="capital-performance-bridge"])');
   await expect(bridge).not.toHaveAttribute("open", "");
   await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-capital-narrow");
+  await capture(page, testInfo, "ui-v2-capital-desktop-long-values");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -1227,20 +1190,6 @@ test("issue 538 archive keeps a known subtotal beside its source coverage", asyn
   expect(evidence.unexpected).toEqual([]);
 });
 
-test("ui-v2 reports archive narrow: rows stay readable as cards", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installReportsApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/reports");
-  await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
-  await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
-  await expect(page.getByTestId("reports-row-90")).toHaveCSS("display", "block");
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-reports-archive-narrow");
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
 for (const scene of ["no-closed", "first-closed", "money-error"] as const) {
   test(`ui-v2 reports archive state ${scene}: honest partial result`, async ({
     page,
@@ -1314,21 +1263,6 @@ test("ui-v2 report partial source coverage stays beside the historical value", a
   await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "issue-538-report-partial");
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 historical report narrow: header, values and handoff stay operable", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installReportsApi(page, "report");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
-  await expect(page.getByTestId("report-net")).toContainText("2 761 300 ₽");
-  await expect(page.getByRole("link", { name: "← Все отчёты" })).toBeVisible();
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-report-narrow");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

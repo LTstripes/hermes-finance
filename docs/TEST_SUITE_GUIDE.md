@@ -5,11 +5,12 @@ additive: the existing regression tests remain in place, and the full test
 commands still collect every existing test. The guide does not authorize
 renaming, moving, merging, or deleting test files.
 
-## Current CI topology — 2026-10-04
+## Current CI topology — 2026-10-09
 
 The optimization wave is complete; this is the supported topology, not a queue for further speed work.
 
 - **Ordinary PR concurrency (#671):** only a newer run of the same repository/workflow/PR cancels its predecessor. Canonical main, release and protected integration/UAT work use independent groups.
+- **Desktop-only cleanup (#747):** obsolete phone/390px duplicates are removed; unique financial, actual-backend, lifecycle and keyboard coverage remains at established desktop sizes. No phone UAT or mobile matrix is required. See [removed/retained coverage map](testing/MOBILE_RETIREMENT_COVERAGE.md). Existing desktop projects and all safety lanes remain.
 - **Visual ownership (#668):** tests that replace the project viewport execute once on the 1440 reference project; tests that genuinely use project viewport still retain the required 1366/1440/1920 coverage.
 - **Exact-head UI evidence (#669):** the UI-evidence workflow still checks out the PR head and owns its screenshots, production dist build and provenance. Normal PR CI may omit the overlapping 1440 grep only when head, merge and checkout tree identity is proven; uncertainty falls back to full execution.
 - **Docs-only PRs (#670):** the workflow always runs. A narrow fail-closed classifier permits the fast path only for explicitly allowlisted non-executable prose. Unknown/mixed/executable/build/test/release inputs, mode changes, rename/delete and classifier/workflow changes stay full. backend/README.md is deliberately full because Hatchling consumes it as package metadata. Canonical main pushes are always full.

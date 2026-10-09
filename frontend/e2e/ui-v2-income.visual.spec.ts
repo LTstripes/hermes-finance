@@ -303,6 +303,41 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect(plan).toContainText("Факт 3 000 ₽");
   await expect(plan).toContainText("План 0 ₽ · факта нет");
   await expect(plan).not.toContainText("Не задано");
+  const planOverlaps = await plan.locator("li").evaluateAll((rows) => {
+    const boxes = rows.map((row) => {
+      const rect = row.getBoundingClientRect();
+      const amount = row.querySelector("strong")?.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        amountRight: amount?.right ?? rect.right,
+        amountBottom: amount?.bottom ?? rect.bottom,
+        text: row.textContent ?? "",
+      };
+    });
+    return boxes.flatMap((box, index) => {
+      const problems: string[] = [];
+      if (box.amountRight > box.right + 1 || box.amountBottom > box.bottom + 1) {
+        problems.push(`overflow:${box.text}`);
+      }
+      // Desktop places expenses and savings in separate columns. Only actual
+      // two-dimensional intersections are overlaps, regardless of DOM order.
+      for (const previous of boxes.slice(0, index)) {
+        if (
+          box.left < previous.right - 1 &&
+          box.right > previous.left + 1 &&
+          box.top < previous.bottom - 1 &&
+          box.bottom > previous.top + 1
+        ) {
+          problems.push(`overlap:${previous.text} / ${box.text}`);
+        }
+      }
+      return problems;
+    });
+  });
+  expect(planOverlaps).toEqual([]);
   await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toHaveAttribute(
     "aria-controls",
     "income-ladder-content",
@@ -328,68 +363,6 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-income-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no page overflow", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored once");
-  const evidence = await installIncomeApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/income");
-  await expect(page.getByTestId("income-average")).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Главные показатели дохода" }).getByRole("article"),
-  ).toHaveCount(3);
-  await expect(page.getByTestId("income-plan-panel").locator("details")).not.toHaveAttribute(
-    "open",
-  );
-  await expect(page.locator('button[data-testid^="income-history-"]').first()).toHaveAttribute(
-    "data-testid",
-    "income-history-91",
-  );
-  await page.getByTestId("income-plan-panel").locator("summary").click();
-  const narrowPlan = page.getByTestId("income-plan-panel");
-  await expect(narrowPlan).toContainText("Факт 3 000 ₽");
-  await expect(narrowPlan).toContainText("План 0 ₽ · факта нет");
-  await expect(narrowPlan).not.toContainText("Не задано");
-  const planOverlaps = await narrowPlan.locator("li").evaluateAll((rows) => {
-    const boxes = rows.map((row) => {
-      const rect = row.getBoundingClientRect();
-      const amount = row.querySelector("strong")?.getBoundingClientRect();
-      return {
-        top: rect.top,
-        bottom: rect.bottom,
-        right: rect.right,
-        amountRight: amount?.right ?? rect.right,
-        amountBottom: amount?.bottom ?? rect.bottom,
-        text: row.textContent ?? "",
-      };
-    });
-    return boxes.flatMap((box, index) => {
-      const problems: string[] = [];
-      if (box.amountRight > box.right + 1 || box.amountBottom > box.bottom + 1) {
-        problems.push(`overflow:${box.text}`);
-      }
-      const previous = boxes[index - 1];
-      if (previous && box.top < previous.bottom - 1) {
-        problems.push(`overlap:${previous.text} / ${box.text}`);
-      }
-      return problems;
-    });
-  });
-  expect(planOverlaps).toEqual([]);
-  await expect(
-    page.getByTestId("income-window-30").getByTestId("income-event-provider-701"),
-  ).toBeVisible();
-  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toBeVisible();
-  await expect(page.getByTestId("income-handoffs-panel").locator("details")).not.toHaveAttribute(
-    "open",
-  );
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-income-narrow");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

@@ -323,10 +323,7 @@ async function prepareStatement(page: Page) {
   await page.getByRole("checkbox", { name: "Выбрать строку 1" }).check();
 }
 
-for (const viewport of [
-  { name: "desktop", width: 1366, height: 900 },
-  { name: "390px", width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(
     `native statement import ${viewport.name}: inspect/prepare/cancel/apply + readback`,
     { tag: "@viewport-owned" },

@@ -120,12 +120,12 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
   expect(await readFlows(january.id)).toHaveLength(1);
   expect(await readFlows(february.id)).toEqual([]);
 
-  // 390px keeps the whole prepared statement inside the viewport.
-  await page.setViewportSize({ width: 390, height: 844 });
+  // Desktop keeps the whole prepared statement inside the viewport.
+  await page.setViewportSize({ width: 1440, height: 900 });
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
   ).toBe(true);
-  await page.screenshot({ path: info.outputPath("mobile-statement.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("desktop-statement.png"), fullPage: true });
 
   // Legacy panel: no target period at all, so a second spanning document may
   // write both reporting months even though legacy shows the newest month.

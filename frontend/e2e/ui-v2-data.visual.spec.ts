@@ -282,28 +282,11 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-navigation-desktop");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-navigation-narrow");
   await page.getByRole("link", { name: "Открыть закрытие месяца →" }).press("Enter");
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=readiness$/);
   await expect(page.getByRole("heading", { name: /Закрытие месяца/ })).toBeVisible();
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Data sources narrow: chips and stacked clocks remain operable", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installDataApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/data");
-  await expect(page.getByTestId("freshness-clocks")).toBeVisible();
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-data-sources-narrow");
-  expect(evidence.posts).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
 
@@ -317,6 +300,9 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
     "Сверка только показывает различия и ничего не сохраняет",
   );
+  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
+    "Данные брокера запрашиваются только после нажатия",
+  );
   expect(evidence.posts).toEqual([]);
   await page.getByRole("button", { name: "Проверить снимок" }).click();
   await expect(page.getByTestId("reconciliation-result")).toBeVisible();
@@ -324,26 +310,6 @@ test("ui-v2 Data reconciliation: no provider call on mount; preview only on clic
   expect(evidence.posts).toEqual(["POST /api/months/12/broker-reconciliation-preview"]);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Data reconciliation narrow: owner copy and action stay bounded", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installDataApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/data/reconciliation");
-  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
-  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
-    "Данные брокера запрашиваются только после нажатия",
-  );
-  expect(evidence.posts).toEqual([]);
-  await page.getByRole("button", { name: "Проверить снимок" }).click();
-  await expect(page.getByTestId("reconciliation-result")).toBeVisible();
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-data-reconciliation-narrow");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -368,18 +334,6 @@ test("ui-v2 Catalogs desktop: accounts, instruments and mappings stay bounded", 
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Catalogs narrow: catalog controls remain operable", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installDataApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/data/catalogs");
-  await expect(page.getByTestId("catalog-accounts")).toBeVisible();
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-data-catalogs-narrow");
-  expect(evidence.posts).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
 test("ui-v2 Files desktop: exports and irreversible restore remain separated", async ({
   page,
 }, testInfo) => {
@@ -400,28 +354,10 @@ test("ui-v2 Files desktop: exports and irreversible restore remain separated", a
   await expect(page.getByRole("alertdialog")).toContainText(
     `Выбрана копия: ${evidence.backup.name}`,
   );
+  await expect(page.getByRole("alertdialog")).toContainText("Это необратимое действие");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-desktop");
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Files narrow: mutation gate and backup cards stay operable", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored with reference desktop");
-  const evidence = await installFilesApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/data/files");
-  await expect(page.getByTestId("files-exports")).toBeVisible();
-  await expect(page.getByTestId("files-backups")).toBeVisible();
-  await page
-    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
-    .click();
-  await expect(page.getByRole("alertdialog")).toContainText("Это необратимое действие");
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-data-files-restore-confirmation-narrow");
-  expect(evidence.posts).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

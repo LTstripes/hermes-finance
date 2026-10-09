@@ -14,10 +14,7 @@ const account = {
   notes: null,
 };
 
-for (const viewport of [
-  { width: 1366, height: 768 },
-  { width: 390, height: 844 },
-]) {
+for (const viewport of [{ width: 1366, height: 768 }]) {
   test(`catalog IIS write forms ${viewport.width}px and keyboard`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     const errors: string[] = [];

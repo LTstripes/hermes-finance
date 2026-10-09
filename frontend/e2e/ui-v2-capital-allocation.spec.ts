@@ -167,10 +167,7 @@ async function syntheticApi(page: Page) {
   });
 }
 
-for (const viewport of [
-  { name: "desktop", width: 1366, height: 900 },
-  { name: "390px", width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(`allocation leaf ${viewport.name}: deep link, coverage, keyboard and contained layout`, async ({
     page,
   }, testInfo) => {

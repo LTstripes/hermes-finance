@@ -60,10 +60,7 @@ async function installMonthsApi(page: Page) {
   return calls;
 }
 
-for (const viewport of [
-  { name: "desktop", width: 1366, height: 900 },
-  { name: "390px", width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(`native months ${viewport.name}: clone, refresh, delete and keyboard`, async ({
     page,
   }, testInfo) => {
