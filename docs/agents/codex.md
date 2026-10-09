@@ -8,7 +8,7 @@ The receiving coding session is the Worker unless explicitly assigned another ro
 Use the configured workspace root under the standing self-create policy. Local model/effort availability comes from runtime configuration, not repository aliases.
 
 Portable role/root boundaries and the Owner-local registry are in [Owner machine layout](../OWNER_MACHINE_LAYOUT.md).
-The real-machine inventory is Owner-only; agents use synthetic fixtures.
+Real-machine inventory and Owner-authorized read-only analysis follow [Owner data workflow](../OWNER_DATA_WORKFLOW.md); automated code checks use synthetic fixtures.
 An explicitly launched Owner-local operational assignment such as #679 follows
 the narrow helper boundary in AGENTS.md and the machine-layout procedure; it
 does not extend ordinary development access to private runtime payloads.
