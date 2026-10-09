@@ -33,7 +33,7 @@ A role is not a GitHub account. Worker self-review is not independent review; op
 Default: one Worker takes the assigned result through investigation, implementation, verification and authorized delivery.
 Choose implementation details, add necessary regressions and fix task-caused defects without repeated approval for routine reversible steps.
 Do not add unrelated cleanup or invent backlog work. Queues/orchestration require explicit opt-in.
-Stop for a conflicting/undefined contract, new financial meaning, architecture/invariant expansion, protected-data access or materially larger scope.
+Stop for a conflicting/undefined contract, new financial meaning, architecture/invariant expansion, data/runtime operations outside the Owner-authorized scope or materially larger scope.
 Ordinary engineering choices inside the accepted contract are not scope expansion; do not turn them into approval gates.
 
 ## Product and privacy invariants
@@ -42,17 +42,15 @@ Ordinary engineering choices inside the accepted contract are not scope expansio
 - Money and rates are exact: no binary `float` in financial logic; `Decimal` calculations, integer minor-unit money storage, `ROUND_HALF_UP`.
 - CLOSED reporting months are immutable until explicit reopen. The frontend is not the financial source of truth.
 
-## Runtime isolation — pragmatic Owner-approved privacy
+## Owner data and runtime isolation
 
-Credentials, access tokens, API keys, recovery material, real `.env`, production/Test/UAT databases and SQLite sidecars, backups, full private provider/broker exports and other reconstructive datasets are **not ordinary code fixtures**. Do not place them in tracked Git, public issues/PRs, CI artifacts or code-only test fixtures, or bypass this boundary with copies, symlinks, junctions, hardlinks or reused runtime mounts. Automated tests and CI use fabricated data. Secrets are never deliberately exposed in screenshots, issue comments or agent handoffs.
-
-**Real UI screenshots are allowed in Owner-authorized UAT.** Displayed balances, deposit amounts, asset holdings, performance values, dates and other ordinary personal-finance facts are *not* credentials and do not by themselves trigger a privacy blocker. An assigned Owner-local UAT operator and its authorized AI worker may inspect actual Test screen content and screenshots with normal browser capture, local image viewer and assistant/model vision tooling, including sending real screenshots to the authorized assistant conversation when helpful. Screenshots may be held temporarily in local untracked/ignored UAT scratch for visual diagnosis. Do not require a special protected viewer, obligatory monetary redaction or a fresh Owner confirmation for every image. Preserve the Owner's deliberate risk choice; the repository is public.
-
-Real screenshots/DOM dumps should **not be automatically committed or published** as public GitHub/CI evidence; use synthetic fixtures for committed visual tests, and summarize real UAT findings in normal language. Harmless individual financial values are not automatically treated as incidents. The Owner may expressly choose to publish a specific image/value, but normal UAT authorization is not blanket permission for public posting of whole private datasets.
-
-**Runtime integrity remains independent of screenshot privacy.** Ordinary implementation stays in its isolated code checkout; do not inspect/copy real database files or reuse Stable/Test data as code fixtures. An explicitly assigned Owner-local UAT/operations worker may inspect the real UI and conduct only the authorized Test preparation, isolation/backup/readiness and read-only visual actions. This is not permission to migrate DBs, write financial assertions, reopen CLOSED months, modify Stable, publish releases, or reconfigure existing clients without the applicable explicit authorization. Preserve applicable ADR 0012/0014 and operations/verification gates for actual runtime mutations.
-
-No machine-specific absolute paths in tracked files.
+Follow [Owner data and efficient task execution](docs/OWNER_DATA_WORKFLOW.md).
+Owner-requested analysis, diagnosis and UAT permit relevant real-data reads and
+ordinary presentation in the authorized assistant conversation, without masking
+personal values or asking again for each query/image. Keep credentials out of
+outputs, real datasets out of tracked code/CI, and synthetic data in automated tests.
+Reading data is distinct from permission to change data, runtime or publication.
+Preserve Stable and the applicable migration/recovery/financial/health contracts.
 
 <a id="sync-before-a-new-task"></a><a id="one-writer-isolated-task-branch"></a>
 <a id="parallel-task-isolation--physical-workspace-invariant"></a>
@@ -84,6 +82,8 @@ An authorized Integrator performs permitted repository mechanics directly; exist
 Staged integration and affected-document closeout belong to the integration procedure; release-specific closeout belongs to `docs/RELEASE_AUTOMATION.md`.
 
 ## Verification
+
+Claim the physical checkout before writing/testing and check ownership before delivery, as described in the Owner-data workflow. Every STOP cites a concrete boundary or failure; do not invent privacy gates for authorized Owner reads.
 
 Use the matching policy section, focused evidence and the existing CI; do not automatically repeat full suites for every handoff or role change.
 Review final scope/diff/privacy and report actual checks, not inferred passes. Required independent review and Owner UAT are not replaced by green tests.

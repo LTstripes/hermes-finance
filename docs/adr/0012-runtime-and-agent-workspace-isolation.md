@@ -31,7 +31,13 @@ All agent clones have independent Git directories. They are not worktrees of the
 
 Runtime secrets and data live only in runtime storage.
 
-Development agents must not access runtime data through copies or filesystem links, including:
+Owner clarification (2026-10-10): [Owner data workflow](../OWNER_DATA_WORKFLOW.md)
+permits assigned read-only analysis/UAT of real data and presentation to the Owner
+in the authorized assistant conversation. This supersedes blanket bans on the
+assistant seeing personal values; it preserves separate runtime storage, synthetic
+code fixtures, credential protection and authorization for mutations/publication.
+
+Development agents must not turn runtime data into code fixtures through copies or filesystem links, including:
 
 - copies;
 - symlinks;

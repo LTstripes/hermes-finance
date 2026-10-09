@@ -89,7 +89,9 @@ Exactly one profile may have `type=stable`. Preview and experiment profiles may 
 | Migrations | Inherit current production behaviour: `hermes-finance-api` runs `alembic upgrade head` on **this** database only |
 | Git | Launcher inspects identity; it does not change it |
 
-Stable is the only profile allowed to open production data.
+Stable is the only application runtime profile allowed to open production data.
+Assigned read-only Owner analysis is separately governed by the [Owner data workflow](../OWNER_DATA_WORKFLOW.md);
+it does not authorize startup/migrations from an experimental checkout.
 
 ### 1.2 Preview
 
