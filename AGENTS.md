@@ -42,16 +42,17 @@ Ordinary engineering choices inside the accepted contract are not scope expansio
 - Money and rates are exact: no binary `float` in financial logic; `Decimal` calculations, integer minor-unit money storage, `ROUND_HALF_UP`.
 - CLOSED reporting months are immutable until explicit reopen. The frontend is not the financial source of truth.
 
-## Runtime isolation — hard invariant
+## Runtime isolation — pragmatic Owner-approved privacy
 
-Agent workspaces and artifacts (Git, tests, logs, prompts and reports) must not contain or expose real `.env`, production/Preview/UAT databases,
-SQLite sidecars, backups, `private/`, credentials/tokens/secrets, Owner exports or other reconstructive private/provider datasets.
-This includes copies, symlinks, junctions, hardlinks and other indirection. Tests/probes use synthetic data only.
-Never inspect or reuse Owner runtime, Stable/Preview/UAT or `owner-probes/` locations; Owner-generated local reports remain allowed in Owner runtime.
-An explicit Owner-local operational assignment may authorize a bounded helper to collect structural/Git metadata and perform supported recovery/readiness operations on named boundaries. Private payloads remain opaque and outside agent artifacts; implementation/tests stay in a separate code-only clone. Relocation, deletion and existing-client reconfiguration still require the exact independently reviewed package and explicit Owner approval specified by that assignment. This exception does not grant ordinary development tasks runtime access.
-Avoid publishing individual financial values. An isolated scalar is normally P3 hygiene, not automatically a critical incident/release blocker;
-escalate when its context increases sensitivity or reconstructive risk. No history rewrite for scalar cleanup without explicit Owner authorization.
-No machine-specific absolute paths in tracked files. Governing runtime contracts remain in accepted ADRs, including 0012 and 0014.
+Credentials, access tokens, API keys, recovery material, real `.env`, production/Test/UAT databases and SQLite sidecars, backups, full private provider/broker exports and other reconstructive datasets are **not ordinary code fixtures**. Do not place them in tracked Git, public issues/PRs, CI artifacts or code-only test fixtures, or bypass this boundary with copies, symlinks, junctions, hardlinks or reused runtime mounts. Automated tests and CI use fabricated data. Secrets are never deliberately exposed in screenshots, issue comments or agent handoffs.
+
+**Real UI screenshots are allowed in Owner-authorized UAT.** Displayed balances, deposit amounts, asset holdings, performance values, dates and other ordinary personal-finance facts are *not* credentials and do not by themselves trigger a privacy blocker. An assigned Owner-local UAT operator and its authorized AI worker may inspect actual Test screen content and screenshots with normal browser capture, local image viewer and assistant/model vision tooling, including sending real screenshots to the authorized assistant conversation when helpful. Screenshots may be held temporarily in local untracked/ignored UAT scratch for visual diagnosis. Do not require a special protected viewer, obligatory monetary redaction or a fresh Owner confirmation for every image. Preserve the Owner's deliberate risk choice; the repository is public.
+
+Real screenshots/DOM dumps should **not be automatically committed or published** as public GitHub/CI evidence; use synthetic fixtures for committed visual tests, and summarize real UAT findings in normal language. Harmless individual financial values are not automatically treated as incidents. The Owner may expressly choose to publish a specific image/value, but normal UAT authorization is not blanket permission for public posting of whole private datasets.
+
+**Runtime integrity remains independent of screenshot privacy.** Ordinary implementation stays in its isolated code checkout; do not inspect/copy real database files or reuse Stable/Test data as code fixtures. An explicitly assigned Owner-local UAT/operations worker may inspect the real UI and conduct only the authorized Test preparation, isolation/backup/readiness and read-only visual actions. This is not permission to migrate DBs, write financial assertions, reopen CLOSED months, modify Stable, publish releases, or reconfigure existing clients without the applicable explicit authorization. Preserve applicable ADR 0012/0014 and operations/verification gates for actual runtime mutations.
+
+No machine-specific absolute paths in tracked files.
 
 <a id="sync-before-a-new-task"></a><a id="one-writer-isolated-task-branch"></a>
 <a id="parallel-task-isolation--physical-workspace-invariant"></a>
