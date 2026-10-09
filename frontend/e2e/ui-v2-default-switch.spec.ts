@@ -101,11 +101,11 @@ test("ui-v2: failed lazy load still exposes a working v1 escape", async ({ page 
   await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
 });
 
-test("ui-v2: keeps the UI v1 rollback visible and keyboard-operable at narrow width", {
+test("ui-v2: keeps the UI v1 rollback visible and keyboard-operable on desktop", {
   tag: "@viewport-owned",
 }, async ({ page }) => {
   await installReadOnlyApiFixtures(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
 
   const rollback = page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });

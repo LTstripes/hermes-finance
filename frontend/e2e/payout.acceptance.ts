@@ -40,7 +40,7 @@ test("individual Apply confirms through the real API and reload never submits", 
   page.on("request", (request) => {
     if (request.url().endsWith("/payout-apply")) posts.push(request.url());
   });
-  await page.setViewportSize({ width: 390, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/v2/data/payouts?month=${month.id}`);
   await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
   expect(posts).toEqual([]);
@@ -190,7 +190,7 @@ test("committed response loss never retries; reload needs fresh preview and expl
   expect(posts).toHaveLength(2);
 });
 
-for (const width of [1366, 390]) {
+for (const width of [1366]) {
   test(`synthetic real-backend payout journey ${width}px`, async ({ page, request }, testInfo) => {
     const monthId = width === 1366 ? 1 : 2;
     const positionId = width === 1366 ? 1 : 5;

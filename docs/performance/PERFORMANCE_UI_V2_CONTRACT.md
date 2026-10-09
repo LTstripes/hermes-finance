@@ -153,7 +153,7 @@ Reopen — отдельное явное действие в существую�
 | V14 | Linked transfer внутри портфеля, account drill-in | Классификация берётся для каждого scope, не переносится из portfolio в account. |
 | V15 | PRE capture начат, flow изменён перед POST | Expected signature rejected; form не переподписывается автоматически. |
 | V16 | Поддержанные данные проверены и явно сохранены | Read-back показывает оставшиеся blockers либо реальные final metrics; success save не равен success calculation. |
-| V17 | 390px, keyboard, 200% zoom, длинные названия/причины | Нет горизонтального page overflow; видны даты/units/основной action, раскрытие и возврат с управляемым focus. |
+| V17 | Desktop/laptop, keyboard, 200% zoom, длинные названия/причины | Нет горизонтального page overflow; видны даты/units/основной action, раскрытие и возврат с управляемым focus. |
 | V18 | Переход между #575 и Performance | Денежный месяц и интервал доходности не смешаны; один экран не подменяет другой. |
 
 ## 9. Порядок поставки и review

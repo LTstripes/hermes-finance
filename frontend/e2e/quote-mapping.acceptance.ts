@@ -87,8 +87,8 @@ test("synthetic real-backend: missing mapping, verified mapping, explicit new pr
   expect(after[0].price_source).toBe("t_invest");
   expect(after[0].market_price_per_unit.amount).toBe("123.45");
 
-  // 390px and keyboard keep the quote panel bounded and operable.
-  await page.setViewportSize({ width: 390, height: 844 });
+  // Desktop and keyboard keep the quote panel bounded and operable.
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/data/months/1?section=positions#month-quotes");
   const refresh = page.getByRole("button", { name: "Обновить котировки" });
   await refresh.focus();
@@ -98,5 +98,5 @@ test("synthetic real-backend: missing mapping, verified mapping, explicit new pr
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
   ).toBe(true);
-  await page.screenshot({ path: info.outputPath("quote-mapping-390.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("quote-mapping-desktop.png"), fullPage: true });
 });

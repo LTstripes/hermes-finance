@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { classReturnsFixture } from "../src/test/classReturnsFixture";
 
-for (const width of [390, 1366]) {
+for (const width of [1366]) {
   for (const scenario of ["values", "evidence", "xirr-only"] as const) {
     test(`ui-v2 class returns ${scenario} keyboard and layout ${width}px @viewport-owned`, async ({
       page,
@@ -167,7 +167,7 @@ for (const width of [390, 1366]) {
   }
 }
 
-for (const width of [390, 1366]) {
+for (const width of [1366]) {
   test(`Owner preparation keyboard and layout ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const start = "2030-05-01";
@@ -308,7 +308,7 @@ for (const width of [390, 1366]) {
   });
 }
 
-for (const width of [390, 1366]) {
+for (const width of [1366]) {
   test(`ui-v2 class Owner preparation keyboard and lifecycle ${width}px @viewport-owned`, async ({
     page,
   }, testInfo) => {

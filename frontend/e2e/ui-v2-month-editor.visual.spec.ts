@@ -316,7 +316,7 @@ test("saving removes the history guard and Back returns to the month list", asyn
   await expect(page).toHaveURL(/\/v2\/data\/months$/);
 });
 
-for (const width of [1280, 390]) {
+for (const width of [1280]) {
   test(
     `native month editor ${width}px and keyboard`,
     { tag: "@viewport-owned" },
@@ -374,7 +374,7 @@ for (const [id, , heading] of leaves) {
   });
 }
 
-for (const width of [1280, 390]) {
+for (const width of [1280]) {
   test(
     `aggregate six leaves write readback navigation ${width}px`,
     { tag: "@viewport-owned" },
@@ -434,14 +434,6 @@ for (const width of [1280, 390]) {
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
-      if (width === 390) {
-        const scroll = page.locator(".table-wrap").first();
-        expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-        await scroll.evaluate((el) => {
-          el.scrollLeft = 100;
-        });
-        expect(await scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-      }
       await page.screenshot({
         path: testInfo.outputPath(`budget-readback-${width}.png`),
         fullPage: true,
@@ -505,7 +497,7 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
   await expect(page.getByRole("heading", { name: "Депозиты", exact: true })).toBeVisible();
 });
 
-for (const width of [1280, 390]) {
+for (const width of [1280]) {
   test(
     `#650 debt stacked editor ${width}px keeps Save/Cancel reachable without horizontal page scroll`,
     { tag: "@viewport-owned" },

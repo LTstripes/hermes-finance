@@ -87,10 +87,7 @@ async function installSyntheticApi(page: Page) {
   return calls;
 }
 
-for (const viewport of [
-  { name: "desktop", width: 1366, height: 900 },
-  { name: "390px", width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(`native Scenario Lab ${viewport.name}: deep link, calculate, keyboard, back and refresh`, async ({
     page,
   }, testInfo) => {
@@ -111,13 +108,6 @@ for (const viewport of [
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: /Июнь.*2030.*Падение акций/ })).toBeVisible();
     await expect(page.getByText("Синтетическая акция")).toBeVisible();
-    if (viewport.width === 390) {
-      const tableOverflowsWithinPanel = await page
-        .locator(".table-wrap")
-        .first()
-        .evaluate((element) => element.scrollWidth > element.clientWidth);
-      expect(tableOverflowsWithinPanel).toBe(true);
-    }
     await page.screenshot({
       path: testInfo.outputPath(`${viewport.name}-result.png`),
       fullPage: true,

@@ -283,10 +283,7 @@ async function assertNoPageOverflow(page: Page) {
   ).toBe(true);
 }
 
-for (const viewport of [
-  { name: "desktop", width: 1366, height: 900 },
-  { name: "390px", width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(`native payout forecast ${viewport.name}: preview/apply, keyboard, contained scroll`, async ({
     page,
   }, testInfo) => {

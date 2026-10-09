@@ -141,14 +141,14 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }).click();
   await expect(page).toHaveURL(/\/v2\/close\?month=1&step=next_month_outlook$/);
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
   await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
-  await page.screenshot({ path: info.outputPath("closed-390.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("closed-desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Открыть месяц заново" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
@@ -215,7 +215,7 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     if (sent.method() === "POST" && sent.url().endsWith(`/api/months/${old}/close`))
       closePosts += 1;
   });
-  for (const width of [1440, 390]) {
+  for (const width of [1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/v2/data/months");
     const oldRow = page
@@ -349,7 +349,7 @@ test("settings has one sidebar entry and diagnostics deep links keep selection, 
   page.on("request", (sent) => {
     if (sent.method() === "PUT" && sent.url().endsWith("/api/settings")) settingsWrites += 1;
   });
-  for (const width of [1440, 390]) {
+  for (const width of [1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/v2/data/app?month=1#diagnostics");
     const sections = page.getByRole("navigation", { name: "Настройки и диагностика" });

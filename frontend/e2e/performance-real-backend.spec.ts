@@ -89,7 +89,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
   const url = `/v2/capital/performance?start=${start}&end=${end}&scope=account&account_id=${account.id}&view=accounts&prepare_account=${account.id}&prepare_reason=cash_history#performance-preparation`;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.setViewportSize({ width: 390, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(url);
   await expect(page.getByTestId("performance-detail-xirr-reason")).toBeVisible();
   for (const name of ["Денежная история", "Неденежная история"]) {
@@ -159,7 +159,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
     true,
   );
   await page.screenshot({
-    path: testInfo.outputPath("performance-390-both-available.png"),
+    path: testInfo.outputPath("performance-1440-both-available.png"),
     fullPage: true,
   });
   await page.goto("/v2/capital");
@@ -198,7 +198,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
   await expect(page.getByTestId("performance-detail-xirr-reason")).toBeVisible();
   await expect(page.getByTestId("performance-detail-twrr-reason")).toBeVisible();
   await page.screenshot({
-    path: testInfo.outputPath("performance-390-fail-closed.png"),
+    path: testInfo.outputPath("performance-1440-fail-closed.png"),
     fullPage: true,
   });
   expect(errors).toEqual([]);

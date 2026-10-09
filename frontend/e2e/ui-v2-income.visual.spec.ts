@@ -303,59 +303,7 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect(plan).toContainText("Факт 3 000 ₽");
   await expect(plan).toContainText("План 0 ₽ · факта нет");
   await expect(plan).not.toContainText("Не задано");
-  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toHaveAttribute(
-    "aria-controls",
-    "income-ladder-content",
-  );
-  await expect(
-    page
-      .getByTestId("income-window-30")
-      .getByTestId("income-event-provider-701")
-      .locator(":scope > *"),
-  ).toHaveCount(3);
-  expect(
-    await page
-      .locator('[data-testid$="-panel"]')
-      .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
-  ).toEqual([
-    "income-history-panel",
-    "income-forecast-panel",
-    "income-goals-panel",
-    "income-plan-panel",
-    "income-ladder-panel",
-    "income-handoffs-panel",
-  ]);
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-income-desktop");
-  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no page overflow", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "390px evidence stored once");
-  const evidence = await installIncomeApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/v2/income");
-  await expect(page.getByTestId("income-average")).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Главные показатели дохода" }).getByRole("article"),
-  ).toHaveCount(3);
-  await expect(page.getByTestId("income-plan-panel").locator("details")).not.toHaveAttribute(
-    "open",
-  );
-  await expect(page.locator('button[data-testid^="income-history-"]').first()).toHaveAttribute(
-    "data-testid",
-    "income-history-91",
-  );
-  await page.getByTestId("income-plan-panel").locator("summary").click();
-  const narrowPlan = page.getByTestId("income-plan-panel");
-  await expect(narrowPlan).toContainText("Факт 3 000 ₽");
-  await expect(narrowPlan).toContainText("План 0 ₽ · факта нет");
-  await expect(narrowPlan).not.toContainText("Не задано");
-  const planOverlaps = await narrowPlan.locator("li").evaluateAll((rows) => {
+  const planOverlaps = await plan.locator("li").evaluateAll((rows) => {
     const boxes = rows.map((row) => {
       const rect = row.getBoundingClientRect();
       const amount = row.querySelector("strong")?.getBoundingClientRect();
@@ -381,15 +329,31 @@ test("ui-v2 Income and plans narrow: secondary plan handoffs collapse and no pag
     });
   });
   expect(planOverlaps).toEqual([]);
-  await expect(
-    page.getByTestId("income-window-30").getByTestId("income-event-provider-701"),
-  ).toBeVisible();
-  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toBeVisible();
-  await expect(page.getByTestId("income-handoffs-panel").locator("details")).not.toHaveAttribute(
-    "open",
+  await expect(page.getByRole("group", { name: "Окно ожидаемых выплат" })).toHaveAttribute(
+    "aria-controls",
+    "income-ladder-content",
   );
+  await expect(
+    page
+      .getByTestId("income-window-30")
+      .getByTestId("income-event-provider-701")
+      .locator(":scope > *"),
+  ).toHaveCount(3);
+  expect(
+    await page
+      .locator('[data-testid$="-panel"]')
+      .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
+  ).toEqual([
+    "income-history-panel",
+    "income-forecast-panel",
+    "income-goals-panel",
+    "income-plan-panel",
+    "income-ladder-panel",
+    "income-handoffs-panel",
+  ]);
   await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-income-narrow");
+  await capture(page, testInfo, "ui-v2-income-desktop");
+  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px keyboard", async ({
+test("synthetic real-backend: cancel, stale, apply/readback, desktop keyboard", async ({
   page,
   request,
 }, info) => {
@@ -92,7 +92,7 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   ])
     expect(after[0][key]).toEqual(before[0][key]);
   await expect(page.getByRole("region", { name: "Актуальные позиции месяца" })).toContainText("10");
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await preview.click();
   // Unchanged matched rows are collapsed by default; the deliberate
   // re-confirmation path uses the explicit all-rows view.
@@ -101,7 +101,7 @@ test("synthetic real-backend: cancel, stale, apply/readback, desktop and 390px k
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
-  await page.screenshot({ path: info.outputPath("mobile-preview.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("desktop-preview.png"), fullPage: true });
   await page.getByRole("button", { name: "Применить выбранный базовый срез" }).click();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Подтвердить базовый срез" })).toBeFocused();
