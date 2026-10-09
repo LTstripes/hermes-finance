@@ -310,6 +310,7 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
       return {
         top: rect.top,
         bottom: rect.bottom,
+        left: rect.left,
         right: rect.right,
         amountRight: amount?.right ?? rect.right,
         amountBottom: amount?.bottom ?? rect.bottom,
@@ -321,9 +322,17 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
       if (box.amountRight > box.right + 1 || box.amountBottom > box.bottom + 1) {
         problems.push(`overflow:${box.text}`);
       }
-      const previous = boxes[index - 1];
-      if (previous && box.top < previous.bottom - 1) {
-        problems.push(`overlap:${previous.text} / ${box.text}`);
+      // Desktop places expenses and savings in separate columns. Only actual
+      // two-dimensional intersections are overlaps, regardless of DOM order.
+      for (const previous of boxes.slice(0, index)) {
+        if (
+          box.left < previous.right - 1 &&
+          box.right > previous.left + 1 &&
+          box.top < previous.bottom - 1 &&
+          box.bottom > previous.top + 1
+        ) {
+          problems.push(`overlap:${previous.text} / ${box.text}`);
+        }
       }
       return problems;
     });
