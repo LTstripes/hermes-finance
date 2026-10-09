@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +63,15 @@ beforeEach(() => {
     result.coverage_state = "unknown";
     result.coverage_provenance = structuredClone(coverages);
     result.evidence_reason_codes = ["historical_class_unknown", "reporting_month_not_closed"];
+    result.eligibility_status = "unavailable";
+    for (const kind of ["xirr", "twrr"] as const)
+      Object.assign(result[kind], {
+        availability: "not_computable",
+        quality: "unavailable",
+        value: null,
+        reason_source: "evidence",
+        reason_codes: result.evidence_reason_codes,
+      });
     return result;
   });
 });
@@ -102,7 +111,7 @@ describe("class Owner preparation", () => {
     });
     const client = await setup();
     const invalidation = vi.spyOn(client, "invalidateQueries");
-    expect(screen.getByText("historical_class_unknown")).toBeVisible();
+    expect(screen.getByText("historical_class_unknown")).toBeInTheDocument();
     fireEvent.click(screen.getByText(/Исторический класс C1: все/));
     expect(screen.getByText(/Не подтверждён \/ неизвестно/)).toBeVisible();
     fireEvent.change(screen.getByLabelText("Исторический класс позиции 7"), {
@@ -163,7 +172,7 @@ describe("class Owner preparation", () => {
     );
     expect(button).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
-    expect(screen.getByText("reporting_month_not_closed")).toBeVisible();
+    expect(screen.getByText("reporting_month_not_closed")).toBeInTheDocument();
   });
 
   it("corrects/revokes with the read revision and blocks stale writes until an explicit reread", async () => {
@@ -201,12 +210,12 @@ describe("class Owner preparation", () => {
     months[0].status = "closed";
     months[0].snapshot_date = "2030-03-01";
     await setup();
-    await claims();
     expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
-    expect(screen.getAllByRole("link", { name: /2030-01/ })[0]).toHaveAttribute(
-      "href",
-      "/months/1",
-    );
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).toBeDisabled();
+    expect(screen.getByText(/CLOSED — только чтение: сохранение/)).toBeVisible();
+    for (const link of screen.getAllByRole("link", { name: /2030-01/ })) {
+      expect(link).toHaveAttribute("href", "/v2/data/months/1");
+    }
     expect(saveClassCoverage).not.toHaveBeenCalled();
   });
 
@@ -267,5 +276,167 @@ describe("class Owner preparation", () => {
     expect(
       screen.queryByRole("button", { name: "Сохранить подтверждение класса" }),
     ).not.toBeInTheDocument();
+  });
+
+  it.each(["unknown", "revoked"] as const)(
+    "starts unchecked, explains independent %s endpoint claims, and saves exactly those claims",
+    async (state) => {
+      await setup();
+      for (const checkbox of screen.getAllByRole("checkbox")) expect(checkbox).not.toBeChecked();
+      expect(screen.getByLabelText("Состояние подтверждения")).toHaveValue("unknown");
+      expect(screen.getByText(/Их можно сохранить при состоянии/)).toBeVisible();
+      fireEvent.change(screen.getByLabelText("Состояние подтверждения"), {
+        target: { value: state },
+      });
+      fireEvent.click(screen.getByLabelText(/Полный состав класса на начало/));
+      expect(screen.getByText(/Будет сохранено:/)).toHaveTextContent(
+        `отсутствие пересечений — ${state === "unknown" ? "не проверено" : "отозвано"}`,
+      );
+      fireEvent.click(
+        screen.getByLabelText("Подтверждаю выбранное состояние и обе декларации состава"),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Сохранить подтверждение класса" }));
+      await waitFor(() =>
+        expect(saveClassCoverage).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            coverage_state: state,
+            opening_inventory_complete: true,
+            closing_inventory_complete: false,
+          }),
+          undefined,
+        ),
+      );
+    },
+  );
+
+  it("keeps drafts, mounted controls and focus through a benign delayed background reread; blocks save while reading", async () => {
+    const client = await setup();
+    await claims();
+    fireEvent.click(screen.getByText(/Исторический класс C1: все/));
+    fireEvent.change(screen.getByLabelText("Исторический класс позиции 7"), {
+      target: { value: "gold" },
+    });
+    fireEvent.click(screen.getByLabelText(/исторический класс позиции 7 с источником/));
+    const checkbox = screen.getByLabelText(/Полный состав класса на начало/);
+    checkbox.focus();
+    let resolve!: (value: ClassCoverage[]) => void;
+    vi.mocked(listClassCoverages).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    let reread!: Promise<void>;
+    await act(async () => {
+      reread = client.refetchQueries({ queryKey: ["class-preparation"] });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled(),
+    );
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).toBe(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
+    const form = checkbox.closest("form");
+    if (!form) throw new Error("Coverage form missing");
+    fireEvent.submit(form);
+    expect(saveClassCoverage).not.toHaveBeenCalled();
+    await act(async () => {
+      resolve([]);
+      await reread;
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeEnabled(),
+    );
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).toBe(checkbox);
+    expect(checkbox).toHaveFocus();
+    expect(checkbox).toBeChecked();
+    expect(screen.getByLabelText("Исторический класс позиции 7")).toHaveValue("gold");
+    expect(screen.getByLabelText(/исторический класс позиции 7 с источником/)).toBeChecked();
+    expect(screen.queryByText(/Исходные данные изменились/)).not.toBeInTheDocument();
+  });
+
+  it("resets claims on actual evidence revisions with a notice; retains a blocked draft on failed background read", async () => {
+    const client = await setup();
+    await claims();
+    vi.mocked(listClassCoverages).mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["class-preparation"] });
+    });
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).toBeChecked();
+    expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
+    positions[0].updated_at = "2030-03-02T00:00:00";
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["class-preparation"] });
+    });
+    await screen.findByText(/Исходные данные изменились/);
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).not.toBeChecked();
+    expect(screen.getByLabelText(/пересечений границы класса/)).not.toBeChecked();
+    expect(saveClassCoverage).not.toHaveBeenCalled();
+  });
+
+  it("resets every positive claim when coverage state changes", async () => {
+    await setup();
+    await claims();
+    fireEvent.change(screen.getByLabelText("Состояние подтверждения"), {
+      target: { value: "unknown" },
+    });
+    for (const checkbox of screen.getAllByRole("checkbox")) expect(checkbox).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
+  });
+
+  it("requires fresh final confirmation after changing any independent claim", async () => {
+    await setup();
+    for (const claim of [
+      /пересечений границы класса/,
+      /Полный состав класса на начало/,
+      /Полный состав класса на конец/,
+    ]) {
+      await claims();
+      fireEvent.click(screen.getByLabelText(claim));
+      expect(
+        screen.getByLabelText("Подтверждаю выбранное состояние и обе декларации состава"),
+      ).not.toBeChecked();
+      expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
+    }
+  });
+
+  it("preserves an unchanged draft on an explicit reread and explains source-gated and independent solver reasons", async () => {
+    const result = classReturnsFixture("stock", start, end);
+    result.evidence_reason_codes = [
+      "membership_incomplete_or_changed",
+      "opening_class_inventory_not_complete",
+      "mybroker_class_reconciliation_required",
+    ];
+    Object.assign(result.xirr, {
+      availability: "not_computable",
+      quality: "unavailable",
+      value: null,
+      reason_source: "solver",
+      reason_codes: ["not_computable_xirr_root_ambiguity"],
+    });
+    result.eligibility_status = "unavailable";
+    Object.assign(result.twrr, {
+      availability: "not_computable",
+      quality: "unavailable",
+      value: null,
+      reason_source: "evidence",
+      reason_codes: result.evidence_reason_codes,
+    });
+    vi.mocked(getClassReturns).mockResolvedValue(result);
+    await setup();
+    expect(screen.getByText(/История участия счетов неполна/)).toBeVisible();
+    expect(screen.getByText(/Данные MyBroker требуют исторической сверки/)).toBeVisible();
+    expect(screen.getByText(/Метод XIRR не может выбрать/)).toBeVisible();
+    expect(screen.getByText("not_computable_xirr_root_ambiguity")).not.toBeVisible();
+    await claims();
+    fireEvent.click(screen.getByRole("button", { name: "Перечитать подготовку класса" }));
+    await screen.findByText(/Черновик сохранён/);
+    expect(screen.getByLabelText(/Полный состав класса на начало/)).toBeChecked();
+    expect(
+      screen.getByLabelText("Подтверждаю выбранное состояние и обе декларации состава"),
+    ).toBeChecked();
+    expect(saveClassCoverage).not.toHaveBeenCalled();
   });
 });

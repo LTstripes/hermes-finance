@@ -308,7 +308,7 @@ for (const width of [390, 1366]) {
   });
 }
 
-for (const width of [390, 1366]) {
+for (const width of [390, 1440]) {
   test(`ui-v2 class Owner preparation keyboard and lifecycle ${width}px @viewport-owned`, async ({
     page,
   }, testInfo) => {
@@ -319,6 +319,7 @@ for (const width of [390, 1366]) {
     let coverage: Record<string, unknown> | null = null;
     let closed = false;
     const writes: string[] = [];
+    let preparationReads = 0;
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/api/**", async (route) => {
@@ -389,6 +390,7 @@ for (const width of [390, 1366]) {
                 : [],
         });
       } else if (url.pathname === "/api/class-evidence/coverages") {
+        preparationReads++;
         if (method === "POST") {
           const body = request.postDataJSON();
           expect(body).toMatchObject({
@@ -414,7 +416,12 @@ for (const width of [390, 1366]) {
     const prepare = page.locator("summary", { hasText: "Подготовить подтверждения классов" });
     await prepare.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByText("historical_class_unknown", { exact: true }).last()).toBeVisible();
+    await expect(page.getByText(/Авторитетные ограничения: Акции/)).toBeVisible();
+    await expect(
+      page.getByText("Можно подтвердить вручную после проверки источника"),
+    ).toBeVisible();
+    for (const checkbox of await page.getByRole("checkbox").all())
+      await expect(checkbox).not.toBeChecked();
     await page.getByText("Исторический класс C1: все наблюдаемые строки интервала").click();
     await expect(page.getByText(/Позиция 7 · Synthetic Broker · Synthetic Security/)).toBeVisible();
     await expect(page.getByText(/Не подтверждён \/ неизвестно/)).toBeVisible();
@@ -441,6 +448,38 @@ for (const width of [390, 1366]) {
     await page
       .getByLabel("Подтверждаю выбранное состояние и обе декларации состава", { exact: true })
       .check();
+    const opening = page.getByLabel(/Полный состав класса на начало/);
+    await opening.focus();
+    const scrollBefore = await page.evaluate(() => scrollY);
+    const readsBefore = preparationReads;
+    await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+    await expect.poll(() => preparationReads).toBeGreaterThan(readsBefore);
+    await expect(saveCoverage).toBeEnabled();
+    await expect(opening).toBeChecked();
+    await expect(opening).toBeFocused();
+    expect(await page.evaluate(() => scrollY)).toBe(scrollBefore);
+    const bounds = await opening.evaluate((input) => {
+      const label = input.closest("label");
+      if (!label) throw new Error("Associated label missing");
+      const box = input.getBoundingClientRect();
+      const labelBox = label.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(label);
+      return {
+        display: getComputedStyle(label).display,
+        width: box.width,
+        gap: parseFloat(getComputedStyle(label).gap),
+        contained:
+          box.left >= labelBox.left && box.right <= labelBox.right && box.top >= labelBox.top,
+      };
+    });
+    expect(bounds).toMatchObject({ display: "flex", width: 16, gap: 8, contained: true });
+    const dir = path.resolve(".visual-audit", testInfo.project.name);
+    fs.mkdirSync(dir, { recursive: true });
+    await page.screenshot({
+      path: path.join(dir, `ui-v2-class-attestations-${width}.png`),
+      fullPage: true,
+    });
     await saveCoverage.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText(/Исправление \/ отзыв подтверждения 5 · версия 1/)).toBeVisible();
@@ -449,7 +488,7 @@ for (const width of [390, 1366]) {
     closed = true;
     await page.getByRole("button", { name: "Перечитать подготовку класса" }).click();
     await expect(page.getByTestId("class-return-stock")).toContainText("+10,12%");
-    await expect(page.getByText(/Сначала явно откройте все CLOSED/)).toBeVisible();
+    await expect(page.getByText(/CLOSED — только чтение: сохранение/)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Сохранить подтверждение класса" }),
     ).toBeDisabled();
@@ -458,11 +497,48 @@ for (const width of [390, 1366]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
-    const dir = path.resolve(".visual-audit", testInfo.project.name);
-    fs.mkdirSync(dir, { recursive: true });
     await page.screenshot({
       path: path.join(dir, `ui-v2-class-owner-preparation-${width}.png`),
       fullPage: true,
     });
+    const monthLinks = page.getByRole("link", { name: /Месяц 2030-01/ });
+    await expect(monthLinks).toHaveCount(2);
+    for (const link of await monthLinks.all())
+      await expect(link).toHaveAttribute("href", "/v2/data/months/1");
+    await page.getByLabel("Класс для подготовки").selectOption("gold");
+    await expect(page.getByText(/Авторитетные ограничения: Золото/)).toBeVisible();
+    await page
+      .getByRole("link", { name: /Месяц 2030-01/ })
+      .first()
+      .click();
+    await expect(page).toHaveURL(/\/v2\/data\/months\/1$/);
+    await page.goBack();
+    await expect(page).toHaveURL(
+      new RegExp(`start=${start}&end=${end}&scope=portfolio&view=classes`),
+    );
+    await expect(page.getByLabel("Класс для подготовки")).toHaveValue("gold");
+    await expect(page.getByText(/Авторитетные ограничения: Золото/)).toBeVisible();
+    await page
+      .getByRole("link", { name: /Месяц 2030-01/ })
+      .last()
+      .click();
+    await expect(page).toHaveURL(/\/v2\/data\/months\/1$/);
+    await page.goBack();
+    await expect(page.getByLabel("Класс для подготовки")).toHaveValue("gold");
+    // 200% desktop zoom reflows within the shared shell's supported minimum width.
+    if (width === 1440) {
+      await page.evaluate(() => {
+        document.documentElement.style.zoom = "2";
+      });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: path.join(dir, `ui-v2-class-zoom-${width}.png`),
+        fullPage: true,
+      });
+    }
+    expect(writes).toEqual(["C1", "coverage"]);
+    expect(errors).toEqual([]);
   });
 }
