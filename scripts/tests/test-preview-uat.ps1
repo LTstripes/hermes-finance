@@ -211,7 +211,18 @@ function Invoke-PreviewPreparation {
         StableDataDirectory = $stableDataPath
         StableDatabase     = $stableDatabasePath
         RepositoryUrl      = $remotePath
-        CommandRunner      = New-HermesPreviewCommandRunner
+        CommandRunner      = {
+            param($Request)
+            if ($Request.Name -eq "runtime-database") {
+                $checkout = Split-Path -Parent $Request.WorkingDirectory
+                $database = Join-Path "$checkout data" "preview.sqlite"
+                if (Test-Path -LiteralPath (Join-Path $checkout "wrong-db.flag")) {
+                    $database = Join-Path $checkout "data\finance.db"
+                }
+                return [pscustomobject]@{ ExitCode = 0; Stdout = ($database | ConvertTo-Json); Stderr = "" }
+            }
+            return Invoke-HermesPreviewNativeCommand -Request $Request
+        }
         CommandResolver    = New-HermesPreviewCommandResolver
     }
     return Invoke-HermesPreviewPreparation @parameters
@@ -284,7 +295,9 @@ frontend/dist/
 data/*
 !data/.gitkeep
 .hermes-runtime-prepared.json
+.hermes-preview-boundary.json
 .hermes-data-identity.json
+wrong-db.flag
 target-runtime.log
 target-start.log
 '@
@@ -361,6 +374,14 @@ if ($Validate) {
     Assert-Test -Condition ($runtimeLog.Contains("cwd=$($firstPaths.Checkout)") -and $runtimeLog.Contains("checkout=$($firstPaths.Checkout)")) -Message "Prepare/Validate run with target checkout cwd"
     Assert-Test -Condition (Test-HermesPreviewSamePath -Left (Get-HermesPreviewGitCommonDirectory -Context $context -Checkout $firstPaths.Checkout) -Right (Get-HermesPreviewGitDirectory -Context $context -Checkout $firstPaths.Checkout)) -Message "Preview Git common directory is its own Git directory"
 
+    $pinPath = Join-Path $firstPaths.Checkout ".hermes-preview-boundary.json"
+    $pinBefore = Get-Content -LiteralPath $pinPath -Raw
+    Assert-TestEqual -Expected $firstPaths.Database -Actual (($pinBefore | ConvertFrom-Json).PreviewDatabase) -Message "OPS03 pins the exact database for Start"
+    Write-TestText -Path (Join-Path $firstPaths.Checkout "wrong-db.flag") -Content "synthetic"
+    Invoke-PreviewFailure -CandidateSha $candidateOne -PreviewName "preview exact path" -ExpectedText "runtime database does not match the pinned destination" | Out-Null
+    Assert-TestEqual -Expected $pinBefore -Actual (Get-Content -LiteralPath $pinPath -Raw) -Message "wrong DB must not overwrite the accepted runtime boundary"
+    Remove-Item -LiteralPath (Join-Path $firstPaths.Checkout "wrong-db.flag")
+
     $entrypointPaths = Get-PreviewPath -PreviewName "preview public entrypoint"
     $entrypointPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\prepare-preview.ps1"))
     $entrypointArguments = @(
@@ -375,7 +396,11 @@ if ($Validate) {
         "-StableDatabase", $stableDatabasePath,
         "-RepositoryUrl", $remotePath
     )
-    $entrypointResult = Invoke-TestCommand -FilePath $powerShellPath -WorkingDirectory $testRoot -Arguments $entrypointArguments
+    # This fixture's Prepare is a stub, without a usable prepared interpreter.
+    # The native entrypoint must now refuse to call such a target ready.
+    $entrypointResult = Invoke-TestCommand -FilePath $powerShellPath -WorkingDirectory $testRoot -Arguments $entrypointArguments -AllowFailure
+    Assert-Test -Condition ($entrypointResult.ExitCode -ne 0) -Message "missing runtime settings probe must fail closed"
+    Assert-Test -Condition ($entrypointResult.Output -match "runtime database configuration") -Message "native entrypoint refuses an unresolvable runtime DB: $($entrypointResult.Output)"
     Assert-Test -Condition ($entrypointResult.Output.Contains("candidate_sha=$candidateOne")) -Message "public owner entrypoint reports the exact candidate"
     Assert-TestEqual -Expected $candidateOne -Actual (Get-TestGitText -WorkingDirectory $entrypointPaths.Checkout -Arguments @("rev-parse", "HEAD")) -Message "public owner entrypoint pins exact SHA"
 
