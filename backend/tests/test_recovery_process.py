@@ -461,6 +461,7 @@ def test_real_competing_runtime_cannot_satisfy_recovery_readiness_or_be_terminat
     frontend.mkdir()
     for name in (
         "start-local.ps1",
+        "prepare-preview-lib.ps1",
         "recovery-runtime-boundary.ps1",
         "recovery-runtime-safety.ps1",
         "recovery-readiness.ps1",
@@ -563,6 +564,7 @@ def test_real_owned_runtime_passes_recovery_readiness_through_job(
         directory.mkdir(parents=True)
     for name in (
         "start-local.ps1",
+        "prepare-preview-lib.ps1",
         "recovery-runtime-boundary.ps1",
         "recovery-runtime-safety.ps1",
         "recovery-readiness.ps1",

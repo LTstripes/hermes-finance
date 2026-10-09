@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "recovery-runtime-safety.ps1")
 . (Join-Path $PSScriptRoot "recovery-readiness.ps1")
+. (Join-Path $PSScriptRoot "prepare-preview-lib.ps1")
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $backendDir = Join-Path $repoRoot "backend"
@@ -308,6 +309,7 @@ try {
         "HERMES_FINANCE_HOST",
         "HERMES_FINANCE_PORT",
         "HERMES_FINANCE_RELOAD",
+        "HERMES_FINANCE_DATABASE_PATH",
         "HERMES_FINANCE_FRONTEND_DIST",
         "UV_OFFLINE",
         "UV_PROJECT_ENVIRONMENT",
@@ -324,6 +326,11 @@ try {
         $env:UV_OFFLINE = "1"
         $env:UV_PROJECT_ENVIRONMENT = [IO.Path]::GetFullPath((Join-Path $backendDir ".venv"))
         $env:PYTHONPATH = ""
+
+        $pinnedDatabase = Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot
+        if ($null -ne $pinnedDatabase) {
+            $env:HERMES_FINANCE_DATABASE_PATH = $pinnedDatabase
+        }
 
         Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
         $backendProcess = Start-Process `

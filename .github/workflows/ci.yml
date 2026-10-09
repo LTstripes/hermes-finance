@@ -501,6 +501,8 @@ jobs:
           uv run --locked python -I -m pytest -q `
             tests/test_recovery_rehearsal.py `
             tests/test_recovery_process.py `
+            tests/test_settings.py `
+            tests/test_startup.py `
             --basetemp $recoveryBaseTemp
           $recoveryExitCode = $LASTEXITCODE
           Pop-Location

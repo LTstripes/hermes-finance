@@ -548,6 +548,7 @@ function Test-HermesPreviewForbiddenTrackedPath {
         $normalized -eq "frontend/node_modules" -or $normalized.StartsWith("frontend/node_modules/", [StringComparison]::Ordinal) -or
         $normalized -eq "frontend/dist" -or $normalized.StartsWith("frontend/dist/", [StringComparison]::Ordinal) -or
         $normalized -eq ".hermes-runtime-prepared.json" -or
+        $normalized -eq ".hermes-preview-boundary.json" -or
         $normalized -eq ".hermes-data-identity.json") {
         return $true
     }
@@ -864,6 +865,68 @@ function Get-HermesPreviewObservedHead {
     }
 }
 
+function Assert-HermesPreviewRuntimeDatabase {
+    param(
+        [Parameter(Mandatory = $true)]$Context,
+        [Parameter(Mandatory = $true)][string]$Checkout,
+        [Parameter(Mandatory = $true)][string]$Database
+    )
+
+    # Use the prepared interpreter and the same cwd as Start. Import Settings
+    # only: no app import, SQLite connection, dependency sync or migration.
+    $result = Invoke-HermesPreviewExternalCommand -Context $Context `
+        -Name "runtime-database" `
+        -FilePath (Join-Path $Checkout "backend\.venv\Scripts\python.exe") `
+        -WorkingDirectory (Join-Path $Checkout "backend") `
+        -ArgumentList @("-I", "-c", "import sys, json; sys.path.insert(0, 'src'); from hermes_finance.settings import Settings; print(json.dumps(str(Settings().database_path.absolute())))") `
+        -AllowFailure
+    if ([int]$result.ExitCode -ne 0) {
+        # Pydantic diagnostics may include .env values; never forward them.
+        throw "Preview/UAT runtime database configuration could not be resolved."
+    }
+    try {
+        # ASCII JSON avoids Windows console-codepage corruption of UTF-8 paths.
+        $actual = [string](([string]$result.Stdout) | ConvertFrom-Json)
+        $matches = -not [string]::IsNullOrWhiteSpace($actual) -and
+            (Test-HermesPreviewSamePath -Left $actual -Right $Database)
+    }
+    catch { $matches = $false }
+    if (-not $matches) {
+        throw "Preview/UAT runtime database does not match the pinned destination."
+    }
+}
+
+function Assert-HermesPreviewPinnedRuntimeBoundary {
+    param([Parameter(Mandatory = $true)][string]$Checkout)
+
+    $pinPath = Join-Path $Checkout ".hermes-preview-boundary.json"
+    if (-not (Test-Path -LiteralPath $pinPath)) { return }
+    Assert-HermesPreviewNoReparsePath -Path $pinPath -Label "Preview/UAT runtime boundary"
+    try {
+        $pin = Get-Content -LiteralPath $pinPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $boundary = @{}
+        foreach ($field in @("ControlCheckout", "StableCheckout", "StableDataDirectory", "StableDatabase", "PreviewCheckout", "PreviewDataDirectory", "PreviewDatabase")) {
+            $value = [string]$pin.$field
+            if ([string]::IsNullOrWhiteSpace($value) -or -not [IO.Path]::IsPathRooted($value)) {
+                throw "Invalid pin"
+            }
+            $boundary[$field] = $value
+        }
+        if (-not (Test-HermesPreviewSamePath -Left $boundary.PreviewCheckout -Right $Checkout)) {
+            throw "Invalid checkout"
+        }
+    }
+    catch {
+        throw "Preview/UAT runtime boundary is invalid; repeat exact-candidate preparation."
+    }
+    Assert-HermesPreviewDataBoundary @boundary | Out-Null
+    $context = [pscustomobject]@{
+        CommandRunner = { param($Request) Invoke-HermesPreviewNativeCommand -Request $Request }
+    }
+    Assert-HermesPreviewRuntimeDatabase -Context $context -Checkout $Checkout -Database $boundary.PreviewDatabase
+    return $boundary.PreviewDatabase
+}
+
 function Invoke-HermesPreviewPreparation {
     [CmdletBinding()]
     param(
@@ -1098,6 +1161,21 @@ function Invoke-HermesPreviewPreparation {
         Assert-HermesPreviewDataSidecar -DataDirectory $resolvedPreviewData -Database $resolvedPreviewDatabase | Out-Null
         Assert-HermesPreviewGitSnapshotUnchanged -Context $context -Snapshot $controlSnapshot -Label "Control checkout"
         Assert-HermesPreviewGitSnapshotUnchanged -Context $context -Snapshot $stableSnapshot -Label "Stable checkout"
+
+        $stage = "runtime-database-proof"
+        Assert-HermesPreviewRuntimeDatabase -Context $context -Checkout $resolvedPreview -Database $resolvedPreviewDatabase
+        $pinPath = Join-Path $resolvedPreview ".hermes-preview-boundary.json"
+        Assert-HermesPreviewNoReparsePath -Path $pinPath -Label "Preview/UAT runtime boundary"
+        $boundary = [ordered]@{
+            ControlCheckout = $resolvedControl
+            StableCheckout = $resolvedStable
+            StableDataDirectory = $resolvedStableData
+            StableDatabase = $resolvedStableDatabase
+            PreviewCheckout = $resolvedPreview
+            PreviewDataDirectory = $resolvedPreviewData
+            PreviewDatabase = $resolvedPreviewDatabase
+        }
+        [IO.File]::WriteAllText($pinPath, ($boundary | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 
         return [pscustomobject]@{
             Status          = "prepared"

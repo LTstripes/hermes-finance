@@ -55,6 +55,53 @@ def test_database_path_reads_prefixed_environment(monkeypatch: MonkeyPatch, tmp_
     assert settings.database_path == database_path
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_env_file_database_override_is_honored(
+    monkeypatch: MonkeyPatch, tmp_path: Path, encoding: str
+) -> None:
+    monkeypatch.delenv("HERMES_FINANCE_DATABASE_PATH", raising=False)
+    database_path = tmp_path / "synthetic history" / "intended.db"
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f'HERMES_FINANCE_DATABASE_PATH="{database_path.as_posix()}"\n', encoding=encoding
+    )
+
+    assert Settings(_env_file=env_file).database_path == database_path
+    assert not database_path.exists()  # Reading configuration must not open/create a DB.
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
+def test_env_file_preserves_precedence_validation_and_secret_privacy(
+    monkeypatch: MonkeyPatch, tmp_path: Path, encoding: str
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "HERMES_FINANCE_DATABASE_PATH=synthetic-file.db\n"
+        "HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=synthetic-env-secret\n",
+        encoding=encoding,
+    )
+    monkeypatch.delenv("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", raising=False)
+    override = tmp_path / "process.db"
+    monkeypatch.setenv("HERMES_FINANCE_DATABASE_PATH", str(override))
+    loaded = Settings(_env_file=env_file)
+    assert loaded.database_path == override
+    assert loaded.t_invest_read_only_token is not None
+    assert loaded.t_invest_read_only_token.get_secret_value() == "synthetic-env-secret"
+    assert "synthetic-env-secret" not in repr(loaded)
+    assert "synthetic-env-secret" not in loaded.model_dump_json()
+
+    monkeypatch.delenv("HERMES_FINANCE_PORT", raising=False)
+    env_file.write_text("HERMES_FINANCE_PORT=invalid\n", encoding=encoding)
+    with pytest.raises(ValueError):
+        Settings(_env_file=env_file)
+
+
+def test_missing_env_file_preserves_default_database(tmp_path: Path) -> None:
+    assert Settings(_env_file=tmp_path / "missing.env").database_path == (
+        REPOSITORY_ROOT / "data" / "finance.db"
+    )
+
+
 def test_t_invest_token_is_secret_and_empty_is_missing(monkeypatch: MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
     assert settings.t_invest_read_only_token is None
