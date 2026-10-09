@@ -1,103 +1,83 @@
 # Finance Dashboard — Project Wiki
 
-Durable Hermes Finance context, synchronized **2026-10-08**. Moving state belongs to live GitHub and [CURRENT_STATUS](CURRENT_STATUS.md). Latest restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md). Dated closeouts and [EXECUTION_HISTORY](EXECUTION_HISTORY.md) retain historical evidence, not standing orders.
+Durable context updated **2026-10-09**. Moving identities, results and pending actions belong to [CURRENT_STATUS](CURRENT_STATUS.md), live GitHub and [#554](https://github.com/LTstripes/hermes-finance/issues/554). Restart from [SESSION_CLOSEOUT_2026-10-09](SESSION_CLOSEOUT_2026-10-09.md). Earlier closeouts and [EXECUTION_HISTORY](EXECUTION_HISTORY.md) preserve dated evidence, not standing assignments.
 
-## 1. Product
+## Product and current outcome
 
-Local single-user Windows-first monthly finance application: explicit Monthly Close, liquid capital/debts/history, investment performance versus external flows, actual/forecast passive income, cash-flow ladder/redemptions, risk/allocation, freshness/provenance/reconciliation, Goals/Tax/IIS/Scenario and a read-only AI Analysis Bundle.
+Local single-user personal finance application on a Windows laptop: Monthly Close, liquid capital/debts/history, investment performance versus external flows, actual/forecast passive income, future cash flows, risk/allocation, source reconciliation, Goals/Tax/IIS/Scenario and read-only exports. SQLite and normal `127.0.0.1:8000` remain local. No trading, cloud account/auth, telemetry or automatic provider refresh.
 
-It is not a trading/banking/accounting/tax system and does not invent precision absent from authoritative evidence. SQLite and normal `127.0.0.1:8000` remain local. No cloud account/auth/telemetry/trading or automatic provider refresh. The filesystem janitor is housekeeping, not provider/data automation.
+**Desktop-only:** Owner decision #746 excludes phone UI, 390px/mobile design and mobile Owner UAT. Normal laptop resizing, keyboard/focus and browser zoom remain important. Owner now requests physical removal of obsolete mobile-only tests/fixtures/checks in **#747, first implementation priority**, not merely a policy note. Preserve unique financial scenarios on desktop; do not delete shared assertions or production CSS blindly. [Master Spec](MASTER_SPEC.md#52-среда-запуска), [verification](VERIFICATION_POLICY.md#12-ui-платформа-и-визуальная-приёмка).
 
-**Owner UI-platform decision (2026-10-09):** Hermes Finance is **desktop-only, on the Owner's Windows laptop**. Phone-sized layouts, mobile-specific product features, 390px screenshots/tests and mobile Owner UAT are not forward-looking requirements. Preserve readable, keyboard-accessible desktop windows and normal browser zoom. See [Master Spec](MASTER_SPEC.md#52-среда-запуска) and [verification target](VERIFICATION_POLICY.md#12-ui-платформа-и-визуальная-приёмка). Historical responsive code/tests are not a new mobile feature commitment. Active #743 UAT is desktop-only; full real-data/financial completeness stays separately scoped under #709.
+**Financial priority:** first independently verified account XIRR on one short real brokerage interval, initially 2026-08-31→2026-09-30, through #749 under #709. A displayed empty table, source import or green test is not that result. The broader two-year reconstruction and class/TWRR extensions follow a proven first account outcome.
 
-## 2. Sources and execution
+## Execution and authority
 
-Follow [AGENTS](../AGENTS.md): MASTER_SPEC → accepted ADRs → active accepted task/contract. Verification, risk/routing and integration retain their own procedure owners. Main is the only canonical/release source; integration branches are staging.
+Follow [AGENTS](../AGENTS.md): MASTER_SPEC → accepted ADRs → active contract; [integration](AGENT_ORCHESTRATION.md), [verification](VERIFICATION_POLICY.md) and [routing](MODEL_ROUTING.md) retain their own responsibilities. Main alone is canonical/releasable. One accountable writer and one physical task workspace; no sibling-tree edits. Integrator performs authorized GitHub review/merge/status mechanics directly. Required independent review is a separate assessment, not a compulsory repeat of every test.
 
-One writing/local-verification task owns one physical workspace. **Worker prompts are short launch pointers, normally 5–10 lines**, referencing the issue/latest note rather than repeating requirements. This is an explicit Owner preference, not an invitation to recreate the rulebook on each handoff. [MODEL_ROUTING](MODEL_ROUTING.md) owns prompt/routing procedure.
+Worker launch prompts are short (normally 5–10 lines), pointing to a real issue. Difficulty/model/effort are route choices, not Model evidence, provider logging or model benchmarks. Simple Owner-local actions should be supplied as brief PowerShell commands instead of starting Codex for a trivial step. Permission errors are not execution; never bypass safety or loop indefinitely on the same failure.
 
-Independent review follows risk, not file count. Use targeted checks and actual exact-candidate CI without redundant full suites at every handoff. Normal handoffs do not request/persist model/provider identity, benchmark grades or telemetry; model selection is routing only.
+One heavyweight local verification process at a time, including other projects. #747 code/test cleanup can run alongside #749's narrowly read-only financial input preparation, not alongside another full-suite process. #748 starts after #747 merge. #744 is frozen awaiting desktop UAT; Integrator reconciles its shared visual-test file once, retaining new desktop assertions without resurrecting removed mobile variants.
 
-## 3. Release and development identity
+## Release and runtime identity
 
-Published release: **v1.2.0**, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`, annotated tag object `f9311d26c1aae7295361937096844f4dde615b55`. Release CI `37206069556` and Guarded Release `37206660242` succeeded. [Release record](releases/1.2.0.md).
+Published **v1.2.0** resolves to `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; [release record](releases/1.2.0.md). Later preflight confirmed the Owner's Stable checkout at that code SHA, but a separate production Start/health/data-continuity completion record is not established. Do not repeatedly claim only v1.1.0 is installed or make a declined standalone version check an active Owner chore.
 
-Owner-local preflight has since confirmed the **Stable code checkout** matches published v1.2.0, but production Start/health/data-continuity acceptance is not separately on record. Publication/code pin is not full runtime acceptance. Most recent protected Test pin was #741 candidate `9f028150475bb14dfb3c43c8bdbb9d6e2512e2fc` with separate schema 0054 DB and read-only H0 UAT PASS. See live [CURRENT_STATUS](CURRENT_STATUS.md) for subsequent changes.
+Development main includes post-v1.2.0 class evidence/UI, S1/S2, H0–H3, #740 REPO/Skip, #741 H0 speed, #745 screenshot policy and #746 desktop scope. Main merges are not local deployments. Current pending UX PR is #744; its exact Test pin and CI/UAT distinction are in CURRENT_STATUS. Do not assume the protected Test follows main.
 
-The original class-return Phase 1 code milestone after #701 was `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4`, canonical CI `37226437369` SUCCESS. Development main later integrated #706 Owner preparation, #740 MyBroker REPO/Skip and #741 read-only H0 scaling (merge `e2864668a7357365656ace4ac681288313d0ee9f`). **None is part of published v1.2.0.** Live main/CI in [CURRENT_STATUS](CURRENT_STATUS.md) are authoritative; no git merge automatically promotes Stable.
+v1.2.0 contained #662's accepted product wave and follow-ups, CI maintenance and #629 Launcher retirement. Earlier [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) and [v1.1.0 record](releases/1.1.0.md) are historical. Export schema versions are independent of application release versions.
 
-v1.2.0 contains the accepted #662 product wave, #667/#674, maintenance #663/#664/#665/#672, #668–#671 CI work and #629 Launcher retirement. Prior v1.1.0 remains at `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`. Historical transition records: [R10](R10_RELEASE_CLOSEOUT_2026-09-21.md), [R09](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md), [v1.1.0](releases/1.1.0.md).
+## Financial truth and privacy
 
-## 4. Financial and privacy invariants
+Backend/domain is authoritative. Money/rates use Decimal and integer minor units. CLOSED months require explicit Reopen for corrections. Unknown is not zero; redemption principal is not passive income; capital change, investment return, unrealized valuation and the monetary bridge are different quantities.
 
-Backend/domain is authoritative. Money/rates use Decimal and integer minor units. CLOSED months are immutable until explicit Reopen; unknown/unavailable is not zero. Redemption principal is not passive income. Capital change, investment return, unrealized snapshot and monetary bridge are different claims.
+Credentials, real .env, full SQLite/sidecars/backups and original broker exports do not belong in code clones, public Git or CI. **Authorized real Test UI screenshots with ordinary finance values may be viewed by the local UAT agent and private assistant through normal tools** under #745/AGENTS. No special viewer or repeated monetary-redaction approval gate. Do not automatically publish them publicly. Runtime/financial-write permission is separate from screenshot inspection.
 
-Stable/Test data, real .env, credentials, backups and private exports never enter Git/CI/development artifacts. Explicit local operations remain bounded; ordinary Workers do not gain runtime access. Frontend state never authorizes hidden financial writes, automatic mapping or background provider calls.
-
-## 5. Delivered foundations
+## Delivered foundations and remaining financial boundaries
 
 ### Owner workflow and Decision Support
 
-Monthly Close and native v2 parity are delivered: months/editing, reports/Reopen, imports/Preview/Apply/readback, settings/diagnostics and retained /v1. #570/#571/#643 and #572 are complete; Owner acceptance retains documented provider/manual limitations.
-
-Decision Support v1 includes the AI bundle, Monthly Close Cockpit, Cash-flow Ladder, Risk & Allocation, Freshness & Provenance, Reconciliation, current-state Tax/IIS, deterministic Insights and Scenario Lab. Scenario is deterministic/read-only, not probabilistic forecasting. AI `schema_version=1.3.0` is independent of application version.
+Monthly Close and native v2 months/editor/reports, import Preview→Apply→readback, settings, diagnostics and explicit v1 escape are delivered. #572 Owner acceptance has documented limitations; no repeat of the entire completed workflow is required for each UI patch. Decision Support includes AI review exports, cash-flow ladder, risk/allocation, freshness, reconciliation, Tax/IIS, insights and deterministic Scenario Lab.
 
 References: [Decision Support](DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md), [UI completion](UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md), [default switch](UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md), [post-release UAT](POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md).
 
-### Portfolio/account Performance
+### Account/portfolio and historical Performance
 
-XIRR, exact TWRR, cash/in-kind boundary coverage, external/internal flow reconciliation, valuation/membership guards and PERF04A `value_change_after_external_flows` are delivered. XIRR is annualized, TWRR covers the selected period; availability is independent. PRE/POST evidence is never fabricated. Phase A UI/preparation is complete; #541/#528 are closed for coordination. [Performance v1](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
+Existing Performance includes XIRR, exact TWRR, external/internal flows, cash/in-kind coverage, valuation/membership evidence and a separate monetary bridge. XIRR is annualized; TWRR covers the selected period and requires appropriate PRE/POST boundaries when flows occur. Their availability is independent. [Performance closeout](PERFORMANCE_V1_CLOSEOUT_2026-09-12.md).
 
-### Asset-class returns — Phase 1
+`services/portfolio_xirr.py` first uses the ordinary accepted monthly availability path, then historical H1/H2 fallback. Do not demand new historical records for every selected monthly interval without checking which path is applicable. Do not combine incompatible sides or count both imported and existing representations of one fact.
 
-#534's original BLOCK ON EVIDENCE was correct for its September baseline. Its accepted October amendment enabled metric-specific sequencing, not weaker precision. #696/#698/#535/#540 now deliver the first exact no-crossing capability for whole-portfolio RUB stock/bond/gold.
+#740 source import/Skip diagnostics and #741 H0 inventory-speed UAT passed on protected Test. A subsequent no-write audit found no numeric discrepancy in its checked source/ledger facts, but every sampled real return remained unavailable. That is not an unimplemented solver; missing accepted financial inputs and independent source barriers remain. #749 must identify exact present/unaccepted/missing facts for one account and prepare a source-bound acceptance package, not repeat the whole audit.
 
-C1 uses persisted historical position identity, not current catalogue type; legacy NULL remains unknown. C2/C3 require explicit Owner no-crossing and both full endpoint inventory claims over the historical Performance account universe. Stored RUB market values, including existing accrued-interest semantics, are the valuation basis; mutable catalogue currency is not historical proof. Reopen/corrections revoke or invalidate dependent evidence.
+Relevant archived Skip is not cleared by age, current holdings, a shorter interval or merely creating an instrument. Exact prior source-account alias decisions remain reusable, not a general suffix heuristic. Skip→Map and same-account non-impact require a separately accepted correction/proof route. #715's existing S2-B fee/event contract should be reused only where it actually blocks the selected account. No autonomous financial attestation follows a research/UX authorization.
 
-The read-only API uses existing numerical primitives: two endpoint cash flows for XIRR and no boundaries for TWRR. Frontend Accounts/Classes view preserves dates/presets, zero/loss, independent metric states and safe provenance. Deposits are visible as unsupported. Numerical limits are not missing-data instructions.
+### Class returns
 
-**This is not complete automated class history.** Purchases/sales/distributions, deposits, FX and flow-bearing TWRR remain unsupported without exact source evidence. #705/#706 later delivered bounded C1 correction and no-crossing/inventory evidence preparation UI; automatic legacy C1 repair is still not delivered. The class-return screen and preparation path still need their own focused Owner UAT, and a visible table does not promise historical percentages.
+#696/#698/#535/#540 introduced the first exact no-crossing whole-portfolio RUB stock/bond/gold subset under the amended #534 contract. Historical position C1 is not current catalogue type. Class-wide endpoint inventory and interval no-crossing are separate explicit evidence; legacy unknown remains unknown. No-crossing XIRR uses two endpoint flows and TWRR uses its no-boundary path. General crossings, deposits/savings, FX and flow-bearing class TWRR are not universally supported.
 
-Sources: [class contract](performance/ASSET_CLASS_RETURNS_CONTRACT.md), [C1](performance/POSITION_CLASS_IDENTITY.md), [endpoint evidence](performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](performance/CLASS_RETURNS_API.md).
+#705/#706 added bounded C1/no-crossing preparation UI; #743/#744 improve its usability but do not populate evidence or compute returns. Endpoint assertions may deliberately remain true with unknown/revoked interval coverage without making rates available. CLOSED/revisions/material invalidation stay guarded.
 
-### Component attribution remains separate
+Contracts: [class returns](performance/ASSET_CLASS_RETURNS_CONTRACT.md), [historical C1](performance/POSITION_CLASS_IDENTITY.md), [C2/C3](performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](performance/CLASS_RETURNS_API.md).
 
-#396/#400/PR #402 accepted a backend-only identity:
+### Attribution, integrity and recovery
 
-```text
-B_portfolio = Σ B_account + Σ T_internal_transfer
-```
+PERF04B's backend identity remains `B_portfolio = Σ B_account + Σ T_internal_transfer`. B is not return/profit/P&L; no fabricated residual, rate summation or exact decomposition from insufficient transfer evidence. Lots, causal price/FX attribution and additive class contributions are separate. [Contract](performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
 
-B is the existing monetary bridge, not return/profit/P&L. No partial exact split or residual bucket. `100 -> 99` without accepted reconciliation remains unavailable; S>D needs transfer fee/commission/tax evidence; D>S remains unavailable. Same-currency FX spread alone does not authorize T; cross-currency gaps remain unavailable. API/UI exposure is a separate decision.
+Atomic writes, coherent reads, source/transfer/month-clone conflicts and stale-evidence invalidation remain required. Missing accounts are not zero-filled. [Integrity closeout](DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
 
-Class XIRR/TWRR does not implement additive class contributions, causal/price-vs-FX attribution, lots or realised/unrealised attribution. [PERF04B contract](performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
+Managed recovery retains encrypted and explicitly accepted plaintext/synced-filesystem modes, bounded retention, separate restore rehearsal and truthful local/off-device evidence. A synchronized directory is not automatically encrypted or proven off-device. [Durability closeout](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md).
 
-### Integrity and recovery
+## Runtime and housekeeping
 
-#484–#498/#536–#539 and #621–#624 preserve atomic writes, coherent reads, statement/transfer/salary/month-clone conflict handling, source coverage and stale-evidence invalidation. Missing accounts are not zero-filled. [Integrity closeout](DATA_INTEGRITY_HARDENING_CLOSEOUT_2026-09-27.md).
+#679/#666 relocation/legacy cleanup and janitor deployment, #629 Launcher retirement and #313 runtime separation are complete. Preserve Stable/Main/Test/Owner, active Ops (including its separate outside-root installation), backups and other tasks. Do not repeat inventory/migration or delete workspaces because an old note says BLOCKED. [Layout](OWNER_MACHINE_LAYOUT.md).
 
-#417's managed recovery publication/read-back, bounded retention, isolated DR and truthful outcomes are complete, including later #543/#547 CLI/retention hardening. Encrypted and separately Owner-accepted plaintext synced-filesystem modes remain distinct; a synchronized folder is not automatically encrypted or proven off-device. [Durability closeout](OWNER_DURABILITY_CLOSEOUT_2026-09-25.md).
+Use supported Prepare/Validate, Start, backup-first release-pinned OPS02 and exact-SHA Test OPS03. Only one runtime owns port 8000; identify the owned runtime instead of killing by port. The documented interactive stop is Ctrl+C in its owning console; `start-local.ps1` can perform forced child cleanup, so do not label every stop purely graceful. A private old helper name is not proof of safe behavior.
 
-## 6. Runtime and housekeeping
+#124 guarded publication remains separate from local update/Start. Never copy Test DB back into Stable. RuntimeConfig/example and [runtime operations](OWNER_RUNTIME_OPERATIONS.md) remain governing procedures; old dated release pins therein are historical.
 
-#679/#666 migration/legacy cleanup and janitor deployment are COMPLETE. Do not restart inventory/migration/restore/client setup because old notes say BLOCKED. Portable roles are `stable`, `main`, `test`, `owner`, `workspaces/<client>/<task>`; absolute roots stay local. Control is Main; Preview is persistent Test.
+The [janitor](WORKSPACE_JANITOR.md) has a recorded daily 12:00 local schedule, retention 7 days and preservation of young/active/dirty/private/unknown work. Prior deployment/dry-run evidence is not a guarantee of future deletions. Existing CI optimization history is complete except the newly Owner-prioritized #747 mobile cleanup; #691 remains NO-GO, not an invented delivery.
 
-The separate **active Ops installation outside the Hermes root** is protected. Outside-root is not deletion permission. [Machine layout](OWNER_MACHINE_LAYOUT.md) owns the map.
+## Remaining backlog and resumption
 
-Direct operations: OPS01 Prepare/Validate, deterministic `start-local.ps1`, OPS02 backup-first published-release update, OPS03 exact-SHA Test preparation. #124 guarded publication is separate from installation/Start. Only one owned runtime uses port 8000. Do not make Stable follow main.
+#747 first; #749's one-account financial work alongside it; #748 account-row display after #747; #744 desktop UAT/integration remains separate. #709 stays OPEN until actual real financial acceptance. #711/#714 are future source-first expansion, #646 awaits a supported Alfa token contract (no guessed protocol/provider calls), #389 composer deferred. #124/#554 are operational control/coordination; /v1 remains intentional.
 
-Installed and repository Launcher removal is complete. Shared backup/update/recovery/RuntimeConfig protections remain; do not reinstall the shell. Direct inventory inputs are defined in [OWNER_RUNTIME_OPERATIONS §13](OWNER_RUNTIME_OPERATIONS.md#13-protected-off-site-recovery-points-and-dr-rehearsal) and [the example](runtime-inventory.example.json). #313 redesign and earlier Launcher experiments are historical.
-
-Janitor schedule: daily 12:00 local, Apply, retention 7 days, fixed client roots. Young/active/dirty/private/unknown/unique work is preserved. Deployment plus 8-PRESERVE/0-delete dry-run are recorded, not a guarantee of first scheduled deletion. [Janitor](WORKSPACE_JANITOR.md).
-
-## 7. Next work
-
-#702 read-only statement-backed class-flow source research is completed. #708 delivered S1 MyBroker import; #709 is the active historical reconstruction/evidence program, with H0 inventory/speed verified on protected Test but financial completion and exact historical XIRR still pending. #711/#714 coordinate future source-first bank/deposit work; research alone does not grant implementation semantics.
-
-Owner-local original XML source import and H0 performance UAT have passed on isolated Test; a financial XIRR number was not proven. The class returns and bounded C1/no-crossing UI still need focused Owner review on an exact post-#706 Test code pin. Do not ask for manual SQL/JSON/PowerShell or repeat the full already accepted #662/#572 route.
-
-#646: the Trading core UI can be switched Online on 3366 and a read-only token exists, but Hermes still reports unrecognized protocol. A token handshake is a hypothesis, not established wire evidence. Owner chose a several-day/about-week wait before support; Alfa is optional for statement research. No provider fix or automatic monitoring is claimed.
-
-#389 composer is deferred; #124/#554 are permanent release/coordination endpoints. #630/#573/#127 are closed not-planned and /v1 stays. CI optimization #668–#671/#629 is complete; #691 was NO-GO with no delivery. Other optional test/cleanup pilots are not an active queue. [CI/test closeout](history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
-
-Latest restart brief: [SESSION_CLOSEOUT_2026-10-04](SESSION_CLOSEOUT_2026-10-04.md). Historical documents retain their dated facts rather than being rewritten as current evidence.
+See [CURRENT_STATUS](CURRENT_STATUS.md) for exact SHAs, CI versus local UAT and Owner actions, and [2026-10-09 checkpoint](SESSION_CLOSEOUT_2026-10-09.md) before resuming. Nothing in this documentation authorizes a release, Stable update, database mutation or implicit financial confirmation.
