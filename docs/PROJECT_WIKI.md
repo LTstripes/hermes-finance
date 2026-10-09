@@ -8,6 +8,8 @@ Local single-user Windows-first monthly finance application: explicit Monthly Cl
 
 It is not a trading/banking/accounting/tax system and does not invent precision absent from authoritative evidence. SQLite and normal `127.0.0.1:8000` remain local. No cloud account/auth/telemetry/trading or automatic provider refresh. The filesystem janitor is housekeeping, not provider/data automation.
 
+**Owner UI-platform decision (2026-10-09):** Hermes Finance is **desktop-only, on the Owner's Windows laptop**. Phone-sized layouts, mobile-specific product features, 390px screenshots/tests and mobile Owner UAT are not forward-looking requirements. Preserve readable, keyboard-accessible desktop windows and normal browser zoom. See [Master Spec](MASTER_SPEC.md#52-среда-запуска) and [verification target](VERIFICATION_POLICY.md#12-ui-платформа-и-визуальная-приёмка). Historical responsive code/tests are not a new mobile feature commitment. Active #743 UAT is desktop-only; full real-data/financial completeness stays separately scoped under #709.
+
 ## 2. Sources and execution
 
 Follow [AGENTS](../AGENTS.md): MASTER_SPEC → accepted ADRs → active accepted task/contract. Verification, risk/routing and integration retain their own procedure owners. Main is the only canonical/release source; integration branches are staging.
