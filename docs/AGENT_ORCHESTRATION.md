@@ -41,6 +41,7 @@ Force-push, destructive reset/rebase, branch/tag deletion, release publication a
 ## Linked handoff receipts
 
 Use the existing issue/PR and review/acceptance notes, not another process ledger.
+
 - **Worker:** one concise delivery receipt with the AGENTS completion fields: exact baseline/target/candidate,
   branch/workspace identity, changed files/stat, actual checks and limitations, final Git read-back.
   Link existing CI/check evidence rather than copying logs or acceptance criteria into every handoff.
