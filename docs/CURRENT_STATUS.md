@@ -1,71 +1,57 @@
-# Hermes Finance — current status
+# Hermes Finance - current status
 
-Updated **2026-10-09** from live GitHub and explicitly attributed Owner-local reports. Latest coordination: [#554](https://github.com/LTstripes/hermes-finance/issues/554). Restart brief: [2026-10-09 checkpoint](SESSION_CLOSEOUT_2026-10-09.md). Older closeouts retain dated evidence, not current assignments.
+Repository checkpoint **2026-10-10**, baseline `7957367b014e9ae3ab1a9645571901db0f0113a2`.
+This is the single maintained project-status snapshot. Live GitHub refs/checks establish repository identity;
+each issue and its latest accepted Integrator note own that task's assignment.
+[#554](https://github.com/LTstripes/hermes-finance/issues/554) is the coordination entrypoint.
+[PROJECT_WIKI](PROJECT_WIKI.md) holds durable concepts; dated closeouts preserve the evidence observed then.
+Update this checkpoint when an outcome, boundary, selected assignment or remaining gate changes, not for every handoff or poll.
 
-## Current priority and product boundary
+## Repository, release and runtime evidence
 
-**First implementation: remove obsolete mobile checks (#747). Main financial outcome: first verified real brokerage-account XIRR (#749 / #709), initially 2026-08-31 through 2026-09-30.** Do not substitute cosmetic completion, a successful import or another broad audit for that outcome. Correct zero/loss is valid; the goal is a trustworthy number, not a positive one.
-
-Hermes is **Windows laptop / desktop-browser only**. #746 integrated the Owner decision in MASTER_SPEC and VERIFICATION_POLICY. No phone/390px design or Owner UAT requirement. #747 now explicitly removes obsolete mobile-only test variants, data/expected images and redundant checks while retaining unique financial behavior on desktop. Existing responsive production CSS is not removed merely because it also handles narrow windows.
-
-## Release, main and Test are different
-
-| Surface | Verified checkpoint and limits |
+| Surface | Verified checkpoint / remaining limit |
 | --- | --- |
-| Published release | v1.2.0, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; [release record](releases/1.2.0.md). No newer release authorized by this checkpoint. |
-| Canonical main before this docs refresh | `65f1e811971019e2eadda6b20657eb2b86edaf7b`; [exact-main CI 37956819377](https://github.com/LTstripes/hermes-finance/actions/runs/37956819377) SUCCESS. Includes #740/#741, #742 status, #745 real-screenshot policy and #746 desktop-only policy. Read live main after any later merge. |
-| Open implementation PR | [#744](https://github.com/LTstripes/hermes-finance/pull/744), DRAFT/unmerged, exact head `20c2c4d45832b3c94a15de8720240815fcba705b`; #743 stays OPEN. |
-| Local Stable | Prior Owner-local preflight reported checkout at the published v1.2.0 SHA. Separate production Start/health/data-continuity proof remains unrecorded. Do not say the code is still v1.1.0; do not turn this narrower evidence gap into a repeated Owner chore. Owner declined an unnecessary standalone Stable check. |
-| Persistent Test | Owner's OPS03 returned PASS at the exact #744 head above, DB_unchanged=true; schema 0054 retained. Owner then started Test and supplied real desktop screenshots. This is not a deployment to Stable; current running/stopped state must be checked locally before any operation. |
+| Canonical main | `7957367b014e9ae3ab1a9645571901db0f0113a2`; [CI 38001547489](https://github.com/LTstripes/hermes-finance/actions/runs/38001547489) SUCCESS. Includes [#750](https://github.com/LTstripes/hermes-finance/pull/750), [#751](https://github.com/LTstripes/hermes-finance/pull/751), [#754](https://github.com/LTstripes/hermes-finance/pull/754) and [#755](https://github.com/LTstripes/hermes-finance/pull/755). |
+| Published release | v1.2.0, source `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; [release record](releases/1.2.0.md). Development merges do not publish or install a release. |
+| Stable | Earlier Owner-local preflight reported checkout at the v1.2.0 source. Separate production Start/data-continuity proof remains unrecorded. Owner declined a redundant standalone version check. |
+| Test | Earlier OPS03 PASS on #744 head `20c2c4d45832b3c94a15de8720240815fcba705b`, DB_unchanged=true, schema 0054; desktop screens were observed. #754 code/CI does not prove the intended preserved Test DB/.env has been verified or repaired in the actual runtime. Running/stopped state requires observation at operation time. |
 
-A documentation merge changes neither Owner runtime. Do not repin or rebuild Test just to follow docs. Never copy Test SQLite into Stable. Future release, Stable backup-first update, Start and production imports need their own approval and evidence.
+No runtime operation, release, merge or financial write is performed by this status update.
+Do not repin Test for a prose change or copy Test SQLite into Stable.
 
-## CI / independent review — not Owner UAT
+## Active work and remaining gates
 
-| Slice | GitHub evidence |
+| Task | Current result / next gate |
 | --- | --- |
-| #740 combined REPO + explicit archived Skip | Merged `5144b71b05537a540b2ac11ae9e66ea751bb1446`; post-main [37827387788](https://github.com/LTstripes/hermes-finance/actions/runs/37827387788) SUCCESS; #736/#738 CLOSED. #737/#739 closed as superseded, not separately merged. |
-| #741 H0 performance | Merged `e2864668a7357365656ace4ac681288313d0ee9f`; post-main [37835529213](https://github.com/LTstripes/hermes-finance/actions/runs/37835529213) SUCCESS. |
-| #744 current UI candidate | [Product 37946758389](https://github.com/LTstripes/hermes-finance/actions/runs/37946758389) SUCCESS; [UI 37946758362](https://github.com/LTstripes/hermes-finance/actions/runs/37946758362) SUCCESS; [independent review 5471760064](https://github.com/LTstripes/hermes-finance/pull/744#pullrequestreview-5471760064) ACCEPT for Test UAT. Initial-head review/runs are historical, not current-head checks. |
+| [#747](https://github.com/LTstripes/hermes-finance/issues/747) / [#751](https://github.com/LTstripes/hermes-finance/pull/751) | Code merged: phone-only test variants retired with desktop safety retained. The still-open issue's final acceptance/closeout belongs to Integrator; do not repeat implementation from its older ordering. |
+| [#752](https://github.com/LTstripes/hermes-finance/issues/752) | Append-only Skip→Map [contract v2](https://github.com/LTstripes/hermes-finance/issues/752#issuecomment-6090540978) independently [READY](https://github.com/LTstripes/hermes-finance/issues/752#issuecomment-6090672906). Owner has now assigned a code-only Worker for synthetic implementation from live main. Code, exact-candidate CI and independent review are pending; protected execution is separate. |
+| [#749](https://github.com/LTstripes/hermes-finance/issues/749) / [#709](https://github.com/LTstripes/hermes-finance/issues/709) | First real brokerage-account XIRR remains unproven. Reuse the bounded private dossier; resolve relevant source/catalogue/Skip dependencies, then an exact source-backed acceptance package. A private reference alone is not the same numeric Hermes API/UI result. |
+| [#748](https://github.com/LTstripes/hermes-finance/issues/748) | Its #747 code-merge dependency is satisfied. No implementation PR observed at this checkpoint. Use its accepted issue contract for assignment; readable readiness rows do not grant financial completeness. |
+| [#743](https://github.com/LTstripes/hermes-finance/issues/743) / [#744](https://github.com/LTstripes/hermes-finance/pull/744) | DRAFT/unmerged at `20c2c4d45832b3c94a15de8720240815fcba705b`. [Product CI](https://github.com/LTstripes/hermes-finance/actions/runs/37946758389), [UI evidence](https://github.com/LTstripes/hermes-finance/actions/runs/37946758362) SUCCESS; [independent review](https://github.com/LTstripes/hermes-finance/pull/744#pullrequestreview-5471760064) ACCEPT for Test UAT. Expanded preparation form and both v2 month-link/Back checks remain unconfirmed. Integrator owns reconciliation against merged desktop tests and any changed-candidate gates. |
 
-Failed helper/controller setup attempts did not inspect source and remain UNVERIFIED. A separate GitHub-native independent review need not rerun all tests or repair that runtime. Any changed executable candidate requires its own applicable checks and accurately attributed review.
+Contract READY, Worker delivery, independent review, Integrator acceptance, Owner UAT and integration are distinct results.
+Link concise candidate/check/review/acceptance receipts under the [existing integration procedure](AGENT_ORCHESTRATION.md#linked-handoff-receipts).
+Reuse valid evidence with its original candidate and scope; do not relabel partial screenshots or skipped suites as PASS.
 
-## Owner-local acceptance — bounded findings
+## Financial acceptance and preserved context
 
-- **Source journey PASS:** original XML 1/2/4 Preview, explicit Skip, Apply, independent GET, fresh-visit replay/dedup and preservation of previous reports. Combined #740's source/diagnostic UAT is not positive historical return acceptance.
-- **H0 read-only UAT PASS:** original Test API returned complete HTTP 200 in 0.538s and 0.524s with equal bodies/digests, unchanged schema/database and existing report/source reads. Old timed-out H0 produced no complete response for old-vs-new comparison. Separate ordinary shutdown smoke was not established by that read-only probe.
-- **Data-fidelity audit PASS, financial completeness unproven:** local operator reported 10 accounts, 803 read-only API checks, 2,637 source numeric fields and 124 S2 core facts without detected discrepancies; 18 earlier report responses preserved. All 770 inspected account/portfolio/class return contexts were not_computable/null. This is source-number/ledger-arithmetic evidence, not total portfolio completeness.
-- **#744 desktop UAT PARTIAL:** final-head OPS03 and screen loading observed; account/class diagnostic screenshots and Files reviewed. Final expanded preparation form, both native v2 month links and Back are not yet confirmed. Do not merge/close #743 from a table-only screenshot. No real financial attestations or CLOSED Reopen were accepted.
+Source import/Skip journey and H0 read-only performance UAT passed for #740/#741.
+The prior audit found no discrepancy in its checked source/ledger facts, while all sampled returns were unavailable:
+source fidelity and arithmetic are not proof of accepted financial completeness.
+[The dated 9 October checkpoint](SESSION_CLOSEOUT_2026-10-09.md) retains those measurements and original work order.
 
-Real screenshots of ordinary financial values may be inspected in the authorized private assistant/UAT session under current AGENTS; no special viewer or per-image monetary redaction gate. Do not automatically publish screenshots, secrets, full databases or raw broker exports to public Git/CI.
+For account XIRR, try the accepted monthly path before historical H1/H2 fallback. Exact full-account endpoint
+values, external flows, applicable noncash evidence, historical scope and reconciliation must be supported.
+TWRR PRE/POST and class no-crossing are independent requirements, not automatic account-XIRR gates.
+Catalogue preparation or retiring a Skip does not by itself restore source eligibility. #752's accepted contract
+requires fresh whole-batch Preview after preparation; original source/Skip evidence stays immutable.
+No real financial Apply, attestation, reimport or CLOSED Reopen follows from code or contract acceptance.
 
-## First XIRR — actual remaining work
+[#711](https://github.com/LTstripes/hermes-finance/issues/711), [#714](https://github.com/LTstripes/hermes-finance/issues/714),
+[#646](https://github.com/LTstripes/hermes-finance/issues/646) and [#389](https://github.com/LTstripes/hermes-finance/issues/389)
+remain separate backlog; [#124](https://github.com/LTstripes/hermes-finance/issues/124) is release control.
+Runtime relocation/cleanup, Launcher retirement and prior CI work are historical deliveries, not new instructions.
 
-Existing account/portfolio solvers and monthly Performance are implemented. **The monthly evidence path is tried first; historical H1/H2/H3 is a fallback**, as implemented in `services/portfolio_xirr.py`. Missing historical H1/H2 tables alone do not prove that every account/month requires new historical acceptance. Check the chosen path rather than demanding all layers indiscriminately.
-
-For one exact account/interval, establish complete boundary valuations including cash, all external flows and applicable noncash evidence, historical scope, and reconciliation. Distinguish already present facts needing acceptance from genuinely missing source/implementation. Trades inside an account are not Owner deposits; source settlement/fee details need their accepted meaning, not heuristics. #715 already defines S2-B fee/event-C1 work; use it only if necessary for the selected interval.
-
-Relevant Skip and unsupported REPO remain independent blockers. Merely shortening dates, adding old instruments, or revoking a Skip does not erase its accepted lifecycle impact. Skip-to-map correction or same-account non-impact proof needs its own accepted source-backed contract. Previously confirmed exact account aliases remain Owner decisions; do not strip suffixes generically or ask for the same mapping again. The Owner-designated empty source stays excluded only while actually empty.
-
-**#749 produces one exact private input schedule, verified reference XIRR if possible, and a consolidated supported acceptance/repair package.** It does not perform financial writes. Subsequent Owner-approved Apply/GET must make the same account's Hermes API/UI genuinely numeric before declaring first-XIRR delivery. TWRR PRE/POST, class no-crossing and full two-year reconstruction are not automatic prerequisites for account XIRR.
-
-## Assigned order and parallelism
-
-| Task | When / boundary |
-| --- | --- |
-| [#747 mobile-test retirement](https://github.com/LTstripes/hermes-finance/issues/747) | FIRST code task, from live main after docs refresh. Does not wait for #744. Only tests/associated mobile fixtures/check references and necessary active test documentation. |
-| [#749 first-XIRR input/acceptance package](https://github.com/LTstripes/hermes-finance/issues/749) | Can run alongside #747: Owner-local read-only, reuses prior audit, no repository edits or second heavy suite. |
-| [#748 account-readiness rows](https://github.com/LTstripes/hermes-finance/issues/748) | Start implementation AFTER #747 merge; independent of financial acceptance. Makes accounts inspectable, not their return computable. |
-| #743 / #744 existing UX | Frozen candidate awaiting remaining desktop UAT. Integrator reconciles its shared visual-test file after #747, preserving new desktop assertions without reintroducing phone cases. |
-
-No parallel writers to the same physical checkout. One heavy local verification at a time. No second broad financial audit. Short launch prompts (normally 5–10 lines), difficulty and model/effort for routing only; no Model evidence or model benchmarks. Simple local actions go directly to Owner as one or two PowerShell commands rather than starting Codex for a trivial action.
-
-## Other retained backlog and completed work
-
-#711 source-first roadmap, #714 bank/deposit source research, #646 documented Alfa PRO token compatibility, #389 future composer; none is an immediate prerequisite of the selected account pilot. #124 is permanent release control, #554 coordination. Alfa remains externally unresolved, not a guessed protocol fix. No new provider investigation/monitoring is authorized here.
-
-Class no-crossing Phase 1 (#696/#698/#535/#540) and #705/#706 evidence-entry UI are integrated after v1.2.0. Exact class returns still need their historical class/whole-universe inventory/no-crossing evidence. Deposits, FX and general flow-bearing class TWRR remain outside that delivered subset. See [class contract](performance/ASSET_CLASS_RETURNS_CONTRACT.md), [C1](performance/POSITION_CLASS_IDENTITY.md), [C2/C3](performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](performance/CLASS_RETURNS_API.md).
-
-#572's older common UI/monthly-close Owner PASS retains documented limitations; do not repeat the whole route. #679/#666 relocation/legacy cleanup, #629 Launcher retirement and earlier CI optimization are complete. Active Ops, Stable/Main/Test/Owner, backups and other projects remain protected; this checkpoint authorizes no cleanup there. [Layout](OWNER_MACHINE_LAYOUT.md), [runtime operations](OWNER_RUNTIME_OPERATIONS.md), [janitor](WORKSPACE_JANITOR.md) and dated [CI history](history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) retain details. Old runtime-release pins inside dated sections are historical, not a substitute for this checkpoint.
-
-[AGENTS](../AGENTS.md), [verification](VERIFICATION_POLICY.md) and [integration](AGENT_ORCHESTRATION.md) govern execution. No Stable update, new release, financial/data mutation or #744 merge is performed by this documentation refresh.
+[AGENTS](../AGENTS.md), [Owner-data workflow](OWNER_DATA_WORKFLOW.md), [verification](VERIFICATION_POLICY.md),
+[risk/review](MODEL_ROUTING.md) and [runtime operations](OWNER_RUNTIME_OPERATIONS.md) retain their authority.
+This task uses synthetic code checks only; no Owner data or installed-app changes are assigned.
