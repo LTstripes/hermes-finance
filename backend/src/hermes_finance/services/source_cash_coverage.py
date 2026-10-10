@@ -43,7 +43,13 @@ from hermes_finance.services.historical_owner_flows import (
     _read_historical_owner_flow,
     _rows,
 )
-from hermes_finance.services.mybroker_dispositions import REASON, excluded_trade, impact
+from hermes_finance.services.mybroker_dispositions import (
+    REASON,
+    correction_dependencies,
+    effective_bindings,
+    excluded_trade,
+    impact,
+)
 from hermes_finance.services.mybroker_import import _reduce
 from hermes_finance.services.performance_availability import _history_covers_interval
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
@@ -128,7 +134,7 @@ def inventory(session, account_id, a, b, *, retained=None):
         try:
             aliases.update(
                 m["identity"]
-                for m in json.loads(source.mappings_json)
+                for m in effective_bindings(session, source)
                 if m["kind"] == "account" and m["hermes_id"] == account_id
             )
         except (ValueError, TypeError, KeyError):
@@ -136,7 +142,7 @@ def inventory(session, account_id, a, b, *, retained=None):
     trade_links = set()
     for source in source_rows:
         try:
-            mappings = json.loads(source.mappings_json)
+            mappings = effective_bindings(session, source)
             document = json.loads(source.normalized_json)
             relevant = any(m["kind"] == "account" and m["identity"] in aliases for m in mappings)
             if (
@@ -171,7 +177,7 @@ def inventory(session, account_id, a, b, *, retained=None):
     for source in source_rows:
         intersects = _overlap(source.covered_from, source.covered_to, start, b)
         try:
-            accepted = json.loads(source.mappings_json)
+            accepted = effective_bindings(session, source)
             relevant_aliases = {
                 m["identity"]
                 for m in accepted
@@ -345,6 +351,23 @@ def inventory(session, account_id, a, b, *, retained=None):
         trades = {}
         blockers.add("source_trade_envelope_invalid")
     dispositions = []
+    corrections = correction_dependencies(session, (account_id,))
+    corrected_identities, corrected_executions = set(), {}
+    if corrections:
+        from hermes_finance.services.executed_trades import _context, _read
+
+        execution_context = _context(session)
+        corrected_identities = {
+            identity
+            for item in execution_context["state"].get("instrument_dispositions", [])
+            if "correction" in item
+            for identity in item["trade_identities"]
+        }
+        corrected_executions = {
+            identity: _read(session, execution_context, execution)
+            for identity, execution in execution_context["trades"].items()
+            if identity in corrected_identities
+        }
     for import_id, row in scoped_money:
         occurrence = {
             "import_id": import_id,
@@ -380,6 +403,14 @@ def inventory(session, account_id, a, b, *, retained=None):
             if (
                 trade
                 and not excluded_trade(session, identity)
+                and (
+                    identity not in corrected_identities
+                    or (
+                        identity in corrected_executions
+                        and not corrected_executions[identity]["conflicts"]
+                        and corrected_executions[identity]["acceptance_state"] == "active"
+                    )
+                )
                 and len(matches) == 1
                 and trade["state"] == "settled"
                 and not (set(trade["blockers"]) - _NON_OWNER_TRADE_CASH_LIMITATIONS)
@@ -457,6 +488,9 @@ def inventory(session, account_id, a, b, *, retained=None):
         "competing_coverage": [_material(c) for c in coverage],
         "blockers": sorted(blockers),
     }
+    if corrections:
+        result["corrections"] = corrections
+        result["corrected_executions"] = corrected_executions
     if exclusions:
         result["instrument_dispositions"] = exclusions
     return result

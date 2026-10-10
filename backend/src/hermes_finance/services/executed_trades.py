@@ -23,7 +23,12 @@ from hermes_finance.persistence import (
     ExecutedTradeRevision,
     Instrument,
 )
-from hermes_finance.services.mybroker_dispositions import REASON, resolve
+from hermes_finance.services.mybroker_dispositions import (
+    REASON,
+    accepted_account_binding,
+    effective_bindings,
+    resolve,
+)
 from hermes_finance.services.mybroker_import import (
     _historical_bound_accounts,
     _imports,
@@ -56,9 +61,10 @@ def _context(session: Session) -> dict:
     state["source_material"] = [
         [row.id, row.parser_version, row.normalized_json, row.mappings_json] for row in imports
     ]
-    exclusions = [i for row in imports for i in resolve(session, row)]
-    if exclusions:
-        state["instrument_dispositions"] = exclusions
+    dispositions = [i for row in imports for i in resolve(session, row)]
+    exclusions = [i for i in dispositions if i["effective_state"] != "mapped"]
+    if dispositions:
+        state["instrument_dispositions"] = dispositions
     for model in (ExecutedTrade, ExecutedTradeOccurrence, ExecutedTradeRevision):
         state[model.__tablename__] = [
             [str(getattr(row, column.name)) for column in model.__table__.columns]
@@ -73,6 +79,13 @@ def _context(session: Session) -> dict:
         # Request-local full-union evidence. Never retain this across snapshots
         # or filter revoked/retired/invalid revisions: their impact is permanent.
         "exclusions": exclusions,
+        "dispositions": dispositions,
+        "effective_bindings": {
+            row.id: effective_bindings(
+                session, row, dispositions=[i for i in dispositions if i["import_id"] == row.id]
+            )
+            for row in imports
+        },
         "excluded_trade_identities": {
             identity for item in exclusions for identity in item["trade_identities"]
         },
@@ -104,6 +117,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         conflicts.add(REASON)
     occurrences = []
     bindings = []
+    money_bindings = []
     money = defaultdict(list)
     for row, document in zip(context["imports"], context["documents"], strict=True):
         matching = [t for t in document["trades"] if t["identity"] == identity]
@@ -125,7 +139,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 ("account", source["core"]["source_account"]),
                 ("instrument", source["core"]["isin"]),
             ]
-            stored = json.loads(row.mappings_json)
+            stored = context["effective_bindings"][row.id]
             selected = [b for b in stored if (b["kind"], b["identity"]) in required]
             if len(selected) != 2:
                 conflicts.add("accepted_mapping_conflict")
@@ -149,6 +163,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             if candidates != {identity}:
                 conflicts.add("money_link_ambiguous")
                 continue
+            money_bindings.append(accepted_account_binding(session, row, leg["source_account"]))
             if leg["kind"] in ("settlement", "commission"):
                 material = {k: leg[k] for k in ("kind", "date", "amount", "currency")}
                 money[canonical(material)].append(
@@ -161,6 +176,9 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
     if len({canonical(b) for b in bindings}) != 1:
         conflicts.add("accepted_mapping_conflict")
     accepted_bindings = bindings[0] if bindings else []
+    account_binding = next((b for b in accepted_bindings if b["kind"] == "account"), None)
+    if any(b is None or b != account_binding for b in money_bindings):
+        conflicts.add("accepted_mapping_conflict")
     for binding in accepted_bindings:
         current = [
             m
@@ -320,6 +338,15 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             if any(t["identity"] == identity for t in d["trades"])
         ):
             conflicts.add("accepted_class_coverage_requires_reconciliation")
+    correction_support = [
+        {"import_id": row.id, "correction": item["correction"]}
+        for row in context["imports"]
+        for item in context["dispositions"]
+        if item["import_id"] == row.id
+        if identity in item["trade_identities"] and "correction" in item
+    ]
+    if correction_support:
+        evidence["correction_support"] = correction_support
     material = digest({"core": source["core"], "bindings": accepted_bindings, "evidence": evidence})
     return {
         "source_identity": identity,

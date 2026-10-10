@@ -180,3 +180,59 @@ All fixtures are fabricated. No Owner data or runtime access, Stable/Test change
 release or merge is authorized. Implementation requires the accepted contract,
 synthetic evidence, full relevant exact-candidate CI, independent financial/data
 candidate review and Integrator acceptance. Owner-local UAT is a separate gate.
+
+## 7. Accepted bounded Skip-to-Map correction extension
+
+[#752 amended contract](https://github.com/LTstripes/hermes-finance/issues/752#issuecomment-6090540978)
+and its [READY recheck](https://github.com/LTstripes/hermes-finance/issues/752#issuecomment-6090672906)
+define the separate correction route deferred above. This does not change original
+source acceptance, reimport or revoke/reaffirm semantics.
+
+The API is `POST /api/mybroker-import/corrections/preview`, then
+`POST /api/mybroker-import/corrections/apply`, followed independently by
+`GET /api/mybroker-import/corrections/{request_id}`. Submit the complete declared
+`decisions` array and strict `owner_reviewed: true`. Each decision binds `import_id`,
+`document_sha256`, `isin`, `original_revision_id`, `expected_revision`,
+`expected_correction_revision` (zero initially), exact effective `mapping_id` and
+`hermes_id`, and the positively reviewed `reviewed_instrument_type`. Apply adds a
+request ID and the fresh Preview's `confirmation_digest`.
+
+Catalogue/account/registry preparation is separate. Existing mapping-trigger
+retirement must finish before constructing these pins. Only an intact original
+accepted Skip with a current, traceable retired predecessor is eligible. Revoked,
+accepted, invalid or missing/unhistoried predecessors refuse. Exact target ISIN,
+observed mapping ISIN, instrument type and observed trade currency must agree;
+funds receive no equity fallback. A batch has no fixed size. Every declared
+decision must pass, and all account/ISIN exclusion support across overlapping
+imports must be included. The API never drops a failed fund or silently selects
+an 18/17 tranche: a smaller scope needs its own accepted scope/overlap review.
+
+Migration 0055 creates only empty, append-only correction receipts, revisions and
+a monotonic change journal. Original Skip/source sets, revisions, receipts and
+JSON remain untouched. Writer reservation, complete dependency reread and digest
+comparison precede all inserts. Any mismatch or insert failure rolls back the
+whole batch. Populated receipt downgrade refuses. Source/registry/catalogue
+changes conservatively retire correction authority for the entire reviewed source
+union; SQL A-to-B-to-A cannot restore it. Returning to the old target needs fresh
+Preview and a new correction revision. Existing SQL guards remain installed.
+
+GET separates the immutable committed receipt/revision IDs from current effective
+corrections and unresolved exclusions. Exact request/digest replay returns these
+same committed IDs with fresh current state; it never reaccepts retired authority.
+A changed request payload/digest conflicts. An identical newly reviewed batch is
+a correction-revision no-op only while every current effect is valid.
+
+S1 reads retain original mappings and Skip history while exposing effective
+mappings separately. S2, H0/H1/H2 and Performance use the same effective resolver.
+S2 separately accepts canonical trade support and deduplicates economic identities
+and Money across files. Within-file duplicate Money refuses correction; ambiguous
+primary linkage and reducer conflicts remain blockers. Corrected Money stays
+bound to its exact originally accepted account mapping, revalidated against the
+effective registry and trade account even for Money-only support documents. It stays
+unresolved in H2 until current independent S2 acceptance exists. H1/H2 and S2
+fingerprints retain correction generation IDs, so fresh correction cannot revive
+an older financial acceptance. Correction removes only resolved exclusion impact;
+endpoint, membership, C1, fee, funding, REPO, pending, XIRR and TWRR gates remain.
+Affected CLOSED facts refuse until explicit Reopen; Apply never changes facts,
+months, deposits, catalogue or mappings. Owner-local preparation/UAT and numeric
+return acceptance remain separate from synthetic code verification.

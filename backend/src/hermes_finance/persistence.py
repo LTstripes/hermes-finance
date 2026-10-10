@@ -116,6 +116,48 @@ class MyBrokerDispositionChange(Base):
     )
 
 
+class MyBrokerCorrectionApply(Base):
+    """Immutable whole-batch receipt, separate from original source acceptance."""
+
+    __tablename__ = "mybroker_correction_applies"
+    request_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    intent_json: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    revision_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class MyBrokerCorrectionRevision(Base):
+    __tablename__ = "mybroker_correction_revisions"
+    __table_args__ = (
+        UniqueConstraint("import_id", "isin", "revision", name="uq_mybroker_correction_revision"),
+        CheckConstraint("revision > 0", name="ck_mybroker_correction_revision"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), nullable=False)
+    isin: Mapped[str] = mapped_column(String(128), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mybroker_correction_revisions.id")
+    )
+    predecessor_revision_id: Mapped[int] = mapped_column(
+        ForeignKey("mybroker_disposition_revisions.id"), nullable=False
+    )
+    request_id: Mapped[str] = mapped_column(
+        ForeignKey("mybroker_correction_applies.request_id"), nullable=False
+    )
+    binding_json: Mapped[str] = mapped_column(Text, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MyBrokerCorrectionChange(Base):
+    """Monotonic source/registry/catalogue changes, including SQL A-to-B-to-A."""
+
+    __tablename__ = "mybroker_correction_changes"
+    __table_args__ = {"sqlite_autoincrement": True}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+
 class HistoricalOwnerFlow(Base):
     """Immutable account-boundary core. Its tuple is not an economic identity."""
 

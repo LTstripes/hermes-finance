@@ -45,6 +45,30 @@ class DispositionApply(DispositionIntent):
     confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class CorrectionDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    import_id: int = Field(gt=0, strict=True)
+    document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    isin: str = Field(min_length=1, max_length=128)
+    original_revision_id: int = Field(gt=0, strict=True)
+    expected_revision: int = Field(gt=0, strict=True)
+    expected_correction_revision: int = Field(ge=0, strict=True)
+    mapping_id: int = Field(gt=0, strict=True)
+    hermes_id: int = Field(gt=0, strict=True)
+    reviewed_instrument_type: Literal["stock", "bond", "fund", "currency", "gold", "other"]
+
+
+class CorrectionBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decisions: list[CorrectionDecision] = Field(min_length=1, max_length=10000)
+    owner_reviewed: bool = Field(strict=True)
+
+
+class CorrectionApply(CorrectionBatch):
+    request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class Confirmation(SkipReview):
     model_config = ConfigDict(extra="forbid")
     confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -137,6 +161,40 @@ def apply_disposition(intent: DispositionApply, session: Session = Depends(sessi
         return apply_lifecycle(session, **intent.model_dump())
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
+
+
+@router.post("/corrections/preview")
+def preview_correction_batch(
+    intent: CorrectionBatch, session: Session = Depends(session_for_request)
+):
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+
+    try:
+        return preview_corrections(session, **intent.model_dump())
+    except MyBrokerError as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@router.post("/corrections/apply")
+def apply_correction_batch(
+    intent: CorrectionApply, session: Session = Depends(session_for_request)
+):
+    from hermes_finance.services.mybroker_corrections import apply_corrections
+
+    try:
+        return apply_corrections(session, **intent.model_dump())
+    except MyBrokerError as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@router.get("/corrections/{request_id}")
+def correction_readback(request_id: str, session: Session = Depends(session_for_request)):
+    from hermes_finance.services.mybroker_corrections import read_correction_batch
+
+    try:
+        return read_correction_batch(session, request_id)
+    except MyBrokerError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 @router.get("/{import_id}")
