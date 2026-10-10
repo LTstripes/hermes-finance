@@ -8,7 +8,6 @@ amounts, native identifiers or raw provider content. There is no Apply route.
 from __future__ import annotations
 
 import calendar
-import json
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -264,7 +263,7 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         account_aliases = {
             b["identity"]
             for row in context["imports"]
-            for b in json.loads(row.mappings_json)
+            for b in context["effective_bindings"][row.id]
             if b["kind"] == "account" and b["hermes_id"] == account_id
         }
         cutoff_trades = [
@@ -290,7 +289,7 @@ def _preview(session: Session, account_ids: list[int], start: date, end: date) -
         ]
         cutoff_trades += [t for t in canonical if t["account_id"] == account_id]
         for row, document in zip(context["imports"], context["documents"], strict=True):
-            bindings = json.loads(row.mappings_json)
+            bindings = context["effective_bindings"][row.id]
             aliases = {
                 b["identity"]
                 for b in bindings

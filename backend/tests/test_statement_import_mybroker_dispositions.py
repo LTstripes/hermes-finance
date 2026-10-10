@@ -1114,3 +1114,719 @@ def test_skip_cannot_hide_quantity_conflict_with_closed_snapshot(database):
         session.refresh(position)
         assert month.status == "closed" and position.quantity == 9
         assert count(session, MyBrokerImport) == count(session, MyBrokerDispositionRevision) == 0
+
+
+# Skip-to-Map uses only fabricated accepted-source evidence and isolated databases.
+def correction_targets(session, isins, *, fund=None):
+    from hermes_finance.services.instruments import create_instrument
+
+    for isin in isins:
+        instrument = create_instrument(
+            session,
+            name="Synthetic correction target",
+            isin=isin,
+            instrument_type="fund" if isin == fund else "stock",
+        )
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="instrument",
+            provider_identity=isin,
+            hermes_target_id=instrument.id,
+            observed_isin=isin,
+        )
+
+
+def correction_decisions(session, import_ids):
+    from hermes_finance.persistence import MyBrokerCorrectionRevision
+    from hermes_finance.services.mybroker_dispositions import original_dispositions
+
+    result = []
+    for import_id in import_ids:
+        source = session.get(MyBrokerImport, import_id)
+        for item in original_dispositions(session, source):
+            mapping = session.scalar(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.provider == PROVIDER,
+                    BrokerIdentityMapping.subject_kind == "instrument",
+                    BrokerIdentityMapping.provider_identity == item["isin"],
+                    BrokerIdentityMapping.status == "effective",
+                )
+            )
+            current = session.scalar(
+                select(MyBrokerCorrectionRevision)
+                .where(
+                    MyBrokerCorrectionRevision.import_id == import_id,
+                    MyBrokerCorrectionRevision.isin == item["isin"],
+                )
+                .order_by(MyBrokerCorrectionRevision.revision.desc())
+                .limit(1)
+            )
+            result.append(
+                dict(
+                    import_id=import_id,
+                    document_sha256=source.document_sha256,
+                    isin=item["isin"],
+                    original_revision_id=item["history"][0]["revision_id"],
+                    expected_revision=item["revision"],
+                    expected_correction_revision=current.revision if current else 0,
+                    mapping_id=mapping.id,
+                    hermes_id=mapping.hermes_target_id,
+                    reviewed_instrument_type=session.get(
+                        Instrument, mapping.hermes_target_id
+                    ).instrument_type,
+                )
+            )
+    return result
+
+
+def correction_accept(session, decisions, request="synthetic-correction"):
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+
+    reviewed = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+    assert reviewed["can_apply"], reviewed["blockers"]
+    return apply_corrections(
+        session,
+        decisions=decisions,
+        owner_reviewed=True,
+        request_id=request,
+        confirmation_digest=reviewed["confirmation_digest"],
+    )
+
+
+def correction_xml(isins):
+    root = ET.fromstring(fixture())
+    position = root.find(".//{MyBroker}Details[@ISIN1]")
+    trade = root.find(".//{MyBroker}Details[@isin_reg]")
+    money = root.find(".//{MyBroker}rn")
+    for n, isin in enumerate(isins, 1):
+        for row, attributes in (
+            (position, {"ISIN1": isin}),
+            (trade, {"isin_reg": isin, "trade_no": f"{10000000001 + n}\n{2000000001 + n}"}),
+            (money, {}),
+        ):
+            extra = copy.deepcopy(row)
+            extra.attrib.update(attributes)
+            if row is money:
+                extra.find(".//{MyBroker}comment").set(
+                    "comment", f"Расчеты по сделке {10000000001 + n}"
+                )
+            for parent in root.iter():
+                if row in list(parent):
+                    parent.append(extra)
+                    break
+    return ET.tostring(root, encoding="utf-8")
+
+
+def correction_source(session, isins, *, raw=None, request="synthetic-source-batch"):
+    raw = raw or correction_xml(isins)
+    p = preview_mybroker(
+        session, document=raw, filename=FILENAME, skipped_isins=tuple(isins), owner_reviewed=True
+    )
+    assert p["can_apply"], p["conflicts"]
+    return apply_mybroker(
+        session,
+        document=raw,
+        filename=FILENAME,
+        skipped_isins=tuple(isins),
+        owner_reviewed=True,
+        request_id=request,
+        confirmation_digest=p["confirmation_digest"],
+        confirmed_mappings=p["mappings"],
+        confirmed_range=(p["document"]["covered_from"], p["document"]["covered_to"]),
+    )
+
+
+def test_correction_full_19_decisions_18_isins_overlap_and_independent_consumers(database):
+    from hermes_finance.persistence import MyBrokerCorrectionRevision
+    from hermes_finance.services.historical_reconstruction import preview_historical_reconstruction
+    from hermes_finance.services.mybroker_corrections import read_correction_batch
+
+    isins = [f"RU000A{i:06d}" for i in range(11, 29)]
+    with database.session_factory() as session:
+        account = include_source_account(session)
+        first = correction_source(session, isins)
+        second = correction_source(session, [isins[0]], request="synthetic-second")
+        ids = [first["import_id"], second["import_id"]]
+        original = [
+            (s.normalized_json, s.mappings_json, s.document_sha256)
+            for s in session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id))
+        ]
+        correction_targets(session, isins, fund=isins[-1])
+        decisions = correction_decisions(session, ids)
+        assert len(decisions) == 19 and len({d["isin"] for d in decisions}) == 18
+        saved = correction_accept(session, decisions)
+        assert len(saved["receipt"]["committed_revision_ids"]) == 19
+        assert all(c["effective_state"] == "mapped" for c in saved["current_corrections"])
+        assert read_correction_batch(session, "synthetic-correction") == saved
+        assert original == [
+            (s.normalized_json, s.mappings_json, s.document_sha256)
+            for s in session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id))
+        ]
+        assert count(session, MyBrokerCorrectionRevision) == 19
+        assert count(session, ExecutedTrade) == count(session, InvestmentCashFlow) == 0
+        assert impact(session, [account]) == []
+        reread = read_mybroker_import(session, first["import_id"])
+        assert reread["document"] == first["document"] and reread["mappings"] == first["mappings"]
+        assert (
+            reread["counts"]["skipped"] == 0
+            and len(reread["effective_mappings"]) == len(first["mappings"]) + 18
+        )
+        identity = next(
+            t["identity"] for t in first["document"]["trades"] if t["core"]["isin"] == isins[0]
+        )
+        p = preview_executed_trades(session, [identity])
+        assert p["can_apply"], p
+        candidate = p["candidates"][0]
+        assert len(candidate["evidence"]["cash_legs"]) == 1
+        assert len(candidate["evidence"]["cash_legs"][0]["occurrences"]) == 2
+        apply_executed_trades(
+            session,
+            identities=[identity],
+            request_id="synthetic-promote",
+            confirmation_digest=p["confirmation_digest"],
+        )
+        assert count(session, ExecutedTrade) == 1 and count(session, InvestmentCashFlow) == 0
+        h0 = preview_historical_reconstruction(
+            session, account_ids=[account], requested_from=A, requested_to=B
+        )
+        assert REASON not in str(h0) and h0["financial_apply_available"] is False
+        h1 = preview_historical_endpoint(
+            session,
+            EndpointIntent(
+                account_id=account, valuation_date=B, source_import_id=first["import_id"]
+            ),
+        )
+        assert REASON not in h1["blockers"] and not h1["can_apply"]
+        assert len(h1["evidence"]["positions"]) == 19
+        h2 = inventory(session, account, A, B)
+        assert REASON not in h2["blockers"] and h2["blockers"]
+        for reader in (xirr_for_interval, twrr_for_interval):
+            performance = reader(
+                session,
+                scope=PerformanceScope.ACCOUNT,
+                account_id=account,
+                start_date=A,
+                end_date=B,
+            )
+            assert not performance.is_available and REASON not in performance.reason_codes
+        # New exact reviewed intent is a revision no-op, including after S2 writes.
+        again = correction_accept(session, correction_decisions(session, ids), "synthetic-noop")
+        assert (
+            again["receipt"]["committed_revision_ids"] == saved["receipt"]["committed_revision_ids"]
+        )
+        assert count(session, MyBrokerCorrectionRevision) == 19
+
+
+def test_correction_overlap_partial_and_incompatible_fund_refuse_entire_batch(database):
+    from hermes_finance.persistence import MyBrokerCorrectionApply, MyBrokerCorrectionRevision
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+
+    isins = ["RU000A000011", "RU000A000012"]
+    with database.session_factory() as session:
+        first = correction_source(session, isins)
+        second = correction_source(session, [isins[0]], request="synthetic-second")
+        correction_targets(session, isins, fund=isins[-1])
+        decisions = correction_decisions(session, [first["import_id"], second["import_id"]])
+        partial = preview_corrections(session, decisions=decisions[:-1], owner_reviewed=True)
+        assert not partial["can_apply"] and "correction_overlap_incomplete" in partial["blockers"]
+        decisions[1]["reviewed_instrument_type"] = "stock"
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        assert not p["can_apply"] and "correction_target_incompatible" in p["blockers"]
+        with pytest.raises(MyBrokerError, match="correction_batch_blocked"):
+            apply_corrections(
+                session,
+                decisions=decisions,
+                owner_reviewed=True,
+                request_id="synthetic-blocked",
+                confirmation_digest=p["confirmation_digest"],
+            )
+        assert (
+            count(session, MyBrokerCorrectionApply)
+            == count(session, MyBrokerCorrectionRevision)
+            == 0
+        )
+
+
+def test_correction_replay_aba_current_state_and_new_revision_never_revive_old_s2(database):
+    from hermes_finance.persistence import MyBrokerCorrectionRevision
+    from hermes_finance.services.executed_trades import read_executed_trades
+    from hermes_finance.services.mybroker_corrections import (
+        apply_corrections,
+        preview_corrections,
+        read_correction_batch,
+    )
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        decisions = correction_decisions(session, [source["import_id"]])
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        args = dict(
+            decisions=decisions,
+            owner_reviewed=True,
+            request_id="synthetic-replay",
+            confirmation_digest=p["confirmation_digest"],
+        )
+        saved = apply_corrections(session, **args)
+        identity = next(
+            t["identity"] for t in source["document"]["trades"] if t["core"]["isin"] == SKIP
+        )
+        p2 = preview_executed_trades(session, [identity])
+        apply_executed_trades(
+            session,
+            identities=[identity],
+            request_id="synthetic-s2",
+            confirmation_digest=p2["confirmation_digest"],
+        )
+        mapping_id = decisions[0]["mapping_id"]
+        # Same-transaction SQL A->B->A still leaves a monotonic change history.
+        session.execute(
+            text(
+                "UPDATE broker_identity_mappings SET status='revoked', revoked_at=CURRENT_TIMESTAMP WHERE id=:id"
+            ),
+            {"id": mapping_id},
+        )
+        session.execute(
+            text(
+                "UPDATE broker_identity_mappings SET status='effective', revoked_at=NULL WHERE id=:id"
+            ),
+            {"id": mapping_id},
+        )
+        session.commit()
+        stale = apply_corrections(session, **args)
+        assert stale["receipt"] == saved["receipt"]
+        assert stale["current_corrections"][0]["effective_state"] == "retired"
+        assert count(session, MyBrokerCorrectionRevision) == 1
+        assert read_correction_batch(session, "synthetic-replay") == stale
+        assert REASON in read_executed_trades(session)["trades"][0]["conflicts"]
+        with pytest.raises(MyBrokerError, match="idempotency_conflict"):
+            apply_corrections(session, **{**args, "confirmation_digest": "0" * 64})
+        fresh = correction_accept(
+            session, correction_decisions(session, [source["import_id"]]), "synthetic-fresh-map"
+        )
+        assert fresh["current_corrections"][0]["revision"] == 2
+        assert count(session, ExecutedTrade) == 1
+        assert (
+            "source_enrichment_not_accepted"
+            in read_executed_trades(session)["trades"][0]["conflicts"]
+        )
+        # Original receipt remains immutable even after a later reviewed revision.
+        assert read_correction_batch(session, "synthetic-replay")["receipt"] == saved["receipt"]
+
+
+@pytest.mark.parametrize("operation", ["revoke", "reaffirm"])
+def test_correction_predecessor_and_stale_revision_gates(database, operation):
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        item = read_mybroker_import(session, source["import_id"])["instrument_dispositions"][0]
+        intent = dict(
+            import_id=source["import_id"],
+            isin=SKIP,
+            operation=operation,
+            expected_revision=item["revision"],
+        )
+        p = lifecycle_preview(session, **intent)
+        apply_lifecycle(
+            session,
+            **intent,
+            request_id="synthetic-lifecycle",
+            confirmation_digest=p["confirmation_digest"],
+        )
+        decisions = correction_decisions(session, [source["import_id"]])
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        assert not p["can_apply"] and "correction_predecessor_not_retired" in p["blockers"]
+        decisions[0]["expected_revision"] -= 1
+        assert (
+            "disposition_revision_stale"
+            in preview_corrections(session, decisions=decisions, owner_reviewed=True)["blockers"]
+        )
+
+
+def test_correction_stale_preview_and_atomic_rollback(database):
+    from sqlalchemy import event
+
+    from hermes_finance.persistence import MyBrokerCorrectionApply, MyBrokerCorrectionRevision
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP, "RU000A000012"])
+        correction_targets(session, [SKIP, "RU000A000012"])
+        decisions = correction_decisions(session, [source["import_id"]])
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        args = dict(
+            decisions=decisions,
+            owner_reviewed=True,
+            request_id="synthetic-atomic",
+            confirmation_digest=p["confirmation_digest"],
+        )
+        session.execute(
+            text("UPDATE instruments SET is_active=0 WHERE id=:id"),
+            {"id": decisions[0]["hermes_id"]},
+        )
+        session.commit()
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_corrections(session, **args)
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        seen = []
+
+        def fail_second(_mapper, _connection, _row):
+            seen.append(1)
+            if len(seen) == 2:
+                raise RuntimeError("synthetic second insert failure")
+
+        event.listen(MyBrokerCorrectionRevision, "before_insert", fail_second)
+        try:
+            with pytest.raises(RuntimeError, match="second insert"):
+                apply_corrections(
+                    session, **{**args, "confirmation_digest": p["confirmation_digest"]}
+                )
+        finally:
+            event.remove(MyBrokerCorrectionRevision, "before_insert", fail_second)
+        assert (
+            count(session, MyBrokerCorrectionApply)
+            == count(session, MyBrokerCorrectionRevision)
+            == 0
+        )
+        assert correction_accept(session, decisions)["receipt"]["committed_revision_ids"]
+
+
+def test_correction_http_readback_and_sql_history_guards(database):
+    from hermes_finance.services.mybroker_corrections import HISTORY
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        decisions = correction_decisions(session, [source["import_id"]])
+    client = TestClient(create_app(database=database))
+    intent = dict(decisions=decisions, owner_reviewed=True)
+    p = client.post("/api/mybroker-import/corrections/preview", json=intent)
+    assert p.status_code == 200 and p.json()["can_apply"]
+    saved = client.post(
+        "/api/mybroker-import/corrections/apply",
+        json={
+            **intent,
+            "request_id": "synthetic-http",
+            "confirmation_digest": p.json()["confirmation_digest"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert client.get("/api/mybroker-import/corrections/synthetic-http").json() == saved.json()
+    assert (
+        client.post(
+            "/api/mybroker-import/corrections/preview", json={**intent, "owner_reviewed": False}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            "/api/mybroker-import/corrections/preview",
+            json={**intent, "decisions": decisions + decisions},
+        ).status_code
+        == 409
+    )
+    with database.session_factory() as session:
+        for model in HISTORY:
+            for operation in (
+                f"UPDATE {model.__tablename__} SET "
+                + (
+                    "id=id"
+                    if model.__tablename__ != "mybroker_correction_applies"
+                    else "request_id=request_id"
+                ),
+                f"DELETE FROM {model.__tablename__}",
+            ):
+                with pytest.raises(IntegrityError, match="append-only"):
+                    session.execute(text(operation))
+                session.rollback()
+
+
+def test_correction_closed_refusal_and_reopen_preserve_financial_facts(database):
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        create_reporting_month,
+        reopen_reporting_month,
+    )
+
+    with database.session_factory() as session:
+        account = include_source_account(session)
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        decisions = correction_decisions(session, [source["import_id"]])
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=B)
+        position = PositionSnapshot(
+            reporting_month_id=month.id,
+            account_id=account,
+            instrument_id=decisions[0]["hermes_id"],
+            quantity=9,
+            average_cost_per_unit_kopecks=0,
+            market_price_per_unit_kopecks=0,
+            market_value_kopecks=0,
+            cost_basis_kopecks=0,
+            unrealized_result_kopecks=0,
+            price_date=B,
+        )
+        session.add(position)
+        session.commit()
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        close_reporting_month(session, month.id)
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_corrections(
+                session,
+                decisions=decisions,
+                owner_reviewed=True,
+                request_id="synthetic-closed",
+                confirmation_digest=p["confirmation_digest"],
+            )
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        assert "closed_reporting_month_requires_reopen" in p["blockers"]
+        with pytest.raises(MyBrokerError, match="correction_batch_blocked"):
+            apply_corrections(
+                session,
+                decisions=decisions,
+                owner_reviewed=True,
+                request_id="synthetic-closed",
+                confirmation_digest=p["confirmation_digest"],
+            )
+        session.refresh(month)
+        session.refresh(position)
+        assert month.status == "closed" and position.quantity == 9
+        reopen_reporting_month(session, month.id)
+        correction_accept(session, decisions)
+        session.refresh(position)
+        assert position.quantity == 9
+
+
+def test_correction_money_multiplicity_is_not_cross_file_dedup(database):
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+
+    root = ET.fromstring(correction_xml([SKIP]))
+    money = root.findall(".//{MyBroker}rn")[-1]
+    for parent in root.iter():
+        if money in list(parent):
+            parent.append(copy.deepcopy(money))
+            break
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP], raw=ET.tostring(root, encoding="utf-8"))
+        correction_targets(session, [SKIP])
+        p = preview_corrections(
+            session,
+            decisions=correction_decisions(session, [source["import_id"]]),
+            owner_reviewed=True,
+        )
+        assert not p["can_apply"] and "correction_money_duplicate" in p["blockers"]
+
+
+def test_correction_migration_parity_empty_and_populated_downgrade(tmp_path):
+    from _migration_helpers import run_alembic
+
+    from hermes_finance.database import create_database
+
+    path = tmp_path / "synthetic-correction-migration.db"
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        for table in (
+            "mybroker_correction_applies",
+            "mybroker_correction_revisions",
+            "mybroker_correction_changes",
+        ):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        migration_sql = connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND (name LIKE 'correction_change_%' OR name LIKE 'mybroker_correction_%') ORDER BY name"
+        ).fetchall()
+    assert len(migration_sql) == 18
+    assert run_alembic(path, "downgrade", "0054_mybroker_dispositions").returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    db = create_database(path)
+    try:
+        with db.session_factory() as session:
+            account = create_account(
+                session, name="Synthetic migrated correction", account_type="brokerage"
+            )
+            from hermes_finance.services.instruments import create_instrument
+
+            target = create_instrument(
+                session, name="Synthetic original", instrument_type="stock", isin=ISIN
+            )
+            for alias in ("1234567", "1234567-000"):
+                confirm_mapping(
+                    session,
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_target_id=account.id,
+                )
+            confirm_mapping(
+                session,
+                provider=PROVIDER,
+                subject_kind="instrument",
+                provider_identity=ISIN,
+                hermes_target_id=target.id,
+                observed_isin=ISIN,
+            )
+            source = correction_source(session, [SKIP])
+            correction_targets(session, [SKIP])
+            assert (
+                correction_accept(session, correction_decisions(session, [source["import_id"]]))[
+                    "current_corrections"
+                ][0]["effective_state"]
+                == "mapped"
+            )
+        from hermes_finance.persistence import Base
+
+        metadata_path = tmp_path / "synthetic-correction-metadata.db"
+        metadata_db = create_database(metadata_path)
+        try:
+            Base.metadata.create_all(metadata_db.engine)
+            with sqlite3.connect(metadata_path) as connection:
+                metadata_sql = connection.execute(
+                    "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND (name LIKE 'correction_change_%' OR name LIKE 'mybroker_correction_%') ORDER BY name"
+                ).fetchall()
+            assert metadata_sql == migration_sql
+        finally:
+            metadata_db.engine.dispose()
+    finally:
+        db.engine.dispose()
+    result = run_alembic(path, "downgrade", "0054_mybroker_dispositions")
+    assert result.returncode != 0 and "cannot discard reviewed source corrections" in result.stderr
+
+
+def test_correction_concurrent_writer_rechecks_predecessor_under_reservation(database):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from hermes_finance.persistence import MyBrokerCorrectionApply, MyBrokerCorrectionRevision
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        decisions = correction_decisions(session, [source["import_id"]])
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+    barrier = Barrier(2)
+
+    def writer(n):
+        with database.session_factory() as session:
+            barrier.wait(timeout=20)
+            try:
+                apply_corrections(
+                    session,
+                    decisions=decisions,
+                    owner_reviewed=True,
+                    request_id=f"synthetic-concurrent-{n}",
+                    confirmation_digest=p["confirmation_digest"],
+                )
+                return "committed"
+            except MyBrokerError as error:
+                return str(error)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(writer, [1, 2]))
+    assert sorted(results) == ["committed", "preview_stale"]
+    with database.session_factory() as session:
+        assert (
+            count(session, MyBrokerCorrectionApply)
+            == count(session, MyBrokerCorrectionRevision)
+            == 1
+        )
+
+
+@pytest.mark.parametrize("damage", ["source-range", "target-identity", "target-currency"])
+def test_correction_invalid_source_or_target_never_lifts_exclusion(database, damage):
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP], fund=SKIP)
+        decisions = correction_decisions(session, [source["import_id"]])
+        if damage == "source-range":
+            session.execute(
+                text("UPDATE mybroker_imports SET covered_to='2030-02-28' WHERE id=:id"),
+                {"id": source["import_id"]},
+            )
+        elif damage == "target-identity":
+            session.execute(
+                text("UPDATE instruments SET isin='RU000A000099' WHERE id=:id"),
+                {"id": decisions[0]["hermes_id"]},
+            )
+        else:
+            session.execute(
+                text("UPDATE instruments SET currency='USD' WHERE id=:id"),
+                {"id": decisions[0]["hermes_id"]},
+            )
+        session.commit()
+        p = preview_corrections(session, decisions=decisions, owner_reviewed=True)
+        assert not p["can_apply"]
+        assert (
+            "source_integrity_or_version"
+            if damage == "source-range"
+            else "correction_target_incompatible"
+        ) in p["blockers"]
+        assert all(
+            i["effective_state"] != "mapped"
+            for i in read_mybroker_import(session, source["import_id"])["instrument_dispositions"]
+        )
+
+
+def test_correction_money_only_overlapping_support_conflict_refuses_batch(database):
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+
+    with database.session_factory() as session:
+        source = correction_source(session, [SKIP])
+        root = ET.fromstring(correction_xml([SKIP]))
+        for parent in root.iter():
+            for child in list(parent):
+                if child.tag == "{MyBroker}Details":
+                    parent.remove(child)
+        money = root.findall(".//{MyBroker}rn")
+        for parent in root.iter():
+            if money[0] in list(parent):
+                parent.remove(money[0])
+        money[-1].find(".//{MyBroker}p_code[@volume]").set("volume", "-999.00")
+        correction_source(
+            session, [], raw=ET.tostring(root, encoding="utf-8"), request="synthetic-money-only"
+        )
+        correction_targets(session, [SKIP])
+        p = preview_corrections(
+            session,
+            decisions=correction_decisions(session, [source["import_id"]]),
+            owner_reviewed=True,
+        )
+        assert not p["can_apply"] and "trade_material_conflict" in p["blockers"]
+
+
+def test_correction_closed_non_cash_boundary_also_requires_reopen(database):
+    from hermes_finance.persistence import InKindMovement
+    from hermes_finance.services.mybroker_corrections import preview_corrections
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        create_reporting_month,
+    )
+
+    with database.session_factory() as session:
+        account = include_source_account(session)
+        source = correction_source(session, [SKIP])
+        correction_targets(session, [SKIP])
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=B)
+        movement = InKindMovement(
+            reporting_month_id=month.id,
+            event_date=B,
+            destination_account_id=account,
+            movement_kind="external_in",
+            provenance_kind="synthetic",
+        )
+        session.add(movement)
+        session.commit()
+        close_reporting_month(session, month.id)
+        p = preview_corrections(
+            session,
+            decisions=correction_decisions(session, [source["import_id"]]),
+            owner_reviewed=True,
+        )
+        assert not p["can_apply"] and "closed_reporting_month_requires_reopen" in p["blockers"]
+        assert count(session, PositionSnapshot) == 0 and count(session, InKindMovement) == 1

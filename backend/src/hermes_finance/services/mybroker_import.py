@@ -32,6 +32,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.mybroker_dispositions import (
     counts,
+    effective_bindings,
     impact,
     initial_accept,
     occurrence_evidence,
@@ -500,7 +501,7 @@ def _prepare(
 
     incoming_positions = position_support(document, skipped_isins)
     for source, previous_document in zip(imports, prior_documents, strict=True):
-        excluded = {i["isin"] for i in resolve(session, source)}
+        excluded = {i["isin"] for i in resolve(session, source) if i["effective_state"] != "mapped"}
         if any(
             t["identity"] in incoming_trades
             and incoming_trades[t["identity"]] != (t["core"]["isin"] in excluded)
@@ -640,7 +641,6 @@ def read_mybroker_import(session: Session, import_id: int) -> dict:
         if row is None:
             raise MyBrokerError("import_not_found")
         dispositions = resolve(session, row)
-        bindings = json.loads(row.mappings_json)
         document = json.loads(row.normalized_json)
         instruments = sorted(
             {p["isin"] for p in document["positions"]}
@@ -655,10 +655,19 @@ def read_mybroker_import(session: Session, import_id: int) -> dict:
                 }
                 for isin in instruments
             ],
-            "counts": counts(document, bindings, dispositions),
+            "counts": counts(
+                document,
+                effective_bindings(session, row),
+                [i for i in dispositions if i["effective_state"] != "mapped"],
+            ),
             "import_id": row.id,
             "document": json.loads(row.normalized_json),
             "mappings": json.loads(row.mappings_json),
+            **(
+                {"effective_mappings": effective_bindings(session, row)}
+                if any("correction" in i for i in dispositions)
+                else {}
+            ),
             "coverage_state": "unknown",
             "confirmation_digest": row.confirmation_digest,
         }

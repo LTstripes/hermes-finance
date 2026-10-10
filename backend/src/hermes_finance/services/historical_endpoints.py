@@ -30,7 +30,12 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.executed_trades import _candidate, _context
-from hermes_finance.services.mybroker_dispositions import REASON, impact
+from hermes_finance.services.mybroker_dispositions import (
+    REASON,
+    correction_dependencies,
+    effective_bindings,
+    impact,
+)
 from hermes_finance.services.mybroker_import import _crosses_cutoff, _reduce
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
@@ -90,7 +95,7 @@ def _bindings(
     result = []
     registry = _rows(session, BrokerIdentityMapping)
     for binding in (
-        selected_bindings if selected_bindings is not None else json.loads(row.mappings_json)
+        selected_bindings if selected_bindings is not None else effective_bindings(session, row)
     ):
         matches = [
             m
@@ -316,7 +321,7 @@ def _source_union(session, intent, selected, blockers):
     """New relevant observations strengthen guards; none can relax accepted S2 truth."""
     docs, dependencies = [], []
     for row in _rows(session, MyBrokerImport):
-        bindings = json.loads(row.mappings_json)
+        bindings = effective_bindings(session, row)
         relevant = any(
             b["kind"] == "account" and b["hermes_id"] == intent.account_id for b in bindings
         )
@@ -375,7 +380,7 @@ def _source_union(session, intent, selected, blockers):
             )
             selected_doc = json.loads(selected.normalized_json)
             p, c = _components(
-                selected_doc, json.loads(selected.mappings_json), selected.id, "ending", blockers
+                selected_doc, effective_bindings(session, selected), selected.id, "ending", blockers
             )
             if _economics(other_positions, other_cash) != _economics(p, c):
                 blockers.add("reconciliation_required")
@@ -396,7 +401,7 @@ def _source_union(session, intent, selected, blockers):
                 )
                 original = json.loads(selected.normalized_json)
                 sp, sc = _components(
-                    original, json.loads(selected.mappings_json), selected.id, "ending", blockers
+                    original, effective_bindings(session, selected), selected.id, "ending", blockers
                 )
                 if _economics(p, c) != _economics(sp, sc):
                     blockers.add("reconciliation_required")
@@ -595,6 +600,9 @@ def _build(session, intent):
             "archived": archived,
         },
     }
+    corrections = correction_dependencies(session, (intent.account_id,))
+    if corrections:
+        evidence["dependencies"]["corrections"] = corrections
     if exclusions:
         evidence["dependencies"]["instrument_dispositions"] = exclusions
         total = None

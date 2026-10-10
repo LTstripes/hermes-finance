@@ -130,7 +130,7 @@ def dependency_context(session, source, isin):
     return {"source": source_fingerprint(source), "registry": material, "changes": changes}, valid
 
 
-def resolve(session, source):
+def original_dispositions(session, source):
     """Permanent impacted identities survive revoke, retirement and missing support."""
     document, bindings = json.loads(source.normalized_json), json.loads(source.mappings_json)
     mapped = {b["identity"] for b in bindings if b["kind"] == "instrument"}
@@ -202,6 +202,42 @@ def resolve(session, source):
     return result
 
 
+def resolve(session, source):
+    """Original audit evidence plus independently resolved current Map authority."""
+    from hermes_finance.services.mybroker_corrections import current_corrections
+
+    corrections = current_corrections(session)
+    result = original_dispositions(session, source)
+    for item in result:
+        correction = corrections.get((source.id, item["isin"]))
+        if correction:
+            item["correction"] = correction
+            if correction["effective_state"] == "mapped":
+                item["original_effective_state"] = item["effective_state"]
+                item["effective_state"] = "mapped"
+                item["effective_mapping"] = correction["binding"]
+    return result
+
+
+def effective_bindings(session, source, *, dispositions=None):
+    """Never overwrite accepted mappings; overlay only current valid corrections."""
+    return json.loads(source.mappings_json) + [
+        item["effective_mapping"]
+        for item in (resolve(session, source) if dispositions is None else dispositions)
+        if item["effective_state"] == "mapped"
+    ]
+
+
+def correction_dependencies(session, account_ids):
+    """Keep correction generations in H1/H2 support, including mapped items."""
+    return [
+        {"import_id": source.id, "isin": item["isin"], "correction": item["correction"]}
+        for source in session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id))
+        for item in resolve(session, source)
+        if "correction" in item and any(b["hermes_id"] in account_ids for b in item["accounts"])
+    ]
+
+
 def impact(session, account_ids):
     requested = set(account_ids)
     items = []
@@ -209,7 +245,9 @@ def impact(session, account_ids):
         return items
     for source in session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id)):
         for item in resolve(session, source):
-            if any(b["hermes_id"] in requested for b in item["accounts"]):
+            if item["effective_state"] != "mapped" and any(
+                b["hermes_id"] in requested for b in item["accounts"]
+            ):
                 items.append(item)
     return items
 
@@ -219,6 +257,7 @@ def excluded_trade(session, identity):
         identity in item["trade_identities"]
         for source in session.scalars(select(MyBrokerImport))
         for item in resolve(session, source)
+        if item["effective_state"] != "mapped"
     )
 
 
@@ -274,6 +313,8 @@ def lifecycle_preview(session, *, import_id, isin, operation, expected_revision)
     if len(items) != 1 or not items[0]["revision_id"]:
         raise MyBrokerError("reconciliation_required")
     item = items[0]
+    if "correction" in item:
+        raise MyBrokerError("reconciliation_required")
     context, valid = dependency_context(session, source, isin)
     intent = {
         "import_id": import_id,
@@ -411,6 +452,9 @@ def install_sql_guards(connection):
 
 def _after_create(_metadata, connection, **_kwargs):
     install_sql_guards(connection)
+    from hermes_finance.services.mybroker_corrections import install_sql_guards as correction_guards
+
+    correction_guards(connection)
 
 
 def install_hooks():

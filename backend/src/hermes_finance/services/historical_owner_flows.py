@@ -31,7 +31,12 @@ from hermes_finance.persistence import (
     MyBrokerImport,
     ReportingMonth,
 )
-from hermes_finance.services.mybroker_dispositions import REASON, impact
+from hermes_finance.services.mybroker_dispositions import (
+    REASON,
+    correction_dependencies,
+    effective_bindings,
+    impact,
+)
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 from hermes_finance.statement_import.mybroker import decimal as source_decimal
 
@@ -113,7 +118,7 @@ def _core(flow):
 def _binding(session, source, alias, account_id, registry, blockers):
     accepted = [
         b
-        for b in json.loads(source.mappings_json)
+        for b in effective_bindings(session, source)
         if b["kind"] == "account" and b["identity"] == alias
     ]
     active = [
@@ -183,7 +188,7 @@ def _build(session, intent):
             blockers.add("brokerage_account_required")
         sources, occurrences, bindings = [], [], []
         for source in _rows(session, MyBrokerImport):
-            accepted = json.loads(source.mappings_json)
+            accepted = effective_bindings(session, source)
             aliases = {
                 b["identity"]
                 for b in accepted
@@ -306,6 +311,9 @@ def _build(session, intent):
             "transfer_links": links,
             "cash_coverage": coverage,
         }
+        corrections = correction_dependencies(session, (intent.account_id,))
+        if corrections:
+            dependencies["corrections"] = corrections
         exclusions = impact(session, (intent.account_id,))
         if exclusions:
             blockers.add(REASON)
@@ -384,7 +392,7 @@ def _withdrawal_context(session, flow, evidence):
                 relevant |= any(
                     b["kind"] == "account"
                     and (b["hermes_id"] == account_id or b["identity"] in aliases)
-                    for b in json.loads(source.mappings_json)
+                    for b in effective_bindings(session, source)
                 )
             except (ValueError, TypeError, KeyError):
                 relevant = True
