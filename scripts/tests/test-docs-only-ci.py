@@ -107,6 +107,51 @@ class AllowlistTests(unittest.TestCase):
                 self.assertTrue(ordinary_doc_path(path))
                 self.assertEqual(classify_records([record(path)]), "docs-only")
 
+    def test_audited_owner_workflow_and_dated_checkpoints_are_prose(self) -> None:
+        for path in (
+            "docs/OWNER_DATA_WORKFLOW.md",
+            "docs/SESSION_CLOSEOUT_2026-10-03.md",
+            "docs/SESSION_CLOSEOUT_2026-10-04.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09.md",
+            "docs/SESSION_CLOSEOUT_2028-02-29.md",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(ordinary_doc_path(path))
+                self.assertEqual(classify_records([record(path)]), "docs-only")
+                self.assertEqual(
+                    classify_records([record(path, status="A", old_mode="000000")]),
+                    "docs-only",
+                )
+                for unsafe in (
+                    record(path, binary=True),
+                    record(path, new_mode="100755"),
+                    record(path, new_mode="120000"),
+                    record(path, status="D", new_mode="000000"),
+                    record(path, status="R100", old_path="README.md"),
+                ):
+                    self.assertEqual(classify_records([unsafe]), "full")
+
+    def test_checkpoint_rule_does_not_accept_lookalikes_or_non_dates(self) -> None:
+        for path in (
+            "docs/SESSION_CLOSEOUT_2026-02-29.md",
+            "docs/SESSION_CLOSEOUT_2026-13-09.md",
+            "docs/SESSION_CLOSEOUT_0000-10-09.md",
+            "docs/SESSION_CLOSEOUT_2026-10-00.md",
+            "docs/SESSION_CLOSEOUT_2026-1-9.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09_extra.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09.py.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09.MD",
+            "docs/history/nested/SESSION_CLOSEOUT_2026-10-09.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09.md/helper.py",
+            "docs/../docs/SESSION_CLOSEOUT_2026-10-09.md",
+            "docs/SESSION_CLOSEOUT_2026-10-09.md ",
+            "backend/SESSION_CLOSEOUT_2026-10-09.md",
+            "docs/OWNER_DATA_WORKFLOW_new.md",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(ordinary_doc_path(path))
+                self.assertEqual(classify_records([record(path)]), "full")
+
     def test_new_file_is_docs_only_only_on_an_explicit_rule(self) -> None:
         self.assertTrue(ordinary_doc_path("docs/adr/0099-new-decision.md"))
         self.assertTrue(ordinary_doc_path("docs/README.md"))
@@ -372,6 +417,26 @@ class RepositoryTests(unittest.TestCase):
 
             binary = _commit_bytes(repo, "docs/history/README.md", b"prose\0hidden\n")
             self.assertEqual(classify_repo(repo, submodule, binary), "full")
+
+    def test_pr750_checkpoint_add_edit_and_mixed_followup(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            repo = Path(tmp) / "repo"
+            _git_repo(repo)
+            base = _commit(repo, "docs/CURRENT_STATUS.md", "Original status.\n")
+            _commit(repo, "docs/CURRENT_STATUS.md", "New status.\n")
+            _commit(repo, "docs/PROJECT_WIKI.md", "Durable concepts.\n")
+            checkpoint = "docs/SESSION_CLOSEOUT_2026-10-09.md"
+            added = _commit(repo, checkpoint, "Dated receipt.\n")
+            self.assertEqual(classify_repo(repo, base, added), "docs-only")
+            edited = _commit(repo, checkpoint, "Dated receipt with a link.\n")
+            self.assertEqual(classify_repo(repo, added, edited), "docs-only")
+            workflow = _commit(repo, "docs/OWNER_DATA_WORKFLOW.md", "Read/write boundaries.\n")
+            self.assertEqual(classify_repo(repo, edited, workflow), "docs-only")
+            binary = _commit_bytes(repo, checkpoint, b"prose\0payload\n")
+            self.assertEqual(classify_repo(repo, workflow, binary), "full")
+            code = _commit(repo, "backend/src/app.py", "print('synthetic')\n")
+            self.assertEqual(classify_repo(repo, base, code), "full")
+            self.assertEqual(classify_repo(repo, base, added), "docs-only")
 
     def test_backend_readme_change_is_full_and_history_prose_stays_docs_only(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
