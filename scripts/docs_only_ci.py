@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 _SHA = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -29,6 +30,8 @@ _OBJECT = re.compile(r"^[0-9a-fA-F]{4,64}$")
 _STATUS = re.compile(r"^[A-Z][0-9]{0,3}$")
 _PROSE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*\.md$")
 _RELEASE_NOTES = re.compile(r"^docs/release-notes-.+\.md$")
+# Audited dated restart prose at the docs root, not arbitrary root Markdown.
+_SESSION_CLOSEOUT = re.compile(r"^docs/SESSION_CLOSEOUT_([0-9]{4}-[0-9]{2}-[0-9]{2})\.md$")
 
 # Ordinary prose at a known path. This is not "any markdown" and not docs/**.
 # backend/README.md stays full: Hatchling reads it as the package readme.
@@ -53,6 +56,7 @@ EXACT_DOCS = frozenset(
         "docs/IDEA.md",
         "docs/MASTER_SPEC.md",
         "docs/MODEL_ROUTING.md",
+        "docs/OWNER_DATA_WORKFLOW.md",
         "docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md",
         "docs/OWNER_MACHINE_LAYOUT.md",
         "docs/OWNER_RUNTIME_OPERATIONS.md",
@@ -150,6 +154,13 @@ def ordinary_doc_path(path: str) -> bool:
     if not _plain_relative_path(path) or _RELEASE_NOTES.fullmatch(path):
         return False
     if path in EXACT_DOCS:
+        return True
+    checkpoint = _SESSION_CLOSEOUT.fullmatch(path)
+    if checkpoint is not None:
+        try:
+            date.fromisoformat(checkpoint.group(1))
+        except ValueError:
+            return False
         return True
     for prefix in PROSE_PREFIXES:
         if not path.startswith(prefix):
