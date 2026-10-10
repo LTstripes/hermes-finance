@@ -227,6 +227,8 @@ mappings separately. S2, H0/H1/H2 and Performance use the same effective resolve
 S2 separately accepts canonical trade support and deduplicates economic identities
 and Money across files. Within-file duplicate Money refuses correction; ambiguous
 primary linkage and reducer conflicts remain blockers. Corrected Money stays
+bound to its exact originally accepted account mapping, revalidated against the
+effective registry and trade account even for Money-only support documents. It stays
 unresolved in H2 until current independent S2 acceptance exists. H1/H2 and S2
 fingerprints retain correction generation IDs, so fresh correction cannot revive
 an older financial acceptance. Correction removes only resolved exclusion impact;

@@ -21,11 +21,27 @@ from hermes_finance.persistence import (
     MyBrokerImport,
     ReportingMonth,
 )
-from hermes_finance.services.mybroker_dispositions import original_dispositions, source_fingerprint
+from hermes_finance.services.mybroker_dispositions import (
+    accepted_account_binding,
+    dependency_context,
+    original_dispositions,
+    source_fingerprint,
+)
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
 CONTRACT = "mybroker-skip-map-v1"
 HISTORY = (MyBrokerCorrectionApply, MyBrokerCorrectionRevision, MyBrokerCorrectionChange)
+
+
+def _source_integrity(source, document):
+    return (
+        source.parser_version == "mybroker-s1-v2"
+        and document["parser"] == source.parser_version
+        and document["provider"] == PROVIDER
+        and document["document_sha256"] == source.document_sha256
+        and document["covered_from"] == str(source.covered_from)
+        and document["covered_to"] == str(source.covered_to)
+    )
 
 
 def _rows(session, model):
@@ -165,13 +181,38 @@ def _overlap(session, decisions, sources, blockers):
         for t in doc["trades"]
         if t["core"]["isin"] in requested_isins and t["ids"]
     }
+    trade_accounts = defaultdict(set)
+    for source, doc in zip(sources, documents, strict=True):
+        for trade in doc["trades"]:
+            if trade["core"]["isin"] not in requested_isins or not trade["ids"]:
+                continue
+            binding = accepted_account_binding(session, source, trade["core"]["source_account"])
+            if binding is None:
+                blockers.add("accepted_mapping_conflict")
+            else:
+                trade_accounts[(trade["core"]["source_account"], trade["ids"][0])].add(
+                    canonical(binding)
+                )
     leg_materials = defaultdict(set)
-    for doc in documents:
+    for source, doc in zip(sources, documents, strict=True):
+        related = (
+            any(p["isin"] in requested_isins for p in doc["positions"])
+            or any(t["core"]["isin"] in requested_isins for t in doc["trades"])
+            or any((m["source_account"], m.get("primary_id")) in links for m in doc["money"])
+        )
+        if related:
+            if not _source_integrity(source, doc):
+                blockers.add("source_integrity_or_version")
+            if not dependency_context(session, source, next(iter(requested_isins)))[1]:
+                blockers.add("accepted_mapping_conflict")
         money = Counter()
         for leg in doc["money"]:
             link = (leg["source_account"], leg.get("primary_id"))
             if link not in links:
                 continue
+            binding = accepted_account_binding(session, source, leg["source_account"])
+            if binding is None or trade_accounts[link] != {canonical(binding)}:
+                blockers.add("accepted_mapping_conflict")
             identities = {
                 t["identity"]
                 for d in documents
@@ -243,14 +284,7 @@ def _preview(session, decisions, owner_reviewed):
             blockers.add("import_not_found")
             continue
         document = json.loads(source.normalized_json)
-        if (
-            source.parser_version != "mybroker-s1-v2"
-            or document["parser"] != source.parser_version
-            or document["provider"] != PROVIDER
-            or document["document_sha256"] != source.document_sha256
-            or document["covered_from"] != str(source.covered_from)
-            or document["covered_to"] != str(source.covered_to)
-        ):
+        if not _source_integrity(source, document):
             blockers.add("source_integrity_or_version")
         item = next(
             (i for i in original_dispositions(session, source) if i["isin"] == decision["isin"]),
@@ -338,8 +372,6 @@ def _preview(session, decisions, owner_reviewed):
         }
         if target and currencies and currencies != {target.currency}:
             blockers.add("correction_target_incompatible")
-        from hermes_finance.services.mybroker_dispositions import dependency_context
-
         if not dependency_context(session, source, decision["isin"])[1]:
             blockers.add("accepted_mapping_conflict")
         reviewed.append({"decision": decision, "disposition": item, "current_correction": prior})

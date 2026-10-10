@@ -1830,3 +1830,89 @@ def test_correction_closed_non_cash_boundary_also_requires_reopen(database):
         )
         assert not p["can_apply"] and "closed_reporting_month_requires_reopen" in p["blockers"]
         assert count(session, PositionSnapshot) == 0 and count(session, InKindMovement) == 1
+
+
+def test_correction_money_only_old_account_binding_cannot_follow_remapped_trade(database):
+    from hermes_finance.persistence import MyBrokerCorrectionRevision
+    from hermes_finance.services.broker_identity_mappings import remap_mapping
+    from hermes_finance.services.mybroker_corrections import apply_corrections, preview_corrections
+
+    root = ET.fromstring(correction_xml([SKIP]))
+    for parent in root.iter():
+        for child in list(parent):
+            if child.tag == "{MyBroker}Details":
+                parent.remove(child)
+    money = root.findall(".//{MyBroker}rn")
+    for parent in root.iter():
+        if money[0] in list(parent):
+            parent.remove(money[0])
+    with database.session_factory() as session:
+        money_source = correction_source(session, [], raw=ET.tostring(root, encoding="utf-8"))
+        second = create_account(
+            session, name="Synthetic remapped account", account_type="brokerage"
+        )
+        old_accounts = list(
+            session.scalars(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.subject_kind == "account",
+                    BrokerIdentityMapping.status == "effective",
+                )
+            )
+        )
+        for mapping in old_accounts:
+            remap_mapping(session, mapping.id, hermes_target_id=second.id)
+        trade_source = correction_source(session, [SKIP], request="synthetic-remapped-trade")
+        assert money_source["mappings"][0]["hermes_id"] != trade_source["mappings"][0]["hermes_id"]
+        correction_targets(session, [SKIP])
+        p = preview_corrections(
+            session,
+            decisions=correction_decisions(session, [trade_source["import_id"]]),
+            owner_reviewed=True,
+        )
+        assert not p["can_apply"] and "accepted_mapping_conflict" in p["blockers"]
+        with pytest.raises(MyBrokerError, match="correction_batch_blocked"):
+            apply_corrections(
+                session,
+                decisions=p["intent"]["decisions"],
+                owner_reviewed=True,
+                request_id="synthetic-stale-money",
+                confirmation_digest=p["confirmation_digest"],
+            )
+        assert count(session, MyBrokerCorrectionRevision) == 0
+
+
+def test_s2_money_only_accepted_account_cannot_follow_remapped_execution(database):
+    from hermes_finance.services.broker_identity_mappings import remap_mapping
+
+    root = ET.fromstring(fixture())
+    for parent in root.iter():
+        for child in list(parent):
+            if child.tag == "{MyBroker}Details":
+                parent.remove(child)
+    with database.session_factory() as session:
+        correction_source(session, [], raw=ET.tostring(root, encoding="utf-8"))
+        second = create_account(
+            session, name="Synthetic second S2 account", account_type="brokerage"
+        )
+        old_accounts = list(
+            session.scalars(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.subject_kind == "account",
+                    BrokerIdentityMapping.status == "effective",
+                )
+            )
+        )
+        for mapping in old_accounts:
+            remap_mapping(session, mapping.id, hermes_target_id=second.id)
+        source = apply(session, fixture(), preview(session, fixture()))
+        identity = source["document"]["trades"][0]["identity"]
+        p = preview_executed_trades(session, [identity])
+        assert not p["can_apply"] and "accepted_mapping_conflict" in p["candidates"][0]["conflicts"]
+        with pytest.raises(MyBrokerError, match="reconciliation_required"):
+            apply_executed_trades(
+                session,
+                identities=[identity],
+                request_id="synthetic-invalid-money",
+                confirmation_digest=p["confirmation_digest"],
+            )
+        assert count(session, ExecutedTrade) == 0

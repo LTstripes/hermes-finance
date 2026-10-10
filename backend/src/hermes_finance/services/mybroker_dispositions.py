@@ -228,6 +228,34 @@ def effective_bindings(session, source, *, dispositions=None):
     ]
 
 
+def accepted_account_binding(session, source, alias):
+    """Validate the original account of every support occurrence, including Money-only files."""
+    recorded = [
+        b
+        for b in json.loads(source.mappings_json)
+        if b["kind"] == "account" and b["identity"] == alias
+    ]
+    current = list(
+        session.scalars(
+            select(BrokerIdentityMapping).where(
+                BrokerIdentityMapping.provider == PROVIDER,
+                BrokerIdentityMapping.subject_kind == "account",
+                BrokerIdentityMapping.provider_identity == alias,
+                BrokerIdentityMapping.status == "effective",
+            )
+        )
+    )
+    if (
+        len(recorded) != 1
+        or len(current) != 1
+        or current[0].id != recorded[0]["mapping_id"]
+        or current[0].hermes_target_id != recorded[0]["hermes_id"]
+        or session.get(Account, recorded[0]["hermes_id"]) is None
+    ):
+        return None
+    return recorded[0]
+
+
 def correction_dependencies(session, account_ids):
     """Keep correction generations in H1/H2 support, including mapped items."""
     return [

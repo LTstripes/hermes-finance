@@ -23,7 +23,12 @@ from hermes_finance.persistence import (
     ExecutedTradeRevision,
     Instrument,
 )
-from hermes_finance.services.mybroker_dispositions import REASON, effective_bindings, resolve
+from hermes_finance.services.mybroker_dispositions import (
+    REASON,
+    accepted_account_binding,
+    effective_bindings,
+    resolve,
+)
 from hermes_finance.services.mybroker_import import (
     _historical_bound_accounts,
     _imports,
@@ -112,6 +117,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         conflicts.add(REASON)
     occurrences = []
     bindings = []
+    money_bindings = []
     money = defaultdict(list)
     for row, document in zip(context["imports"], context["documents"], strict=True):
         matching = [t for t in document["trades"] if t["identity"] == identity]
@@ -157,6 +163,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             if candidates != {identity}:
                 conflicts.add("money_link_ambiguous")
                 continue
+            money_bindings.append(accepted_account_binding(session, row, leg["source_account"]))
             if leg["kind"] in ("settlement", "commission"):
                 material = {k: leg[k] for k in ("kind", "date", "amount", "currency")}
                 money[canonical(material)].append(
@@ -169,6 +176,9 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
     if len({canonical(b) for b in bindings}) != 1:
         conflicts.add("accepted_mapping_conflict")
     accepted_bindings = bindings[0] if bindings else []
+    account_binding = next((b for b in accepted_bindings if b["kind"] == "account"), None)
+    if any(b is None or b != account_binding for b in money_bindings):
+        conflicts.add("accepted_mapping_conflict")
     for binding in accepted_bindings:
         current = [
             m
