@@ -26,7 +26,9 @@ Existing standing Owner authorization covers this standard flow without repeated
 4. Reuse valid evidence and rerun failed checks for an established mechanical/infrastructure cause; follow `VERIFICATION_POLICY.md`, not a second full-suite ritual.
 5. Merge an accepted candidate after required PR CI/review/UAT, with an exact-head guard where supported.
 6. Read back canonical main and verify its exact push CI before reporting integration complete.
-7. Update only durable documentation/history made materially stale by the integrated task.
+7. Update only documentation whose meaning changed: current outcomes/gates in `CURRENT_STATUS.md`, durable concepts in
+   `PROJECT_WIKI.md` or their owning procedure. Keep dated records intact; add a linked later receipt when needed.
+   A handoff, CI poll or unchanged candidate does not require another Wiki/status/closeout edit.
 
 Tool access alone grants no authority; the standing delegation above does. Workers cannot adopt it by changing their role label.
 A post-review nonsemantic correction may retain earlier semantic review only after the Integrator proves the exact diff changes no executable/product/financial meaning.
@@ -34,6 +36,21 @@ Standard mechanics never authorize new product/financial semantics, architecture
 privacy/runtime/network-boundary expansion, behavior-changing fixes outside accepted scope or missing review/UAT evidence.
 Those cases return to the task/decision path; a green rerun does not replace a missing decision.
 Force-push, destructive reset/rebase, branch/tag deletion, release publication and repository settings require their separate explicit authority.
+
+<a id="linked-handoff-receipts"></a>
+## Linked handoff receipts
+
+Use the existing issue/PR and review/acceptance notes, not another process ledger.
+- **Worker:** one concise delivery receipt with the AGENTS completion fields: exact baseline/target/candidate,
+  branch/workspace identity, changed files/stat, actual checks and limitations, final Git read-back.
+  Link existing CI/check evidence rather than copying logs or acceptance criteria into every handoff.
+- **Reviewer:** link that candidate and inspected diff/check evidence; report findings or the bounded verdict,
+  with unresolved source-access/check limits. A failed setup remains UNVERIFIED. Independent review follows MODEL_ROUTING.
+- **Integrator:** link the Worker/review receipts and any required Owner UAT; state acceptance or remaining gates.
+  Integration, when authorized, adds the actual merge SHA and exact-main CI. Delivery/review alone is not acceptance or merge authority.
+
+Reference applicable earlier evidence with its original SHA/scope and the proved intervening diff.
+Keep full logs in their existing evidence location; use links plus the conclusion in these receipts.
 
 ## Staged integration for parallel slices
 
