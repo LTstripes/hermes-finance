@@ -1675,6 +1675,475 @@ def test_money_nkd_remains_scoped_close_blocker_after_coupon_and_h2_acceptance(d
         )
 
 
+def trade_money_xml(*, inclusive=True, duplicate_nkd=False, stamp="10", extra=False):
+    from copy import deepcopy
+
+    root = ET.fromstring(money_batch_xml(nkd=True, stamp=stamp))
+    stock = root.find(f".//{{MyBroker}}Details[@ISIN1='{ISIN}']")
+    stock.set("income_rest", "10")
+    bond = root.find(".//{MyBroker}Details[@ISIN1='RU000A000001']")
+    bond.set("real_rest", "11")
+    bond.set("forward_rest", "11")
+    trade = root.find(".//{MyBroker}Details[@trade_no]")
+    trade.set("isin_reg", "RU000A000001")
+    trade.set("qty", "1")
+    trade.set("summ_trade", "10125.50" if inclusive else "10000.00")
+    trade.set("summ_nkd", "125.50")
+    trade.set("bank_tax", "10.00")
+    collection = root.find(".//{MyBroker}rn_Collection")
+    settlement = collection.find("{MyBroker}rn")
+    settlement.find(".//{MyBroker}p_code[@volume]").set("volume", "-10000.00")
+    fee = deepcopy(settlement)
+    fee.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
+    fee.find(".//{MyBroker}p_code[@volume]").set("volume", "-10.00")
+    collection.append(fee)
+    if duplicate_nkd:
+        collection.append(
+            deepcopy(
+                next(
+                    r
+                    for r in collection
+                    if r.find("{MyBroker}oper_type").get("oper_type") == "НКД по сделке"
+                )
+            )
+        )
+    if extra:
+        other = deepcopy(fee)
+        other.find(".//{MyBroker}comment").set("comment", "Synthetic unsupported REPO UFSR")
+        other.find(".//{MyBroker}p_code[@volume]").set("volume", "-1.00")
+        collection.append(other)
+        node(root.find("{MyBroker}Trades3/{MyBroker}Report"), "Tablix1")
+        node(root.find("{MyBroker}Trades4/{MyBroker}Report"), "Tablix1")
+    cash = root.find(".//{MyBroker}Details[@active_name='RUB']")
+    cash.set("income_rest", "10000.00")
+    cash.set(
+        "real_rest",
+        str(
+            Decimal("52864.50") - (Decimal("125.50") if duplicate_nkd else 0) - (1 if extra else 0)
+        ),
+    )
+    return ET.tostring(root, encoding="utf-8")
+
+
+def _trade_decide(session, intent, originals, *, inclusive=True, claims=True, operation="accept"):
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.persistence import ExecutedTrade, ExecutedTradeRevision
+    from hermes_finance.services.broker_money import preview_money
+
+    trade = session.scalar(select(ExecutedTrade))
+    revision = session.scalar(
+        select(ExecutedTradeRevision).order_by(ExecutedTradeRevision.revision.desc())
+    )
+    inventory = preview_money(
+        session, intent.model_copy(update={"money_decisions": []}), originals
+    )["inventory"]
+    item = next(o for o in inventory if o["candidate_kind"] == "trade_paid_nkd_candidate")
+    decision = {
+        "role": "trade",
+        "trade_id": trade.id,
+        "expected_trade_revision": revision.revision,
+        "operation": operation,
+        "seed": {k: item["occurrence"][k] for k in ("import_id", "section", "ordinal")},
+    }
+    requested = MoneyIntent.model_validate({**intent.model_dump(), "money_decisions": [decision]})
+    plan = preview_money(session, requested, originals)
+    if claims:
+        decision["trade_claims"] = {
+            "reference": "synthetic-independent-native-basis-review",
+            "review_context_digest": plan["decisions"][0]["review_context_digest"],
+            "exact_row_settled_buy_link": True,
+            "complete_occurrence_set_is_one_event": True,
+            "nkd_separately_posted": True,
+            "fee_separately_charged": True,
+            "native_total_basis_independently_proved": True,
+            "native_total_basis": "includes_paid_nkd" if inclusive else "excludes_paid_nkd",
+        }
+    return MoneyIntent.model_validate({**requested.model_dump(), "money_decisions": [decision]})
+
+
+@pytest.mark.parametrize("inclusive", [True, False])
+def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(database, inclusive):
+    from hermes_finance.persistence import (
+        ExecutedTrade,
+        ExecutedTradeOccurrence,
+        ExecutedTradeRevision,
+        ExternalFlow,
+        HistoricalOwnerFlow,
+    )
+    from hermes_finance.services.broker_money import apply_money, preview_money, read_money
+    from hermes_finance.services.executed_trades import read_executed_trades
+
+    client, xml, intent, bond, _ = _money_setup(database, trade_money_xml(inclusive=inclusive))
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        coupon_intent = _money_decide(session, intent, originals, bond)
+        _money_apply(session, coupon_intent, originals)
+        bare = _trade_decide(session, intent, originals, inclusive=inclusive, claims=False)
+        assert "paid_nkd_basis_unresolved" in preview_money(session, bare, originals)["blockers"]
+        assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+        requested = _trade_decide(session, intent, originals, inclusive=inclusive)
+        plan = preview_money(session, requested, originals)
+        assert plan["can_apply"], plan["blockers"]
+        saved = apply_money(
+            session,
+            requested,
+            originals,
+            confirmation_digest=plan["confirmation_digest"],
+            request_id="trade-cash",
+        )
+        reread = read_money(session, "trade-cash")
+        assert saved["accepted"] == reread["accepted"]
+        assert reread["bookkeeping_ready"], reread["exceptions"]
+        execution = read_executed_trades(session)["trades"][0]
+        assert execution["conflicts"] == []
+        assert execution["revision"] == 2
+        evidence = execution["evidence"]
+        assert evidence["fee_basis"] == "separate"
+        assert {leg["role"] for leg in evidence["cash_legs"]} == {
+            "settlement",
+            "commission",
+            "paid_nkd",
+        }
+        assert sum(leg["amount_minor"] for leg in evidence["cash_legs"]) == 1013550
+        assert all(
+            not evidence["readiness"][kind]
+            for kind in ("settlement", "commission", "cash_ownership", "unsupported")
+        )
+        assert session.scalar(select(CashBalance.amount_kopecks)) == 5286450
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 2
+        assert session.scalar(select(func.sum(InvestmentCashFlow.net_amount_kopecks))) == 300000
+        assert session.scalar(select(func.count()).select_from(HistoricalOwnerFlow)) == 1
+        assert session.scalar(select(func.count()).select_from(ExternalFlow)) == 0
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ExecutedTradeOccurrence)
+                .where(ExecutedTradeOccurrence.section == "money")
+            )
+            == 3
+        )
+        for _ in range(10):
+            assert apply_money(
+                session,
+                requested,
+                originals,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="trade-cash",
+            )["duplicate"]
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 2
+    readiness = client.get(f"/api/months/{intent.reporting_month_id}/close-readiness").json()
+    assert readiness["can_close"], readiness
+    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 200
+    with database.session_factory() as session:
+        blocked = preview_money(session, requested, originals)
+        assert "reporting_month_closed" in blocked["blockers"]
+
+
+@pytest.mark.parametrize(
+    "change,code",
+    [
+        ("unproved", "trade_cash_specific_proof_required"),
+        ("fee_embedded", "trade_cash_specific_proof_required"),
+        ("nkd_embedded", "trade_cash_specific_proof_required"),
+        ("wrong_basis", "native_total_basis_control_mismatch"),
+        ("stale_revision", "trade_revision_stale"),
+    ],
+)
+def test_trade_money_equations_cannot_supply_independent_basis(database, change, code):
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.services.broker_money import apply_money, preview_money
+
+    _, xml, intent, _, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        value = requested.model_dump()
+        decision = value["money_decisions"][0]
+        if change == "wrong_basis":
+            decision["trade_claims"]["native_total_basis"] = "excludes_paid_nkd"
+        elif change == "stale_revision":
+            decision["expected_trade_revision"] += 1
+        else:
+            field = {
+                "unproved": "native_total_basis_independently_proved",
+                "fee_embedded": "fee_separately_charged",
+                "nkd_embedded": "nkd_separately_posted",
+            }[change]
+            decision["trade_claims"][field] = False
+        requested = MoneyIntent.model_validate(value)
+        plan = preview_money(session, requested, originals)
+        assert code in plan["blockers"]
+        assert not plan["can_apply"]
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError):
+            apply_money(
+                session,
+                requested,
+                originals,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="refused",
+            )
+        assert before == _all_month_tables(database)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_trade_money_overlap_both_orders_same_execution_three_cash_legs(database, reverse):
+    from hermes_finance.persistence import ExecutedTrade, ExecutedTradeOccurrence
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.executed_trades import read_executed_trades
+
+    docs = [trade_money_xml(stamp="10"), trade_money_xml(stamp="11")]
+    if reverse:
+        docs.reverse()
+    _, xml, intent, bond, _ = _money_setup(database, docs[0])
+    with database.session_factory() as session:
+        apply(session, docs[1], preview(session, docs[1]))
+        originals = [(FILENAME, doc) for doc in docs]
+        coupons = _money_decide(session, intent, originals, bond)
+        _money_apply(session, coupons, originals)
+        trade = _trade_decide(session, intent, originals)
+        saved = _money_apply(session, trade, originals, request_id="overlap-trade")
+        assert saved["bookkeeping_ready"], saved["exceptions"]
+        assert read_money(session, "overlap-trade")["bookkeeping_ready"]
+        execution = read_executed_trades(session)["trades"][0]
+        assert execution["conflicts"] == []
+        assert len(execution["evidence"]["cash_legs"]) == 3
+        assert sum(leg["amount_minor"] for leg in execution["evidence"]["cash_legs"]) == 1013550
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ExecutedTradeOccurrence)
+                .where(ExecutedTradeOccurrence.section == "money")
+            )
+            == 6
+        )
+        assert session.scalar(select(CashBalance.amount_kopecks)) == 5286450
+
+
+def test_trade_money_indistinguishable_nkd_and_unparsed_source_stay_blocked(database):
+    from hermes_finance.services.broker_money import preview_money
+
+    client, xml, intent, bond, _ = _money_setup(
+        database, trade_money_xml(duplicate_nkd=True, extra=True)
+    )
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        plan = preview_money(session, requested, originals)
+        assert not plan["can_apply"]
+        assert "same_report_multiplicity" in plan["blockers"]
+        assert "money_semantics_unsupported" in plan["exceptions"]
+        assert "4_Transfers_unsupported" in plan["exceptions"]
+        assert "5_UFSR_unsupported" in plan["exceptions"]
+    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+
+
+@pytest.mark.parametrize("failure", ["stale", "rollback", "closed"])
+def test_trade_money_stale_closed_and_late_revision_failure_roll_back(
+    database, monkeypatch, failure
+):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import executed_trades
+    from hermes_finance.services.broker_money import apply_money, preview_money
+
+    _, xml, intent, bond, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        if failure == "rollback":
+            from hermes_finance.domain.broker_money import MoneyIntent
+
+            coupons = _money_decide(session, intent, originals, bond)
+            requested = MoneyIntent.model_validate(
+                {
+                    **requested.model_dump(),
+                    "money_decisions": [
+                        *coupons.model_dump()["money_decisions"],
+                        *requested.model_dump()["money_decisions"],
+                    ],
+                }
+            )
+        plan = preview_money(session, requested, originals)
+        assert plan["can_apply"]
+        if failure == "stale":
+            bond = session.scalar(select(Instrument).where(Instrument.instrument_type == "bond"))
+            original_name = bond.name
+            bond.name = "Synthetic temporary rename"
+            session.commit()
+            bond.name = original_name
+            session.commit()
+        elif failure == "closed":
+            session.get(ReportingMonth, intent.reporting_month_id).status = "closed"
+            session.commit()
+        else:
+            stage = executed_trades.stage_executed_trades
+
+            def interrupted(*args, **kwargs):
+                stage(*args, **kwargs)
+                raise RuntimeError("synthetic failure after trade revision stage")
+
+            monkeypatch.setattr(executed_trades, "stage_executed_trades", interrupted)
+        before = _all_month_tables(database)
+        with pytest.raises((MyBrokerError, RuntimeError)):
+            apply_money(
+                session,
+                requested,
+                originals,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="failed-trade",
+            )
+        assert before == _all_month_tables(database)
+
+
+def test_trade_money_catalogue_a_b_a_retires_proof_and_requires_reviewed_reaffirm(database):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.broker_money import preview_money, read_money
+
+    _, xml, intent, _, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        accepted = _money_apply(session, requested, originals, request_id="trade-first")
+        original_proof = accepted["accepted"]
+        bond = session.scalar(select(Instrument).where(Instrument.instrument_type == "bond"))
+        name = bond.name
+        bond.name = "Synthetic changed"
+        session.commit()
+        bond.name = name
+        session.commit()
+        read = read_money(session, "trade-first")
+        assert read["accepted"] == original_proof
+        assert "money_review_retired" in read["targets"][0]["exceptions"]
+        requested = _trade_decide(session, intent, originals)
+        assert (
+            "reviewed_reaffirmation_required"
+            in preview_money(session, requested, originals)["blockers"]
+        )
+        requested = _trade_decide(session, intent, originals, operation="reaffirm")
+        saved = _money_apply(session, requested, originals, request_id="trade-reaffirm")
+        assert saved["targets"][0]["effective"]
+
+
+def test_trade_money_other_money_and_opaque_sections_block_close_after_accepted_trade(database):
+    from hermes_finance.services.broker_money import read_money
+
+    client, xml, intent, _, _ = _money_setup(database, trade_money_xml(extra=True))
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        saved = _money_apply(session, requested, originals, request_id="trade-with-gap")
+        assert saved["targets"][0]["effective"]
+        assert {
+            "money_semantics_unsupported",
+            "4_Transfers_unsupported",
+            "5_UFSR_unsupported",
+        } <= set(saved["exceptions"])
+        assert not read_money(session, "trade-with-gap")["bookkeeping_ready"]
+    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+
+
+@pytest.mark.parametrize(
+    "field,value,code",
+    [
+        ("summ_nkd", "125.51", "native_nkd_fee_amount_conflict"),
+        ("bank_tax", "9.99", "native_nkd_fee_amount_conflict"),
+        ("bank_tax", "0", "negative_posted_cash_nonzero_native_required"),
+        ("summ_nkd", "125.501", "trade_cash_exact_kopecks_required"),
+        ("qty", "-1", "settled_bond_buy_required"),
+    ],
+)
+def test_trade_money_native_controls_cannot_be_waived(database, field, value, code):
+    from hermes_finance.services.broker_money import preview_money
+
+    root = ET.fromstring(trade_money_xml())
+    root.find(".//{MyBroker}Details[@trade_no]").set(field, value)
+    _, xml, intent, _, _ = _money_setup(database, ET.tostring(root))
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        requested = _trade_decide(session, intent, originals)
+        plan = preview_money(session, requested, originals)
+        assert not plan["can_apply"]
+        assert code in plan["blockers"]
+
+
+def test_trade_money_fresh_repeat_is_revision_noop_and_reopen_does_not_reaffirm(database):
+    from hermes_finance.persistence import ExecutedTradeRevision
+    from hermes_finance.services.broker_money import preview_money, read_money
+
+    client, xml, intent, bond, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        _money_apply(session, _money_decide(session, intent, originals, bond), originals)
+        _money_apply(
+            session, _trade_decide(session, intent, originals), originals, request_id="trade-once"
+        )
+        repeated = _trade_decide(session, intent, originals, claims=False)
+        plan = preview_money(session, repeated, originals)
+        assert plan["can_apply"], plan["blockers"]
+        assert plan["decisions"][0]["action"] == "reuse"
+        _money_apply(session, repeated, originals, request_id="trade-repeat")
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 2
+    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 200
+    assert client.post(f"/api/months/{intent.reporting_month_id}/reopen").status_code == 200
+    with database.session_factory() as session:
+        current = read_money(session, "trade-once")
+        assert "money_review_retired" in current["targets"][0]["exceptions"]
+        assert not current["bookkeeping_ready"]
+
+
+def test_trade_money_repo_cannot_create_financial_source_draft(database):
+    scope = _broker_month_setup(database, bond=True)
+    client = TestClient(create_app(database))
+    root = ET.fromstring(trade_money_xml())
+    root.find(".//{MyBroker}Details[@trade_no]").set("repo_no", "SYNTHETIC-REPO")
+    xml = ET.tostring(root)
+    plan = _broker_month_preview(client, scope, xml)
+    assert "repo_semantics_unsupported" in plan["exceptions"]
+    assert not plan["bookkeeping_ready"]
+    before = _all_month_tables(database)
+    assert _broker_month_apply(client, scope, plan, xml).status_code == 409
+    assert before == _all_month_tables(database)
+
+
+@pytest.mark.parametrize("change", ["strip_proof", "delete_revision", "move_owner", "delete_owner"])
+def test_trade_money_accepted_revision_and_occurrence_cannot_be_rewritten(database, change):
+    from hermes_finance.persistence import ExecutedTradeOccurrence, ExecutedTradeRevision
+
+    _, xml, intent, _, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        _money_apply(
+            session,
+            _trade_decide(session, intent, originals),
+            originals,
+            request_id="immutable-trade",
+        )
+        revision = session.scalar(
+            select(ExecutedTradeRevision).where(ExecutedTradeRevision.revision == 2)
+        )
+        original = revision.evidence_json
+        owner = session.scalar(
+            select(ExecutedTradeOccurrence).where(ExecutedTradeOccurrence.section == "money")
+        )
+        if change == "strip_proof":
+            evidence = json.loads(revision.evidence_json)
+            del evidence["cash_reconciliation"]
+            revision.evidence_json = json.dumps(evidence)
+        elif change == "delete_revision":
+            session.delete(revision)
+        elif change == "move_owner":
+            owner.section = "completed"
+        else:
+            session.delete(owner)
+        with pytest.raises(MyBrokerError, match="append_only|ownership_is_permanent"):
+            session.commit()
+        session.rollback()
+        assert session.get(type(revision), revision.id).evidence_json == original
+
+
 def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(
     database, monkeypatch
 ):

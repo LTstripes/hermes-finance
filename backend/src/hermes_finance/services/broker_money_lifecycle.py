@@ -15,7 +15,9 @@ from hermes_finance.persistence import (
     BrokerMoneyOccurrenceOwner,
     BrokerMonthApply,
     CashBalance,
+    ExecutedTrade,
     ExecutedTradeOccurrence,
+    ExecutedTradeRevision,
     ExternalFlow,
     HistoricalOwnerFlowOccurrence,
     HistoricalOwnerFlowRevision,
@@ -147,6 +149,22 @@ def _before_flush(session, _context, _instances):
     with session.no_autoflush:
         links = list(session.scalars(select(BrokerMoneyOccurrenceOwner)))
         for row in (*session.dirty, *session.deleted):
+            if (
+                isinstance(row, ExecutedTradeOccurrence)
+                and "money" in _values(row, "section")
+                and (row in session.deleted or session.is_modified(row))
+            ):
+                raise MyBrokerError("money_ownership_is_permanent")
+            if (
+                isinstance(row, ExecutedTradeRevision)
+                and (row in session.deleted or session.is_modified(row))
+                and any(
+                    "cash_reconciliation" in json.loads(value)
+                    for value in _values(row, "evidence_json")
+                    if value
+                )
+            ):
+                raise MyBrokerError("trade_cash_revision_is_append_only")
             if isinstance(row, BrokerMoneyOccurrenceOwner) and (
                 row in session.deleted or session.is_modified(row)
             ):
@@ -286,13 +304,27 @@ def _before_flush(session, _context, _instances):
             month = session.get(ReportingMonth, receipt.reporting_month_id)
             instruments = (
                 {int(target["facts"]["instrument_id"])}
-                if target["role"] == "coupon" and target["facts"]
+                if target["role"] in ("coupon", "trade") and target["facts"]
                 else set()
             )
             source_ids = {s["import_id"] for s in proof["sources"]}
             funding_ids = {target["target_id"]} if target["role"] == "account_funding" else set()
 
             def affects(row):
+                if isinstance(row, ReportingMonth):
+                    return (
+                        target["role"] == "trade"
+                        and row.id == receipt.reporting_month_id
+                        and "closed" in inspect(row).attrs.status.history.deleted
+                    )
+                if isinstance(row, ExecutedTrade):
+                    return target["role"] == "trade" and row.id == target["target_id"]
+                if isinstance(row, ExecutedTradeRevision):
+                    return (
+                        target["role"] == "trade"
+                        and row.trade_id == target["target_id"]
+                        and not session.info.get("broker_money_stage")
+                    )
                 if (
                     session.info.get("broker_money_stage")
                     and isinstance(row, InvestmentCashFlow)

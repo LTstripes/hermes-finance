@@ -2,7 +2,7 @@ import { apiMultipart, apiRequest } from "./client";
 
 export type MoneyOccurrence = { import_id: number; section: "money"; ordinal: number };
 export type MoneyDecision = {
-  role: "coupon" | "account_funding";
+  role: "coupon" | "account_funding" | "trade";
   seed: MoneyOccurrence;
   operation?: "accept" | "corroborate" | "reaffirm";
   instrument_id?: number;
@@ -16,6 +16,18 @@ export type MoneyDecision = {
     existing_target_is_same_payment: boolean;
   };
   owner_flow_intent?: Record<string, unknown>;
+  trade_id?: number;
+  expected_trade_revision?: number;
+  trade_claims?: {
+    reference: string;
+    review_context_digest: string;
+    exact_row_settled_buy_link: boolean;
+    complete_occurrence_set_is_one_event: boolean;
+    nkd_separately_posted: boolean;
+    fee_separately_charged: boolean;
+    native_total_basis_independently_proved: boolean;
+    native_total_basis: "includes_paid_nkd" | "excludes_paid_nkd";
+  };
 };
 export type MoneyIntent = {
   contract_version: "broker_money_v1";
@@ -48,6 +60,14 @@ export type MoneyPreview = {
     currency: string;
     reasons: string[];
   }[];
+  trade_choices?: {
+    trade_id: number;
+    ids: string[];
+    source_identity: string;
+    instrument_id: number;
+    core: { isin: string; trade_time: string; trade_amount: string; quantity: string };
+    revision: Record<string, string | null> | null;
+  }[];
   decisions: {
     decision: MoneyDecision;
     occurrences: MoneyOccurrence[];
@@ -58,16 +78,21 @@ export type MoneyPreview = {
     owner_flow_intent?: Record<string, unknown>;
     h2_plan?: { source_set_fingerprint: string; review_context_digest: string } | null;
     competing_payouts?: Record<string, string | null>[];
+    native_ids?: string[];
+    cash_proof?: { signed_minor: Record<string, string> } | null;
+    cash_review?: Record<string, string | null>;
   }[];
 };
 export type MoneyTarget = {
-  role: "coupon" | "account_funding";
+  role: "coupon" | "account_funding" | "trade";
   target_id: string | number;
   facts: Record<string, string | null> | null;
   components?: Record<string, string | null>;
   effective: boolean;
   exceptions: string[];
   h2?: { account_scope: { status: string }; portfolio_scope: { status: string } };
+  trade_revision?: Record<string, string | null>;
+  cash_proof?: { signed_minor: Record<string, string>; claims: { native_total_basis: string } };
 };
 export type MoneyReadback = {
   contract_version: "broker_money_v1";

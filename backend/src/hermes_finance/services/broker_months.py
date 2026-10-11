@@ -116,7 +116,7 @@ def _bindings(identity):
     ]
 
 
-def _controls(document):
+def _controls(document, session=None):
     blockers = set(document["syntax_blockers"]) | set(document["endpoint_conflicts"])
     blockers.update(b for b in document["endpoint_blockers"] if b != "endpoint_value_unavailable")
     if any(p["ending_value"] is None for p in document["positions"]):
@@ -141,12 +141,28 @@ def _controls(document):
     ):
         blockers.add("quantity_control_unavailable")
     for trade in document["trades"]:
+        from hermes_finance.services.broker_trade_money import effective_proof
+
+        proof = (
+            effective_proof(session, trade["identity"]) if session and trade["identity"] else None
+        )
+        groups = {
+            kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
+            for kind in ("settlement", "commission")
+        }
+        if proof:
+            leg = proof["nkd_leg"]
+            groups["paid_nkd"] = [
+                {
+                    "amount": leg["source_amount"],
+                    "date": leg["effective_date"],
+                    "currency": leg["currency"],
+                }
+            ]
         readiness = executed_trades.source_bookkeeping_readiness(
             trade,
-            {
-                kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
-                for kind in ("settlement", "commission")
-            },
+            groups,
+            cash_proof=proof,
         )
         blockers.update(code for reasons in readiness.values() for code in reasons)
     for row in document["positions"]:
@@ -380,7 +396,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         or not cash_rows[0].include_in_capital
     ):
         conflicts.add("existing_cash_reconciliation_required")
-    blockers, cash_delta, quantity_controls = _controls(parsed)
+    blockers, cash_delta, quantity_controls = _controls(parsed, session)
     blockers.extend(canonical_blockers)
     # Preview must disclose the same already accepted intersecting authority
     # that GET and Close consume, even when the new original itself is clean.
@@ -512,6 +528,17 @@ def _source_money_blockers(session, source, plan):
     ]
     if not unresolved:
         blockers.discard("money_semantics_unsupported")
+    # S1 remains immutable and reports nonzero fees as unknown. Resolve only
+    # this named fee limitation, after rechecking every affected native trade.
+    from hermes_finance.services.broker_trade_money import effective_proof
+
+    nonzero = [
+        t
+        for t in plan["document"]["trades"]
+        if t["bank_commission"] is not None and Decimal(t["bank_commission"]) != 0
+    ]
+    if nonzero and all(t["identity"] and effective_proof(session, t["identity"]) for t in nonzero):
+        blockers.discard("commission_basis_unresolved")
     return blockers
 
 
@@ -599,7 +626,7 @@ def _readiness(session, receipt):
         current = mybroker_import._prepare(session, json.loads(source.normalized_json))
         blockers.update(current["conflicts"])
         blockers.update(_source_money_blockers(session, source, current))
-        source_blockers, _, _ = _controls(current["document"])
+        source_blockers, _, _ = _controls(current["document"], session)
         blockers.update(source_blockers)
         if current["missing_mappings"]:
             blockers.add("accepted_mapping_changed")

@@ -104,3 +104,38 @@ InvestmentCashFlow, ExternalFlow, payout, transfer or UFSR fact is created or
 changed. No return consumer, historical reconstruction, realized P&L or bond
 arithmetic is enabled. S2-B reconciliation/correction/retraction, #709 backfill,
 financial/data candidate review and Integrator acceptance remain separate.
+
+## Reviewed paid-buy cash extension
+
+[#781 accepted contract](https://github.com/LTstripes/hermes-finance/issues/781#issuecomment-6109886284)
+and #783 extend an existing source-owned DRAFT through the `broker_money_v1`
+batch. A `trade` decision selects one original negative paid-NKD Money occurrence,
+the existing canonical `trade_id` and its exact `expected_trade_revision`.
+`TradeCashClaims` binds a specific review to the server's context digest and
+separately confirms the settled RUB bond BUY link, the complete occurrence set,
+separately posted NKD, separately charged nonzero native-ID commission and an
+independently proved native-total basis. The desktop form discloses the ordered
+native IDs, posted S/N/F, native T/summ_nkd/bank_tax and actual cash/custody dates.
+
+`includes_paid_nkd` checks `-(S+N)=T`; `excludes_paid_nkd` checks `-S=T`, using
+signed debits. Neither equality discovers the basis. Native NKD and fee must
+agree exactly in kopecks with the separate negative Money legs. The actual
+cash debit remains `S+N+F` once. Fractional kopecks, missing/multiple cash legs,
+unsupported pending/REPO/FX, ambiguous primary linkage, changed mappings and
+target reassignment refuse the entire batch.
+
+Apply appends the existing `ExecutedTradeRevision` with `fee_basis=separate`,
+three cash legs and the accepted reconciliation. Money occurrence ownership
+uses existing `ExecutedTradeOccurrence` entries, the same cross-writer mutex
+as coupon/H2 ownership, and the existing immutable month receipt journal.
+No migration, second cash ledger, payout/owner event for NKD, endpoint cash
+increment or inferred EOD NKD/cost basis is introduced. Accepted S1 JSON and
+earlier revisions stay immutable.
+
+Candidate rebuild, canonical GET, source-account readiness and reserved Close
+revalidate the same receipt and reconciliation. A source union/target/catalogue
+change or reopening retires authority monotonically; restoring old values or
+replaying an old request cannot reaffirm it. New explicit review is required.
+One supported trade does not clear opaque Money, unparsed UFSR/REPO/transfer
+sections or other source gaps. C1, portfolio scope and exact returns remain
+unavailable. Synthetic Close evidence does not establish real-account Close.

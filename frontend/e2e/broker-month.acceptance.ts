@@ -185,7 +185,7 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
     if (/\/api\/broker-months\/[^/?]+$/.test(sent.url()) && sent.method() === "GET") gets++;
   });
   await page.goto("/v2/close?month=3&step=final_review_close");
-  await page.getByText("Принять купоны и пополнения в этот черновик").click();
+  await page.getByText("Принять Money в этот черновик").click();
   await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
   await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
   const inventory = page.getByRole("table", { name: "Все наблюдения Money" });
@@ -201,7 +201,7 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
   await confirm.focus();
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
-  const stored = page.getByRole("table", { name: "Сохранённые купоны и пополнения" });
+  const stored = page.getByRole("table", { name: "Сохранённые Money и доказательства покупки" });
   await expect(stored).toContainText("50 000");
   await expect(stored).toContainText("Неизвестно");
   expect(writes).toBe(1);
@@ -211,7 +211,7 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
   await expect(stored.getByRole("row")).toHaveCount(3);
   await page.reload();
   await expect(stored.getByRole("row")).toHaveCount(3);
-  await page.getByText("Принять купоны и пополнения в этот черновик").click();
+  await page.getByText("Принять Money в этот черновик").click();
   await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
   await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
   await inventory.getByRole("checkbox").nth(1).check();
@@ -292,4 +292,107 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
     ),
   ).toBe(true);
   await page.screenshot({ path: info.outputPath("synthetic-money-desktop.png"), fullPage: true });
+});
+
+test("desktop paid NKD uses independently reviewed native basis, one revision and 52864.50 cash through Close", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const xml = await (await request.get("/api/synthetic-broker-source/trade-money")).body();
+  const original = {
+    name: "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  };
+  const scope = { reporting_month_id: 4, account_id: 1 };
+  const preview = await (
+    await request.post("/api/broker-months/preview", {
+      multipart: { file: original, intent: JSON.stringify(scope) },
+    })
+  ).json();
+  const baseResponse = await request.post("/api/broker-months/apply", {
+    multipart: {
+      file: original,
+      confirmation: JSON.stringify({
+        ...scope,
+        request_id: "desktop-trade-base",
+        confirmation_digest: preview.confirmation_digest,
+        reviewed_account_bindings: preview.account_bindings,
+      }),
+    },
+  });
+  expect(baseResponse.ok()).toBe(true);
+  const base = await baseResponse.json();
+  await page.goto("/v2/close?month=4&step=final_review_close");
+  await page.getByText("Принять Money в этот черновик").click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const inventory = page.getByRole("table", { name: "Все наблюдения Money" });
+  await expect(inventory.getByRole("checkbox")).toHaveCount(4);
+  for (const checkbox of await inventory.getByRole("checkbox").all()) await checkbox.check();
+  await page.getByLabel("Подтверждённая облигация для строки 2").selectOption("2");
+  await page.getByLabel("Подтверждённая облигация для строки 3").selectOption("2");
+  await page
+    .getByLabel("Точное исполнение покупки для НКД строки 5")
+    .selectOption(String(base.accepted.trade_ids[0]));
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const confirm = page.getByRole("checkbox", {
+    name: /Я подтверждаю перечисленные конкретные решения Money/,
+  });
+  await expect(confirm).toBeDisabled();
+  await expect(page.getByText(/Равенство сумм не доказывает basis/)).toBeVisible();
+  await page
+    .getByLabel("Независимо доказанное включение НКД в native сумму сделки")
+    .selectOption("includes_paid_nkd");
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("paid-nkd-review-1280-125-percent.png"),
+    fullPage: true,
+  });
+  await confirm.focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
+  const stored = page.getByRole("table", { name: "Сохранённые Money и доказательства покупки" });
+  await expect(stored.getByRole("row")).toHaveCount(5, { timeout: 30000 });
+  await expect(stored).toContainText("НКД и комиссия покупки");
+  await expect(stored).toContainText("включает НКД");
+  const read = await (await request.get("/api/broker-months/desktop-trade-base")).json();
+  expect(read.bookkeeping_ready).toBe(true);
+  expect(read.accepted.cash_control_difference_kopecks).toBe(0);
+  expect(read.accepted.document.rub_money[0].ending_amount).toBe("52864.5");
+  expect(
+    read.money_acceptance.current_targets.filter((t: { role: string }) => t.role === "trade"),
+  ).toHaveLength(1);
+  const trade = await (
+    await request.get(`/api/executed-trades/${base.accepted.trade_ids[0]}`)
+  ).json();
+  expect(trade.revision).toBe(2);
+  expect(
+    trade.evidence.cash_legs
+      .map((leg: { amount_minor: number }) => leg.amount_minor)
+      .reduce((a: number, b: number) => a + b, 0),
+  ).toBe(1013550);
+  await page.reload();
+  await expect(stored.getByRole("row")).toHaveCount(5, { timeout: 30000 });
+  expect((await (await request.get("/api/months/4/close-readiness")).json()).can_close).toBe(true);
+  await page.screenshot({ path: info.outputPath("paid-nkd-get-1280.png"), fullPage: true });
+  await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
+  const closed = page.waitForResponse(
+    (response) => response.url().endsWith("/api/months/4/close"),
+    { timeout: 30000 },
+  );
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  expect((await closed).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible({
+    timeout: 30000,
+  });
 });
