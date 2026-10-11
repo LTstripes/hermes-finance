@@ -56,7 +56,7 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
           </tr>
         </thead>
         <tbody>
-          {saved.targets.map((target) => (
+          {(saved.current_targets ?? saved.targets).map((target) => (
             <tr key={`${target.role}:${target.target_id}`}>
               <Td>{target.role === "coupon" ? "Купон" : "Пополнение счёта"}</Td>
               <Td>{target.target_id}</Td>
@@ -246,7 +246,8 @@ export function BrokerMoneyReview({
         read.request_id !== request.current ||
         read.confirmation_digest !== confirmed.confirmation_digest ||
         JSON.stringify(read.accepted) !== JSON.stringify(committed.accepted) ||
-        JSON.stringify(read.targets) !== JSON.stringify(committed.targets)
+        JSON.stringify(read.targets) !== JSON.stringify(committed.targets) ||
+        JSON.stringify(read.current_targets) !== JSON.stringify(committed.current_targets)
       )
         throw new Error(
           "Независимое GET не подтвердило Money. Обнови состояние; повтор не создаёт новые деньги.",
@@ -274,7 +275,8 @@ export function BrokerMoneyReview({
         read.request_id !== pending.id ||
         read.confirmation_digest !== pending.digest ||
         JSON.stringify(read.accepted) !== JSON.stringify(pending.committed.accepted) ||
-        JSON.stringify(read.targets) !== JSON.stringify(pending.committed.targets)
+        JSON.stringify(read.targets) !== JSON.stringify(pending.committed.targets) ||
+        JSON.stringify(read.current_targets) !== JSON.stringify(pending.committed.current_targets)
       )
         throw new Error("Независимое GET Money не совпало с сохранённым batch.");
       if (!active.current) return;

@@ -77,6 +77,7 @@ export type MoneyReadback = {
   account_id: number;
   reporting_month_id: number;
   targets: MoneyTarget[];
+  current_targets?: MoneyTarget[];
   accepted: unknown;
   exceptions: string[];
   bookkeeping_ready: boolean;

@@ -315,10 +315,32 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
     if competing:
         blockers.add("legacy_payout_overlap")
     previous = latest_proofs(session).get(("coupon", target_id))
+    selected_keys = set(map(key, occurrences))
+    target_owners = {
+        key(owner)
+        for owner in broker_months._rows(session, BrokerMoneyOccurrenceOwner)
+        if owner.role == "coupon" and owner.investment_cash_flow_id == target_id
+    }
+    if target_owners - selected_keys:
+        # A canonical payout cannot absorb a distinguishable second event,
+        # even when financial fields match and new claims are supplied.
+        blockers.add("existing_payout_occurrence_set_conflict")
+    proven_reuse = (
+        previous is not None
+        and previous[1]["operation"] != "retire"
+        and decision.operation == "accept"
+        and selected_keys == target_owners
+        and selected_keys
+        == {
+            key(o)
+            for o in previous[1]["occurrences"]
+            if o["role"] == "coupon" and o["target_id"] == target_id
+        }
+    )
     reviewed = digest(
         [context, "coupon", occurrences, material(instrument), material(target), competing]
     )
-    if not previous or previous[1]["operation"] == "retire" or decision.operation != "accept":
+    if not proven_reuse:
         claims = decision.coupon_claims
         if claims is None or claims.review_context_digest != reviewed:
             blockers.add("coupon_claim_binding_required")
@@ -340,9 +362,7 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
         "target": material(target),
         "competing_payouts": competing,
         "review_context_digest": reviewed,
-        "action": "reuse"
-        if previous and previous[1]["operation"] != "retire" and decision.operation == "accept"
-        else ("link_existing" if target else "create"),
+        "action": "reuse" if proven_reuse else ("link_existing" if target else "create"),
     }
 
 
@@ -350,6 +370,9 @@ def _funding(session, intent, decision, occurrences, blockers):
     found = owners(session, occurrences)
     ids = {o["target_id"] for o in found if o["role"] == "account_funding"}
     requested = decision.owner_flow_intent
+    if requested is not None and requested.evidence_version != h2.COMPATIBLE_FLOW_CONTRACT:
+        blockers.add("money_h2_v2_required")
+        return {"target_id": requested.flow_id, "action": "blocked", "h2_plan": None}
     if ids and len(ids) == 1 and requested is None:
         flow_id = next(iter(ids))
         read = h2._read_historical_owner_flow(session, flow_id)
@@ -358,7 +381,10 @@ def _funding(session, intent, decision, occurrences, blockers):
         previous = latest_proofs(session).get(("account_funding", flow_id))
         if previous and previous[1]["operation"] == "retire" and decision.operation != "reaffirm":
             blockers.add("reviewed_reaffirmation_required")
-        if read["effective_state"] == "accepted":
+        if (
+            read["effective_state"] == "accepted"
+            and read["evidence"]["contract_version"] == h2.COMPATIBLE_FLOW_CONTRACT
+        ):
             return {"target_id": flow_id, "action": "reuse", "h2_readback": read, "h2_plan": None}
         requested = OwnerFlowIntent(
             evidence_version="h2-a1-owner-rub-v2",
@@ -420,7 +446,7 @@ def _plan(session, intent, originals):
     if base.import_id not in {s["import_id"] for s in sources}:
         blockers.add("base_source_missing")
     dependencies = _dependencies(session)
-    plans, selected = [], set()
+    plans, selected, selected_targets = [], set(), set()
     for decision in intent.money_decisions:
         reasons = set(union_blockers)
         observation, occurrences = _cohort(inventory, decision.seed, sources, reasons)
@@ -451,6 +477,11 @@ def _plan(session, intent, originals):
             if decision.role == "coupon"
             else _funding(session, intent, decision, occurrences, reasons)
         )
+        target_identity = (decision.role, target_plan["target_id"])
+        if target_plan["target_id"] is not None:
+            if target_identity in selected_targets:
+                reasons.add("duplicate_decision_target")
+            selected_targets.add(target_identity)
         plans.append(
             {
                 "decision": decision.model_dump(mode="json"),
@@ -537,7 +568,9 @@ def proof_blockers(session, receipt, proof, target):
     if current != target:
         blockers.add("money_target_revision_changed")
     if target["role"] == "account_funding" and (
-        current.get("h2") is None or current["h2"]["effective_state"] != "accepted"
+        current.get("h2") is None
+        or current["h2"]["effective_state"] != "accepted"
+        or current["h2"]["evidence"]["contract_version"] != h2.COMPATIBLE_FLOW_CONTRACT
     ):
         blockers.add("h2_authority_unavailable")
     for source_snapshot in proof["sources"]:
@@ -611,6 +644,22 @@ def read_money(session, request_id):
             raise MyBrokerError("money_receipt_required")
         latest = latest_proofs(session)
         targets, blockers = [], set()
+        current_targets = []
+        for current_receipt, current_proof, target in latest.values():
+            if (
+                current_receipt.reporting_month_id == receipt.reporting_month_id
+                and current_receipt.account_id == receipt.account_id
+                and current_proof["base_request_id"] == proof["base_request_id"]
+            ):
+                reasons = proof_blockers(session, current_receipt, current_proof, target)
+                current_targets.append(
+                    {
+                        **_target(session, target["role"], target["target_id"]),
+                        "effective": not reasons,
+                        "exceptions": reasons,
+                        "current_request_id": current_receipt.request_id,
+                    }
+                )
         for accepted in proof["targets"]:
             current_receipt, current_proof, target = latest[target_key(accepted)]
             reasons = proof_blockers(session, current_receipt, current_proof, target)
@@ -639,6 +688,7 @@ def read_money(session, request_id):
             "status": session.get(ReportingMonth, receipt.reporting_month_id).status,
             "accepted": proof,
             "targets": targets,
+            "current_targets": current_targets,
             "exceptions": sorted(blockers),
             "bookkeeping_ready": not blockers,
             "portfolio_scope": "unknown",

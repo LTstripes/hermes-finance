@@ -152,7 +152,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.screenshot({ path: info.outputPath("partial-money-1280.png"), fullPage: true });
 });
 
-test("desktop Money adds one reviewed coupon/H2 batch to DRAFT, GET shows NULL tax and deferred NKD", async ({
+test("desktop Money accepts atomic batches and reload retains earlier coupons/H2 with NULL tax and deferred NKD", async ({
   page,
   request,
 }, info) => {
@@ -191,9 +191,9 @@ test("desktop Money adds one reviewed coupon/H2 batch to DRAFT, GET shows NULL t
   const inventory = page.getByRole("table", { name: "Все наблюдения Money" });
   await expect(inventory).toContainText("trade_paid_nkd_candidate");
   const choose = inventory.getByRole("checkbox");
-  for (let index = 0; index < 3; index++) await choose.nth(index).check();
+  await choose.nth(0).check();
+  await choose.nth(2).check();
   await page.getByLabel("Подтверждённая облигация для строки 2").selectOption("2");
-  await page.getByLabel("Подтверждённая облигация для строки 3").selectOption("2");
   await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
   const confirm = page.getByRole("checkbox", {
     name: /Я подтверждаю перечисленные конкретные решения Money/,
@@ -206,11 +206,32 @@ test("desktop Money adds one reviewed coupon/H2 batch to DRAFT, GET shows NULL t
   await expect(stored).toContainText("Неизвестно");
   expect(writes).toBe(1);
   expect(gets).toBe(1);
+  await expect(stored.getByRole("row")).toHaveCount(3);
+  await page.reload();
+  await expect(stored.getByRole("row")).toHaveCount(3);
+  await page.getByText("Принять купоны и пополнения в этот черновик").click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await inventory.getByRole("checkbox").nth(1).check();
+  await page.getByLabel("Подтверждённая облигация для строки 3").selectOption("2");
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await confirm.check();
+  const beforeSecondGets = gets;
+  await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
+  await expect(stored.getByRole("row")).toHaveCount(4);
+  expect(writes).toBe(2);
+  expect(gets).toBe(beforeSecondGets + 1);
+  await page.reload();
+  await expect(stored.getByRole("row")).toHaveCount(4);
+  await expect(stored).toContainText("50 000");
+  await expect(stored).toContainText("1 000");
+  await expect(stored).toContainText("2 000");
   const read = await (await request.get("/api/broker-months/desktop-money-base")).json();
-  expect(read.money_acceptance.targets).toHaveLength(3);
-  expect(read.money_acceptance.targets.every((t: { effective: boolean }) => t.effective)).toBe(
-    true,
-  );
+  expect(read.money_acceptance.targets).toHaveLength(1);
+  expect(read.money_acceptance.current_targets).toHaveLength(3);
+  expect(
+    read.money_acceptance.current_targets.every((t: { effective: boolean }) => t.effective),
+  ).toBe(true);
   expect(read.exceptions).toContain("money_semantics_unsupported");
   const rejected = await request.post("/api/months/3/close");
   expect(rejected.status()).toBe(422);

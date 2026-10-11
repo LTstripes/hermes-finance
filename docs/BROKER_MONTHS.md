@@ -43,6 +43,12 @@ Journal revision order is assigned under the writer reservation, independently o
 wall-clock timestamps. A compatible staged coupon addition preserves unchanged
 earlier payouts. Legacy PDF technical tax zero is displayed as unknown when its
 accepted provenance marks tax unavailable; stored legacy facts are not rewritten.
+Claim-free coupon reuse is limited to the already proven complete occurrence set.
+A distinguishable second coupon cannot be linked to that payout even with matching
+amount/date and supplied claims. Money funding requires H2 v2; legacy v1 authority
+needs explicit version-bound reaffirmation, retaining its original receipts.
+Independent GET retains batch targets and also returns all current targets for the
+source-owned account/month, so the desktop panel preserves earlier acceptances.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply

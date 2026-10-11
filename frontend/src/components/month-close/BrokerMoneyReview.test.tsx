@@ -117,6 +117,18 @@ beforeEach(() => {
   );
   vi.mocked(readBrokerMoney).mockImplementation(async (id) => readback(id));
 });
+it("persistent panel shows earlier coupon and funding after a later batch and reload", () => {
+  const saved = readback("later-batch");
+  const earlier = saved.targets;
+  saved.targets = [{ ...earlier[0], target_id: 8, facts: { net_amount_kopecks: "200000" } }];
+  saved.current_targets = [...earlier, ...saved.targets];
+  render(<MoneyStored saved={saved} />);
+  const stored = screen.getByRole("table", { name: "Сохранённые купоны и пополнения" });
+  expect(within(stored).getAllByRole("row")).toHaveLength(4);
+  expect(stored).toHaveTextContent("1 000");
+  expect(stored).toHaveTextContent("2 000");
+  expect(stored).toHaveTextContent("50 000");
+});
 it("legacy PDF technical tax zero remains unknown when provenance says unavailable", () => {
   const saved = readback("synthetic");
   saved.targets[0].facts = { net_amount_kopecks: "100000", tax_amount_kopecks: "0" };
