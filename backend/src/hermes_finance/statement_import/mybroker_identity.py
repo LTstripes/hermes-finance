@@ -63,6 +63,9 @@ def parse_identity(document: bytes, filename: str) -> dict:
         ]
         for row, trade in zip(root.findall(path, NS), trades, strict=True):
             isin, account = trade["core"]["isin"], trade["core"]["source_account"]
+            row_currency = None if pending else single(row.get("Textbox14"), optional=True)
+            if row_currency is not None and row_currency != trade["core"]["currency"]:
+                conflicts.add("trade_currency_observation_conflict")
             # Pending metadata field names are not in the accepted manifest.
             observations[isin].append(
                 {
@@ -72,9 +75,7 @@ def parse_identity(document: bytes, filename: str) -> dict:
                     "source_account": account,
                     "source_name": None if pending else single(row.get("p_name"), optional=True),
                     "settlement_currency": trade["core"]["currency"],
-                    "row_currency_observation": None
-                    if pending
-                    else single(row.get("Textbox14"), optional=True),
+                    "row_currency_observation": row_currency,
                 }
             )
             row_accounts.add(account)

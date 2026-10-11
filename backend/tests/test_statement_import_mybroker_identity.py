@@ -468,3 +468,21 @@ def test_fresh_preview_cannot_rebind_an_already_accepted_original(database):
             stage(session, reviewed, xml)
         session.rollback()
         assert inventory(session) == before
+
+
+def test_contradictory_trade_currency_observations_block_whole_batch(database):
+    root = ET.fromstring(identity_xml(bond=True))
+    root.find(".//{MyBroker}Details[@trade_no]").set("Textbox14", "USD")
+    xml = ET.tostring(root)
+    with database.session_factory() as session:
+        create_instrument(session, name="Trusted bond", isin=BOND, instrument_type="bond")
+        before = inventory(session)
+        reviewed = plan(session, xml)
+        assert reviewed["conflicts"] == ["trade_currency_observation_conflict"]
+        assert reviewed["evidence_gaps"] == []
+        assert not reviewed["can_stage"]
+        assert reviewed["evidence"]["instruments"][0]["currency"] is None
+        with pytest.raises(MyBrokerError, match="identity_batch_conflict"):
+            stage(session, reviewed, xml)
+        session.rollback()
+        assert inventory(session) == before

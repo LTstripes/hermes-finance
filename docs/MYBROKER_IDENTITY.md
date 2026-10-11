@@ -29,7 +29,10 @@ snapshot and writes nothing.
 
 Only row-level Positions `active_type=Акции|Облигации`, `active_name`, `ISIN1`,
 `acc_code` and `place` provide security metadata. Completed Trades supplies
-`isin_reg`, `p_name`, `acc_code`, `curr_calc` and `Textbox14`. Trade type must link
+`isin_reg`, `p_name`, `acc_code`, `curr_calc` and `Textbox14`. Contradictory
+`curr_calc`/`Textbox14` observations refuse the entire batch with
+`trade_currency_observation_conflict`, without deriving security denomination.
+Trade type must link
 to Positions by exact account and ISIN. Trade-only type remains unproven; names,
 group placement and current catalogue type cannot manufacture source authority.
 Unknown/unparsed rows, invalid ISINs, unsupported asset types, REPO, account/type/
