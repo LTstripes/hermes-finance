@@ -7,6 +7,7 @@ import type { GuidedCloseActionId, GuidedCloseStep } from "../api/monthCloseWork
 import type { ReportingMonth } from "../api/types";
 import { listMonths } from "../api/months";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
+import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import { isGuidedCloseStepId, routeForGuidedAction } from "../components/month-close/navigation";
 import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
@@ -291,6 +292,7 @@ export default function UiV2ClosePage() {
         : null;
     content = (
       <div className={styles.closeWorkspace} data-testid="v2-close-workspace">
+        <BrokerMonthReview key={workflow.month.id} monthId={workflow.month.id} closed={closed} />
         <div className={styles.closeContext}>
           <span className={closed ? styles.closedBadge : styles.draftBadge}>
             {closed ? "Месяц закрыт" : "Черновик"}

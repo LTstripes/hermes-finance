@@ -75,6 +75,434 @@ def endpoint_xml(
     return ET.tostring(root, encoding="utf-8")
 
 
+def broker_month_xml(*, unsupported=False, bond=False):
+    """Supported fabricated monthly inventory; no guessed Money classification."""
+    from copy import deepcopy
+
+    root = ET.fromstring(endpoint_xml(rub_amounts=("1400.00", "400.00")))
+    security = root.find(".//{MyBroker}Details[@ISIN1]")
+    security.set("active_type", "Акции")
+    security.set("active_name", "Synthetic stock")
+    trade = root.find(".//{MyBroker}Details[@trade_no]")
+    trade.set("qty", "2")
+    trade.set("p_name", "Synthetic stock")
+    trade.set("Textbox14", "RUB")
+    if unsupported:
+        root.find(".//{MyBroker}comment").set(
+            "comment", "Fabricated unclassified coupon-like posting"
+        )
+    if bond:
+        row = deepcopy(security)
+        row.set("ISIN1", "RU000A000001")
+        row.set("active_type", "Облигации")
+        row.set("active_name", "Synthetic bond")
+        row.set("income_rest", "10")
+        row.set("income_volume", "999.99")
+        row.set("real_volume", "1000.01")
+        root.find(".//{MyBroker}Details_Collection").append(row)
+    return ET.tostring(root, encoding="utf-8")
+
+
+def _broker_month_setup(database, *, bond=False):
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    with database.session_factory() as session:
+        if bond:
+            create_instrument(
+                session, name="Synthetic bond", instrument_type="bond", isin="RU000A000001"
+            )
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+        return {"reporting_month_id": month.id, "account_id": 1}
+
+
+def _broker_month_preview(client, intent, xml, filename=FILENAME, supporting=None):
+    response = client.post(
+        "/api/broker-months/preview",
+        files=[("file", (filename, xml, "application/xml")), *(supporting or [])],
+        data={"intent": json.dumps(intent)},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _broker_month_apply(
+    client, intent, reviewed, xml, request_id="synthetic-batch", filename=FILENAME, supporting=None
+):
+    return client.post(
+        "/api/broker-months/apply",
+        files=[("file", (filename, xml, "application/xml")), *(supporting or [])],
+        data={
+            "confirmation": json.dumps(
+                {
+                    **intent,
+                    "confirmation_digest": reviewed["confirmation_digest"],
+                    "request_id": request_id,
+                }
+            )
+        },
+    )
+
+
+def test_broker_month_atomic_native_draft_get_close_and_replay(database):
+    from hermes_finance.persistence import (
+        BrokerIdentityMapping,
+        BrokerMonthApply,
+        ExecutedTrade,
+        ExecutedTradeRevision,
+    )
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_identity_mappings import revoke_mapping
+
+    intent = _broker_month_setup(database, bond=True)
+    # Unrelated account remains advisory; a fresh mapping is staged in the batch.
+    with database.session_factory() as session:
+        create_account(session, name="Unrelated synthetic deposit", account_type="deposit")
+        mapping = session.scalar(
+            select(BrokerIdentityMapping).where(BrokerIdentityMapping.subject_kind == "instrument")
+        )
+        revoke_mapping(session, mapping.id)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml(bond=True)
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert reviewed["can_apply"] and reviewed["bookkeeping_ready"], reviewed
+    assert reviewed["cash_control_difference_kopecks"] == 0
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 0
+    response = _broker_month_apply(client, intent, reviewed, xml)
+    assert response.status_code == 200, response.text
+    applied = response.json()
+    readback = client.get("/api/broker-months/synthetic-batch").json()
+    assert {k: v for k, v in applied.items() if k != "duplicate"} == readback
+    assert readback["bookkeeping_ready"] and readback["status"] == "draft"
+    with database.session_factory() as session:
+        positions = list(session.scalars(select(PositionSnapshot).order_by(PositionSnapshot.id)))
+        assert [p.market_value_kopecks for p in positions] == [100000, 100001]
+        assert all(
+            p.cost_basis_kopecks is None
+            and p.unrealized_result_kopecks is None
+            and p.accrued_interest_kopecks is None
+            for p in positions
+        )
+        assert positions[1].bond_nkd_basis == "unknown"
+        assert session.scalar(select(CashBalance)).amount_kopecks == 40000
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 1
+    # Same original, fresh confirmation/key: reuse all economic rows.
+    again = _broker_month_preview(client, intent, xml)
+    replay = _broker_month_apply(client, intent, again, xml, request_id="fresh-replay")
+    assert replay.status_code == 200, replay.text
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 2
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 1
+        assert session.scalar(select(func.count()).select_from(BrokerMonthApply)) == 2
+    readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
+    assert readiness["can_close"]
+    assert any(
+        i["code"] == "active_account_snapshot_missing" and i["severity"] == "warning"
+        for i in readiness["items"]
+    )
+    closed = client.post(f"/api/months/{intent['reporting_month_id']}/close")
+    assert closed.status_code == 200 and closed.json()["status"] == "closed", closed.text
+    exact_replay = _broker_month_apply(client, intent, reviewed, xml)
+    assert exact_replay.status_code == 200 and exact_replay.json()["duplicate"]
+    blocked = _broker_month_preview(client, intent, xml)
+    assert "reporting_month_closed" in blocked["conflicts"]
+
+
+def test_broker_month_unsupported_money_partial_draft_blocks_readiness_and_close(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml(unsupported=True)
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    assert "money_semantics_unsupported" in reviewed["exceptions"]
+    assert len(reviewed["document"]["money"]) == 1
+    response = _broker_month_apply(client, intent, reviewed, xml)
+    assert response.status_code == 200, response.text
+    assert not client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
+    readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
+    assert not readiness["can_close"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        assert session.scalar(select(ReportingMonth)).status == "draft"
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+
+
+def test_broker_month_stale_and_late_failure_roll_back_entire_batch(database, monkeypatch):
+    import hermes_finance.services.broker_months as service
+    from hermes_finance.persistence import Base
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database), raise_server_exceptions=False)
+    xml = broker_month_xml()
+    reviewed = _broker_month_preview(client, intent, xml)
+    changed = xml.replace(b'real_volume="1000.00"', b'real_volume="1000.01"')
+    assert _broker_month_apply(client, intent, reviewed, changed).status_code == 409
+    with database.session_factory() as session:
+        before = {
+            t.name: session.scalar(select(func.count()).select_from(t))
+            for t in Base.metadata.sorted_tables
+        }
+
+    def interrupted(*args, **kwargs):
+        raise RuntimeError("synthetic late interruption")
+
+    monkeypatch.setattr(service, "stage_native_position", interrupted)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 500
+    with database.session_factory() as session:
+        after = {
+            t.name: session.scalar(select(func.count()).select_from(t))
+            for t in Base.metadata.sorted_tables
+        }
+    assert before == after
+
+
+def test_broker_month_currency_manual_and_optional_evidence_fail_closed(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    novel = xml.replace(ISIN.encode(), b"RU000A000009")
+    blocked = _broker_month_preview(client, intent, novel)
+    assert not blocked["can_apply"] and "instrument_currency_unproven" in blocked["conflicts"]
+    supporting = [
+        ("supporting", ("synthetic.xml", b"fabricated optional evidence", "application/xml"))
+    ]
+    reviewed = _broker_month_preview(client, intent, xml, supporting=supporting)
+    assert (
+        "optional_evidence_unsupported" in reviewed["exceptions"]
+        and not reviewed["bookkeeping_ready"]
+    )
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 409
+    with database.session_factory() as session:
+        session.add(
+            CashBalance(
+                reporting_month_id=intent["reporting_month_id"],
+                account_id=1,
+                name="Manual",
+                amount_kopecks=40000,
+            )
+        )
+        session.commit()
+    assert (
+        "existing_cash_reconciliation_required"
+        in _broker_month_preview(client, intent, xml)["conflicts"]
+    )
+
+
+def test_broker_month_changed_projection_atomically_prevents_close(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
+    assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    with database.session_factory() as session:
+        session.execute(update(CashBalance).values(amount_kopecks=40001))
+        session.commit()
+    readback = client.get("/api/broker-months/synthetic-batch").json()
+    assert "source_projection_changed" in readback["exceptions"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+
+
+@pytest.mark.parametrize("source_first", [True, False])
+def test_broker_month_overlapping_reports_share_canonical_trade_and_projection(
+    database, source_first
+):
+    from hermes_finance.persistence import ExecutedTrade, ExecutedTradeOccurrence
+
+    intent = _broker_month_setup(database)
+    xml = broker_month_xml()
+    filename = FILENAME.replace("31.01.30", "20.01.30")
+    narrow = ET.fromstring(xml)
+    narrow.set("synthetic_revision", "narrow")
+    narrow_xml = ET.tostring(narrow, encoding="utf-8")
+    client = TestClient(create_app(database=database))
+
+    def accept_narrow():
+        with database.session_factory() as session:
+            reviewed = preview(session, narrow_xml, filename)
+            apply(session, narrow_xml, reviewed, filename)
+
+    if source_first:
+        accept_narrow()
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
+    if not source_first:
+        accept_narrow()
+        refreshed = _broker_month_preview(client, intent, xml)
+        assert (
+            _broker_month_apply(
+                client, intent, refreshed, xml, request_id="overlap-refresh"
+            ).status_code
+            == 200
+        )
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeOccurrence)) == 2
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 1
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+
+
+def test_broker_month_two_native_ids_with_same_economics_stay_distinct(database):
+    from copy import deepcopy
+
+    from hermes_finance.persistence import ExecutedTrade
+
+    intent = _broker_month_setup(database)
+    root = ET.fromstring(broker_month_xml())
+    security = root.find(".//{MyBroker}Details[@ISIN1]")
+    security.set("real_rest", "12")
+    security.set("forward_rest", "12")
+    security.set("real_volume", "1200.00")
+    root.find(".//{MyBroker}Details[@active_name='RUB']").set("income_rest", "2400.00")
+    trade = deepcopy(root.find(".//{MyBroker}Details[@trade_no]"))
+    trade.set("trade_no", "2001\n2002")
+    root.find(".//{MyBroker}Tablix2/{MyBroker}Details_Collection").append(trade)
+    money = deepcopy(root.find(".//{MyBroker}rn"))
+    money.find(".//{MyBroker}comment").set("comment", "Расчеты по сделке 2001")
+    root.find(".//{MyBroker}rn_Collection").append(money)
+    xml = ET.tostring(root, encoding="utf-8")
+    client = TestClient(create_app(database=database))
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert reviewed["bookkeeping_ready"], reviewed
+    response = _broker_month_apply(client, intent, reviewed, xml)
+    assert response.status_code == 200, response.text
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 2
+
+
+def test_broker_month_conflicting_later_source_blocks_close_without_rewriting_rows(database):
+    intent = _broker_month_setup(database)
+    xml = broker_month_xml()
+    client = TestClient(create_app(database=database))
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
+    conflicting = xml.replace(b'real_volume="1000.00"', b'real_volume="1000.01"')
+    with database.session_factory() as session:
+        raw = preview(session, conflicting)
+        assert raw["can_apply"]
+        apply(session, conflicting, raw)
+    assert (
+        "overlapping_endpoint_conflict"
+        in client.get("/api/broker-months/synthetic-batch").json()["exceptions"]
+    )
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        assert session.scalar(select(PositionSnapshot)).market_value_kopecks == 100000
+
+
+def test_broker_month_close_holds_writer_through_source_recheck(database, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    from hermes_finance.services import broker_months
+    from hermes_finance.services.reporting_months import close_reporting_month
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
+    reserved, release = Event(), Event()
+    original = broker_months._readiness
+
+    def paused(session, receipt):
+        result = original(session, receipt)
+        reserved.set()
+        assert release.wait(10)
+        return result
+
+    monkeypatch.setattr(broker_months, "_readiness", paused)
+
+    def close():
+        with database.session_factory() as session:
+            close_reporting_month(session, intent["reporting_month_id"])
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(close)
+        try:
+            assert reserved.wait(10)
+            with database.session_factory() as other:
+                other.execute(text("PRAGMA busy_timeout=0"))
+                with pytest.raises(OperationalError, match="database is locked"):
+                    other.execute(update(CashBalance).values(amount_kopecks=1))
+                other.rollback()
+        finally:
+            release.set()
+        future.result(timeout=10)
+
+
+def test_broker_month_quantity_cash_missingness_and_fractional_minor_units(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    fractional = xml.replace(b'real_volume="1000.00"', b'real_volume="1000.001"')
+    assert (
+        client.post(
+            "/api/broker-months/preview",
+            files={"file": (FILENAME, fractional, "application/xml")},
+            data={"intent": json.dumps(intent)},
+        ).status_code
+        == 422
+    )
+    precision = xml.replace(b'real_rest="10"', b'real_rest="10.1234567"')
+    assert (
+        "quantity_precision_unsupported"
+        in _broker_month_preview(client, intent, precision)["conflicts"]
+    )
+    missing = xml.replace(b' real_volume="1000.00"', b"")
+    assert not _broker_month_preview(client, intent, missing)["can_apply"]
+
+
+def test_broker_month_missing_canonical_occurrence_blocks_current_get_and_close(database):
+    from sqlalchemy import delete
+
+    from hermes_finance.persistence import ExecutedTradeOccurrence
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
+    with database.session_factory() as session:
+        session.execute(delete(ExecutedTradeOccurrence))
+        session.commit()
+    assert (
+        "canonical_trade_projection_changed"
+        in _broker_month_preview(client, intent, xml)["exceptions"]
+    )
+    assert (
+        "canonical_trade_projection_changed"
+        in client.get("/api/broker-months/synthetic-batch").json()["exceptions"]
+    )
+    assert not client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+
+
+def test_broker_month_preview_discloses_intersecting_unsupported_money(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml(unsupported=True)
+    narrow = FILENAME.replace("31.01.30", "20.01.30")
+    with database.session_factory() as session:
+        apply(session, xml, preview(session, xml, narrow), narrow)
+    plan = _broker_month_preview(client, intent, broker_month_xml())
+    assert "money_semantics_unsupported" in plan["exceptions"]
+    assert not plan["bookkeeping_ready"]
+
+
 def positions_only(document: bytes) -> bytes:
     """Keep the endpoint Positions section and drop all trade/money rows."""
     root = ET.fromstring(document)

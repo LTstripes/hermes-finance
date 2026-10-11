@@ -56,6 +56,7 @@ export type MyBrokerDocument = {
   endpoint_blockers?: string[];
   endpoint_conflicts?: string[];
   money: {
+    date?: string;
     ordinal: number;
     kind: string;
     source_account: string;

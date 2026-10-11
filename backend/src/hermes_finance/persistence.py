@@ -60,6 +60,22 @@ class MyBrokerImport(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class BrokerMonthApply(Base):
+    """Append-only source/month ownership receipt, not a second economic ledger."""
+
+    __tablename__ = "broker_month_applies"
+    request_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    reporting_month_id: Mapped[int] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id"), nullable=False)
+    projection_json: Mapped[str] = mapped_column(Text, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MyBrokerDispositionSet(Base):
     """Immutable initial skip manifest; absent on legacy fully mapped S1."""
 

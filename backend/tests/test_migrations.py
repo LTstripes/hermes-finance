@@ -13,6 +13,48 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_broker_month_receipt_migration_preserves_source_and_refuses_owned_downgrade(tmp_path):
+    from fastapi.testclient import TestClient
+    from test_statement_import_mybroker import FILENAME, ISIN
+    from test_statement_import_mybroker_endpoints import (
+        _broker_month_apply,
+        _broker_month_preview,
+        broker_month_xml,
+    )
+
+    from hermes_finance.database import create_database
+    from hermes_finance.main import create_app
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    path = tmp_path / "synthetic-broker-batch.db"
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    assert run_alembic(path, "downgrade", "0056_source_native_finance").returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    db = create_database(path)
+    with db.session_factory() as session:
+        account = create_account(session, name="Synthetic", account_type="brokerage")
+        create_instrument(session, name="Synthetic", instrument_type="stock", isin=ISIN)
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+        intent = {"reporting_month_id": month.id, "account_id": account.id}
+    client = TestClient(create_app(database=db))
+    xml = broker_month_xml()
+    plan = _broker_month_preview(client, intent, xml, filename=FILENAME)
+    assert _broker_month_apply(client, intent, plan, xml).status_code == 200
+    db.engine.dispose()
+    result = run_alembic(path, "downgrade", "0056_source_native_finance")
+    assert (
+        result.returncode != 0
+        and "cannot downgrade with source-owned broker month receipts" in result.stderr
+    )
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("SELECT COUNT(*) FROM broker_month_applies").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM mybroker_imports").fetchone()[0] == 1
+
+
 def test_native_migration_refuses_lossy_downgrade_and_fractional_kopecks(tmp_path):
     import pytest
     from test_positions import _native_source, build_environment

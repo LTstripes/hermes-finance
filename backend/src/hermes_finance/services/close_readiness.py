@@ -140,14 +140,14 @@ def _one_year_after(day: date) -> date:
         return day.replace(year=day.year + 1, month=2, day=28)
 
 
-def _hard_blocker_items(month) -> list[CloseReadinessItem]:
+def _hard_blocker_items(month, session: Session) -> list[CloseReadinessItem]:
     return [
         _item(
             severity=CloseReadinessSeverity.HARD_BLOCKER,
             code=code,
             message=message,
         )
-        for code, message in close_hard_guards(month)
+        for code, message in close_hard_guards(month, session)
     ]
 
 
@@ -415,7 +415,7 @@ def build_close_readiness(
 
     with session.no_autoflush:
         month = get_reporting_month(session, month_id)
-        items = _hard_blocker_items(month)
+        items = _hard_blocker_items(month, session)
         items.extend(_salary_tax_items(session, month))
         items.extend(_active_account_snapshot_items(session, month))
         if month.snapshot_date is not None:
