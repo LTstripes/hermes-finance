@@ -227,3 +227,52 @@ it("a refreshed source GET overrides earlier ready Apply readback", async () => 
   await screen.findByText(/Черновик неполный; Close заблокирован/);
   expect(screen.queryByText(/Брокерский компонент готов к общей проверке/)).not.toBeInTheDocument();
 });
+
+it.each([true, false])(
+  "account readiness retains every receipt blocker when newer receipt blocked=%s",
+  async (newerBlocked) => {
+    const first = (id: string) => ({
+      ...persisted(id),
+      bookkeeping_ready: newerBlocked,
+      exceptions: newerBlocked ? [] : ["source_projection_changed"],
+    });
+    vi.mocked(previewBrokerMonth).mockResolvedValue({
+      ...preview,
+      bookkeeping_ready: true,
+      exceptions: [],
+    });
+    vi.mocked(applyBrokerMonth).mockImplementation(async (_file, _intent, _digest, id) =>
+      first(id),
+    );
+    vi.mocked(readBrokerMonth).mockImplementation(async (id) => first(id));
+    vi.mocked(listBrokerMonths).mockImplementation(async () => {
+      const id = vi.mocked(applyBrokerMonth).mock.calls.at(-1)?.[3];
+      return id
+        ? [
+            first(id),
+            {
+              ...persisted("newer-request"),
+              bookkeeping_ready: !newerBlocked,
+              exceptions: newerBlocked ? ["source_projection_changed"] : [],
+            },
+          ]
+        : [];
+    });
+    const user = show();
+    await screen.findByRole("option", { name: "Synthetic broker" });
+    await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
+    await user.upload(
+      screen.getByLabelText("Оригинальный XML MyBroker"),
+      new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+    await screen.findByRole("button", { name: "Сформировать черновик" });
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
+    await screen.findByText(/Сохранённый источник месяца/);
+    expect(screen.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+    expect(
+      screen.queryByText(/Брокерский компонент готов к общей проверке/),
+    ).not.toBeInTheDocument();
+  },
+);

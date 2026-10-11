@@ -257,15 +257,24 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       if (active.current) setBusy(false);
     }
   }
+  const currentBatches = batches.data ?? [];
   const saved = Array.from(
-    new Map(
-      [
-        ...(batches.data ?? []),
-        ...(readback
-          ? [batches.data?.find((batch) => batch.request_id === readback.request_id) ?? readback]
-          : []),
-      ].map((batch) => [batch.account_id, batch]),
-    ).values(),
+    [
+      ...(readback && !currentBatches.some((batch) => batch.request_id === readback.request_id)
+        ? [readback]
+        : []),
+      ...currentBatches,
+    ]
+      .reduce((accounts, batch) => {
+        const prior = accounts.get(batch.account_id);
+        accounts.set(batch.account_id, {
+          ...batch,
+          bookkeeping_ready: batch.bookkeeping_ready && (prior?.bookkeeping_ready ?? true),
+          exceptions: [...new Set([...(prior?.exceptions ?? []), ...batch.exceptions])],
+        });
+        return accounts;
+      }, new Map<number, BrokerMonthReadback>())
+      .values(),
   );
   return (
     <Panel title="Месяц из MyBroker" label="Исходный отчёт">

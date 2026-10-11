@@ -596,6 +596,25 @@ def test_broker_month_fractional_stock_is_a_preview_conflict(database):
         assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
 
 
+def test_broker_month_inexact_sqlite_bond_quantity_is_rejected_before_apply(database):
+    intent = _broker_month_setup(database, bond=True)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(broker_month_xml(bond=True))
+    bond = root.find(".//{MyBroker}Details[@ISIN1='RU000A000001']")
+    for field in ("income_rest", "real_rest", "forward_rest"):
+        bond.set(field, "999999999999.999999")
+    xml = ET.tostring(root, encoding="utf-8")
+    plan = _broker_month_preview(client, intent, xml)
+    assert not plan["can_apply"]
+    assert "quantity_precision_unsupported" in plan["conflicts"]
+    result = _broker_month_apply(client, intent, plan, xml)
+    assert result.status_code == 409, result.text
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 0
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 0
+
+
 def test_broker_month_close_refreshes_loaded_financial_facts_after_reservation(database):
     from hermes_finance.services.reporting_months import close_reporting_month
 

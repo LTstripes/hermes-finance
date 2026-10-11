@@ -33,7 +33,11 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import executed_trades, mybroker_identity, mybroker_import
 from hermes_finance.services.mybroker_dispositions import effective_bindings, resolve
-from hermes_finance.services.source_native import NATIVE_SOURCE, stage_native_position
+from hermes_finance.services.source_native import (
+    NATIVE_SOURCE,
+    native_quantity_representable,
+    stage_native_position,
+)
 from hermes_finance.statement_import.mybroker import (
     MyBrokerError,
     canonical,
@@ -277,6 +281,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
             or (proposal["instrument_type"] == "stock" and quantity != quantity.to_integral_value())
             or quantity > Decimal("999999999999.999999")
             or quantity.normalize().as_tuple().exponent < -6
+            or not native_quantity_representable(session, quantity)
         ):
             conflicts.add("quantity_precision_unsupported")
         if value is None or (quantity == 0 and value != 0):
