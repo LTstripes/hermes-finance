@@ -26,6 +26,17 @@ class Binding(BaseModel):
     hermes_id: int = Field(gt=0)
 
 
+class IdentityAccountBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    identity: str = Field(min_length=1, max_length=128)
+    hermes_id: int = Field(gt=0, strict=True)
+
+
+class IdentityIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    account_bindings: list[IdentityAccountBinding] = Field(default_factory=list, max_length=10000)
+
+
 class SkipReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     skipped_isins: list[str] = Field(default_factory=list, max_length=10000)
@@ -134,6 +145,29 @@ async def apply(
         )
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
+
+
+@router.post("/identity-preview")
+async def identity_preview(
+    file: UploadFile = File(...),
+    intent: str = Form("{}"),
+    session: Session = Depends(session_for_request),
+):
+    from hermes_finance.services.mybroker_identity import preview_identity
+
+    try:
+        requested = IdentityIntent.model_validate_json(intent)
+    except ValidationError:
+        raise HTTPException(422, "identity_intent_invalid") from None
+    try:
+        return preview_identity(
+            session,
+            document=await _bytes(file),
+            filename=file.filename or "",
+            account_bindings=[b.model_dump() for b in requested.account_bindings],
+        )
+    except MyBrokerError as error:
+        raise HTTPException(422, str(error)) from None
 
 
 @router.get("/lineage")
