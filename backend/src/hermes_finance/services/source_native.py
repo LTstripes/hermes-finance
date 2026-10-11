@@ -10,7 +10,7 @@ import re
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import literal, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import RubleAmount
@@ -27,6 +27,12 @@ from hermes_finance.services.positions import _require_instrument as _instrument
 
 NATIVE_SOURCE = "broker_statement_native"
 NET_BASIS = "broker_statement_net_v1"
+
+
+def native_quantity_representable(session: Session, quantity: Decimal) -> bool:
+    """Zero-write probe through the same Numeric bind/read processors as storage."""
+    quantity_type = PositionSnapshot.__table__.c.quantity.type
+    return session.scalar(select(literal(quantity, type_=quantity_type))) == quantity
 
 
 def _amount(value: RubleAmount) -> int:

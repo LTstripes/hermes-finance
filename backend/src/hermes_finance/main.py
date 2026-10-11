@@ -14,6 +14,7 @@ from hermes_finance.api.backups import router as backups_router
 from hermes_finance.api.broker_identity_mappings import (
     router as broker_identity_mappings_router,
 )
+from hermes_finance.api.broker_months import router as broker_months_router
 from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
 from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.cash import router as cash_router
@@ -164,6 +165,7 @@ def create_app(
     application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(mybroker_import_router)
+    application.include_router(broker_months_router)
     application.include_router(historical_endpoints_router)
     application.include_router(historical_owner_flows_router)
     application.include_router(historical_portfolio_flows_router)

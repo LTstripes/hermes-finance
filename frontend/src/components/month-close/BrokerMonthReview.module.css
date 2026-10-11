@@ -1,0 +1,49 @@
+.stack {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stack > button {
+  justify-self: start;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  max-width: 640px;
+}
+
+.field select,
+.field input {
+  border: 1px solid #cad5df;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+  padding: 9px 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.field :focus-visible,
+.review input:focus-visible {
+  outline: 3px solid #527da8;
+  outline-offset: 2px;
+}
+
+.review {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.exceptions {
+  border: 1px solid #e3c790;
+  border-radius: 8px;
+  background: #fff9ef;
+  padding: 12px;
+}

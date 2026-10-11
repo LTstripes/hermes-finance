@@ -1,7 +1,7 @@
 from calendar import monthrange
 from datetime import date
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,16 +21,21 @@ CLOSE_SNAPSHOT_DATE_REQUIRED_CODE = "snapshot_date_required"
 CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE = "snapshot_date is required before closing a reporting month"
 
 
-def close_hard_guards(reporting_month: ReportingMonth) -> tuple[tuple[str, str], ...]:
+def close_hard_guards(
+    reporting_month: ReportingMonth, session: Session | None = None
+) -> tuple[tuple[str, str], ...]:
     """Return ``(code, message)`` pairs that the authoritative close already rejects.
 
-    Close has no financial-data completeness gate. The HTTP close path only
-    rejects a missing snapshot date after the month has been loaded. Do not
-    invent additional hard blockers here.
+    Legacy accounts retain advisory completeness. Only explicitly source-owned
+    broker components require live source readiness (#773 Owner decision).
     """
     snapshot_date = getattr(reporting_month, "snapshot_date", None)
     if snapshot_date is None:
         return ((CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE),)
+    if session is not None:
+        from hermes_finance.services.broker_months import broker_month_close_blockers
+
+        return broker_month_close_blockers(session, reporting_month.id)
     return ()
 
 
@@ -253,9 +258,25 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
 
 
 def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
-    reporting_month = get_reporting_month(session, month_id)
-    reporting_month.status = ReportingMonthStatus.CLOSED.value
-    session.commit()
+    try:
+        # Same writer reservation as child edits and source batch Apply. No
+        # source/mapping/financial mutation can commit between recheck and Close.
+        session.execute(
+            text("UPDATE reporting_months SET status = status WHERE id = :id"), {"id": month_id}
+        )
+        reporting_month = get_reporting_month(session, month_id)
+        session.refresh(reporting_month)
+        if reporting_month.status == ReportingMonthStatus.CLOSED.value:
+            session.rollback()
+            return get_reporting_month(session, month_id)
+        blockers = close_hard_guards(reporting_month, session)
+        if blockers:
+            raise ValueError(blockers[0][1])
+        reporting_month.status = ReportingMonthStatus.CLOSED.value
+        session.commit()
+    except BaseException:
+        session.rollback()
+        raise
     session.refresh(reporting_month)
     return reporting_month
 

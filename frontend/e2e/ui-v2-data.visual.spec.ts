@@ -70,6 +70,12 @@ async function installDataApi(page: Page) {
       json = makeUiV2ProviderCapabilities();
     } else if (url.pathname === "/api/months/12/close-workflow") {
       json = makeUiV2Workflow();
+    } else if (
+      request.method() === "GET" &&
+      url.pathname === "/api/broker-months" &&
+      url.search === "?reporting_month_id=12"
+    ) {
+      json = [];
     } else if (/^\/api\/instruments\/\d+\/market-mapping$/.test(url.pathname)) {
       const instrumentId = Number(url.pathname.split("/")[3]);
       json = {
@@ -282,7 +288,18 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-navigation-desktop");
-  await page.getByRole("link", { name: "Открыть закрытие месяца →" }).press("Enter");
+  await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "GET" &&
+        url.pathname === "/api/broker-months" &&
+        url.search === "?reporting_month_id=12" &&
+        response.status() === 200
+      );
+    }),
+    page.getByRole("link", { name: "Открыть закрытие месяца →" }).press("Enter"),
+  ]);
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=readiness$/);
   await expect(page.getByRole("heading", { name: /Закрытие месяца/ })).toBeVisible();
   expect(evidence.posts).toEqual([]);

@@ -11,6 +11,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -50,7 +51,13 @@ from hermes_finance.statement_import.mybroker import (
 
 
 def _imports(session: Session) -> list[MyBrokerImport]:
-    return list(session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id)))
+    return list(
+        session.scalars(
+            select(MyBrokerImport)
+            .order_by(MyBrokerImport.id)
+            .execution_options(populate_existing=True)
+        )
+    )
 
 
 # The parser's core is immutable. These source fields may be absent in a
@@ -240,6 +247,7 @@ def _state(session: Session) -> tuple[dict, list[BrokerIdentityMapping]]:
             select(BrokerIdentityMapping)
             .where(BrokerIdentityMapping.provider == PROVIDER)
             .order_by(BrokerIdentityMapping.id)
+            .execution_options(populate_existing=True)
         )
     )
     # Bind reconciliation to the authoritative facts and all mapping lifecycle revisions.
@@ -401,8 +409,23 @@ def _prepare(
     document: dict,
     skipped_isins: tuple[str, ...] = (),
     owner_reviewed: bool = False,
+    *,
+    planned_bindings: list[dict] | None = None,
 ) -> dict:
     state, registry = _state(session)
+    # Only the original-bound identity planner supplies these zero-write
+    # proposals. The batch writer stages and revalidates the real mappings.
+    if planned_bindings is not None:
+        registry = [
+            SimpleNamespace(
+                id=b["mapping_id"],
+                status="effective",
+                subject_kind=b["kind"],
+                provider_identity=b["identity"],
+                hermes_target_id=b["hermes_id"],
+            )
+            for b in planned_bindings
+        ]
     accounts = sorted(
         {document["filename_account"]}
         | {p["source_account"] for p in document["positions"]}
@@ -446,7 +469,11 @@ def _prepare(
             if len(matches) == 1:
                 mapping = matches[0]
                 if kind == "instrument":
-                    target = session.get(Instrument, mapping.hermes_target_id)
+                    target = (
+                        session.get(Instrument, mapping.hermes_target_id)
+                        if mapping.hermes_target_id is not None
+                        else None
+                    )
                     if target is None or target.isin not in (None, identity):
                         missing.append({"kind": kind, "identity": identity})
                         continue
@@ -671,6 +698,28 @@ def read_mybroker_import(session: Session, import_id: int) -> dict:
             "coverage_state": "unknown",
             "confirmation_digest": row.confirmation_digest,
         }
+
+
+def stage_mybroker(session: Session, parsed: dict) -> MyBrokerImport:
+    """Accept S1 inside an already reserved batch transaction, never commit."""
+    preview = _prepare(session, parsed)
+    if not preview["can_apply"]:
+        raise MyBrokerError("reconciliation_required")
+    if preview["already_imported"] is not None:
+        return session.get(MyBrokerImport, preview["already_imported"])
+    row = MyBrokerImport(
+        document_sha256=parsed["document_sha256"],
+        covered_from=date.fromisoformat(parsed["covered_from"]),
+        covered_to=date.fromisoformat(parsed["covered_to"]),
+        parser_version=PARSER,
+        confirmation_digest=preview["confirmation_digest"],
+        normalized_json=canonical(parsed),
+        mappings_json=canonical(preview["mappings"]),
+        accepted_at=datetime.now(UTC),
+    )
+    session.add(row)
+    session.flush()
+    return row
 
 
 def apply_mybroker(

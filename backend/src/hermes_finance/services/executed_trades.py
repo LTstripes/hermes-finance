@@ -50,7 +50,9 @@ def _minor(value: str) -> int:
 
 
 def _rows(session: Session, model) -> list:
-    return list(session.scalars(select(model).order_by(model.id)))
+    return list(
+        session.scalars(select(model).order_by(model.id).execution_options(populate_existing=True))
+    )
 
 
 def _context(session: Session) -> dict:
@@ -101,6 +103,54 @@ def _latest(context: dict, trade_id: int) -> ExecutedTradeRevision | None:
         key=lambda r: r.revision,
         default=None,
     )
+
+
+def settlement_principal_reasons(core: dict, settlements: list[dict]) -> list[str]:
+    """Accepted native principal check, shared by S2 and zero-write S2b review."""
+    if (
+        len(settlements) == 1
+        and Decimal(settlements[0]["amount"]).copy_abs() != Decimal(core["trade_amount"]).copy_abs()
+    ):
+        return ["settlement_principal_unresolved"]
+    return []
+
+
+def source_bookkeeping_readiness(
+    source: dict, leg_groups: dict, *, repeated_money_rows=False, repeated_settlement=False
+):
+    """Native S2 readiness shared with zero-write review of a new source."""
+    actual = source["state"] == "settled"
+    reasons = []
+    if not actual:
+        reasons.append("pending_not_cash")
+    if not actual or not source["settlement_date"] or not source["depo_settlement_date"]:
+        reasons.append("actual_settlement_missing")
+    settlements = leg_groups.get("settlement", [])
+    if len(settlements) != 1 or repeated_settlement:
+        reasons.append("settlement_cash_missing_or_ambiguous")
+    else:
+        leg = settlements[0]
+        qty, amount = Decimal(source["core"]["quantity"]), Decimal(leg["amount"])
+        if not qty or not amount or (qty > 0) == (amount > 0):
+            reasons.append("trade_cash_direction_conflict")
+        if (
+            leg["currency"] != source["core"]["currency"]
+            or leg["date"] != source["settlement_date"]
+        ):
+            reasons.append("settlement_cash_conflict")
+        reasons.extend(settlement_principal_reasons(source["core"], settlements))
+    commission = source["bank_commission"] if actual else None
+    zero_fee = (
+        commission is not None and Decimal(commission) == 0 and not leg_groups.get("commission", [])
+    )
+    return {
+        "settlement": sorted(set(reasons)),
+        "commission": [] if zero_fee else ["commission_basis_unresolved"],
+        "unsupported": sorted(
+            set(source["blockers"]) & {"currency_unsupported", "repo_semantics_unsupported"}
+        ),
+        "cash_ownership": ["cash_leg_multiplicity_unresolved"] if repeated_money_rows else [],
+    }
 
 
 def _candidate(session: Session, context: dict, identity: str) -> dict:
@@ -229,29 +279,9 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 "observed_multiplicity": multiplicity,
             }
         )
-    settlement_reasons = []
-    if not actual:
-        settlement_reasons.append("pending_not_cash")
-    if not actual or not source["settlement_date"] or not source["depo_settlement_date"]:
-        settlement_reasons.append("actual_settlement_missing")
     settlements = leg_groups["settlement"]
-    if len(settlements) != 1 or any(
-        leg["role"] == "settlement" and leg["observed_multiplicity"] > 1 for leg in legs
-    ):
-        settlement_reasons.append("settlement_cash_missing_or_ambiguous")
-        if len(settlements) > 1:
-            conflicts.add("trade_material_conflict")
-    else:
-        leg = settlements[0]
-        qty, amount = Decimal(source["core"]["quantity"]), Decimal(leg["amount"])
-        if not qty or not amount or (qty > 0) == (amount > 0):
-            settlement_reasons.append("trade_cash_direction_conflict")
-        if leg["currency"] != source["core"]["currency"] or (
-            leg["date"] != source["settlement_date"]
-        ):
-            settlement_reasons.append("settlement_cash_conflict")
-        if amount.copy_abs() != Decimal(source["core"]["trade_amount"]).copy_abs():
-            settlement_reasons.append("settlement_principal_unresolved")
+    if len(settlements) > 1:
+        conflicts.add("trade_material_conflict")
     commission = source["bank_commission"] if actual else None
     fee_basis = (
         "zero"
@@ -283,14 +313,16 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         if source["core"]["currency"] == "RUB"
         else None,
         "readiness": {
-            "settlement": sorted(set(settlement_reasons)),
-            "commission": [] if fee_basis == "zero" else ["commission_basis_unresolved"],
+            **source_bookkeeping_readiness(
+                source,
+                leg_groups,
+                repeated_money_rows=repeated_money_rows,
+                repeated_settlement=any(
+                    leg["role"] == "settlement" and leg["observed_multiplicity"] > 1 for leg in legs
+                ),
+            ),
             "c1": ["event_c1_missing"],
             "coverage": ["coverage_unknown"],
-            "unsupported": sorted(
-                set(source["blockers"]) & {"currency_unsupported", "repo_semantics_unsupported"}
-            ),
-            "cash_ownership": ["cash_leg_multiplicity_unresolved"] if repeated_money_rows else [],
         },
     }
     if latest:
@@ -442,6 +474,81 @@ def read_executed_trades(session: Session, trade_ids: list[int] | None = None) -
         }
 
 
+def stage_executed_trades(
+    session: Session, plan: dict, *, confirmation_digest: str, request_id: str
+) -> list[int]:
+    """Stage the existing S2 acceptance in the caller's writer transaction."""
+    if not plan["can_apply"]:
+        raise MyBrokerError("reconciliation_required")
+    identities = [c["source_identity"] for c in plan["candidates"]]
+    fingerprint = digest({"identities": sorted(identities), "confirmation": confirmation_digest})
+    trade_ids = []
+    now = datetime.now(UTC)
+    for candidate in plan["candidates"]:
+        trade = session.get(ExecutedTrade, candidate["trade_id"]) if candidate["trade_id"] else None
+        if trade is None:
+            binding = {b["kind"]: b["hermes_id"] for b in candidate["bindings"]}
+            trade = ExecutedTrade(
+                provider=PROVIDER,
+                source_account=candidate["core"]["source_account"],
+                primary_id=candidate["ids"][0],
+                secondary_id=candidate["ids"][1],
+                source_identity=candidate["source_identity"],
+                account_id=binding["account"],
+                instrument_id=binding["instrument"],
+                core_json=canonical(candidate["core"]),
+                bindings_json=canonical(candidate["bindings"]),
+                accepted_at=now,
+            )
+            session.add(trade)
+            session.flush()
+        trade_ids.append(trade.id)
+        if candidate["action"] != "noop":
+            evidence = candidate["evidence"]
+            session.add(
+                ExecutedTradeRevision(
+                    trade_id=trade.id,
+                    revision=(candidate["revision"] or 0) + 1,
+                    lifecycle=evidence["lifecycle"],
+                    acceptance_state="active",
+                    fee_basis=evidence["fee_basis"],
+                    event_c1_json=None,
+                    evidence_json=canonical(evidence),
+                    material_fingerprint=candidate["material_fingerprint"],
+                    confirmation_digest=confirmation_digest,
+                    accepted_at=now,
+                )
+            )
+            for occurrence in evidence["occurrences"]:
+                exists = session.scalar(
+                    select(ExecutedTradeOccurrence.id).where(
+                        ExecutedTradeOccurrence.import_id == occurrence["import_id"],
+                        ExecutedTradeOccurrence.section == occurrence["section"],
+                        ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
+                    )
+                )
+                if exists is None:
+                    session.add(
+                        ExecutedTradeOccurrence(
+                            trade_id=trade.id,
+                            import_id=occurrence["import_id"],
+                            section=occurrence["section"],
+                            ordinal=occurrence["ordinal"],
+                            source_fingerprint=occurrence["source_fingerprint"],
+                        )
+                    )
+    session.add(
+        ExecutedTradeApply(
+            request_id=request_id,
+            request_fingerprint=fingerprint,
+            trade_ids_json=canonical(trade_ids),
+            accepted_at=now,
+        )
+    )
+    session.flush()
+    return trade_ids
+
+
 def apply_executed_trades(
     session: Session, *, identities: list[str], confirmation_digest: str, request_id: str
 ) -> dict:
@@ -470,72 +577,8 @@ def apply_executed_trades(
                 raise MyBrokerError("preview_stale")
             if not plan["can_apply"]:
                 raise MyBrokerError("reconciliation_required")
-            trade_ids = []
-            now = datetime.now(UTC)
-            for candidate in plan["candidates"]:
-                trade = (
-                    session.get(ExecutedTrade, candidate["trade_id"])
-                    if candidate["trade_id"]
-                    else None
-                )
-                if trade is None:
-                    binding = {b["kind"]: b["hermes_id"] for b in candidate["bindings"]}
-                    trade = ExecutedTrade(
-                        provider=PROVIDER,
-                        source_account=candidate["core"]["source_account"],
-                        primary_id=candidate["ids"][0],
-                        secondary_id=candidate["ids"][1],
-                        source_identity=candidate["source_identity"],
-                        account_id=binding["account"],
-                        instrument_id=binding["instrument"],
-                        core_json=canonical(candidate["core"]),
-                        bindings_json=canonical(candidate["bindings"]),
-                        accepted_at=now,
-                    )
-                    session.add(trade)
-                    session.flush()
-                trade_ids.append(trade.id)
-                if candidate["action"] != "noop":
-                    evidence = candidate["evidence"]
-                    session.add(
-                        ExecutedTradeRevision(
-                            trade_id=trade.id,
-                            revision=(candidate["revision"] or 0) + 1,
-                            lifecycle=evidence["lifecycle"],
-                            acceptance_state="active",
-                            fee_basis=evidence["fee_basis"],
-                            event_c1_json=None,
-                            evidence_json=canonical(evidence),
-                            material_fingerprint=candidate["material_fingerprint"],
-                            confirmation_digest=confirmation_digest,
-                            accepted_at=now,
-                        )
-                    )
-                    for occurrence in evidence["occurrences"]:
-                        exists = session.scalar(
-                            select(ExecutedTradeOccurrence.id).where(
-                                ExecutedTradeOccurrence.import_id == occurrence["import_id"],
-                                ExecutedTradeOccurrence.section == occurrence["section"],
-                                ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
-                            )
-                        )
-                        if exists is None:
-                            session.add(
-                                ExecutedTradeOccurrence(
-                                    trade_id=trade.id,
-                                    import_id=occurrence["import_id"],
-                                    section=occurrence["section"],
-                                    ordinal=occurrence["ordinal"],
-                                    source_fingerprint=occurrence["source_fingerprint"],
-                                )
-                            )
-            session.add(
-                ExecutedTradeApply(
-                    request_id=request_id,
-                    request_fingerprint=fingerprint,
-                    trade_ids_json=canonical(trade_ids),
-                    accepted_at=now,
-                )
+            trade_ids = stage_executed_trades(
+                session, plan, confirmation_digest=confirmation_digest, request_id=request_id
             )
         session.commit()
     except Exception:

@@ -300,6 +300,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --config=playwright.monthly-close.config.ts
 
+      - name: Run source-first broker-month Preview DRAFT readback and Close
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --config=playwright.broker-month.config.ts
+
       - name: Upload synthetic real-backend journey evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -309,6 +315,7 @@ jobs:
             ${{ runner.temp }}/hermes-finance-playwright-results
             ${{ runner.temp }}/hermes-statement-playwright-results
             ${{ runner.temp }}/hermes-571-playwright
+            ${{ runner.temp }}/hermes-broker-month-playwright
           if-no-files-found: warn
 
   visual-audit-paths:

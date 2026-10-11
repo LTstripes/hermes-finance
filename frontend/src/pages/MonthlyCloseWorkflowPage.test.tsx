@@ -7,6 +7,11 @@ import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { formatMoney } from "../lib/format";
 import { MonthlyCloseWorkflowPage } from "./MonthlyCloseWorkflowPage";
 
+// The source panel has its own request/readback tests and real API journey.
+// Keep lifecycle fixtures scoped to their existing workflow endpoints.
+vi.mock("../api/accounts", () => ({ listAccounts: async () => [] }));
+vi.mock("../api/brokerMonths", () => ({ listBrokerMonths: async () => [] }));
+
 function money(amount: string) {
   return { amount, currency: "RUB" };
 }

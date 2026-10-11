@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
+import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import { routeForGuidedAction } from "../components/month-close/navigation";
 import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
@@ -245,6 +246,11 @@ export function MonthlyCloseWorkflowPage() {
         </Panel>
       )}
 
+      <BrokerMonthReview
+        key={workflow.month.id}
+        monthId={workflow.month.id}
+        closed={workflow.month.status === "closed"}
+      />
       <FinalMonthReview review={workflow.final_review} />
       {workflow.month.status === "closed" && workflow.outlook ? (
         <NextMonthOutlook outlook={workflow.outlook} />
