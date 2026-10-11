@@ -52,6 +52,42 @@ authoritative trade identity.
 Money rows linked to incomplete IDs retain their visible blocker and attach to
 no identity-less trade.
 
+## Native Money linkage compatibility (#788)
+
+The exact full strings `Расчеты по сделке <numeric-primary-id>` and
+`Комиссия по сделке <numeric-primary-id>` are accepted from the `oper_type`
+attribute of the Money `oper_type` node. The accepted `comment` attribute
+variant remains supported. IDs contain 1–128 ASCII digits. Neither field is
+trimmed, searched for substrings, translated or used to invent a secondary ID.
+When both fields match, they must agree on role and ID; otherwise the complete
+document refuses parsing with `money_linkage_conflict`, including legacy rereads.
+Matching both fields still yields one observation per original amount leaf.
+Other Money operations keep their existing classification and blockers.
+
+New documents with native linkage record the bounded optional
+`money_linkage_version=mybroker-money-linkage-v1` extension under the unchanged
+`mybroker-s1-v2` identity. Comment-only documents retain their frozen normalized
+shape. The extension participates in confirmation material; row ordinals,
+source account, posted date, currency, exact signed amount and both trade-native
+IDs retain their original authority. Native cash requires a unique settled
+trade; pending-only linkage stays unlinked with `money_link_not_settled`.
+Existing account/ID ambiguity, direction, date/currency and commission-basis
+checks still apply. Link recognition is not financial fee/NKD acceptance.
+
+For exact bytes already accepted as S1 v2, source Preview/replay, broker-month
+planning and original-bound Money reads select the grammar recorded in that
+immutable receipt. An absent extension means the old comment-only grammar.
+Thus old oper_type-only rows remain unsupported; saved JSON, fingerprints,
+confirmation digests and receipts are never upgraded or rewritten. Unknown
+extension versions refuse parsing with `money_linkage_version_unsupported`.
+Fresh reports can provide new native evidence through normal overlap guards;
+they never erase an older unsupported occurrence or grant complete coverage.
+There is no migration, reimport or financial write in this parser repair.
+
+This bounded fix does not waive unparsed Money/control nodes, Transfers/UFSR,
+separate stock-fee proof or any remaining #787 Gate 0 blocker. Original Owner-local
+read-only recheck and any subsequently authorized scratch work remain separate.
+
 The [#736 compatibility repair](https://github.com/LTstripes/hermes-finance/issues/736)
 also accepts the sanitized completed REPO observation shape at
 `Trades/Report/Tablix2/Details_Collection/Details`: exactly one `trade_no`

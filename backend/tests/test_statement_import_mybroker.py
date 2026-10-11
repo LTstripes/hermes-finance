@@ -42,6 +42,243 @@ ACCOUNT = "1234567-000"
 ISIN = "RU000A000000"
 
 
+def native_money_xml(**kwargs):
+    """Fabricated original family: native settlement/fee narrative in oper_type."""
+    from copy import deepcopy
+
+    root = ET.fromstring(fixture(**kwargs))
+    rn = root.find(".//{MyBroker}rn")
+    op = rn.find("{MyBroker}oper_type")
+    comment = op.find("{MyBroker}comment")
+    op.set("oper_type", comment.attrib.pop("comment"))
+    fee = deepcopy(rn)
+    fee.find("{MyBroker}oper_type").set("oper_type", "Комиссия по сделке 10000000001")
+    fee.find(".//{MyBroker}p_code[@volume]").set("volume", "-10.00")
+    root.find(".//{MyBroker}rn_Collection").append(fee)
+    return ET.tostring(root, encoding="utf-8")
+
+
+def test_original_oper_type_settlement_and_separate_fee():
+    parsed = parse_mybroker(native_money_xml(), FILENAME)
+    assert [r["kind"] for r in parsed["money"]] == ["settlement", "commission"]
+    assert [r["primary_id"] for r in parsed["money"]] == ["10000000001"] * 2
+    assert [r["amount"] for r in parsed["money"]] == ["-1000", "-10"]
+    assert [r["ordinal"] for r in parsed["money"]] == [0, 1]
+    assert parsed["trades"][0]["ids"] == ["10000000001", "2000000001"]
+    assert parsed["money_linkage_version"] == "mybroker-money-linkage-v1"
+    assert parsed == parse_mybroker(native_money_xml(), FILENAME)
+
+
+def test_native_each_amount_leaf_and_unknown_commission_are_retained(database):
+    from copy import deepcopy
+
+    root = ET.fromstring(native_money_xml())
+    leaf = root.find(".//{MyBroker}p_code[@volume]")
+    parent = root.find(".//{MyBroker}p_code_Collection/{MyBroker}p_code")
+    extra = deepcopy(leaf)
+    extra.set("volume", "0.00")
+    parent.append(extra)
+    root.find(".//{MyBroker}Details[@trade_no]").attrib.pop("bank_tax")
+    with database.session_factory() as session:
+        parsed = preview(session, ET.tostring(root))
+        money = parsed["document"]["money"]
+        assert [r["ordinal"] for r in money] == [0, 1, 2]
+        assert [r["amount"] for r in money] == ["-1000", "0", "-10"]
+        assert [r["kind"] for r in money] == ["settlement", "settlement", "commission"]
+        assert all(r["source_account"] == ACCOUNT and r["date"] == "2030-01-17" for r in money)
+        assert all(
+            r["currency"] == "RUB" and r["last_update"] == "2030-01-17T10:00:00" for r in money
+        )
+        assert parsed["document"]["trades"][0]["bank_commission"] is None
+        assert {"commission_missing", "settlement_cash_missing_or_ambiguous"} <= set(
+            parsed["blockers"]
+        )
+
+
+def test_unknown_native_linkage_version_refuses_parsing():
+    with pytest.raises(MyBrokerError, match="^money_linkage_version_unsupported$"):
+        parse_mybroker(native_money_xml(), FILENAME, money_linkage_version="future")
+
+
+@pytest.mark.parametrize("comment", ["Расчеты по сделке 99", "Комиссия по сделке 10000000001"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_native_comment_id_or_kind_conflict_refuses_whole_document(comment, legacy):
+    root = ET.fromstring(native_money_xml())
+    root.find(".//{MyBroker}comment").set("comment", comment)
+    kwargs = {"money_linkage_version": None} if legacy else {}
+    with pytest.raises(MyBrokerError, match="^money_linkage_conflict$"):
+        parse_mybroker(ET.tostring(root), FILENAME, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "Расчеты по сделке",
+        "Расчеты по сделке B1",
+        "Расчеты по сделке 1x",
+        "Расчеты по сделке １",
+        "Расчеты по сделке 1\n",
+        " Расчеты по сделке 1",
+        "Комиссия по сделке " + "1" * 129,
+        "НКД по сделке",
+        "Перевод",
+    ],
+)
+def test_native_linkage_is_only_the_exact_bounded_grammar(operation):
+    root = ET.fromstring(native_money_xml())
+    root.find(".//{MyBroker}oper_type").set("oper_type", operation)
+    result = parse_mybroker(ET.tostring(root), FILENAME)
+    assert result["money"][0]["kind"] == "unsupported"
+    assert result["money"][0]["primary_id"] is None
+
+
+def test_agreeing_native_and_comment_are_one_occurrence(database):
+    root = ET.fromstring(native_money_xml())
+    op = root.find(".//{MyBroker}oper_type")
+    op.find("{MyBroker}comment").set("comment", op.get("oper_type"))
+    raw = ET.tostring(root)
+    with database.session_factory() as session:
+        reviewed = preview(session, raw)
+        assert len(reviewed["document"]["money"]) == 2
+        assert len(reviewed["document"]["trades"][0]["cash_legs"]) == 2
+        assert "commission_basis_unresolved" in reviewed["blockers"]
+        assert reviewed["coverage_state"] == "unknown"
+        assert apply(session, raw, reviewed)["document"] == reviewed["document"]
+
+
+@pytest.mark.parametrize(
+    "change,reason",
+    [
+        ("sign", "trade_cash_direction_conflict"),
+        ("account", "money_link_missing"),
+        ("currency", "settlement_cash_conflict"),
+        ("date", "settlement_cash_conflict"),
+        ("missing_id", "money_link_incomplete_identity"),
+        ("ambiguous", "money_link_ambiguous"),
+    ],
+)
+def test_native_cash_cannot_bypass_existing_exact_trade_proof(database, change, reason):
+    from copy import deepcopy
+
+    root = ET.fromstring(native_money_xml(missing_id=change == "missing_id"))
+    if change == "sign":
+        root.find(".//{MyBroker}p_code[@volume]").set("volume", "1000")
+    elif change == "account":
+        root.find(".//{MyBroker}Textbox11").set("acc_code", "unmapped-synthetic-account")
+    elif change == "currency":
+        root.find(".//{MyBroker}p_code[@volume]").set("p_code", "USD")
+    elif change == "date":
+        root.find(".//{MyBroker}settlement_date").set("settlement_date", "2030-01-18T00:00:00")
+    elif change == "ambiguous":
+        trade = deepcopy(root.find(".//{MyBroker}Details[@trade_no]"))
+        trade.set("trade_no", "10000000001\n2000000002")
+        root.find(".//{MyBroker}Tablix2/{MyBroker}Details_Collection").append(trade)
+    with database.session_factory() as session:
+        reviewed = preview(session, ET.tostring(root))
+        assert reason in reviewed["blockers"]
+        assert not reviewed["document"]["trades"][0]["cash_available"]
+        if change == "ambiguous":
+            assert not reviewed["can_apply"]
+            assert all(r["trade_identity"] is None for r in reviewed["document"]["money"])
+
+
+def test_historical_native_unsupported_receipt_rereads_without_upgrade(database):
+    from hermes_finance.persistence import Account
+    from hermes_finance.services.mybroker_import import _prepare, stage_mybroker
+    from hermes_finance.services.mybroker_money_candidates import read_money_candidates
+    from hermes_finance.statement_import.mybroker import canonical
+
+    raw = native_money_xml()
+    legacy = parse_mybroker(raw, FILENAME, money_linkage_version=None)
+    assert [r["kind"] for r in legacy["money"]] == ["unsupported"] * 2
+    with database.session_factory() as session:
+        row = stage_mybroker(session, legacy)
+        session.commit()
+        frozen = (row.normalized_json, row.confirmation_digest, row.parser_version)
+        fingerprints = [digest(r) for r in json.loads(row.normalized_json)["money"]]
+        reviewed = preview(session, raw)
+        assert "money_linkage_version" not in reviewed["document"]
+        assert canonical(reviewed["document"]) == frozen[0]
+        assert apply(session, raw, reviewed)["duplicate"]
+        inventory = read_money_candidates(
+            session,
+            import_id=row.id,
+            document=raw,
+            filename=FILENAME,
+            account_id=session.scalar(select(Account.id)),
+        )
+        assert [o.s1_kind for o in inventory.observations] == ["unsupported"] * 2
+        assert [o.occurrence.row_fingerprint for o in inventory.observations] == fingerprints
+        assert "money_semantics_unsupported" in inventory.exceptions
+        assert (row.normalized_json, row.confirmation_digest, row.parser_version) == frozen
+        assert read_mybroker_import(session, row.id)["document"] == json.loads(frozen[0])
+        assert _prepare(session, json.loads(frozen[0]))["coverage_state"] == "unknown"
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_native_and_legacy_overlap_share_one_trade_without_financial_writes(database, reverse):
+    from hermes_finance.persistence import CashBalance, ExternalFlow
+
+    root = ET.fromstring(native_money_xml())
+    for op in root.findall(".//{MyBroker}oper_type"):
+        op.find("{MyBroker}comment").set("comment", op.get("oper_type"))
+        op.set("oper_type", "Synthetic")
+    old, new = ET.tostring(root), native_money_xml()
+    docs = [new, old] if reverse else [old, new]
+    with database.session_factory() as session:
+        for raw in docs:
+            reviewed = preview(session, raw)
+            assert reviewed["can_apply"]
+            apply(session, raw, reviewed)
+            assert apply(session, raw, preview(session, raw))["duplicate"]
+        lineage = read_mybroker_lineage(session)
+        assert len(lineage["trades"]) == 1
+        assert len(lineage["trades"][0]["cash_legs"]) == 2
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 2
+        for model in (CashBalance, ExternalFlow, InvestmentCashFlow, ReportingMonth):
+            assert session.scalar(select(func.count()).select_from(model)) == 0
+
+
+def test_native_money_does_not_attach_to_pending_trade(database):
+    root = ET.fromstring(fixture(pending=True))
+    money = ET.fromstring(native_money_xml()).find(
+        "{MyBroker}Trades2/{MyBroker}Report/{MyBroker}Tablix1"
+    )
+    root.find("{MyBroker}Trades2/{MyBroker}Report").append(money)
+    with database.session_factory() as session:
+        reviewed = preview(session, ET.tostring(root))
+        assert "money_link_not_settled" in reviewed["blockers"]
+        assert all(r["trade_identity"] is None for r in reviewed["document"]["money"])
+        assert reviewed["document"]["trades"][0]["cash_legs"] == []
+
+
+def test_native_http_stale_and_conflict_preserve_zero_writes(database):
+    client = TestClient(create_app(database=database))
+    raw = native_money_xml()
+    reviewed = client.post("/api/mybroker-import/preview", files={"file": (FILENAME, raw)}).json()
+    confirmation = {
+        "confirmation_digest": reviewed["confirmation_digest"],
+        "covered_from": reviewed["document"]["covered_from"],
+        "covered_to": reviewed["document"]["covered_to"],
+        "mappings": reviewed["mappings"],
+    }
+    changed = raw.replace(b'volume="-10.00"', b'volume="-11.00"')
+    stale = client.post(
+        "/api/mybroker-import/apply",
+        files={"file": (FILENAME, changed)},
+        data={"confirmation": json.dumps(confirmation)},
+    )
+    assert stale.status_code == 409 and "preview_stale" in stale.text
+    root = ET.fromstring(raw)
+    root.find(".//{MyBroker}comment").set("comment", "Расчеты по сделке 99")
+    conflict = client.post(
+        "/api/mybroker-import/preview", files={"file": (FILENAME, ET.tostring(root))}
+    )
+    assert conflict.status_code == 422 and "money_linkage_conflict" in conflict.text
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+
+
 @pytest.mark.parametrize("pair,duplicate", [(False, False), (True, False), (True, True)])
 def test_b_repo_rows_are_blocked_one_part_observations(database, pair, duplicate):
     xml = repo_fixture(pair=pair, duplicate=duplicate, mixed=True)

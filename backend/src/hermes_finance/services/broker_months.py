@@ -42,7 +42,6 @@ from hermes_finance.statement_import.mybroker import (
     MyBrokerError,
     canonical,
     digest,
-    parse_mybroker,
 )
 from hermes_finance.statement_import.mybroker_identity import parse_identity
 
@@ -241,7 +240,7 @@ def _intersecting_sources(session, document, account_id):
 
 
 def _prepare(session, *, document, filename, reporting_month_id, account_id, optional_hashes):
-    parsed = parse_mybroker(document, filename)
+    parsed = mybroker_import.parse_import_original(session, document, filename)
     evidence = parse_identity(document, filename)
     # Effective aliases are authority already; only unbound aliases are proposed.
     # These proposals are zero-write until Apply receives the exact reviewed set.
@@ -807,7 +806,10 @@ def apply_broker_month(
                 confirmation_digest=plan["identity"]["confirmation_digest"],
             )
             source = mybroker_import.stage_mybroker(
-                session, parse_mybroker(kwargs["document"], kwargs["filename"])
+                session,
+                mybroker_import.parse_import_original(
+                    session, kwargs["document"], kwargs["filename"]
+                ),
             )
             parsed = json.loads(source.normalized_json)
             identities = sorted({t["identity"] for t in parsed["trades"] if t["identity"]})

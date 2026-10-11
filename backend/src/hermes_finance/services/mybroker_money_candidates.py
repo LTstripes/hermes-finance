@@ -212,15 +212,18 @@ def _read_money_candidates(
     Original/parser/range/inventory mismatch refuses interpretation entirely.
     Missing/currently changed account links remain visible diagnostics.
     """
-    fresh = parse_mybroker(document, filename)
     with session.no_autoflush:
         source = session.get(MyBrokerImport, import_id, populate_existing=True)
         if source is None:
             raise MyBrokerError("import_not_found")
         stored = json.loads(source.normalized_json)
+        fresh = parse_mybroker(
+            document, filename, money_linkage_version=stored.get("money_linkage_version")
+        )
         if (
             stored.get("provider") != PROVIDER
             or source.parser_version != PARSER
+            or stored.get("parser") != source.parser_version
             or source.document_sha256 != fresh["document_sha256"]
             or source.covered_from.isoformat() != fresh["covered_from"]
             or source.covered_to.isoformat() != fresh["covered_to"]
