@@ -105,8 +105,21 @@ def _latest(context: dict, trade_id: int) -> ExecutedTradeRevision | None:
     )
 
 
-def settlement_principal_reasons(core: dict, settlements: list[dict]) -> list[str]:
+def settlement_principal_reasons(
+    core: dict, settlements: list[dict], *, cash_proof=None
+) -> list[str]:
     """Accepted native principal check, shared by S2 and zero-write S2b review."""
+    if cash_proof and len(settlements) == 1:
+        with localcontext() as ctx:
+            ctx.prec = 100
+            posted = Decimal(settlements[0]["amount"])
+            if cash_proof["claims"]["native_total_basis"] == "includes_paid_nkd":
+                posted += Decimal(cash_proof["nkd_leg"]["source_amount"])
+            return (
+                []
+                if -posted == Decimal(core["trade_amount"])
+                else ["settlement_principal_unresolved"]
+            )
     if (
         len(settlements) == 1
         and Decimal(settlements[0]["amount"]).copy_abs() != Decimal(core["trade_amount"]).copy_abs()
@@ -116,11 +129,19 @@ def settlement_principal_reasons(core: dict, settlements: list[dict]) -> list[st
 
 
 def source_bookkeeping_readiness(
-    source: dict, leg_groups: dict, *, repeated_money_rows=False, repeated_settlement=False
+    source: dict,
+    leg_groups: dict,
+    *,
+    repeated_money_rows=False,
+    repeated_settlement=False,
+    cash_proof=None,
 ):
     """Native S2 readiness shared with zero-write review of a new source."""
     actual = source["state"] == "settled"
     reasons = []
+    from hermes_finance.services.broker_trade_money import cash_reasons
+
+    proof_reasons = cash_reasons(source, leg_groups, cash_proof) if cash_proof else []
     if not actual:
         reasons.append("pending_not_cash")
     if not actual or not source["settlement_date"] or not source["depo_settlement_date"]:
@@ -138,14 +159,21 @@ def source_bookkeeping_readiness(
             or leg["date"] != source["settlement_date"]
         ):
             reasons.append("settlement_cash_conflict")
-        reasons.extend(settlement_principal_reasons(source["core"], settlements))
+        reasons.extend(proof_reasons)
+        reasons.extend(
+            settlement_principal_reasons(
+                source["core"], settlements, cash_proof=cash_proof if not proof_reasons else None
+            )
+        )
     commission = source["bank_commission"] if actual else None
     zero_fee = (
         commission is not None and Decimal(commission) == 0 and not leg_groups.get("commission", [])
     )
     return {
         "settlement": sorted(set(reasons)),
-        "commission": [] if zero_fee else ["commission_basis_unresolved"],
+        "commission": []
+        if zero_fee or (cash_proof and not proof_reasons)
+        else ["commission_basis_unresolved"],
         "unsupported": sorted(
             set(source["blockers"]) & {"currency_unsupported", "repo_semantics_unsupported"}
         ),
@@ -153,7 +181,12 @@ def source_bookkeeping_readiness(
     }
 
 
-def _candidate(session: Session, context: dict, identity: str) -> dict:
+def _candidate(session: Session, context: dict, identity: str, *, cash_proof=None) -> dict:
+    from hermes_finance.services.broker_trade_money import effective_proof
+
+    supplied_proof = cash_proof is not None
+    if not supplied_proof:
+        cash_proof = effective_proof(session, identity)
     source = context["projections"].get(identity)
     if source is None:
         raise MyBrokerError("source_trade_not_found")
@@ -280,6 +313,16 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             }
         )
     settlements = leg_groups["settlement"]
+    if cash_proof:
+        nkd_leg = cash_proof["nkd_leg"]
+        legs.append(nkd_leg)
+        leg_groups["paid_nkd"].append(
+            {
+                "amount": nkd_leg["source_amount"],
+                "date": nkd_leg["effective_date"],
+                "currency": nkd_leg["currency"],
+            }
+        )
     if len(settlements) > 1:
         conflicts.add("trade_material_conflict")
     commission = source["bank_commission"] if actual else None
@@ -288,6 +331,8 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
         if commission is not None and Decimal(commission) == 0 and (not leg_groups["commission"])
         else "unknown"
     )
+    if cash_proof:
+        fee_basis = "separate"
     if len(leg_groups["commission"]) > 1:
         conflicts.add("trade_material_conflict")
     # S2-A cannot accept nonzero separation/embedding or event-C1: S2-B owns
@@ -320,11 +365,14 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 repeated_settlement=any(
                     leg["role"] == "settlement" and leg["observed_multiplicity"] > 1 for leg in legs
                 ),
+                cash_proof=cash_proof,
             ),
             "c1": ["event_c1_missing"],
             "coverage": ["coverage_unknown"],
         },
     }
+    if cash_proof:
+        evidence["cash_reconciliation"] = cash_proof
     if latest:
         old = json.loads(latest.evidence_json)
         if old["lifecycle"] == "settled" and not actual:
@@ -338,7 +386,9 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
                 (leg["role"], leg["effective_date"], leg["currency"], leg["source_amount"])
                 for leg in evidence["cash_legs"]
             }
-            if not old_legs.issubset(new_legs):
+            if not (
+                old_legs - {leg for leg in old_legs if leg[0] == "paid_nkd" and supplied_proof}
+            ).issubset(new_legs):
                 conflicts.add("trade_material_conflict")
             for field in (
                 "settlement_date",
@@ -349,7 +399,12 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             ):
                 if old[field] is not None and evidence[field] != old[field]:
                     conflicts.add("trade_material_conflict")
-        if latest.event_c1_json is not None or latest.fee_basis in ("separate", "embedded"):
+        if (
+            latest.event_c1_json is not None
+            or latest.fee_basis == "embedded"
+            or (latest.fee_basis == "separate" and not old.get("cash_reconciliation"))
+            or (latest.fee_basis == "separate" and not cash_proof and not supplied_proof)
+        ):
             conflicts.add("reconciliation_required")
     for coverage in session.scalars(
         select(ClassNoCrossingCoverage).where(ClassNoCrossingCoverage.coverage_state == "complete")

@@ -28,10 +28,16 @@ const ownerClaims = [
   "complete_occurrence_set_is_one_event",
 ];
 const identity = (row: { import_id: number; ordinal: number }) => `${row.import_id}:${row.ordinal}`;
+const roleLabel = (role: string) =>
+  role === "trade" ? "НКД и комиссия покупки" : role === "coupon" ? "Купон" : "Пополнение счёта";
 function minor(value: string | null | undefined) {
   if (value == null || !/^\d+$/.test(value)) return null;
   const amount = BigInt(value);
   return `${amount / 100n}.${String(amount % 100n).padStart(2, "0")}`;
+}
+function signedMinor(value: string | null | undefined) {
+  if (value == null || !/^-?\d+$/.test(value)) return null;
+  return `${value.startsWith("-") ? "-" : ""}${minor(value.replace("-", ""))}`;
 }
 
 export function MoneyStored({ saved }: { saved: MoneyReadback }) {
@@ -45,7 +51,7 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
         . Внешний взнос портфеля не подтверждён.
       </p>
       <Table>
-        <caption>Сохранённые купоны и пополнения</caption>
+        <caption>Сохранённые Money и доказательства покупки</caption>
         <thead>
           <tr>
             <Th>Событие</Th>
@@ -58,15 +64,31 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
         <tbody>
           {(saved.current_targets ?? saved.targets).map((target) => (
             <tr key={`${target.role}:${target.target_id}`}>
-              <Td>{target.role === "coupon" ? "Купон" : "Пополнение счёта"}</Td>
-              <Td>{target.target_id}</Td>
+              <Td>{roleLabel(target.role)}</Td>
+              <Td>
+                {target.target_id}
+                {target.role === "trade" && ` · ревизия ${target.trade_revision?.revision ?? "?"}`}
+              </Td>
               <Td numeric>
-                {formatMoney(
-                  minor(
-                    target.facts?.[
-                      target.role === "coupon" ? "net_amount_kopecks" : "boundary_amount_kopecks"
-                    ],
-                  ),
+                {target.role === "trade" ? (
+                  <span>
+                    Расчёт: {formatMoney(signedMinor(target.cash_proof?.signed_minor.settlement))},{" "}
+                    НКД: {formatMoney(signedMinor(target.cash_proof?.signed_minor.paid_nkd))},{" "}
+                    комиссия: {formatMoney(signedMinor(target.cash_proof?.signed_minor.commission))}
+                    . Сумма сделки:{" "}
+                    {formatMoney(signedMinor(target.cash_proof?.signed_minor.native_total))},{" "}
+                    {target.cash_proof?.claims.native_total_basis === "includes_paid_nkd"
+                      ? "включает НКД"
+                      : "не включает НКД"}
+                  </span>
+                ) : (
+                  formatMoney(
+                    minor(
+                      target.facts?.[
+                        target.role === "coupon" ? "net_amount_kopecks" : "boundary_amount_kopecks"
+                      ],
+                    ),
+                  )
                 )}
               </Td>
               <Td>
@@ -128,6 +150,9 @@ export function BrokerMoneyReview({
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<MoneyPreview | null>(null);
   const [decisions, setDecisions] = useState<MoneyDecision[]>([]);
+  const [tradeBases, setTradeBases] = useState<
+    Record<string, "includes_paid_nkd" | "excludes_paid_nkd" | "">
+  >({});
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [currentPlan, setCurrentPlan] = useState(false);
@@ -218,6 +243,21 @@ export function BrokerMoneyReview({
               ...Object.fromEntries(ownerClaims.map((name) => [name, true])),
             },
           };
+        if (decision.role === "trade" && proposed.action !== "reuse") {
+          const basis = tradeBases[identity(decision.seed)];
+          if (!basis)
+            throw new Error("Подтверди независимое доказательство включения НКД в сумму сделки.");
+          decision.trade_claims = {
+            reference: "desktop-specific-native-cash-basis-review",
+            review_context_digest: proposed.review_context_digest ?? "",
+            exact_row_settled_buy_link: true,
+            complete_occurrence_set_is_one_event: true,
+            nkd_separately_posted: true,
+            fee_separately_charged: true,
+            native_total_basis_independently_proved: true,
+            native_total_basis: basis,
+          };
+        }
         return decision;
       });
       const requested = intent(selected);
@@ -295,10 +335,13 @@ export function BrokerMoneyReview({
     setDecisions((rows) =>
       rows.map((row) => (identity(row.seed) === identity(decision.seed) ? decision : row)),
     );
-    setPreview(null);
     invalidate();
   }
   const current = saved ?? stored;
+  const basisMissing = preview?.decisions.some(
+    (p) =>
+      p.decision.role === "trade" && p.action !== "reuse" && !tradeBases[identity(p.decision.seed)],
+  );
   return (
     <div className={styles.stack}>
       {current && <MoneyStored saved={current} />}
@@ -309,11 +352,12 @@ export function BrokerMoneyReview({
       )}
       {!closed && (
         <details>
-          <summary>Принять купоны и пополнения в этот черновик</summary>
+          <summary>Принять Money в этот черновик</summary>
           <div className={styles.stack}>
             <p>
               Счёт #{accountId}. Точные даты и RUB суммы взяты из источника. Один batch дополняет
-              существующий черновик. НКД, комиссии и неразобранные строки сохраняют ограничения.
+              существующий черновик. НКД и комиссия требуют отдельной доказанной связи с покупкой и
+              basis. Неразобранные строки сохраняют ограничения.
             </p>
             <label className={styles.field}>
               Оригинальные XML для Money, включая принятые пересекающиеся отчёты
@@ -325,6 +369,7 @@ export function BrokerMoneyReview({
                 onChange={(e) => {
                   setFiles(Array.from(e.target.files ?? []));
                   setDecisions([]);
+                  setTradeBases({});
                   setPreview(null);
                   invalidate();
                 }}
@@ -365,9 +410,11 @@ export function BrokerMoneyReview({
                         </Td>
                         <Td>
                           {row.occurrence.import_id === importId &&
-                          ["coupon_paid_candidate", "account_cash_in_candidate"].includes(
-                            row.candidate_kind,
-                          ) ? (
+                          [
+                            "coupon_paid_candidate",
+                            "account_cash_in_candidate",
+                            "trade_paid_nkd_candidate",
+                          ].includes(row.candidate_kind) ? (
                             <label>
                               <input
                                 type="checkbox"
@@ -389,7 +436,9 @@ export function BrokerMoneyReview({
                                             role:
                                               row.candidate_kind === "coupon_paid_candidate"
                                                 ? "coupon"
-                                                : "account_funding",
+                                                : row.candidate_kind === "trade_paid_nkd_candidate"
+                                                  ? "trade"
+                                                  : "account_funding",
                                             seed,
                                           },
                                         ]
@@ -422,7 +471,7 @@ export function BrokerMoneyReview({
               <div key={identity(decision.seed)} className={styles.stack}>
                 <p>
                   Строка #{decision.seed.import_id} / {decision.seed.ordinal + 1}:{" "}
-                  {decision.role === "coupon" ? "Купон" : "Пополнение только этого счёта"}
+                  {roleLabel(decision.role)}
                 </p>
                 {decision.role === "coupon" && (
                   <>
@@ -463,6 +512,67 @@ export function BrokerMoneyReview({
                         }
                       />
                     </label>
+                  </>
+                )}
+                {decision.role === "trade" && (
+                  <>
+                    <label className={styles.field}>
+                      Точное исполнение покупки для НКД строки {decision.seed.ordinal + 1}
+                      <select
+                        disabled={busy}
+                        value={decision.trade_id ?? ""}
+                        onChange={(e) => {
+                          const trade = preview?.trade_choices?.find(
+                            (t) => t.trade_id === Number(e.target.value),
+                          );
+                          update({
+                            ...decision,
+                            trade_id: trade?.trade_id,
+                            expected_trade_revision: Number(trade?.revision?.revision) || undefined,
+                          });
+                        }}
+                      >
+                        <option value="">Выбери подтверждённое исполнение</option>
+                        {preview?.trade_choices?.map((t) => (
+                          <option key={t.trade_id} value={t.trade_id}>
+                            #{t.trade_id} · native {t.ids.join(" / ")} · {t.core.isin} ·{" "}
+                            {t.core.trade_time} · T {t.core.trade_amount} · ревизия{" "}
+                            {t.revision?.revision}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.field}>
+                      Независимо доказанное включение НКД в native сумму сделки
+                      <select
+                        disabled={busy}
+                        value={tradeBases[identity(decision.seed)] ?? ""}
+                        onChange={(e) => {
+                          setTradeBases({
+                            ...tradeBases,
+                            [identity(decision.seed)]: e.target.value as
+                              | "includes_paid_nkd"
+                              | "excludes_paid_nkd"
+                              | "",
+                          });
+                          invalidate();
+                        }}
+                      >
+                        <option value="">Basis не подтверждён</option>
+                        <option value="includes_paid_nkd">
+                          Источник доказывает: T включает НКД
+                        </option>
+                        <option value="excludes_paid_nkd">
+                          Источник доказывает: T не включает НКД
+                        </option>
+                      </select>
+                    </label>
+                    <p>
+                      Равенство сумм не доказывает basis. Подтверди исходную строку НКД → это
+                      settled RUB bond BUY, полный набор наблюдений одной проводки, отдельно
+                      списанные НКД и ненулевую комиссию по native ID. S + N + F учитываются один
+                      раз; EOD НКД и себестоимость неизвестны.
+                    </p>
                   </>
                 )}
                 <label className={styles.field}>
@@ -513,6 +623,26 @@ export function BrokerMoneyReview({
                         облигацией и что полный набор наблюдений — одна выплата. При выборе
                         существующей цели это именно та же выплата.
                       </p>
+                    ) : proposed.decision.role === "trade" ? (
+                      <div>
+                        <p>
+                          Покупка native {proposed.native_ids?.join(" / ")}. Подтверждаю связь 1:1 и
+                          независимое доказательство basis, отдельные posted НКД и комиссию. Все три
+                          cash legs принадлежат одному исполнению.
+                        </p>
+                        {proposed.cash_review && (
+                          <p>
+                            Расчёт {formatMoney(proposed.cash_review.settlement)}, НКД{" "}
+                            {formatMoney(proposed.cash_review.paid_nkd)}, комиссия{" "}
+                            {formatMoney(proposed.cash_review.commission)}. Native сумма сделки{" "}
+                            {formatMoney(proposed.cash_review.native_total)}, НКД{" "}
+                            {formatMoney(proposed.cash_review.native_nkd)}, комиссия{" "}
+                            {formatMoney(proposed.cash_review.native_fee)}. Денежный расчёт{" "}
+                            {formatDate(proposed.cash_review.settlement_date ?? "")}, поставка{" "}
+                            {formatDate(proposed.cash_review.depo_settlement_date ?? "")}.
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <p>
                         Подтверждаю идентифицируемую исходную строку, дату фактической проводки,
@@ -528,14 +658,14 @@ export function BrokerMoneyReview({
                   <input
                     type="checkbox"
                     checked={reviewed}
-                    disabled={busy || !currentPlan}
+                    disabled={busy || !currentPlan || basisMissing}
                     onChange={(e) => setReviewed(e.target.checked)}
                   />
                   Я подтверждаю перечисленные конкретные решения Money и их полный набор наблюдений.
                 </label>
                 <Button
                   type="button"
-                  disabled={busy || !reviewed || !currentPlan || pending != null}
+                  disabled={busy || !reviewed || !currentPlan || pending != null || basisMissing}
                   onClick={() => void apply()}
                 >
                   Принять один Money batch

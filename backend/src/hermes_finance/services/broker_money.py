@@ -1,6 +1,6 @@
 """One reviewed Money extension of an existing source-owned DRAFT.
 
-Economic facts live only in ICF/H2. This module stages them, permanent links and
+Economic facts live only in ICF/H2/canonical trade revisions. This module stages permanent links and
 versioned proofs in the existing month receipt journal under one reserved writer.
 """
 
@@ -25,6 +25,9 @@ from hermes_finance.persistence import (
     AppliedStatementEventRevision,
     BrokerMoneyOccurrenceOwner,
     BrokerMonthApply,
+    ExecutedTrade,
+    ExecutedTradeOccurrence,
+    ExecutedTradeRevision,
     HistoricalOwnerFlow,
     HistoricalOwnerFlowApply,
     HistoricalOwnerFlowOccurrence,
@@ -97,6 +100,24 @@ def latest_proofs(session):
 
 
 def _target(session, role, target_id):
+    if role == "trade":
+        trade = session.get(ExecutedTrade, target_id, populate_existing=True)
+        revision = session.scalar(
+            select(ExecutedTradeRevision)
+            .where(ExecutedTradeRevision.trade_id == target_id)
+            .order_by(ExecutedTradeRevision.revision.desc())
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+        return {
+            "role": role,
+            "target_id": target_id,
+            "facts": material(trade),
+            "trade_revision": material(revision),
+            "cash_proof": json.loads(revision.evidence_json).get("cash_reconciliation")
+            if revision
+            else None,
+        }
     if role == "coupon":
         row = session.get(InvestmentCashFlow, target_id, populate_existing=True)
         events = [
@@ -555,24 +576,49 @@ def _plan(session, intent, originals):
             <= month.period_end.isoformat()
         ):
             reasons.add("money_outside_selected_month")
-        expected = (
-            "coupon_paid_candidate" if decision.role == "coupon" else "account_cash_in_candidate"
-        )
+        expected = {
+            "coupon": "coupon_paid_candidate",
+            "account_funding": "account_cash_in_candidate",
+            "trade": "trade_paid_nkd_candidate",
+        }[decision.role]
         if (
             observation["candidate_kind"] != expected
             or observation["amount_minor"] is None
-            or observation["amount_minor"] <= 0
+            or (
+                observation["amount_minor"] >= 0
+                if decision.role == "trade"
+                else observation["amount_minor"] <= 0
+            )
         ):
             reasons.add("money_semantics_not_supported")
         occurrence_keys = set(map(key, occurrences))
         if selected.intersection(occurrence_keys):
             reasons.add("duplicate_decision_occurrence")
         selected.update(occurrence_keys)
-        target_plan = (
-            _coupon(session, intent, decision, observation, occurrences, dependencies, reasons)
-            if decision.role == "coupon"
-            else _funding(session, intent, decision, occurrences, reasons)
-        )
+        if decision.role == "trade":
+            from hermes_finance.services.broker_trade_money import plan_trade
+
+            target_plan = plan_trade(
+                session,
+                intent,
+                decision,
+                observation,
+                occurrences,
+                inventory,
+                dependencies,
+                reasons,
+            )
+            occurrences = target_plan.get("occurrences", occurrences)
+            extra = set(map(key, occurrences)) - occurrence_keys
+            if selected.intersection(extra):
+                reasons.add("duplicate_decision_occurrence")
+            selected.update(extra)
+        elif decision.role == "coupon":
+            target_plan = _coupon(
+                session, intent, decision, observation, occurrences, dependencies, reasons
+            )
+        else:
+            target_plan = _funding(session, intent, decision, occurrences, reasons)
         target_identity = (decision.role, target_plan["target_id"])
         if target_plan["target_id"] is not None:
             if target_identity in selected_targets:
@@ -593,6 +639,15 @@ def _plan(session, intent, originals):
     exceptions = broker_months._account_readiness(
         session, intent.reporting_month_id, intent.account_id
     )
+    # Execution time can precede this cash month. Native-linked postings in
+    # the accepted source union define the selector scope; plan_trade still
+    # proves the complete settled S/N/F set and exact execution identity.
+    cash_trade_identities = {
+        o["trade_identity"]
+        for o in inventory
+        if o["trade_identity"] is not None
+        and month.period_start.isoformat() <= o["date"] <= month.period_end.isoformat()
+    }
     plan = {
         "contract_version": CONTRACT,
         "base_request_id": intent.base_request_id,
@@ -601,6 +656,18 @@ def _plan(session, intent, originals):
         "inventory": inventory,
         "sources": sources,
         "decisions": plans,
+        "trade_choices": [
+            {
+                "trade_id": t.id,
+                "ids": [t.primary_id, t.secondary_id],
+                "source_identity": t.source_identity,
+                "instrument_id": t.instrument_id,
+                "core": json.loads(t.core_json),
+                "revision": _target(session, "trade", t.id)["trade_revision"],
+            }
+            for t in broker_months._rows(session, ExecutedTrade)
+            if t.account_id == intent.account_id and t.source_identity in cash_trade_identities
+        ],
         "expected_effects": {
             "new_coupon_facts": sum(
                 p["decision"]["role"] == "coupon" and p["target_id"] is None for p in plans
@@ -647,7 +714,19 @@ def effective_occurrence(session, source_id, row):
             BrokerMoneyOccurrenceOwner.ordinal == row["ordinal"],
         )
     )
-    if owner is None or owner.row_fingerprint != digest(row):
+    if owner is None:
+        trade_owner = session.scalar(
+            select(ExecutedTradeOccurrence).where(
+                ExecutedTradeOccurrence.import_id == source_id,
+                ExecutedTradeOccurrence.section == "money",
+                ExecutedTradeOccurrence.ordinal == row["ordinal"],
+            )
+        )
+        if trade_owner is None or trade_owner.source_fingerprint != digest(row):
+            return False
+        latest = latest_proofs(session).get(("trade", trade_owner.trade_id))
+        return latest is not None and not proof_blockers(session, *latest)
+    if owner.row_fingerprint != digest(row):
         return False
     target_id = (
         owner.investment_cash_flow_id if owner.role == "coupon" else owner.historical_owner_flow_id
@@ -705,6 +784,13 @@ def proof_blockers(session, receipt, proof, target):
             row is None
             or digest(row) != occurrence["row_fingerprint"]
             or conflicts(session, [occurrence], occurrence["role"], occurrence["target_id"])
+        ):
+            blockers.add("money_ownership_changed")
+        if occurrence["role"] == "trade" and not any(
+            owner["role"] == "trade"
+            and owner["target_id"] == occurrence["target_id"]
+            and owner["row_fingerprint"] == occurrence["row_fingerprint"]
+            for owner in owners(session, [occurrence])
         ):
             blockers.add("money_ownership_changed")
         if source and any(
@@ -864,10 +950,39 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                         confirmation_digest=decision["h2_plan"]["confirmation_digest"],
                         request_id=digest([CONTRACT, request_id, index]),
                     )
+                elif role == "trade":
+                    from hermes_finance.services.executed_trades import stage_executed_trades
+
+                    stage_executed_trades(
+                        session,
+                        {"can_apply": True, "candidates": [decision["candidate"]]},
+                        confirmation_digest=confirmation_digest,
+                        request_id=digest([CONTRACT, request_id, "trade", index]),
+                    )
                 target_refs.append((role, target_id))
                 for occurrence in decision["occurrences"]:
                     if conflicts(session, [occurrence], role, target_id):
                         raise MyBrokerError("occurrence_already_owned")
+                    if role == "trade":
+                        exists = session.scalar(
+                            select(ExecutedTradeOccurrence.id).where(
+                                ExecutedTradeOccurrence.import_id == occurrence["import_id"],
+                                ExecutedTradeOccurrence.section == "money",
+                                ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
+                            )
+                        )
+                        if exists is None:
+                            session.add(
+                                ExecutedTradeOccurrence(
+                                    trade_id=target_id,
+                                    import_id=occurrence["import_id"],
+                                    section="money",
+                                    ordinal=occurrence["ordinal"],
+                                    source_fingerprint=occurrence["row_fingerprint"],
+                                )
+                            )
+                        occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
+                        continue
                     existing = session.scalar(
                         select(BrokerMoneyOccurrenceOwner).where(
                             BrokerMoneyOccurrenceOwner.import_id == occurrence["import_id"],

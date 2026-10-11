@@ -22,6 +22,7 @@ def main():
         broker_month_alias_xml,
         money_batch_xml,
         money_coupon_pdf,
+        trade_money_xml,
     )
 
     with TemporaryDirectory(prefix="hermes-broker-month-synthetic-") as temporary:
@@ -46,7 +47,7 @@ def main():
                 isin="RU000A000001",
                 currency="RUB",
             )
-            for number, end in ((1, 31), (2, 28), (3, 31)):
+            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30)):
                 create_reporting_month(
                     session,
                     year=2030,
@@ -57,6 +58,17 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "trade-money":
+                xml = (
+                    trade_money_xml(prior_month_buy=True)
+                    .replace(b"31.12.2029", b"31.03.2030")
+                    .replace(b".01.2030", b".04.2030")
+                    .replace(b"2030-01-", b"2030-04-")
+                    .replace(b".01.30", b".04.30")
+                    .replace(b"10000000001", b"10000000004")
+                    .replace(b"2000000001", b"2000000004")
+                )
+                return Response(xml, media_type="application/xml")
             if kind == "money-pdf":
                 return Response(money_coupon_pdf(month=3), media_type="application/pdf")
             if kind == "money":

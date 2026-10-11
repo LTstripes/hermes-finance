@@ -84,12 +84,31 @@ beforeEach(() => {
     ...intent,
     confirmation_digest: "b".repeat(64),
     can_apply: intent.money_decisions.every((d) =>
-      d.role === "coupon" ? !!d.coupon_claims : !!d.owner_flow_intent,
+      d.role === "coupon"
+        ? !!d.coupon_claims
+        : d.role === "trade"
+          ? !!d.trade_claims
+          : !!d.owner_flow_intent,
     ),
     blockers: [],
     exceptions: ["money_semantics_unsupported"],
     sources: [],
     inventory,
+    trade_choices: [
+      {
+        trade_id: 7,
+        ids: ["native-A", "native-B"],
+        source_identity: "e".repeat(64),
+        instrument_id: 2,
+        core: {
+          isin: "RU000A000001",
+          trade_time: "2030-01-15T09:00:00",
+          trade_amount: "10125.50",
+          quantity: "1",
+        },
+        revision: { revision: "1" },
+      },
+    ],
     decisions: intent.money_decisions.map((d) => ({
       decision: d,
       occurrences: [d.seed],
@@ -97,6 +116,21 @@ beforeEach(() => {
       action: "create",
       blockers: [],
       review_context_digest: "a".repeat(64),
+      ...(d.role === "trade"
+        ? {
+            native_ids: ["native-A", "native-B"],
+            cash_review: {
+              settlement: "-10000.00",
+              paid_nkd: "-125.50",
+              commission: "-10.00",
+              native_total: "10125.50",
+              native_nkd: "125.50",
+              native_fee: "10.00",
+              settlement_date: "2030-01-17",
+              depo_settlement_date: "2030-01-17",
+            },
+          }
+        : {}),
       ...(d.role === "account_funding"
         ? {
             owner_flow_intent: {
@@ -123,7 +157,7 @@ it("persistent panel shows earlier coupon and funding after a later batch and re
   saved.targets = [{ ...earlier[0], target_id: 8, facts: { net_amount_kopecks: "200000" } }];
   saved.current_targets = [...earlier, ...saved.targets];
   render(<MoneyStored saved={saved} />);
-  const stored = screen.getByRole("table", { name: "Сохранённые купоны и пополнения" });
+  const stored = screen.getByRole("table", { name: "Сохранённые Money и доказательства покупки" });
   expect(within(stored).getAllByRole("row")).toHaveLength(4);
   expect(stored).toHaveTextContent("1 000");
   expect(stored).toHaveTextContent("2 000");
@@ -153,7 +187,7 @@ function show(closed = false) {
 }
 async function prepare() {
   const user = userEvent.setup();
-  await user.click(screen.getByText("Принять купоны и пополнения в этот черновик"));
+  await user.click(screen.getByText("Принять Money в этот черновик"));
   await user.upload(
     screen.getByLabelText(/Оригинальные XML для Money/),
     new File(["synthetic"], "synthetic.xml", { type: "application/xml" }),
@@ -161,7 +195,8 @@ async function prepare() {
   await user.click(screen.getByRole("button", { name: "Проверить Money" }));
   const table = await screen.findByRole("table", { name: "Все наблюдения Money" });
   expect(table).toHaveTextContent("Synthetic NKD");
-  for (const checkbox of within(table).getAllByRole("checkbox")) await user.click(checkbox);
+  for (const checkbox of within(table).getAllByRole("checkbox").slice(0, 2))
+    await user.click(checkbox);
   await user.selectOptions(screen.getByLabelText("Подтверждённая облигация для строки 2"), "2");
   await user.click(screen.getByRole("button", { name: "Проверить Money" }));
   await user.click(
@@ -173,7 +208,9 @@ it("one specific batch review, one Apply and independent GET; net/NULL/portfolio
   show();
   const user = await prepare();
   await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
-  const stored = await screen.findByRole("table", { name: "Сохранённые купоны и пополнения" });
+  const stored = await screen.findByRole("table", {
+    name: "Сохранённые Money и доказательства покупки",
+  });
   expect(stored).toHaveTextContent("Неизвестно");
   expect(stored).toHaveTextContent("50 000");
   expect(applyBrokerMoney).toHaveBeenCalledTimes(1);
@@ -193,10 +230,10 @@ it("failed GET retries only reading and cannot claim success from POST", async (
   await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
   const retry = await screen.findByRole("button", { name: "Повторить GET Money" });
   expect(
-    screen.queryByRole("table", { name: "Сохранённые купоны и пополнения" }),
+    screen.queryByRole("table", { name: "Сохранённые Money и доказательства покупки" }),
   ).not.toBeInTheDocument();
   await user.click(retry);
-  await screen.findByRole("table", { name: "Сохранённые купоны и пополнения" });
+  await screen.findByRole("table", { name: "Сохранённые Money и доказательства покупки" });
   expect(applyBrokerMoney).toHaveBeenCalledTimes(1);
   expect(readBrokerMoney).toHaveBeenCalledTimes(2);
 });
@@ -210,12 +247,12 @@ it("mismatched GET keeps the financial batch unconfirmed", async () => {
   await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/другого счёта/));
   expect(
-    screen.queryByRole("table", { name: "Сохранённые купоны и пополнения" }),
+    screen.queryByRole("table", { name: "Сохранённые Money и доказательства покупки" }),
   ).not.toBeInTheDocument();
 });
 it("CLOSED exposes no financial writer", async () => {
   show(true);
-  expect(screen.queryByText("Принять купоны и пополнения в этот черновик")).not.toBeInTheDocument();
+  expect(screen.queryByText("Принять Money в этот черновик")).not.toBeInTheDocument();
 });
 it("late confirmed Preview after navigation cannot dispatch Apply", async () => {
   const view = show();
@@ -244,4 +281,43 @@ it("late confirmed Preview after navigation cannot dispatch Apply", async () => 
   });
   await Promise.resolve();
   expect(applyBrokerMoney).not.toHaveBeenCalled();
+});
+
+it("requires explicit native execution and independent NKD basis before Apply and verifies GET", async () => {
+  show();
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Принять Money в этот черновик"));
+  await user.upload(
+    screen.getByLabelText(/Оригинальные XML для Money/),
+    new File(["synthetic"], "synthetic.xml", { type: "application/xml" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  const table = await screen.findByRole("table", { name: "Все наблюдения Money" });
+  await user.click(within(table).getAllByRole("checkbox")[2]);
+  const exact = screen.getByLabelText("Точное исполнение покупки для НКД строки 4");
+  expect(exact).toHaveTextContent("native-A / native-B");
+  await user.selectOptions(exact, "7");
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  expect(
+    screen.getByRole("checkbox", { name: /Я подтверждаю перечисленные конкретные/ }),
+  ).toBeDisabled();
+  expect(applyBrokerMoney).not.toHaveBeenCalled();
+  await user.selectOptions(
+    screen.getByLabelText("Независимо доказанное включение НКД в native сумму сделки"),
+    "includes_paid_nkd",
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  await user.click(
+    screen.getByRole("checkbox", { name: /Я подтверждаю перечисленные конкретные/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
+  await waitFor(() => expect(readBrokerMoney).toHaveBeenCalledTimes(1));
+  const accepted = vi.mocked(applyBrokerMoney).mock.calls[0][1].money_decisions[0];
+  expect(accepted.trade_id).toBe(7);
+  expect(accepted.expected_trade_revision).toBe(1);
+  expect(accepted.trade_claims).toMatchObject({
+    native_total_basis: "includes_paid_nkd",
+    native_total_basis_independently_proved: true,
+    fee_separately_charged: true,
+  });
 });
