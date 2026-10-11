@@ -537,6 +537,9 @@ def _readiness(session, receipt):
         # Recompute original source dependencies with the same S1 reconciliation.
         current = mybroker_import._prepare(session, json.loads(source.normalized_json))
         blockers.update(current["conflicts"])
+        blockers.update(current["blockers"])
+        source_blockers, _, _ = _controls(current["document"])
+        blockers.update(source_blockers)
         if current["missing_mappings"]:
             blockers.add("accepted_mapping_changed")
         if effective_bindings(session, source) != json.loads(source.mappings_json) or resolve(
@@ -752,7 +755,13 @@ def apply_broker_month(session, *, confirmation_digest, request_id, **kwargs):
                 accepted_at=datetime.now(UTC),
             )
             accepted = {
-                "exceptions": plan["exceptions"],
+                # Preserve supplied, still-unread optional evidence. Source,
+                # controls and authority are recomputed from immutable S1 and
+                # current canonical facts; a pre-enrichment failure must not
+                # become a permanent receipt exception after successful Apply.
+                "exceptions": ["optional_evidence_unsupported"]
+                if kwargs["optional_hashes"]
+                else [],
                 "position_ids": position_ids,
                 "cash_id": cash.id,
                 "trade_ids": trade_ids,

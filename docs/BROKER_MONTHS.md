@@ -38,6 +38,10 @@ one snapshot. Readiness and reserved server Close share the same source checks:
 all positions and cash must still match, mappings/source authority must remain
 valid, intersecting evidence must have no material unresolved conflicts. Hard
 guards apply only to accounts explicitly covered by source-owned receipts.
+Supplied optional evidence remains attached to its receipt. Source/control and
+authority failures are recomputed rather than frozen: successful compatible
+canonical enrichment clears its temporary projection blocker. Preview and GET
+also retain every applicable receipt's unresolved evidence at account level.
 Unrelated active accounts retain `active_account_snapshot_missing` warnings;
 ordinary months keep existing behavior. Account readiness does not attest whole
 portfolio coverage: `coverage_state=unknown`, exact XIRR/TWRR remain unavailable.

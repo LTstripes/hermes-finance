@@ -379,12 +379,24 @@ def test_broker_month_overlapping_reports_share_canonical_trade_and_projection(
     if not source_first:
         accept_narrow()
         refreshed = _broker_month_preview(client, intent, xml)
+        assert "canonical_trade_projection_changed" in refreshed["exceptions"]
+        assert not refreshed["bookkeeping_ready"]
         assert (
             _broker_month_apply(
                 client, intent, refreshed, xml, request_id="overlap-refresh"
             ).status_code
             == 200
         )
+    for request_id in ("synthetic-batch", *([] if source_first else ["overlap-refresh"])):
+        current = client.get(f"/api/broker-months/{request_id}").json()
+        assert current["bookkeeping_ready"], current
+        assert "canonical_trade_projection_changed" not in current["exceptions"]
+    fresh = _broker_month_preview(client, intent, xml)
+    assert fresh["bookkeeping_ready"], fresh
+    assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
     with database.session_factory() as session:
         assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
         assert session.scalar(select(func.count()).select_from(ExecutedTradeOccurrence)) == 2
