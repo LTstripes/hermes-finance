@@ -21,9 +21,14 @@ Accepted S1 trade settlement/commission patterns and canonical native trade keys
 retain their authority. The #782 extension under accepted #781 adds only explicitly
 reviewed actual net coupons and account funding to an existing source-owned DRAFT.
 Coupons use InvestmentCashFlow; funding uses H2 v2 HistoricalOwnerFlow. Neither
-creates ExternalFlow nor adds source cash again. Dividend, paid NKD, fees and opaque
-Money remain visible scoped exceptions; #783 owns NKD/fees. Incomplete DRAFT is
-allowed, but material unknown Money blocks the covered account at Close.
+creates ExternalFlow nor adds source cash again. Accepted #783 additionally handles
+an individually proved settled RUB **bond BUY** with negative posted paid NKD and
+a separately charged nonzero native-linked fee through the existing
+ExecutedTradeRevision. No duplicate endpoint cash or inferred EOD NKD/cost arises.
+Stock BUY separate commissions without paid NKD remain outside that bond proof
+(#790 pending). Unknown dividends, opaque Money and unsupported source sections
+remain visible scoped exceptions. An incomplete DRAFT is allowed; unresolved
+evidence blocks its covered account at Close.
 
 The Money Preview requires original bytes for the complete accepted overlapping
 source union. Original observations guide specific instrument/payment/boundary
@@ -95,3 +100,48 @@ orders, distinct native IDs, stale review, full rollback, conflicts and reserved
 Close concurrency. Desktop tests verify explicit review, failed/mismatched GET,
 CLOSED reading and real API Preview → Apply → GET → global Close at desktop widths,
 including the incomplete Money path. Synthetic evidence is not Owner acceptance.
+
+## Real September Owner-local Gate 0 — 2026-10-11, BLOCKED
+
+This is a dated source-compatibility result, not another parser family or a
+production UAT. [#787](https://github.com/LTstripes/hermes-finance/issues/787#issuecomment-6112959100)
+reported a complete unmodified private MyBroker source with individually
+compatible stock/bond identities, independently matching source/native cash and
+quantity controls, and no scratch database or financial Apply. Original file
+identifiers, source monetary amounts/hashes and machine targets are Owner-private.
+
+Live `main@e512338b` still requires three distinct acceptance paths:
+
+1. [#788](https://github.com/LTstripes/hermes-finance/issues/788):
+   original native settlement/commission Money has the exact primary-ID text in
+   `oper_type`, while accepted legacy S1 linkage reads `comment`.
+   A safe versioned extension must preserve existing accepted S1 normalized
+   rows, fingerprints and receipts. No guessing the second native trade ID.
+   Draft PR #791 is **not accepted or merged** at this checkpoint.
+2. [#789](https://github.com/LTstripes/hermes-finance/issues/789#issuecomment-6113268340)
+   metadata contract: exact empty Transfers and UFSR connected-status-only trees
+   may be classified as *no economic movement* only with strict complete
+   namespace/attribute/child validation, preserving raw inventory. The
+   corresponding bounded implementation is [#792](https://github.com/LTstripes/hermes-finance/issues/792)
+   after #788. Populated daily Money `all_volume` and `debet_volume` have no
+   proven independent per-date account/basis equation:
+   [#793](https://github.com/LTstripes/hermes-finance/issues/793) is a separate
+   read-only investigation. Control-only fields do not mint payments or daily
+   valuations; even exact total cash arithmetic cannot clear this blocker.
+3. [#790](https://github.com/LTstripes/hermes-finance/issues/790#issuecomment-6113269181):
+   strictly proven two-leg settled RUB stock BUY separate fee is a future
+   compatible **financial proof variant**, not a relaxation of #783 bond
+   three-leg proof. A documented, independently reviewed fee-excluded native
+   amount basis is required; equal numerical sums alone cannot provide it.
+   New fee proof may reuse existing ExecutedTradeRevision and Money ownership,
+   but never create an artificial `paid_nkd=0`, another cash ledger or
+   a general exemption from commission blockers.
+
+[#787](https://github.com/LTstripes/hermes-finance/issues/787) remains
+**Gate 0 BLOCKED** even though private raw controls reconcile to zero residual.
+Recheck the unchanged Owner original **read-only** only after integrated
+compatible code and exact post-main CI. Creating an isolated scratch DB, DRAFT
+Apply and eventual scratch Close each require separately explicit Owner GO.
+Protected Test/Stable/CLOSED and actual historical data must remain untouched.
+Bond reported EOD value can be retained as a **source-marked value** with
+unknown accrued NKD; this does not authorize exact economic XIRR/TWRR.
