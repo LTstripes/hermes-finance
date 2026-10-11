@@ -39,6 +39,10 @@ Money proof and monotonic retirement/dependency tokens use the existing append-o
 BrokerMonthApply journal; legacy receipt JSON and S1 are unchanged. A → B → A cannot
 revive stale review. Retired proof requires reviewed reaffirmation of the same core
 targets. Replay returns current disputed/readiness state without adding money.
+Journal revision order is assigned under the writer reservation, independently of
+wall-clock timestamps. A compatible staged coupon addition preserves unchanged
+earlier payouts. Legacy PDF technical tax zero is displayed as unknown when its
+accepted provenance marks tax unavailable; stored legacy facts are not rewritten.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply

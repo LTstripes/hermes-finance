@@ -9,7 +9,7 @@ import {
   type MoneyPreview,
   type MoneyReadback,
 } from "../../api/brokerMoney";
-import { BrokerMoneyReview } from "./BrokerMoneyReview";
+import { BrokerMoneyReview, MoneyStored } from "./BrokerMoneyReview";
 
 vi.mock("../../api/instruments", () => ({
   listInstruments: async () => [
@@ -116,6 +116,13 @@ beforeEach(() => {
     readback(id),
   );
   vi.mocked(readBrokerMoney).mockImplementation(async (id) => readback(id));
+});
+it("legacy PDF technical tax zero remains unknown when provenance says unavailable", () => {
+  const saved = readback("synthetic");
+  saved.targets[0].facts = { net_amount_kopecks: "100000", tax_amount_kopecks: "0" };
+  saved.targets[0].components = { tax_amount_kopecks: null };
+  render(<MoneyStored saved={saved} />);
+  expect(screen.getByRole("table")).toHaveTextContent("Неизвестно");
 });
 function show(closed = false) {
   return render(

@@ -65,7 +65,7 @@ def material(row):
 
 
 def receipts(session):
-    return [
+    result = [
         (r, json.loads(r.projection_json))
         for r in session.scalars(
             select(BrokerMonthApply).order_by(
@@ -74,6 +74,14 @@ def receipts(session):
         )
         if json.loads(r.projection_json).get("contract_version") == CONTRACT
     ]
+    return sorted(
+        result,
+        key=lambda item: (
+            item[1].get("journal_revision", 0),
+            item[0].accepted_at,
+            item[0].request_id,
+        ),
+    )
 
 
 def target_key(target):
@@ -97,17 +105,33 @@ def _target(session, role, target_id):
             if event.investment_cash_flow_id == target_id
         ]
         event_ids = {event.id for event in events}
+        revisions = [
+            revision
+            for revision in broker_months._rows(session, AppliedStatementEventRevision)
+            if revision.applied_statement_event_id in event_ids
+        ]
+        latest = {revision.applied_statement_event_id: revision for revision in revisions}
+        components = {
+            field: str(getattr(row, field)) if row and getattr(row, field) is not None else None
+            for field in ("gross_amount_kopecks", "tax_amount_kopecks", "commission_amount_kopecks")
+        }
+        if any(
+            event.link_mode == "statement_created"
+            and event.id in latest
+            and not latest[event.id].tax_available
+            for event in events
+        ):
+            # Legacy PDF stores technical zero in ICF; provenance retains the
+            # actual unavailable tax. Preserve the row and expose honest meaning.
+            components["tax_amount_kopecks"] = None
         return {
             "role": role,
             "target_id": target_id,
             "facts": material(row),
+            "components": components,
             "statement_support": {
                 "events": [material(event) for event in events],
-                "revisions": [
-                    material(revision)
-                    for revision in broker_months._rows(session, AppliedStatementEventRevision)
-                    if revision.applied_statement_event_id in event_ids
-                ],
+                "revisions": [material(revision) for revision in revisions],
             },
         }
     row = session.get(HistoricalOwnerFlow, target_id, populate_existing=True)
@@ -730,6 +754,10 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                 "targets": [_target(session, role, target_id) for role, target_id in target_refs],
                 "decisions": [d.model_dump(mode="json") for d in intent.money_decisions],
             }
+            from hermes_finance.services.broker_money_lifecycle import next_journal_revision
+
+            proof["journal_revision"] = next_journal_revision(session)
+            receipt.accepted_at = datetime.now(UTC)
             receipt.projection_json = canonical(proof)
             session.flush()
             session.info.pop("broker_money_stage", None)

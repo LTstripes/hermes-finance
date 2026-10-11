@@ -1539,8 +1539,13 @@ def test_money_nkd_remains_scoped_close_blocker_after_coupon_and_h2_acceptance(d
         )
 
 
-def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(database):
+def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(
+    database, monkeypatch
+):
+    from datetime import UTC, datetime
+
     from hermes_finance.persistence import Instrument, InvestmentCashFlow
+    from hermes_finance.services import broker_money_lifecycle
     from hermes_finance.services.broker_money import read_money
     from hermes_finance.statement_import.mybroker import MyBrokerError
 
@@ -1558,6 +1563,13 @@ def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(d
         with pytest.raises(MyBrokerError, match="money_target_requires_source_revision"):
             session.commit()
         session.rollback()
+
+        class BackdatedClock:
+            @staticmethod
+            def now(_timezone):
+                return datetime(2001, 1, 1, tzinfo=UTC)
+
+        monkeypatch.setattr(broker_money_lifecycle, "datetime", BackdatedClock)
         instrument = session.get(Instrument, bond)
         old = instrument.name
         instrument.name = "Synthetic renamed"
@@ -1590,7 +1602,7 @@ def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_inv
 
     from hermes_finance.domain.broker_money import MoneyIntent
     from hermes_finance.persistence import AppliedStatementEvent, InvestmentCashFlow
-    from hermes_finance.services.broker_money import preview_money
+    from hermes_finance.services.broker_money import preview_money, read_money
     from hermes_finance.services.statement_import_apply import StatementApplyAction
 
     _, xml, intent, bond, _ = _money_setup(database, money_batch_xml(coupons=("1000",)))
@@ -1660,6 +1672,10 @@ def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_inv
             assert session.get(InvestmentCashFlow, flow_id).gross_amount_kopecks is None
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 1
         assert session.scalar(select(AppliedStatementEvent.investment_cash_flow_id)) == flow_id
+        assert (
+            read_money(session, "money-accepted")["targets"][0]["components"]["tax_amount_kopecks"]
+            is None
+        )
         assert session.get(InvestmentCashFlow, flow_id).net_amount_kopecks == 100000
 
 
@@ -1974,3 +1990,82 @@ def test_money_new_covering_report_missing_event_blocks_and_stales_old_confirmat
         complete = preview_money(session, reviewed, [*originals, (FILENAME, missing)])
         assert "overlapping_source_event_missing" in complete["blockers"]
         assert not complete["can_apply"]
+
+
+@pytest.mark.parametrize("reuse_first", [False, True])
+def test_money_incremental_distinct_coupons_keep_prior_authority_and_scoped_readiness(
+    database, reuse_first
+):
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.services.broker_money import read_money
+
+    _, xml, intent, bond, _ = _money_setup(
+        database, money_batch_xml(coupons=("1000", "1000"), distinct=True)
+    )
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        all_rows = _money_decide(session, intent, originals, bond)
+        first = MoneyIntent.model_validate(
+            {
+                **all_rows.model_dump(),
+                "money_decisions": [
+                    d.model_dump() for d in all_rows.money_decisions if d.seed.ordinal != 2
+                ],
+            }
+        )
+        accepted = _money_apply(session, first, originals, "coupon-a-and-funding")
+        original_ids = [(t["role"], t["target_id"]) for t in accepted["targets"]]
+        all_rows = _money_decide(session, intent, originals, bond)
+        second = MoneyIntent.model_validate(
+            {
+                **all_rows.model_dump(),
+                "money_decisions": [
+                    d.model_dump()
+                    for d in all_rows.money_decisions
+                    if d.role == "coupon" and (reuse_first or d.seed.ordinal == 2)
+                ],
+            }
+        )
+        accepted_b = _money_apply(session, second, originals, "coupon-b")
+        after_a = read_money(session, "coupon-a-and-funding")
+        assert all(t["effective"] for t in after_a["targets"]), after_a["exceptions"]
+        assert all(t["effective"] for t in accepted_b["targets"]), accepted_b["exceptions"]
+        assert after_a["bookkeeping_ready"] and accepted_b["bookkeeping_ready"]
+        assert original_ids == [(t["role"], t["target_id"]) for t in after_a["targets"]]
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 2
+
+
+@pytest.mark.parametrize("dependency", ["instrument", "account"])
+def test_money_identity_a_b_a_before_first_acceptance_cannot_restore_confirmation(
+    database, dependency
+):
+    from hermes_finance.persistence import Account, BrokerMoneyOccurrenceOwner, Instrument
+    from hermes_finance.services.broker_money import apply_money, preview_money
+
+    _, xml, intent, bond, _ = _money_setup(database)
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        reviewed = _money_decide(session, intent, originals, bond)
+        old = preview_money(session, reviewed, originals)
+        assert old["can_apply"]
+        row = (
+            session.get(Instrument, bond)
+            if dependency == "instrument"
+            else session.get(Account, intent.account_id)
+        )
+        field = "currency" if dependency == "instrument" else "status"
+        original = getattr(row, field)
+        setattr(row, field, "USD" if dependency == "instrument" else "frozen")
+        session.commit()
+        setattr(row, field, original)
+        session.commit()
+        with pytest.raises(MyBrokerError, match="money_preview_stale"):
+            apply_money(
+                session,
+                reviewed,
+                originals,
+                confirmation_digest=old["confirmation_digest"],
+                request_id="stale-identity",
+            )
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+        assert session.scalar(select(func.count()).select_from(BrokerMoneyOccurrenceOwner)) == 0

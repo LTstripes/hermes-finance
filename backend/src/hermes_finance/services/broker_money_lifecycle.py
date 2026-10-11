@@ -31,6 +31,17 @@ from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, d
 DEPENDENCY_CONTRACT = "broker_money_dependency_v1"
 
 
+def next_journal_revision(session):
+    """Reserved writer assigns order independent of wall-clock timestamps."""
+    with session.no_autoflush:
+        rows = list(session.scalars(select(BrokerMonthApply)))
+        rows.extend(r for r in session.new if isinstance(r, BrokerMonthApply))
+        return 1 + max(
+            (json.loads(r.projection_json).get("journal_revision", 0) for r in rows),
+            default=0,
+        )
+
+
 def _append_receipt(session, receipt, proof):
     token = digest([proof["contract_version"], uuid4().hex])
     session.add(
@@ -41,7 +52,9 @@ def _append_receipt(session, receipt, proof):
             reporting_month_id=receipt.reporting_month_id,
             account_id=receipt.account_id,
             import_id=receipt.import_id,
-            projection_json=canonical(proof),
+            projection_json=canonical(
+                {**proof, "journal_revision": next_journal_revision(session)}
+            ),
             accepted_at=datetime.now(UTC),
         )
     )
@@ -164,7 +177,7 @@ def _before_flush(session, _context, _instances):
                         row.currency or "RUB",
                     ):
                         raise MyBrokerError("source_payout_requires_link_existing")
-        # Legacy ICF/cash have no revision journal. Retain a monotonic dependency token
+        # Legacy ICF/cash/catalogue have no revision journal. Retain a dependency token
         # for source-owned scopes even before the first Money acceptance, so an
         # edit A -> B -> A cannot revive a previously reviewed confirmation.
         if not session.info.get("broker_money_stage"):
@@ -173,8 +186,12 @@ def _before_flush(session, _context, _instances):
                 for r in changes
                 if isinstance(r, (InvestmentCashFlow, CashBalance, PositionSnapshot, ExternalFlow))
             }
+            identity_changed = any(isinstance(r, (Account, Instrument)) for r in changes)
             for receipt in session.scalars(select(BrokerMonthApply)):
-                if receipt.account_id not in affected_accounts:
+                # Zero-write Preview can select a bond absent from end holdings;
+                # catalogue dependencies are therefore account-wide, as in the
+                # existing identity revision hash. Tokens do not block v1 Close.
+                if not identity_changed and receipt.account_id not in affected_accounts:
                     continue
                 if "projection_digest" not in json.loads(receipt.projection_json):
                     continue
@@ -206,6 +223,14 @@ def _before_flush(session, _context, _instances):
             }
 
             def affects(row):
+                if (
+                    session.info.get("broker_money_stage")
+                    and isinstance(row, InvestmentCashFlow)
+                    and row in session.new
+                ):
+                    # The reserved, revalidated batch may add an independently
+                    # proved payout without invalidating unchanged prior payouts.
+                    return False
                 if isinstance(row, Account):
                     return row.id == receipt.account_id
                 if isinstance(row, Instrument):

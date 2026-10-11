@@ -71,7 +71,14 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
               </Td>
               <Td>
                 {target.role === "coupon"
-                  ? formatMoney(minor(target.facts?.tax_amount_kopecks), { empty: "Неизвестно" })
+                  ? formatMoney(
+                      minor(
+                        target.components
+                          ? target.components.tax_amount_kopecks
+                          : target.facts?.tax_amount_kopecks,
+                      ),
+                      { empty: "Неизвестно" },
+                    )
                   : "Не применяется"}
               </Td>
               <Td>{target.effective ? "Подтверждено" : "Требуется сверка"}</Td>

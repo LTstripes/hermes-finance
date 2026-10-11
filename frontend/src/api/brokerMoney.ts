@@ -64,6 +64,7 @@ export type MoneyTarget = {
   role: "coupon" | "account_funding";
   target_id: string | number;
   facts: Record<string, string | null> | null;
+  components?: Record<string, string | null>;
   effective: boolean;
   exceptions: string[];
   h2?: { account_scope: { status: string }; portfolio_scope: { status: string } };
