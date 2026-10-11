@@ -19,7 +19,15 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page
     .getByLabel("Оригинальный XML MyBroker", { exact: true })
     .setInputFiles({ name: filename, mimeType: "application/xml", buffer: xml });
+  const previewResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/broker-months/preview"),
+  );
   await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  const preview = await (await previewResponse).json();
+  expect(preview.account_bindings).toHaveLength(3);
+  const aliases = page.getByRole("table", { name: "Привязки исходных счетов" });
+  for (const identity of ["1234567", "ROW-A", "ROW-B", "filename_account", "acc_code"])
+    await expect(aliases).toContainText(identity);
   await expect(page.getByRole("table", { name: "Позиции по исходному отчёту" })).toContainText(
     "RU000A000001",
   );
@@ -32,7 +40,31 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await reviewed.focus();
   await page.keyboard.press("Space");
   await expect(reviewed).toBeChecked();
+  await expect(apply).toBeDisabled();
+  expect(writes).toBe(0);
+  const bindingReview = page.getByRole("checkbox", {
+    name: /Я подтверждаю, что все новые aliases/,
+  });
+  await bindingReview.focus();
+  await page.keyboard.press("Space");
+  await expect(bindingReview).toBeChecked();
+  await expect(apply).toBeEnabled();
   await page.screenshot({ path: info.outputPath("preview-1440.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  await expect(aliases).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("alias-preview-1280-125-percent.png"),
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1";
+  });
   await apply.click();
   await expect(
     page.getByText(/Сохранённый результат подтверждён независимым чтением/),
@@ -78,6 +110,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
         account_id: 1,
         confirmation_digest: saved.confirmation_digest,
         request_id: saved.request_id,
+        reviewed_account_bindings: preview.account_bindings,
       }),
     },
   });
@@ -97,6 +130,12 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
     buffer: partial,
   });
   await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await expect(page.getByRole("table", { name: "Привязки исходных счетов" })).toContainText(
+    "Существующая",
+  );
+  await expect(
+    page.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }),
+  ).toHaveCount(0);
   await expect(page.getByText(/Черновик неполный. Есть неразобранные/)).toBeVisible();
   await page.getByText("Все денежные строки и секции источника").click();
   await expect(page.getByText("Не разобрано — требуется доказательство")).toBeVisible();

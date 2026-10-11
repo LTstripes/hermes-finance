@@ -172,6 +172,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     () => queryClient.getQueryData<string>(["broker-month-confirmed", monthId]) ?? null,
   );
   const [reviewed, setReviewed] = useState(false);
+  const [bindingsReviewed, setBindingsReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<string | null>(null);
@@ -187,6 +188,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     setPreview(null);
     setReadback(null);
     setReviewed(false);
+    setBindingsReviewed(false);
     setError(null);
     request.current = null;
   }
@@ -198,6 +200,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     setPreview(null);
     request.current = null;
     setReviewed(false);
+    setBindingsReviewed(false);
     try {
       const result = await previewBrokerMonth(file, {
         reporting_month_id: monthId,
@@ -220,6 +223,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
   }
   async function apply() {
     if (!file || !preview?.can_apply || !reviewed || busy || closed || !request.current) return;
+    if (preview.account_bindings.length && !bindingsReviewed) return;
     setBusy(true);
     setError(null);
     try {
@@ -229,6 +233,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         intent,
         preview.confirmation_digest,
         request.current,
+        preview.account_bindings,
       );
       const persisted = await readBrokerMonth(request.current);
       if (!active.current) return;
@@ -346,6 +351,41 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         {preview ? (
           <>
             <SourceInventory document={preview.document} />
+            <Table aria-label="Привязки исходных счетов">
+              <thead>
+                <tr>
+                  <Th>Точный alias</Th>
+                  <Th>Происхождение</Th>
+                  <Th>Счёт Hermes</Th>
+                  <Th>Привязка</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.account_aliases.map((alias) => (
+                  <tr key={alias.identity}>
+                    <Td>{alias.identity}</Td>
+                    <Td>{alias.origins.join(", ")}</Td>
+                    <Td>
+                      {alias.target_name ?? "Неизвестен"} (#{alias.hermes_id})
+                    </Td>
+                    <Td>
+                      {alias.action === "reuse" ? "Существующая" : "Новая — требует подтверждения"}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            {preview.account_bindings.length ? (
+              <label className={styles.review}>
+                <input
+                  type="checkbox"
+                  checked={bindingsReviewed}
+                  disabled={busy || !preview.can_apply}
+                  onChange={(e) => setBindingsReviewed(e.target.checked)}
+                />{" "}
+                Я подтверждаю, что все новые aliases в таблице относятся к указанному счёту Hermes.
+              </label>
+            ) : null}
             <Exceptions codes={preview.exceptions} />
             {preview.conflicts.length ? (
               <div role="alert">
@@ -372,7 +412,12 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
             <Button
               type="button"
               onClick={() => void apply()}
-              disabled={busy || !preview.can_apply || !reviewed}
+              disabled={
+                busy ||
+                !preview.can_apply ||
+                !reviewed ||
+                (preview.account_bindings.length > 0 && !bindingsReviewed)
+              }
             >
               {preview.bookkeeping_ready
                 ? "Сформировать черновик"

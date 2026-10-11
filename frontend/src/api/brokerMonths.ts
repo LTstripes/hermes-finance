@@ -2,9 +2,17 @@ import { apiMultipart, apiRequest } from "./client";
 import type { MyBrokerDocument } from "./mybrokerImport";
 
 export type BrokerMonthIntent = { reporting_month_id: number; account_id: number };
+export type AccountBindingDecision = { identity: string; hermes_id: number };
 export type BrokerMonthPreview = BrokerMonthIntent & {
   contract_version: "broker_month_v1";
   confirmation_digest: string;
+  account_bindings: AccountBindingDecision[];
+  account_aliases: (AccountBindingDecision & {
+    origins: ("filename_account" | "acc_code")[];
+    target_name: string | null;
+    action: "reuse" | "stage_create";
+    mapping_id: number | null;
+  })[];
   document: MyBrokerDocument;
   conflicts: string[];
   exceptions: string[];
@@ -44,12 +52,18 @@ export function applyBrokerMonth(
   intent: BrokerMonthIntent,
   digest: string,
   requestId: string,
+  reviewedAccountBindings: AccountBindingDecision[],
 ) {
   const form = new FormData();
   form.append("file", file);
   form.append(
     "confirmation",
-    JSON.stringify({ ...intent, confirmation_digest: digest, request_id: requestId }),
+    JSON.stringify({
+      ...intent,
+      confirmation_digest: digest,
+      request_id: requestId,
+      reviewed_account_bindings: reviewedAccountBindings,
+    }),
   );
   return apiMultipart<BrokerMonthReadback>("/api/broker-months/apply", form);
 }

@@ -18,7 +18,7 @@ from hermes_finance.services.reporting_months import create_reporting_month
 def main():
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "backend" / "tests"))
-    from test_statement_import_mybroker_endpoints import broker_month_xml
+    from test_statement_import_mybroker_endpoints import broker_month_alias_xml
 
     with TemporaryDirectory(prefix="hermes-broker-month-synthetic-") as temporary:
         database = create_database(Path(temporary) / "finance.db")
@@ -53,7 +53,7 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
-            xml = broker_month_xml(bond=True, unsupported=kind == "partial")
+            xml = broker_month_alias_xml(bond=True, unsupported=kind == "partial")
             if kind == "partial":
                 xml = (
                     xml.replace(b".01.2030", b".02.2030")

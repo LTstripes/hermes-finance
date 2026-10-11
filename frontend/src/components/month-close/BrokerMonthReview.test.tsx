@@ -68,6 +68,17 @@ const preview: BrokerMonthPreview = {
   reporting_month_id: 1,
   account_id: 7,
   confirmation_digest: "b".repeat(64),
+  account_bindings: [],
+  account_aliases: [
+    {
+      identity: "synthetic",
+      hermes_id: 7,
+      mapping_id: 1,
+      action: "reuse",
+      origins: ["filename_account", "acc_code"],
+      target_name: "Synthetic broker",
+    },
+  ],
   document,
   conflicts: [],
   exceptions: ["money_semantics_unsupported"],
@@ -136,6 +147,9 @@ it("requires explicit whole-account review and confirms partial DRAFT only after
   await inspect(user);
   const apply = screen.getByRole("button", { name: "Сформировать неполный черновик" });
   expect(apply).toBeDisabled();
+  expect(screen.getByRole("table", { name: "Привязки исходных счетов" })).toHaveTextContent(
+    "Существующая",
+  );
   expect(screen.getByText(/Общая оценка источника/)).toHaveTextContent("— → 1");
   await user.click(screen.getByText("Все денежные строки и секции источника"));
   expect(screen.getByText("Не разобрано — требуется доказательство")).toBeVisible();
@@ -145,6 +159,68 @@ it("requires explicit whole-account review and confirms partial DRAFT only after
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
   expect(readBrokerMonth).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+});
+
+it("discloses every new alias and sends the exact batch decision only after explicit confirmation", async () => {
+  const decisions = ["FILE-ALIAS", "ROW-A", "ROW-B"].map((identity) => ({
+    identity,
+    hermes_id: 7,
+  }));
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    account_bindings: decisions,
+    account_aliases: decisions.map((d, i) => ({
+      ...d,
+      mapping_id: null,
+      action: "stage_create",
+      origins: [i === 0 ? "filename_account" : "acc_code"],
+      target_name: "Synthetic broker",
+    })),
+  });
+  const user = show();
+  await inspect(user);
+  const table = screen.getByRole("table", { name: "Привязки исходных счетов" });
+  for (const alias of [
+    "FILE-ALIAS",
+    "ROW-A",
+    "ROW-B",
+    "filename_account",
+    "acc_code",
+    "Synthetic broker (#7)",
+  ])
+    expect(table).toHaveTextContent(alias);
+  await user.click(
+    screen.getByRole("checkbox", { name: "Я проверил весь счёт и видимую неполноту черновика." }),
+  );
+  const apply = screen.getByRole("button", { name: "Сформировать неполный черновик" });
+  expect(apply).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }));
+  await user.click(apply);
+  await screen.findByText(/Сохранённый результат подтверждён независимым чтением/);
+  expect(vi.mocked(applyBrokerMonth).mock.calls[0][4]).toEqual(decisions);
+});
+
+it("reinspection invalidates alias confirmation and stale Apply cannot claim success", async () => {
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    account_bindings: [{ identity: "synthetic", hermes_id: 7 }],
+    account_aliases: [{ ...preview.account_aliases[0], action: "stage_create", mapping_id: null }],
+  });
+  vi.mocked(applyBrokerMonth).mockRejectedValue(new Error("broker_month_preview_stale"));
+  const user = show();
+  await inspect(user);
+  await user.click(screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }));
+  await user.click(screen.getByRole("checkbox", { name: /Я проверил весь счёт/ }));
+  await user.click(screen.getByRole("button", { name: "Сформировать неполный черновик" }));
+  await screen.findByText("broker_month_preview_stale");
+  expect(readBrokerMonth).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await screen.findByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ });
+  expect(
+    screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }),
+  ).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Сформировать неполный черновик" })).toBeDisabled();
 });
 it("does not claim success after failed GET and reuses request identity on retry", async () => {
   vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic read failed"));

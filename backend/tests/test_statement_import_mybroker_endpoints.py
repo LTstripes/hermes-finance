@@ -36,7 +36,7 @@ from hermes_finance.services.mybroker_import import (
     read_mybroker_import,
     unresolved_class_source_ids,
 )
-from hermes_finance.statement_import.mybroker import MyBrokerError, parse_mybroker
+from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, parse_mybroker
 
 
 def endpoint_xml(
@@ -127,7 +127,14 @@ def _broker_month_preview(client, intent, xml, filename=FILENAME, supporting=Non
 
 
 def _broker_month_apply(
-    client, intent, reviewed, xml, request_id="synthetic-batch", filename=FILENAME, supporting=None
+    client,
+    intent,
+    reviewed,
+    xml,
+    request_id="synthetic-batch",
+    filename=FILENAME,
+    supporting=None,
+    decisions=None,
 ):
     return client.post(
         "/api/broker-months/apply",
@@ -138,10 +145,146 @@ def _broker_month_apply(
                     **intent,
                     "confirmation_digest": reviewed["confirmation_digest"],
                     "request_id": request_id,
+                    "reviewed_account_bindings": (
+                        reviewed["account_bindings"] if decisions is None else decisions
+                    ),
                 }
             )
         },
     )
+
+
+def broker_month_alias_xml(*, bond=False, unsupported=False):
+    """Distinct fabricated codes: no suffix/name equivalence is assumed."""
+    root = ET.fromstring(broker_month_xml(bond=bond, unsupported=unsupported))
+    for row in root.iter():
+        if "acc_code" in row.attrib:
+            row.set(
+                "acc_code",
+                "ROW-B" if row.get("active_name") == "RUB" else "ROW-A",
+            )
+    return ET.tostring(root, encoding="utf-8")
+
+
+def _all_month_tables(database):
+    from hermes_finance.persistence import Base
+
+    with database.session_factory() as session:
+        return {
+            t.name: [tuple(str(v) for v in row) for row in session.execute(select(t))]
+            for t in Base.metadata.sorted_tables
+        }
+
+
+@pytest.mark.parametrize("invalid", ["missing", "partial", "duplicate", "unobserved", "target"])
+def test_broker_month_multiple_new_aliases_require_exact_explicit_decisions(database, invalid):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_alias_xml()
+    filename = FILENAME.replace("1234567", "7654321")
+    before = _all_month_tables(database)
+    plan = _broker_month_preview(client, intent, xml, filename=filename)
+    assert _all_month_tables(database) == before  # Preview cannot stage mappings.
+    assert plan["can_apply"], plan["conflicts"]
+    assert plan["account_aliases"] == [
+        {
+            "identity": alias,
+            "hermes_id": 1,
+            "mapping_id": None,
+            "action": "stage_create",
+            "origins": [origin],
+            "target_name": "Synthetic account",
+        }
+        for alias, origin in [
+            ("7654321", "filename_account"),
+            ("ROW-A", "acc_code"),
+            ("ROW-B", "acc_code"),
+        ]
+    ]
+    decisions = plan["account_bindings"]
+    invalid_decisions = {
+        "missing": [],
+        "partial": decisions[:-1],
+        "duplicate": decisions + [decisions[0]],
+        "unobserved": decisions + [{"identity": "NEVER-OBSERVED", "hermes_id": 1}],
+        "target": [{**d, "hermes_id": 999999} for d in decisions],
+    }[invalid]
+    rejected = _broker_month_apply(
+        client, intent, plan, xml, filename=filename, decisions=invalid_decisions
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["error"]["message"] == "broker_month_account_bindings_unconfirmed"
+    assert _all_month_tables(database) == before
+    accepted = _broker_month_apply(client, intent, plan, xml, filename=filename)
+    assert accepted.status_code == 200, accepted.text
+    reread = client.get("/api/broker-months/synthetic-batch")
+    assert reread.json()["accepted"] == accepted.json()["accepted"]
+    replay = _broker_month_apply(client, intent, plan, xml, filename=filename)
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    assert (
+        _broker_month_apply(client, intent, plan, xml, filename=filename, decisions=[]).status_code
+        == 409
+    )
+    fresh = _broker_month_preview(client, intent, xml, filename=filename)
+    assert fresh["account_bindings"] == []
+    assert all(a["action"] == "reuse" for a in fresh["account_aliases"])
+    after = _all_month_tables(database)
+    assert (
+        _broker_month_apply(
+            client, intent, fresh, xml, filename=filename, request_id="reuse"
+        ).status_code
+        == 200
+    )
+    current = _all_month_tables(database)
+    for table in after:
+        if table not in {"broker_month_applies", "executed_trade_applies"}:
+            assert current[table] == after[table]
+
+
+@pytest.mark.parametrize("change", ["row", "filename", "mapping", "inactive_target"])
+def test_broker_month_alias_decisions_stale_preview_rolls_back_all_tables(database, change):
+    from hermes_finance.persistence import Account
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_alias_xml()
+    filename = FILENAME.replace("1234567", "7654321")
+    plan = _broker_month_preview(client, intent, xml, filename=filename)
+    if change == "row":
+        xml = xml.replace(b"ROW-B", b"ROW-C")
+    elif change == "filename":
+        filename = filename.replace("7654321", "7654322")
+    else:
+        with database.session_factory() as session:
+            if change == "mapping":
+                other = create_account(
+                    session, name="Other synthetic broker", account_type="brokerage"
+                )
+                confirm_mapping(
+                    session,
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity="ROW-B",
+                    hermes_target_id=other.id,
+                )
+            else:
+                session.get(Account, 1).status = "closed"
+                session.commit()
+    before = _all_month_tables(database)
+    response = _broker_month_apply(client, intent, plan, xml, filename=filename)
+    assert (
+        response.status_code == 409
+        and response.json()["error"]["message"] == "broker_month_preview_stale"
+    )
+    assert _all_month_tables(database) == before
+    if change == "mapping":
+        fresh = _broker_month_preview(client, intent, xml, filename=filename)
+        assert not fresh["can_apply"]
+        assert "account_mapping_conflict" in fresh["conflicts"]
+        assert _broker_month_apply(client, intent, fresh, xml, filename=filename).status_code == 409
+        assert _all_month_tables(database) == before
 
 
 def test_broker_month_atomic_native_draft_get_close_and_replay(database):
@@ -166,6 +309,8 @@ def test_broker_month_atomic_native_draft_get_close_and_replay(database):
     xml = broker_month_xml(bond=True)
     reviewed = _broker_month_preview(client, intent, xml)
     assert reviewed["can_apply"] and reviewed["bookkeeping_ready"], reviewed
+    assert reviewed["account_bindings"] == []
+    assert all(a["action"] == "reuse" for a in reviewed["account_aliases"])
     assert reviewed["cash_control_difference_kopecks"] == 0
     with database.session_factory() as session:
         assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0

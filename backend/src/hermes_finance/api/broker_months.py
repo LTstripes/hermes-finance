@@ -27,9 +27,16 @@ class Intent(BaseModel):
     account_id: int = Field(gt=0, strict=True)
 
 
+class AccountBindingDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    identity: str = Field(min_length=1)
+    hermes_id: int = Field(gt=0, strict=True)
+
+
 class Confirmation(Intent):
     confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    reviewed_account_bindings: list[AccountBindingDecision] = Field(default_factory=list)
 
 
 @router.post("/preview")

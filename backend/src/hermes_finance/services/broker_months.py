@@ -227,15 +227,34 @@ def _intersecting_sources(session, document, account_id):
 def _prepare(session, *, document, filename, reporting_month_id, account_id, optional_hashes):
     parsed = parse_mybroker(document, filename)
     evidence = parse_identity(document, filename)
+    # Effective aliases are authority already; only unbound aliases are proposed.
+    # These proposals are zero-write until Apply receives the exact reviewed set.
+    existing = mybroker_identity._prepare(session, evidence, [])
     account_bindings = [
-        {"identity": alias, "hermes_id": account_id} for alias in evidence["source_accounts"]
+        {"identity": p["identity"], "hermes_id": account_id}
+        for p in existing["accounts"]
+        if p["mapping_id"] is None
     ]
     identity = mybroker_identity._prepare(session, evidence, account_bindings)
+    account_aliases = []
+    for proposal in identity["accounts"]:
+        alias = proposal["identity"]
+        target = session.get(Account, proposal["hermes_id"]) if proposal["hermes_id"] else None
+        account_aliases.append(
+            {
+                **proposal,
+                "origins": (["filename_account"] if alias == evidence["filename_account"] else [])
+                + (["acc_code"] if alias in evidence["row_accounts"] else []),
+                "target_name": target.name if target else None,
+            }
+        )
     source = mybroker_import._prepare(session, parsed, planned_bindings=_bindings(identity))
     month = session.get(ReportingMonth, reporting_month_id, populate_existing=True)
     if month is None:
         raise MyBrokerError("reporting_month_not_found")
     conflicts = set(identity["conflicts"]) | set(source["conflicts"])
+    if any(p["hermes_id"] != account_id for p in identity["accounts"]):
+        conflicts.add("account_mapping_conflict")
     conflicts.update(g["code"] for g in identity["evidence_gaps"])
     if not identity["can_stage"]:
         conflicts.add("identity_batch_conflict")
@@ -399,6 +418,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         "document": parsed,
         "identity": identity,
         "account_bindings": account_bindings,
+        "account_aliases": account_aliases,
         "positions": position_plan,
         "cash_kopecks": cash_amount,
         "cash_id": cash_id,
@@ -654,19 +674,24 @@ def read_broker_month(session, request_id):
         }
 
 
-def apply_broker_month(session, *, confirmation_digest, request_id, **kwargs):
+def apply_broker_month(
+    session, *, confirmation_digest, request_id, reviewed_account_bindings=None, **kwargs
+):
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("session_has_pending_changes")
-    fingerprint = digest(
-        [
-            hashlib.sha256(kwargs["document"]).hexdigest(),
-            kwargs["filename"],
-            kwargs["reporting_month_id"],
-            kwargs["account_id"],
-            kwargs["optional_hashes"],
-            confirmation_digest,
-        ]
-    )
+    reviewed = sorted(reviewed_account_bindings or [], key=lambda b: b["identity"])
+    fingerprint_material = [
+        hashlib.sha256(kwargs["document"]).hexdigest(),
+        kwargs["filename"],
+        kwargs["reporting_month_id"],
+        kwargs["account_id"],
+        kwargs["optional_hashes"],
+        confirmation_digest,
+    ]
+    # Preserve existing all-mapped receipt retries, which had no new decisions.
+    if reviewed:
+        fingerprint_material.append(reviewed)
+    fingerprint = digest(fingerprint_material)
     session.rollback()
     try:
         session.execute(
@@ -687,6 +712,8 @@ def apply_broker_month(session, *, confirmation_digest, request_id, **kwargs):
                 raise MyBrokerError("broker_month_preview_stale")
             if not plan["can_apply"]:
                 raise MyBrokerError("broker_month_reconciliation_required")
+            if reviewed != sorted(plan["account_bindings"], key=lambda b: b["identity"]):
+                raise MyBrokerError("broker_month_account_bindings_unconfirmed")
             mybroker_identity.stage_identity(
                 session,
                 document=kwargs["document"],
