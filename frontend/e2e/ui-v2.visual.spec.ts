@@ -438,6 +438,8 @@ async function installCloseApi(page: Page) {
       json = { ...state.workflow.month, can_close: state.workflow.readiness.can_close, items: [] };
     } else if (url.pathname === "/api/positions" && url.search === "?month_id=12") {
       json = [];
+    } else if (url.pathname === "/api/broker-months" && url.search === "?reporting_month_id=12") {
+      json = [];
     } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
       json = [];
     } else if (url.pathname === "/api/health") {

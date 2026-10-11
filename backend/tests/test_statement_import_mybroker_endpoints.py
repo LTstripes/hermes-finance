@@ -525,6 +525,34 @@ def test_broker_month_balanced_endpoints_do_not_clear_unresolved_trade_principal
     assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
 
 
+@pytest.mark.parametrize("missing_date", ["save_depo_settlement_date", "save_settlement_date"])
+def test_broker_month_new_trade_missing_settlement_blocks_preview_get_and_close(
+    database, missing_date
+):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(broker_month_xml())
+    trade = root.find(".//{MyBroker}Details[@trade_no]")
+    trade.attrib.pop(missing_date)
+    root.find(".//{MyBroker}Details[@ISIN1]").set("income_rest", "10")
+    xml = ET.tostring(root, encoding="utf-8")
+    plan = _broker_month_preview(client, intent, xml)
+    assert plan["cash_control_difference_kopecks"] == 0
+    assert plan["can_apply"] and not plan["bookkeeping_ready"]
+    assert "actual_settlement_missing" in plan["exceptions"]
+    result = _broker_month_apply(client, intent, plan, xml)
+    assert result.status_code == 200, result.text
+    readback = client.get("/api/broker-months/synthetic-batch").json()
+    assert "actual_settlement_missing" in readback["exceptions"]
+    assert not readback["bookkeeping_ready"]
+    readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
+    assert not readiness["can_close"]
+    assert any(i["code"] == "actual_settlement_missing" for i in readiness["items"])
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+
+
 def test_broker_month_affirmative_sold_out_position_is_source_zero_not_a_holding(database):
     intent = _broker_month_setup(database)
     client = TestClient(create_app(database=database))

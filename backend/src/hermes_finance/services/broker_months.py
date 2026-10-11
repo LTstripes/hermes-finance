@@ -137,12 +137,14 @@ def _controls(document):
     ):
         blockers.add("quantity_control_unavailable")
     for trade in document["trades"]:
-        blockers.update(
-            executed_trades.settlement_principal_reasons(
-                trade["core"],
-                [leg for leg in trade.get("cash_legs", []) if leg["kind"] == "settlement"],
-            )
+        readiness = executed_trades.source_bookkeeping_readiness(
+            trade,
+            {
+                kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
+                for kind in ("settlement", "commission")
+            },
         )
+        blockers.update(code for reasons in readiness.values() for code in reasons)
     for row in document["positions"]:
         delta = None
         if row["beginning_actual_quantity"] is not None:
