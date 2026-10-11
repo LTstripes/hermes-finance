@@ -386,6 +386,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
             blockers.append("canonical_trade_authority_unavailable")
     if _existing_flows(session, month.id, account_id):
         blockers.append("existing_flow_reconciliation_required")
+    blockers.extend(_account_readiness(session, month.id, account_id))
     blockers = sorted(
         set(blockers)
         | set(source["blockers"])
@@ -580,6 +581,19 @@ def _readiness(session, receipt):
     return sorted(blockers)
 
 
+def _account_readiness(session, month_id, account_id):
+    """Retained receipt authority is account-wide, as at global Close."""
+    receipts = session.scalars(
+        select(BrokerMonthApply)
+        .where(
+            BrokerMonthApply.reporting_month_id == month_id,
+            BrokerMonthApply.account_id == account_id,
+        )
+        .execution_options(populate_existing=True)
+    )
+    return sorted({code for receipt in receipts for code in _readiness(session, receipt)})
+
+
 def broker_month_close_blockers(session, month_id):
     """One shared pure read for readiness and reserved authoritative Close."""
     result = []
@@ -611,7 +625,7 @@ def read_broker_month(session, request_id):
         if receipt is None:
             raise MyBrokerError("broker_month_not_found")
         accepted = json.loads(receipt.projection_json)
-        blockers = _readiness(session, receipt)
+        blockers = _account_readiness(session, receipt.reporting_month_id, receipt.account_id)
         source = session.get(MyBrokerImport, receipt.import_id)
         accepted["document"] = (
             json.loads(source.normalized_json)

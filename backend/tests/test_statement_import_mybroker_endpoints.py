@@ -293,6 +293,49 @@ def test_broker_month_currency_manual_and_optional_evidence_fail_closed(database
     )
 
 
+@pytest.mark.parametrize("optional_first", [True, False])
+def test_broker_month_all_receipts_block_account_preview_get_and_close(database, optional_first):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    supporting = [
+        ("supporting", ("synthetic.xml", b"fabricated optional evidence", "application/xml"))
+    ]
+    first_files = supporting if optional_first else []
+    first = _broker_month_preview(client, intent, xml, supporting=first_files)
+    assert first["bookkeeping_ready"] == (not optional_first)
+    result = _broker_month_apply(
+        client, intent, first, xml, request_id="first", supporting=first_files
+    )
+    assert result.status_code == 200, result.text
+    second_files = [] if optional_first else supporting
+    second = _broker_month_preview(client, intent, xml, supporting=second_files)
+    assert second["can_apply"] and not second["bookkeeping_ready"]
+    assert "optional_evidence_unsupported" in second["exceptions"]
+    result = _broker_month_apply(
+        client, intent, second, xml, request_id="second", supporting=second_files
+    )
+    assert result.status_code == 200, result.text
+    assert not result.json()["bookkeeping_ready"]
+    for request_id in ("first", "second"):
+        current = client.get(f"/api/broker-months/{request_id}").json()
+        assert not current["bookkeeping_ready"]
+        assert "optional_evidence_unsupported" in current["exceptions"]
+    # A further clean upload cannot erase the applicable optional-document evidence.
+    clean = _broker_month_preview(client, intent, xml)
+    assert clean["can_apply"] and not clean["bookkeeping_ready"]
+    assert "optional_evidence_unsupported" in clean["exceptions"]
+    readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
+    assert not readiness["can_close"]
+    assert any(i["code"] == "optional_evidence_unsupported" for i in readiness["items"])
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 1
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 1
+
+
 def test_broker_month_changed_projection_atomically_prevents_close(database):
     intent = _broker_month_setup(database)
     client = TestClient(create_app(database=database))
