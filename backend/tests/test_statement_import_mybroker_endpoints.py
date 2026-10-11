@@ -503,6 +503,108 @@ def test_broker_month_preview_discloses_intersecting_unsupported_money(database)
     assert not plan["bookkeeping_ready"]
 
 
+def test_broker_month_balanced_endpoints_do_not_clear_unresolved_trade_principal(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml().replace(b'summ_trade="1000.00"', b'summ_trade="999.00"')
+    plan = _broker_month_preview(client, intent, xml)
+    assert plan["cash_control_difference_kopecks"] == 0
+    assert plan["quantity_controls"][0]["difference"] == "0"
+    assert plan["can_apply"] and not plan["bookkeeping_ready"]
+    assert "settlement_principal_unresolved" in plan["exceptions"]
+    result = _broker_month_apply(client, intent, plan, xml)
+    assert result.status_code == 200, result.text
+    assert not result.json()["bookkeeping_ready"]
+    assert (
+        "settlement_principal_unresolved"
+        in client.get("/api/broker-months/synthetic-batch").json()["exceptions"]
+    )
+    assert not client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+
+
+def test_broker_month_affirmative_sold_out_position_is_source_zero_not_a_holding(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = (
+        broker_month_xml()
+        .replace(b'real_rest="10"', b'real_rest="0"')
+        .replace(b'forward_rest="10"', b'forward_rest="0"')
+        .replace(b'real_volume="1000.00"', b'real_volume="0"')
+        .replace(b'qty="2"', b'qty="-8"')
+        .replace(b'summ_trade="1000.00"', b'summ_trade="800.00"')
+        .replace(b'volume="-1000.00"', b'volume="800.00"')
+        .replace(b'real_rest="400.00"', b'real_rest="2200.00"')
+    )
+    plan = _broker_month_preview(client, intent, xml)
+    assert plan["can_apply"] and plan["bookkeeping_ready"], plan
+    assert plan["positions"][0]["action"] == "observed_zero"
+    result = _broker_month_apply(client, intent, plan, xml)
+    assert result.status_code == 200, result.text
+    assert result.json()["bookkeeping_ready"]
+    assert result.json()["accepted"]["position_ids"] == []
+    assert result.json()["accepted"]["document"]["positions"][0]["actual_quantity"] == "0"
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 0
+        assert session.scalar(select(CashBalance)).amount_kopecks == 220000
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
+
+
+def test_broker_month_fractional_stock_is_a_preview_conflict(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = (
+        broker_month_xml()
+        .replace(b'real_rest="10"', b'real_rest="10.5"')
+        .replace(b'forward_rest="10"', b'forward_rest="10.5"')
+    )
+    plan = _broker_month_preview(client, intent, xml)
+    assert not plan["can_apply"]
+    assert "quantity_precision_unsupported" in plan["conflicts"]
+    assert _broker_month_apply(client, intent, plan, xml).status_code == 409
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+
+
+def test_broker_month_close_refreshes_loaded_financial_facts_after_reservation(database):
+    from hermes_finance.services.reporting_months import close_reporting_month
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = broker_month_xml()
+    plan = _broker_month_preview(client, intent, xml)
+    assert _broker_month_apply(client, intent, plan, xml).status_code == 200
+    with database.session_factory() as stale:
+        cash = stale.scalar(select(CashBalance))
+        assert cash.amount_kopecks == 40000
+        with database.session_factory() as writer:
+            writer.execute(update(CashBalance).values(amount_kopecks=1))
+            writer.commit()
+        with pytest.raises(ValueError, match="сохранённые позиции или cash"):
+            close_reporting_month(stale, intent["reporting_month_id"])
+    assert client.get(f"/api/months/{intent['reporting_month_id']}").json()["status"] == "draft"
+
+
+def test_broker_month_missing_security_inventory_is_not_affirmative_zero(database):
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(positions_only(broker_month_xml()))
+    collection = root.find(".//{MyBroker}Details_Collection")
+    collection.remove(collection.find("{MyBroker}Details[@ISIN1]"))
+    cash = collection.find("{MyBroker}Details")
+    cash.set("income_rest", "0")
+    cash.set("real_rest", "0")
+    xml = ET.tostring(root, encoding="utf-8")
+    plan = _broker_month_preview(client, intent, xml)
+    assert plan["can_apply"] and not plan["bookkeeping_ready"]
+    assert "security_inventory_unproven" in plan["exceptions"]
+    assert _broker_month_apply(client, intent, plan, xml).status_code == 200
+    assert not client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+
+
 def positions_only(document: bytes) -> bytes:
     """Keep the endpoint Positions section and drop all trade/money rows."""
     root = ET.fromstring(document)

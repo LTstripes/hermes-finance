@@ -59,7 +59,13 @@ def _minor(value: str | None, *, signed=False) -> int | None:
 
 
 def _rows(session, model):
-    return list(session.scalars(select(model).order_by(*model.__table__.primary_key)))
+    return list(
+        session.scalars(
+            select(model)
+            .order_by(*model.__table__.primary_key)
+            .execution_options(populate_existing=True)
+        )
+    )
 
 
 def _dependencies(session):
@@ -123,6 +129,20 @@ def _controls(document):
     else:
         blockers.add("rub_money_incomplete")
     quantity_controls = []
+    if not document["positions"]:
+        blockers.add("security_inventory_unproven")
+    if any(
+        t["core"]["isin"] not in {p["isin"] for p in document["positions"]}
+        for t in document["trades"]
+    ):
+        blockers.add("quantity_control_unavailable")
+    for trade in document["trades"]:
+        blockers.update(
+            executed_trades.settlement_principal_reasons(
+                trade["core"],
+                [leg for leg in trade.get("cash_legs", []) if leg["kind"] == "settlement"],
+            )
+        )
     for row in document["positions"]:
         delta = None
         if row["beginning_actual_quantity"] is not None:
@@ -240,6 +260,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     if known:
         for candidate in executed_trades._plan(session, known)["candidates"]:
             conflicts.update(candidate["conflicts"])
+            canonical_blockers.update(_bookkeeping_trade_blockers(candidate))
             if candidate["action"] == "noop" and not _canonical_projection_matches(
                 session, candidate
             ):
@@ -251,6 +272,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         quantity = Decimal(p["actual_quantity"])
         if (
             quantity < 0
+            or (proposal["instrument_type"] == "stock" and quantity != quantity.to_integral_value())
             or quantity > Decimal("999999999999.999999")
             or quantity.normalize().as_tuple().exponent < -6
         ):
@@ -271,7 +293,8 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         )
         existing = matches[0] if len(matches) == 1 else None
         if matches and (
-            existing is None
+            quantity == 0
+            or existing is None
             or existing.source_row_key != row_key
             or existing.price_source != NATIVE_SOURCE
             or existing.quantity != quantity
@@ -287,7 +310,9 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
                 "market_value_kopecks": value,
                 "source_row_key": row_key,
                 "position_id": existing.id if existing else None,
-                "action": "reuse" if existing else "create",
+                "action": "observed_zero"
+                if quantity == 0 and value == 0
+                else ("reuse" if existing else "create"),
             }
         )
     existing_positions = list(
@@ -345,6 +370,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
                 "candidates"
             ]:
                 conflicts.update(candidate["conflicts"])
+                blockers.extend(_bookkeeping_trade_blockers(candidate))
                 if candidate["action"] != "noop" or not _canonical_projection_matches(
                     session, candidate
                 ):
@@ -405,6 +431,7 @@ def _projection(session, receipt):
                 model.account_id == receipt.account_id,
             )
             .order_by(model.id)
+            .execution_options(populate_existing=True)
         ):
             rows.append(
                 [
@@ -432,12 +459,23 @@ def _existing_flows(session, month_id, account_id):
     )
 
 
+def _bookkeeping_trade_blockers(candidate):
+    readiness = candidate["evidence"]["readiness"]
+    # C1 and historical coverage are return-authority gates, not bookkeeping.
+    return {
+        code
+        for kind in ("settlement", "commission", "cash_ownership", "unsupported")
+        for code in readiness[kind]
+    }
+
+
 def _canonical_projection_matches(session, candidate):
     latest = session.scalar(
         select(ExecutedTradeRevision)
         .where(ExecutedTradeRevision.trade_id == candidate["trade_id"])
         .order_by(ExecutedTradeRevision.revision.desc())
         .limit(1)
+        .execution_options(populate_existing=True)
     )
     if (
         latest is None
@@ -447,11 +485,13 @@ def _canonical_projection_matches(session, candidate):
         return False
     for occurrence in candidate["evidence"]["occurrences"]:
         link = session.scalar(
-            select(ExecutedTradeOccurrence).where(
+            select(ExecutedTradeOccurrence)
+            .where(
                 ExecutedTradeOccurrence.import_id == occurrence["import_id"],
                 ExecutedTradeOccurrence.section == occurrence["section"],
                 ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
             )
+            .execution_options(populate_existing=True)
         )
         if (
             link is None
@@ -499,7 +539,7 @@ def _readiness(session, receipt):
         for binding in json.loads(source.mappings_json):
             if binding["kind"] == "instrument":
                 instrument = session.get(Instrument, binding["hermes_id"], populate_existing=True)
-                expected = accepted["instruments"][str(binding["hermes_id"])]
+                expected = accepted["instruments"].get(str(binding["hermes_id"]))
                 if (
                     instrument is None
                     or [instrument.isin, instrument.instrument_type, instrument.currency]
@@ -520,6 +560,7 @@ def _readiness(session, receipt):
                 plan = executed_trades._plan(session, sorted(trade_identities))
                 for candidate in plan["candidates"]:
                     blockers.update(candidate["conflicts"])
+                    blockers.update(_bookkeeping_trade_blockers(candidate))
                     if candidate["action"] != "noop" or (
                         candidate["source_identity"] in accepted["trade_identities"]
                         and candidate["trade_id"] not in accepted["trade_ids"]
@@ -536,7 +577,9 @@ def broker_month_close_blockers(session, month_id):
     """One shared pure read for readiness and reserved authoritative Close."""
     result = []
     for receipt in session.scalars(
-        select(BrokerMonthApply).where(BrokerMonthApply.reporting_month_id == month_id)
+        select(BrokerMonthApply)
+        .where(BrokerMonthApply.reporting_month_id == month_id)
+        .execution_options(populate_existing=True)
     ):
         for code in _readiness(session, receipt):
             explanation = {
@@ -643,6 +686,8 @@ def apply_broker_month(session, *, confirmation_digest, request_id, **kwargs):
                 )
             position_ids = []
             for p in plan["positions"]:
+                if p["action"] == "observed_zero":
+                    continue  # Affirmative source zero is retained in S1, never a fabricated holding.
                 row = (
                     session.get(PositionSnapshot, p["position_id"])
                     if p["position_id"]
@@ -696,8 +741,8 @@ def apply_broker_month(session, *, confirmation_digest, request_id, **kwargs):
                 ),
                 "projection_digest": _projection(session, receipt),
                 "instruments": {
-                    str(p["instrument_id"]): [p["isin"], p["asset_kind"], "RUB"]
-                    for p in plan["positions"]
+                    str(i["hermes_id"]): [i["isin"], i["instrument_type"], i["currency"]]
+                    for i in plan["identity"]["instruments"]
                 },
                 "optional_hashes": kwargs["optional_hashes"],
                 "cash_control_difference_kopecks": plan["cash_control_difference_kopecks"],

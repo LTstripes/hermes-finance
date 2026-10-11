@@ -259,10 +259,12 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
   }
   const saved = Array.from(
     new Map(
-      [...(batches.data ?? []), ...(readback ? [readback] : [])].map((batch) => [
-        batch.account_id,
-        batch,
-      ]),
+      [
+        ...(batches.data ?? []),
+        ...(readback
+          ? [batches.data?.find((batch) => batch.request_id === readback.request_id) ?? readback]
+          : []),
+      ].map((batch) => [batch.account_id, batch]),
     ).values(),
   );
   return (

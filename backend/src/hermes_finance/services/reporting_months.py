@@ -264,8 +264,8 @@ def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
         session.execute(
             text("UPDATE reporting_months SET status = status WHERE id = :id"), {"id": month_id}
         )
-        session.expire_all()
         reporting_month = get_reporting_month(session, month_id)
+        session.refresh(reporting_month)
         if reporting_month.status == ReportingMonthStatus.CLOSED.value:
             session.rollback()
             return get_reporting_month(session, month_id)

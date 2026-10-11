@@ -51,7 +51,13 @@ from hermes_finance.statement_import.mybroker import (
 
 
 def _imports(session: Session) -> list[MyBrokerImport]:
-    return list(session.scalars(select(MyBrokerImport).order_by(MyBrokerImport.id)))
+    return list(
+        session.scalars(
+            select(MyBrokerImport)
+            .order_by(MyBrokerImport.id)
+            .execution_options(populate_existing=True)
+        )
+    )
 
 
 # The parser's core is immutable. These source fields may be absent in a
@@ -241,6 +247,7 @@ def _state(session: Session) -> tuple[dict, list[BrokerIdentityMapping]]:
             select(BrokerIdentityMapping)
             .where(BrokerIdentityMapping.provider == PROVIDER)
             .order_by(BrokerIdentityMapping.id)
+            .execution_options(populate_existing=True)
         )
     )
     # Bind reconciliation to the authoritative facts and all mapping lifecycle revisions.

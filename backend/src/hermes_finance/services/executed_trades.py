@@ -50,7 +50,9 @@ def _minor(value: str) -> int:
 
 
 def _rows(session: Session, model) -> list:
-    return list(session.scalars(select(model).order_by(model.id)))
+    return list(
+        session.scalars(select(model).order_by(model.id).execution_options(populate_existing=True))
+    )
 
 
 def _context(session: Session) -> dict:
@@ -101,6 +103,16 @@ def _latest(context: dict, trade_id: int) -> ExecutedTradeRevision | None:
         key=lambda r: r.revision,
         default=None,
     )
+
+
+def settlement_principal_reasons(core: dict, settlements: list[dict]) -> list[str]:
+    """Accepted native principal check, shared by S2 and zero-write S2b review."""
+    if (
+        len(settlements) == 1
+        and Decimal(settlements[0]["amount"]).copy_abs() != Decimal(core["trade_amount"]).copy_abs()
+    ):
+        return ["settlement_principal_unresolved"]
+    return []
 
 
 def _candidate(session: Session, context: dict, identity: str) -> dict:
@@ -250,8 +262,7 @@ def _candidate(session: Session, context: dict, identity: str) -> dict:
             leg["date"] != source["settlement_date"]
         ):
             settlement_reasons.append("settlement_cash_conflict")
-        if amount.copy_abs() != Decimal(source["core"]["trade_amount"]).copy_abs():
-            settlement_reasons.append("settlement_principal_unresolved")
+        settlement_reasons.extend(settlement_principal_reasons(source["core"], settlements))
     commission = source["bank_commission"] if actual else None
     fee_basis = (
         "zero"

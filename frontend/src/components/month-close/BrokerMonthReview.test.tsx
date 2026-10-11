@@ -190,3 +190,40 @@ it("CLOSED renders every persisted covered account and offers no writer", async 
   expect(screen.queryByLabelText("Оригинальный XML MyBroker")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Проверить MyBroker" })).not.toBeInTheDocument();
 });
+
+it("a refreshed source GET overrides earlier ready Apply readback", async () => {
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    bookkeeping_ready: true,
+    exceptions: [],
+  });
+  vi.mocked(applyBrokerMonth).mockImplementation(async (_file, _intent, _digest, requestId) => ({
+    ...persisted(requestId),
+    bookkeeping_ready: true,
+    exceptions: [],
+  }));
+  vi.mocked(readBrokerMonth).mockImplementation(async (id) => ({
+    ...persisted(id),
+    bookkeeping_ready: true,
+    exceptions: [],
+  }));
+  vi.mocked(listBrokerMonths).mockImplementation(async () => {
+    const id = vi.mocked(applyBrokerMonth).mock.calls.at(-1)?.[3];
+    return id
+      ? [{ ...persisted(id), bookkeeping_ready: false, exceptions: ["source_projection_changed"] }]
+      : [];
+  });
+  const user = show();
+  await screen.findByRole("option", { name: "Synthetic broker" });
+  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
+  await user.upload(
+    screen.getByLabelText("Оригинальный XML MyBroker"),
+    new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await screen.findByRole("button", { name: "Сформировать черновик" });
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
+  await screen.findByText(/Черновик неполный; Close заблокирован/);
+  expect(screen.queryByText(/Брокерский компонент готов к общей проверке/)).not.toBeInTheDocument();
+});

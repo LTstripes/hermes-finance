@@ -12,6 +12,10 @@ under #777. Unsupported instruments cannot be skipped to make the account comple
 Position quantity and native total, beginning and ending values, separate RUB cash
 and the full Money inventory remain distinct. Source cash is not incremented again
 by settlement or payouts. Missing tax, cost and bond NKD stay null.
+Affirmative zero holdings remain in source inventory without fabricated position
+rows. Missing security inventory is unproven, not observed zero; fractional stock
+quantities are explicit Preview conflicts. Balanced endpoints cannot clear an
+unresolved canonical settlement principal, commission or cash ownership.
 
 Only accepted S1 trade settlement/commission patterns and canonical native trade
 keys are financial authority here. No accepted generic Money manifest exists yet:
