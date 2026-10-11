@@ -1675,7 +1675,9 @@ def test_money_nkd_remains_scoped_close_blocker_after_coupon_and_h2_acceptance(d
         )
 
 
-def trade_money_xml(*, inclusive=True, duplicate_nkd=False, stamp="10", extra=False):
+def trade_money_xml(
+    *, inclusive=True, duplicate_nkd=False, stamp="10", extra=False, prior_month_buy=False
+):
     from copy import deepcopy
 
     root = ET.fromstring(money_batch_xml(nkd=True, stamp=stamp))
@@ -1685,6 +1687,8 @@ def trade_money_xml(*, inclusive=True, duplicate_nkd=False, stamp="10", extra=Fa
     bond.set("real_rest", "11")
     bond.set("forward_rest", "11")
     trade = root.find(".//{MyBroker}Details[@trade_no]")
+    if prior_month_buy:
+        trade.set("db_time", "31.12.2029 9:00:00\r\n31.12.2029 9:00:00")
     trade.set("isin_reg", "RU000A000001")
     trade.set("qty", "1")
     trade.set("summ_trade", "10125.50" if inclusive else "10000.00")
@@ -1762,7 +1766,10 @@ def _trade_decide(session, intent, originals, *, inclusive=True, claims=True, op
 
 
 @pytest.mark.parametrize("inclusive", [True, False])
-def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(database, inclusive):
+@pytest.mark.parametrize("prior_month_buy", [False, True])
+def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(
+    database, inclusive, prior_month_buy
+):
     from hermes_finance.persistence import (
         ExecutedTrade,
         ExecutedTradeOccurrence,
@@ -1773,13 +1780,21 @@ def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(dat
     from hermes_finance.services.broker_money import apply_money, preview_money, read_money
     from hermes_finance.services.executed_trades import read_executed_trades
 
-    client, xml, intent, bond, _ = _money_setup(database, trade_money_xml(inclusive=inclusive))
+    client, xml, intent, bond, _ = _money_setup(
+        database, trade_money_xml(inclusive=inclusive, prior_month_buy=prior_month_buy)
+    )
     originals = [(FILENAME, xml)]
     with database.session_factory() as session:
         coupon_intent = _money_decide(session, intent, originals, bond)
         _money_apply(session, coupon_intent, originals)
         bare = _trade_decide(session, intent, originals, inclusive=inclusive, claims=False)
-        assert "paid_nkd_basis_unresolved" in preview_money(session, bare, originals)["blockers"]
+        initial = preview_money(session, bare, originals)
+        assert "paid_nkd_basis_unresolved" in initial["blockers"]
+        assert [t["trade_id"] for t in initial["trade_choices"]] == [
+            bare.money_decisions[0].trade_id
+        ]
+        if prior_month_buy:
+            assert initial["trade_choices"][0]["core"]["trade_time"][:10] == "2029-12-31"
         assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
         requested = _trade_decide(session, intent, originals, inclusive=inclusive)
         plan = preview_money(session, requested, originals)

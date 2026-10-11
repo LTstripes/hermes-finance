@@ -639,6 +639,15 @@ def _plan(session, intent, originals):
     exceptions = broker_months._account_readiness(
         session, intent.reporting_month_id, intent.account_id
     )
+    # Execution time can precede this cash month. Native-linked postings in
+    # the accepted source union define the selector scope; plan_trade still
+    # proves the complete settled S/N/F set and exact execution identity.
+    cash_trade_identities = {
+        o["trade_identity"]
+        for o in inventory
+        if o["trade_identity"] is not None
+        and month.period_start.isoformat() <= o["date"] <= month.period_end.isoformat()
+    }
     plan = {
         "contract_version": CONTRACT,
         "base_request_id": intent.base_request_id,
@@ -657,10 +666,7 @@ def _plan(session, intent, originals):
                 "revision": _target(session, "trade", t.id)["trade_revision"],
             }
             for t in broker_months._rows(session, ExecutedTrade)
-            if t.account_id == intent.account_id
-            and month.period_start.isoformat()
-            <= json.loads(t.core_json)["trade_time"][:10]
-            <= month.period_end.isoformat()
+            if t.account_id == intent.account_id and t.source_identity in cash_trade_identities
         ],
         "expected_effects": {
             "new_coupon_facts": sum(
