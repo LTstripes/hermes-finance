@@ -367,7 +367,9 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     owned_cash = {
         json.loads(r.projection_json)["cash_id"]
         for r in _rows(session, BrokerMonthApply)
-        if r.reporting_month_id == month.id and r.account_id == account_id
+        if r.reporting_month_id == month.id
+        and r.account_id == account_id
+        and "cash_id" in json.loads(r.projection_json)
     }
     cash_id = cash_rows[0].id if len(cash_rows) == 1 else None
     if cash_rows and (
@@ -476,15 +478,41 @@ def _projection(session, receipt):
 
 
 def _existing_flows(session, month_id, account_id):
-    return any(
-        session.scalar(
-            select(model.id).where(
-                model.reporting_month_id == month_id, model.account_id == account_id
+    from hermes_finance.services.broker_money import owned_payout_ids
+
+    owned = owned_payout_ids(session, month_id, account_id)
+    return (
+        any(
+            row.id not in owned
+            for row in session.scalars(
+                select(InvestmentCashFlow).where(
+                    InvestmentCashFlow.reporting_month_id == month_id,
+                    InvestmentCashFlow.account_id == account_id,
+                )
+            )
+        )
+        or session.scalar(
+            select(ExternalFlow.id).where(
+                ExternalFlow.reporting_month_id == month_id, ExternalFlow.account_id == account_id
             )
         )
         is not None
-        for model in (InvestmentCashFlow, ExternalFlow)
     )
+
+
+def _source_money_blockers(session, source, plan):
+    """Resolve the generic code only through every exact unsupported occurrence."""
+    from hermes_finance.services.broker_money import effective_occurrence
+
+    blockers = set(plan["blockers"])
+    unresolved = [
+        row
+        for row in plan["document"]["money"]
+        if row["kind"] == "unsupported" and not effective_occurrence(session, source.id, row)
+    ]
+    if not unresolved:
+        blockers.discard("money_semantics_unsupported")
+    return blockers
 
 
 def _bookkeeping_trade_blockers(candidate):
@@ -532,6 +560,19 @@ def _canonical_projection_matches(session, candidate):
 
 def _readiness(session, receipt):
     accepted = json.loads(receipt.projection_json)
+    if accepted.get("contract_version") == "broker_money_dependency_v1":
+        return []
+    if accepted.get("contract_version") == "broker_money_v1":
+        from hermes_finance.services.broker_money import latest_proofs, proof_blockers, target_key
+
+        latest = latest_proofs(session)
+        return sorted(
+            {
+                code
+                for target in accepted["targets"]
+                for code in proof_blockers(session, *latest[target_key(target)])
+            }
+        )
     blockers = set(accepted["exceptions"])
     source = session.get(MyBrokerImport, receipt.import_id, populate_existing=True)
     account = session.get(Account, receipt.account_id, populate_existing=True)
@@ -557,7 +598,7 @@ def _readiness(session, receipt):
         # Recompute original source dependencies with the same S1 reconciliation.
         current = mybroker_import._prepare(session, json.loads(source.normalized_json))
         blockers.update(current["conflicts"])
-        blockers.update(current["blockers"])
+        blockers.update(_source_money_blockers(session, source, current))
         source_blockers, _, _ = _controls(current["document"])
         blockers.update(source_blockers)
         if current["missing_mappings"]:
@@ -582,7 +623,7 @@ def _readiness(session, receipt):
         for other in _intersecting_sources(session, parsed, receipt.account_id):
             other_plan = mybroker_import._prepare(session, json.loads(other.normalized_json))
             blockers.update(other_plan["conflicts"])
-            blockers.update(other_plan["blockers"])
+            blockers.update(_source_money_blockers(session, other, other_plan))
             trade_identities.update(
                 t["identity"] for t in other_plan["document"]["trades"] if t["identity"]
             )
@@ -648,6 +689,12 @@ def read_broker_month(session, request_id):
         if receipt is None:
             raise MyBrokerError("broker_month_not_found")
         accepted = json.loads(receipt.projection_json)
+        if accepted.get("contract_version") == "broker_money_dependency_v1":
+            raise MyBrokerError("broker_month_not_found")
+        if accepted.get("contract_version") == "broker_money_v1":
+            from hermes_finance.services.broker_money import read_money
+
+            return read_money(session, request_id)
         blockers = _account_readiness(session, receipt.reporting_month_id, receipt.account_id)
         source = session.get(MyBrokerImport, receipt.import_id)
         accepted["document"] = (
@@ -657,6 +704,16 @@ def read_broker_month(session, request_id):
             == accepted["source_digest"]
             else None
         )
+        from hermes_finance.services.broker_money import read_money, receipts
+
+        money_receipts = [
+            r
+            for r, proof in receipts(session)
+            if r.reporting_month_id == receipt.reporting_month_id
+            and r.account_id == receipt.account_id
+            and proof["base_request_id"] == request_id
+        ]
+        money = read_money(session, money_receipts[-1].request_id) if money_receipts else None
         return {
             "contract_version": CONTRACT,
             "request_id": receipt.request_id,
@@ -666,6 +723,7 @@ def read_broker_month(session, request_id):
             "confirmation_digest": receipt.confirmation_digest,
             "status": session.get(ReportingMonth, receipt.reporting_month_id).status,
             "accepted": accepted,
+            "money_acceptance": money,
             "exceptions": blockers,
             "bookkeeping_ready": not blockers,
             "coverage_state": "unknown",

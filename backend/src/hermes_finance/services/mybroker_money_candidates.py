@@ -192,6 +192,20 @@ def _reference(import_id: int, row: dict) -> MoneyOccurrence:
 def read_money_candidates(
     session: Session, *, import_id: int, document: bytes, filename: str, account_id: int
 ) -> MoneyCandidateInventory:
+    """Committed, zero-write public reader; stage callers use the pure builder."""
+    with coherent_read_snapshot(session):
+        return _read_money_candidates(
+            session,
+            import_id=import_id,
+            document=document,
+            filename=filename,
+            account_id=account_id,
+        )
+
+
+def _read_money_candidates(
+    session: Session, *, import_id: int, document: bytes, filename: str, account_id: int
+) -> MoneyCandidateInventory:
     """Read an immutable S1 import, original and full accepted overlap inventory.
 
     No normalized client rows, mappings or guessed event keys are accepted.
@@ -199,7 +213,7 @@ def read_money_candidates(
     Missing/currently changed account links remain visible diagnostics.
     """
     fresh = parse_mybroker(document, filename)
-    with coherent_read_snapshot(session):
+    with session.no_autoflush:
         source = session.get(MyBrokerImport, import_id, populate_existing=True)
         if source is None:
             raise MyBrokerError("import_not_found")

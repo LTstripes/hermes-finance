@@ -17,6 +17,7 @@ import { sumMoneyAmounts } from "../../lib/money";
 import { queryKeys } from "../../queryClient";
 import { Button, Panel, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
+import { BrokerMoneyReview } from "./BrokerMoneyReview";
 
 function SourceInventory({ document }: { document: MyBrokerDocument }) {
   const total = (side: "beginning" | "ending") => {
@@ -444,6 +445,15 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                 </p>
               )}
               <Exceptions codes={previous.exceptions} />
+              <BrokerMoneyReview
+                key={previous.request_id}
+                baseRequestId={previous.request_id}
+                monthId={monthId}
+                accountId={previous.account_id}
+                importId={previous.import_id}
+                closed={closed}
+                stored={previous.money_acceptance}
+              />
             </div>
           ))
         ) : null}

@@ -438,9 +438,18 @@ def _linked_flow_matches_accepted(
         or flow.instrument_id != event.instrument_id
         or flow.flow_type != event.event_kind
         or flow.event_date != accepted.event_date
-        or flow.gross_amount_kopecks != accepted.gross_amount_kopecks
-        or flow.tax_amount_kopecks != expected_tax
-        or flow.commission_amount_kopecks != 0
+        or (
+            flow.amount_basis != "broker_statement_net_v1"
+            and (
+                flow.gross_amount_kopecks != accepted.gross_amount_kopecks
+                or flow.tax_amount_kopecks != expected_tax
+                or flow.commission_amount_kopecks != 0
+            )
+        )
+        or (
+            flow.amount_basis == "broker_statement_net_v1"
+            and event.link_mode != StatementLinkMode.LINKED_EXISTING.value
+        )
         or flow.net_amount_kopecks != accepted.net_amount_kopecks
         or flow.currency != accepted.net_currency
     ):
@@ -481,9 +490,14 @@ def _financially_compatible(flow: InvestmentCashFlow, row: PreviewRow) -> bool:
         and flow.instrument_id == row.hermes_instrument_id
         and flow.flow_type == row.event_kind
         and flow.event_date == row.event_date
-        and flow.gross_amount_kopecks == kopecks(row.gross_amount)
-        and flow.tax_amount_kopecks == tax
-        and flow.commission_amount_kopecks == 0
+        and (
+            flow.amount_basis == "broker_statement_net_v1"
+            or (
+                flow.gross_amount_kopecks == kopecks(row.gross_amount)
+                and flow.tax_amount_kopecks == tax
+                and flow.commission_amount_kopecks == 0
+            )
+        )
         and flow.net_amount_kopecks == kopecks(row.net_amount)
         and flow.currency == "RUB"
     )
@@ -879,31 +893,41 @@ def _stage_plan(
 
     if plan.item_action is StatementApplyItemAction.LINKED_EXISTING:
         assert plan.existing_cash_flow_id is not None
-        event = create_applied_statement_event(
-            session,
-            provider=ALFA_DEPOSITORY_INCOME_PROVIDER,
-            account_id=row.hermes_account_id,
-            instrument_id=row.hermes_instrument_id,
-            event_kind=row.event_kind,
-            isin=row.isin,
-            record_date=row.record_date,
-            natural_identity=row.natural_identity,
-            material_fingerprint=row.material_fingerprint,
-            investment_cash_flow_id=plan.existing_cash_flow_id,
-            document_sha256=document_sha256,
-            link_mode=StatementLinkMode.LINKED_EXISTING,
-            event_date=row.event_date,
-            quantity=row.quantity,
-            per_unit=row.per_unit,
-            gross_amount_kopecks=kopecks(row.gross_amount),
-            gross_currency="RUB",
-            tax_available=row.tax_available,
-            tax_amount_kopecks=provenance_tax,
-            tax_rate=row.tax_rate,
-            net_amount_kopecks=kopecks(row.net_amount),
-            net_currency="RUB",
-            applied_at=applied_at,
-        )
+        # Narrow marker for the validated atomic typed LINK_EXISTING writer.
+        # Lifecycle checks still validate the target and first revision themselves.
+        session.info["broker_money_pdf_link"] = {
+            "target_id": plan.existing_cash_flow_id,
+            "event_date": row.event_date.isoformat(),
+            "net_amount_kopecks": str(kopecks(row.net_amount)),
+        }
+        try:
+            event = create_applied_statement_event(
+                session,
+                provider=ALFA_DEPOSITORY_INCOME_PROVIDER,
+                account_id=row.hermes_account_id,
+                instrument_id=row.hermes_instrument_id,
+                event_kind=row.event_kind,
+                isin=row.isin,
+                record_date=row.record_date,
+                natural_identity=row.natural_identity,
+                material_fingerprint=row.material_fingerprint,
+                investment_cash_flow_id=plan.existing_cash_flow_id,
+                document_sha256=document_sha256,
+                link_mode=StatementLinkMode.LINKED_EXISTING,
+                event_date=row.event_date,
+                quantity=row.quantity,
+                per_unit=row.per_unit,
+                gross_amount_kopecks=kopecks(row.gross_amount),
+                gross_currency="RUB",
+                tax_available=row.tax_available,
+                tax_amount_kopecks=provenance_tax,
+                tax_rate=row.tax_rate,
+                net_amount_kopecks=kopecks(row.net_amount),
+                net_currency="RUB",
+                applied_at=applied_at,
+            )
+        finally:
+            session.info.pop("broker_money_pdf_link", None)
         revision = list_applied_statement_event_revisions(session, event.id)[-1]
         return StatementApplyItemResult(
             action=StatementApplyItemAction.LINKED_EXISTING,

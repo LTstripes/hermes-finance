@@ -2599,3 +2599,92 @@ def test_debt_link_migration_is_additive_and_downgrade_is_fail_closed(
         }
     finally:
         connection.close()
+
+
+def test_money_ownership_migration_keeps_v1_bytes_and_refuses_populated_downgrade(tmp_path):
+    from test_statement_import_mybroker import ACCOUNT, FILENAME, ISIN
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide, _money_setup
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    path = tmp_path / "synthetic-money-migration.db"
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    db = create_database(path)
+    with db.session_factory() as session:
+        account = create_account(session, name="Synthetic account", account_type="brokerage")
+        instrument = create_instrument(
+            session, name="Synthetic stock", instrument_type="stock", isin=ISIN
+        )
+        for alias in ("1234567", ACCOUNT):
+            confirm_mapping(
+                session,
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=alias,
+                hermes_target_id=account.id,
+            )
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="instrument",
+            provider_identity=ISIN,
+            hermes_target_id=instrument.id,
+        )
+    _, xml, intent, bond, _ = _money_setup(db)
+    db.engine.dispose()
+    with sqlite3.connect(path) as connection:
+        old = connection.execute(
+            "SELECT normalized_json, mappings_json, confirmation_digest FROM mybroker_imports"
+        ).fetchall()
+        receipts = connection.execute("SELECT projection_json FROM broker_month_applies").fetchall()
+    assert run_alembic(path, "downgrade", "0057_broker_month_batch").returncode == 0
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        assert (
+            connection.execute(
+                "SELECT normalized_json, mappings_json, confirmation_digest FROM mybroker_imports"
+            ).fetchall()
+            == old
+        )
+        assert (
+            connection.execute("SELECT projection_json FROM broker_month_applies").fetchall()
+            == receipts
+        )
+        assert (
+            connection.execute("SELECT COUNT(*) FROM broker_money_occurrence_owners").fetchone()[0]
+            == 0
+        )
+    from sqlalchemy import select
+
+    from hermes_finance.persistence import CashBalance
+
+    with db.session_factory() as session:
+        cash = session.scalar(select(CashBalance))
+        cash.amount_kopecks += 1
+        session.commit()
+        cash.amount_kopecks -= 1
+        session.commit()
+    db.engine.dispose()
+    # Even with no ownership links yet, downgrading must retain the monotonic
+    # dependency evidence; the old implementation cannot read its version.
+    blocked = run_alembic(path, "downgrade", "0057_broker_month_batch")
+    assert blocked.returncode != 0 and "cannot downgrade permanent Money" in blocked.stderr
+    with db.session_factory() as session:
+        requested = _money_decide(session, intent, [(FILENAME, xml)], bond)
+        _money_apply(session, requested, [(FILENAME, xml)])
+    db.engine.dispose()
+    blocked = run_alembic(path, "downgrade", "0057_broker_month_batch")
+    assert (
+        blocked.returncode != 0 and "cannot downgrade permanent Money ownership" in blocked.stderr
+    )
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert (
+            connection.execute("SELECT COUNT(*) FROM broker_money_occurrence_owners").fetchone()[0]
+            == 3
+        )
