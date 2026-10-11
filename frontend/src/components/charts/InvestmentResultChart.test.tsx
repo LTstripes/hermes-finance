@@ -49,6 +49,16 @@ const cashOnlyClass: InstrumentClassResultPoint = {
 };
 
 describe("InvestmentResultChart", () => {
+  it("does not fabricate an account total or chart zero from unknown P&L", () => {
+    render(
+      <InvestmentResultChart accounts={[{ ...broker, unrealized_result: null }]} classes={[]} />,
+    );
+    const row = within(screen.getByRole("table", { name: "Результат по счетам" })).getAllByRole(
+      "row",
+    )[1];
+    expect(within(row).getAllByText("—")).toHaveLength(2);
+    expect(row).toHaveTextContent("+870");
+  });
   it("renders the chart section and both accessibility tables", () => {
     render(<InvestmentResultChart accounts={[broker, iis]} classes={[bondClass]} />);
     expect(

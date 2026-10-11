@@ -44,9 +44,9 @@ class StatementCashFlowCandidate:
     instrument_id: int | None
     flow_type: str
     event_date: date
-    gross_amount_kopecks: int
-    tax_amount_kopecks: int
-    commission_amount_kopecks: int
+    gross_amount_kopecks: int | None
+    tax_amount_kopecks: int | None
+    commission_amount_kopecks: int | None
     net_amount_kopecks: int
     currency: str
     source: str

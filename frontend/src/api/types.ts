@@ -711,7 +711,7 @@ export type AccountResultPoint = {
   account_name: string;
   account_type: string;
   cash_income: MoneyValue;
-  unrealized_result: MoneyValue;
+  unrealized_result: MoneyValue | null;
 };
 
 /** Monetary result per instrument class (E15). */
@@ -1006,16 +1006,20 @@ export type PositionSnapshot = {
   instrument_id: number;
   historical_instrument_type?: HistoricalInstrumentType | null;
   quantity: string;
-  average_cost_per_unit: MoneyValue;
-  market_price_per_unit: MoneyValue;
+  average_cost_per_unit: MoneyValue | null;
+  market_price_per_unit: MoneyValue | null;
   market_value: MoneyValue;
-  cost_basis: MoneyValue;
-  unrealized_result: MoneyValue;
+  cost_basis: MoneyValue | null;
+  unrealized_result: MoneyValue | null;
   accrued_interest: MoneyValue | null;
   price_source: string;
   price_date: string;
   notes: string | null;
   updated_at: string;
+  native_contract_version?: number | null;
+  source_import_id?: number | null;
+  source_row_key?: string | null;
+  bond_nkd_basis?: "unknown" | "included" | "excluded" | "not_applicable";
 };
 
 export type PositionCreate = {
@@ -1057,14 +1061,17 @@ export type InvestmentFlow = {
   instrument_id: number | null;
   flow_type: string;
   event_date: string;
-  gross_amount: MoneyValue;
-  tax_amount: MoneyValue;
-  commission_amount: MoneyValue;
+  gross_amount: MoneyValue | null;
+  tax_amount: MoneyValue | null;
+  commission_amount: MoneyValue | null;
   net_amount: MoneyValue;
   currency: string;
   source: string;
   notes: string | null;
   statement_link?: StatementLink | null;
+  amount_basis?: "gross_components" | "broker_statement_net_v1";
+  source_import_id?: number | null;
+  source_row_key?: string | null;
 };
 
 export type InvestmentFlowCreate = {

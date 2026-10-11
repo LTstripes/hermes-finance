@@ -151,9 +151,13 @@ def _report_for_month(
         InvestmentFlowReportRow(
             event_date=item.event_date,
             flow_type=item.flow_type,
-            gross=RubleAmount(item.gross_amount_kopecks),
-            tax=RubleAmount(item.tax_amount_kopecks),
-            commission=RubleAmount(item.commission_amount_kopecks),
+            gross=None
+            if item.gross_amount_kopecks is None
+            else RubleAmount(item.gross_amount_kopecks),
+            tax=None if item.tax_amount_kopecks is None else RubleAmount(item.tax_amount_kopecks),
+            commission=None
+            if item.commission_amount_kopecks is None
+            else RubleAmount(item.commission_amount_kopecks),
             net=RubleAmount(item.net_amount_kopecks),
         )
         for item in list_investment_cash_flows(session)

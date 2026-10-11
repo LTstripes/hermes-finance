@@ -132,6 +132,27 @@ function setup(overrides: Record<string, Handler> = {}, initial: unknown[] = [po
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native month positions leaf", () => {
+  it("renders exact native total and unknown cost/P&L without editable source actions", async () => {
+    setup({}, [
+      {
+        ...position,
+        price_source: "broker_statement_native",
+        average_cost_per_unit: null,
+        market_price_per_unit: null,
+        cost_basis: null,
+        unrealized_result: null,
+      },
+    ]);
+    await screen.findByText("Synthetic Fund (SYN)");
+    const table = screen.getByRole("table");
+    expect(table).toHaveTextContent("550");
+    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText("Нет подтверждённой суммы")).toHaveLength(2);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Действия для позиции/ }));
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+  });
   it("loads only local data, keeps units and currency visible, and never auto-refreshes quotes", async () => {
     const { fetchMock, context, rerender, setDirty, unmount } = setup();
     await screen.findByText("Synthetic Fund (SYN)");

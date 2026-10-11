@@ -21,6 +21,7 @@ export function isManuallyEditableInvestmentFlow(
   source: string,
   statementLink?: StatementLink | null,
 ): boolean {
+  if (source === "broker_statement_native") return false;
   return source === "manual" && statementLink == null;
 }
 

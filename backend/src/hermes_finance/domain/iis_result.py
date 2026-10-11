@@ -32,7 +32,7 @@ class IisResultInput:
     correct persisted rows; the calculator simply sums what it is given.
     """
 
-    unrealized: RubleAmount
+    unrealized: RubleAmount | None
     coupons: RubleAmount
     dividends: RubleAmount
     realized_pnl: RubleAmount
@@ -49,7 +49,7 @@ class IisResultBreakdown:
     shown separately and never added to the portfolio results.
     """
 
-    unrealized: RubleAmount
+    unrealized: RubleAmount | None
     coupons: RubleAmount
     dividends: RubleAmount
     realized_pnl: RubleAmount
@@ -62,8 +62,8 @@ class IisResultBreakdown:
 class IisResult:
     """Pure-domain output of the IIS account-result calculator."""
 
-    portfolio_result_without_tax_benefit: RubleAmount
-    portfolio_result_with_tax_benefit: RubleAmount
+    portfolio_result_without_tax_benefit: RubleAmount | None
+    portfolio_result_with_tax_benefit: RubleAmount | None
     breakdown: IisResultBreakdown
 
 
@@ -80,13 +80,21 @@ def calculate_iis_result(input_data: IisResultInput) -> IisResult:
     - Planned and submitted benefits are in the breakdown only, never added
       to either portfolio result.
     """
-    without = RubleAmount(
-        input_data.unrealized.kopecks
-        + input_data.coupons.kopecks
-        + input_data.dividends.kopecks
-        + input_data.realized_pnl.kopecks
+    without = (
+        None
+        if input_data.unrealized is None
+        else RubleAmount(
+            input_data.unrealized.kopecks
+            + input_data.coupons.kopecks
+            + input_data.dividends.kopecks
+            + input_data.realized_pnl.kopecks
+        )
     )
-    with_benefit = RubleAmount(without.kopecks + input_data.received_tax_benefits.kopecks)
+    with_benefit = (
+        None
+        if without is None
+        else RubleAmount(without.kopecks + input_data.received_tax_benefits.kopecks)
+    )
     breakdown = IisResultBreakdown(
         unrealized=input_data.unrealized,
         coupons=input_data.coupons,

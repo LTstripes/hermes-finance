@@ -101,13 +101,15 @@ def iis_result(session: Session, *, account_id: int, reporting_month_id: int) ->
     if has_iis_profile is None:
         raise ValueError(f"account {account_id} is not an IIS account")
 
-    unrealized_total = session.scalar(
-        select(func.coalesce(func.sum(PositionSnapshot.unrealized_result_kopecks), 0)).where(
-            PositionSnapshot.account_id == account_id,
-            PositionSnapshot.reporting_month_id == reporting_month_id,
+    values = list(
+        session.scalars(
+            select(PositionSnapshot.unrealized_result_kopecks).where(
+                PositionSnapshot.account_id == account_id,
+                PositionSnapshot.reporting_month_id == reporting_month_id,
+            )
         )
     )
-    unrealized = RubleAmount(int(unrealized_total or 0))
+    unrealized = None if any(value is None for value in values) else RubleAmount(sum(values))
 
     coupons = _sum_cash_flows(session, account_id, InvestmentCashFlowType.COUPON)
     dividends = _sum_cash_flows(session, account_id, InvestmentCashFlowType.DIVIDEND)

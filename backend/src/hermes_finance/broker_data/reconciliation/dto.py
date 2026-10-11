@@ -84,10 +84,10 @@ class HermesPositionView:
     account_id: int
     instrument_id: int
     quantity: Decimal
-    market_price_per_unit_kopecks: int
+    market_price_per_unit_kopecks: int | None
     accrued_interest_kopecks: int | None
     market_value_kopecks: int
-    unrealized_result_kopecks: int
+    unrealized_result_kopecks: int | None
 
 
 @dataclass(frozen=True, slots=True)

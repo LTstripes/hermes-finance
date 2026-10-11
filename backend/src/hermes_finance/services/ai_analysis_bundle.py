@@ -100,6 +100,7 @@ ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 _SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
 
 _SOURCE_KIND = {
+    "broker_statement_native": ("statement", None),
     "manual": ("manual", None),
     "excel_migration": ("migration", None),
     "alfa_pdf": ("statement", "alfa_statement"),
@@ -1137,7 +1138,13 @@ def assemble_ai_analysis_bundle(
                     reason_codes=valuation_reason_codes,
                 ),
                 "accrued_interest": _metric(
-                    None if valuation_reason_codes else int(row.accrued_interest_kopecks or 0),
+                    None
+                    if valuation_reason_codes
+                    else (
+                        row.accrued_interest_kopecks
+                        if row.price_source == "broker_statement_native"
+                        else int(row.accrued_interest_kopecks or 0)
+                    ),
                     source="persisted_snapshot",
                     reason_codes=valuation_reason_codes,
                 ),
@@ -1464,7 +1471,7 @@ def assemble_ai_analysis_bundle(
                 "tax_benefits": {key: _money(value) for key, value in benefits.items()},
                 "portfolio_result_without_tax_benefit": _metric(
                     None
-                    if iis_result_ineligible
+                    if iis_result_ineligible or result.portfolio_result_without_tax_benefit is None
                     else result.portfolio_result_without_tax_benefit.kopecks,
                     source="backend_derived",
                     reason_codes=[FUTURE_DATED_VALUATION] if iis_result_ineligible else (),
@@ -1472,7 +1479,7 @@ def assemble_ai_analysis_bundle(
                 ),
                 "portfolio_result_with_received_tax_benefit": _metric(
                     None
-                    if iis_result_ineligible
+                    if iis_result_ineligible or result.portfolio_result_with_tax_benefit is None
                     else result.portfolio_result_with_tax_benefit.kopecks,
                     source="backend_derived",
                     reason_codes=[FUTURE_DATED_VALUATION] if iis_result_ineligible else (),

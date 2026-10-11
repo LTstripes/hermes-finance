@@ -73,14 +73,18 @@ class InvestmentFlowResponse(BaseModel):
     instrument_id: int | None
     flow_type: str
     event_date: date
-    gross_amount: MoneyValue
-    tax_amount: MoneyValue
-    commission_amount: MoneyValue
+    gross_amount: MoneyValue | None
+    tax_amount: MoneyValue | None
+    commission_amount: MoneyValue | None
     net_amount: MoneyValue
     currency: str
     source: str
     notes: str | None
     statement_link: StatementLinkOut | None = None
+
+    amount_basis: str
+    source_import_id: int | None
+    source_row_key: str | None
 
 
 def _validate_flow_type(value: str) -> str:
@@ -95,7 +99,9 @@ def _amount(money: MoneyValue) -> RubleAmount:
     return RubleAmount.from_api(money.amount)
 
 
-def _money(kopecks: int) -> MoneyValue:
+def _money(kopecks: int | None) -> MoneyValue | None:
+    if kopecks is None:
+        return None
     return MoneyValue(amount=RubleAmount(kopecks).to_api(), currency="RUB")
 
 
@@ -125,6 +131,9 @@ def _response(flow: object, event: object | None = None) -> InvestmentFlowRespon
         source=flow.source,
         notes=flow.notes,
         statement_link=_statement_link(event),
+        amount_basis=flow.amount_basis,
+        source_import_id=flow.source_import_id,
+        source_row_key=flow.source_row_key,
     )
 
 

@@ -108,6 +108,26 @@ afterEach(() => {
 });
 
 describe("MonthPositionsSection G03 component contract", () => {
+  it("keeps native unknown cost and P&L unavailable and source rows read-only", async () => {
+    setup({}, [
+      {
+        ...position,
+        price_source: "broker_statement_native",
+        average_cost_per_unit: null,
+        market_price_per_unit: null,
+        cost_basis: null,
+        unrealized_result: null,
+      },
+    ]);
+    await screen.findByRole("table");
+    const table = screen.getByRole("table");
+    expect(table).toHaveTextContent("11");
+    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    const user = userEvent.setup();
+    await openPositionMenu(user);
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+  });
   it("submits a position form with backend money objects and no blank accrued interest", async () => {
     const fetchMock = setup({ "POST /api/positions": () => jsonResponse({ id: 31 }, 201) });
     const user = userEvent.setup();

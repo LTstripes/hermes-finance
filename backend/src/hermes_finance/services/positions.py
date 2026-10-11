@@ -275,6 +275,8 @@ def stage_update_position_snapshot(
     """
     snapshot = get_position_snapshot(session, snapshot_id)
     require_editable_child_month(session, snapshot)
+    if snapshot.price_source == "broker_statement_native":
+        raise ValueError("source-owned position requires a reviewed source revision")
     instrument = _require_instrument(session, snapshot.instrument_id)
     if expected_updated_at is not None and snapshot.updated_at != expected_updated_at:
         raise ConcurrencyError("updated_at", expected_updated_at, snapshot.updated_at)
@@ -420,6 +422,8 @@ def apply_snapshot_market_quote(
     Accrued interest (NKD) is left unchanged. The caller owns the transaction.
     """
     require_editable_child_month(session, snapshot)
+    if snapshot.price_source == "broker_statement_native":
+        raise ValueError("source-owned position cannot be replaced by a market quote")
     if market_price_per_unit_kopecks < 0:
         raise ValueError("market_price_per_unit must not be negative")
     snapshot.market_price_per_unit_kopecks = market_price_per_unit_kopecks
@@ -442,6 +446,8 @@ def apply_snapshot_market_quote(
 
 def delete_position_snapshot(session: Session, snapshot_id: int) -> None:
     snapshot = get_position_snapshot(session, snapshot_id)
+    if snapshot.price_source == "broker_statement_native":
+        raise ValueError("source-owned position requires a reviewed source revision")
     try:
         month = require_editable_child_month(session, snapshot)
         from hermes_finance.services.payout_provenance_lifecycle import (

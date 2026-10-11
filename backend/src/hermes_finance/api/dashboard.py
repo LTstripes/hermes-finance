@@ -185,7 +185,7 @@ class NormalizedBonusOut(BaseModel):
 class IisBreakdownOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    unrealized: MoneyValue
+    unrealized: MoneyValue | None
     coupons: MoneyValue
     dividends: MoneyValue
     realized_pnl: MoneyValue
@@ -197,8 +197,8 @@ class IisBreakdownOut(BaseModel):
 class IisOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    portfolio_result_without_tax_benefit: MoneyValue
-    portfolio_result_with_tax_benefit: MoneyValue
+    portfolio_result_without_tax_benefit: MoneyValue | None
+    portfolio_result_with_tax_benefit: MoneyValue | None
     breakdown: IisBreakdownOut
 
 
@@ -347,7 +347,7 @@ class AccountResultOut(BaseModel):
     account_name: str
     account_type: str
     cash_income: MoneyValue
-    unrealized_result: MoneyValue
+    unrealized_result: MoneyValue | None
 
 
 class DashboardOut(BaseModel):
@@ -506,12 +506,14 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
         ),
         iis=[
             IisOut(
-                portfolio_result_without_tax_benefit=_money(
+                portfolio_result_without_tax_benefit=_money_opt(
                     item.portfolio_result_without_tax_benefit
                 ),
-                portfolio_result_with_tax_benefit=_money(item.portfolio_result_with_tax_benefit),
+                portfolio_result_with_tax_benefit=_money_opt(
+                    item.portfolio_result_with_tax_benefit
+                ),
                 breakdown=IisBreakdownOut(
-                    unrealized=_money(item.breakdown.unrealized),
+                    unrealized=_money_opt(item.breakdown.unrealized),
                     coupons=_money(item.breakdown.coupons),
                     dividends=_money(item.breakdown.dividends),
                     realized_pnl=_money(item.breakdown.realized_pnl),
@@ -674,7 +676,7 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
                 account_name=item.account_name,
                 account_type=item.account_type,
                 cash_income=_money(item.cash_income),
-                unrealized_result=_money(item.unrealized_result),
+                unrealized_result=_money_opt(item.unrealized_result),
             )
             for item in dashboard.result_by_account
         ],

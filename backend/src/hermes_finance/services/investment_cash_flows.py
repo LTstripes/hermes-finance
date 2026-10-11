@@ -260,6 +260,8 @@ def stage_update_investment_cash_flow(
     """
     flow = get_investment_cash_flow(session, flow_id)
     require_editable_child_month(session, flow)
+    if flow.amount_basis == "broker_statement_net_v1":
+        raise ValueError("source-owned payout requires a reviewed source revision")
     if reporting_month_id is not None and reporting_month_id != flow.reporting_month_id:
         require_editable_reporting_month(session, reporting_month_id)
         flow.reporting_month_id = reporting_month_id
@@ -339,5 +341,7 @@ def update_investment_cash_flow(
 def delete_investment_cash_flow(session: Session, flow_id: int) -> None:
     flow = get_investment_cash_flow(session, flow_id)
     require_editable_child_month(session, flow)
+    if flow.amount_basis == "broker_statement_net_v1":
+        raise ValueError("source-owned payout requires a reviewed source revision")
     session.delete(flow)
     session.commit()

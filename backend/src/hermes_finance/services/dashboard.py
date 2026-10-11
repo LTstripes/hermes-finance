@@ -71,7 +71,7 @@ class AccountResultSlice:
     account_name: str
     account_type: str
     cash_income: RubleAmount
-    unrealized_result: RubleAmount
+    unrealized_result: RubleAmount | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,12 +216,12 @@ def _instrument_class_results(
         .join(Instrument, Instrument.id == PositionSnapshot.instrument_id)
         .where(PositionSnapshot.reporting_month_id == reporting_month_id)
     ).all()
-    aggregated: dict[str, list[int]] = {}
+    aggregated: dict[str, list[int | None]] = {}
     for instrument_type, market, cost, unrealized in rows:
         bucket = aggregated.setdefault(instrument_type, [0, 0, 0])
         bucket[0] += int(market)
-        bucket[1] += int(cost)
-        bucket[2] += int(unrealized)
+        bucket[1] = None if cost is None or bucket[1] is None else bucket[1] + int(cost)
+        bucket[2] = None if unrealized is None or bucket[2] is None else bucket[2] + int(unrealized)
 
     realized_by_type = _cash_income_by_class(session, reporting_month_id)
     instrument_types = sorted({*aggregated, *realized_by_type})
@@ -232,10 +232,10 @@ def _instrument_class_results(
             if instrument_type in aggregated
             else None,
             cost_basis=RubleAmount(aggregated[instrument_type][1])
-            if instrument_type in aggregated
+            if instrument_type in aggregated and aggregated[instrument_type][1] is not None
             else None,
             unrealized_result=RubleAmount(aggregated[instrument_type][2])
-            if instrument_type in aggregated
+            if instrument_type in aggregated and aggregated[instrument_type][2] is not None
             else None,
             realized_result=RubleAmount(realized_by_type.get(instrument_type, 0)),
         )
@@ -286,6 +286,8 @@ def _account_results(session: Session, reporting_month_id: int) -> tuple[Account
             Account.name,
             Account.account_type,
             func.sum(PositionSnapshot.unrealized_result_kopecks),
+            func.count(PositionSnapshot.id)
+            - func.count(PositionSnapshot.unrealized_result_kopecks),
         )
         .join(PositionSnapshot, PositionSnapshot.account_id == Account.id)
         .where(PositionSnapshot.reporting_month_id == reporting_month_id)
@@ -301,7 +303,7 @@ def _account_results(session: Session, reporting_month_id: int) -> tuple[Account
             cash_income=RubleAmount(int(total or 0)),
             unrealized_result=RubleAmount(0),
         )
-    for account_id, name, account_type, total in unrealized_rows:
+    for account_id, name, account_type, total, unknown_count in unrealized_rows:
         slice_ = merged.get(account_id)
         if slice_ is None:
             merged[account_id] = AccountResultSlice(
@@ -309,7 +311,7 @@ def _account_results(session: Session, reporting_month_id: int) -> tuple[Account
                 account_name=name,
                 account_type=account_type,
                 cash_income=RubleAmount(0),
-                unrealized_result=RubleAmount(int(total or 0)),
+                unrealized_result=None if unknown_count else RubleAmount(int(total or 0)),
             )
         else:
             merged[account_id] = AccountResultSlice(
@@ -317,7 +319,7 @@ def _account_results(session: Session, reporting_month_id: int) -> tuple[Account
                 account_name=slice_.account_name,
                 account_type=slice_.account_type,
                 cash_income=slice_.cash_income,
-                unrealized_result=RubleAmount(int(total or 0)),
+                unrealized_result=None if unknown_count else RubleAmount(int(total or 0)),
             )
     return tuple(merged[key] for key in sorted(merged, key=lambda k: (merged[k].account_name, k)))
 
