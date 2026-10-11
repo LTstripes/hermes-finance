@@ -11,6 +11,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, localcontext
 from typing import Literal
 from xml.etree import ElementTree as ET
@@ -27,7 +28,6 @@ from hermes_finance.statement_import.mybroker import (
     PARSER,
     PROVIDER,
     MyBrokerError,
-    day,
     digest,
     parse_mybroker,
 )
@@ -40,7 +40,7 @@ CandidateKind = Literal[
 # shape are recognized; no token/issuer/date is extracted as an economic key.
 COUPON = re.compile(
     r"погашение купона (?P<token>[^\r\n]+) \(облигации (?P<issuer>[^\r\n]+)\) "
-    r"д\.ф\.(?P<date>[0-9]{2}\.[0-9]{2}\.[0-9]{4})"
+    r"д\.ф\.(?P<date>[0-9]{2}\.[0-9]{2}\.[0-9]{2})"
 )
 CASH_IN = re.compile(r"из АО [^\r\n]+")
 GROUPS = "m:Trades2/m:Report/m:Tablix1/m:settlement_date_Collection/m:settlement_date"
@@ -155,9 +155,12 @@ def _pattern(operation: str, narrative: str) -> CandidateKind:
         match = COUPON.fullmatch(narrative)
         if match and match["token"].strip() and match["issuer"].strip():
             try:
-                day(match["date"])  # shape check only, NEVER the posted cash date
+                day_number, month_number, year_number = map(int, match["date"].split("."))
+                # Fixed Gregorian 2000-2099 anchor for calendar validity only,
+                # never %y's pivot, a resolved narrative date or the cash date.
+                date(2000 + year_number, month_number, day_number)
                 return "coupon_paid_candidate"
-            except MyBrokerError:
+            except ValueError:
                 return "unsupported"
         if CASH_IN.fullmatch(narrative) and narrative[len("из АО ") :].strip():
             return "account_cash_in_candidate"

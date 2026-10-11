@@ -24,7 +24,7 @@ from hermes_finance.services.broker_identity_mappings import revoke_mapping
 from hermes_finance.services.mybroker_money_candidates import ADAPTER, read_money_candidates
 from hermes_finance.statement_import.mybroker import NS, MyBrokerError, canonical, digest
 
-COUPON = "погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.2030"
+COUPON = "погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30"
 CASH_IN = "из АО Synthetic bank"
 
 database = synthetic_database
@@ -78,6 +78,92 @@ def read(db, import_id, account_id, xml, filename=FILENAME):
         return read_money_candidates(
             session, import_id=import_id, document=xml, filename=filename, account_id=account_id
         )
+
+
+def coupon_date_original(first="15.01.30", second="16.01.30"):
+    from copy import deepcopy
+
+    root = ET.fromstring(original(coupons=("1000",)))
+    collection = root.find(".//m:rn_Collection", NS)
+    rn = collection.find(f"m:rn/m:oper_type/m:comment[@comment='{COUPON}']/../..", NS)
+    second_rn = deepcopy(rn)
+    rn.find("m:oper_type/m:comment", NS).set(
+        "comment", COUPON.rsplit("д.ф.", 1)[0] + "д.ф." + first
+    )
+    second_rn.find("m:oper_type/m:comment", NS).set(
+        "comment",
+        COUPON.rsplit("д.ф.", 1)[0].replace("SYNTHETIC-TOKEN", "SYNTHETIC-SECOND")
+        + "д.ф."
+        + second,
+    )
+    second_rn.find(".//m:p_code[@volume]", NS).set("volume", "2000")
+    collection.append(second_rn)
+    return ET.tostring(root)
+
+
+def test_two_digit_coupon_dates_preserve_posted_date_s1_inventory_and_read_only(database):
+    xml = coupon_date_original()
+    import_id, account_id = accept(database, xml)
+    with database.session_factory() as session:
+        source = session.get(MyBrokerImport, import_id)
+        before = (source.normalized_json, source.mappings_json, source.confirmation_digest)
+        stored = json.loads(source.normalized_json)
+        plan_before = preview(session, xml)
+
+    def forbid_write(_connection, _cursor, statement, _parameters, _context, _many):
+        assert statement.split()[0].upper() not in {
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "REPLACE",
+            "CREATE",
+            "ALTER",
+            "DROP",
+        }
+
+    event.listen(database.engine, "before_cursor_execute", forbid_write)
+    try:
+        result = read(database, import_id, account_id, xml)
+    finally:
+        event.remove(database.engine, "before_cursor_execute", forbid_write)
+    coupons = [r for r in result.observations if r.candidate_kind == "coupon_paid_candidate"]
+    assert len(coupons) == 2
+    assert result.source_subtotals["coupon_paid_candidate"] == "3000"
+    assert len(result.observations) == len(stored["money"]) == 6
+    assert [r.occurrence.ordinal for r in result.observations] == list(range(6))
+    assert [r.occurrence.row_fingerprint for r in result.observations] == [
+        digest(r) for r in stored["money"]
+    ]
+    assert all(r.date == "2030-01-17" for r in coupons)
+    assert all(r.authority == "unproven" and r.economic_event_id is None for r in coupons)
+    assert all("summary_proof_unavailable" in r.reasons for r in coupons)
+    with database.session_factory() as session:
+        source = session.get(MyBrokerImport, import_id)
+        assert before == (source.normalized_json, source.mappings_json, source.confirmation_digest)
+        assert preview(session, xml) == plan_before
+
+
+@pytest.mark.parametrize("suffix", ["31.02.30", "29.02.30", "16.13.30", "16.01.2030", "1.01.30"])
+def test_invalid_or_invented_coupon_date_suffix_is_unsupported(database, suffix):
+    xml = coupon_date_original(first=suffix)
+    import_id, account_id = accept(database, xml)
+    result = read(database, import_id, account_id, xml)
+    coupons = [r for r in result.observations if r.candidate_kind == "coupon_paid_candidate"]
+    assert len(coupons) == 1 and coupons[0].date == "2030-01-17"
+    assert result.source_subtotals["coupon_paid_candidate"] == "2000"
+    invalid = result.observations[2]
+    assert invalid.candidate_kind == "unsupported"
+    assert "source_pattern_unproven" in invalid.reasons
+    assert invalid.date == "2030-01-17" and invalid.authority == "unproven"
+
+
+def test_valid_leap_day_suffix_is_shape_evidence_only(database):
+    xml = coupon_date_original(first="29.02.24")
+    import_id, account_id = accept(database, xml)
+    result = read(database, import_id, account_id, xml)
+    coupons = [r for r in result.observations if r.candidate_kind == "coupon_paid_candidate"]
+    assert len(coupons) == 2
+    assert all(r.date == "2030-01-17" for r in coupons)
 
 
 def test_exact_six_leaf_inventory_ten_zero_write_reads_and_s1_receipt_parity(database):
@@ -230,7 +316,7 @@ def test_invalid_amount_currency_date_cannot_be_candidate(
         ("Other", COUPON),
         ("Перевод", "prefix " + COUPON),
         ("Перевод", COUPON + " suffix"),
-        ("Перевод", COUPON.replace("16.01.2030", "31.02.2030")),
+        ("Перевод", COUPON.replace("16.01.30", "31.02.30")),
         ("Перевод", "погашение купона "),
         ("Перевод", "из АО "),
         ("Перевод", "Synthetic dividend"),

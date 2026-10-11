@@ -28,9 +28,13 @@ typed reasons. There is no rounding or currency/date substitution.
 
 The three observed shapes are exact-operation, full-narrative coupon and
 incoming-account-cash candidates, and exact negative `НКД по сделке`. Narrative
-recognition is bounded to 4096 characters; the coupon date suffix is checked
-using the existing strict source day grammar, solely as a conservative shape
-check. Its value never replaces `settlement_date`. Placeholder issuer/bank/token
+recognition is bounded to 4096 characters. Per the
+[Integrator source-shape finding](https://github.com/LTstripes/hermes-finance/pull/784#issuecomment-6110094535),
+the coupon suffix is exactly `д.ф.DD.MM.YY`. Calendar validity uses a fixed
+Gregorian 2000–2099 validation anchor, with no `%y` pivot and no narrative-date
+value returned or used as financial evidence. Four-digit, partial and invalid
+calendar forms remain unsupported. This shape check never replaces the actual
+posted `settlement_date`. Placeholder issuer/bank/token
 values never become instrument, owner, trade or economic identities. Unknown
 and dividend shapes remain unsupported. All candidate authority is `unproven`;
 instrument/event links stay null, incoming cash has unknown owner crossing and
