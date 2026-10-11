@@ -31,9 +31,9 @@ class IncomeReportRow:
 class InvestmentFlowReportRow:
     event_date: date
     flow_type: str
-    gross: RubleAmount
-    tax: RubleAmount
-    commission: RubleAmount
+    gross: RubleAmount | None
+    tax: RubleAmount | None
+    commission: RubleAmount | None
     net: RubleAmount
 
 

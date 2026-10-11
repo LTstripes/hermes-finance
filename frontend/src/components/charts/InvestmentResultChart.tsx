@@ -39,22 +39,23 @@ type AccountBar = {
   name: string;
   accountType: string;
   cash: number;
-  unrealized: number;
+  unrealized: number | null;
   cashAmount: string;
-  unrealizedAmount: string;
+  unrealizedAmount: string | null;
 };
 
 function buildBars(accounts: AccountResultPoint[]): AccountBar[] {
   return accounts.map((account) => {
     const cashAmount = moneyAmount(account.cash_income);
-    const unrealizedAmount = moneyAmount(account.unrealized_result);
+    const unrealizedAmount =
+      account.unrealized_result === null ? null : moneyAmount(account.unrealized_result);
     return {
       key: String(account.account_id),
       name: account.account_name,
       accountType: ACCOUNT_TYPE_LABELS[account.account_type] ?? account.account_type,
       // Recharts coordinates only; financial sums remain exact decimal strings/kopecks.
       cash: moneyToChartNumber(cashAmount),
-      unrealized: moneyToChartNumber(unrealizedAmount),
+      unrealized: unrealizedAmount === null ? null : moneyToChartNumber(unrealizedAmount),
       cashAmount,
       unrealizedAmount,
     };

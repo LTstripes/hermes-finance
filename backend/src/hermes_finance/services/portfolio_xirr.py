@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
@@ -28,6 +29,11 @@ from hermes_finance.domain.xirr import (
     XirrCashFlow,
     XirrQuality,
     calculate_xirr,
+)
+from hermes_finance.persistence import (
+    AccountPerformanceScopeMembership,
+    PositionSnapshot,
+    ReportingMonth,
 )
 from hermes_finance.services.historical_xirr_evidence import historical_xirr_evidence
 from hermes_finance.services.performance_availability import (
@@ -165,6 +171,39 @@ def _xirr_for_scope_interval(
         scope=scope,
         account_id=account_id,
     )
+    native = (
+        select(PositionSnapshot.id)
+        .join(ReportingMonth, PositionSnapshot.reporting_month_id == ReportingMonth.id)
+        .where(
+            ReportingMonth.snapshot_date.in_((start_date, end_date)),
+            PositionSnapshot.price_source == "broker_statement_native",
+        )
+    )
+    if scope is PerformanceScope.ACCOUNT:
+        native = native.where(PositionSnapshot.account_id == account_id)
+    else:
+        native = native.where(
+            select(AccountPerformanceScopeMembership.id)
+            .where(
+                AccountPerformanceScopeMembership.account_id == PositionSnapshot.account_id,
+                AccountPerformanceScopeMembership.include_in_returns.is_(True),
+                AccountPerformanceScopeMembership.effective_from <= ReportingMonth.snapshot_date,
+                or_(
+                    AccountPerformanceScopeMembership.effective_to.is_(None),
+                    AccountPerformanceScopeMembership.effective_to >= ReportingMonth.snapshot_date,
+                ),
+            )
+            .exists()
+        )
+    if session.scalar(native.limit(1)) is not None:
+        return _unavailable(
+            scope=scope,
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            performance_currency=availability.performance_currency,
+            reason_codes=("source_native_exact_basis_unproven",),
+        )
     if availability.xirr.is_available:
         cash_flows = _cash_flows_from_availability(availability)
     else:

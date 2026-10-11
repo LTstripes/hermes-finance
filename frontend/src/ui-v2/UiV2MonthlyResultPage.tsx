@@ -63,7 +63,8 @@ function AccountRows({ rows }: { rows: AccountResultPoint[] }) {
       <tbody>
         {rows.map((row) => {
           const cash = moneyAmount(row.cash_income);
-          const unrealized = moneyAmount(row.unrealized_result);
+          const unrealized =
+            row.unrealized_result === null ? null : moneyAmount(row.unrealized_result);
           return (
             <tr key={row.account_id}>
               <Td data-label="Счёт">

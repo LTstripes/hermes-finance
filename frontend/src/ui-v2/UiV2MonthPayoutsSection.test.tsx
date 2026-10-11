@@ -62,6 +62,27 @@ const manualFlow = {
   statement_link: null,
 };
 
+it("shows received net while native gross/tax/commission remain unknown", async () => {
+  setup({
+    flows: [
+      {
+        ...manualFlow,
+        source: "broker_statement_native",
+        amount_basis: "broker_statement_net_v1",
+        gross_amount: null,
+        tax_amount: null,
+        commission_amount: null,
+      },
+    ],
+  });
+  render(<UiV2MonthPayoutsSection context={contextFor()} />);
+  await screen.findByRole("heading", { name: "Фактические потоки" });
+  const row = screen.getByRole("row", { name: /Synthetic Bond/ });
+  expect(within(row).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  expect(row).toHaveTextContent("860");
+  expect(within(row).queryByRole("button", { name: /Изменить|Удалить/ })).toBeNull();
+});
+
 const redemptionFlow = {
   ...manualFlow,
   id: 44,

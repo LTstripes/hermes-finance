@@ -123,7 +123,7 @@ function safeTotal(
     )
   )
     return null;
-  return sumMoneyAmounts(rows.map((row) => row[field].amount));
+  return sumMoneyAmounts(rows.map((row) => row[field]?.amount ?? ""));
 }
 
 function displayTotal(amount: string | null) {
@@ -721,7 +721,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
           return (
             !position ||
             position.price_date !== applied.price_date ||
-            position.market_price_per_unit.amount !== applied.market_price_per_unit.amount ||
+            position.market_price_per_unit?.amount !== applied.market_price_per_unit.amount ||
             position.price_source !== applied.price_source
           );
         })
@@ -1036,7 +1036,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                             label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
                           >
                             <OverflowMenuItem
-                              disabled={busy || readOnly}
+                              disabled={
+                                busy || readOnly || row.price_source === "broker_statement_native"
+                              }
                               onClick={() => {
                                 setEditingId(row.id);
                                 setEditDraft(editDraftFromPosition(row));
@@ -1046,7 +1048,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                             </OverflowMenuItem>
                             <OverflowMenuItem
                               danger
-                              disabled={busy || readOnly}
+                              disabled={
+                                busy || readOnly || row.price_source === "broker_statement_native"
+                              }
                               onClick={() => setPendingDelete(row)}
                             >
                               Удалить

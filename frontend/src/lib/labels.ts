@@ -4,6 +4,7 @@ export const MONTH_STATUS_LABELS: Record<string, string> = {
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
+  broker_statement_native: "По отчёту брокера",
   manual: "Вручную",
   excel_migration: "Импорт из Excel",
   alfa_pdf: "Выписка Альфа-Банка",
@@ -76,6 +77,7 @@ export const BENEFIT_STATUS_LABELS: Record<string, string> = {
 };
 
 export const PRICE_SOURCE_LABELS: Record<string, string> = {
+  broker_statement_native: "По отчёту брокера",
   manual: "Вручную",
   moex: "Мосбиржа",
   alfa_pdf: "Выписка Альфа-Банка",

@@ -39,4 +39,8 @@ def downgrade() -> None:
         )
     ).first():
         raise RuntimeError("cannot downgrade position class identity while evidence exists")
-    op.drop_column("position_snapshots", "historical_instrument_type")
+    # Later batch migrations reflect the original inline CHECK as a table CHECK.
+    # Remove it explicitly before removing the referenced column in either shape.
+    with op.batch_alter_table("position_snapshots") as batch:
+        batch.drop_constraint("ck_position_snapshots_historical_instrument_type", type_="check")
+        batch.drop_column("historical_instrument_type")

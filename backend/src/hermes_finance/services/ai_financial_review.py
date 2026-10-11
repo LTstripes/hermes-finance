@@ -865,8 +865,14 @@ def _portfolio_data(
         price_source = "manual"
         notes: str | None = None
         if row is not None:
-            average_cost = _available_money_metric(
-                int(row.average_cost_per_unit_kopecks), source="persisted_snapshot"
+            average_cost = (
+                _unavailable_money_metric(
+                    source="persisted_snapshot", reason_codes=["cost_basis_unknown"]
+                )
+                if row.average_cost_per_unit_kopecks is None
+                else _available_money_metric(
+                    int(row.average_cost_per_unit_kopecks), source="persisted_snapshot"
+                )
             )
             price_source = row.price_source
             notes = _text(row.notes)

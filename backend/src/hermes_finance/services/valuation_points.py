@@ -78,12 +78,13 @@ def _provenance(
     source_kind: str,
     source_ids: list[int] | tuple[int, ...],
     observed_date: date | None,
+    quality: ValuationQuality = ValuationQuality.EXACT,
 ) -> ValuationProvenance:
     return ValuationProvenance(
         source_kind=source_kind,
         source_ids=tuple(sorted(source_ids)),
         observed_date=observed_date,
-        quality=ValuationQuality.EXACT,
+        quality=quality,
     )
 
 
@@ -267,7 +268,12 @@ def valuation_point_for_month(
         )
     )
     position_ids = [row.id for row in positions]
-    invalid_positions = [row.id for row in positions if not _valid_amount(row.market_value_kopecks)]
+    invalid_positions = [
+        row.id
+        for row in positions
+        if not _valid_amount(row.market_value_kopecks)
+        or row.price_source == "broker_statement_native"
+    ]
     if positions:
         components.append(
             _component(
@@ -291,7 +297,16 @@ def valuation_point_for_month(
                 ),
             )
         )
-        provenance.append(_provenance("position_snapshot", position_ids, month.snapshot_date))
+        provenance.append(
+            _provenance(
+                "position_snapshot",
+                position_ids,
+                month.snapshot_date,
+                ValuationQuality.UNKNOWN
+                if any(row.price_source == "broker_statement_native" for row in positions)
+                else ValuationQuality.EXACT,
+            )
+        )
 
     deposits = list(
         session.scalars(

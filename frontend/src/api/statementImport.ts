@@ -12,9 +12,9 @@ export type StatementCandidate = {
   instrument_id: number | null;
   flow_type: string;
   event_date: string;
-  gross_amount_kopecks: number;
-  tax_amount_kopecks: number;
-  commission_amount_kopecks: number;
+  gross_amount_kopecks: number | null;
+  tax_amount_kopecks: number | null;
+  commission_amount_kopecks: number | null;
   net_amount_kopecks: number;
   currency: string;
   source: string;

@@ -305,6 +305,8 @@ def preview_market_quotes(
     plans: list[tuple[PositionSnapshot, Instrument, InstrumentMappingView]] = []
 
     for snapshot in snapshots:
+        if snapshot.price_source == "broker_statement_native":
+            continue  # A native total is not a quote-owned valuation.
         if snapshot_ids is not None and snapshot.id not in snapshot_ids:
             continue
         instrument_id = snapshot.instrument_id

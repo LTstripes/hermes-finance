@@ -529,6 +529,12 @@ def _build_apply_plan(
             mapping=mapping,
             snapshot=local,
         )
+        if local is not None and local.price_source == "broker_statement_native":
+            return _failure(
+                selected_count,
+                BrokerSnapshotApplyFailureCode.VALIDATION_ERROR,
+                "source-owned position requires a reviewed source revision",
+            )
         if fingerprint != selection.fingerprint:
             return _preview_changed(selected_count)
         if row.status not in _APPLYABLE_STATUSES:

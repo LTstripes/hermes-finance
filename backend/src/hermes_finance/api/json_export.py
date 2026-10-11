@@ -40,7 +40,7 @@ from hermes_finance.persistence import (
 from hermes_finance.services.markdown_export import MarkdownReport
 from hermes_finance.services.tax_brackets import official_default_tax_bracket_rules
 
-JSON_SCHEMA_VERSION: Literal["1.2"] = "1.2"
+JSON_SCHEMA_VERSION: Literal["1.3"] = "1.3"
 
 
 class ExportModel(BaseModel):
@@ -130,17 +130,21 @@ class RawPositionSnapshot(ExportModel):
     instrument_id: int
     historical_instrument_type: str | None
     quantity: str
-    average_cost_per_unit: MoneyValue
-    market_price_per_unit: MoneyValue
+    average_cost_per_unit: MoneyValue | None
+    market_price_per_unit: MoneyValue | None
     accrued_interest: MoneyValue | None
     market_value: MoneyValue
-    cost_basis: MoneyValue
-    unrealized_result: MoneyValue
+    cost_basis: MoneyValue | None
+    unrealized_result: MoneyValue | None
     price_date: date
     price_source: str
     manual_adjustment: bool
     notes: str | None
     updated_at: datetime
+    native_contract_version: int | None
+    source_import_id: int | None
+    source_row_key: str | None
+    bond_nkd_basis: str
 
 
 class RawDepositSnapshot(ExportModel):
@@ -189,13 +193,16 @@ class RawInvestmentCashFlow(ExportModel):
     instrument_id: int | None
     flow_type: str
     event_date: date
-    gross_amount: MoneyValue
-    tax_amount: MoneyValue
-    commission_amount: MoneyValue
+    gross_amount: MoneyValue | None
+    tax_amount: MoneyValue | None
+    commission_amount: MoneyValue | None
     net_amount: MoneyValue
     currency: str
     source: str
     notes: str | None
+    amount_basis: str
+    source_import_id: int | None
+    source_row_key: str | None
 
 
 class RawExpectedCashFlow(ExportModel):
@@ -317,9 +324,9 @@ class ReportIncomeRow(ExportModel):
 class ReportInvestmentFlowRow(ExportModel):
     event_date: date
     flow_type: str
-    gross: MoneyValue
-    tax: MoneyValue
-    commission: MoneyValue
+    gross: MoneyValue | None
+    tax: MoneyValue | None
+    commission: MoneyValue | None
     net: MoneyValue
 
 
@@ -359,7 +366,7 @@ class DerivedData(ExportModel):
 
 
 class JsonExport(ExportModel):
-    schema_version: Literal["1.2"]
+    schema_version: Literal["1.3"]
     calculation_version: str
     raw: RawSourceData
     derived: DerivedData
@@ -510,15 +517,19 @@ def build_raw_source_data(
                 instrument_id=item.instrument_id,
                 historical_instrument_type=item.historical_instrument_type,
                 quantity=_quantity(item.quantity),
-                average_cost_per_unit=_required_money(item.average_cost_per_unit_kopecks),
-                market_price_per_unit=_required_money(item.market_price_per_unit_kopecks),
+                average_cost_per_unit=_money(item.average_cost_per_unit_kopecks),
+                market_price_per_unit=_money(item.market_price_per_unit_kopecks),
                 accrued_interest=_money(item.accrued_interest_kopecks),
                 market_value=_required_money(item.market_value_kopecks),
-                cost_basis=_required_money(item.cost_basis_kopecks),
-                unrealized_result=_required_money(item.unrealized_result_kopecks),
+                cost_basis=_money(item.cost_basis_kopecks),
+                unrealized_result=_money(item.unrealized_result_kopecks),
                 price_date=item.price_date,
                 price_source=item.price_source,
                 manual_adjustment=item.manual_adjustment,
+                native_contract_version=item.native_contract_version,
+                source_import_id=item.source_import_id,
+                source_row_key=item.source_row_key,
+                bond_nkd_basis=item.bond_nkd_basis,
                 notes=item.notes,
                 updated_at=item.updated_at,
             )
@@ -577,9 +588,12 @@ def build_raw_source_data(
                 instrument_id=item.instrument_id,
                 flow_type=item.flow_type,
                 event_date=item.event_date,
-                gross_amount=_required_money(item.gross_amount_kopecks, item.currency),
-                tax_amount=_required_money(item.tax_amount_kopecks, item.currency),
-                commission_amount=_required_money(item.commission_amount_kopecks, item.currency),
+                gross_amount=_money(item.gross_amount_kopecks, item.currency),
+                tax_amount=_money(item.tax_amount_kopecks, item.currency),
+                commission_amount=_money(item.commission_amount_kopecks, item.currency),
+                amount_basis=item.amount_basis,
+                source_import_id=item.source_import_id,
+                source_row_key=item.source_row_key,
                 net_amount=_required_money(item.net_amount_kopecks, item.currency),
                 currency=item.currency,
                 source=item.source,
@@ -695,9 +709,9 @@ def build_report_data(report: MarkdownReport) -> ReportData:
             ReportInvestmentFlowRow(
                 event_date=item.event_date,
                 flow_type=item.flow_type,
-                gross=_required_money(item.gross.kopecks),
-                tax=_required_money(item.tax.kopecks),
-                commission=_required_money(item.commission.kopecks),
+                gross=_money(None if item.gross is None else item.gross.kopecks),
+                tax=_money(None if item.tax is None else item.tax.kopecks),
+                commission=_money(None if item.commission is None else item.commission.kopecks),
                 net=_required_money(item.net.kopecks),
             )
             for item in report.investment_flow_rows

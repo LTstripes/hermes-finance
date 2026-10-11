@@ -64,16 +64,21 @@ class PositionResponse(BaseModel):
     instrument_id: int
     historical_instrument_type: InstrumentType | None
     quantity: str
-    average_cost_per_unit: MoneyValue
-    market_price_per_unit: MoneyValue
+    average_cost_per_unit: MoneyValue | None
+    market_price_per_unit: MoneyValue | None
     market_value: MoneyValue
-    cost_basis: MoneyValue
-    unrealized_result: MoneyValue
+    cost_basis: MoneyValue | None
+    unrealized_result: MoneyValue | None
     accrued_interest: MoneyValue | None
     price_source: str
     price_date: date
     notes: str | None
     updated_at: datetime
+
+    native_contract_version: int | None
+    source_import_id: int | None
+    source_row_key: str | None
+    bond_nkd_basis: str
 
 
 def _validate_price_source(value: str) -> str:
@@ -102,31 +107,23 @@ def _response_from_snapshot(snapshot: object) -> PositionResponse:
         instrument_id=snapshot.instrument_id,
         historical_instrument_type=snapshot.historical_instrument_type,
         quantity=str(snapshot.quantity),
-        average_cost_per_unit=MoneyValue(
-            amount=RubleAmount(snapshot.average_cost_per_unit_kopecks).to_api(),
-            currency="RUB",
-        ),
-        market_price_per_unit=MoneyValue(
-            amount=RubleAmount(snapshot.market_price_per_unit_kopecks).to_api(),
-            currency="RUB",
-        ),
+        average_cost_per_unit=_money_from_kopecks(snapshot.average_cost_per_unit_kopecks),
+        market_price_per_unit=_money_from_kopecks(snapshot.market_price_per_unit_kopecks),
         market_value=MoneyValue(
             amount=RubleAmount(snapshot.market_value_kopecks).to_api(),
             currency="RUB",
         ),
-        cost_basis=MoneyValue(
-            amount=RubleAmount(snapshot.cost_basis_kopecks).to_api(),
-            currency="RUB",
-        ),
-        unrealized_result=MoneyValue(
-            amount=RubleAmount(snapshot.unrealized_result_kopecks).to_api(),
-            currency="RUB",
-        ),
+        cost_basis=_money_from_kopecks(snapshot.cost_basis_kopecks),
+        unrealized_result=_money_from_kopecks(snapshot.unrealized_result_kopecks),
         accrued_interest=_money_from_kopecks(snapshot.accrued_interest_kopecks),
         price_source=snapshot.price_source,
         price_date=snapshot.price_date,
         notes=snapshot.notes,
         updated_at=snapshot.updated_at,
+        native_contract_version=snapshot.native_contract_version,
+        source_import_id=snapshot.source_import_id,
+        source_row_key=snapshot.source_row_key,
+        bond_nkd_basis=snapshot.bond_nkd_basis,
     )
 
 

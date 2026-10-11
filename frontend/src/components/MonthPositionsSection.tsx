@@ -254,8 +254,12 @@ export function MonthPositionsSection({
   const totals = useMemo(() => {
     return {
       market: sumMoneyAmounts(filteredPositions.map((p) => moneyAmount(p.market_value))),
-      cost: sumMoneyAmounts(filteredPositions.map((p) => moneyAmount(p.cost_basis))),
-      result: sumMoneyAmounts(filteredPositions.map((p) => moneyAmount(p.unrealized_result))),
+      cost: filteredPositions.some((p) => p.cost_basis === null)
+        ? null
+        : sumMoneyAmounts(filteredPositions.map((p) => moneyAmount(p.cost_basis))),
+      result: filteredPositions.some((p) => p.unrealized_result === null)
+        ? null
+        : sumMoneyAmounts(filteredPositions.map((p) => moneyAmount(p.unrealized_result))),
     };
   }, [filteredPositions]);
 
@@ -439,7 +443,7 @@ export function MonthPositionsSection({
           return (
             !position ||
             position.price_date !== applied.price_date ||
-            position.market_price_per_unit.amount !== applied.market_price_per_unit.amount ||
+            position.market_price_per_unit?.amount !== applied.market_price_per_unit.amount ||
             position.price_source !== applied.price_source
           );
         })
@@ -732,7 +736,9 @@ export function MonthPositionsSection({
                           label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
                         >
                           <OverflowMenuItem
-                            disabled={busy || readOnly}
+                            disabled={
+                              busy || readOnly || row.price_source === "broker_statement_native"
+                            }
                             onClick={() => {
                               setEditingId(row.id);
                               setEditDraft(editDraftFromPosition(row));
@@ -742,7 +748,9 @@ export function MonthPositionsSection({
                           </OverflowMenuItem>
                           <OverflowMenuItem
                             danger
-                            disabled={busy || readOnly}
+                            disabled={
+                              busy || readOnly || row.price_source === "broker_statement_native"
+                            }
                             onClick={() => setPendingDelete(row)}
                           >
                             Удалить

@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from _migration_helpers import (
@@ -10,6 +11,138 @@ from _migration_helpers import (
 )
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_native_migration_refuses_lossy_downgrade_and_fractional_kopecks(tmp_path):
+    import pytest
+    from test_positions import _native_source, build_environment
+
+    from hermes_finance.database import create_database
+    from hermes_finance.domain import RubleAmount
+    from hermes_finance.services.source_native import stage_native_payout, stage_native_position
+
+    path = tmp_path / "synthetic-native-owned.db"
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    database = create_database(path)
+    with database.session_factory() as session:
+        month, account, instrument = build_environment(session)
+        source = _native_source(session)
+        row = stage_native_position(
+            session,
+            reporting_month_id=month,
+            account_id=account,
+            instrument_id=instrument,
+            quantity="3",
+            market_value=RubleAmount(1000001),
+            price_date=date(2030, 5, 12),
+            source_import_id=source,
+            source_row_key="c" * 64,
+            asset_kind="bond",
+            bond_nkd_basis="unknown",
+        )
+        flow = stage_native_payout(
+            session,
+            reporting_month_id=month,
+            account_id=account,
+            instrument_id=instrument,
+            flow_type="coupon",
+            event_date=date(2030, 5, 10),
+            net_amount=RubleAmount(30001),
+            source_import_id=source,
+            source_row_key="d" * 64,
+        )
+        session.commit()
+        row_id, flow_id = row.id, flow.id
+    database.engine.dispose()
+    with sqlite3.connect(path) as c:
+        for sql in (
+            f"UPDATE position_snapshots SET market_value_kopecks=1.1 WHERE id={row_id}",
+            f"UPDATE investment_cash_flows SET net_amount_kopecks=1.1 WHERE id={flow_id}",
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                c.execute(sql)
+        assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    result = run_alembic(path, "downgrade", "0055_mybroker_corrections")
+    assert result.returncode != 0 and "cannot downgrade with source-native" in result.stderr
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as c:
+        assert c.execute(
+            "SELECT market_value_kopecks,cost_basis_kopecks FROM position_snapshots"
+        ).fetchone() == (1000001, None)
+        assert c.execute(
+            "SELECT net_amount_kopecks,tax_amount_kopecks FROM investment_cash_flows"
+        ).fetchone() == (30001, None)
+
+
+def test_native_migration_preserves_legacy_and_guards_nullable_modes_and_downgrade(tmp_path):
+    import pytest
+
+    path = tmp_path / "synthetic-native-migration.db"
+    parent = "0055_mybroker_corrections"
+    result = run_alembic(path, "upgrade", parent)
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as c:
+        c.execute("INSERT INTO accounts(id,name,account_type) VALUES(1,'Synthetic','brokerage')")
+        c.execute("INSERT INTO instruments(id,name,instrument_type) VALUES(1,'Synthetic','bond')")
+        c.execute(
+            "INSERT INTO reporting_months(id,year,month,period_start,period_end,snapshot_date,status,source,created_at,updated_at) VALUES(1,2030,5,'2030-05-01','2030-05-31','2030-05-31','closed','manual','2030-06-01','2030-06-01')"
+        )
+        c.execute(
+            "INSERT INTO position_snapshots(id,reporting_month_id,account_id,instrument_id,quantity,average_cost_per_unit_kopecks,market_price_per_unit_kopecks,market_value_kopecks,cost_basis_kopecks,unrealized_result_kopecks,price_date,updated_at) VALUES(1,1,1,1,3,123,124,373,369,4,'2030-05-31','2030-06-01')"
+        )
+        c.execute(
+            "INSERT INTO investment_cash_flows(id,reporting_month_id,account_id,flow_type,event_date,gross_amount_kopecks,tax_amount_kopecks,commission_amount_kopecks,net_amount_kopecks,source) VALUES(1,1,1,'coupon','2030-05-15',100,13,0,87,'manual')"
+        )
+        before_position = c.execute("SELECT * FROM position_snapshots").fetchone()
+        before_flow = c.execute("SELECT * FROM investment_cash_flows").fetchone()
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as c:
+        # All original columns, including deliberately non-price-derived totals, survive.
+        columns = [r[1] for r in c.execute("PRAGMA table_info(position_snapshots)")]
+        old_columns = [
+            name
+            for name in columns
+            if name
+            not in {
+                "source_import_id",
+                "source_row_key",
+                "native_contract_version",
+                "bond_nkd_basis",
+            }
+        ]
+        assert (
+            c.execute(f"SELECT {','.join(old_columns)} FROM position_snapshots").fetchone()
+            == before_position
+        )
+        columns = [r[1] for r in c.execute("PRAGMA table_info(investment_cash_flows)")]
+        old_columns = [
+            name
+            for name in columns
+            if name not in {"source_import_id", "source_row_key", "amount_basis"}
+        ]
+        assert (
+            c.execute(f"SELECT {','.join(old_columns)} FROM investment_cash_flows").fetchone()
+            == before_flow
+        )
+        assert c.execute("SELECT bond_nkd_basis FROM position_snapshots").fetchone() == ("unknown",)
+        assert c.execute("SELECT amount_basis FROM investment_cash_flows").fetchone() == (
+            "gross_components",
+        )
+        for sql in (
+            "UPDATE position_snapshots SET cost_basis_kopecks=NULL",
+            "UPDATE investment_cash_flows SET tax_amount_kopecks=NULL",
+            "UPDATE position_snapshots SET price_source='broker_statement_native'",
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                c.execute(sql)
+        assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    result = run_alembic(path, "downgrade", parent)
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as c:
+        assert c.execute("SELECT * FROM position_snapshots").fetchone() == before_position
+        assert c.execute("SELECT * FROM investment_cash_flows").fetchone() == before_flow
 
 
 def test_source_cash_upgrade_empty_preserves_v1_and_legacy_and_guards_identity_history(tmp_path):
@@ -391,6 +524,10 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "updated_at",
             "archived_from_period",
             "historical_instrument_type",
+            "source_import_id",
+            "source_row_key",
+            "native_contract_version",
+            "bond_nkd_basis",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(deposit_snapshots)")] == [
             "id",
@@ -445,6 +582,9 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "currency",
             "source",
             "notes",
+            "amount_basis",
+            "source_import_id",
+            "source_row_key",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(external_transfer_links)")

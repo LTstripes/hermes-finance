@@ -80,6 +80,8 @@ def _copy_positions(session: Session, *, source_id: int, target_id: int) -> None
         select(PositionSnapshot).where(PositionSnapshot.reporting_month_id == source_id)
     )
     for row in rows:
+        if row.price_source == "broker_statement_native":
+            continue  # Native EOD facts belong to their actual source date only.
         session.add(
             PositionSnapshot(
                 reporting_month_id=target_id,

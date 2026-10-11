@@ -1245,8 +1245,28 @@ class PositionSnapshot(Base):
             "cost_basis_kopecks >= 0", name="ck_position_snapshots_cost_basis_nonnegative"
         ),
         CheckConstraint(
-            "price_source IN ('manual', 'moex', 'alfa_pdf', 't_invest')",
+            "price_source IN ('manual', 'moex', 'alfa_pdf', 't_invest', 'broker_statement_native')",
             name="ck_position_snapshots_price_source",
+        ),
+        CheckConstraint(
+            "(price_source != 'broker_statement_native' AND "
+            "average_cost_per_unit_kopecks IS NOT NULL AND "
+            "market_price_per_unit_kopecks IS NOT NULL AND cost_basis_kopecks IS NOT NULL AND "
+            "unrealized_result_kopecks IS NOT NULL AND source_import_id IS NULL AND "
+            "source_row_key IS NULL AND native_contract_version IS NULL) OR "
+            "(price_source = 'broker_statement_native' AND native_contract_version = 1 AND "
+            "native_contract_version IS NOT NULL AND source_import_id IS NOT NULL AND "
+            "typeof(market_value_kopecks) = 'integer' AND "
+            "source_row_key IS NOT NULL AND length(source_row_key) = 64 AND "
+            "historical_instrument_type IS NOT NULL AND "
+            "historical_instrument_type IN ('stock', 'bond') AND manual_adjustment = 0 AND "
+            "((historical_instrument_type = 'stock' AND bond_nkd_basis = 'not_applicable') OR "
+            "(historical_instrument_type = 'bond' AND bond_nkd_basis != 'not_applicable')))",
+            name="ck_position_snapshots_native_contract",
+        ),
+        CheckConstraint(
+            "bond_nkd_basis IN ('unknown', 'included', 'excluded', 'not_applicable')",
+            name="ck_position_snapshots_nkd_basis",
         ),
     )
 
@@ -1264,15 +1284,23 @@ class PositionSnapshot(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     # Snapshot-scoped C1 evidence. No default or catalogue fallback for legacy rows.
     historical_instrument_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    average_cost_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    market_price_per_unit_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    average_cost_per_unit_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    market_price_per_unit_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     accrued_interest_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     market_value_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    cost_basis_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    unrealized_result_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_basis_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    unrealized_result_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_import_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mybroker_imports.id", ondelete="RESTRICT"), nullable=True
+    )
+    source_row_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    native_contract_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bond_nkd_basis: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown", server_default=text("'unknown'")
+    )
     price_date: Mapped[date] = mapped_column(Date, nullable=False)
     price_source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="manual", server_default=text("'manual'")
+        String(32), nullable=False, default="manual", server_default=text("'manual'")
     )
     manual_adjustment: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("0")
@@ -1440,6 +1468,21 @@ class IncomeEntry(Base):
 class InvestmentCashFlow(Base):
     __tablename__ = "investment_cash_flows"
     __table_args__ = (
+        UniqueConstraint(
+            "account_id", "source_row_key", name="uq_investment_cash_flows_source_cash"
+        ),
+        CheckConstraint(
+            "(amount_basis = 'gross_components' AND gross_amount_kopecks IS NOT NULL AND "
+            "tax_amount_kopecks IS NOT NULL AND commission_amount_kopecks IS NOT NULL AND "
+            "source_import_id IS NULL AND source_row_key IS NULL) OR "
+            "(amount_basis = 'broker_statement_net_v1' AND gross_amount_kopecks IS NULL AND "
+            "tax_amount_kopecks IS NULL AND commission_amount_kopecks IS NULL AND "
+            "source_import_id IS NOT NULL AND source_row_key IS NOT NULL AND "
+            "length(source_row_key) = 64 AND currency = 'RUB' AND "
+            "typeof(net_amount_kopecks) = 'integer' AND "
+            "flow_type IN ('coupon', 'dividend', 'interest', 'redemption') AND net_amount_kopecks >= 0)",
+            name="ck_investment_cash_flows_amount_basis",
+        ),
         CheckConstraint(
             "flow_type IN ('interest', 'coupon', 'dividend', 'redemption', 'deposit', "
             "'withdrawal', 'commission', 'tax', 'realized_profit', 'realized_loss', 'other')",
@@ -1467,9 +1510,19 @@ class InvestmentCashFlow(Base):
     )
     flow_type: Mapped[str] = mapped_column(String(16), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False)
-    gross_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    tax_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    commission_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    gross_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tax_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    commission_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    amount_basis: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="gross_components",
+        server_default=text("'gross_components'"),
+    )
+    source_import_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mybroker_imports.id", ondelete="RESTRICT"), nullable=True
+    )
+    source_row_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     net_amount_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default=DEFAULT_BASE_CURRENCY, server_default=text("'RUB'")

@@ -239,6 +239,8 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
             ]
             if not component_rows:
                 reasons.add("class_endpoint_empty")
+            if any(p.price_source == "broker_statement_native" for p in component_rows):
+                reasons.add("source_native_exact_basis_unproven")
             values[index] = sum(p.market_value_kopecks for p in component_rows)
     # Current catalogue labels/flags/quotes/metadata are deliberately absent.
     material = {
@@ -265,6 +267,18 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
                 p.historical_instrument_type,
                 str(p.quantity),
                 p.market_value_kopecks,
+                # Preserve accepted legacy signatures; new provenance belongs
+                # only to the versioned native representation.
+                *(
+                    (
+                        p.price_source,
+                        p.bond_nkd_basis,
+                        p.source_import_id,
+                        p.source_row_key,
+                    )
+                    if p.price_source == "broker_statement_native"
+                    else ()
+                ),
             )
             for p in relevant
         ],
