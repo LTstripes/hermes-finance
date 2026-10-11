@@ -469,6 +469,12 @@ def _plan(session, intent):
         evidence, reasons, source_set, review_context = _build(session, intent)
         blockers.update(reasons)
         owners = _ownership(session, evidence.get("occurrences", []))
+        from hermes_finance.services.broker_money_ownership import conflicts as money_conflicts
+
+        if money_conflicts(
+            session, evidence.get("occurrences", []), "account_funding", intent.flow_id
+        ):
+            blockers.add("occurrence_already_owned")
         if any(o["flow_id"] != intent.flow_id for o in owners):
             blockers.add("occurrence_already_owned")
         action = "created"
@@ -637,6 +643,72 @@ def _append(session, flow_id, current, evidence, operation, state, reason=None):
     return row
 
 
+def stage_historical_owner_flow(session, intent, plan, *, confirmation_digest, request_id):
+    """Stage the existing H2 plan without commit; caller reserves and revalidates."""
+    if not plan["can_apply"]:
+        raise MyBrokerError(";".join(plan["blockers"]))
+    intent_digest = digest(_intent_dump(intent))
+    action, evidence = plan["candidate_action"], plan["evidence"]
+    flow_id = intent.flow_id or uuid4().hex
+    if not intent.flow_id:
+        core = evidence["core"]
+        session.add(
+            HistoricalOwnerFlow(
+                id=flow_id,
+                **{
+                    **core,
+                    "event_date": date.fromisoformat(core["event_date"]),
+                },
+            )
+        )
+        session.flush()
+    current = _latest(session, flow_id)
+    if action == "noop":
+        revision = current
+    else:
+        if intent.operation != "revoke":
+            for occurrence in evidence["occurrences"]:
+                if not _ownership(session, [occurrence]):
+                    session.add(
+                        HistoricalOwnerFlowOccurrence(
+                            flow_id=flow_id,
+                            **{
+                                k: occurrence[k]
+                                for k in (
+                                    "import_id",
+                                    "section",
+                                    "ordinal",
+                                    "row_fingerprint",
+                                )
+                            },
+                        )
+                    )
+        revision = _append(
+            session,
+            flow_id,
+            current,
+            evidence,
+            intent.operation,
+            "revoked" if intent.operation == "revoke" else "accepted",
+            intent.reason_code,
+        )
+        session.flush()
+    revision_id = revision.id
+    session.add(
+        HistoricalOwnerFlowApply(
+            request_id=request_id,
+            intent_digest=intent_digest,
+            confirmation_digest=confirmation_digest,
+            flow_id=flow_id,
+            revision_id=revision_id,
+            result_action=action,
+            committed_at=datetime.now(UTC),
+        )
+    )
+    session.flush()
+    return flow_id, revision_id, action
+
+
 def apply_historical_owner_flow(session, intent, *, confirmation_digest, request_id):
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("clean_session_required")
@@ -670,64 +742,13 @@ def apply_historical_owner_flow(session, intent, *, confirmation_digest, request
                 raise MyBrokerError("preview_stale")
             if not plan["can_apply"]:
                 raise MyBrokerError(";".join(plan["blockers"]))
-            action, evidence = plan["candidate_action"], plan["evidence"]
-            flow_id = intent.flow_id or uuid4().hex
-            if not intent.flow_id:
-                core = evidence["core"]
-                session.add(
-                    HistoricalOwnerFlow(
-                        id=flow_id,
-                        **{
-                            **core,
-                            "event_date": date.fromisoformat(core["event_date"]),
-                        },
-                    )
-                )
-                session.flush()
-            current = _latest(session, flow_id)
-            if action == "noop":
-                revision = current
-            else:
-                if intent.operation != "revoke":
-                    for occurrence in evidence["occurrences"]:
-                        if not _ownership(session, [occurrence]):
-                            session.add(
-                                HistoricalOwnerFlowOccurrence(
-                                    flow_id=flow_id,
-                                    **{
-                                        k: occurrence[k]
-                                        for k in (
-                                            "import_id",
-                                            "section",
-                                            "ordinal",
-                                            "row_fingerprint",
-                                        )
-                                    },
-                                )
-                            )
-                revision = _append(
-                    session,
-                    flow_id,
-                    current,
-                    evidence,
-                    intent.operation,
-                    "revoked" if intent.operation == "revoke" else "accepted",
-                    intent.reason_code,
-                )
-                session.flush()
-            revision_id = revision.id
-            session.add(
-                HistoricalOwnerFlowApply(
-                    request_id=request_id,
-                    intent_digest=intent_digest,
-                    confirmation_digest=confirmation_digest,
-                    flow_id=flow_id,
-                    revision_id=revision_id,
-                    result_action=action,
-                    committed_at=datetime.now(UTC),
-                )
+            flow_id, revision_id, action = stage_historical_owner_flow(
+                session,
+                intent,
+                plan,
+                confirmation_digest=confirmation_digest,
+                request_id=request_id,
             )
-            session.flush()
             replay = False
         session.commit()
     except Exception:

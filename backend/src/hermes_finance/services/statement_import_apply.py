@@ -438,9 +438,18 @@ def _linked_flow_matches_accepted(
         or flow.instrument_id != event.instrument_id
         or flow.flow_type != event.event_kind
         or flow.event_date != accepted.event_date
-        or flow.gross_amount_kopecks != accepted.gross_amount_kopecks
-        or flow.tax_amount_kopecks != expected_tax
-        or flow.commission_amount_kopecks != 0
+        or (
+            flow.amount_basis != "broker_statement_net_v1"
+            and (
+                flow.gross_amount_kopecks != accepted.gross_amount_kopecks
+                or flow.tax_amount_kopecks != expected_tax
+                or flow.commission_amount_kopecks != 0
+            )
+        )
+        or (
+            flow.amount_basis == "broker_statement_net_v1"
+            and event.link_mode != StatementLinkMode.LINKED_EXISTING.value
+        )
         or flow.net_amount_kopecks != accepted.net_amount_kopecks
         or flow.currency != accepted.net_currency
     ):
@@ -481,9 +490,14 @@ def _financially_compatible(flow: InvestmentCashFlow, row: PreviewRow) -> bool:
         and flow.instrument_id == row.hermes_instrument_id
         and flow.flow_type == row.event_kind
         and flow.event_date == row.event_date
-        and flow.gross_amount_kopecks == kopecks(row.gross_amount)
-        and flow.tax_amount_kopecks == tax
-        and flow.commission_amount_kopecks == 0
+        and (
+            flow.amount_basis == "broker_statement_net_v1"
+            or (
+                flow.gross_amount_kopecks == kopecks(row.gross_amount)
+                and flow.tax_amount_kopecks == tax
+                and flow.commission_amount_kopecks == 0
+            )
+        )
         and flow.net_amount_kopecks == kopecks(row.net_amount)
         and flow.currency == "RUB"
     )

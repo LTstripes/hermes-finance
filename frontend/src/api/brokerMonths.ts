@@ -1,5 +1,6 @@
 import { apiMultipart, apiRequest } from "./client";
 import type { MyBrokerDocument } from "./mybrokerImport";
+import type { MoneyReadback } from "./brokerMoney";
 
 export type BrokerMonthIntent = { reporting_month_id: number; account_id: number };
 export type AccountBindingDecision = { identity: string; hermes_id: number };
@@ -23,6 +24,7 @@ export type BrokerMonthPreview = BrokerMonthIntent & {
   ending_date: string;
 };
 export type BrokerMonthReadback = BrokerMonthIntent & {
+  money_acceptance?: MoneyReadback | null;
   contract_version: "broker_month_v1";
   request_id: string;
   confirmation_digest: string;

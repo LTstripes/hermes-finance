@@ -151,3 +151,77 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   expect((await request.post("/api/months/2/close")).status()).toBe(422);
   await page.screenshot({ path: info.outputPath("partial-money-1280.png"), fullPage: true });
 });
+
+test("desktop Money adds one reviewed coupon/H2 batch to DRAFT, GET shows NULL tax and deferred NKD", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const xml = await (await request.get("/api/synthetic-broker-source/money")).body();
+  const filename = "Брокерский 1234567 (01.03.30-31.03.30).xml";
+  const scope = { reporting_month_id: 3, account_id: 1 };
+  const original = { name: filename, mimeType: "application/xml", buffer: xml };
+  const preview = await (
+    await request.post("/api/broker-months/preview", {
+      multipart: { file: original, intent: JSON.stringify(scope) },
+    })
+  ).json();
+  const baseResponse = await request.post("/api/broker-months/apply", {
+    multipart: {
+      file: original,
+      confirmation: JSON.stringify({
+        ...scope,
+        request_id: "desktop-money-base",
+        confirmation_digest: preview.confirmation_digest,
+        reviewed_account_bindings: preview.account_bindings,
+      }),
+    },
+  });
+  expect(baseResponse.ok()).toBe(true);
+  let writes = 0;
+  let gets = 0;
+  page.on("request", (sent) => {
+    if (sent.url().endsWith("/api/broker-months/apply") && sent.method() === "POST") writes++;
+    if (/\/api\/broker-months\/[^/?]+$/.test(sent.url()) && sent.method() === "GET") gets++;
+  });
+  await page.goto("/v2/close?month=3&step=final_review_close");
+  await page.getByText("Принять купоны и пополнения в этот черновик").click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const inventory = page.getByRole("table", { name: "Все наблюдения Money" });
+  await expect(inventory).toContainText("trade_paid_nkd_candidate");
+  const choose = inventory.getByRole("checkbox");
+  for (let index = 0; index < 3; index++) await choose.nth(index).check();
+  await page.getByLabel("Подтверждённая облигация для строки 2").selectOption("2");
+  await page.getByLabel("Подтверждённая облигация для строки 3").selectOption("2");
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const confirm = page.getByRole("checkbox", {
+    name: /Я подтверждаю перечисленные конкретные решения Money/,
+  });
+  await confirm.focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
+  const stored = page.getByRole("table", { name: "Сохранённые купоны и пополнения" });
+  await expect(stored).toContainText("50 000");
+  await expect(stored).toContainText("Неизвестно");
+  expect(writes).toBe(1);
+  expect(gets).toBe(1);
+  const read = await (await request.get("/api/broker-months/desktop-money-base")).json();
+  expect(read.money_acceptance.targets).toHaveLength(3);
+  expect(read.money_acceptance.targets.every((t: { effective: boolean }) => t.effective)).toBe(
+    true,
+  );
+  expect(read.exceptions).toContain("money_semantics_unsupported");
+  const rejected = await request.post("/api/months/3/close");
+  expect(rejected.status()).toBe(422);
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  await expect(stored).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: info.outputPath("synthetic-money-desktop.png"), fullPage: true });
+});

@@ -76,6 +76,38 @@ class BrokerMonthApply(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class BrokerMoneyOccurrenceOwner(Base):
+    """Permanent exclusive observation link; no duplicated financial amounts."""
+
+    __tablename__ = "broker_money_occurrence_owners"
+    __table_args__ = (
+        UniqueConstraint("import_id", "section", "ordinal", name="uq_broker_money_occurrence"),
+        CheckConstraint("section = 'money' AND ordinal >= 0", name="ck_broker_money_occurrence"),
+        CheckConstraint("length(row_fingerprint) = 64", name="ck_broker_money_fingerprint"),
+        CheckConstraint(
+            "(role = 'coupon' AND investment_cash_flow_id IS NOT NULL AND "
+            "historical_owner_flow_id IS NULL) OR (role = 'account_funding' AND "
+            "historical_owner_flow_id IS NOT NULL AND investment_cash_flow_id IS NULL)",
+            name="ck_broker_money_target",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("mybroker_imports.id", ondelete="RESTRICT"))
+    section: Mapped[str] = mapped_column(String(16), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    investment_cash_flow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("investment_cash_flows.id", ondelete="RESTRICT"), nullable=True
+    )
+    historical_owner_flow_id: Mapped[str | None] = mapped_column(
+        ForeignKey("historical_owner_flows.id", ondelete="RESTRICT"), nullable=True
+    )
+    accepted_request_id: Mapped[str] = mapped_column(
+        ForeignKey("broker_month_applies.request_id", ondelete="RESTRICT"), nullable=False
+    )
+
+
 class MyBrokerDispositionSet(Base):
     """Immutable initial skip manifest; absent on legacy fully mapped S1."""
 

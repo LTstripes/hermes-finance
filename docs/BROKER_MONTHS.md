@@ -17,13 +17,28 @@ rows. Missing security inventory is unproven, not observed zero; fractional stoc
 quantities are explicit Preview conflicts. Balanced endpoints cannot clear an
 unresolved canonical settlement principal, commission or cash ownership.
 
-Only accepted S1 trade settlement/commission patterns and canonical native trade
-keys are financial authority here. No accepted generic Money manifest exists yet:
-#778 owns coupons, dividends, owner funding and unlinked paid trade NKD. These rows
-are inventoried as visible exceptions, never inferred from text, sign, aggregate,
-date/amount or source ordinal. Explicitly incomplete DRAFT is allowed, but material
-unknown Money blocks the covered account at Close. #773 is not fully complete or
-ready for Owner UAT until the accepted #778 integration.
+Accepted S1 trade settlement/commission patterns and canonical native trade keys
+retain their authority. The #782 extension under accepted #781 adds only explicitly
+reviewed actual net coupons and account funding to an existing source-owned DRAFT.
+Coupons use InvestmentCashFlow; funding uses H2 v2 HistoricalOwnerFlow. Neither
+creates ExternalFlow nor adds source cash again. Dividend, paid NKD, fees and opaque
+Money remain visible scoped exceptions; #783 owns NKD/fees. Incomplete DRAFT is
+allowed, but material unknown Money blocks the covered account at Close.
+
+The Money Preview requires original bytes for the complete accepted overlapping
+source union. Original observations guide specific instrument/payment/boundary
+review; they do not mint payment identity from date, amount or narrative. The server
+assigns coupon identity and retains permanent occurrence-to-target ownership,
+including old H2/S2 owners and revoked evidence. Indistinguishable repetitions and
+missing events in a covering report block acceptance. A typed PDF can explicitly
+link the same ICF; it cannot invent missing gross, tax or commission components.
+
+Money Apply reserves the writer, revalidates all dependencies and stages ICF, H2,
+ownership links and proof in one transaction, followed by independent GET. Versioned
+Money proof and monotonic retirement/dependency tokens use the existing append-only
+BrokerMonthApply journal; legacy receipt JSON and S1 are unchanged. A → B → A cannot
+revive stale review. Retired proof requires reviewed reaffirmation of the same core
+targets. Replay returns current disputed/readiness state without adding money.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply
@@ -54,6 +69,9 @@ remain deferred. The desktop route currently accepts the original XML only.
 Migration 0057 adds an empty append-only ownership receipt table with source/month/
 account foreign keys. It neither backfills financial data nor reparses legacy S1.
 Downgrade refuses populated source-owned receipts to prevent lost ownership.
+Migration 0058 adds only permanent Money occurrence links with ICF/H2 target and
+receipt foreign keys; it performs no financial backfill and refuses downgrade when
+links are populated. The desktop extension accepts the required original XML set.
 
 Synthetic backend regressions cover exact values/missingness, replay, both overlap
 orders, distinct native IDs, stale review, full rollback, conflicts and reserved
