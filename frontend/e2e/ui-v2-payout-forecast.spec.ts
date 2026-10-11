@@ -206,6 +206,14 @@ async function installPayoutApi(page: Page) {
         await route.fulfill({ json: makeUiV2Workflow({ monthId: 12 }) });
         return;
       }
+      if (
+        request.method() === "GET" &&
+        pathname === "/api/broker-months" &&
+        url.search === "?reporting_month_id=12"
+      ) {
+        await route.fulfill({ json: [] });
+        return;
+      }
       if (request.method() === "POST" && pathname === "/api/months/12/payout-preview") {
         await route.fulfill({ json: payoutPreview });
         return;

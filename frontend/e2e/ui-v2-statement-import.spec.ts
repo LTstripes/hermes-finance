@@ -234,6 +234,14 @@ async function installStatementApi(
         await route.fulfill({ json: makeUiV2Workflow({ monthId: 12 }) });
         return;
       }
+      if (
+        request.method() === "GET" &&
+        pathname === "/api/broker-months" &&
+        url.search === "?reporting_month_id=12"
+      ) {
+        await route.fulfill({ json: [] });
+        return;
+      }
       if (request.method() === "GET" && pathname === "/api/investment-flows") {
         await route.fulfill({
           json: url.searchParams.get("month_id") === "12" ? [appliedFlow] : [],
