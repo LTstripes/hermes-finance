@@ -45,7 +45,9 @@ including opaque, pending, REPO and unparsed-source evidence.
 
 The inventory exposes all relevant overlapping accepted reports and their
 Money occurrence references, even after binding withdrawal. Same-report
-multiplicity stays visible. Equal date/amount/currency only identifies possible
+multiplicity stays visible. Different matching multiplicities in overlapping
+reports have an explicit `overlapping_source_multiplicity_mismatch` diagnostic;
+the reader does not pair or collapse their rows. Equal date/amount/currency only identifies possible
 competing evidence; it never establishes economic equivalence. Missing matches
 in a report covering the posting date remain explicit. No report union is
 summed or deduplicated. `source_subtotals` counts admissible candidate leaves

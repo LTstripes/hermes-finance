@@ -371,3 +371,38 @@ def test_exact_signed_64_bit_bounds_do_not_round(database, amount, minor):
     import_id, account_id = accept(database, xml)
     row = read(database, import_id, account_id, xml).observations[2]
     assert row.amount_minor == minor and row.candidate_kind != "unsupported"
+
+
+@pytest.mark.parametrize("local,other", [(2, 1), (1, 2), (2, 2)])
+def test_overlap_multiplicity_is_disclosed_without_pairing_or_collapsing(database, local, other):
+    xml = original(coupons=("1000",) * local)
+    import_id, account_id = accept(database, xml)
+    root = ET.fromstring(original(coupons=("1000",) * other))
+    root.set("SyntheticIndependentReport", "true")
+    other_id, _ = accept(database, ET.tostring(root))
+    result = read(database, import_id, account_id, xml)
+    coupons = [r for r in result.observations if r.candidate_kind == "coupon_paid_candidate"]
+    assert len(coupons) == local
+    assert Decimal(result.source_subtotals["coupon_paid_candidate"]) == local * 1000
+    for row in coupons:
+        assert len(row.competing_occurrences) == other
+        assert all(r.import_id == other_id for r in row.competing_occurrences)
+        assert ("overlapping_source_multiplicity_mismatch" in row.reasons) == (local != other)
+        assert "overlapping_source_ambiguity" in row.reasons
+        assert row.economic_event_id is None
+
+
+def test_leaf_locators_remain_unique_across_repeated_nested_collections(database):
+    from copy import deepcopy
+
+    root = ET.fromstring(original(coupons=("1000",)))
+    group = root.find(".//m:settlement_date", NS)
+    group.append(deepcopy(group.find("m:rn_Collection", NS)))
+    xml = ET.tostring(root)
+    import_id, account_id = accept(database, xml)
+    result = read(database, import_id, account_id, xml)
+    assert len(result.observations) == 10
+    assert len({r.locator for r in result.observations}) == 10
+    # A global index over the rooted atomic-leaf selector resolves each leaf,
+    # including those under a second collection that per-parent indices miss.
+    assert all(r.locator.endswith(f")[{i}]") for i, r in enumerate(result.observations, 1))

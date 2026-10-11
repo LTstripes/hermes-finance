@@ -131,15 +131,17 @@ def _original_equal(fresh: dict, stored: dict) -> bool:
 def _narratives(document: bytes):
     # S1 has already checked family, bounds, cardinalities, exact paths and leaves.
     root = ET.fromstring(document.decode("utf-8-sig"))
-    for g, group in enumerate(root.findall(GROUPS, NS), 1):
-        for r, rn in enumerate(group.findall("m:rn_Collection/m:rn", NS), 1):
+    ordinal = 0
+    for group in root.findall(GROUPS, NS):
+        for rn in group.findall("m:rn_Collection/m:rn", NS):
             op = rn.find("m:oper_type", NS)
             comment = op.find("m:comment", NS)
-            for leaf, _ in enumerate(comment.findall(AMOUNTS, NS), 1):
+            for _ in comment.findall(AMOUNTS, NS):
+                ordinal += 1
                 locator = (
                     f"(/m:Report/m:Trades2/m:Report[@Name='3_BrokerMoneyMove']/m:Tablix1/"
-                    f"m:settlement_date_Collection/m:settlement_date[{g}]/"
-                    f"m:rn_Collection/m:rn[{r}]/m:oper_type/m:comment/{AMOUNTS})[{leaf}]"
+                    f"m:settlement_date_Collection/m:settlement_date/"
+                    f"m:rn_Collection/m:rn/m:oper_type/m:comment/{AMOUNTS})[{ordinal}]"
                 )
                 yield op.get("oper_type", ""), comment.get("comment", ""), locator
 
@@ -281,6 +283,14 @@ def read_money_candidates(
             return row["source_account"], row["date"], row["amount"], row["currency"]
 
         multiplicity = Counter(signature(r) for r in stored["money"])
+
+        # This comparison is an inventory diagnostic, never a one-to-one join
+        # or economic equivalence assertion. All competing references are kept.
+        def cash_signature(row):
+            return row["date"], row["amount"], row["currency"]
+
+        selected_counts = Counter(cash_signature(r) for r in stored["money"])
+        overlapping_counts = Counter((i, cash_signature(r)) for i, r in overlap_rows)
         observations = []
         subtotals = {}
         for row, (operation, narrative, locator) in zip(
@@ -332,6 +342,13 @@ def read_money_candidates(
             )
             if overlaps:
                 reasons.add("overlapping_source_ambiguity")
+                if any(
+                    o.covered_from <= row["date"] <= o.covered_to
+                    and overlapping_counts[o.import_id, cash_signature(row)]
+                    != selected_counts[cash_signature(row)]
+                    for o in overlaps
+                ):
+                    reasons.add("overlapping_source_multiplicity_mismatch")
                 if any(
                     o.covered_from <= row["date"] <= o.covered_to
                     and not any(ref.import_id == o.import_id for ref in competing)
