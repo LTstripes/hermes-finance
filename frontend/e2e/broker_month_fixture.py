@@ -60,7 +60,7 @@ def main():
         def source(kind: str):
             if kind == "trade-money":
                 xml = (
-                    trade_money_xml(prior_month_buy=True)
+                    trade_money_xml(prior_month_buy=True, native_linkage=True)
                     .replace(b"31.12.2029", b"31.03.2030")
                     .replace(b".01.2030", b".04.2030")
                     .replace(b"2030-01-", b"2030-04-")

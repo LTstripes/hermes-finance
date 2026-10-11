@@ -17,6 +17,14 @@ occurrence fingerprints use the full saved S1 rows, exactly like existing cash
 coverage readers. Changed bytes, parser, declared range, account facts, amounts
 or ordinals refuse interpretation with a bounded error code.
 
+The bounded [S1 native-linkage extension](MYBROKER_S1.md#native-money-linkage-compatibility-788)
+selects original reparsing from the accepted receipt's optional
+`money_linkage_version`. Absence preserves the legacy comment-only interpretation,
+including previously unsupported oper_type-only leaves. Newly accepted native
+settlement/commission observations retain S1 precedence. No old fingerprints,
+S1 JSON or financial receipts are reclassified; unknown versions and contradictory
+native/comment roles or IDs refuse interpretation.
+
 Every signed amount leaf remains an observation, including unsupported rows and
 the existing settlement/commission roles. Those roles retain precedence and
 their saved linkage; they are never second candidate cash rows. Explicit,

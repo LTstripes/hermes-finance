@@ -1676,7 +1676,13 @@ def test_money_nkd_remains_scoped_close_blocker_after_coupon_and_h2_acceptance(d
 
 
 def trade_money_xml(
-    *, inclusive=True, duplicate_nkd=False, stamp="10", extra=False, prior_month_buy=False
+    *,
+    inclusive=True,
+    duplicate_nkd=False,
+    stamp="10",
+    extra=False,
+    prior_month_buy=False,
+    native_linkage=False,
 ):
     from copy import deepcopy
 
@@ -1726,6 +1732,11 @@ def trade_money_xml(
             Decimal("52864.50") - (Decimal("125.50") if duplicate_nkd else 0) - (1 if extra else 0)
         ),
     )
+    if native_linkage:
+        for op in root.findall(".//{MyBroker}oper_type"):
+            comment = op.find("{MyBroker}comment")
+            if comment.get("comment", "").startswith(("Расчеты по сделке ", "Комиссия по сделке ")):
+                op.set("oper_type", comment.attrib.pop("comment"))
     return ET.tostring(root, encoding="utf-8")
 
 
@@ -1767,8 +1778,9 @@ def _trade_decide(session, intent, originals, *, inclusive=True, claims=True, op
 
 @pytest.mark.parametrize("inclusive", [True, False])
 @pytest.mark.parametrize("prior_month_buy", [False, True])
+@pytest.mark.parametrize("native_linkage", [False, True])
 def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(
-    database, inclusive, prior_month_buy
+    database, inclusive, prior_month_buy, native_linkage
 ):
     from hermes_finance.persistence import (
         ExecutedTrade,
@@ -1781,7 +1793,10 @@ def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(
     from hermes_finance.services.executed_trades import read_executed_trades
 
     client, xml, intent, bond, _ = _money_setup(
-        database, trade_money_xml(inclusive=inclusive, prior_month_buy=prior_month_buy)
+        database,
+        trade_money_xml(
+            inclusive=inclusive, prior_month_buy=prior_month_buy, native_linkage=native_linkage
+        ),
     )
     originals = [(FILENAME, xml)]
     with database.session_factory() as session:

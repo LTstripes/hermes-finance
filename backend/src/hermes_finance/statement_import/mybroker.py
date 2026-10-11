@@ -17,6 +17,10 @@ from xml.etree import ElementTree as ET
 
 PROVIDER = "alfa_mybroker"
 PARSER = "mybroker-s1-v2"
+# Optional, bounded grammar extension. Absence in an accepted receipt means the
+# frozen comment-only grammar, not permission to upgrade its saved occurrences.
+MONEY_LINKAGE = "mybroker-money-linkage-v1"
+LINKAGE = re.compile(r"(Расчеты|Комиссия) по сделке ([0-9]{1,128})")
 NS = {"m": "MyBroker"}
 # Accepted #716 currency-row conjunction; only the exact row-level placement is
 # accepted, and anything else stays a visible fail-closed blocker.
@@ -188,7 +192,11 @@ def _trade(row: ET.Element, *, pending: bool, ordinal: int) -> dict:
     }
 
 
-def parse_mybroker(document: bytes, filename: str) -> dict:
+def parse_mybroker(
+    document: bytes, filename: str, *, money_linkage_version: str | None = MONEY_LINKAGE
+) -> dict:
+    if money_linkage_version not in (None, MONEY_LINKAGE):
+        raise MyBrokerError("money_linkage_version_unsupported")
     match = FILENAME.fullmatch(filename)
     if not match:
         raise MyBrokerError("filename_range_invalid")
@@ -343,6 +351,7 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
         for i, row in enumerate(sections["Trades"].findall(path, NS)):
             trades.append(_trade(row, pending=pending, ordinal=i))
     money = []
+    native_linkage_observed = False
     groups = sections["Trades2"].findall(
         "m:Tablix1/m:settlement_date_Collection/m:settlement_date", NS
     )
@@ -363,8 +372,19 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
             if len(accounts) != 1:
                 raise MyBrokerError("money_row_invalid")
             # Only the exact approved linkage strings carry semantics. Other text is discarded.
-            linkage = re.fullmatch(
-                r"(Расчеты|Комиссия) по сделке ([0-9]{1,128})", comment.get("comment", "")
+            legacy_linkage = LINKAGE.fullmatch(comment.get("comment", ""))
+            native_linkage = LINKAGE.fullmatch(op.get("oper_type", ""))
+            if (
+                native_linkage
+                and legacy_linkage
+                and native_linkage.groups() != legacy_linkage.groups()
+            ):
+                raise MyBrokerError("money_linkage_conflict")
+            native_linkage_observed |= native_linkage is not None
+            linkage = (
+                native_linkage or legacy_linkage
+                if money_linkage_version == MONEY_LINKAGE
+                else legacy_linkage
             )
             amounts = comment.findall(
                 "m:money_volume_begin1_Collection/m:money_volume_begin1/"
@@ -418,6 +438,11 @@ def parse_mybroker(document: bytes, filename: str) -> dict:
     return {
         "provider": PROVIDER,
         "parser": PARSER,
+        **(
+            {"money_linkage_version": MONEY_LINKAGE}
+            if native_linkage_observed and money_linkage_version == MONEY_LINKAGE
+            else {}
+        ),
         "document_sha256": hashlib.sha256(document).hexdigest(),
         "filename_account": match["account"],
         "covered_from": start.isoformat(),

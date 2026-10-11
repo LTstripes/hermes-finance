@@ -7,6 +7,7 @@ ordinals or financial payout tables. S1 does not attest portfolio completeness.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import defaultdict
 from datetime import UTC, date, datetime
@@ -41,6 +42,7 @@ from hermes_finance.services.mybroker_dispositions import (
 )
 from hermes_finance.services.performance_availability import _membership_at
 from hermes_finance.statement_import.mybroker import (
+    MONEY_LINKAGE,
     PARSER,
     PROVIDER,
     MyBrokerError,
@@ -48,6 +50,24 @@ from hermes_finance.statement_import.mybroker import (
     digest,
     parse_mybroker,
 )
+
+
+def parse_import_original(session: Session, document: bytes, filename: str) -> dict:
+    """Exact accepted bytes select their recorded grammar; new bytes use v1.
+
+    Never rewrite an old receipt, even if its native operations were unsupported.
+    Both Preview and reserved-writer revalidation call this same selector.
+    """
+    with session.no_autoflush:
+        source = session.scalar(
+            select(MyBrokerImport)
+            .where(MyBrokerImport.document_sha256 == hashlib.sha256(document).hexdigest())
+            .execution_options(populate_existing=True)
+        )
+        version = MONEY_LINKAGE
+        if source is not None and source.parser_version == PARSER:
+            version = json.loads(source.normalized_json).get("money_linkage_version")
+        return parse_mybroker(document, filename, money_linkage_version=version)
 
 
 def _imports(session: Session) -> list[MyBrokerImport]:
@@ -223,6 +243,14 @@ def _attach_cash(document: dict, prior: dict[str, dict]) -> list[str]:
             and trade["ids"][0] == row["primary_id"]
         )
         row["trade_identity"] = matches[0] if len(matches) == 1 else None
+        if (
+            document.get("money_linkage_version") == MONEY_LINKAGE
+            and row["trade_identity"] is not None
+            and candidates[row["trade_identity"]]["state"] != "settled"
+        ):
+            row["trade_identity"] = None
+            blockers.append("money_link_not_settled")
+            continue
         if len(matches) != 1:
             blockers.append("money_link_ambiguous" if matches else "money_link_missing")
         elif matches[0] is None:
@@ -657,8 +685,8 @@ def preview_mybroker(
     skipped_isins: tuple[str, ...] = (),
     owner_reviewed: bool = False,
 ) -> dict:
-    parsed = parse_mybroker(document, filename)
     with coherent_read_snapshot(session):
+        parsed = parse_import_original(session, document, filename)
         return _prepare(session, parsed, skipped_isins, owner_reviewed)
 
 
@@ -736,7 +764,9 @@ def apply_mybroker(
 ) -> dict:
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("session_has_pending_changes")
-    parsed = parse_mybroker(document, filename)  # authoritative bytes, never browser rows
+    # Family/bounds validation before reserving the writer; the accepted grammar
+    # is selected again inside that reservation, never from client rows.
+    parse_mybroker(document, filename)
     session.rollback()
     try:
         # A no-op UPDATE reserves SQLite's single writer even when the ledger is empty.
@@ -745,6 +775,7 @@ def apply_mybroker(
             update(MyBrokerImport).where(MyBrokerImport.id == -1).values(id=MyBrokerImport.id)
         )
         session.expire_all()
+        parsed = parse_import_original(session, document, filename)
         intent_digest = digest(
             [
                 parsed["document_sha256"],
