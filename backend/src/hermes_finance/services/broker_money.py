@@ -139,6 +139,102 @@ def _target(session, role, target_id):
     return {"role": role, "target_id": target_id, "facts": material(row), "h2": readback}
 
 
+def compatible_pdf_event(event, facts):
+    return bool(
+        facts
+        and event["provider"] == "alfa_depository_income_report"
+        and event["link_mode"] == "linked_existing"
+        and event["status"] == "active"
+        and event["retracted_at"] is None
+        and event["investment_cash_flow_id"] == facts["id"]
+        and all(
+            event[field] == facts[flow_field]
+            for field, flow_field in (
+                ("account_id", "account_id"),
+                ("instrument_id", "instrument_id"),
+                ("event_kind", "flow_type"),
+            )
+        )
+    )
+
+
+def compatible_pdf_revision(event, revision, facts):
+    """Only the first accepted LINK_EXISTING supports an additive attachment.
+
+    Missing ICF fiscal components remain missing; every known financial value and
+    the complete event/revision identity must agree. Later edits are not additive.
+    """
+    if not compatible_pdf_event(event, facts) or revision["revision_kind"] != "link_existing":
+        return False
+    if revision["applied_statement_event_id"] != event["id"] or any(
+        revision[field] != event[field]
+        for field in (
+            "document_sha256",
+            "natural_identity",
+            "material_fingerprint",
+            "account_id",
+            "instrument_id",
+            "event_kind",
+            "isin",
+            "record_date",
+        )
+    ):
+        return False
+    if (
+        any(
+            revision[field] != facts[flow_field]
+            for field, flow_field in (
+                ("event_date", "event_date"),
+                ("net_amount_kopecks", "net_amount_kopecks"),
+                ("net_currency", "currency"),
+            )
+        )
+        or revision["gross_currency"] != facts["currency"]
+    ):
+        return False
+    if facts["amount_basis"] == "broker_statement_net_v1":
+        return all(
+            facts[field] is None or facts[field] == revision[field]
+            for field in ("gross_amount_kopecks", "tax_amount_kopecks")
+        ) and facts["commission_amount_kopecks"] in (None, "0")
+    expected_tax = revision["tax_amount_kopecks"] if revision["tax_available"] == "True" else "0"
+    return (
+        facts["gross_amount_kopecks"] == revision["gross_amount_kopecks"]
+        and facts["tax_amount_kopecks"] == expected_tax
+        and facts["commission_amount_kopecks"] == "0"
+    )
+
+
+def compatible_target_readback(accepted, current):
+    if accepted["role"] != "coupon":
+        return accepted == current
+    if {k: v for k, v in accepted.items() if k != "statement_support"} != {
+        k: v for k, v in current.items() if k != "statement_support"
+    }:
+        return False
+    old, new = accepted["statement_support"], current["statement_support"]
+    for section in ("events", "revisions"):
+        by_id = {row["id"]: row for row in new[section]}
+        if any(by_id.get(row["id"]) != row for row in old[section]):
+            return False
+    old_ids = {event["id"] for event in old["events"]}
+    # Existing support is immutable, including its full revision history.
+    if any(
+        revision["applied_statement_event_id"] in old_ids and revision not in old["revisions"]
+        for revision in new["revisions"]
+    ):
+        return False
+    for event in new["events"]:
+        if event["id"] in old_ids:
+            continue
+        revisions = [r for r in new["revisions"] if r["applied_statement_event_id"] == event["id"]]
+        if len(revisions) != 1 or not compatible_pdf_revision(
+            event, revisions[0], current["facts"]
+        ):
+            return False
+    return True
+
+
 def _dependencies(session):
     return digest(
         {
@@ -565,7 +661,7 @@ def proof_blockers(session, receipt, proof, target):
     if proof["operation"] == "retire":
         blockers.add("money_review_retired")
     current = _target(session, target["role"], target["target_id"])
-    if current != target:
+    if not compatible_target_readback(target, current):
         blockers.add("money_target_revision_changed")
     if target["role"] == "account_funding" and (
         current.get("h2") is None

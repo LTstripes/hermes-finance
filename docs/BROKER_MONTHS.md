@@ -49,6 +49,13 @@ amount/date and supplied claims. Money funding requires H2 v2; legacy v1 authori
 needs explicit version-bound reaffirmation, retaining its original receipts.
 Independent GET retains batch targets and also returns all current targets for the
 source-owned account/month, so the desktop panel preserves earlier acceptances.
+Compatible additive typed PDF LINK_EXISTING keeps the original Money authority:
+the ICF facts and existing PDF support must remain identical, and each added
+attachment must contain one matching initial link revision for that exact target.
+Later PDF revisions, retractions or contradictions retain monotonic retirement.
+Lifecycle retirement follows the affected target and reporting period (including
+old scope when a row moves), so cash/payout/PDF changes in another month of the
+same account do not retire independent accepted Money.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply

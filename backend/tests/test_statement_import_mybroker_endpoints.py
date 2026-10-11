@@ -1713,7 +1713,8 @@ def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(
         instrument.name = old
         session.commit()
         read = read_money(session, "money-accepted")
-        assert all(not t["effective"] for t in read["targets"])
+        assert all(not t["effective"] for t in read["targets"] if t["role"] == "coupon")
+        assert all(t["effective"] for t in read["targets"] if t["role"] == "account_funding")
         assert "money_review_retired" in read["exceptions"]
         renewed = _money_decide(
             session,
@@ -1727,38 +1728,48 @@ def test_money_target_edit_delete_and_dependency_a_b_a_cannot_revive_authority(
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 2
 
 
-@pytest.mark.parametrize("pdf_first", [False, True])
-def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_invention(
-    database, pdf_first
-):
+def money_coupon_pdf(*, month=1, net="1000,00"):
     from _statement_pdf import build_income_report_pdf
-    from test_statement_import_apply import apply as income_apply
-    from test_statement_import_apply import preview as income_preview
-    from test_statement_import_apply import selection_from_row
 
-    from hermes_finance.domain.broker_money import MoneyIntent
-    from hermes_finance.persistence import AppliedStatementEvent, InvestmentCashFlow
-    from hermes_finance.services.broker_money import preview_money, read_money
-    from hermes_finance.services.statement_import_apply import StatementApplyAction
-
-    _, xml, intent, bond, _ = _money_setup(database, money_batch_xml(coupons=("1000",)))
-    pdf = build_income_report_pdf(
+    return build_income_report_pdf(
         [
             {
                 "payment_kind": "погашение купона",
                 "isin": "RU000A000001",
                 "security_name": "Synthetic bond",
-                "record_date": "15.01.2030",
-                "payment_date": "17.01.2030",
+                "record_date": f"15.{month:02d}.2030",
+                "payment_date": f"17.{month:02d}.2030",
                 "quantity": "10",
-                "per_unit": "100,00",
-                "gross": "1000,00",
-                "net": "1000,00",
+                "per_unit": str(Decimal(net.replace(",", ".")) / 10).replace(".", ","),
+                "gross": net,
+                "net": net,
                 "tax": "-",
                 "tax_rate": "-",
             }
         ]
     )
+
+
+@pytest.mark.parametrize("pdf_first", [False, True])
+def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_invention(
+    database, pdf_first
+):
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.persistence import (
+        AppliedStatementEvent,
+        BrokerMoneyOccurrenceOwner,
+        InvestmentCashFlow,
+    )
+    from hermes_finance.services.broker_money import preview_money, read_money
+    from hermes_finance.services.broker_months import broker_month_close_blockers, read_broker_month
+    from hermes_finance.services.statement_import_apply import StatementApplyAction
+
+    _, xml, intent, bond, _ = _money_setup(database, money_batch_xml(coupons=("1000",)))
+    pdf = money_coupon_pdf()
     with database.session_factory() as session:
         if pdf_first:
             row = income_preview(session, pdf, intent.account_id).rows[0]
@@ -1766,7 +1777,7 @@ def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_inv
             assert result.success, result
             flow_id = result.items[0].investment_cash_flow_id
         originals = [(FILENAME, xml)]
-        reviewed = _money_decide(session, intent, originals, bond, funding=False)
+        reviewed = _money_decide(session, intent, originals, bond)
         if pdf_first:
             decisions = reviewed.model_dump()["money_decisions"]
             decisions[0]["investment_cash_flow_id"] = flow_id
@@ -1787,6 +1798,8 @@ def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_inv
                 {**reviewed.model_dump(), "money_decisions": decisions}
             )
         saved = _money_apply(session, reviewed, originals)
+        assert saved["bookkeeping_ready"]
+        assert all(t["effective"] for t in saved["targets"])
         if not pdf_first:
             flow_id = saved["targets"][0]["target_id"]
             row = income_preview(session, pdf, intent.account_id).rows[0]
@@ -1813,6 +1826,240 @@ def test_money_typed_pdf_corroborates_same_payout_in_both_orders_without_tax_inv
             is None
         )
         assert session.get(InvestmentCashFlow, flow_id).net_amount_kopecks == 100000
+    # Independent GET/snapshot after PDF Apply, including the first Money receipt.
+    with database.session_factory() as fresh:
+        read = read_money(fresh, "money-accepted")
+        assert read["bookkeeping_ready"], read["exceptions"]
+        assert all(t["effective"] for t in read["targets"]), read["targets"]
+        assert read_broker_month(fresh, intent.base_request_id)["exceptions"] == []
+        assert broker_month_close_blockers(fresh, intent.reporting_month_id) == ()
+        assert fresh.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 1
+        assert fresh.scalar(select(func.count()).select_from(BrokerMoneyOccurrenceOwner)) == 2
+
+
+def test_money_unrelated_month_cash_and_typed_payout_preserve_independent_authority(database):
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+
+    from hermes_finance.persistence import CashBalance, InvestmentCashFlow
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.broker_months import broker_month_close_blockers
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    _, xml, intent, bond, _ = _money_setup(database)
+    with database.session_factory() as session:
+        _money_apply(
+            session, _money_decide(session, intent, [(FILENAME, xml)], bond), [(FILENAME, xml)]
+        )
+        other_month = create_reporting_month(
+            session, year=2030, month=2, snapshot_date=date(2030, 2, 28)
+        )
+        cash = CashBalance(
+            reporting_month_id=other_month.id,
+            account_id=intent.account_id,
+            name="Synthetic February",
+            currency="RUB",
+            amount_kopecks=100000,
+        )
+        session.add(cash)
+        session.commit()
+        pdf = money_coupon_pdf(month=2)
+        row = income_preview(session, pdf, intent.account_id).rows[0]
+        result = income_apply(session, pdf, intent.account_id, (selection_from_row(row),))
+        assert result.success, result
+        payout = session.get(InvestmentCashFlow, result.items[0].investment_cash_flow_id)
+        for obj, field in ((cash, "amount_kopecks"), (payout, "net_amount_kopecks")):
+            old = getattr(obj, field)
+            for value in (old + 1, old):
+                setattr(obj, field, value)
+                session.commit()
+                read = read_money(session, "money-accepted")
+                assert all(t["effective"] for t in read["targets"]), read["targets"]
+                assert read["bookkeeping_ready"], read["exceptions"]
+                assert broker_month_close_blockers(session, intent.reporting_month_id) == ()
+        with database.session_factory() as fresh:
+            assert read_money(fresh, "money-accepted")["bookkeeping_ready"]
+
+
+@pytest.mark.parametrize("change", ["event_aba", "revision_aba", "revision_scope_aba", "retract"])
+def test_money_pdf_conflict_retires_only_its_target_and_cannot_restore_authority(database, change):
+
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+
+    from hermes_finance.persistence import (
+        AppliedStatementEvent,
+        AppliedStatementEventRevision,
+        InvestmentCashFlow,
+    )
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.broker_months import broker_month_close_blockers
+    from hermes_finance.services.reporting_months import create_reporting_month
+    from hermes_finance.services.statement_import_apply import StatementApplyAction
+    from hermes_finance.services.statement_import_retract import retract_applied_statement_event
+
+    _, xml, intent, bond, _ = _money_setup(database)
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        saved = _money_apply(session, _money_decide(session, intent, originals, bond), originals)
+        flow_id = saved["targets"][0]["target_id"]
+        candidates = tuple(t["target_id"] for t in saved["targets"] if t["role"] == "coupon")
+        pdf = money_coupon_pdf()
+        row = income_preview(session, pdf, intent.account_id).rows[0]
+        result = income_apply(
+            session,
+            pdf,
+            intent.account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=flow_id,
+                    expected_candidate_ids=candidates,
+                ),
+            ),
+        )
+        assert result.success, result
+        assert read_money(session, "money-accepted")["bookkeeping_ready"]
+        event = session.get(AppliedStatementEvent, result.items[0].applied_statement_event_id)
+        if change == "retract":
+            retracted = retract_applied_statement_event(session, event.id)
+            assert not retracted.cash_flow_deleted
+            assert retracted.investment_cash_flow_id == flow_id
+        else:
+            obj = (
+                event
+                if change == "event_aba"
+                else session.get(AppliedStatementEventRevision, result.items[0].revision_id)
+            )
+            field = "material_fingerprint" if change == "event_aba" else "net_amount_kopecks"
+            new_value = "b" * 64 if change == "event_aba" else obj.net_amount_kopecks + 1
+            if change == "revision_scope_aba":
+                create_reporting_month(session, year=2030, month=2, snapshot_date=date(2030, 2, 28))
+                other_pdf = money_coupon_pdf(month=2)
+                other_row = income_preview(session, other_pdf, intent.account_id).rows[0]
+                other = income_apply(
+                    session, other_pdf, intent.account_id, (selection_from_row(other_row),)
+                )
+                assert other.success
+                field = "applied_statement_event_id"
+                new_value = other.items[0].applied_statement_event_id
+            old = getattr(obj, field)
+            setattr(obj, field, new_value)
+            session.commit()
+            assert not read_money(session, "money-accepted")["targets"][0]["effective"]
+            setattr(obj, field, old)
+            session.commit()
+        read = read_money(session, "money-accepted")
+        assert not read["targets"][0]["effective"]
+        assert "money_review_retired" in read["targets"][0]["exceptions"]
+        # The other distinct payout and H2 did not depend on this optional PDF.
+        assert all(t["effective"] for t in read["targets"][1:])
+        assert not read["bookkeeping_ready"]
+        assert "money_semantics_unsupported" in dict(
+            broker_month_close_blockers(session, intent.reporting_month_id)
+        )
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == (
+            3 if change == "revision_scope_aba" else 2
+        )
+
+
+def test_money_conflicting_pdf_revision_is_rejected_without_changing_accepted_fact(database):
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+
+    from hermes_finance.persistence import InvestmentCashFlow
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.statement_import_apply import StatementApplyAction
+
+    _, xml, intent, bond, _ = _money_setup(database, money_batch_xml(coupons=("1000",)))
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        saved = _money_apply(session, _money_decide(session, intent, originals, bond), originals)
+        flow_id = saved["targets"][0]["target_id"]
+        pdf = money_coupon_pdf()
+        row = income_preview(session, pdf, intent.account_id).rows[0]
+        linked = income_apply(
+            session,
+            pdf,
+            intent.account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=flow_id,
+                    expected_candidate_ids=(flow_id,),
+                ),
+            ),
+        )
+        assert linked.success
+        bad_pdf = money_coupon_pdf(net="1001,00")
+        changed = income_preview(session, bad_pdf, intent.account_id).rows[0]
+        result = income_apply(
+            session,
+            bad_pdf,
+            intent.account_id,
+            (selection_from_row(changed, action=StatementApplyAction.REVISE),),
+        )
+        assert not result.success
+        assert read_money(session, "money-accepted")["bookkeeping_ready"]
+        assert session.get(InvestmentCashFlow, flow_id).net_amount_kopecks == 100000
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 1
+
+
+@pytest.mark.parametrize("change", ["event", "revision"])
+def test_money_get_checks_pdf_support_even_without_lifecycle_retirement(database, change):
+    from sqlalchemy import update
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+
+    from hermes_finance.persistence import AppliedStatementEvent, AppliedStatementEventRevision
+    from hermes_finance.services.statement_import_apply import StatementApplyAction
+
+    client, xml, intent, bond, _ = _money_setup(database, money_batch_xml(coupons=("1000",)))
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        saved = _money_apply(session, _money_decide(session, intent, originals, bond), originals)
+        flow_id = saved["targets"][0]["target_id"]
+        pdf = money_coupon_pdf()
+        row = income_preview(session, pdf, intent.account_id).rows[0]
+        result = income_apply(
+            session,
+            pdf,
+            intent.account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=flow_id,
+                    expected_candidate_ids=(flow_id,),
+                ),
+            ),
+        )
+        assert result.success
+        # Synthetic corruption bypasses ORM retirement to exercise independent GET.
+        if change == "event":
+            session.execute(
+                update(AppliedStatementEvent)
+                .where(AppliedStatementEvent.id == result.items[0].applied_statement_event_id)
+                .values(material_fingerprint="b" * 64)
+            )
+        else:
+            session.execute(
+                update(AppliedStatementEventRevision)
+                .where(AppliedStatementEventRevision.id == result.items[0].revision_id)
+                .values(net_amount_kopecks=100001)
+            )
+        session.commit()
+    read = client.get("/api/broker-months/money-accepted").json()
+    assert not read["targets"][0]["effective"]
+    assert "money_target_revision_changed" in read["targets"][0]["exceptions"]
+    assert "money_review_retired" not in read["targets"][0]["exceptions"]
+    assert not read["bookkeeping_ready"]
 
 
 @pytest.mark.parametrize("amount", ["1000.001", "92233720368547758.08", "-1000", "0"])

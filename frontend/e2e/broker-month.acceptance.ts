@@ -206,6 +206,8 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
   await expect(stored).toContainText("Неизвестно");
   expect(writes).toBe(1);
   expect(gets).toBe(1);
+  const firstMoney = await (await request.get("/api/broker-months/desktop-money-base")).json();
+  const firstMoneyId = firstMoney.money_acceptance.request_id;
   await expect(stored.getByRole("row")).toHaveCount(3);
   await page.reload();
   await expect(stored.getByRole("row")).toHaveCount(3);
@@ -233,6 +235,51 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
     read.money_acceptance.current_targets.every((t: { effective: boolean }) => t.effective),
   ).toBe(true);
   expect(read.exceptions).toContain("money_semantics_unsupported");
+  const pdf = await (await request.get("/api/synthetic-broker-source/money-pdf")).body();
+  const pdfForm = {
+    document: { name: "synthetic-money.pdf", mimeType: "application/pdf", buffer: pdf },
+    account_mappings: JSON.stringify([
+      { hermes_account_id: 1, provider_account_ref: "SYN-DEPO-001" },
+    ]),
+  };
+  const preparation = await (
+    await request.post("/api/statement-import/prepare", { multipart: pdfForm })
+  ).json();
+  const pdfRow = preparation.rows[0];
+  const coupon = read.money_acceptance.current_targets.find(
+    (t: { role: string; facts: { net_amount_kopecks: string } }) =>
+      t.role === "coupon" && t.facts.net_amount_kopecks === "100000",
+  );
+  const linkedPdf = await (
+    await request.post("/api/statement-import/apply", {
+      multipart: {
+        ...pdfForm,
+        expected_document_sha256: preparation.document_sha256,
+        selections: JSON.stringify([
+          {
+            natural_identity: pdfRow.natural_identity,
+            material_fingerprint: pdfRow.material_fingerprint,
+            expected_hermes_account_id: 1,
+            expected_hermes_instrument_id: 2,
+            action: "link_existing",
+            existing_cash_flow_id: coupon.target_id,
+            expected_candidate_ids: pdfRow.expected_candidate_ids,
+          },
+        ]),
+      },
+    })
+  ).json();
+  expect(linkedPdf.success).toBe(true);
+  expect(linkedPdf.items[0].investment_cash_flow_id).toBe(coupon.target_id);
+  const afterPdf = await (await request.get(`/api/broker-months/${firstMoneyId}`)).json();
+  expect(afterPdf.targets.every((t: { effective: boolean }) => t.effective)).toBe(true);
+  expect(afterPdf.exceptions).toEqual(read.money_acceptance.exceptions);
+  expect(afterPdf.current_targets).toHaveLength(3);
+  expect(afterPdf.targets[0].components.tax_amount_kopecks).toBeNull();
+  await page.reload();
+  await expect(stored.getByRole("row")).toHaveCount(4);
+  await expect(stored).toContainText("Неизвестно");
+  await expect(stored).not.toContainText("Требуется сверка");
   const rejected = await request.post("/api/months/3/close");
   expect(rejected.status()).toBe(422);
   await page.evaluate(() => {

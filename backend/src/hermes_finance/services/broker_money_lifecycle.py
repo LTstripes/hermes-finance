@@ -60,6 +60,79 @@ def _append_receipt(session, receipt, proof):
     )
 
 
+def _values(row, field):
+    if not hasattr(row, field):
+        return set()
+    return {getattr(row, field), *inspect(row).attrs[field].history.deleted}
+
+
+def _financial_scope(row, receipt, month):
+    """Both old and new scope matter when a financial row changes month/account."""
+    return receipt.account_id in _values(row, "account_id") and (
+        receipt.reporting_month_id in _values(row, "reporting_month_id")
+        or any(
+            day is not None and month.period_start <= day <= month.period_end
+            for day in _values(row, "event_date")
+        )
+    )
+
+
+def _statement_affects(session, row, target):
+    if target["role"] != "coupon":
+        return False
+    from hermes_finance.services.broker_money import (
+        compatible_pdf_event,
+        compatible_pdf_revision,
+        material,
+    )
+
+    frozen_events = {e["id"] for e in target["statement_support"]["events"]}
+    event_rows = (
+        [row]
+        if isinstance(row, AppliedStatementEvent)
+        else [
+            session.get(AppliedStatementEvent, event_id)
+            for event_id in _values(row, "applied_statement_event_id")
+            if event_id is not None
+        ]
+    )
+    relevant = [
+        event_row
+        for event_row in event_rows
+        if event_row is not None
+        and (
+            target["target_id"] in _values(event_row, "investment_cash_flow_id")
+            or str(event_row.id) in frozen_events
+        )
+    ]
+    if not relevant:
+        return False
+    event_row = relevant[0]
+    marker = session.info.get("broker_money_pdf_link")
+    if (
+        row in session.new
+        and marker
+        and marker["target_id"] == target["target_id"]
+        and marker["event_date"] == target["facts"]["event_date"]
+        and marker["net_amount_kopecks"] == target["facts"]["net_amount_kopecks"]
+        and str(event_row.id) not in frozen_events
+    ):
+        if isinstance(row, AppliedStatementEvent):
+            if compatible_pdf_event(material(row), target["facts"]):
+                return False
+        elif not list(
+            session.scalars(
+                select(AppliedStatementEventRevision).where(
+                    AppliedStatementEventRevision.applied_statement_event_id == event_row.id
+                )
+            )
+        ) and compatible_pdf_revision(material(event_row), material(row), target["facts"]):
+            return False
+    # A changed/retracted event or any later revision is never additive,
+    # including A -> B -> A after a compatible attachment.
+    return True
+
+
 def _before_flush(session, _context, _instances):
     if not inspect(session.connection()).has_table("broker_money_occurrence_owners"):
         return
@@ -181,19 +254,19 @@ def _before_flush(session, _context, _instances):
         # for source-owned scopes even before the first Money acceptance, so an
         # edit A -> B -> A cannot revive a previously reviewed confirmation.
         if not session.info.get("broker_money_stage"):
-            affected_accounts = {
-                r.account_id
-                for r in changes
-                if isinstance(r, (InvestmentCashFlow, CashBalance, PositionSnapshot, ExternalFlow))
-            }
             identity_changed = any(isinstance(r, (Account, Instrument)) for r in changes)
             for receipt in session.scalars(select(BrokerMonthApply)):
                 # Zero-write Preview can select a bond absent from end holdings;
                 # catalogue dependencies are therefore account-wide, as in the
                 # existing identity revision hash. Tokens do not block v1 Close.
-                if not identity_changed and receipt.account_id not in affected_accounts:
-                    continue
                 if "projection_digest" not in json.loads(receipt.projection_json):
+                    continue
+                month = session.get(ReportingMonth, receipt.reporting_month_id)
+                if not identity_changed and not any(
+                    isinstance(r, (InvestmentCashFlow, CashBalance, PositionSnapshot, ExternalFlow))
+                    and _financial_scope(r, receipt, month)
+                    for r in changes
+                ):
                     continue
                 _append_receipt(
                     session,
@@ -207,20 +280,17 @@ def _before_flush(session, _context, _instances):
         from hermes_finance.services.broker_money import latest_proofs
 
         grouped = {}
-        for receipt, proof, _target in latest_proofs(session).values():
+        for receipt, proof, target in latest_proofs(session).values():
             if proof["operation"] == "retire":
                 continue
-            grouped[receipt.request_id] = (receipt, proof)
-        for receipt, proof in grouped.values():
-            instruments = {
-                int(t["facts"]["instrument_id"])
-                for t in proof["targets"]
-                if t["role"] == "coupon" and t["facts"]
-            }
+            month = session.get(ReportingMonth, receipt.reporting_month_id)
+            instruments = (
+                {int(target["facts"]["instrument_id"])}
+                if target["role"] == "coupon" and target["facts"]
+                else set()
+            )
             source_ids = {s["import_id"] for s in proof["sources"]}
-            funding_ids = {
-                t["target_id"] for t in proof["targets"] if t["role"] == "account_funding"
-            }
+            funding_ids = {target["target_id"]} if target["role"] == "account_funding" else set()
 
             def affects(row):
                 if (
@@ -236,14 +306,12 @@ def _before_flush(session, _context, _instances):
                 if isinstance(row, Instrument):
                     return row.id in instruments
                 if isinstance(row, BrokerIdentityMapping):
-                    return (
-                        row.hermes_account_id == receipt.account_id
-                        or row.hermes_instrument_id in instruments
+                    return receipt.account_id in _values(row, "hermes_account_id") or bool(
+                        instruments.intersection(_values(row, "hermes_instrument_id"))
                     )
                 if isinstance(row, MyBrokerImport):
                     if row.id in source_ids:
                         return True
-                    month = session.get(ReportingMonth, receipt.reporting_month_id)
                     return (
                         row.covered_from <= month.period_end
                         and row.covered_to >= month.period_start
@@ -254,24 +322,37 @@ def _before_flush(session, _context, _instances):
                     )
                 if isinstance(row, HistoricalOwnerFlowRevision):
                     return row.flow_id in funding_ids
+                if isinstance(row, (AppliedStatementEvent, AppliedStatementEventRevision)):
+                    return _statement_affects(session, row, target)
                 if isinstance(
                     row,
                     (
                         ExternalFlow,
-                        AppliedStatementEvent,
-                        AppliedStatementEventRevision,
                         CashBalance,
                         PositionSnapshot,
                         InvestmentCashFlow,
                     ),
                 ):
-                    return getattr(row, "account_id", None) == receipt.account_id
+                    return _financial_scope(row, receipt, month)
                 return False
 
             if not any(affects(r) for r in changes):
                 continue
+            if receipt.request_id not in grouped:
+                grouped[receipt.request_id] = (receipt, proof, [])
+            grouped[receipt.request_id][2].append(target)
+        for receipt, proof, affected_targets in grouped.values():
             retired = {
                 **proof,
+                "targets": affected_targets,
+                "occurrences": [
+                    o
+                    for o in proof["occurrences"]
+                    if any(
+                        (o["role"], o["target_id"]) == (t["role"], t["target_id"])
+                        for t in affected_targets
+                    )
+                ],
                 "operation": "retire",
                 "previous_request_id": receipt.request_id,
                 "reason_code": "dependency_changed",

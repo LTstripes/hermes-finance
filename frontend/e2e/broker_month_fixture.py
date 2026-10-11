@@ -21,6 +21,7 @@ def main():
     from test_statement_import_mybroker_endpoints import (
         broker_month_alias_xml,
         money_batch_xml,
+        money_coupon_pdf,
     )
 
     with TemporaryDirectory(prefix="hermes-broker-month-synthetic-") as temporary:
@@ -56,6 +57,8 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "money-pdf":
+                return Response(money_coupon_pdf(month=3), media_type="application/pdf")
             if kind == "money":
                 xml = (
                     money_batch_xml(nkd=True)
