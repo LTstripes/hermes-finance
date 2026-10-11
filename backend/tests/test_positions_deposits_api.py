@@ -36,6 +36,10 @@ POSITION_KEYS = {
     "price_date",
     "notes",
     "updated_at",
+    "native_contract_version",
+    "source_import_id",
+    "source_row_key",
+    "bond_nkd_basis",
 }
 DEPOSIT_KEYS = {
     "id",
@@ -236,6 +240,10 @@ def test_position_create_recalculates_metrics(client: TestClient) -> None:
     assert created["unrealized_result"] == _rub("2500.00")
     assert created["accrued_interest"] is None
     assert created["price_source"] == "manual"
+    assert created["native_contract_version"] is None
+    assert created["source_import_id"] is None
+    assert created["source_row_key"] is None
+    assert created["bond_nkd_basis"] == "unknown"
     assert created["price_date"] == "2031-01-15"
     assert created["notes"] is None
     assert isinstance(datetime.fromisoformat(created["updated_at"]), datetime)
@@ -454,6 +462,10 @@ def test_position_patch_with_current_if_match_updates(client: TestClient) -> Non
     assert body["market_value"] == _rub("13750.00")
     assert body["cost_basis"] == _rub("11000.00")
     assert body["unrealized_result"] == _rub("2750.00")
+    assert body["native_contract_version"] is None
+    assert body["source_import_id"] is None
+    assert body["source_row_key"] is None
+    assert body["bond_nkd_basis"] == "unknown"
     assert body["updated_at"] != created["updated_at"]
 
 
