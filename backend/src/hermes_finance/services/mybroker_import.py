@@ -50,6 +50,7 @@ from hermes_finance.statement_import.mybroker import (
     digest,
     parse_mybroker,
 )
+from hermes_finance.statement_import.mybroker_empty_money import parse_empty_money_layout
 from hermes_finance.statement_import.mybroker_metadata import parse_section_metadata
 
 
@@ -692,6 +693,9 @@ def preview_mybroker(
         # Separate read-only evidence; never part of S1/confirmation material or
         # persisted receipts, and never used to disposition readiness blockers.
         preview["metadata_evidence"] = parse_section_metadata(document, filename)
+        preview["empty_money_layout_evidence"] = parse_empty_money_layout(
+            document, filename, expected_document_sha256=parsed["document_sha256"]
+        )
         return preview
 
 
