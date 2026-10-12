@@ -18,16 +18,28 @@ export type MoneyDecision = {
   owner_flow_intent?: Record<string, unknown>;
   trade_id?: number;
   expected_trade_revision?: number;
-  trade_claims?: {
-    reference: string;
-    review_context_digest: string;
-    exact_row_settled_buy_link: boolean;
-    complete_occurrence_set_is_one_event: boolean;
-    nkd_separately_posted: boolean;
-    fee_separately_charged: boolean;
-    native_total_basis_independently_proved: boolean;
-    native_total_basis: "includes_paid_nkd" | "excludes_paid_nkd";
-  };
+  trade_claims?:
+    | {
+        proof_variant: "stock_buy_separate_fee_v1";
+        reference: string;
+        basis_reference: string;
+        review_context_digest: string;
+        exact_row_settled_buy_link: boolean;
+        complete_occurrence_set_is_one_event: boolean;
+        fee_separately_charged: boolean;
+        native_total_basis_independently_proved: boolean;
+        native_total_basis: "excludes_separate_fee";
+      }
+    | {
+        reference: string;
+        review_context_digest: string;
+        exact_row_settled_buy_link: boolean;
+        complete_occurrence_set_is_one_event: boolean;
+        nkd_separately_posted: boolean;
+        fee_separately_charged: boolean;
+        native_total_basis_independently_proved: boolean;
+        native_total_basis: "includes_paid_nkd" | "excludes_paid_nkd";
+      };
 };
 export type MoneyIntent = {
   contract_version: "broker_money_v1";
@@ -54,6 +66,8 @@ export type MoneyPreview = {
   inventory: {
     occurrence: MoneyOccurrence;
     candidate_kind: string;
+    s1_kind?: string;
+    trade_identity?: string | null;
     description: string;
     date: string;
     signed_amount: string;
@@ -65,6 +79,7 @@ export type MoneyPreview = {
     ids: string[];
     source_identity: string;
     instrument_id: number;
+    instrument_type?: string;
     core: { isin: string; trade_time: string; trade_amount: string; quantity: string };
     revision: Record<string, string | null> | null;
   }[];
@@ -92,7 +107,11 @@ export type MoneyTarget = {
   exceptions: string[];
   h2?: { account_scope: { status: string }; portfolio_scope: { status: string } };
   trade_revision?: Record<string, string | null>;
-  cash_proof?: { signed_minor: Record<string, string>; claims: { native_total_basis: string } };
+  cash_proof?: {
+    proof_variant?: "stock_buy_separate_fee_v1";
+    signed_minor: Record<string, string>;
+    claims: { native_total_basis: string; basis_reference?: string };
+  };
 };
 export type MoneyReadback = {
   contract_version: "broker_money_v1";

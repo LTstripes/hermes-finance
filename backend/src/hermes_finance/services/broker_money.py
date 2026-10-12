@@ -340,7 +340,7 @@ def _union(session, intent, originals):
     return inventory, sources, blockers
 
 
-def _cohort(inventory, seed, sources, blockers):
+def _cohort(inventory, seed, sources, blockers, *, trade=False):
     selected = [o for o in inventory if key(o["occurrence"]) == key(seed.model_dump())]
     if len(selected) != 1:
         blockers.add("source_occurrence_not_found")
@@ -348,6 +348,10 @@ def _cohort(inventory, seed, sources, blockers):
     observation = selected[0]
 
     def signature(o):
+        if trade and observation["s1_kind"] == "commission":
+            # S1 identity binds provider/account/ordered native IDs. Equal
+            # amounts or narratives cannot collapse distinct stock executions.
+            return o["source_account"], o["trade_identity"], o["s1_kind"]
         return o["date"], o["signed_amount"], o["currency"], o["narrative_digest"]
 
     cohort = [o for o in inventory if signature(o) == signature(observation)]
@@ -566,7 +570,9 @@ def _plan(session, intent, originals):
     plans, selected, selected_targets = [], set(), set()
     for decision in intent.money_decisions:
         reasons = set(union_blockers)
-        observation, occurrences = _cohort(inventory, decision.seed, sources, reasons)
+        observation, occurrences = _cohort(
+            inventory, decision.seed, sources, reasons, trade=decision.role == "trade"
+        )
         if observation is None:
             blockers.update(reasons)
             continue
@@ -582,7 +588,15 @@ def _plan(session, intent, originals):
             "trade": "trade_paid_nkd_candidate",
         }[decision.role]
         if (
-            observation["candidate_kind"] != expected
+            (
+                observation["candidate_kind"] != expected
+                and not (
+                    decision.role == "trade"
+                    and observation["s1_kind"] == "commission"
+                    and observation["row"]["kind"] == "commission"
+                    and observation["trade_identity"] is not None
+                )
+            )
             or observation["amount_minor"] is None
             or (
                 observation["amount_minor"] >= 0
@@ -662,6 +676,9 @@ def _plan(session, intent, originals):
                 "ids": [t.primary_id, t.secondary_id],
                 "source_identity": t.source_identity,
                 "instrument_id": t.instrument_id,
+                "instrument_type": instrument.instrument_type
+                if (instrument := session.get(Instrument, t.instrument_id)) is not None
+                else None,
                 "core": json.loads(t.core_json),
                 "revision": _target(session, "trade", t.id)["trade_revision"],
             }

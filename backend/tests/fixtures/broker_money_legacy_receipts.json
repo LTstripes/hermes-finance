@@ -1,0 +1,371 @@
+{
+  "baseline": "5e02e8382f7a116242666f268aa48e6b570b8d2e",
+  "cases": [
+    {
+      "name": "coupon",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "coupon",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 1
+            },
+            "operation": "accept",
+            "instrument_id": 2,
+            "investment_cash_flow_id": null,
+            "coupon_claims": {
+              "reference": "synthetic-row-review",
+              "review_context_digest": "86b8a612d3803400bd7b7a750675beff9a0b7373db9a7780e8c91232c761e0ac",
+              "actual_coupon_payment": true,
+              "exact_row_instrument_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "existing_target_is_same_payment": true
+            },
+            "owner_flow_intent": null,
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          },
+          {
+            "role": "coupon",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 2
+            },
+            "operation": "accept",
+            "instrument_id": 2,
+            "investment_cash_flow_id": null,
+            "coupon_claims": {
+              "reference": "synthetic-row-review",
+              "review_context_digest": "300be4845311bf58600e8d4ecfb66c4c2899de7402274ebde1681e75abf79c43",
+              "actual_coupon_payment": true,
+              "exact_row_instrument_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "existing_target_is_same_payment": true
+            },
+            "owner_flow_intent": null,
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ]
+      },
+      "confirmation": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "coupon",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 1
+            },
+            "operation": "accept",
+            "instrument_id": 2,
+            "investment_cash_flow_id": null,
+            "coupon_claims": {
+              "reference": "synthetic-row-review",
+              "review_context_digest": "86b8a612d3803400bd7b7a750675beff9a0b7373db9a7780e8c91232c761e0ac",
+              "actual_coupon_payment": true,
+              "exact_row_instrument_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "existing_target_is_same_payment": true
+            },
+            "owner_flow_intent": null,
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          },
+          {
+            "role": "coupon",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 2
+            },
+            "operation": "accept",
+            "instrument_id": 2,
+            "investment_cash_flow_id": null,
+            "coupon_claims": {
+              "reference": "synthetic-row-review",
+              "review_context_digest": "300be4845311bf58600e8d4ecfb66c4c2899de7402274ebde1681e75abf79c43",
+              "actual_coupon_payment": true,
+              "exact_row_instrument_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "existing_target_is_same_payment": true
+            },
+            "owner_flow_intent": null,
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ],
+        "request_id": "old-coupon",
+        "confirmation_digest": "100f7354648729f0294c42c548b1a31c6cc4066df01e73388432fab12d56c5cf"
+      },
+      "original_filename": "Брокерский 1234567 (01.01.30-31.01.30).xml",
+      "original_xml": "<ns0:Report xmlns:ns0=\"MyBroker\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" Name=\"MyBroker\" Textbox5=\"Отчет по сделкам и операциям (Отчет брокера)\" xsi:schemaLocation=\"MyBroker http://reporting.alfadirect.ru/ReportServer?%2FCabinet%2FRelease%2FMyBroker&amp;rs%3AFormat=XML&amp;rc%3ASchema=True\"><ns0:Positions><ns0:Report Name=\"1_Positions\"><ns0:Tablix1><ns0:active_type_Collection><ns0:active_type><ns0:Details_Collection><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000000\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic stock\" income_rest=\"8\" income_volume=\"800.00\" real_volume=\"1000.00\" active_type=\"Акции\" /><ns0:Details acc_code=\"1234567-000\" active_name=\"RUB\" active_type=\"Валюта\" income_rest=\"1400.00\" real_rest=\"53400.00\" /><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000001\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic bond\" income_rest=\"10\" income_volume=\"999.99\" real_volume=\"1000.01\" active_type=\"Облигации\" /></ns0:Details_Collection></ns0:active_type></ns0:active_type_Collection></ns0:Tablix1></ns0:Report></ns0:Positions><ns0:Trades><ns0:Report Name=\"2_Trades\"><ns0:Tablix2><ns0:Details_Collection><ns0:Details trade_no=\"10000000001&#13;&#10;2000000001\" db_time=\"15.01.2030 9:00:00&#13;&#10;15.01.2030 9:00:00\" save_settlement_date=\"17.01.2030\" save_depo_settlement_date=\"17.01.2030\" settlement_time=\"17.01.2030 10:00:00\" acc_code=\"1234567-000\" isin_reg=\"RU000A000000\" qty=\"2\" Price=\"100.00\" summ_trade=\"1000.00\" curr_calc=\"RUB\" bank_tax=\"0\" p_name=\"Synthetic stock\" Textbox14=\"RUB\" /></ns0:Details_Collection></ns0:Tablix2></ns0:Report></ns0:Trades><ns0:Trades2><ns0:Report Name=\"3_BrokerMoneyMove\"><ns0:Tablix1><ns0:settlement_date_Collection><ns0:settlement_date settlement_date=\"2030-01-17T00:00:00\"><ns0:rn_Collection><ns0:rn last_update=\"2030-01-17T10:00:00\"><ns0:oper_type oper_type=\"Synthetic\"><ns0:comment comment=\"Расчеты по сделке 10000000001\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"2000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"из АО Synthetic bank\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"50000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn></ns0:rn_Collection></ns0:settlement_date></ns0:settlement_date_Collection></ns0:Tablix1></ns0:Report></ns0:Trades2><ns0:Trades3><ns0:Report Name=\"4_Transfers\" /></ns0:Trades3><ns0:Trades4><ns0:Report Name=\"5_UFSR\" /></ns0:Trades4></ns0:Report>",
+      "receipt": {
+        "request_id": "old-coupon",
+        "request_fingerprint": "9600ee926d2401ee41c5e0ecc2bb281863bc073709e0842938df74e2c379df9c",
+        "confirmation_digest": "100f7354648729f0294c42c548b1a31c6cc4066df01e73388432fab12d56c5cf",
+        "reporting_month_id": "1",
+        "account_id": "1",
+        "import_id": "1",
+        "projection_json": "{\"base_request_id\":\"base-money\",\"contract_version\":\"broker_money_v1\",\"decisions\":[{\"coupon_claims\":{\"actual_coupon_payment\":true,\"complete_occurrence_set_is_one_event\":true,\"exact_row_instrument_link\":true,\"existing_target_is_same_payment\":true,\"reference\":\"synthetic-row-review\",\"review_context_digest\":\"86b8a612d3803400bd7b7a750675beff9a0b7373db9a7780e8c91232c761e0ac\"},\"expected_trade_revision\":null,\"instrument_id\":2,\"investment_cash_flow_id\":null,\"operation\":\"accept\",\"owner_flow_intent\":null,\"role\":\"coupon\",\"seed\":{\"import_id\":1,\"ordinal\":1,\"section\":\"money\"},\"trade_claims\":null,\"trade_id\":null},{\"coupon_claims\":{\"actual_coupon_payment\":true,\"complete_occurrence_set_is_one_event\":true,\"exact_row_instrument_link\":true,\"existing_target_is_same_payment\":true,\"reference\":\"synthetic-row-review\",\"review_context_digest\":\"300be4845311bf58600e8d4ecfb66c4c2899de7402274ebde1681e75abf79c43\"},\"expected_trade_revision\":null,\"instrument_id\":2,\"investment_cash_flow_id\":null,\"operation\":\"accept\",\"owner_flow_intent\":null,\"role\":\"coupon\",\"seed\":{\"import_id\":1,\"ordinal\":2,\"section\":\"money\"},\"trade_claims\":null,\"trade_id\":null}],\"journal_revision\":1,\"occurrences\":[{\"import_id\":1,\"ordinal\":1,\"role\":\"coupon\",\"row_fingerprint\":\"3b757c5f6cc0c1095535859429aea097b2170d8ff54f10e9b0a9c9fcfe226c31\",\"section\":\"money\",\"target_id\":1},{\"import_id\":1,\"ordinal\":2,\"role\":\"coupon\",\"row_fingerprint\":\"e12837f9e15c070e4b502ffe5628209a4f20e861030255008dce285eb4ac3f58\",\"section\":\"money\",\"target_id\":2}],\"operation\":\"accept\",\"sources\":[{\"adapter\":\"mybroker-money-candidates-v1\",\"dispositions\":[],\"import_id\":1,\"source\":{\"accepted_at\":\"2026-10-12 05:33:46.051471\",\"confirmation_digest\":\"c5a584140fac50683005d190c9f720a1fdcf3ec5924238bdc9c51be3e74495cc\",\"covered_from\":\"2030-01-01\",\"covered_to\":\"2030-01-31\",\"document_sha256\":\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\",\"id\":\"1\",\"mappings_json\":\"[{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":1},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567-000\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":2},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"RU000A000000\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":3},{\\\"hermes_id\\\":2,\\\"identity\\\":\\\"RU000A000001\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":4}]\",\"normalized_json\":\"{\\\"covered_from\\\":\\\"2030-01-01\\\",\\\"covered_to\\\":\\\"2030-01-31\\\",\\\"document_sha256\\\":\\\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\\\",\\\"endpoint_basis\\\":{\\\"beginning_value\\\":\\\"previous_day_eod\\\",\\\"ending_value\\\":\\\"covered_to_eod\\\"},\\\"endpoint_blockers\\\":[],\\\"endpoint_conflicts\\\":[],\\\"filename_account\\\":\\\"1234567\\\",\\\"money\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:00\\\",\\\"ordinal\\\":0,\\\"primary_id\\\":\\\"10000000001\\\",\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"},{\\\"amount\\\":\\\"1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":1,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"2000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":2,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"50000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":3,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"parser\\\":\\\"mybroker-s1-v2\\\",\\\"positions\\\":[{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"8\\\",\\\"beginning_value\\\":\\\"800\\\",\\\"ending_value\\\":\\\"1000\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"ordinal\\\":0,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"10\\\",\\\"beginning_value\\\":\\\"999.99\\\",\\\"ending_value\\\":\\\"1000.01\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"ordinal\\\":2,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"provider\\\":\\\"alfa_mybroker\\\",\\\"rub_money\\\":[{\\\"beginning_amount\\\":\\\"1400\\\",\\\"currency\\\":\\\"RUB\\\",\\\"ending_amount\\\":\\\"53400\\\",\\\"ordinal\\\":1,\\\"section\\\":\\\"rub_money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"section_inventory\\\":{\\\"1_Positions\\\":7,\\\"2_Trades\\\":3,\\\"3_BrokerMoneyMove\\\":40,\\\"4_Transfers\\\":0,\\\"5_UFSR\\\":0},\\\"source_accounts\\\":[\\\"1234567\\\",\\\"1234567-000\\\"],\\\"syntax_blockers\\\":[],\\\"trades\\\":[{\\\"accrued_interest\\\":null,\\\"bank_commission\\\":\\\"0\\\",\\\"blockers\\\":[],\\\"cash_available\\\":true,\\\"cash_legs\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\"}],\\\"core\\\":{\\\"currency\\\":\\\"RUB\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"price\\\":\\\"100\\\",\\\"quantity\\\":\\\"2\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_amount\\\":\\\"1000\\\",\\\"trade_time\\\":\\\"2030-01-15T09:00:00\\\"},\\\"depo_settlement_date\\\":\\\"2030-01-17\\\",\\\"identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\",\\\"ids\\\":[\\\"10000000001\\\",\\\"2000000001\\\"],\\\"ordinal\\\":0,\\\"repo_observed\\\":false,\\\"section\\\":\\\"completed\\\",\\\"settlement_date\\\":\\\"2030-01-17\\\",\\\"settlement_time\\\":\\\"2030-01-17T10:00:00\\\",\\\"state\\\":\\\"settled\\\"}]}\",\"parser_version\":\"mybroker-s1-v2\"}}],\"targets\":[{\"components\":{\"commission_amount_kopecks\":null,\"gross_amount_kopecks\":null,\"tax_amount_kopecks\":null},\"facts\":{\"account_id\":\"1\",\"amount_basis\":\"broker_statement_net_v1\",\"commission_amount_kopecks\":null,\"currency\":\"RUB\",\"event_date\":\"2030-01-17\",\"flow_type\":\"coupon\",\"gross_amount_kopecks\":null,\"id\":\"1\",\"instrument_id\":\"2\",\"net_amount_kopecks\":\"100000\",\"notes\":null,\"reporting_month_id\":\"1\",\"source\":\"broker_statement_native\",\"source_import_id\":\"1\",\"source_row_key\":\"ec5065d6c4ae6b7ada16a458858cdeb2a3ff58b836a19950bd0df63bdc54c18b\",\"tax_amount_kopecks\":null},\"role\":\"coupon\",\"statement_support\":{\"events\":[],\"revisions\":[]},\"target_id\":1},{\"components\":{\"commission_amount_kopecks\":null,\"gross_amount_kopecks\":null,\"tax_amount_kopecks\":null},\"facts\":{\"account_id\":\"1\",\"amount_basis\":\"broker_statement_net_v1\",\"commission_amount_kopecks\":null,\"currency\":\"RUB\",\"event_date\":\"2030-01-17\",\"flow_type\":\"coupon\",\"gross_amount_kopecks\":null,\"id\":\"2\",\"instrument_id\":\"2\",\"net_amount_kopecks\":\"200000\",\"notes\":null,\"reporting_month_id\":\"1\",\"source\":\"broker_statement_native\",\"source_import_id\":\"1\",\"source_row_key\":\"f8f79c167f92dc018773a617f4feb67fa64dd52937911990e8dd1b0c045578f3\",\"tax_amount_kopecks\":null},\"role\":\"coupon\",\"statement_support\":{\"events\":[],\"revisions\":[]},\"target_id\":2}]}",
+        "accepted_at": "2026-10-12 05:33:46.445798"
+      }
+    },
+    {
+      "name": "h2",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "account_funding",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 3
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": {
+              "evidence_version": "h2-a1-owner-rub-v2",
+              "operation": "accept",
+              "account_id": 1,
+              "seed": {
+                "import_id": 1,
+                "section": "money",
+                "ordinal": 3
+              },
+              "flow_id": null,
+              "expected_revision": null,
+              "claims": {
+                "provenance_kind": "owner_attested_source_row",
+                "reference": "synthetic-account-boundary-review",
+                "source_set_fingerprint": "173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420",
+                "review_context_digest": "ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966",
+                "direction": "contribution",
+                "original_row_identifiable": true,
+                "posted_cash_date_confirmed": true,
+                "signed_cash_convention_confirmed": true,
+                "owner_capital_crossing": true,
+                "not_income_tax_promotion_or_internal_cash": true,
+                "not_settlement_or_commission": true,
+                "cash_not_in_kind": true,
+                "not_tracked_account_transfer": true,
+                "counterparty_outside_account_boundary": true,
+                "complete_occurrence_set_is_one_event": true
+              },
+              "reason_code": null
+            },
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ]
+      },
+      "confirmation": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "account_funding",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 3
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": {
+              "evidence_version": "h2-a1-owner-rub-v2",
+              "operation": "accept",
+              "account_id": 1,
+              "seed": {
+                "import_id": 1,
+                "section": "money",
+                "ordinal": 3
+              },
+              "flow_id": null,
+              "expected_revision": null,
+              "claims": {
+                "provenance_kind": "owner_attested_source_row",
+                "reference": "synthetic-account-boundary-review",
+                "source_set_fingerprint": "173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420",
+                "review_context_digest": "ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966",
+                "direction": "contribution",
+                "original_row_identifiable": true,
+                "posted_cash_date_confirmed": true,
+                "signed_cash_convention_confirmed": true,
+                "owner_capital_crossing": true,
+                "not_income_tax_promotion_or_internal_cash": true,
+                "not_settlement_or_commission": true,
+                "cash_not_in_kind": true,
+                "not_tracked_account_transfer": true,
+                "counterparty_outside_account_boundary": true,
+                "complete_occurrence_set_is_one_event": true
+              },
+              "reason_code": null
+            },
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ],
+        "request_id": "old-h2",
+        "confirmation_digest": "3d2aeadeaea4c7da8bbe5414d9b142280e93b77b1782775e79f76c9dec2741cc"
+      },
+      "original_filename": "Брокерский 1234567 (01.01.30-31.01.30).xml",
+      "original_xml": "<ns0:Report xmlns:ns0=\"MyBroker\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" Name=\"MyBroker\" Textbox5=\"Отчет по сделкам и операциям (Отчет брокера)\" xsi:schemaLocation=\"MyBroker http://reporting.alfadirect.ru/ReportServer?%2FCabinet%2FRelease%2FMyBroker&amp;rs%3AFormat=XML&amp;rc%3ASchema=True\"><ns0:Positions><ns0:Report Name=\"1_Positions\"><ns0:Tablix1><ns0:active_type_Collection><ns0:active_type><ns0:Details_Collection><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000000\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic stock\" income_rest=\"8\" income_volume=\"800.00\" real_volume=\"1000.00\" active_type=\"Акции\" /><ns0:Details acc_code=\"1234567-000\" active_name=\"RUB\" active_type=\"Валюта\" income_rest=\"1400.00\" real_rest=\"53400.00\" /><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000001\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic bond\" income_rest=\"10\" income_volume=\"999.99\" real_volume=\"1000.01\" active_type=\"Облигации\" /></ns0:Details_Collection></ns0:active_type></ns0:active_type_Collection></ns0:Tablix1></ns0:Report></ns0:Positions><ns0:Trades><ns0:Report Name=\"2_Trades\"><ns0:Tablix2><ns0:Details_Collection><ns0:Details trade_no=\"10000000001&#13;&#10;2000000001\" db_time=\"15.01.2030 9:00:00&#13;&#10;15.01.2030 9:00:00\" save_settlement_date=\"17.01.2030\" save_depo_settlement_date=\"17.01.2030\" settlement_time=\"17.01.2030 10:00:00\" acc_code=\"1234567-000\" isin_reg=\"RU000A000000\" qty=\"2\" Price=\"100.00\" summ_trade=\"1000.00\" curr_calc=\"RUB\" bank_tax=\"0\" p_name=\"Synthetic stock\" Textbox14=\"RUB\" /></ns0:Details_Collection></ns0:Tablix2></ns0:Report></ns0:Trades><ns0:Trades2><ns0:Report Name=\"3_BrokerMoneyMove\"><ns0:Tablix1><ns0:settlement_date_Collection><ns0:settlement_date settlement_date=\"2030-01-17T00:00:00\"><ns0:rn_Collection><ns0:rn last_update=\"2030-01-17T10:00:00\"><ns0:oper_type oper_type=\"Synthetic\"><ns0:comment comment=\"Расчеты по сделке 10000000001\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"2000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"из АО Synthetic bank\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"50000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn></ns0:rn_Collection></ns0:settlement_date></ns0:settlement_date_Collection></ns0:Tablix1></ns0:Report></ns0:Trades2><ns0:Trades3><ns0:Report Name=\"4_Transfers\" /></ns0:Trades3><ns0:Trades4><ns0:Report Name=\"5_UFSR\" /></ns0:Trades4></ns0:Report>",
+      "receipt": {
+        "request_id": "old-h2",
+        "request_fingerprint": "d954ce9628314398ea61416e01266cdd75a6d4ed398e42c90bb2932d69c3d0d1",
+        "confirmation_digest": "3d2aeadeaea4c7da8bbe5414d9b142280e93b77b1782775e79f76c9dec2741cc",
+        "reporting_month_id": "1",
+        "account_id": "1",
+        "import_id": "1",
+        "projection_json": "{\"base_request_id\":\"base-money\",\"contract_version\":\"broker_money_v1\",\"decisions\":[{\"coupon_claims\":null,\"expected_trade_revision\":null,\"instrument_id\":null,\"investment_cash_flow_id\":null,\"operation\":\"accept\",\"owner_flow_intent\":{\"account_id\":1,\"claims\":{\"cash_not_in_kind\":true,\"complete_occurrence_set_is_one_event\":true,\"counterparty_outside_account_boundary\":true,\"direction\":\"contribution\",\"not_income_tax_promotion_or_internal_cash\":true,\"not_settlement_or_commission\":true,\"not_tracked_account_transfer\":true,\"original_row_identifiable\":true,\"owner_capital_crossing\":true,\"posted_cash_date_confirmed\":true,\"provenance_kind\":\"owner_attested_source_row\",\"reference\":\"synthetic-account-boundary-review\",\"review_context_digest\":\"ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966\",\"signed_cash_convention_confirmed\":true,\"source_set_fingerprint\":\"173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420\"},\"evidence_version\":\"h2-a1-owner-rub-v2\",\"expected_revision\":null,\"flow_id\":null,\"operation\":\"accept\",\"reason_code\":null,\"seed\":{\"import_id\":1,\"ordinal\":3,\"section\":\"money\"}},\"role\":\"account_funding\",\"seed\":{\"import_id\":1,\"ordinal\":3,\"section\":\"money\"},\"trade_claims\":null,\"trade_id\":null}],\"journal_revision\":1,\"occurrences\":[{\"import_id\":1,\"ordinal\":3,\"role\":\"account_funding\",\"row_fingerprint\":\"7b13a4e56be6b2cfcada00b122927977a2c5d7e2b6f71f9fea8fbdd81a328919\",\"section\":\"money\",\"target_id\":\"e6c799f0cc74456984a1a3acd7f25b0e\"}],\"operation\":\"accept\",\"sources\":[{\"adapter\":\"mybroker-money-candidates-v1\",\"dispositions\":[],\"import_id\":1,\"source\":{\"accepted_at\":\"2026-10-12 05:33:47.380529\",\"confirmation_digest\":\"c5a584140fac50683005d190c9f720a1fdcf3ec5924238bdc9c51be3e74495cc\",\"covered_from\":\"2030-01-01\",\"covered_to\":\"2030-01-31\",\"document_sha256\":\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\",\"id\":\"1\",\"mappings_json\":\"[{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":1},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567-000\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":2},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"RU000A000000\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":3},{\\\"hermes_id\\\":2,\\\"identity\\\":\\\"RU000A000001\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":4}]\",\"normalized_json\":\"{\\\"covered_from\\\":\\\"2030-01-01\\\",\\\"covered_to\\\":\\\"2030-01-31\\\",\\\"document_sha256\\\":\\\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\\\",\\\"endpoint_basis\\\":{\\\"beginning_value\\\":\\\"previous_day_eod\\\",\\\"ending_value\\\":\\\"covered_to_eod\\\"},\\\"endpoint_blockers\\\":[],\\\"endpoint_conflicts\\\":[],\\\"filename_account\\\":\\\"1234567\\\",\\\"money\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:00\\\",\\\"ordinal\\\":0,\\\"primary_id\\\":\\\"10000000001\\\",\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"},{\\\"amount\\\":\\\"1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":1,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"2000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":2,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"50000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":3,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"parser\\\":\\\"mybroker-s1-v2\\\",\\\"positions\\\":[{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"8\\\",\\\"beginning_value\\\":\\\"800\\\",\\\"ending_value\\\":\\\"1000\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"ordinal\\\":0,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"10\\\",\\\"beginning_value\\\":\\\"999.99\\\",\\\"ending_value\\\":\\\"1000.01\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"ordinal\\\":2,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"provider\\\":\\\"alfa_mybroker\\\",\\\"rub_money\\\":[{\\\"beginning_amount\\\":\\\"1400\\\",\\\"currency\\\":\\\"RUB\\\",\\\"ending_amount\\\":\\\"53400\\\",\\\"ordinal\\\":1,\\\"section\\\":\\\"rub_money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"section_inventory\\\":{\\\"1_Positions\\\":7,\\\"2_Trades\\\":3,\\\"3_BrokerMoneyMove\\\":40,\\\"4_Transfers\\\":0,\\\"5_UFSR\\\":0},\\\"source_accounts\\\":[\\\"1234567\\\",\\\"1234567-000\\\"],\\\"syntax_blockers\\\":[],\\\"trades\\\":[{\\\"accrued_interest\\\":null,\\\"bank_commission\\\":\\\"0\\\",\\\"blockers\\\":[],\\\"cash_available\\\":true,\\\"cash_legs\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\"}],\\\"core\\\":{\\\"currency\\\":\\\"RUB\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"price\\\":\\\"100\\\",\\\"quantity\\\":\\\"2\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_amount\\\":\\\"1000\\\",\\\"trade_time\\\":\\\"2030-01-15T09:00:00\\\"},\\\"depo_settlement_date\\\":\\\"2030-01-17\\\",\\\"identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\",\\\"ids\\\":[\\\"10000000001\\\",\\\"2000000001\\\"],\\\"ordinal\\\":0,\\\"repo_observed\\\":false,\\\"section\\\":\\\"completed\\\",\\\"settlement_date\\\":\\\"2030-01-17\\\",\\\"settlement_time\\\":\\\"2030-01-17T10:00:00\\\",\\\"state\\\":\\\"settled\\\"}]}\",\"parser_version\":\"mybroker-s1-v2\"}}],\"targets\":[{\"facts\":{\"account_id\":\"1\",\"boundary_amount_kopecks\":\"5000000\",\"currency\":\"RUB\",\"direction\":\"contribution\",\"event_date\":\"2030-01-17\",\"id\":\"e6c799f0cc74456984a1a3acd7f25b0e\",\"signed_source_amount\":\"50000\"},\"h2\":{\"acceptance_state\":\"accepted\",\"account_scope\":{\"classification\":\"external_contribution\",\"status\":\"authoritative\"},\"authority_kind\":\"owner_attested_source_row\",\"blockers\":[],\"boundary_amount_kopecks\":5000000,\"cash_coverage\":\"unknown\",\"core\":{\"account_id\":1,\"boundary_amount_kopecks\":5000000,\"currency\":\"RUB\",\"direction\":\"contribution\",\"event_date\":\"2030-01-17\",\"signed_source_amount\":\"50000\"},\"effective_state\":\"accepted\",\"evidence\":{\"claims\":{\"cash_not_in_kind\":true,\"complete_occurrence_set_is_one_event\":true,\"counterparty_outside_account_boundary\":true,\"direction\":\"contribution\",\"not_income_tax_promotion_or_internal_cash\":true,\"not_settlement_or_commission\":true,\"not_tracked_account_transfer\":true,\"original_row_identifiable\":true,\"owner_capital_crossing\":true,\"posted_cash_date_confirmed\":true,\"provenance_kind\":\"owner_attested_source_row\",\"reference\":\"synthetic-account-boundary-review\",\"review_context_digest\":\"ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966\",\"signed_cash_convention_confirmed\":true,\"source_set_fingerprint\":\"173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420\"},\"contract_version\":\"h2-a1-owner-rub-v2\",\"core\":{\"account_id\":1,\"boundary_amount_kopecks\":5000000,\"currency\":\"RUB\",\"direction\":\"contribution\",\"event_date\":\"2030-01-17\",\"signed_source_amount\":\"50000\"},\"dependencies\":{\"account\":{\"account_type\":\"brokerage\",\"id\":\"1\"},\"bindings\":[{\"accepted\":[{\"hermes_id\":1,\"identity\":\"1234567\",\"kind\":\"account\",\"mapping_id\":1}],\"active\":[{\"captured_at\":\"None\",\"confirmed_at\":\"2026-10-12 05:33:47.358127\",\"hermes_account_id\":\"1\",\"hermes_instrument_id\":\"None\",\"id\":\"1\",\"observed_isin\":\"None\",\"predecessor_mapping_id\":\"None\",\"provider\":\"alfa_mybroker\",\"provider_identity\":\"1234567\",\"revoke_reason\":\"None\",\"revoked_at\":\"None\",\"source_as_of\":\"None\",\"status\":\"effective\",\"subject_kind\":\"account\",\"successor_mapping_id\":\"None\"}],\"alias\":\"1234567\",\"import_id\":1},{\"accepted\":[{\"hermes_id\":1,\"identity\":\"1234567-000\",\"kind\":\"account\",\"mapping_id\":2}],\"active\":[{\"captured_at\":\"None\",\"confirmed_at\":\"2026-10-12 05:33:47.363796\",\"hermes_account_id\":\"1\",\"hermes_instrument_id\":\"None\",\"id\":\"2\",\"observed_isin\":\"None\",\"predecessor_mapping_id\":\"None\",\"provider\":\"alfa_mybroker\",\"provider_identity\":\"1234567-000\",\"revoke_reason\":\"None\",\"revoked_at\":\"None\",\"source_as_of\":\"None\",\"status\":\"effective\",\"subject_kind\":\"account\",\"successor_mapping_id\":\"None\"}],\"alias\":\"1234567-000\",\"import_id\":1}],\"cash_coverage\":[],\"legacy_flows\":[],\"membership\":[],\"sources\":[{\"import_id\":1,\"material\":{\"accepted_at\":\"2026-10-12 05:33:47.380529\",\"confirmation_digest\":\"c5a584140fac50683005d190c9f720a1fdcf3ec5924238bdc9c51be3e74495cc\",\"covered_from\":\"2030-01-01\",\"covered_to\":\"2030-01-31\",\"document_sha256\":\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\",\"id\":\"1\",\"mappings_json\":\"[{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":1},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567-000\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":2},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"RU000A000000\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":3},{\\\"hermes_id\\\":2,\\\"identity\\\":\\\"RU000A000001\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":4}]\",\"normalized_json\":\"{\\\"covered_from\\\":\\\"2030-01-01\\\",\\\"covered_to\\\":\\\"2030-01-31\\\",\\\"document_sha256\\\":\\\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\\\",\\\"endpoint_basis\\\":{\\\"beginning_value\\\":\\\"previous_day_eod\\\",\\\"ending_value\\\":\\\"covered_to_eod\\\"},\\\"endpoint_blockers\\\":[],\\\"endpoint_conflicts\\\":[],\\\"filename_account\\\":\\\"1234567\\\",\\\"money\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:00\\\",\\\"ordinal\\\":0,\\\"primary_id\\\":\\\"10000000001\\\",\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"},{\\\"amount\\\":\\\"1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":1,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"2000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":2,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"50000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":3,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"parser\\\":\\\"mybroker-s1-v2\\\",\\\"positions\\\":[{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"8\\\",\\\"beginning_value\\\":\\\"800\\\",\\\"ending_value\\\":\\\"1000\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"ordinal\\\":0,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"10\\\",\\\"beginning_value\\\":\\\"999.99\\\",\\\"ending_value\\\":\\\"1000.01\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"ordinal\\\":2,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"provider\\\":\\\"alfa_mybroker\\\",\\\"rub_money\\\":[{\\\"beginning_amount\\\":\\\"1400\\\",\\\"currency\\\":\\\"RUB\\\",\\\"ending_amount\\\":\\\"53400\\\",\\\"ordinal\\\":1,\\\"section\\\":\\\"rub_money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"section_inventory\\\":{\\\"1_Positions\\\":7,\\\"2_Trades\\\":3,\\\"3_BrokerMoneyMove\\\":40,\\\"4_Transfers\\\":0,\\\"5_UFSR\\\":0},\\\"source_accounts\\\":[\\\"1234567\\\",\\\"1234567-000\\\"],\\\"syntax_blockers\\\":[],\\\"trades\\\":[{\\\"accrued_interest\\\":null,\\\"bank_commission\\\":\\\"0\\\",\\\"blockers\\\":[],\\\"cash_available\\\":true,\\\"cash_legs\\\":[{\\\"amount\\\":\\\"-1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\"}],\\\"core\\\":{\\\"currency\\\":\\\"RUB\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"price\\\":\\\"100\\\",\\\"quantity\\\":\\\"2\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_amount\\\":\\\"1000\\\",\\\"trade_time\\\":\\\"2030-01-15T09:00:00\\\"},\\\"depo_settlement_date\\\":\\\"2030-01-17\\\",\\\"identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\",\\\"ids\\\":[\\\"10000000001\\\",\\\"2000000001\\\"],\\\"ordinal\\\":0,\\\"repo_observed\\\":false,\\\"section\\\":\\\"completed\\\",\\\"settlement_date\\\":\\\"2030-01-17\\\",\\\"settlement_time\\\":\\\"2030-01-17T10:00:00\\\",\\\"state\\\":\\\"settled\\\"}]}\",\"parser_version\":\"mybroker-s1-v2\"},\"money_inventory\":[{\"amount\":\"-1000\",\"currency\":\"RUB\",\"date\":\"2030-01-17\",\"kind\":\"settlement\",\"last_update\":\"2030-01-17T10:00:00\",\"ordinal\":0,\"primary_id\":\"10000000001\",\"section\":\"money\",\"source_account\":\"1234567-000\",\"trade_identity\":\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\"},{\"amount\":\"1000\",\"currency\":\"RUB\",\"date\":\"2030-01-17\",\"kind\":\"unsupported\",\"last_update\":\"2030-01-17T10:00:10\",\"ordinal\":1,\"primary_id\":null,\"section\":\"money\",\"source_account\":\"1234567-000\"},{\"amount\":\"2000\",\"currency\":\"RUB\",\"date\":\"2030-01-17\",\"kind\":\"unsupported\",\"last_update\":\"2030-01-17T10:00:10\",\"ordinal\":2,\"primary_id\":null,\"section\":\"money\",\"source_account\":\"1234567-000\"},{\"amount\":\"50000\",\"currency\":\"RUB\",\"date\":\"2030-01-17\",\"kind\":\"unsupported\",\"last_update\":\"2030-01-17T10:00:10\",\"ordinal\":3,\"primary_id\":null,\"section\":\"money\",\"source_account\":\"1234567-000\"}]}],\"transfer_links\":[]},\"intent\":{\"account_id\":1,\"claims\":{\"cash_not_in_kind\":true,\"complete_occurrence_set_is_one_event\":true,\"counterparty_outside_account_boundary\":true,\"direction\":\"contribution\",\"not_income_tax_promotion_or_internal_cash\":true,\"not_settlement_or_commission\":true,\"not_tracked_account_transfer\":true,\"original_row_identifiable\":true,\"owner_capital_crossing\":true,\"posted_cash_date_confirmed\":true,\"provenance_kind\":\"owner_attested_source_row\",\"reference\":\"synthetic-account-boundary-review\",\"review_context_digest\":\"ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966\",\"signed_cash_convention_confirmed\":true,\"source_set_fingerprint\":\"173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420\"},\"evidence_version\":\"h2-a1-owner-rub-v2\",\"expected_revision\":null,\"flow_id\":null,\"operation\":\"accept\",\"reason_code\":null,\"seed\":{\"import_id\":1,\"ordinal\":3,\"section\":\"money\"}},\"occurrences\":[{\"currency\":\"RUB\",\"date\":\"2030-01-17\",\"document_sha256\":\"7655921aca1c969dd63c67f1c0de7e7acf4028ed1c440a9c90dedfebbc6c9fe2\",\"import_id\":1,\"ordinal\":3,\"parser\":\"mybroker-s1-v2\",\"provider\":\"alfa_mybroker\",\"row_fingerprint\":\"7b13a4e56be6b2cfcada00b122927977a2c5d7e2b6f71f9fea8fbdd81a328919\",\"section\":\"money\",\"signed_amount\":\"50000\",\"source_account\":\"1234567-000\"}],\"review_context_digest\":\"ab133833c5b90d02151f7b244cdd079bd18d735b3817fe3eb558cabf74aa3966\",\"source_set_fingerprint\":\"173079b441a846e3a88c9dabdbeafbcd9885984a18cb9fb9f495a4d9b4d8f420\"},\"flow_id\":\"e6c799f0cc74456984a1a3acd7f25b0e\",\"history\":[{\"acceptance_state\":\"accepted\",\"id\":1,\"operation\":\"accept\",\"previous_revision_id\":null,\"reason_code\":null,\"revision\":1}],\"material_signature\":\"d9e926a4c21f0c09d3352ee45448fdc9d98d6fefcb545e2813209429d7648ce8\",\"owned_occurrences\":[{\"flow_id\":\"e6c799f0cc74456984a1a3acd7f25b0e\",\"id\":\"1\",\"import_id\":\"1\",\"ordinal\":\"3\",\"row_fingerprint\":\"7b13a4e56be6b2cfcada00b122927977a2c5d7e2b6f71f9fea8fbdd81a328919\",\"section\":\"money\"}],\"portfolio_scope\":{\"classification\":null,\"status\":\"unknown\"},\"revision\":1,\"revision_id\":1},\"role\":\"account_funding\",\"target_id\":\"e6c799f0cc74456984a1a3acd7f25b0e\"}]}",
+        "accepted_at": "2026-10-12 05:33:47.785081"
+      }
+    },
+    {
+      "name": "bond",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "trade",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 4
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": null,
+            "trade_id": 1,
+            "expected_trade_revision": 1,
+            "trade_claims": {
+              "reference": "synthetic-independent-native-basis-review",
+              "review_context_digest": "3dfe4d8adeb9842246d76c296556eaefdcfb298ecf4cde327f090075ec4f6529",
+              "exact_row_settled_buy_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "nkd_separately_posted": true,
+              "fee_separately_charged": true,
+              "native_total_basis_independently_proved": true,
+              "native_total_basis": "includes_paid_nkd"
+            }
+          }
+        ]
+      },
+      "confirmation": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "base-money",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "trade",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 4
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": null,
+            "trade_id": 1,
+            "expected_trade_revision": 1,
+            "trade_claims": {
+              "reference": "synthetic-independent-native-basis-review",
+              "review_context_digest": "3dfe4d8adeb9842246d76c296556eaefdcfb298ecf4cde327f090075ec4f6529",
+              "exact_row_settled_buy_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "nkd_separately_posted": true,
+              "fee_separately_charged": true,
+              "native_total_basis_independently_proved": true,
+              "native_total_basis": "includes_paid_nkd"
+            }
+          }
+        ],
+        "request_id": "old-bond",
+        "confirmation_digest": "86ff1b41684c076263f2cd0f75fdbfb1c2b09c12e7e8ae4b5cee16d68de2e2e6"
+      },
+      "original_filename": "Брокерский 1234567 (01.01.30-31.01.30).xml",
+      "original_xml": "<ns0:Report xmlns:ns0=\"MyBroker\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" Name=\"MyBroker\" Textbox5=\"Отчет по сделкам и операциям (Отчет брокера)\" xsi:schemaLocation=\"MyBroker http://reporting.alfadirect.ru/ReportServer?%2FCabinet%2FRelease%2FMyBroker&amp;rs%3AFormat=XML&amp;rc%3ASchema=True\"><ns0:Positions><ns0:Report Name=\"1_Positions\"><ns0:Tablix1><ns0:active_type_Collection><ns0:active_type><ns0:Details_Collection><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000000\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic stock\" income_rest=\"10\" income_volume=\"800.00\" real_volume=\"1000.00\" active_type=\"Акции\" /><ns0:Details acc_code=\"1234567-000\" active_name=\"RUB\" active_type=\"Валюта\" income_rest=\"10000.00\" real_rest=\"52864.50\" /><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000001\" real_rest=\"11\" forward_rest=\"11\" active_name=\"Synthetic bond\" income_rest=\"10\" income_volume=\"999.99\" real_volume=\"1000.01\" active_type=\"Облигации\" /></ns0:Details_Collection></ns0:active_type></ns0:active_type_Collection></ns0:Tablix1></ns0:Report></ns0:Positions><ns0:Trades><ns0:Report Name=\"2_Trades\"><ns0:Tablix2><ns0:Details_Collection><ns0:Details trade_no=\"10000000001&#13;&#10;2000000001\" db_time=\"15.01.2030 9:00:00&#13;&#10;15.01.2030 9:00:00\" save_settlement_date=\"17.01.2030\" save_depo_settlement_date=\"17.01.2030\" settlement_time=\"17.01.2030 10:00:00\" acc_code=\"1234567-000\" isin_reg=\"RU000A000001\" qty=\"1\" Price=\"100.00\" summ_trade=\"10125.50\" curr_calc=\"RUB\" bank_tax=\"10.00\" p_name=\"Synthetic stock\" Textbox14=\"RUB\" summ_nkd=\"125.50\" /></ns0:Details_Collection></ns0:Tablix2></ns0:Report></ns0:Trades><ns0:Trades2><ns0:Report Name=\"3_BrokerMoneyMove\"><ns0:Tablix1><ns0:settlement_date_Collection><ns0:settlement_date settlement_date=\"2030-01-17T00:00:00\"><ns0:rn_Collection><ns0:rn last_update=\"2030-01-17T10:00:00\"><ns0:oper_type oper_type=\"Synthetic\"><ns0:comment comment=\"Расчеты по сделке 10000000001\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-10000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"погашение купона SYNTHETIC-TOKEN (облигации Synthetic issuer) д.ф.16.01.30\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"2000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"Перевод\"><ns0:comment comment=\"из АО Synthetic bank\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"50000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:10\"><ns0:oper_type oper_type=\"НКД по сделке\"><ns0:comment comment=\"Synthetic NKD text without a native trade id\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-125.50\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn><ns0:rn last_update=\"2030-01-17T10:00:00\"><ns0:oper_type oper_type=\"Synthetic\"><ns0:comment comment=\"Комиссия по сделке 10000000001\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-10.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn></ns0:rn_Collection></ns0:settlement_date></ns0:settlement_date_Collection></ns0:Tablix1></ns0:Report></ns0:Trades2><ns0:Trades3><ns0:Report Name=\"4_Transfers\" /></ns0:Trades3><ns0:Trades4><ns0:Report Name=\"5_UFSR\" /></ns0:Trades4></ns0:Report>",
+      "receipt": {
+        "request_id": "old-bond",
+        "request_fingerprint": "ea05ffbc8b9fcaffdc6ca51fdbae2d902a6fccb51534b93d6bb971320ca59d72",
+        "confirmation_digest": "86ff1b41684c076263f2cd0f75fdbfb1c2b09c12e7e8ae4b5cee16d68de2e2e6",
+        "reporting_month_id": "1",
+        "account_id": "1",
+        "import_id": "1",
+        "projection_json": "{\"base_request_id\":\"base-money\",\"contract_version\":\"broker_money_v1\",\"decisions\":[{\"coupon_claims\":null,\"expected_trade_revision\":1,\"instrument_id\":null,\"investment_cash_flow_id\":null,\"operation\":\"accept\",\"owner_flow_intent\":null,\"role\":\"trade\",\"seed\":{\"import_id\":1,\"ordinal\":4,\"section\":\"money\"},\"trade_claims\":{\"complete_occurrence_set_is_one_event\":true,\"exact_row_settled_buy_link\":true,\"fee_separately_charged\":true,\"native_total_basis\":\"includes_paid_nkd\",\"native_total_basis_independently_proved\":true,\"nkd_separately_posted\":true,\"reference\":\"synthetic-independent-native-basis-review\",\"review_context_digest\":\"3dfe4d8adeb9842246d76c296556eaefdcfb298ecf4cde327f090075ec4f6529\"},\"trade_id\":1}],\"journal_revision\":1,\"occurrences\":[{\"import_id\":1,\"ordinal\":4,\"role\":\"trade\",\"row_fingerprint\":\"8f323e6e7d5458f22d0b2c6fa5f517a3124ae2e8dab0c73ca6ed1386ac21486a\",\"section\":\"money\",\"target_id\":1},{\"import_id\":1,\"ordinal\":0,\"role\":\"trade\",\"row_fingerprint\":\"5429e248541d9be855426826f9ed3809a4ac221320b887be80a5b1ac65ebcac0\",\"section\":\"money\",\"target_id\":1},{\"import_id\":1,\"ordinal\":5,\"role\":\"trade\",\"row_fingerprint\":\"5c9e5d74d502077865665b6756788ee58cc97cc3d7023428efbc0dcc5a2190cb\",\"section\":\"money\",\"target_id\":1}],\"operation\":\"accept\",\"sources\":[{\"adapter\":\"mybroker-money-candidates-v1\",\"dispositions\":[],\"import_id\":1,\"source\":{\"accepted_at\":\"2026-10-12 05:33:48.704796\",\"confirmation_digest\":\"ef9e375d61350a01c552850976fa94f8747bcc694f9cf4e6e25e092c7bc3b3d2\",\"covered_from\":\"2030-01-01\",\"covered_to\":\"2030-01-31\",\"document_sha256\":\"f71aceb30d8d526784f8236941b9324fd002d2644e1248591bf5ecbc6427f267\",\"id\":\"1\",\"mappings_json\":\"[{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":1},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567-000\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":2},{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"RU000A000000\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":3},{\\\"hermes_id\\\":2,\\\"identity\\\":\\\"RU000A000001\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":4}]\",\"normalized_json\":\"{\\\"covered_from\\\":\\\"2030-01-01\\\",\\\"covered_to\\\":\\\"2030-01-31\\\",\\\"document_sha256\\\":\\\"f71aceb30d8d526784f8236941b9324fd002d2644e1248591bf5ecbc6427f267\\\",\\\"endpoint_basis\\\":{\\\"beginning_value\\\":\\\"previous_day_eod\\\",\\\"ending_value\\\":\\\"covered_to_eod\\\"},\\\"endpoint_blockers\\\":[],\\\"endpoint_conflicts\\\":[],\\\"filename_account\\\":\\\"1234567\\\",\\\"money\\\":[{\\\"amount\\\":\\\"-10000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:00\\\",\\\"ordinal\\\":0,\\\"primary_id\\\":\\\"10000000001\\\",\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"},{\\\"amount\\\":\\\"1000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":1,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"2000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":2,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"50000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":3,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"-125.5\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"unsupported\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:10\\\",\\\"ordinal\\\":4,\\\"primary_id\\\":null,\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"amount\\\":\\\"-10\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"commission\\\",\\\"last_update\\\":\\\"2030-01-17T10:00:00\\\",\\\"ordinal\\\":5,\\\"primary_id\\\":\\\"10000000001\\\",\\\"section\\\":\\\"money\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"}],\\\"parser\\\":\\\"mybroker-s1-v2\\\",\\\"positions\\\":[{\\\"actual_quantity\\\":\\\"10\\\",\\\"beginning_actual_quantity\\\":\\\"10\\\",\\\"beginning_value\\\":\\\"800\\\",\\\"ending_value\\\":\\\"1000\\\",\\\"forward_quantity\\\":\\\"10\\\",\\\"isin\\\":\\\"RU000A000000\\\",\\\"ordinal\\\":0,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"},{\\\"actual_quantity\\\":\\\"11\\\",\\\"beginning_actual_quantity\\\":\\\"10\\\",\\\"beginning_value\\\":\\\"999.99\\\",\\\"ending_value\\\":\\\"1000.01\\\",\\\"forward_quantity\\\":\\\"11\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"ordinal\\\":2,\\\"section\\\":\\\"positions\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"provider\\\":\\\"alfa_mybroker\\\",\\\"rub_money\\\":[{\\\"beginning_amount\\\":\\\"10000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"ending_amount\\\":\\\"52864.5\\\",\\\"ordinal\\\":1,\\\"section\\\":\\\"rub_money\\\",\\\"source_account\\\":\\\"1234567-000\\\"}],\\\"section_inventory\\\":{\\\"1_Positions\\\":7,\\\"2_Trades\\\":3,\\\"3_BrokerMoneyMove\\\":58,\\\"4_Transfers\\\":0,\\\"5_UFSR\\\":0},\\\"source_accounts\\\":[\\\"1234567\\\",\\\"1234567-000\\\"],\\\"syntax_blockers\\\":[],\\\"trades\\\":[{\\\"accrued_interest\\\":\\\"125.5\\\",\\\"bank_commission\\\":\\\"10\\\",\\\"blockers\\\":[\\\"commission_basis_unresolved\\\"],\\\"cash_available\\\":false,\\\"cash_legs\\\":[{\\\"amount\\\":\\\"-10\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"commission\\\"},{\\\"amount\\\":\\\"-10000\\\",\\\"currency\\\":\\\"RUB\\\",\\\"date\\\":\\\"2030-01-17\\\",\\\"kind\\\":\\\"settlement\\\"}],\\\"core\\\":{\\\"currency\\\":\\\"RUB\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"price\\\":\\\"100\\\",\\\"quantity\\\":\\\"1\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_amount\\\":\\\"10125.5\\\",\\\"trade_time\\\":\\\"2030-01-15T09:00:00\\\"},\\\"depo_settlement_date\\\":\\\"2030-01-17\\\",\\\"identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\",\\\"ids\\\":[\\\"10000000001\\\",\\\"2000000001\\\"],\\\"ordinal\\\":0,\\\"repo_observed\\\":false,\\\"section\\\":\\\"completed\\\",\\\"settlement_date\\\":\\\"2030-01-17\\\",\\\"settlement_time\\\":\\\"2030-01-17T10:00:00\\\",\\\"state\\\":\\\"settled\\\"}]}\",\"parser_version\":\"mybroker-s1-v2\"}}],\"targets\":[{\"cash_proof\":{\"claims\":{\"complete_occurrence_set_is_one_event\":true,\"exact_row_settled_buy_link\":true,\"fee_separately_charged\":true,\"native_total_basis\":\"includes_paid_nkd\",\"native_total_basis_independently_proved\":true,\"nkd_separately_posted\":true,\"reference\":\"synthetic-independent-native-basis-review\",\"review_context_digest\":\"3dfe4d8adeb9842246d76c296556eaefdcfb298ecf4cde327f090075ec4f6529\"},\"native_ids\":[\"10000000001\",\"2000000001\"],\"nkd_leg\":{\"amount_minor\":12550,\"currency\":\"RUB\",\"direction\":\"debit\",\"effective_date\":\"2030-01-17\",\"observed_multiplicity\":1,\"occurrences\":[{\"import_id\":1,\"ordinal\":4,\"source_fingerprint\":\"8f323e6e7d5458f22d0b2c6fa5f517a3124ae2e8dab0c73ca6ed1386ac21486a\"}],\"role\":\"paid_nkd\",\"source_account\":\"1234567-000\",\"source_amount\":\"-125.5\"},\"signed_minor\":{\"commission\":\"-1000\",\"native_total\":\"1012550\",\"paid_nkd\":\"-12550\",\"settlement\":\"-1000000\"},\"source_identity\":\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\"},\"facts\":{\"accepted_at\":\"2026-10-12 05:33:48.725672\",\"account_id\":\"1\",\"bindings_json\":\"[{\\\"hermes_id\\\":1,\\\"identity\\\":\\\"1234567-000\\\",\\\"kind\\\":\\\"account\\\",\\\"mapping_id\\\":2},{\\\"hermes_id\\\":2,\\\"identity\\\":\\\"RU000A000001\\\",\\\"kind\\\":\\\"instrument\\\",\\\"mapping_id\\\":4}]\",\"core_json\":\"{\\\"currency\\\":\\\"RUB\\\",\\\"isin\\\":\\\"RU000A000001\\\",\\\"price\\\":\\\"100\\\",\\\"quantity\\\":\\\"1\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"trade_amount\\\":\\\"10125.5\\\",\\\"trade_time\\\":\\\"2030-01-15T09:00:00\\\"}\",\"id\":\"1\",\"instrument_id\":\"2\",\"primary_id\":\"10000000001\",\"provider\":\"alfa_mybroker\",\"secondary_id\":\"2000000001\",\"source_account\":\"1234567-000\",\"source_identity\":\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\"},\"role\":\"trade\",\"target_id\":1,\"trade_revision\":{\"acceptance_state\":\"active\",\"accepted_at\":\"2026-10-12 05:33:49.177825\",\"confirmation_digest\":\"86ff1b41684c076263f2cd0f75fdbfb1c2b09c12e7e8ae4b5cee16d68de2e2e6\",\"event_c1_json\":null,\"evidence_json\":\"{\\\"accrued_interest\\\":\\\"125.5\\\",\\\"bank_commission\\\":\\\"10\\\",\\\"bank_commission_minor\\\":1000,\\\"cash_legs\\\":[{\\\"amount_minor\\\":1000,\\\"currency\\\":\\\"RUB\\\",\\\"direction\\\":\\\"debit\\\",\\\"effective_date\\\":\\\"2030-01-17\\\",\\\"observed_multiplicity\\\":1,\\\"occurrences\\\":[{\\\"import_id\\\":1,\\\"ordinal\\\":5,\\\"source_fingerprint\\\":\\\"5c9e5d74d502077865665b6756788ee58cc97cc3d7023428efbc0dcc5a2190cb\\\"}],\\\"role\\\":\\\"commission\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"source_amount\\\":\\\"-10\\\"},{\\\"amount_minor\\\":1000000,\\\"currency\\\":\\\"RUB\\\",\\\"direction\\\":\\\"debit\\\",\\\"effective_date\\\":\\\"2030-01-17\\\",\\\"observed_multiplicity\\\":1,\\\"occurrences\\\":[{\\\"import_id\\\":1,\\\"ordinal\\\":0,\\\"source_fingerprint\\\":\\\"5429e248541d9be855426826f9ed3809a4ac221320b887be80a5b1ac65ebcac0\\\"}],\\\"role\\\":\\\"settlement\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"source_amount\\\":\\\"-10000\\\"},{\\\"amount_minor\\\":12550,\\\"currency\\\":\\\"RUB\\\",\\\"direction\\\":\\\"debit\\\",\\\"effective_date\\\":\\\"2030-01-17\\\",\\\"observed_multiplicity\\\":1,\\\"occurrences\\\":[{\\\"import_id\\\":1,\\\"ordinal\\\":4,\\\"source_fingerprint\\\":\\\"8f323e6e7d5458f22d0b2c6fa5f517a3124ae2e8dab0c73ca6ed1386ac21486a\\\"}],\\\"role\\\":\\\"paid_nkd\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"source_amount\\\":\\\"-125.5\\\"}],\\\"cash_reconciliation\\\":{\\\"claims\\\":{\\\"complete_occurrence_set_is_one_event\\\":true,\\\"exact_row_settled_buy_link\\\":true,\\\"fee_separately_charged\\\":true,\\\"native_total_basis\\\":\\\"includes_paid_nkd\\\",\\\"native_total_basis_independently_proved\\\":true,\\\"nkd_separately_posted\\\":true,\\\"reference\\\":\\\"synthetic-independent-native-basis-review\\\",\\\"review_context_digest\\\":\\\"3dfe4d8adeb9842246d76c296556eaefdcfb298ecf4cde327f090075ec4f6529\\\"},\\\"native_ids\\\":[\\\"10000000001\\\",\\\"2000000001\\\"],\\\"nkd_leg\\\":{\\\"amount_minor\\\":12550,\\\"currency\\\":\\\"RUB\\\",\\\"direction\\\":\\\"debit\\\",\\\"effective_date\\\":\\\"2030-01-17\\\",\\\"observed_multiplicity\\\":1,\\\"occurrences\\\":[{\\\"import_id\\\":1,\\\"ordinal\\\":4,\\\"source_fingerprint\\\":\\\"8f323e6e7d5458f22d0b2c6fa5f517a3124ae2e8dab0c73ca6ed1386ac21486a\\\"}],\\\"role\\\":\\\"paid_nkd\\\",\\\"source_account\\\":\\\"1234567-000\\\",\\\"source_amount\\\":\\\"-125.5\\\"},\\\"signed_minor\\\":{\\\"commission\\\":\\\"-1000\\\",\\\"native_total\\\":\\\"1012550\\\",\\\"paid_nkd\\\":\\\"-12550\\\",\\\"settlement\\\":\\\"-1000000\\\"},\\\"source_identity\\\":\\\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\\\"},\\\"depo_settlement_date\\\":\\\"2030-01-17\\\",\\\"event_c1\\\":null,\\\"fee_basis\\\":\\\"separate\\\",\\\"lifecycle\\\":\\\"settled\\\",\\\"occurrences\\\":[{\\\"covered_from\\\":\\\"2030-01-01\\\",\\\"covered_to\\\":\\\"2030-01-31\\\",\\\"document_sha256\\\":\\\"f71aceb30d8d526784f8236941b9324fd002d2644e1248591bf5ecbc6427f267\\\",\\\"import_id\\\":1,\\\"ordinal\\\":0,\\\"parser\\\":\\\"mybroker-s1-v2\\\",\\\"section\\\":\\\"completed\\\",\\\"source_fingerprint\\\":\\\"91509fb3406853921b01568612baf08a76ee0a97566525ddcdf6c05fee5935bc\\\"}],\\\"planned_dates\\\":null,\\\"readiness\\\":{\\\"c1\\\":[\\\"event_c1_missing\\\"],\\\"cash_ownership\\\":[],\\\"commission\\\":[],\\\"coverage\\\":[\\\"coverage_unknown\\\"],\\\"settlement\\\":[],\\\"unsupported\\\":[]},\\\"settlement_date\\\":\\\"2030-01-17\\\",\\\"settlement_time\\\":\\\"2030-01-17T10:00:00\\\",\\\"trade_amount_minor\\\":1012550}\",\"fee_basis\":\"separate\",\"id\":\"2\",\"lifecycle\":\"settled\",\"material_fingerprint\":\"97daabc36f5a3766e5e1b0e7da59e9a101c1a09a2c9ba51fe079bf8d44c9b182\",\"revision\":\"2\",\"trade_id\":\"1\"}}]}",
+        "accepted_at": "2026-10-12 05:33:49.187765"
+      }
+    },
+    {
+      "name": "zero_fee",
+      "intent": {
+        "reporting_month_id": 1,
+        "account_id": 1
+      },
+      "confirmation": {
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "request_id": "old-zero_fee",
+        "confirmation_digest": "4a194c3be2e69607621a9864ddf34cdb9663981ba6255ed4dda2e69f3df73579",
+        "reviewed_account_bindings": [
+          {
+            "identity": "1234567",
+            "hermes_id": 1
+          },
+          {
+            "identity": "1234567-000",
+            "hermes_id": 1
+          }
+        ]
+      },
+      "original_filename": "Брокерский 1234567 (01.01.30-31.01.30).xml",
+      "original_xml": "<ns0:Report xmlns:ns0=\"MyBroker\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" Name=\"MyBroker\" Textbox5=\"Отчет по сделкам и операциям (Отчет брокера)\" xsi:schemaLocation=\"MyBroker http://reporting.alfadirect.ru/ReportServer?%2FCabinet%2FRelease%2FMyBroker&amp;rs%3AFormat=XML&amp;rc%3ASchema=True\"><ns0:Positions><ns0:Report Name=\"1_Positions\"><ns0:Tablix1><ns0:active_type_Collection><ns0:active_type><ns0:Details_Collection><ns0:Details acc_code=\"1234567-000\" ISIN1=\"RU000A000000\" real_rest=\"10\" forward_rest=\"10\" active_name=\"Synthetic stock\" income_rest=\"8\" income_volume=\"800.00\" real_volume=\"1000.00\" active_type=\"Акции\" /><ns0:Details acc_code=\"1234567-000\" active_name=\"RUB\" active_type=\"Валюта\" income_rest=\"1400.00\" real_rest=\"400.00\" /></ns0:Details_Collection></ns0:active_type></ns0:active_type_Collection></ns0:Tablix1></ns0:Report></ns0:Positions><ns0:Trades><ns0:Report Name=\"2_Trades\"><ns0:Tablix2><ns0:Details_Collection><ns0:Details trade_no=\"10000000001&#13;&#10;2000000001\" db_time=\"15.01.2030 9:00:00&#13;&#10;15.01.2030 9:00:00\" save_settlement_date=\"17.01.2030\" save_depo_settlement_date=\"17.01.2030\" settlement_time=\"17.01.2030 10:00:00\" acc_code=\"1234567-000\" isin_reg=\"RU000A000000\" qty=\"2\" Price=\"100.00\" summ_trade=\"1000.00\" curr_calc=\"RUB\" bank_tax=\"0\" p_name=\"Synthetic stock\" Textbox14=\"RUB\" /></ns0:Details_Collection></ns0:Tablix2></ns0:Report></ns0:Trades><ns0:Trades2><ns0:Report Name=\"3_BrokerMoneyMove\"><ns0:Tablix1><ns0:settlement_date_Collection><ns0:settlement_date settlement_date=\"2030-01-17T00:00:00\"><ns0:rn_Collection><ns0:rn last_update=\"2030-01-17T10:00:00\"><ns0:oper_type oper_type=\"Synthetic\"><ns0:comment comment=\"Расчеты по сделке 10000000001\"><ns0:Textbox11 acc_code=\"1234567-000\" /><ns0:money_volume_begin1_Collection><ns0:money_volume_begin1><ns0:p_code_Collection><ns0:p_code><ns0:p_code volume=\"-1000.00\" p_code=\"RUB\" /></ns0:p_code></ns0:p_code_Collection></ns0:money_volume_begin1></ns0:money_volume_begin1_Collection></ns0:comment></ns0:oper_type></ns0:rn></ns0:rn_Collection></ns0:settlement_date></ns0:settlement_date_Collection></ns0:Tablix1></ns0:Report></ns0:Trades2><ns0:Trades3><ns0:Report Name=\"4_Transfers\" /></ns0:Trades3><ns0:Trades4><ns0:Report Name=\"5_UFSR\" /></ns0:Trades4></ns0:Report>",
+      "receipt": {
+        "request_id": "old-zero_fee",
+        "request_fingerprint": "83eb6b5ccf67d5c2c7d2c6e00d9c09e8e2be284c039773bfac404e3feb04acb5",
+        "confirmation_digest": "4a194c3be2e69607621a9864ddf34cdb9663981ba6255ed4dda2e69f3df73579",
+        "reporting_month_id": "1",
+        "account_id": "1",
+        "import_id": "1",
+        "projection_json": "{\"cash_control_difference_kopecks\":0,\"cash_id\":1,\"exceptions\":[],\"instruments\":{\"1\":[\"RU000A000000\",\"stock\",\"RUB\"]},\"optional_hashes\":[],\"position_ids\":[1],\"projection_digest\":\"5975ddaa5690c861b5aa107cfb9a9eb310e0ee320a87faa5fc3a7f75082df41d\",\"quantity_controls\":[{\"difference\":\"0\",\"isin\":\"RU000A000000\"}],\"source_digest\":\"dfce13a3910d275e805d59c8ed24bbc3f1caa76e9c771d8084ce29ddbe0e4a97\",\"trade_identities\":[\"5e0bf3ae018fb7fabaa2067569293deed2eb70950468e53bcbe8bf1705b5fea4\"],\"trade_ids\":[1]}",
+        "accepted_at": "2026-10-12 05:33:50.161220"
+      }
+    }
+  ]
+}
