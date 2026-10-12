@@ -249,7 +249,7 @@ def _intersecting_sources(session, document, account_id):
 
 def _prepare(session, *, document, filename, reporting_month_id, account_id, optional_hashes):
     parsed = mybroker_import.parse_import_original(session, document, filename)
-    evidence = parse_identity(document, filename)
+    evidence = parse_identity(document, filename, incomplete_draft=True)
     # Effective aliases are authority already; only unbound aliases are proposed.
     # These proposals are zero-write until Apply receives the exact reviewed set.
     existing = mybroker_identity._prepare(session, evidence, [])
@@ -409,6 +409,8 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     blockers, cash_delta, quantity_controls = _controls(
         parsed, session, source=accepted_source, account_id=account_id, month_id=month.id
     )
+    if "draft_structure" in evidence:
+        conflicts.update(set(blockers) & {"quantity_control_mismatch", "cash_control_mismatch"})
     blockers.extend(canonical_blockers)
     # Preview must disclose the same already accepted intersecting authority
     # that GET and Close consume, even when the new original itself is clean.
@@ -886,6 +888,7 @@ def apply_broker_month(
                 filename=kwargs["filename"],
                 account_bindings=plan["account_bindings"],
                 confirmation_digest=plan["identity"]["confirmation_digest"],
+                incomplete_draft=True,
             )
             source = mybroker_import.stage_mybroker(
                 session,

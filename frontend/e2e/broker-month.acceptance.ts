@@ -1,5 +1,73 @@
 import { expect, test } from "@playwright/test";
 
+test("exact structural exceptions permit reviewed incomplete DRAFT and GET, while server Close stays blocked", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const xml = await (await request.get("/api/synthetic-broker-source/structure")).body();
+  await page.goto("/v2/close?month=6&step=final_review_close");
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("3");
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
+    name: "Брокерский 7654321 (01.06.30-30.06.30).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  });
+  const response = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
+  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  const preview = await (await response).json();
+  expect(preview).toMatchObject({
+    can_apply: true,
+    bookkeeping_ready: false,
+    conflicts: [],
+    exact_return_ready: false,
+  });
+  expect(preview.exceptions).toContain("unparsed_source_rows");
+  expect(preview.identity.evidence.draft_structure.financial_authority).toBe("none");
+  const apply = page.getByRole("button", { name: "Сформировать неполный черновик", exact: true });
+  await expect(apply).toBeDisabled();
+  await expect(page.getByText(/Черновик неполный. Есть неразобранные/)).toBeVisible();
+  const aliases = page.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ });
+  if (await aliases.count()) await aliases.check();
+  await page
+    .getByRole("checkbox", { name: "Я проверил весь счёт и видимую неполноту черновика." })
+    .check();
+  await expect(apply).toBeEnabled();
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("incomplete-structure-preview-1280-125.png"),
+    fullPage: true,
+  });
+  await apply.click();
+  await expect(
+    page.getByText(/Сохранённый результат подтверждён независимым чтением/),
+  ).toBeVisible();
+  await expect(page.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+  const batches = await (await request.get("/api/broker-months?reporting_month_id=6")).json();
+  expect(batches).toHaveLength(1);
+  const saved = await (await request.get(`/api/broker-months/${batches[0].request_id}`)).json();
+  expect(saved).toMatchObject({
+    status: "draft",
+    bookkeeping_ready: false,
+    exact_return_ready: false,
+  });
+  expect(saved.exceptions).toContain("unparsed_source_rows");
+  expect(saved.accepted.document.syntax_blockers).toContain("unparsed_source_rows");
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
+  expect((await request.post("/api/months/6/close")).status()).toBe(422);
+  await page.reload();
+  await expect(page.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("incomplete-structure-get-1280.png"),
+    fullPage: true,
+  });
+});
+
 test("source-first original → reviewed atomic DRAFT → GET → global Close; partial Money stays blocked", async ({
   page,
   request,

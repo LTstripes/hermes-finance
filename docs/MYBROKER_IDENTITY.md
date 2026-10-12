@@ -35,10 +35,56 @@ Only row-level Positions `active_type=Акции|Облигации`, `active_na
 Trade type must link
 to Positions by exact account and ISIN. Trade-only type remains unproven; names,
 group placement and current catalogue type cannot manufacture source authority.
-Unknown/unparsed rows, invalid ISINs, unsupported asset types, REPO, account/type/
+In the standalone identity contract, unknown/unparsed rows, invalid ISINs, unsupported asset types, REPO, account/type/
 mapping alias conflicts and incompatible revoked bindings refuse the whole batch.
 Opaque UFSR/transfer source warnings remain visible; identity eligibility does not
 attest their financial semantics or source completeness.
+
+## Incomplete DRAFT structural separation
+
+The source-month writer alone selects internal `incomplete_draft=True` for both
+Preview and writer-reserved identity staging. The standalone identity Preview and
+ordinary staging remain strict; no HTTP intent flag can waive source warnings.
+`mybroker-incomplete-draft-identity-v1` rechecks the original tree and can defer
+only structurally bounded Positions/Money side branches. The original byte hash,
+classifications and contract version participate in the identity confirmation
+digest. Originals without these exceptions retain their existing identity shape.
+
+The bounded grammar includes the exact populated NDFL `Tablix3` three-attribute
+leaf (unsigned D2), Money beginning/ending scalar wrappers, daily scalar displays,
+the `Textbox116` summary, operation-group summary and three exact empty trees.
+Money numeric displays use bounded signed decimals (48 characters) with exact
+minor-unit representation; sub-kopecks are rejected without rounding. Daily
+displays are explicitly empty before each group's last rn and populated together
+only on that last rn; missing, empty and numeric zero remain distinct.
+Currency labels are literal RUB. Tablix7 has exactly the three ordered labels
+`Внесено по распоряжению Клиента`, `Купоны`, `Списано по тарифам Банка`, each with
+one childless p_code6/volume6 leaf. Keys, expanded namespaces, paths,
+ordered children and singleton branches are checked, with no text/tail payload,
+comments, processing instructions or nested namespace declarations. The complete
+Money table order and net/operation child order match the accepted
+[#804 manifest as amended](https://github.com/LTstripes/hermes-finance/issues/804#issuecomment-6129597801).
+After projecting these branches out of a temporary tree, every remaining node
+must lie on an actually consumed S1 Positions/Trades/Money path. Retained-node
+attributes are restricted by exact path to consumed row keys or enumerated
+caption keys; grouping wrappers accept no attributes. Fixed path cardinalities,
+consumed S1 row counts, original hash and source inventory remain binding. Root
+attributes match the exact family including Textbox6; sections remain ordered.
+Only one observed row-account/RUB context is eligible; aliases still require
+separate explicit mappings. Source cash/quantity mismatches remain conflicts.
+Unknown roots,
+extra/moved rows, hidden account/ISIN/native-ID attributes inside an exception,
+malformed/foreign/duplicate shapes and all existing semantic conflicts still
+refuse the batch. Optional branches are not inferred when absent.
+
+This is identity eligibility for an explicitly incomplete DRAFT, not safe-layout
+or financial acceptance. Values are never interpreted, summed or substituted.
+The envelope reports `financial_authority=none` and unresolved tax/Money
+classifications. S1 parser, normalized JSON, fingerprints, source warnings and
+legacy receipts stay unchanged; `unparsed_source_rows` remains a source exception
+and a server GET/Close blocker. Unknown tax/bond NKD, fee basis, native cash and
+settlement ownership retain their existing controls. Real scratch, Apply and
+independent GET/UAT require their separate Owner gates.
 
 ## Currency limitation in the confirmed original
 
