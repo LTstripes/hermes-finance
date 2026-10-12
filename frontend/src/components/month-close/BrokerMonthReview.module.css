@@ -47,3 +47,9 @@
   background: #fff9ef;
   padding: 12px;
 }
+
+.stockEvidence {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

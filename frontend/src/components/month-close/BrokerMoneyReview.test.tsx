@@ -321,3 +321,112 @@ it("requires explicit native execution and independent NKD basis before Apply an
     fee_separately_charged: true,
   });
 });
+
+it("offers native stock commission and requires independent basis evidence before typed two-leg Apply/GET/reload", async () => {
+  const oldPreview = vi.mocked(previewBrokerMoney).getMockImplementation();
+  if (!oldPreview) throw new Error("missing synthetic preview");
+  vi.mocked(previewBrokerMoney).mockImplementation(async (files, intent) => {
+    const result = await oldPreview(files, intent);
+    result.inventory = [
+      {
+        occurrence: { import_id: 10, section: "money", ordinal: 1 },
+        candidate_kind: "unsupported",
+        s1_kind: "commission",
+        trade_identity: "e".repeat(64),
+        description: "Комиссия по сделке native-A",
+        date: "2030-01-17",
+        signed_amount: "-1.25",
+        currency: "RUB",
+        reasons: [],
+      },
+    ];
+    const trade = result.trade_choices?.[0];
+    if (!trade) throw new Error("missing synthetic trade");
+    trade.instrument_type = "stock";
+    result.decisions.forEach((proposed) => {
+      proposed.cash_review = {
+        settlement: "-100.00",
+        commission: "-1.25",
+        native_total: "100.00",
+        native_fee: "1.25",
+        settlement_date: "2030-01-17",
+        depo_settlement_date: "2030-01-17",
+      };
+    });
+    return result;
+  });
+  const stockRead = (id: string): MoneyReadback => ({
+    ...readback(id),
+    exceptions: [],
+    bookkeeping_ready: true,
+    targets: [
+      {
+        role: "trade",
+        target_id: 7,
+        facts: null,
+        effective: true,
+        exceptions: [],
+        trade_revision: { revision: "2" },
+        cash_proof: {
+          proof_variant: "stock_buy_separate_fee_v1",
+          signed_minor: {
+            settlement: "-10000",
+            commission: "-125",
+            native_total: "10000",
+            native_fee: "125",
+          },
+          claims: {
+            native_total_basis: "excludes_separate_fee",
+            basis_reference: "independent-source-v1",
+          },
+        },
+      },
+    ],
+  });
+  vi.mocked(applyBrokerMoney).mockImplementation(async (_files, _intent, _digest, id) =>
+    stockRead(id),
+  );
+  vi.mocked(readBrokerMoney).mockImplementation(async (id) => stockRead(id));
+  const view = show();
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Принять Money в этот черновик"));
+  await user.upload(
+    screen.getByLabelText(/Оригинальные XML для Money/),
+    new File(["synthetic"], "synthetic.xml"),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  await user.click(screen.getByRole("checkbox", { name: "Комиссия покупки акции" }));
+  await user.selectOptions(
+    screen.getByLabelText("Точное исполнение покупки акции для строки 2"),
+    "7",
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  const confirmation = screen.getByRole("checkbox", {
+    name: /Я подтверждаю перечисленные конкретные/,
+  });
+  expect(confirmation).toBeDisabled();
+  expect(confirmation).not.toBeChecked();
+  expect(screen.queryByLabelText(/Независимо доказанное включение НКД/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Расчёт S/)).toHaveTextContent("−100");
+  await user.type(
+    screen.getByLabelText("Независимое основание суммы без комиссии"),
+    "independent-source-v1",
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  expect(confirmation).not.toBeChecked();
+  await user.click(confirmation);
+  await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
+  await waitFor(() => expect(readBrokerMoney).toHaveBeenCalledTimes(1));
+  const accepted = vi.mocked(applyBrokerMoney).mock.calls[0][1].money_decisions[0];
+  expect(accepted.trade_claims).toMatchObject({
+    proof_variant: "stock_buy_separate_fee_v1",
+    basis_reference: "independent-source-v1",
+    native_total_basis: "excludes_separate_fee",
+  });
+  expect(accepted.trade_claims).not.toHaveProperty("nkd_separately_posted");
+  view.unmount();
+  render(<MoneyStored saved={stockRead("saved")} />);
+  expect(screen.getByRole("table")).toHaveTextContent("Комиссия покупки акции");
+  expect(screen.getByRole("table")).toHaveTextContent("independent-source-v1");
+  expect(screen.getByRole("table")).not.toHaveTextContent("НКД");
+});

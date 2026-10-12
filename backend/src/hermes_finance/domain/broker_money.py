@@ -28,6 +28,18 @@ class TradeCashClaims(StrictModel):
     native_total_basis: Literal["includes_paid_nkd", "excludes_paid_nkd"]
 
 
+class StockFeeClaims(StrictModel):
+    proof_variant: Literal["stock_buy_separate_fee_v1"]
+    reference: Label
+    basis_reference: Label
+    review_context_digest: Digest
+    exact_row_settled_buy_link: bool = Field(default=False, strict=True)
+    complete_occurrence_set_is_one_event: bool = Field(default=False, strict=True)
+    fee_separately_charged: bool = Field(default=False, strict=True)
+    native_total_basis_independently_proved: bool = Field(default=False, strict=True)
+    native_total_basis: Literal["excludes_separate_fee"]
+
+
 class MoneyDecision(StrictModel):
     role: Literal["coupon", "account_funding", "trade"]
     seed: MoneyOccurrence
@@ -38,7 +50,8 @@ class MoneyDecision(StrictModel):
     owner_flow_intent: OwnerFlowIntent | None = None
     trade_id: int | None = Field(default=None, gt=0, strict=True)
     expected_trade_revision: int | None = Field(default=None, gt=0, strict=True)
-    trade_claims: TradeCashClaims | None = None
+    # Keep the legacy field and dump shape: old request hashes include nulls.
+    trade_claims: TradeCashClaims | StockFeeClaims | None = None
 
     @model_validator(mode="after")
     def shape(self):

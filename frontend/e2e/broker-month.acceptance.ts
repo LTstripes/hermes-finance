@@ -396,3 +396,106 @@ test("desktop paid NKD uses independently reviewed native basis, one revision an
     timeout: 30000,
   });
 });
+
+test("stock separate fee explicit independent basis Preview Apply GET reload Close", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const xml = await (await request.get("/api/synthetic-broker-source/stock-fee")).body();
+  const original = {
+    name: "Брокерский 1234567 (01.05.30-31.05.30).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  };
+  const scope = { reporting_month_id: 5, account_id: 1 };
+  const preview = await (
+    await request.post("/api/broker-months/preview", {
+      multipart: { file: original, intent: JSON.stringify(scope) },
+    })
+  ).json();
+  const applied = await request.post("/api/broker-months/apply", {
+    multipart: {
+      file: original,
+      confirmation: JSON.stringify({
+        ...scope,
+        request_id: "desktop-stock-base",
+        confirmation_digest: preview.confirmation_digest,
+        reviewed_account_bindings: preview.account_bindings,
+      }),
+    },
+  });
+  expect(applied.ok()).toBe(true);
+  const base = await applied.json();
+  await page.goto("/v2/close?month=5&step=final_review_close");
+  await page.getByText("Принять Money в этот черновик").click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Комиссия покупки акции" }).check();
+  await page
+    .getByLabel("Точное исполнение покупки акции для строки 2")
+    .selectOption(String(base.accepted.trade_ids[0]));
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const confirm = page.getByRole("checkbox", {
+    name: /Я подтверждаю перечисленные конкретные решения Money/,
+  });
+  await expect(confirm).toBeDisabled();
+  await expect(confirm).not.toBeChecked();
+  await expect(page.getByText(/Расчёт S/)).toContainText("100");
+  await expect(page.getByText(/Расчёт S/)).toContainText("1,25");
+  await page
+    .getByLabel("Независимое основание суммы без комиссии")
+    .fill("synthetic-independent-source-rule-v1");
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await expect(confirm).not.toBeChecked();
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("stock-fee-review-1280-125-percent.png"),
+    fullPage: true,
+  });
+  await confirm.focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
+  const stored = page.getByRole("table", { name: "Сохранённые Money и доказательства покупки" });
+  await expect(stored).toContainText("Комиссия покупки акции", { timeout: 30000 });
+  await expect(stored).toContainText("synthetic-independent-source-rule-v1");
+  await expect(stored).not.toContainText("НКД");
+  const read = await (await request.get("/api/broker-months/desktop-stock-base")).json();
+  expect(read.bookkeeping_ready).toBe(true);
+  expect(read.accepted.cash_control_difference_kopecks).toBe(0);
+  expect(read.accepted.document.rub_money[0].ending_amount).toBe("898.75");
+  const trade = await (
+    await request.get(`/api/executed-trades/${base.accepted.trade_ids[0]}`)
+  ).json();
+  expect(trade.revision).toBe(2);
+  expect(trade.evidence.cash_legs.map((leg: { role: string }) => leg.role).sort()).toEqual([
+    "commission",
+    "settlement",
+  ]);
+  expect(trade.evidence.cash_reconciliation).not.toHaveProperty("nkd_leg");
+  await page.reload();
+  await expect(stored).toContainText("synthetic-independent-source-rule-v1", { timeout: 30000 });
+  expect(
+    await stored
+      .locator("tbody td")
+      .nth(2)
+      .evaluate((cell) => cell.scrollWidth <= cell.clientWidth),
+  ).toBe(true);
+  await stored.screenshot({ path: info.outputPath("stock-fee-stored-evidence.png") });
+  expect((await (await request.get("/api/months/5/close-readiness")).json()).can_close).toBe(true);
+  await page.screenshot({ path: info.outputPath("stock-fee-reload-1280.png"), fullPage: true });
+  await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
+  const closed = page.waitForResponse((response) => response.url().endsWith("/api/months/5/close"));
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  expect((await closed).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible({
+    timeout: 30000,
+  });
+});

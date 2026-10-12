@@ -313,7 +313,7 @@ def _candidate(session: Session, context: dict, identity: str, *, cash_proof=Non
             }
         )
     settlements = leg_groups["settlement"]
-    if cash_proof:
+    if cash_proof and "proof_variant" not in cash_proof:
         nkd_leg = cash_proof["nkd_leg"]
         legs.append(nkd_leg)
         leg_groups["paid_nkd"].append(

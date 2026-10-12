@@ -149,7 +149,7 @@ def _controls(document, session=None):
             kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
             for kind in ("settlement", "commission")
         }
-        if proof:
+        if proof and "proof_variant" not in proof:
             leg = proof["nkd_leg"]
             groups["paid_nkd"] = [
                 {

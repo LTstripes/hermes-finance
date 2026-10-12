@@ -1,0 +1,161 @@
+{
+  "baseline": "5e02e8382f7a116242666f268aa48e6b570b8d2e",
+  "cases": [
+    {
+      "name": "coupon",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "legacy-base",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "coupon",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 1
+            },
+            "operation": "accept",
+            "instrument_id": 2,
+            "investment_cash_flow_id": null,
+            "coupon_claims": {
+              "reference": "legacy-coupon",
+              "review_context_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "actual_coupon_payment": true,
+              "exact_row_instrument_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "existing_target_is_same_payment": false
+            },
+            "owner_flow_intent": null,
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ]
+      },
+      "confirmation_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "original_hashes": [
+        [
+          "synthetic.xml",
+          "9023e183e74b2dfbde1e67fc552bbba3d8d8858f98596a0e924938bc6f3de8ad"
+        ]
+      ],
+      "intent_digest": "268965bd51e684cd80b105090aa85101bdb89867fade2ec7563a4739ada08d4e",
+      "request_fingerprint": "59711b70f3706495f46872ba07703ca97bb6fcb304ba1778a7b3fb0708077db4"
+    },
+    {
+      "name": "h2",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "legacy-base",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "account_funding",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 1
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": {
+              "evidence_version": "h2-a1-owner-rub-v2",
+              "operation": "accept",
+              "account_id": 1,
+              "seed": {
+                "import_id": 1,
+                "section": "money",
+                "ordinal": 1
+              },
+              "flow_id": null,
+              "expected_revision": null,
+              "claims": null,
+              "reason_code": null
+            },
+            "trade_id": null,
+            "expected_trade_revision": null,
+            "trade_claims": null
+          }
+        ]
+      },
+      "confirmation_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "original_hashes": [
+        [
+          "synthetic.xml",
+          "9023e183e74b2dfbde1e67fc552bbba3d8d8858f98596a0e924938bc6f3de8ad"
+        ]
+      ],
+      "intent_digest": "3dbb24a5a8ad03b125ac44dfa30b27e6281e43005d4c36922eb21575c1be4b4c",
+      "request_fingerprint": "dfd14084671ec4dd5a4f3d4637e960e8f99a368be92afb11da5f17c9f947f762"
+    },
+    {
+      "name": "bond",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "legacy-base",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": [
+          {
+            "role": "trade",
+            "seed": {
+              "import_id": 1,
+              "section": "money",
+              "ordinal": 1
+            },
+            "operation": "accept",
+            "instrument_id": null,
+            "investment_cash_flow_id": null,
+            "coupon_claims": null,
+            "owner_flow_intent": null,
+            "trade_id": 1,
+            "expected_trade_revision": 1,
+            "trade_claims": {
+              "reference": "legacy-bond",
+              "review_context_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "exact_row_settled_buy_link": true,
+              "complete_occurrence_set_is_one_event": true,
+              "nkd_separately_posted": true,
+              "fee_separately_charged": true,
+              "native_total_basis_independently_proved": true,
+              "native_total_basis": "includes_paid_nkd"
+            }
+          }
+        ]
+      },
+      "confirmation_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "original_hashes": [
+        [
+          "synthetic.xml",
+          "9023e183e74b2dfbde1e67fc552bbba3d8d8858f98596a0e924938bc6f3de8ad"
+        ]
+      ],
+      "intent_digest": "9542a6887adb18002638cd835ca44ff0cb29ec0f19b46f00fa1064dc7d4a6f5d",
+      "request_fingerprint": "ff53e377eddd452e5fe170b3121b6daea285f6b70eedace6187909197e27a3ff"
+    },
+    {
+      "name": "zero_fee",
+      "intent": {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "legacy-base",
+        "reporting_month_id": 1,
+        "account_id": 1,
+        "money_decisions": []
+      },
+      "confirmation_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "original_hashes": [
+        [
+          "synthetic.xml",
+          "9023e183e74b2dfbde1e67fc552bbba3d8d8858f98596a0e924938bc6f3de8ad"
+        ]
+      ],
+      "intent_digest": "254eb760dada90eff2137ca78283389bc0985a7160fcb7e1a5a6fc99614fdd4e",
+      "request_fingerprint": "d7a9a84afe2d6d215175e40a934fe24b7c0a76080cdf0a69471e45b4b9658eb9"
+    }
+  ]
+}

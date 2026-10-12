@@ -64,22 +64,44 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
         <tbody>
           {(saved.current_targets ?? saved.targets).map((target) => (
             <tr key={`${target.role}:${target.target_id}`}>
-              <Td>{roleLabel(target.role)}</Td>
+              <Td>
+                {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
+                  ? "Комиссия покупки акции"
+                  : roleLabel(target.role)}
+              </Td>
               <Td>
                 {target.target_id}
                 {target.role === "trade" && ` · ревизия ${target.trade_revision?.revision ?? "?"}`}
               </Td>
               <Td numeric>
                 {target.role === "trade" ? (
-                  <span>
+                  <span
+                    className={
+                      target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
+                        ? styles.stockEvidence
+                        : undefined
+                    }
+                  >
                     Расчёт: {formatMoney(signedMinor(target.cash_proof?.signed_minor.settlement))},{" "}
-                    НКД: {formatMoney(signedMinor(target.cash_proof?.signed_minor.paid_nkd))},{" "}
+                    {target.cash_proof?.proof_variant !== "stock_buy_separate_fee_v1" && (
+                      <>
+                        НКД: {formatMoney(signedMinor(target.cash_proof?.signed_minor.paid_nkd))},{" "}
+                      </>
+                    )}
                     комиссия: {formatMoney(signedMinor(target.cash_proof?.signed_minor.commission))}
                     . Сумма сделки:{" "}
                     {formatMoney(signedMinor(target.cash_proof?.signed_minor.native_total))},{" "}
-                    {target.cash_proof?.claims.native_total_basis === "includes_paid_nkd"
-                      ? "включает НКД"
-                      : "не включает НКД"}
+                    {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1" && (
+                      <>
+                        брокерская комиссия B:{" "}
+                        {formatMoney(signedMinor(target.cash_proof.signed_minor.native_fee))},{" "}
+                      </>
+                    )}
+                    {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
+                      ? `без комиссии; независимое основание: ${target.cash_proof.claims.basis_reference}`
+                      : target.cash_proof?.claims.native_total_basis === "includes_paid_nkd"
+                        ? "включает НКД"
+                        : "не включает НКД"}
                   </span>
                 ) : (
                   formatMoney(
@@ -153,6 +175,14 @@ export function BrokerMoneyReview({
   const [tradeBases, setTradeBases] = useState<
     Record<string, "includes_paid_nkd" | "excludes_paid_nkd" | "">
   >({});
+  const [stockBasisReferences, setStockBasisReferences] = useState<Record<string, string>>({});
+  const stockSeed = (seed: MoneyDecision["seed"]) =>
+    preview?.inventory.some(
+      (row) =>
+        identity(row.occurrence) === identity(seed) &&
+        row.s1_kind === "commission" &&
+        row.trade_identity != null,
+    );
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [currentPlan, setCurrentPlan] = useState(false);
@@ -244,19 +274,38 @@ export function BrokerMoneyReview({
             },
           };
         if (decision.role === "trade" && proposed.action !== "reuse") {
-          const basis = tradeBases[identity(decision.seed)];
-          if (!basis)
-            throw new Error("Подтверди независимое доказательство включения НКД в сумму сделки.");
-          decision.trade_claims = {
-            reference: "desktop-specific-native-cash-basis-review",
-            review_context_digest: proposed.review_context_digest ?? "",
-            exact_row_settled_buy_link: true,
-            complete_occurrence_set_is_one_event: true,
-            nkd_separately_posted: true,
-            fee_separately_charged: true,
-            native_total_basis_independently_proved: true,
-            native_total_basis: basis,
-          };
+          if (stockSeed(decision.seed)) {
+            const basisReference = stockBasisReferences[identity(decision.seed)]?.trim();
+            if (!basisReference || !/^[a-zA-Z0-9_-]{1,64}$/.test(basisReference))
+              throw new Error(
+                "Укажи ссылку на независимо проверенное основание суммы без комиссии.",
+              );
+            decision.trade_claims = {
+              proof_variant: "stock_buy_separate_fee_v1",
+              reference: "desktop-specific-stock-fee-review",
+              basis_reference: basisReference,
+              review_context_digest: proposed.review_context_digest ?? "",
+              exact_row_settled_buy_link: true,
+              complete_occurrence_set_is_one_event: true,
+              fee_separately_charged: true,
+              native_total_basis_independently_proved: true,
+              native_total_basis: "excludes_separate_fee",
+            };
+          } else {
+            const basis = tradeBases[identity(decision.seed)];
+            if (!basis)
+              throw new Error("Подтверди независимое доказательство включения НКД в сумму сделки.");
+            decision.trade_claims = {
+              reference: "desktop-specific-native-cash-basis-review",
+              review_context_digest: proposed.review_context_digest ?? "",
+              exact_row_settled_buy_link: true,
+              complete_occurrence_set_is_one_event: true,
+              nkd_separately_posted: true,
+              fee_separately_charged: true,
+              native_total_basis_independently_proved: true,
+              native_total_basis: basis,
+            };
+          }
         }
         return decision;
       });
@@ -340,7 +389,13 @@ export function BrokerMoneyReview({
   const current = saved ?? stored;
   const basisMissing = preview?.decisions.some(
     (p) =>
-      p.decision.role === "trade" && p.action !== "reuse" && !tradeBases[identity(p.decision.seed)],
+      p.decision.role === "trade" &&
+      p.action !== "reuse" &&
+      (stockSeed(p.decision.seed)
+        ? !/^[a-zA-Z0-9_-]{1,64}$/.test(
+            stockBasisReferences[identity(p.decision.seed)]?.trim() ?? "",
+          )
+        : !tradeBases[identity(p.decision.seed)]),
   );
   return (
     <div className={styles.stack}>
@@ -410,11 +465,17 @@ export function BrokerMoneyReview({
                         </Td>
                         <Td>
                           {row.occurrence.import_id === importId &&
-                          [
+                          ([
                             "coupon_paid_candidate",
                             "account_cash_in_candidate",
                             "trade_paid_nkd_candidate",
-                          ].includes(row.candidate_kind) ? (
+                          ].includes(row.candidate_kind) ||
+                            (row.s1_kind === "commission" &&
+                              preview.trade_choices?.some(
+                                (trade) =>
+                                  trade.source_identity === row.trade_identity &&
+                                  trade.instrument_type === "stock",
+                              ))) ? (
                             <label>
                               <input
                                 type="checkbox"
@@ -436,7 +497,9 @@ export function BrokerMoneyReview({
                                             role:
                                               row.candidate_kind === "coupon_paid_candidate"
                                                 ? "coupon"
-                                                : row.candidate_kind === "trade_paid_nkd_candidate"
+                                                : row.candidate_kind ===
+                                                      "trade_paid_nkd_candidate" ||
+                                                    row.s1_kind === "commission"
                                                   ? "trade"
                                                   : "account_funding",
                                             seed,
@@ -447,7 +510,9 @@ export function BrokerMoneyReview({
                                   invalidate();
                                 }}
                               />
-                              Принять эту конкретную строку
+                              {row.s1_kind === "commission"
+                                ? "Комиссия покупки акции"
+                                : "Принять эту конкретную строку"}
                             </label>
                           ) : (
                             "Наблюдение / ограничение"
@@ -471,7 +536,7 @@ export function BrokerMoneyReview({
               <div key={identity(decision.seed)} className={styles.stack}>
                 <p>
                   Строка #{decision.seed.import_id} / {decision.seed.ordinal + 1}:{" "}
-                  {roleLabel(decision.role)}
+                  {stockSeed(decision.seed) ? "Комиссия покупки акции" : roleLabel(decision.role)}
                 </p>
                 {decision.role === "coupon" && (
                   <>
@@ -517,7 +582,10 @@ export function BrokerMoneyReview({
                 {decision.role === "trade" && (
                   <>
                     <label className={styles.field}>
-                      Точное исполнение покупки для НКД строки {decision.seed.ordinal + 1}
+                      {stockSeed(decision.seed)
+                        ? "Точное исполнение покупки акции для строки"
+                        : "Точное исполнение покупки для НКД строки"}{" "}
+                      {decision.seed.ordinal + 1}
                       <select
                         disabled={busy}
                         value={decision.trade_id ?? ""}
@@ -542,37 +610,65 @@ export function BrokerMoneyReview({
                         ))}
                       </select>
                     </label>
-                    <label className={styles.field}>
-                      Независимо доказанное включение НКД в native сумму сделки
-                      <select
-                        disabled={busy}
-                        value={tradeBases[identity(decision.seed)] ?? ""}
-                        onChange={(e) => {
-                          setTradeBases({
-                            ...tradeBases,
-                            [identity(decision.seed)]: e.target.value as
-                              | "includes_paid_nkd"
-                              | "excludes_paid_nkd"
-                              | "",
-                          });
-                          invalidate();
-                        }}
-                      >
-                        <option value="">Basis не подтверждён</option>
-                        <option value="includes_paid_nkd">
-                          Источник доказывает: T включает НКД
-                        </option>
-                        <option value="excludes_paid_nkd">
-                          Источник доказывает: T не включает НКД
-                        </option>
-                      </select>
-                    </label>
-                    <p>
-                      Равенство сумм не доказывает basis. Подтверди исходную строку НКД → это
-                      settled RUB bond BUY, полный набор наблюдений одной проводки, отдельно
-                      списанные НКД и ненулевую комиссию по native ID. S + N + F учитываются один
-                      раз; EOD НКД и себестоимость неизвестны.
-                    </p>
+                    {stockSeed(decision.seed) ? (
+                      <>
+                        <label className={styles.field}>
+                          Независимое основание суммы без комиссии
+                          <input
+                            disabled={busy}
+                            value={stockBasisReferences[identity(decision.seed)] ?? ""}
+                            onChange={(e) => {
+                              setStockBasisReferences({
+                                ...stockBasisReferences,
+                                [identity(decision.seed)]: e.target.value,
+                              });
+                              invalidate();
+                            }}
+                          />
+                        </label>
+                        <p>
+                          Укажи идентификатор независимо проверенного evidence (латиница, цифры, _
+                          или -). Источник должен доказывать, что native T исключает эту комиссию, а
+                          F — отдельное списание B, не включённое в S. Равенство −S = T и −F = B
+                          само этого не доказывает. Подтверди settled RUB stock BUY и полный native
+                          набор.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label className={styles.field}>
+                          Независимо доказанное включение НКД в native сумму сделки
+                          <select
+                            disabled={busy}
+                            value={tradeBases[identity(decision.seed)] ?? ""}
+                            onChange={(e) => {
+                              setTradeBases({
+                                ...tradeBases,
+                                [identity(decision.seed)]: e.target.value as
+                                  | "includes_paid_nkd"
+                                  | "excludes_paid_nkd"
+                                  | "",
+                              });
+                              invalidate();
+                            }}
+                          >
+                            <option value="">Basis не подтверждён</option>
+                            <option value="includes_paid_nkd">
+                              Источник доказывает: T включает НКД
+                            </option>
+                            <option value="excludes_paid_nkd">
+                              Источник доказывает: T не включает НКД
+                            </option>
+                          </select>
+                        </label>
+                        <p>
+                          Равенство сумм не доказывает basis. Подтверди исходную строку НКД → это
+                          settled RUB bond BUY, полный набор наблюдений одной проводки, отдельно
+                          списанные НКД и ненулевую комиссию по native ID. S + N + F учитываются
+                          один раз; EOD НКД и себестоимость неизвестны.
+                        </p>
+                      </>
+                    )}
                   </>
                 )}
                 <label className={styles.field}>
@@ -625,21 +721,33 @@ export function BrokerMoneyReview({
                       </p>
                     ) : proposed.decision.role === "trade" ? (
                       <div>
-                        <p>
-                          Покупка native {proposed.native_ids?.join(" / ")}. Подтверждаю связь 1:1 и
-                          независимое доказательство basis, отдельные posted НКД и комиссию. Все три
-                          cash legs принадлежат одному исполнению.
-                        </p>
+                        {stockSeed(proposed.decision.seed) ? (
+                          <p>
+                            Покупка акции native {proposed.native_ids?.join(" / ")}. Подтверждаю
+                            независимое основание суммы без комиссии и две cash роли одного
+                            исполнения.
+                          </p>
+                        ) : (
+                          <p>
+                            Покупка native {proposed.native_ids?.join(" / ")}. Подтверждаю связь 1:1
+                            и независимое доказательство basis, отдельные posted НКД и комиссию. Все
+                            три cash legs принадлежат одному исполнению.
+                          </p>
+                        )}
                         {proposed.cash_review && (
                           <p>
-                            Расчёт {formatMoney(proposed.cash_review.settlement)}, НКД{" "}
-                            {formatMoney(proposed.cash_review.paid_nkd)}, комиссия{" "}
-                            {formatMoney(proposed.cash_review.commission)}. Native сумма сделки{" "}
-                            {formatMoney(proposed.cash_review.native_total)}, НКД{" "}
-                            {formatMoney(proposed.cash_review.native_nkd)}, комиссия{" "}
-                            {formatMoney(proposed.cash_review.native_fee)}. Денежный расчёт{" "}
-                            {formatDate(proposed.cash_review.settlement_date ?? "")}, поставка{" "}
-                            {formatDate(proposed.cash_review.depo_settlement_date ?? "")}.
+                            Расчёт S {formatMoney(proposed.cash_review.settlement)},{" "}
+                            {!stockSeed(proposed.decision.seed) && (
+                              <>НКД {formatMoney(proposed.cash_review.paid_nkd)}, </>
+                            )}
+                            комиссия F {formatMoney(proposed.cash_review.commission)}. Native сумма
+                            сделки T {formatMoney(proposed.cash_review.native_total)},{" "}
+                            {!stockSeed(proposed.decision.seed) && (
+                              <>НКД {formatMoney(proposed.cash_review.native_nkd)}, </>
+                            )}
+                            комиссия B {formatMoney(proposed.cash_review.native_fee)}. Денежный
+                            расчёт {formatDate(proposed.cash_review.settlement_date ?? "")},
+                            поставка {formatDate(proposed.cash_review.depo_settlement_date ?? "")}.
                           </p>
                         )}
                       </div>

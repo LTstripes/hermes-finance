@@ -22,6 +22,7 @@ def main():
         broker_month_alias_xml,
         money_batch_xml,
         money_coupon_pdf,
+        stock_fee_xml,
         trade_money_xml,
     )
 
@@ -47,7 +48,7 @@ def main():
                 isin="RU000A000001",
                 currency="RUB",
             )
-            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30)):
+            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30), (5, 31)):
                 create_reporting_month(
                     session,
                     year=2030,
@@ -58,6 +59,17 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "stock-fee":
+                xml = (
+                    stock_fee_xml(prior_month_buy=True)
+                    .replace(b"31.12.2029", b"30.04.2030")
+                    .replace(b".01.2030", b".05.2030")
+                    .replace(b"2030-01-", b"2030-05-")
+                    .replace(b".01.30", b".05.30")
+                    .replace(b"10000000001", b"10000000005")
+                    .replace(b"2000000001", b"2000000005")
+                )
+                return Response(xml, media_type="application/xml")
             if kind == "trade-money":
                 xml = (
                     trade_money_xml(prior_month_buy=True, native_linkage=True)
