@@ -1771,6 +1771,7 @@ def stock_fee_xml(
     missing_fee=False,
     missing_custody=False,
     nkd=False,
+    nkd_amount="-0.01",
     opaque=False,
 ):
     """Exact native two-leg fabricated stock purchase; no real-source authority."""
@@ -1821,7 +1822,7 @@ def stock_fee_xml(
         other.find(".//{MyBroker}comment").set(
             "comment", "НКД по сделке 10000000001" if nkd else "opaque"
         )
-        other.find(".//{MyBroker}p_code[@volume]").set("volume", "-0.01" if nkd else "1")
+        other.find(".//{MyBroker}p_code[@volume]").set("volume", nkd_amount if nkd else "1")
         collection.append(other)
         if opaque:
             opposite = deepcopy(other)
@@ -1995,11 +1996,12 @@ def test_stock_fee_native_overlap_and_equal_amount_distinct_ids(database, revers
         ({"fee": "1.25"}, "negative_posted_cash_nonzero_native_required"),
         ({"duplicate": True}, "same_report_multiplicity"),
         ({"nkd": True}, "stock_unexpected_linked_money"),
+        ({"nkd": True, "nkd_amount": "0.01"}, "stock_unexpected_linked_money"),
         ({"missing_custody": True}, "settled_rub_cash_required"),
     ],
 )
 def test_stock_fee_invalid_native_material_blocks_without_writes(database, kwargs, code):
-    from hermes_finance.services.broker_money import preview_money
+    from hermes_finance.services.broker_money import apply_money, preview_money
 
     client, xml, intent, _ = _stock_setup(database, stock_fee_xml(**kwargs))
     with database.session_factory() as session:
@@ -2008,6 +2010,14 @@ def test_stock_fee_invalid_native_material_blocks_without_writes(database, kwarg
         plan = preview_money(session, requested, [(FILENAME, xml)])
         assert code in plan["blockers"]
         assert not plan["can_apply"]
+        with pytest.raises(MyBrokerError):
+            apply_money(
+                session,
+                requested,
+                [(FILENAME, xml)],
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="stock-invalid-material",
+            )
         assert before == _all_month_tables(database)
     assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
 

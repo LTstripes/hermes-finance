@@ -211,10 +211,7 @@ def plan_trade(session, intent, decision, observation, occurrences, inventory, c
             o["source_account"] == trade.source_account
             and (
                 o["row"].get("primary_id") == candidate["ids"][0]
-                or (
-                    o["candidate_kind"] == "trade_paid_nkd_candidate"
-                    and o["description"] == f"НКД по сделке {candidate['ids'][0]}"
-                )
+                or (o["description"] == f"НКД по сделке {candidate['ids'][0]}")
             )
             and o["s1_kind"] not in ("settlement", "commission")
             for o in inventory
