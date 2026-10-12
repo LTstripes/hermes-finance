@@ -164,7 +164,8 @@ added the reviewed two-leg stock commission proof/desktop route, preserving
 legacy request hashes and financial ownership. The #790 code merge is
 `fee94e4fd4c77db3e50500a6fc3b6d103af2b498`; verify its exact
 [post-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/38212066232)
-before claiming the technical integration fully complete.
+— verified SUCCESS (attempt 1, all applicable jobs). The financial
+implementation is CODE COMPLETE, not real September UAT.
 
 The actual private September Gate 0 remains **BLOCKED** even though
 [#787](https://github.com/LTstripes/hermes-finance/issues/787) is CLOSED as a
