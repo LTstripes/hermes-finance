@@ -150,7 +150,7 @@ implemented the bounded typed source-owned proof and desktop review; **no real
 Owner stock fee has been independently source-accepted**. Its exact merged
 commit is `fee94e4fd4c77db3e50500a6fc3b6d103af2b498`; refer to
 [post-main CI 38212066232](https://github.com/LTstripes/hermes-finance/actions/runs/38212066232)
-for the final integration check.
+for completed SUCCESS (attempt 1, all applicable jobs).
 The existing #783 path is exclusively a settled RUB **bond BUY** with
 separate negative settlement, paid NKD and fee legs, and an explicitly reviewed
 native total NKD inclusion basis. It cannot be reused for a stock commission
@@ -169,8 +169,8 @@ reference; without it the execution's `commission_basis_unresolved` must remain.
 
 The implementation follows accepted [#788](https://github.com/LTstripes/hermes-finance/issues/788)
 and reuses the existing Money batch,
-`ExecutedTradeRevision`, `ExecutedTradeOccurrence` and immutable receipts;
-strictly discriminate a new typed stock proof from the bond three-leg proof.
+`ExecutedTradeRevision`, `ExecutedTradeOccurrence` and immutable receipts.
+The stock proof is strictly discriminated from the bond three-leg proof.
 The dedicated `stock_buy_separate_fee_v1` claims and Money commission seed
 are validated separately from legacy three-leg bond proofs. Literal pre-change
 coupon/H2/bond/zero-fee JSON fingerprints and receipts stay compatible;
