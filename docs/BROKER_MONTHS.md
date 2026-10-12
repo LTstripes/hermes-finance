@@ -114,7 +114,29 @@ Close concurrency. Desktop tests verify explicit review, failed/mismatched GET,
 CLOSED reading and real API Preview → Apply → GET → global Close at desktop widths,
 including the incomplete Money path. Synthetic evidence is not Owner acceptance.
 
-## Real September Owner-local Gate 0 — 2026-10-11, BLOCKED
+## Real September Owner-local UAT — 2026-10-12, bounded DRAFT PASS
+
+The preceding 11 October Gate 0 below is **historical, superseded only for incomplete-DRAFT UAT**. After [#804 / PR #805](https://github.com/LTstripes/hermes-finance/pull/805) the server validates original-bound Positions/Money structural exceptions separately from identity conflicts. It retains frozen S1 source warnings and all financial Close guards. Code merged at `main@d4ff5ea1d1500117d4b57ba348c09fa5452330bc`, [exact post-main CI 38301062183 SUCCESS](https://github.com/LTstripes/hermes-finance/actions/runs/38301062183), technical #804 CLOSED.
+
+The Owner authorized and the local operator reported a genuine isolated scratch run:
+
+| UAT stage | Accepted evidence | Boundary |
+| --- | --- | --- |
+| Original → Preview | Unchanged complete original; fresh zero-write HTTP 200 Preview, `can_apply=true`, hard `conflicts=[]` | Source exceptions still visible; `bookkeeping_ready=false` |
+| Reviewed incomplete DRAFT Apply | **One atomic Apply**; independent GET; 11/11 source position quantity checks and signed RUB cash residual all zero | One receipt, canonical trades, original-valued positions and one source cash state; no duplicate payouts/ExternalFlow |
+| Replay and integrity | Same-intent replay `duplicate=true` without new rows; local SQLite integrity/FK and protected-isolation checks clean | No second financial Apply or historical/protected mutation |
+| Capital participation | Scratch-only ordinary account PATCH `include_in_capital=true`, `include_in_returns=false`; source total = monthly summary GET | Account exposure in Capital is not performance membership/availability |
+| Windows desktop | Operator opened real read-only local viewer, reloaded desktop, confirmed source values, DRAFT, expanded warnings and disabled Close | Integrator did not independently inspect private screenshot pixels |
+
+[Owner-local delivery](https://github.com/LTstripes/hermes-finance/issues/773#issuecomment-6132341689), [Integrator bounded acceptance](https://github.com/LTstripes/hermes-finance/issues/773#issuecomment-6132409052), [stage-3 API](https://github.com/LTstripes/hermes-finance/issues/773#issuecomment-6132678182) and [final desktop PASS](https://github.com/LTstripes/hermes-finance/issues/773#issuecomment-6132814727) separate actual Owner-private evidence from Integrator's GitHub/code verification. The earlier URL-resolution failure was a **tooling blocker that was subsequently resolved**, not an application defect.
+
+**Retained real-source warnings**: `4_Transfers_unsupported`, `5_UFSR_unsupported`, `commission_basis_unresolved`, `money_semantics_unsupported`, `settlement_principal_unresolved`, `unparsed_source_rows`. `coverage_state=unknown`; `bookkeeping_ready=false`, `can_close=false`; XIRR/TWRR null. **No Close/Reopen or separate financial Money/NKD/tax/fee attestations**. Source-native EOD bond valuations retain `bond_nkd_basis=unknown`: source amount known does not equal exact economic value.
+
+**Current product distinction**: DRAFT source panel works and monthly summary can include the account when explicitly opted into capital. The standard `/v2/capital` surface intentionally reads the latest **CLOSED**; no read-only DRAFT Capital view exists yet. Six high-level warning headings repeat; precise source reasons remain accessible via “Подробности”. These are small UX follow-ups, not evidence of lost financial rows. Desktop/laptop only.
+
+**Future [#774](https://github.com/LTstripes/hermes-finance/issues/774)** has [parallel code GO](https://github.com/LTstripes/hermes-finance/issues/774#issuecomment-6132724218) for read-only **separate indicative period MWR**, not exact XIRR/TWRR. Numeric September rate is **not** asserted until both broker-native EOD valuations, all dated account-boundary flows, coverage and material REPO/UFSR/custody exposure pass their *own* guards. No inferred `E=0`, no double coupon/cash. All private values/ISINs/paths/hashes/screenshots remain out of tracked docs. [#773](https://github.com/LTstripes/hermes-finance/issues/773) and [#768](https://github.com/LTstripes/hermes-finance/issues/768) stay **OPEN** for complete financial Close.
+
+## Historical Owner-local Gate 0 — 2026-10-11 (pre-#804; superseded for incomplete DRAFT UAT)
 
 This is a dated source-compatibility result, not another parser family or a
 production UAT. [#787](https://github.com/LTstripes/hermes-finance/issues/787#issuecomment-6112959100)
@@ -159,7 +181,7 @@ Protected Test/Stable/CLOSED and actual historical data must remain untouched.
 Bond reported EOD value can be retained as a **source-marked value** with
 unknown accrued NKD; this does not authorize exact economic XIRR/TWRR.
 
-## Technical checkpoint — 2026-10-12
+## Historical technical checkpoint — 2026-10-12 (pre-#804/real UAT)
 
 The preceding 2026-10-11 original Gate 0 account is a **historical dated result**.
 Since then [#788 / PR #791](https://github.com/LTstripes/hermes-finance/pull/791)
