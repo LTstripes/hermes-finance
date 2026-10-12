@@ -315,8 +315,12 @@ def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | Non
             return None
         if source["section_inventory"][name] != sum(1 for _ in wrapper[0].iter()) - 1:
             return None
-        if outer in {"Trades3", "Trades4"} and len(wrapper[0]) and not _safe(wrapper, outer):
-            return None
+        if outer in {"Trades3", "Trades4"}:
+            # Metadata uses broader str.strip(); DRAFT proof requires XML whitespace.
+            if not all(_white(n.text) and _white(n.tail) for n in wrapper.iter()):
+                return None
+            if len(wrapper[0]) and not _safe(wrapper, outer):
+                return None
     row_accounts = {
         r["source_account"] for r in source["positions"] + source["rub_money"] + source["money"]
     }

@@ -4082,6 +4082,85 @@ def test_draft_missing_linkage_attributes_are_not_empty_values(database, missing
     assert _all_month_tables(database) == before
 
 
+_DRAFT_METADATA_PATHS = (
+    "Trades3",
+    "Trades3/Report",
+    "Trades3/Report/Tablix1",
+    "Trades4",
+    "Trades4/Report",
+    "Trades4/Report/Tablix1",
+    "Trades4/Report/Tablix1/Details_Collection",
+    "Trades4/Report/Tablix1/Details_Collection/Details",
+)
+
+
+def _draft_metadata_root():
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    return ET.fromstring(metadata_xml(draft_structure_xml()))
+
+
+@pytest.mark.parametrize("path", _DRAFT_METADATA_PATHS)
+@pytest.mark.parametrize("field", ["text", "tail"])
+@pytest.mark.parametrize("separator", ["\u00a0", "\u2007"], ids=["nbsp", "figure-space"])
+def test_draft_metadata_requires_xml_whitespace_on_every_node(path, field, separator):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = _draft_metadata_root()
+    target = root.find("/".join("{MyBroker}" + part for part in path.split("/")))
+    setattr(target, field, " \t" + separator + "\r\n")
+    raw = ET.tostring(root, encoding="utf-8")
+    frozen = parse_mybroker(raw, FILENAME)
+    identity = parse_identity(raw, FILENAME, incomplete_draft=True)
+    assert "unparsed_source_rows" in identity["conflicts"]
+    assert "draft_structure" not in identity
+    assert identity["source_warnings"] == frozen["syntax_blockers"]
+
+
+@pytest.mark.parametrize("separator", ["\u00a0", "\u2007"], ids=["nbsp", "figure-space"])
+def test_draft_metadata_unicode_preview_refuses_without_writes(database, separator):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    for path in (_DRAFT_METADATA_PATHS[2], _DRAFT_METADATA_PATHS[-1]):
+        for field in ("text", "tail"):
+            root = _draft_metadata_root()
+            target = root.find("/".join("{MyBroker}" + part for part in path.split("/")))
+            setattr(target, field, separator)
+            raw = ET.tostring(root, encoding="utf-8")
+            identity = parse_identity(raw, FILENAME, incomplete_draft=True)
+            assert "unparsed_source_rows" in identity["conflicts"], (path, field)
+            reviewed = _broker_month_preview(client, scope, raw)
+            assert not reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+            assert "identity_batch_conflict" in reviewed["conflicts"]
+            assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("whitespace", [None, " \t\r\n"], ids=["untouched", "xml-whitespace"])
+def test_draft_metadata_valid_xml_whitespace_preserves_preview(database, whitespace):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = _draft_metadata_root()
+    if whitespace is not None:
+        for outer in ("Trades3", "Trades4"):
+            for descendant in root.find("{MyBroker}" + outer).iter():
+                descendant.text = descendant.tail = whitespace
+    raw = ET.tostring(root, encoding="utf-8")
+    frozen = parse_mybroker(raw, FILENAME)
+    identity = parse_identity(raw, FILENAME, incomplete_draft=True)
+    assert not identity["conflicts"]
+    assert identity["source_warnings"] == frozen["syntax_blockers"]
+    assert "unparsed_source_rows" in parse_identity(raw, FILENAME)["conflicts"]
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    assert _all_month_tables(database) == before
+
+
 @pytest.mark.parametrize(
     "path",
     [
