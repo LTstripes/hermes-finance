@@ -872,7 +872,12 @@ def test_old_receipt_preview_replay_get_and_fingerprints_never_upgrade(database,
         lineage = read_mybroker_lineage(session)
         for _ in range(2):
             reviewed = preview_mybroker(session, document=raw, filename=FILENAME)
-            assert {k: v for k, v in reviewed.items() if k != "metadata_evidence"} == original
+            assert {
+                k: v
+                for k, v in reviewed.items()
+                if k not in ("metadata_evidence", "empty_money_layout_evidence")
+            } == original
+            assert reviewed["empty_money_layout_evidence"]["status"] == "BLOCKED"
             assert reviewed["already_imported"] == row.id
             assert (
                 stage_mybroker(session, parse_import_original(session, raw, FILENAME)).id == row.id
@@ -903,8 +908,13 @@ def test_http_preview_repeated_original_is_zero_write_and_keeps_confirmation(dat
         second = client.post("/api/mybroker-import/preview", files={"file": (FILENAME, raw)})
         assert first.status_code == second.status_code == 200
         assert first.json() == second.json()
-        assert {k: v for k, v in first.json().items() if k != "metadata_evidence"} == original
+        assert {
+            k: v
+            for k, v in first.json().items()
+            if k not in ("metadata_evidence", "empty_money_layout_evidence")
+        } == original
         assert first.json()["metadata_evidence"] == evidence(raw)
+        assert first.json()["empty_money_layout_evidence"]["status"] == "BLOCKED"
         assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)
     finally:
         event.remove(database.engine, "before_cursor_execute", observe)
