@@ -31,7 +31,13 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     ReportingMonth,
 )
-from hermes_finance.services import executed_trades, mybroker_identity, mybroker_import
+from hermes_finance.services import broker_month_journal as journal
+from hermes_finance.services import (
+    broker_sections,
+    executed_trades,
+    mybroker_identity,
+    mybroker_import,
+)
 from hermes_finance.services.mybroker_dispositions import effective_bindings, resolve
 from hermes_finance.services.source_native import (
     NATIVE_SOURCE,
@@ -115,7 +121,7 @@ def _bindings(identity):
     ]
 
 
-def _controls(document, session=None):
+def _controls(document, session=None, *, source=None, account_id=None, month_id=None):
     blockers = set(document["syntax_blockers"]) | set(document["endpoint_conflicts"])
     blockers.update(b for b in document["endpoint_blockers"] if b != "endpoint_value_unavailable")
     if any(p["ending_value"] is None for p in document["positions"]):
@@ -197,6 +203,8 @@ def _controls(document, session=None):
         quantity_controls.append(
             {"isin": row["isin"], "difference": None if delta is None else str(delta)}
         )
+    if source is not None:
+        blockers = broker_sections.disposition(session, source, account_id, month_id, blockers)
     return sorted(blockers), cash_delta, quantity_controls
 
 
@@ -384,7 +392,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         for r in _rows(session, BrokerMonthApply)
         if r.reporting_month_id == month.id
         and r.account_id == account_id
-        and "cash_id" in json.loads(r.projection_json)
+        and journal.kind(r) == journal.SOURCE
     }
     cash_id = cash_rows[0].id if len(cash_rows) == 1 else None
     if cash_rows and (
@@ -395,7 +403,12 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         or not cash_rows[0].include_in_capital
     ):
         conflicts.add("existing_cash_reconciliation_required")
-    blockers, cash_delta, quantity_controls = _controls(parsed, session)
+    accepted_source = session.scalar(
+        select(MyBrokerImport).where(MyBrokerImport.document_sha256 == parsed["document_sha256"])
+    )
+    blockers, cash_delta, quantity_controls = _controls(
+        parsed, session, source=accepted_source, account_id=account_id, month_id=month.id
+    )
     blockers.extend(canonical_blockers)
     # Preview must disclose the same already accepted intersecting authority
     # that GET and Close consume, even when the new original itself is clean.
@@ -403,7 +416,11 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     for other in _intersecting_sources(session, parsed, account_id):
         other_plan = mybroker_import._prepare(session, json.loads(other.normalized_json))
         conflicts.update(other_plan["conflicts"])
-        blockers.extend(other_plan["blockers"])
+        blockers.extend(
+            broker_sections.disposition(
+                session, other, account_id, month.id, other_plan["blockers"]
+            )
+        )
         other_identities.update(
             t["identity"] for t in other_plan["document"]["trades"] if t["identity"]
         )
@@ -425,7 +442,13 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     blockers.extend(_account_readiness(session, month.id, account_id))
     blockers = sorted(
         set(blockers)
-        | set(source["blockers"])
+        | (
+            broker_sections.disposition(
+                session, accepted_source, account_id, month.id, source["blockers"]
+            )
+            if accepted_source is not None
+            else set(source["blockers"])
+        )
         | ({"optional_evidence_unsupported"} if optional_hashes else set())
     )
     material = {
@@ -515,7 +538,7 @@ def _existing_flows(session, month_id, account_id):
     )
 
 
-def _source_money_blockers(session, source, plan):
+def _source_money_blockers(session, source, plan, *, account_id=None, month_id=None):
     """Resolve the generic code only through every exact unsupported occurrence."""
     from hermes_finance.services.broker_money import effective_occurrence
 
@@ -538,6 +561,8 @@ def _source_money_blockers(session, source, plan):
     ]
     if nonzero and all(t["identity"] and effective_proof(session, t["identity"]) for t in nonzero):
         blockers.discard("commission_basis_unresolved")
+    if account_id is not None and month_id is not None:
+        blockers = broker_sections.disposition(session, source, account_id, month_id, blockers)
     return blockers
 
 
@@ -585,10 +610,19 @@ def _canonical_projection_matches(session, candidate):
 
 
 def _readiness(session, receipt):
-    accepted = json.loads(receipt.projection_json)
-    if accepted.get("contract_version") == "broker_money_dependency_v1":
+    accepted = journal.payload(receipt)
+    kind = journal.kind(receipt)
+    if kind == "invalid":
+        return ["broker_month_receipt_invalid"]
+    if kind == broker_sections.CONTRACT:
+        # History is not financial ownership. Base sources consult current heads;
+        # stale/superseded metadata never poisons account-wide readiness.
+        return broker_sections._heads(
+            session, receipt.import_id, receipt.account_id, receipt.reporting_month_id
+        )[1]
+    if kind == journal.DEPENDENCY:
         return []
-    if accepted.get("contract_version") == "broker_money_v1":
+    if kind == journal.MONEY:
         from hermes_finance.services.broker_money import latest_proofs, proof_blockers, target_key
 
         latest = latest_proofs(session)
@@ -624,8 +658,22 @@ def _readiness(session, receipt):
         # Recompute original source dependencies with the same S1 reconciliation.
         current = mybroker_import._prepare(session, json.loads(source.normalized_json))
         blockers.update(current["conflicts"])
-        blockers.update(_source_money_blockers(session, source, current))
-        source_blockers, _, _ = _controls(current["document"], session)
+        blockers.update(
+            _source_money_blockers(
+                session,
+                source,
+                current,
+                account_id=receipt.account_id,
+                month_id=receipt.reporting_month_id,
+            )
+        )
+        source_blockers, _, _ = _controls(
+            current["document"],
+            session,
+            source=source,
+            account_id=receipt.account_id,
+            month_id=receipt.reporting_month_id,
+        )
         blockers.update(source_blockers)
         if current["missing_mappings"]:
             blockers.add("accepted_mapping_changed")
@@ -649,7 +697,23 @@ def _readiness(session, receipt):
         for other in _intersecting_sources(session, parsed, receipt.account_id):
             other_plan = mybroker_import._prepare(session, json.loads(other.normalized_json))
             blockers.update(other_plan["conflicts"])
-            blockers.update(_source_money_blockers(session, other, other_plan))
+            blockers.update(
+                _source_money_blockers(
+                    session,
+                    other,
+                    other_plan,
+                    account_id=receipt.account_id,
+                    month_id=receipt.reporting_month_id,
+                )
+            )
+            other_controls, _, _ = _controls(
+                other_plan["document"],
+                session,
+                source=other,
+                account_id=receipt.account_id,
+                month_id=receipt.reporting_month_id,
+            )
+            blockers.update(other_controls)
             trade_identities.update(
                 t["identity"] for t in other_plan["document"]["trades"] if t["identity"]
             )
@@ -714,10 +778,21 @@ def read_broker_month(session, request_id):
         receipt = session.get(BrokerMonthApply, request_id, populate_existing=True)
         if receipt is None:
             raise MyBrokerError("broker_month_not_found")
-        accepted = json.loads(receipt.projection_json)
-        if accepted.get("contract_version") == "broker_money_dependency_v1":
+        accepted = journal.payload(receipt)
+        kind = journal.kind(receipt)
+        if kind == "invalid":
+            return {
+                "request_id": request_id,
+                "exceptions": ["broker_month_receipt_invalid"],
+                "bookkeeping_ready": False,
+                "coverage_state": "unknown",
+                "exact_return_ready": False,
+            }
+        if kind == broker_sections.CONTRACT:
+            return broker_sections.read_sections(session, request_id)
+        if kind == journal.DEPENDENCY:
             raise MyBrokerError("broker_month_not_found")
-        if accepted.get("contract_version") == "broker_money_v1":
+        if kind == journal.MONEY:
             from hermes_finance.services.broker_money import read_money
 
             return read_money(session, request_id)
@@ -750,6 +825,13 @@ def read_broker_month(session, request_id):
             "status": session.get(ReportingMonth, receipt.reporting_month_id).status,
             "accepted": accepted,
             "money_acceptance": money,
+            "section_dispositions": [
+                broker_sections.read_sections(session, r.request_id)
+                for r in _rows(session, BrokerMonthApply)
+                if journal.kind(r) == broker_sections.CONTRACT
+                and (r.import_id, r.account_id, r.reporting_month_id)
+                == (receipt.import_id, receipt.account_id, receipt.reporting_month_id)
+            ],
             "exceptions": blockers,
             "bookkeeping_ready": not blockers,
             "coverage_state": "unknown",

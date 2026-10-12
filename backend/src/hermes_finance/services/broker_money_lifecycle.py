@@ -35,11 +35,17 @@ DEPENDENCY_CONTRACT = "broker_money_dependency_v1"
 
 def next_journal_revision(session):
     """Reserved writer assigns order independent of wall-clock timestamps."""
+    from hermes_finance.services import broker_month_journal as journal
+
     with session.no_autoflush:
         rows = list(session.scalars(select(BrokerMonthApply)))
         rows.extend(r for r in session.new if isinstance(r, BrokerMonthApply))
         return 1 + max(
-            (json.loads(r.projection_json).get("journal_revision", 0) for r in rows),
+            (
+                journal.payload(r).get("journal_revision", 0)
+                for r in rows
+                if journal.kind(r) in {journal.MONEY, journal.DEPENDENCY}
+            ),
             default=0,
         )
 
@@ -245,6 +251,8 @@ def _before_flush(session, _context, _instances):
         # PDF/manual/forecast creation cannot bypass an existing Money owner by
         # minting an equal payout. Link-existing is the reviewed safe route.
         if not session.info.get("broker_money_stage"):
+            from hermes_finance.services import broker_month_journal as journal
+
             for row in session.new:
                 if not isinstance(row, InvestmentCashFlow):
                     continue
@@ -277,13 +285,28 @@ def _before_flush(session, _context, _instances):
                 # Zero-write Preview can select a bond absent from end holdings;
                 # catalogue dependencies are therefore account-wide, as in the
                 # existing identity revision hash. Tokens do not block v1 Close.
-                if "projection_digest" not in json.loads(receipt.projection_json):
+                if journal.kind(receipt) != journal.SOURCE:
                     continue
                 month = session.get(ReportingMonth, receipt.reporting_month_id)
-                if not identity_changed and not any(
-                    isinstance(r, (InvestmentCashFlow, CashBalance, PositionSnapshot, ExternalFlow))
-                    and _financial_scope(r, receipt, month)
+                month_geometry_changed = any(
+                    isinstance(r, ReportingMonth)
+                    and r.id == receipt.reporting_month_id
+                    and any(
+                        inspect(r).attrs[f].history.has_changes()
+                        for f in ("year", "month", "snapshot_date", "period_start", "period_end")
+                    )
                     for r in changes
+                )
+                if (
+                    not identity_changed
+                    and not month_geometry_changed
+                    and not any(
+                        isinstance(
+                            r, (InvestmentCashFlow, CashBalance, PositionSnapshot, ExternalFlow)
+                        )
+                        and _financial_scope(r, receipt, month)
+                        for r in changes
+                    )
                 ):
                     continue
                 _append_receipt(
