@@ -175,12 +175,60 @@ _PATHS = {
 }
 
 
-def _visited(node, prefix, allowed):
+# Consumed row keys and separately observed caption keys are path-specific.
+# A valid side branch must never make an unseen identity attribute elsewhere
+# eligible. Group wrappers have no attrs; no wildcard Textbox/native-ID keys.
+_ATTRS = {
+    "Positions": {
+        "Report": {"Name"},
+        "Report/Tablix1": set(
+            "Textbox14 Textbox187 Textbox196 Textbox23 Textbox28 Textbox30 Textbox37 Textbox48 Textbox54 Textbox56 Textbox65 Textbox84 Textbox86".split()
+        ),
+        "Report/Tablix1/active_type_Collection/active_type/Details_Collection/Details": set(
+            "ISIN1 acc_code active_name active_type forward_rest income_rest income_volume place real_rest real_volume".split()
+        ),
+    },
+    "Trades": {
+        "Report": {"Name"},
+        "Report/Tablix2": set(
+            "Textbox118 Textbox134 Textbox135 Textbox149 Textbox180 Textbox25 Textbox31 Textbox4 Textbox40 Textbox52 Textbox64 Textbox73 Textbox86".split()
+        ),
+        "Report/Tablix3": set(
+            "Textbox112 Textbox121 Textbox127 Textbox13 Textbox137 Textbox138 Textbox156 Textbox161 Textbox167 Textbox168 Textbox173 Textbox178 Textbox35".split()
+        ),
+        "Report/Tablix2/Details_Collection/Details": set(
+            "trade_no acc_code isin_reg db_time qty Price summ_trade summ_nkd curr_calc bank_tax save_settlement_date save_depo_settlement_date settlement_time repo_no comment p_name Textbox14 place_name".split()
+        ),
+        "Report/Tablix3/Details2_Collection/Details2": set(
+            "trade_no1 acc_code2 isin_reg1 db_time2 qty2 Price2 summ_trade2 summ_nkd2 curr_calc2 bank_tax2 save_settlement_date3 save_depo_settlement_date3 settlement_time2 repo_no1".split()
+        ),
+    },
+    "Trades2": {"Report": {"Name"}},
+}
+_MONEY_ROW = "Report/Tablix1/settlement_date_Collection/settlement_date"
+for _path, _keys in (
+    (_MONEY_ROW, {"settlement_date"}),
+    (_MONEY_ROW + "/rn_Collection/rn", {"last_update"}),
+    (_MONEY_ROW + "/rn_Collection/rn/oper_type", {"oper_type"}),
+    (_MONEY_ROW + "/rn_Collection/rn/oper_type/comment", {"comment"}),
+    (_MONEY_ROW + "/rn_Collection/rn/oper_type/comment/Textbox11", {"acc_code"}),
+    (
+        _MONEY_ROW
+        + "/rn_Collection/rn/oper_type/comment/money_volume_begin1_Collection/money_volume_begin1/p_code_Collection/p_code/p_code",
+        {"p_code", "volume"},
+    ),
+):
+    _ATTRS["Trades2"][_path] = _keys
+
+
+def _visited(node, prefix, allowed, attrs):
     return (
         prefix in allowed
         and all(
-            _visited(child, prefix + "/" + child.tag.removeprefix(N), allowed) for child in node
+            _visited(child, prefix + "/" + child.tag.removeprefix(N), allowed, attrs)
+            for child in node
         )
+        and set(node.attrib) <= attrs.get(prefix, set())
         and node.tag.startswith(N)
         and _white(node.text)
         and _white(node.tail)
@@ -198,6 +246,19 @@ def draft_structure_exceptions(document: bytes) -> list[str] | None:
             document.decode("utf-8-sig"), parser=ET.XMLParser(target=_OriginalTree())
         )
     except MyBrokerError:
+        return None
+    if (
+        set(root.attrib)
+        - {
+            "Name",
+            "Textbox5",
+            "Textbox6",
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation",
+        }
+        or [child.tag for child in root] != [N + outer for outer in SECTIONS]
+        or not _white(root.text)
+        or not _white(root.tail)
+    ):
         return None
     exceptions = []
     for outer in _PATHS:
@@ -259,6 +320,6 @@ def draft_structure_exceptions(document: bytes) -> list[str] | None:
         for path in _PATHS[outer]:
             parts = ("Report/" + path).split("/")
             allowed.update("/".join(parts[:i]) for i in range(1, len(parts) + 1))
-        if not _visited(report, "Report", allowed):
+        if not _visited(report, "Report", allowed, _ATTRS[outer]):
             return None
     return sorted(set(exceptions)) if exceptions else None

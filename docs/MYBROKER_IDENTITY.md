@@ -59,7 +59,10 @@ ordered children and singleton branches are checked, with no text/tail payload,
 comments, processing instructions or nested namespace declarations. Summary
 groups have bounded single-line labels and no duplicate group labels.
 After projecting these branches out of a temporary tree, every remaining node
-must lie on an actually consumed S1 Positions/Trades/Money path. Unknown roots,
+must lie on an actually consumed S1 Positions/Trades/Money path. Retained-node
+attributes are restricted by exact path to consumed row keys or enumerated
+caption keys; grouping wrappers accept no attributes. Root keys/section order
+are bounded too. Unknown roots,
 extra/moved rows, hidden account/ISIN/native-ID attributes inside an exception,
 malformed/foreign/duplicate shapes and all existing semantic conflicts still
 refuse the batch. Optional branches are not inferred when absent.

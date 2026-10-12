@@ -3832,3 +3832,59 @@ def test_broker_month_draft_structural_stale_and_late_failure_rollback(database,
     monkeypatch.setattr(service, "stage_native_position", fail)
     assert _broker_month_apply(client, intent, reviewed, xml).status_code == 500
     assert inventory() == before
+
+
+@pytest.mark.parametrize(
+    "path,attrs",
+    [
+        ("Positions/Report/Tablix1", ("acc_code", "ISIN1", "trade_no")),
+        (
+            "Positions/Report/Tablix1/active_type_Collection/active_type",
+            ("acc_code", "ISIN1", "trade_no"),
+        ),
+        (
+            "Positions/Report/Tablix1/active_type_Collection/active_type/Details_Collection/Details",
+            ("acc_code2", "isin_reg", "trade_no"),
+        ),
+        ("Trades/Report/Tablix2", ("acc_code", "ISIN1", "trade_no")),
+        ("Trades/Report/Tablix2/Details_Collection/Details", ("acc_code2", "ISIN1", "trade_no1")),
+        ("Trades2/Report/Tablix1", ("acc_code", "ISIN1", "trade_no")),
+        (
+            "Trades2/Report/Tablix1/settlement_date_Collection/settlement_date/rn_Collection/rn",
+            ("acc_code", "ISIN1", "trade_no"),
+        ),
+        (
+            "Trades2/Report/Tablix1/settlement_date_Collection/settlement_date/rn_Collection/rn/oper_type/comment/Textbox11",
+            ("acc_code2", "ISIN1", "trade_no"),
+        ),
+        (
+            "Trades2/Report/Tablix1/settlement_date_Collection/settlement_date/rn_Collection/rn/oper_type/comment/money_volume_begin1_Collection/money_volume_begin1/p_code_Collection/p_code/p_code",
+            ("acc_code", "ISIN1", "trade_no"),
+        ),
+    ],
+)
+def test_broker_month_draft_retained_attributes_block_preview_apply_without_writes(
+    database, path, attrs
+):
+    from hermes_finance.persistence import Base
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+
+    def inventory():
+        with database.session_factory() as session:
+            return {t.name: list(session.execute(select(t))) for t in Base.metadata.sorted_tables}
+
+    before = inventory()
+    for attr in attrs:
+        root = ET.fromstring(draft_structure_xml())
+        root.find("/".join("{MyBroker}" + p for p in path.split("/"))).set(attr, "HIDDEN-IDENTITY")
+        raw = ET.tostring(root)
+        identity = parse_identity(raw, FILENAME, incomplete_draft=True)
+        assert "unparsed_source_rows" in identity["conflicts"]
+        reviewed = _broker_month_preview(client, intent, raw)
+        assert not reviewed["can_apply"]
+        assert "identity_batch_conflict" in reviewed["conflicts"]
+        assert _broker_month_apply(client, intent, reviewed, raw).status_code == 409
+        assert inventory() == before
