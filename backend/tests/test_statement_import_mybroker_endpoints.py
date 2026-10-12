@@ -3570,3 +3570,265 @@ def test_money_identity_a_b_a_before_first_acceptance_cannot_restore_confirmatio
             )
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
         assert session.scalar(select(func.count()).select_from(BrokerMoneyOccurrenceOwner)) == 0
+
+
+def draft_structure_xml(*, footer=True, money=True, bond=False):
+    """Fabricated structure and values; no retained Owner XML or identifiers."""
+    root = ET.fromstring(broker_month_xml(bond=bond))
+    if footer:
+        report = root.find("{MyBroker}Positions/{MyBroker}Report")
+        table = node(report, "Tablix3", Textbox217="Предварительный расчет обязательств по НДФЛ")
+        node(
+            node(table, "Details1_Collection"),
+            "Details1",
+            Textbox222="12.34",
+            fSUMPAYED="0.00",
+            fTOPAY="12.34",
+        )
+    if money:
+        report = root.find("{MyBroker}Trades2/{MyBroker}Report")
+        daily = report.find(".//{MyBroker}comment")
+        display = node(daily, "Textbox95")
+        node(display, "Textbox83", money_volume="400.0000000000")
+        node(display, "Textbox84", all_volume="1400.0000000000")
+        node(daily, "Textbox93", debet_volume="0.0000000000")
+        for table_name, box, word, suffix, display_box, scalar_box, total_box in (
+            ("Tablix2", "Textbox1", "begin", "1", "Textbox58", "Textbox39", "Textbox43"),
+            ("Tablix3", "Textbox2", "end", "2", "Textbox59", "Textbox42", "Textbox44"),
+        ):
+            table = node(report, table_name)
+            parent = node(table, box)
+            leaf = parent
+            for tag in (
+                f"money_volume_{word}_Collection",
+                f"money_volume_{word}",
+                f"p_code{suffix}_Collection",
+                f"p_code{suffix}",
+            ):
+                leaf = node(leaf, tag)
+            node(
+                leaf,
+                f"p_code{suffix}",
+                **{f"p_code{suffix}": "RUB", f"volume{suffix}": "400.0000000000"},
+            )
+            display = node(parent, display_box)
+            node(
+                display,
+                scalar_box,
+                **{"money_volume_begin" + ("" if suffix == "1" else "2"): "400.0000000000"},
+            )
+            node(
+                display,
+                total_box,
+                **{"all_volume_begin" + ("" if suffix == "1" else "2"): "1400.0000000000"},
+            )
+        for table, chain, leaves in (
+            ("Tablix5", ("Textbox3", "Textbox61"), ("Textbox46", "Textbox47")),
+            ("Tablix6", ("Textbox4", "Textbox63"), ("Textbox49", "Textbox50")),
+        ):
+            parent = node(report, table)
+            for tag in chain:
+                parent = node(parent, tag)
+            for tag in leaves:
+                node(parent, tag)
+        parent = node(report, "Tablix4")
+        for tag in ("Textbox125", "Textbox118", "Textbox119", "Textbox117"):
+            parent = node(parent, tag)
+        display = node(parent, "Textbox96")
+        node(display, "Textbox85")
+        node(display, "Textbox87")
+        node(parent, "Textbox94")
+        node(parent, "Textbox26")
+        summary = node(node(report, "Tablix7"), "oper_group_Collection")
+        for label in ("Synthetic group A", "Synthetic group B"):
+            group = node(summary, "oper_group", oper_group=label)
+            node(
+                node(group, "p_code6_Collection"),
+                "p_code6",
+                p_code6="RUB",
+                volume6="-1000.0000000000",
+            )
+        parent = report.find("{MyBroker}Tablix1")
+        for tag in ("Textbox116", "Textbox105", "Textbox110", "Textbox111"):
+            parent = node(parent, tag)
+        leaf = parent
+        for tag in (
+            "money_volume_begin1_Collection",
+            "money_volume_begin1",
+            "p_code_Collection",
+            "p_code",
+        ):
+            leaf = node(leaf, tag)
+        node(leaf, "p_code", p_code="RUB", Textbox112="-1000.0000000000")
+        display = node(parent, "Textbox95")
+        node(display, "Textbox83")
+        node(display, "Textbox84")
+        node(parent, "Textbox93")
+        node(parent, "Textbox11")
+    return ET.tostring(root, encoding="utf-8")
+
+
+@pytest.mark.parametrize("footer,money", [(True, False), (False, True), (True, True)])
+def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
+    database, footer, money
+):
+    from hermes_finance.persistence import ExecutedTrade, ExecutedTradeRevision
+    from hermes_finance.statement_import.mybroker import canonical
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    intent = _broker_month_setup(database, bond=True)
+    client = TestClient(create_app(database=database))
+    xml = draft_structure_xml(footer=footer, money=money, bond=True)
+    frozen = parse_mybroker(xml, FILENAME)
+    # Standalone identity and its ordinary staging contract stay strict.
+    assert "unparsed_source_rows" in parse_identity(xml, FILENAME)["conflicts"]
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"], reviewed["conflicts"]
+    assert reviewed["conflicts"] == []
+    assert "unparsed_source_rows" in reviewed["exceptions"]
+    frozen_source_json = canonical(reviewed["document"])
+    classification = reviewed["identity"]["evidence"]["draft_structure"]
+    assert classification["financial_authority"] == "none"
+    assert classification["exceptions"] == sorted(
+        (["positions_tax_footer_unresolved"] if footer else [])
+        + (["money_controls_unresolved"] if money else [])
+    )
+    assert reviewed["cash_control_difference_kopecks"] == 0
+    assert not reviewed["indicative_return_ready"] and not reviewed["exact_return_ready"]
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 0
+    applied = _broker_month_apply(client, intent, reviewed, xml)
+    assert applied.status_code == 200, applied.text
+    for _ in range(2):
+        readback = client.get("/api/broker-months/synthetic-batch").json()
+        assert readback["status"] == "draft" and not readback["bookkeeping_ready"]
+        assert "unparsed_source_rows" in readback["exceptions"]
+        retry = _broker_month_apply(client, intent, reviewed, xml)
+        assert retry.status_code == 200 and retry.json()["duplicate"]
+    fresh = _broker_month_preview(client, intent, xml)
+    assert fresh["can_apply"] and not fresh["bookkeeping_ready"]
+    assert (
+        _broker_month_apply(
+            client, intent, fresh, xml, request_id="fresh-structure-replay"
+        ).status_code
+        == 200
+    )
+    readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
+    assert not readiness["can_close"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        source = session.scalar(select(MyBrokerImport))
+        assert source.normalized_json == frozen_source_json
+        assert source.parser_version == "mybroker-s1-v2"
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert session.scalar(select(CashBalance)).amount_kopecks == 40000
+        positions = list(session.scalars(select(PositionSnapshot)))
+        assert len(positions) == 2 and all(p.accrued_interest_kopecks is None for p in positions)
+        assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 1
+        assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 1
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+    assert parse_mybroker(xml, FILENAME) == frozen
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Positions/Report/Tablix3/Details1_Collection/Details1",
+        "Trades2/Report/Tablix2/Textbox1",
+        "Trades2/Report/Tablix3/Textbox2",
+        "Trades2/Report/Tablix5/Textbox3/Textbox61/Textbox46",
+        "Trades2/Report/Tablix4/Textbox125",
+        "Trades2/Report/Tablix6/Textbox4",
+        "Trades2/Report/Tablix7/oper_group_Collection/oper_group",
+        "Trades2/Report/Tablix1/Textbox116",
+        "Trades2/Report/Tablix1/settlement_date_Collection/settlement_date/rn_Collection/rn/oper_type/comment/Textbox95",
+    ],
+)
+@pytest.mark.parametrize(
+    "mutation", ["identity_attr", "hidden_row", "foreign", "text", "duplicate"]
+)
+def test_draft_structural_guard_rejects_hidden_identity_or_changed_shape(path, mutation):
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = ET.fromstring(draft_structure_xml())
+    target = root.find("/".join("{MyBroker}" + p for p in path.split("/")))
+    if mutation == "identity_attr":
+        target.set("acc_code", "HIDDEN-ALIAS")
+    elif mutation == "hidden_row":
+        node(target, "Details", ISIN1="RU000A000009", acc_code="HIDDEN-ALIAS")
+    elif mutation == "foreign":
+        target.tag = target.tag.replace("MyBroker", "Foreign")
+    elif mutation == "text":
+        target.text = "hidden source payload"
+    else:
+        parent = next(n for n in root.iter() if target in n)
+        parent.append(deepcopy(target))
+    result = parse_identity(ET.tostring(root), FILENAME, incomplete_draft=True)
+    assert "unparsed_source_rows" in result["conflicts"]
+    assert "draft_structure" not in result
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unknown_section",
+        "moved_details",
+        "moved_rn",
+        "comment",
+        "pi",
+        "namespace",
+        "isin",
+        "currency",
+    ],
+)
+def test_draft_structural_guard_retains_semantic_and_unvisited_source_conflicts(mutation):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = ET.fromstring(draft_structure_xml())
+    if mutation == "unknown_section":
+        node(root, "OtherSource")
+    elif mutation in {"moved_details", "moved_rn"}:
+        node(
+            root.find("{MyBroker}Trades/{MyBroker}Report"),
+            "Details" if mutation == "moved_details" else "rn",
+        )
+    elif mutation == "comment":
+        root.append(ET.Comment("hidden"))
+    elif mutation == "pi":
+        root.append(ET.ProcessingInstruction("hidden", "payload"))
+    elif mutation == "namespace":
+        root.find("{MyBroker}Positions").set("xmlns:rebound", "Foreign")
+    elif mutation == "isin":
+        root.find(".//{MyBroker}Details[@ISIN1]").set("ISIN1", "INVALID")
+    elif mutation == "currency":
+        root.find(".//{MyBroker}Details[@trade_no]").set("Textbox14", "USD")
+    result = parse_identity(ET.tostring(root), FILENAME, incomplete_draft=True)
+    assert result["conflicts"]
+
+
+def test_broker_month_draft_structural_stale_and_late_failure_rollback(database, monkeypatch):
+    import hermes_finance.services.broker_months as service
+    from hermes_finance.persistence import Base
+
+    intent = _broker_month_setup(database)
+    client = TestClient(create_app(database=database), raise_server_exceptions=False)
+    xml = draft_structure_xml()
+    reviewed = _broker_month_preview(client, intent, xml)
+    assert reviewed["can_apply"]
+    changed = xml.replace(b'Textbox222="12.34"', b'Textbox222="12.35"')
+    assert _broker_month_apply(client, intent, reviewed, changed).status_code == 409
+
+    def inventory():
+        with database.session_factory() as session:
+            return {t.name: list(session.execute(select(t))) for t in Base.metadata.sorted_tables}
+
+    before = inventory()
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic interruption after identities/source/trades")
+
+    monkeypatch.setattr(service, "stage_native_position", fail)
+    assert _broker_month_apply(client, intent, reviewed, xml).status_code == 500
+    assert inventory() == before

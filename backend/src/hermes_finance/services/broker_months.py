@@ -249,7 +249,7 @@ def _intersecting_sources(session, document, account_id):
 
 def _prepare(session, *, document, filename, reporting_month_id, account_id, optional_hashes):
     parsed = mybroker_import.parse_import_original(session, document, filename)
-    evidence = parse_identity(document, filename)
+    evidence = parse_identity(document, filename, incomplete_draft=True)
     # Effective aliases are authority already; only unbound aliases are proposed.
     # These proposals are zero-write until Apply receives the exact reviewed set.
     existing = mybroker_identity._prepare(session, evidence, [])
@@ -886,6 +886,7 @@ def apply_broker_month(
                 filename=kwargs["filename"],
                 account_bindings=plan["account_bindings"],
                 confirmation_digest=plan["identity"]["confirmation_digest"],
+                incomplete_draft=True,
             )
             source = mybroker_import.stage_mybroker(
                 session,

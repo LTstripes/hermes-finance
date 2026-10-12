@@ -35,6 +35,14 @@ Unknown dividends, opaque Money and unsupported source sections remain
 visible scoped exceptions. An incomplete DRAFT is allowed; unresolved
 evidence blocks its covered account at Close.
 
+The [incomplete DRAFT identity separation](MYBROKER_IDENTITY.md#incomplete-draft-structural-separation)
+allows only server-validated Positions/Money structural side branches to remain
+bookkeeping exceptions rather than identity conflicts. Preview and reserved
+Apply use the same versioned original-bound classification. It never deletes
+`unparsed_source_rows` from S1 or GET/Close, accepts a hidden identity row, creates
+tax/NKD/fee economics or changes exact/indicative return readiness. A successful
+partial Apply is not financial completeness or permission to Close.
+
 The Money Preview requires original bytes for the complete accepted overlapping
 source union. Original observations guide specific instrument/payment/boundary
 review; they do not mint payment identity from date, amount or narrative. The server
