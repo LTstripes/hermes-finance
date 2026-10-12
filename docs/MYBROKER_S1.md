@@ -52,6 +52,38 @@ authoritative trade identity.
 Money rows linked to incomplete IDs retain their visible blocker and attach to
 no identity-less trade.
 
+## Read-only section metadata (#789/#792)
+
+Source Preview adds a separate `metadata_evidence` envelope identified by
+`mybroker-section-metadata-v1` and bound to SHA256 of the exact uploaded bytes.
+It is not part of normalized S1 JSON, confirmation material or saved receipts.
+GET returns the immutable accepted S1 receipt; it cannot reconstruct metadata
+without original bytes. Existing accepted Money grammar selection is unchanged.
+
+Only these exact MyBroker-namespace trees report `READY_SAFE_STRUCTURE`:
+
+- `Trades3/Report[@Name='4_Transfers']/Tablix1`: no wrapper/table attributes,
+  no table children; raw report inventory remains 1.
+- `Trades4/Report[@Name='5_UFSR']/Tablix1[@Textbox4='Подключен']/Details_Collection/Details`:
+  exactly one childless Details, with only `sys_start_time` (ASCII
+  `DD.MM.YYYY HH:MM`, valid calendar/time) and `sys_end_time='-'`;
+  raw report inventory remains 3. The collection/wrapper have no attributes.
+
+Every fixed node occurs once, Report has only its exact Name, and all text/tails
+are whitespace-only. Extra attributes/nodes, comments, processing instructions,
+foreign namespaces, alternate states/end tokens or malformed times block the
+classification. Invalid S1 family/cardinality/bounds still reject the upload.
+The previously supported childless Report is a separate family and is not
+classified as either new safe pattern.
+
+Both classifications derive zero movements. Connection times are validated but
+not returned, constrained to the reporting month or used as transaction dates;
+period scope and coverage remain unknown. The envelope retains S1 source warnings
+and does not disposition any source/account/Close blockers. Money daily controls,
+unknown economics, REPO and unexpected UFSR/Transfers remain unresolved. Any
+consumer authority to relax a specific section blocker needs a separate decision
+and review; this classifier grants none.
+
 ## Native Money linkage compatibility (#788)
 
 The exact full strings `Расчеты по сделке <numeric-primary-id>` and

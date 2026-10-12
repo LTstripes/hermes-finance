@@ -50,6 +50,7 @@ from hermes_finance.statement_import.mybroker import (
     digest,
     parse_mybroker,
 )
+from hermes_finance.statement_import.mybroker_metadata import parse_section_metadata
 
 
 def parse_import_original(session: Session, document: bytes, filename: str) -> dict:
@@ -687,7 +688,11 @@ def preview_mybroker(
 ) -> dict:
     with coherent_read_snapshot(session):
         parsed = parse_import_original(session, document, filename)
-        return _prepare(session, parsed, skipped_isins, owner_reviewed)
+        preview = _prepare(session, parsed, skipped_isins, owner_reviewed)
+        # Separate read-only evidence; never part of S1/confirmation material or
+        # persisted receipts, and never used to disposition readiness blockers.
+        preview["metadata_evidence"] = parse_section_metadata(document, filename)
+        return preview
 
 
 def read_mybroker_import(session: Session, import_id: int) -> dict:
