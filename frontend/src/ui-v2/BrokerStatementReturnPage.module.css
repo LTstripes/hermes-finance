@@ -1,0 +1,57 @@
+.content {
+  display: grid;
+  gap: 24px;
+  max-width: 1100px;
+}
+.controls {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: end;
+}
+.controls label {
+  display: grid;
+  gap: 8px;
+  min-width: 240px;
+}
+.controls select,
+.controls button {
+  padding: 10px 12px;
+  font: inherit;
+  border: 1px solid #bcc8d5;
+  border-radius: 6px;
+  background: white;
+}
+.result {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #e1e6eb;
+  border-radius: 12px;
+}
+.rate {
+  font-size: 2.2rem;
+  font-weight: 650;
+}
+.result table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.result th,
+.result td {
+  text-align: left;
+  padding: 12px 8px;
+  border-bottom: 1px solid #e1e6eb;
+}
+.result caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 12px;
+}
+.result details {
+  overflow-wrap: anywhere;
+}
+.result summary {
+  cursor: pointer;
+}
