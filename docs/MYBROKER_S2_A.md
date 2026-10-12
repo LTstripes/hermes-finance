@@ -140,17 +140,23 @@ One supported trade does not clear opaque Money, unparsed UFSR/REPO/transfer
 sections or other source gaps. C1, portfolio scope and exact returns remain
 unavailable. Synthetic Close evidence does not establish real-account Close.
 
-## Stock BUY separate commission — proposed, NOT implemented
+## Stock BUY separate commission — typed code integrated; real-source basis BLOCKED
 
 [Independent #790 financial/source contract](https://github.com/LTstripes/hermes-finance/issues/790#issuecomment-6113136761)
 received [Integrator conditional ACCEPT](https://github.com/LTstripes/hermes-finance/issues/790#issuecomment-6113269181).
-This is a **design GO only**, not code or real source authority.
+The 2026-10-11 contract was design GO only. On 2026-10-12, exact
+[#790 PR #796](https://github.com/LTstripes/hermes-finance/pull/796)
+implemented the bounded typed source-owned proof and desktop review; **no real
+Owner stock fee has been independently source-accepted**. Its exact merged
+commit is `fee94e4fd4c77db3e50500a6fc3b6d103af2b498`; refer to
+[post-main CI 38212066232](https://github.com/LTstripes/hermes-finance/actions/runs/38212066232)
+for completed SUCCESS (attempt 1, all applicable jobs).
 The existing #783 path is exclusively a settled RUB **bond BUY** with
 separate negative settlement, paid NKD and fee legs, and an explicitly reviewed
 native total NKD inclusion basis. It cannot be reused for a stock commission
 by supplying a synthetic zero NKD event.
 
-The future two-leg stock variation must prove an existing settled RUB
+The implemented two-leg stock variant must prove an existing settled RUB
 **stock BUY** by provider + account + **ordered two native IDs**, one exact
 negative settlement `S` and separately charged negative commission `F`
 bound to the unique native primary. It requires an **independently established**
@@ -161,10 +167,19 @@ accounting convention. For the current real source that independent fee-basis
 referent is still unaccepted: it may require one specific Owner-local evidence
 reference; without it the execution's `commission_basis_unresolved` must remain.
 
-Implementation after [#788](https://github.com/LTstripes/hermes-finance/issues/788)
-has merged and passed exact-main CI: preserve the existing Money batch,
-`ExecutedTradeRevision`, `ExecutedTradeOccurrence` and immutable receipts;
-strictly discriminate a new typed stock proof from the bond three-leg proof.
+The implementation follows accepted [#788](https://github.com/LTstripes/hermes-finance/issues/788)
+and reuses the existing Money batch,
+`ExecutedTradeRevision`, `ExecutedTradeOccurrence` and immutable receipts.
+The stock proof is strictly discriminated from the bond three-leg proof.
+The dedicated `stock_buy_separate_fee_v1` claims and Money commission seed
+are validated separately from legacy three-leg bond proofs. Literal pre-change
+coupon/H2/bond/zero-fee JSON fingerprints and receipts stay compatible;
+stock fees deduplicate by provider/source account/ordered native execution IDs
+and role, not by matching narrative/date/amount. A specific basis-reference
+identifier is stored in the review context, but **cannot by itself establish
+the broker's fee-exclusion convention**. An independent Owner-local source proof
+is mandatory before real September acceptance.
+
 There must be **two** cash roles and **no** paid-NKD role, extra CashBalance,
 InvestmentCashFlow, H2, ExternalFlow, cost-basis or EOD accrual.
 NULL accrued remains NULL, observed source zero stays observed zero.

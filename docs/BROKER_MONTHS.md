@@ -25,9 +25,14 @@ creates ExternalFlow nor adds source cash again. Accepted #783 additionally hand
 an individually proved settled RUB **bond BUY** with negative posted paid NKD and
 a separately charged nonzero native-linked fee through the existing
 ExecutedTradeRevision. No duplicate endpoint cash or inferred EOD NKD/cost arises.
-Stock BUY separate commissions without paid NKD remain outside that bond proof
-(#790 pending). Unknown dividends, opaque Money and unsupported source sections
-remain visible scoped exceptions. An incomplete DRAFT is allowed; unresolved
+Accepted #790 adds a separate, typed **settled RUB stock BUY** proof
+(`stock_buy_separate_fee_v1`) using exact native settlement S and separately
+charged fee F, individually reviewed fee-excluded `summ_trade=T`, `bank_tax=B`,
+and the existing ExecutedTradeRevision. It adds no paid NKD leg, extra cash,
+payout or ledger. A source evidence reference is required; an entered reference
+or matching equation alone is not independent brokerage fee-basis proof.
+Unknown dividends, opaque Money and unsupported source sections remain
+visible scoped exceptions. An incomplete DRAFT is allowed; unresolved
 evidence blocks its covered account at Close.
 
 The Money Preview requires original bytes for the complete accepted overlapping
@@ -145,3 +150,28 @@ Apply and eventual scratch Close each require separately explicit Owner GO.
 Protected Test/Stable/CLOSED and actual historical data must remain untouched.
 Bond reported EOD value can be retained as a **source-marked value** with
 unknown accrued NKD; this does not authorize exact economic XIRR/TWRR.
+
+## Technical checkpoint — 2026-10-12
+
+The preceding 2026-10-11 original Gate 0 account is a **historical dated result**.
+Since then [#788 / PR #791](https://github.com/LTstripes/hermes-finance/pull/791)
+corrected exact `oper_type` native Money linkage without upgrading prior S1 receipts;
+[#792 / PR #795](https://github.com/LTstripes/hermes-finance/pull/795)
+introduced original-byte-bound **diagnostic-only** safe Transfers/UFSR metadata
+without removing S1 or Close blockers; and
+[#790 / PR #796](https://github.com/LTstripes/hermes-finance/pull/796)
+added the reviewed two-leg stock commission proof/desktop route, preserving
+legacy request hashes and financial ownership. The #790 code merge is
+`fee94e4fd4c77db3e50500a6fc3b6d103af2b498`; verify its exact
+[post-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/38212066232)
+— verified SUCCESS (attempt 1, all applicable jobs). The financial
+implementation is CODE COMPLETE, not real September UAT.
+
+The actual private September Gate 0 remains **BLOCKED** even though
+[#787](https://github.com/LTstripes/hermes-finance/issues/787) is CLOSED as a
+GitHub issue. Broker-authored daily `all_volume`/`debet_volume` definitions
+[#793](https://github.com/LTstripes/hermes-finance/issues/793), independent
+real-stock fee-excluded source basis (#790), and separately accepted
+section-control/Close dispositions remain unproved. No actual Owner scratch,
+DRAFT financial Apply or Close is authorized here. No Test/Stable/CLOSED
+mutation or exact XIRR/TWRR claim follows from these code merges.
