@@ -4046,6 +4046,42 @@ def test_draft_consumed_money_cannot_hide_duplicate_or_unrepresentable_amount(da
     assert _all_month_tables(database) == before
 
 
+@pytest.mark.parametrize("outer", ["Trades3", "Trades4"])
+@pytest.mark.parametrize("boundary", ["wrapper_text", "wrapper_tail", "report_text", "report_tail"])
+def test_draft_empty_sections_cannot_hide_character_payload(database, outer, boundary):
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(draft_structure_xml())
+    wrapper = root.find("{MyBroker}" + outer)
+    node_name, field = boundary.split("_")
+    setattr(wrapper if node_name == "wrapper" else wrapper[0], field, "unknown economic payload")
+    raw = ET.tostring(root)
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert not reviewed["can_apply"] and "identity_batch_conflict" in reviewed["conflicts"]
+    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("missing", ["operation", "comment", "both"])
+def test_draft_missing_linkage_attributes_are_not_empty_values(database, missing):
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(draft_structure_xml())
+    operation = root.find(".//{MyBroker}oper_type")
+    comment = operation.find("{MyBroker}comment")
+    if missing in {"operation", "both"}:
+        operation.attrib.pop("oper_type")
+    if missing in {"comment", "both"}:
+        comment.attrib.pop("comment")
+    raw = ET.tostring(root)
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert not reviewed["can_apply"] and "identity_batch_conflict" in reviewed["conflicts"]
+    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
+
+
 @pytest.mark.parametrize(
     "path",
     [

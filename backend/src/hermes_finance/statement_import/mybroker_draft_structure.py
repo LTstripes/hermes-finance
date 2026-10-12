@@ -228,7 +228,7 @@ _REPEATED = {
 }
 
 
-def _visited(node, prefix, allowed, attrs):
+def _visited(node, prefix, allowed, attrs, *, exact_attrs=False):
     expected = [p.rsplit("/", 1)[1] for p in allowed if "/" in p and p.rsplit("/", 1)[0] == prefix]
     actual = [child.tag.removeprefix(N) for child in node]
     # Report children are checked before removing classified side branches.
@@ -255,10 +255,20 @@ def _visited(node, prefix, allowed, attrs):
         prefix in allowed
         and cardinality
         and all(
-            _visited(child, prefix + "/" + child.tag.removeprefix(N), allowed, attrs)
+            _visited(
+                child,
+                prefix + "/" + child.tag.removeprefix(N),
+                allowed,
+                attrs,
+                exact_attrs=exact_attrs,
+            )
             for child in node
         )
-        and set(node.attrib) <= attrs.get(prefix, set())
+        and (
+            set(node.attrib) == attrs.get(prefix, set())
+            if exact_attrs
+            else set(node.attrib) <= attrs.get(prefix, set())
+        )
         and node.tag.startswith(N)
         and _white(node.text)
         and _white(node.tail)
@@ -297,6 +307,11 @@ def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | Non
     for outer, name in SECTIONS.items():
         wrapper = root.find("m:" + outer, NS)
         if wrapper.attrib or len(wrapper) != 1 or wrapper[0].attrib != {"Name": name}:
+            return None
+        if not all(
+            _white(value)
+            for value in (wrapper.text, wrapper.tail, wrapper[0].text, wrapper[0].tail)
+        ):
             return None
         if source["section_inventory"][name] != sum(1 for _ in wrapper[0].iter()) - 1:
             return None
@@ -424,7 +439,7 @@ def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | Non
         for path in _PATHS[outer]:
             parts = ("Report/" + path).split("/")
             allowed.update("/".join(parts[:i]) for i in range(1, len(parts) + 1))
-        if not _visited(report, "Report", allowed, _ATTRS[outer]):
+        if not _visited(report, "Report", allowed, _ATTRS[outer], exact_attrs=outer == "Trades2"):
             return None
     positions = root.findall(
         "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/m:active_type/m:Details_Collection/m:Details",

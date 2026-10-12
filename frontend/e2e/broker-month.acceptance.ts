@@ -7,9 +7,9 @@ test("exact structural exceptions permit reviewed incomplete DRAFT and GET, whil
   await page.setViewportSize({ width: 1280, height: 900 });
   const xml = await (await request.get("/api/synthetic-broker-source/structure")).body();
   await page.goto("/v2/close?month=6&step=final_review_close");
-  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("3");
   await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
-    name: "Брокерский 1234567 (01.06.30-30.06.30).xml",
+    name: "Брокерский 7654321 (01.06.30-30.06.30).xml",
     mimeType: "application/xml",
     buffer: xml,
   });

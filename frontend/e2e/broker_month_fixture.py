@@ -35,6 +35,9 @@ def main():
             create_account(
                 session, name="Unrelated synthetic deposit", account_type="deposit"
             )
+            create_account(
+                session, name="Synthetic structural broker", account_type="brokerage"
+            )
             create_instrument(
                 session,
                 name="Synthetic stock",
@@ -67,6 +70,7 @@ def main():
                     .replace(b"2030-01-", b"2030-06-")
                     .replace(b"10000000001", b"10000000006")
                     .replace(b"2000000001", b"2000000006")
+                    .replace(b"1234567-000", b"STRUCTURE-ROW")
                 )
                 return Response(xml, media_type="application/xml")
             if kind == "stock-fee":
