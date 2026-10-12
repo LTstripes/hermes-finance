@@ -27,7 +27,7 @@ def parse_identity(document: bytes, filename: str, *, incomplete_draft: bool = F
             draft_structure_exceptions,
         )
 
-        structural = draft_structure_exceptions(document)
+        structural = draft_structure_exceptions(document, source)
         if structural is not None:
             conflicts.remove("unparsed_source_rows")
     conflicts.update(source["endpoint_conflicts"])
@@ -145,6 +145,7 @@ def parse_identity(document: bytes, filename: str, *, incomplete_draft: bool = F
             {
                 "draft_structure": {
                     "contract": "mybroker-incomplete-draft-identity-v1",
+                    "document_sha256": source["document_sha256"],
                     "exceptions": structural,
                     "financial_authority": "none",
                 }

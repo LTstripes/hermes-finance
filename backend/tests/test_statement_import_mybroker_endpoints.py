@@ -3575,6 +3575,9 @@ def test_money_identity_a_b_a_before_first_acceptance_cannot_restore_confirmatio
 def draft_structure_xml(*, footer=True, money=True, bond=False):
     """Fabricated structure and values; no retained Owner XML or identifiers."""
     root = ET.fromstring(broker_month_xml(bond=bond))
+    root.set("Textbox6", "Уполномоченное лицо")
+    trades = root.find("{MyBroker}Trades/{MyBroker}Report")
+    node(trades, "Tablix3")  # observed caption-only table with zero pending S1 rows
     if footer:
         report = root.find("{MyBroker}Positions/{MyBroker}Report")
         table = node(report, "Tablix3", Textbox217="Предварительный расчет обязательств по НДФЛ")
@@ -3640,7 +3643,7 @@ def draft_structure_xml(*, footer=True, money=True, bond=False):
         node(parent, "Textbox94")
         node(parent, "Textbox26")
         summary = node(node(report, "Tablix7"), "oper_group_Collection")
-        for label in ("Synthetic group A", "Synthetic group B"):
+        for label in ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка"):
             group = node(summary, "oper_group", oper_group=label)
             node(
                 node(group, "p_code6_Collection"),
@@ -3665,6 +3668,12 @@ def draft_structure_xml(*, footer=True, money=True, bond=False):
         node(display, "Textbox84")
         node(parent, "Textbox93")
         node(parent, "Textbox11")
+        order = ("Tablix2", "Tablix1", "Tablix3", "Tablix5", "Tablix4", "Tablix6", "Tablix7")
+        report[:] = [report.find("{MyBroker}" + name) for name in order]
+        daily[:] = [
+            daily.find("{MyBroker}" + name)
+            for name in ("money_volume_begin1_Collection", "Textbox95", "Textbox93", "Textbox11")
+        ]
     return ET.tostring(root, encoding="utf-8")
 
 
@@ -3728,6 +3737,313 @@ def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
         assert session.scalar(select(func.count()).select_from(ExecutedTradeRevision)) == 1
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
     assert parse_mybroker(xml, FILENAME) == frozen
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["new", "missing", "reordered", "duplicate", "currency", "amount_leaf", "group_attr"],
+)
+def test_draft_summary_requires_exact_three_ordered_rub_groups(mutation):
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = ET.fromstring(draft_structure_xml())
+    groups = root.find(
+        "{MyBroker}Trades2/{MyBroker}Report/{MyBroker}Tablix7/{MyBroker}oper_group_Collection"
+    )
+    if mutation == "new":
+        groups[0].set("oper_group", "Unexpected economic group")
+    elif mutation == "missing":
+        groups.remove(groups[0])
+    elif mutation == "reordered":
+        groups[:] = list(reversed(groups))
+    elif mutation == "duplicate":
+        groups.append(deepcopy(groups[0]))
+    elif mutation == "currency":
+        groups[0][0][0].set("p_code6", "USD")
+    elif mutation == "amount_leaf":
+        groups[0][0].append(deepcopy(groups[0][0][0]))
+    else:
+        groups[0].set("ISIN1", ISIN)
+    observed = parse_identity(ET.tostring(root), FILENAME, incomplete_draft=True)
+    assert "unparsed_source_rows" in observed["conflicts"]
+    assert "draft_structure" not in observed
+
+
+@pytest.mark.parametrize(
+    "token,valid",
+    [
+        ("0", True),
+        ("-12.34", True),
+        ("0.000", True),
+        ("12.3", True),
+        ("12." + "0" * 40, True),
+        ("0.001", False),
+        ("1e2", False),
+        ("+1.00", False),
+        (" 1.00", False),
+        ("", False),
+        ("1" * 49, False),
+    ],
+)
+def test_draft_control_decimal_grammar_checks_minor_units_without_rounding(token, valid):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = ET.fromstring(draft_structure_xml())
+    root.find(
+        "{MyBroker}Trades2/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Textbox1/{MyBroker}Textbox58/{MyBroker}Textbox43"
+    ).set("all_volume_begin", token)
+    observed = parse_identity(ET.tostring(root), FILENAME, incomplete_draft=True)
+    assert ("draft_structure" in observed) == valid
+
+
+def daily_structure_xml():
+    from copy import deepcopy
+
+    root = ET.fromstring(draft_structure_xml())
+    collection = root.find(".//{MyBroker}rn_Collection")
+    previous = deepcopy(collection[0])
+    for name, attr in (
+        ("Textbox83", "money_volume"),
+        ("Textbox84", "all_volume"),
+        ("Textbox93", "debet_volume"),
+    ):
+        previous.find(".//{MyBroker}" + name).set(attr, "")
+    previous.set("last_update", "2030-01-17T09:00:00")
+    previous.find(".//{MyBroker}p_code[@volume]").set("volume", "0")
+    collection.insert(0, previous)
+    return root
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "earlier_zero",
+        "earlier_populated",
+        "last_empty",
+        "missing",
+        "order",
+        "group_duplicate",
+        "net_order",
+    ],
+)
+def test_draft_daily_displays_empty_before_final_rn_without_semantic_inference(mutation):
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = daily_structure_xml()
+    rows = root.find(".//{MyBroker}rn_Collection")
+    if mutation in {"earlier_zero", "earlier_populated"}:
+        rows[0].find(".//{MyBroker}Textbox83").set(
+            "money_volume", "0" if mutation == "earlier_zero" else "100"
+        )
+    elif mutation == "last_empty":
+        rows[-1].find(".//{MyBroker}Textbox93").set("debet_volume", "")
+    elif mutation == "missing":
+        comment = rows[0].find("{MyBroker}oper_type/{MyBroker}comment")
+        comment.remove(comment.find("{MyBroker}Textbox93"))
+    elif mutation == "order":
+        comment = rows[-1].find("{MyBroker}oper_type/{MyBroker}comment")
+        comment[:] = list(reversed(comment))
+    elif mutation == "group_duplicate":
+        table = root.find("{MyBroker}Trades2/{MyBroker}Report/{MyBroker}Tablix1")
+        table.append(deepcopy(table[0]))
+    elif mutation == "net_order":
+        net = root.find(".//{MyBroker}Textbox111")
+        net[:] = list(reversed(net))
+    observed = parse_identity(ET.tostring(root), FILENAME, incomplete_draft=True)
+    assert ("draft_structure" in observed) == (mutation is None)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "root_attr",
+        "root_missing",
+        "root_value",
+        "sections_order",
+        "report_order",
+        "table_missing",
+        "table_duplicate",
+        "extra_cash_leaf",
+        "duplicate_trade",
+        "identity_attr",
+        "economic_section",
+    ],
+)
+def test_draft_complete_root_and_consumed_inventory_refuse_new_evidence(database, mutation):
+    from copy import deepcopy
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(draft_structure_xml())
+    money = root.find("{MyBroker}Trades2/{MyBroker}Report")
+    if mutation == "root_attr":
+        root.set("acc_code", "Hidden alias")
+    elif mutation == "root_missing":
+        root.attrib.pop("Textbox6")
+    elif mutation == "root_value":
+        root.set("Textbox6", "Unexpected root context")
+    elif mutation == "sections_order":
+        root[:] = list(reversed(root))
+    elif mutation == "report_order":
+        money[:] = list(reversed(money))
+    elif mutation == "table_missing":
+        money.remove(money.find("{MyBroker}Tablix6"))
+    elif mutation == "table_duplicate":
+        money.append(deepcopy(money.find("{MyBroker}Tablix1")))
+    elif mutation == "extra_cash_leaf":
+        parent = root.find(
+            ".//{MyBroker}comment/{MyBroker}money_volume_begin1_Collection/{MyBroker}money_volume_begin1/{MyBroker}p_code_Collection/{MyBroker}p_code"
+        )
+        parent.append(deepcopy(parent[0]))
+    elif mutation == "duplicate_trade":
+        collection = root.find(
+            "{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+        )
+        collection.append(deepcopy(collection[0]))
+    elif mutation == "identity_attr":
+        root.find(".//{MyBroker}active_type_Collection").set("acc_code", "Hidden alias")
+    else:
+        node(root.find("{MyBroker}Trades3/{MyBroker}Report"), "Movement", volume="10")
+    raw = ET.tostring(root)
+    before = _all_month_tables(database)
+    previewed = _broker_month_preview(client, scope, raw)
+    assert not previewed["can_apply"] and "identity_batch_conflict" in previewed["conflicts"]
+    assert _broker_month_apply(client, scope, previewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("change", ["cash", "quantity"])
+def test_draft_source_controls_must_reconcile_before_new_structural_eligibility(database, change):
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(draft_structure_xml())
+    if change == "cash":
+        root.find(".//{MyBroker}Details[@active_name='RUB']").set("real_rest", "400.01")
+    else:
+        root.find(".//{MyBroker}Details[@ISIN1]").set("income_rest", "7")
+    raw = ET.tostring(root)
+    before = _all_month_tables(database)
+    previewed = _broker_month_preview(client, scope, raw)
+    assert not previewed["can_apply"] and f"{change}_control_mismatch" in previewed["conflicts"]
+    assert _broker_month_apply(client, scope, previewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+def test_draft_old_s1_receipt_stays_immutable_and_unsafe_overlap_still_blocks_close(database):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    raw = draft_structure_xml()
+    # Accepted S1 predates DRAFT eligibility; its source warnings/receipt are never upgraded.
+    with database.session_factory() as session:
+        accepted_source = apply(session, raw, preview(session, raw))
+        source = session.get(MyBrokerImport, accepted_source["import_id"])
+        old = (
+            source.normalized_json,
+            source.mappings_json,
+            source.confirmation_digest,
+            source.accepted_at,
+        )
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    assert "unparsed_source_rows" in parse_identity(raw, FILENAME)["conflicts"]
+    saved = _broker_month_apply(client, scope, reviewed, raw)
+    assert saved.status_code == 200, saved.text
+    with database.session_factory() as session:
+        source = session.get(MyBrokerImport, accepted_source["import_id"])
+        assert (
+            source.normalized_json,
+            source.mappings_json,
+            source.confirmation_digest,
+            source.accepted_at,
+        ) == old
+        # B is a separately accepted S1 original with unresolved economic custody evidence.
+        root = ET.fromstring(raw)
+        node(root.find("{MyBroker}Trades3/{MyBroker}Report"), "Movement", volume="10")
+        unsafe = ET.tostring(root)
+        apply(session, unsafe, preview(session, unsafe))
+    rejected = _broker_month_preview(client, scope, unsafe)
+    assert not rejected["can_apply"]
+    safe_again = _broker_month_preview(client, scope, raw)
+    assert "4_Transfers_unsupported" in safe_again["exceptions"]
+    assert not safe_again["bookkeeping_ready"]
+    readback = client.get("/api/broker-months/synthetic-batch").json()
+    assert "4_Transfers_unsupported" in readback["exceptions"]
+    assert not readback["bookkeeping_ready"]
+    assert client.post(f"/api/months/{scope['reporting_month_id']}/close").status_code == 422
+    with database.session_factory() as session:
+        source = session.get(MyBrokerImport, accepted_source["import_id"])
+        assert (
+            source.normalized_json,
+            source.mappings_json,
+            source.confirmation_digest,
+            source.accepted_at,
+        ) == old
+
+
+def test_draft_structure_original_inventory_and_hash_cannot_be_borrowed():
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker_draft_structure import draft_structure_exceptions
+
+    raw = draft_structure_xml()
+    frozen = parse_mybroker(raw, FILENAME)
+    assert draft_structure_exceptions(raw, frozen)
+    for key in ("document_sha256", "section_inventory", "money", "positions", "trades"):
+        other = deepcopy(frozen)
+        if key == "document_sha256":
+            other[key] = "0" * 64
+        elif key == "section_inventory":
+            other[key]["3_BrokerMoneyMove"] -= 1
+        else:
+            other[key] = []
+        assert draft_structure_exceptions(raw, other) is None
+
+
+@pytest.mark.parametrize("mutation", ["duplicate_rn", "sub_kopeck", "cash_sub_kopeck"])
+def test_draft_consumed_money_cannot_hide_duplicate_or_unrepresentable_amount(database, mutation):
+    from copy import deepcopy
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(draft_structure_xml())
+    if mutation == "duplicate_rn":
+        rows = root.find(".//{MyBroker}rn_Collection")
+        duplicate = deepcopy(rows[0])
+        for name, attr in (
+            ("Textbox83", "money_volume"),
+            ("Textbox84", "all_volume"),
+            ("Textbox93", "debet_volume"),
+        ):
+            rows[0].find(".//{MyBroker}" + name).set(attr, "")
+        rows.append(duplicate)
+        root.find(".//{MyBroker}Details[@active_name='RUB']").set("income_rest", "2400")
+    elif mutation == "sub_kopeck":
+        root.find(".//{MyBroker}comment//{MyBroker}p_code[@volume]").set("volume", "-1000.001")
+    else:
+        root.find(".//{MyBroker}Details[@active_name='RUB']").set("real_rest", "400.001")
+    raw = ET.tostring(root)
+    before = _all_month_tables(database)
+    if mutation != "duplicate_rn":
+        # The existing financial source guard rejects these before identity planning.
+        refused = client.post(
+            "/api/broker-months/preview",
+            files={"file": (FILENAME, raw, "application/xml")},
+            data={"intent": json.dumps(scope)},
+        )
+        assert refused.status_code == 422 and "fractional_kopeck" in refused.text
+        assert _all_month_tables(database) == before
+        return
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert not reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
 
 
 @pytest.mark.parametrize(

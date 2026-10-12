@@ -7,28 +7,33 @@ S1 bytes, normalized shape and blockers are never edited by this projection.
 
 from __future__ import annotations
 
+import hashlib
 import re
+from decimal import Decimal, localcontext
 from xml.etree import ElementTree as ET
 
-from hermes_finance.statement_import.mybroker import NS, SECTIONS, MyBrokerError
+from hermes_finance.statement_import.mybroker import NS, SCHEMA, SECTIONS, MyBrokerError
 from hermes_finance.statement_import.mybroker_empty_money import _OriginalTree, _white
+from hermes_finance.statement_import.mybroker_metadata import _safe
 
 CONTRACT = "mybroker-incomplete-draft-identity-v1"
 N = "{MyBroker}"
 
 
-def _number(value, *, places=10, empty=False):
-    return (empty and value == "") or (
-        len(value) <= 48 and re.fullmatch(rf"-?[0-9]+\.[0-9]{{{places}}}", value) is not None
-    )
+def _number(value, *, places=None, empty=False):
+    if empty and value == "":
+        return True
+    pattern = rf"-?[0-9]+\.[0-9]{{{places}}}" if places else r"-?[0-9]+(?:\.[0-9]+)?"
+    if len(value) > 48 or re.fullmatch(pattern, value) is None:
+        return False
+    with localcontext() as context:
+        context.prec = 100
+        minor = Decimal(value) * 100
+        return minor == minor.to_integral_value()
 
 
 def _currency(value):
-    return re.fullmatch(r"[A-Z]{3}", value) is not None
-
-
-def _label(value):
-    return 0 < len(value) <= 128 and not any(c in value for c in "\r\n\t")
+    return value == "RUB"
 
 
 def _shape(node, spec):
@@ -42,13 +47,6 @@ def _shape(node, spec):
         or not _white(node.tail)
     ):
         return False
-    if isinstance(children, list):  # One or more homogeneous summary groups.
-        keys = [tuple(sorted(child.attrib.items())) for child in node]
-        return (
-            bool(len(node))
-            and len(keys) == len(set(keys))
-            and all(_shape(child, children[0]) for child in node)
-        )
     return len(node) == len(children) and all(
         _shape(child, expected) for child, expected in zip(node, children, strict=True)
     )
@@ -128,18 +126,18 @@ BLANKS = {
 }
 SUMMARY = _branch(
     "Tablix7",
-    (
+    _branch(
         "oper_group_Collection",
-        {},
-        [
+        *(
             _branch(
                 "oper_group",
                 _branch(
                     "p_code6_Collection", _branch("p_code6", p_code6=_currency, volume6=_number)
                 ),
-                oper_group=_label,
-            ),
-        ],
+                oper_group=lambda v, expected=label: v == expected,
+            )
+            for label in ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка")
+        ),
     ),
 )
 DAILY = _branch(
@@ -221,9 +219,41 @@ for _path, _keys in (
     _ATTRS["Trades2"][_path] = _keys
 
 
+_REPEATED = {
+    "active_type_Collection",
+    "Details_Collection",
+    "Details2_Collection",
+    "rn_Collection",
+    "settlement_date_Collection",
+}
+
+
 def _visited(node, prefix, allowed, attrs):
+    expected = [p.rsplit("/", 1)[1] for p in allowed if "/" in p and p.rsplit("/", 1)[0] == prefix]
+    actual = [child.tag.removeprefix(N) for child in node]
+    # Report children are checked before removing classified side branches.
+    # All other fixed paths have exactly one child; only consumed row collections repeat.
+    cardinality = (
+        all(name in expected for name in actual)
+        if prefix == "Report"
+        else (bool(actual) and all(name == expected[0] for name in actual))
+        if node.tag.removeprefix(N) in _REPEATED and expected
+        else len(actual) == len(expected) and set(actual) == set(expected)
+    )
+    # Empty completed/pending trade collections are an observed part of S1.
+    if (
+        node.tag in {N + "Details_Collection", N + "Details2_Collection"}
+        and "active_type" not in prefix
+    ):
+        cardinality = not actual or cardinality
+    # The original's caption-only pending table has no collection at all.
+    # Frozen S1 supports an explicitly empty trade table; final counted-row
+    # comparison still refuses the disappearance of any actual source trade.
+    if prefix in {"Report/Tablix2", "Report/Tablix3"} and not actual:
+        cardinality = True
     return (
         prefix in allowed
+        and cardinality
         and all(
             _visited(child, prefix + "/" + child.tag.removeprefix(N), allowed, attrs)
             for child in node
@@ -235,29 +265,59 @@ def _visited(node, prefix, allowed, attrs):
     )
 
 
-def draft_structure_exceptions(document: bytes) -> list[str] | None:
+def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | None:
     """Return classifications only if ALL unparsed content is bounded here.
 
     Called only after authoritative S1 parsing. None is a hard identity blocker.
     No source hash is supplied by the caller: parse_identity binds original bytes.
     """
     try:
-        root = ET.fromstring(
-            document.decode("utf-8-sig"), parser=ET.XMLParser(target=_OriginalTree())
-        )
+        builder = _OriginalTree()
+        root = ET.fromstring(document.decode("utf-8-sig"), parser=ET.XMLParser(target=builder))
     except MyBrokerError:
         return None
     if (
-        set(root.attrib)
-        - {
-            "Name",
-            "Textbox5",
-            "Textbox6",
-            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation",
+        root.tag != N + "Report"
+        or root.attrib
+        != {
+            "Name": "MyBroker",
+            "Textbox5": "Отчет по сделкам и операциям (Отчет брокера)",
+            "Textbox6": "Уполномоченное лицо",
+            "{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": SCHEMA,
         }
+        or builder.namespaces != {"MyBroker", "http://www.w3.org/2001/XMLSchema-instance"}
+        or source["document_sha256"] != hashlib.sha256(document).hexdigest()
         or [child.tag for child in root] != [N + outer for outer in SECTIONS]
         or not _white(root.text)
         or not _white(root.tail)
+    ):
+        return None
+    # The original inventory is immutable. A classifier cannot manufacture a
+    # different counted source or lend another original its eligible tree.
+    for outer, name in SECTIONS.items():
+        wrapper = root.find("m:" + outer, NS)
+        if wrapper.attrib or len(wrapper) != 1 or wrapper[0].attrib != {"Name": name}:
+            return None
+        if source["section_inventory"][name] != sum(1 for _ in wrapper[0].iter()) - 1:
+            return None
+        if outer in {"Trades3", "Trades4"} and len(wrapper[0]) and not _safe(wrapper, outer):
+            return None
+    row_accounts = {
+        r["source_account"] for r in source["positions"] + source["rub_money"] + source["money"]
+    }
+    row_accounts.update(t["core"]["source_account"] for t in source["trades"])
+    if len(row_accounts) != 1 or any(r["currency"] != "RUB" for r in source["money"]):
+        return None
+    native = [
+        (t["section"], t["core"]["source_account"], tuple(t["ids"])) for t in source["trades"]
+    ]
+    if len(native) != len(set(native)) or any(t["identity"] is None for t in source["trades"]):
+        return None
+    money_facts = [
+        tuple(sorted((k, v) for k, v in row.items() if k != "ordinal")) for row in source["money"]
+    ]
+    if len(money_facts) != len(set(money_facts)) or any(
+        not _number(row["amount"]) for row in source["money"]
     ):
         return None
     exceptions = []
@@ -274,6 +334,8 @@ def draft_structure_exceptions(document: bytes) -> list[str] | None:
         if report.attrib != {"Name": SECTIONS[outer]}:
             return None
         if outer == "Positions":
+            if [n.tag for n in report] not in ([N + "Tablix1"], [N + "Tablix1", N + "Tablix3"]):
+                return None
             footers = report.findall("m:Tablix3", NS)
             if footers:
                 if len(footers) != 1 or not _shape(footers[0], FOOTER):
@@ -281,6 +343,20 @@ def draft_structure_exceptions(document: bytes) -> list[str] | None:
                 report.remove(footers[0])
                 exceptions.append("positions_tax_footer_unresolved")
         if outer == "Trades2":
+            full_money = any(n.tag != N + "Tablix1" for n in report)
+            money_order = (
+                "Tablix2",
+                "Tablix1",
+                "Tablix3",
+                "Tablix5",
+                "Tablix4",
+                "Tablix6",
+                "Tablix7",
+            )
+            if [n.tag for n in report] != [
+                N + n for n in money_order if full_money or n == "Tablix1"
+            ]:
+                return None
             shapes = {
                 "Tablix2": _endpoint(True),
                 "Tablix3": _endpoint(False),
@@ -298,28 +374,73 @@ def draft_structure_exceptions(document: bytes) -> list[str] | None:
             if len(tables) != 1:
                 return None
             table = tables[0]
+            if [n.tag for n in table] != [N + "settlement_date_Collection"] + (
+                [N + "Textbox116"] if full_money else []
+            ):
+                return None
             totals = table.findall("m:Textbox116", NS)
             if totals:
                 if len(totals) != 1 or not _shape(totals[0], TOTAL):
                     return None
                 table.remove(totals[0])
                 exceptions.append("money_controls_unresolved")
-            comments = table.findall(
-                "m:settlement_date_Collection/m:settlement_date/m:rn_Collection/m:rn/m:oper_type/m:comment",
-                NS,
-            )
-            for comment in comments:
-                for tag, spec in (("Textbox95", DAILY), ("Textbox93", DEBT)):
-                    found = comment.findall("m:" + tag, NS)
-                    if found:
-                        if len(found) != 1 or not _shape(found[0], spec):
+            for group in table.findall("m:settlement_date_Collection/m:settlement_date", NS):
+                rows = group.findall("m:rn_Collection/m:rn", NS)
+                for index, row in enumerate(rows):
+                    comment = row.find("m:oper_type/m:comment", NS)
+                    if full_money:
+                        if [n.tag for n in comment] != [
+                            N + n
+                            for n in (
+                                "money_volume_begin1_Collection",
+                                "Textbox95",
+                                "Textbox93",
+                                "Textbox11",
+                            )
+                        ]:
                             return None
-                        comment.remove(found[0])
+                        if not _shape(comment[1], DAILY) or not _shape(comment[2], DEBT):
+                            return None
+                        values = [
+                            comment[1][0].get("money_volume"),
+                            comment[1][1].get("all_volume"),
+                            comment[2].get("debet_volume"),
+                        ]
+                        if any((v == "") != (index < len(rows) - 1) for v in values):
+                            return None
+                        comment.remove(comment[1])
+                        comment.remove(comment[1])
                         exceptions.append("money_controls_unresolved")
+                    elif [n.tag for n in comment] != [
+                        N + "Textbox11",
+                        N + "money_volume_begin1_Collection",
+                    ]:
+                        return None
+        if outer == "Trades":
+            names = [n.tag for n in report]
+            if names not in ([N + "Tablix2"], [N + "Tablix3"], [N + "Tablix2", N + "Tablix3"]):
+                return None
         allowed = {"Report"}
         for path in _PATHS[outer]:
             parts = ("Report/" + path).split("/")
             allowed.update("/".join(parts[:i]) for i in range(1, len(parts) + 1))
         if not _visited(report, "Report", allowed, _ATTRS[outer]):
             return None
+    positions = root.findall(
+        "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/m:active_type/m:Details_Collection/m:Details",
+        NS,
+    )
+    completed = root.findall("m:Trades/m:Report/m:Tablix2/m:Details_Collection/m:Details", NS)
+    pending = root.findall("m:Trades/m:Report/m:Tablix3/m:Details2_Collection/m:Details2", NS)
+    amounts = root.findall(
+        "m:Trades2/m:Report/m:Tablix1/m:settlement_date_Collection/m:settlement_date/m:rn_Collection/m:rn/m:oper_type/m:comment/m:money_volume_begin1_Collection/m:money_volume_begin1/m:p_code_Collection/m:p_code/m:p_code",
+        NS,
+    )
+    if (
+        len(positions) != len(source["positions"]) + len(source["rub_money"])
+        or len(completed) != sum(t["section"] == "completed" for t in source["trades"])
+        or len(pending) != sum(t["section"] == "pending" for t in source["trades"])
+        or len(amounts) != len(source["money"])
+    ):
+        return None
     return sorted(set(exceptions)) if exceptions else None

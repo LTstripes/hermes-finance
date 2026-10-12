@@ -20,6 +20,7 @@ def main():
     sys.path.insert(0, str(root / "backend" / "tests"))
     from test_statement_import_mybroker_endpoints import (
         broker_month_alias_xml,
+        draft_structure_xml,
         money_batch_xml,
         money_coupon_pdf,
         stock_fee_xml,
@@ -48,7 +49,7 @@ def main():
                 isin="RU000A000001",
                 currency="RUB",
             )
-            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30), (5, 31)):
+            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30), (5, 31), (6, 30)):
                 create_reporting_month(
                     session,
                     year=2030,
@@ -59,6 +60,15 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "structure":
+                xml = (
+                    draft_structure_xml(bond=True)
+                    .replace(b".01.2030", b".06.2030")
+                    .replace(b"2030-01-", b"2030-06-")
+                    .replace(b"10000000001", b"10000000006")
+                    .replace(b"2000000001", b"2000000006")
+                )
+                return Response(xml, media_type="application/xml")
             if kind == "stock-fee":
                 xml = (
                     stock_fee_xml(prior_month_buy=True)

@@ -53,16 +53,26 @@ digest. Originals without these exceptions retain their existing identity shape.
 The bounded grammar includes the exact populated NDFL `Tablix3` three-attribute
 leaf (unsigned D2), Money beginning/ending scalar wrappers, daily scalar displays,
 the `Textbox116` summary, operation-group summary and three exact empty trees.
-Money numeric displays are signed D10 (daily displays may be explicitly empty);
-currency labels are three ASCII capitals. Keys, expanded namespaces, paths,
+Money numeric displays use bounded signed decimals (48 characters) with exact
+minor-unit representation; sub-kopecks are rejected without rounding. Daily
+displays are explicitly empty before each group's last rn and populated together
+only on that last rn; missing, empty and numeric zero remain distinct.
+Currency labels are literal RUB. Tablix7 has exactly the three ordered labels
+`Внесено по распоряжению Клиента`, `Купоны`, `Списано по тарифам Банка`, each with
+one childless p_code6/volume6 leaf. Keys, expanded namespaces, paths,
 ordered children and singleton branches are checked, with no text/tail payload,
-comments, processing instructions or nested namespace declarations. Summary
-groups have bounded single-line labels and no duplicate group labels.
+comments, processing instructions or nested namespace declarations. The complete
+Money table order and net/operation child order match the accepted
+[#804 manifest as amended](https://github.com/LTstripes/hermes-finance/issues/804#issuecomment-6129597801).
 After projecting these branches out of a temporary tree, every remaining node
 must lie on an actually consumed S1 Positions/Trades/Money path. Retained-node
 attributes are restricted by exact path to consumed row keys or enumerated
-caption keys; grouping wrappers accept no attributes. Root keys/section order
-are bounded too. Unknown roots,
+caption keys; grouping wrappers accept no attributes. Fixed path cardinalities,
+consumed S1 row counts, original hash and source inventory remain binding. Root
+attributes match the exact family including Textbox6; sections remain ordered.
+Only one observed row-account/RUB context is eligible; aliases still require
+separate explicit mappings. Source cash/quantity mismatches remain conflicts.
+Unknown roots,
 extra/moved rows, hidden account/ISIN/native-ID attributes inside an exception,
 malformed/foreign/duplicate shapes and all existing semantic conflicts still
 refuse the batch. Optional branches are not inferred when absent.

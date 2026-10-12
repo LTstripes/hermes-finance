@@ -409,6 +409,8 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
     blockers, cash_delta, quantity_controls = _controls(
         parsed, session, source=accepted_source, account_id=account_id, month_id=month.id
     )
+    if "draft_structure" in evidence:
+        conflicts.update(set(blockers) & {"quantity_control_mismatch", "cash_control_mismatch"})
     blockers.extend(canonical_blockers)
     # Preview must disclose the same already accepted intersecting authority
     # that GET and Close consume, even when the new original itself is clean.
