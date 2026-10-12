@@ -12,7 +12,10 @@ from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.broker_money import MoneyConfirmation, MoneyIntent
+from hermes_finance.domain.broker_sections import SectionConfirmation, SectionIntent
 from hermes_finance.persistence import BrokerMonthApply
+from hermes_finance.services import broker_month_journal as journal
+from hermes_finance.services import broker_sections
 from hermes_finance.services.broker_money import apply_money, preview_money
 from hermes_finance.services.broker_months import (
     apply_broker_month,
@@ -51,6 +54,13 @@ async def preview(
     session: Session = Depends(session_for_request),
 ):
     try:
+        if json.loads(intent).get("contract_version") == broker_sections.CONTRACT:
+            requested_sections = SectionIntent.model_validate_json(intent)
+            if supporting or originals:
+                raise MyBrokerError("section_originals_invalid")
+            return broker_sections.preview_sections(
+                session, requested_sections, await _bytes(file), file.filename or ""
+            )
         if json.loads(intent).get("contract_version") == "broker_money_v1":
             requested_money = MoneyIntent.model_validate_json(intent)
             if supporting or len(originals) > 31:
@@ -88,6 +98,20 @@ async def apply(
     session: Session = Depends(session_for_request),
 ):
     try:
+        if json.loads(confirmation).get("contract_version") == broker_sections.CONTRACT:
+            requested_sections = SectionConfirmation.model_validate_json(confirmation)
+            if supporting or originals:
+                raise MyBrokerError("section_originals_invalid")
+            return broker_sections.apply_sections(
+                session,
+                SectionIntent.model_validate(
+                    requested_sections.model_dump(exclude={"request_id", "confirmation_digest"})
+                ),
+                await _bytes(file),
+                file.filename or "",
+                confirmation_digest=requested_sections.confirmation_digest,
+                request_id=requested_sections.request_id,
+            )
         if json.loads(confirmation).get("contract_version") == "broker_money_v1":
             requested_money = MoneyConfirmation.model_validate_json(confirmation)
             if supporting or len(originals) > 31:
@@ -133,8 +157,8 @@ def batches(reporting_month_id: int, session: Session = Depends(session_for_requ
         return [
             read_broker_month(session, request_id)
             for request_id in ids
-            if "projection_digest"
-            in json.loads(session.get(BrokerMonthApply, request_id).projection_json)
+            if journal.kind(session.get(BrokerMonthApply, request_id))
+            in {journal.SOURCE, "invalid"}
         ]
 
 

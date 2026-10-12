@@ -68,6 +68,8 @@ def material(row):
 
 
 def receipts(session):
+    from hermes_finance.services import broker_month_journal as journal
+
     result = [
         (r, json.loads(r.projection_json))
         for r in session.scalars(
@@ -75,7 +77,7 @@ def receipts(session):
                 BrokerMonthApply.accepted_at, BrokerMonthApply.request_id
             )
         )
-        if json.loads(r.projection_json).get("contract_version") == CONTRACT
+        if journal.kind(r) == CONTRACT
     ]
     return sorted(
         result,
@@ -542,10 +544,12 @@ def _funding(session, intent, decision, occurrences, blockers):
 
 
 def _plan(session, intent, originals):
+    from hermes_finance.services import broker_month_journal as journal
+
     base = session.get(BrokerMonthApply, intent.base_request_id, populate_existing=True)
     if (
         base is None
-        or "projection_digest" not in json.loads(base.projection_json)
+        or journal.kind(base) != journal.SOURCE
         or (base.reporting_month_id, base.account_id)
         != (intent.reporting_month_id, intent.account_id)
     ):
@@ -834,12 +838,14 @@ def owned_payout_ids(session, month_id, account_id):
 
 
 def read_money(session, request_id):
+    from hermes_finance.services import broker_month_journal as journal
+
     with coherent_read_snapshot(session):
         receipt = session.get(BrokerMonthApply, request_id, populate_existing=True)
         if receipt is None:
             raise MyBrokerError("broker_month_not_found")
-        proof = json.loads(receipt.projection_json)
-        if proof.get("contract_version") != CONTRACT:
+        proof = journal.payload(receipt)
+        if journal.kind(receipt) != CONTRACT:
             raise MyBrokerError("money_receipt_required")
         latest = latest_proofs(session)
         targets, blockers = [], set()

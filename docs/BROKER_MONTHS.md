@@ -175,3 +175,51 @@ real-stock fee-excluded source basis (#790), and separately accepted
 section-control/Close dispositions remain unproved. No actual Owner scratch,
 DRAFT financial Apply or Close is authorized here. No Test/Stable/CLOSED
 mutation or exact XIRR/TWRR claim follows from these code merges.
+
+## Original-bound section disposition (#799 / #800)
+
+The accepted [#799 Integrator amendments](https://github.com/LTstripes/hermes-finance/issues/799#issuecomment-6120415679)
+add the separately versioned `mybroker-section-disposition-v1` variant in the
+existing append-only BrokerMonthApply journal. It accepts metadata only, for one
+existing source-owned DRAFT receipt and exact import/account/month. No schema,
+source, mapping, financial row or frozen S1/receipt JSON is changed.
+
+Use the existing multipart `/api/broker-months/preview` and `/apply` with one exact
+original XML. Intent names `contract_version`, `base_request_id`, `import_id`,
+`account_id`, `reporting_month_id` and `sections`, each containing `section`
+(`4_Transfers` or `5_UFSR`) and `expected_predecessor` (null for first acceptance).
+Apply also requires `request_id` and the server's `confirmation_digest`.
+Supporting files, client source hashes and safety assertions are not accepted.
+
+Both stages reread the original with the recorded S1/native-Money grammar,
+compare parser facts allowing established service enrichment, validate filename,
+range, account aliases and mapping identities, and independently rerun the strict
+#792 classifier. The receipt binds the original SHA, filename digest, source and
+base-receipt digests, exact section locator/shape, inventory 1/3, zero derived
+movements and unknown period scope. Connection dates are never retained as events.
+Apply rereads dependencies and heads under the existing reserved writer; failure
+rolls back the whole acceptance. Preview writes nothing.
+
+GET `/{request_id}` shows each metadata section as `effective`, `superseded` or
+`blocked` without originals. Source-month GET also includes `section_dispositions`;
+the month list retains its source-month rows. The shared source resolver removes
+only that source's proved named section code before blocker union in Preview,
+GET and reserved Close. Unsafe or unproved overlapping sources retain their own
+blockers. Frozen exceptions have no understood exclusive section provenance in
+the legacy contract, so their contribution remains blocked; no backfill occurs.
+All other Money, footer/Positions, REPO, unparsed rows, fee and NKD guards remain.
+
+One chain per import/account/month/section follows explicit predecessor links,
+independent of timestamps. Forks, missing predecessors and malformed/unknown
+journal variants fail closed. The existing monotonic source/mapping journal and
+dependency receipts retain ABA invalidation, including snapshot geometry edits.
+An invalid head grants nothing; it never revives an older proof. Explicit fresh
+acceptance referencing that head can restore newly validated authority; stale
+history does not permanently poison account readiness. Exact replay is read-only
+and returns current state, even on CLOSED. Fresh acceptance on CLOSED is refused;
+normal Close status changes do not invalidate structural proof.
+
+This code authority does not accept real September Gate 0, Positions/footer
+grammar (#798), daily Money definitions (#793), actual stock fee basis or actual
+Money ownership. Owner/private Apply/Close, Test/Stable/CLOSED mutations and exact
+return authority remain outside this synthetic implementation.
