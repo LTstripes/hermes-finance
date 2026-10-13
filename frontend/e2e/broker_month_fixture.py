@@ -1,5 +1,6 @@
 """Synthetic disposable source-first broker-month runtime; never a real profile."""
 
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -32,12 +33,8 @@ def main():
         Base.metadata.create_all(database.engine)
         with database.session_factory() as session:
             create_account(session, name="Synthetic broker", account_type="brokerage")
-            create_account(
-                session, name="Unrelated synthetic deposit", account_type="deposit"
-            )
-            create_account(
-                session, name="Synthetic structural broker", account_type="brokerage"
-            )
+            create_account(session, name="Unrelated synthetic deposit", account_type="deposit")
+            create_account(session, name="Synthetic structural broker", account_type="brokerage")
             create_instrument(
                 session,
                 name="Synthetic stock",
@@ -59,6 +56,9 @@ def main():
                     month=number,
                     snapshot_date=date(2030, number, end),
                 )
+        from statement_return_seed import seed_statement_return
+
+        seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
         @app.get("/api/synthetic-broker-source/{kind}")
@@ -117,7 +117,12 @@ def main():
 
         # Test-only XML endpoint must precede the app's SPA catch-all.
         app.router.routes.insert(0, app.router.routes.pop())
-        uvicorn.run(app, host="127.0.0.1", port=18773, access_log=False)
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=int(os.environ.get("HERMES_BROKER_MONTH_TEST_PORT", "18773")),
+            access_log=False,
+        )
         database.engine.dispose()
 
 

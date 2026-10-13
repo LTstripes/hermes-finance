@@ -548,6 +548,7 @@ export default function UiV2CapitalPerformanceDetail() {
         <>
           <p className={pageStyles.eyebrow}>Капитал · Доходность</p>
           <h1>Доходность</h1>
+          <Link to="/v2/capital/statement-return">Предварительная доходность по выписке</Link>
           <p className={pageStyles.subtitle}>
             {context
               ? `${formatDate(context.start)} — ${formatDate(context.end)} · ${scopeLabel}`

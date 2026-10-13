@@ -1,5 +1,86 @@
 import { expect, test } from "@playwright/test";
 
+test("statement returns show native EOD facts, NKD caveat, exact export and stale/null account isolation on desktop", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const accounts = await (await request.get("/api/accounts")).json();
+  const account = accounts.find((a: { name: string }) => a.name === "Synthetic statement broker");
+  const empty = accounts.find(
+    (a: { name: string }) => a.name === "Synthetic empty statement broker",
+  );
+  const params = `account_id=${account.id}&request_id=synthetic-statement-return`;
+  const value = await (await request.get(`/api/broker-statement-returns?${params}`)).json();
+  expect(value.status).toBe("indicative");
+  expect(value.bond_nkd_basis).toBe("unknown");
+  await page.goto("/v2/capital/statement-return");
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(account.id));
+  await page.getByLabel("Принятая выписка").selectOption("synthetic-statement-return");
+  await expect(page.getByText("2,80%", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("По оценке брокера; учёт НКД в стоимости облигаций не подтверждён"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Доходность за фактический период; не приведена к году"),
+  ).toBeVisible();
+  await expect(page.getByText("Подтверждено отсутствие пересечений за период.")).toBeVisible();
+  const exportLink = page.getByRole("link", { name: /Экспорт результата/ });
+  const href = await exportLink.getAttribute("href");
+  if (!href) throw new Error("Statement export link missing");
+  const exported = await (await request.get(href)).json();
+  expect(exported).toEqual(value);
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("statement-return-indicative-1280-125.png"),
+    fullPage: true,
+  });
+  // Withdraw only synthetic coverage, then verify viewed export cannot keep its rate.
+  const coverages = await (
+    await request.get(`/api/cash-boundary-coverages?account_id=${account.id}`)
+  ).json();
+  const coverage = coverages[0];
+  const intent = {
+    operation: "revoke",
+    coverage_id: coverage.id,
+    expected_revision: value.cash_coverage_revision_id ? 1 : 0,
+    reason_code: "attestation_withdrawn",
+  };
+  const plan = await (
+    await request.post("/api/cash-boundary-coverages/preview", { data: intent })
+  ).json();
+  const revoked = await request.post("/api/cash-boundary-coverages/apply", {
+    data: {
+      ...intent,
+      request_id: "synthetic-statement-revoke",
+      confirmation_digest: plan.confirmation_digest,
+    },
+  });
+  expect(revoked.ok()).toBe(true);
+  const stale = await (await request.get(href)).json();
+  expect(stale.rate_fraction).toBeNull();
+  expect(stale.reason_codes).toContain("statement_preview_stale");
+  await page.getByRole("button", { name: "Обновить результат" }).click();
+  await expect(page.getByText("Недоступна", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Не подтверждён полный список датированных/)).toBeVisible();
+  await expect(page.getByText("10 280,00 ₽").first()).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("statement-return-unavailable-1280-125.png"),
+    fullPage: true,
+  });
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(empty.id));
+  await expect(page.getByText("Для этого счёта нет принятой выписки с оценками.")).toBeVisible();
+  await expect(page.getByText("Недоступна", { exact: true })).toHaveCount(0);
+  await expect(exportLink).toHaveCount(0);
+  await page.getByLabel("Брокерский счёт", { exact: true }).focus();
+  await expect(page.getByLabel("Брокерский счёт", { exact: true })).toBeFocused();
+});
+
 test("exact structural exceptions permit reviewed incomplete DRAFT and GET, while server Close stays blocked", async ({
   page,
   request,
