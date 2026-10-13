@@ -72,13 +72,18 @@ function DraftSources({ month, accounts }: { month: ReportingMonth; accounts: Ac
             ))}
           </select>
         </label>
-        {sources.length > 1 ? (
+        {sources.length > 1 || (sources.length > 0 && sourceChoice !== null && !saved) ? (
           <label>
             Исходная выписка черновика
             <select
               value={saved?.request_id ?? ""}
               onChange={(event) => setSourceChoice(event.target.value)}
             >
+              {!saved ? (
+                <option value="" disabled>
+                  Выбери доступную выписку
+                </option>
+              ) : null}
               {sources.map((b) => (
                 <option key={b.request_id} value={b.request_id}>
                   {b.request_id}
@@ -103,7 +108,11 @@ function DraftSources({ month, accounts }: { month: ReportingMonth; accounts: Ac
           <DraftFacts saved={saved} />
         </>
       ) : (
-        <p role="status">Для этого счёта нет совместимого DRAFT.</p>
+        <p role="status">
+          {sources.length
+            ? "Выбранная выписка DRAFT недоступна. Выбери другую исходную выписку."
+            : "Для этого счёта нет совместимого DRAFT."}
+        </p>
       )}
     </section>
   );

@@ -884,7 +884,27 @@ for (const scene of ["closed-only", "draft-only", "both", "inaccessible"] as con
       await preview.screenshot({
         path: path.join(dir, `ui-v2-capital-draft-${scene}-account-b-125.png`),
       });
-      if (scene === "both") await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+      if (scene === "both") {
+        const withdrawn = makeCapitalDraft(4);
+        withdrawn.request_id = "synthetic-withdrawn-source";
+        evidence.state.brokerMonths.push(withdrawn);
+        await preview.getByRole("button", { name: "Обновить DRAFT" }).click();
+        await preview.getByLabel("Исходная выписка черновика").selectOption(withdrawn.request_id);
+        evidence.state.brokerMonths = evidence.state.brokerMonths.filter(
+          (b) => b.request_id !== withdrawn.request_id,
+        );
+        await preview.getByRole("button", { name: "Обновить DRAFT" }).click();
+        await expect(
+          preview.getByText("Выбранная выписка DRAFT недоступна. Выбери другую исходную выписку."),
+        ).toBeVisible();
+        await expect(preview.getByRole("table")).toHaveCount(0);
+        await preview.screenshot({
+          path: path.join(dir, "ui-v2-capital-draft-withdrawn-source-125.png"),
+        });
+        await preview.getByLabel("Исходная выписка черновика").selectOption(other.request_id);
+        await expect(preview.getByText("4 321,98 ₽")).toBeVisible();
+        await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+      }
     }
     await assertBounded(page);
     await capture(page, testInfo, `ui-v2-capital-draft-${scene}-full`);

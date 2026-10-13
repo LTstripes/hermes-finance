@@ -128,6 +128,26 @@ it("hides cached facts during refresh and after failed or withdrawn source GET",
   await waitFor(() => expect(screen.queryByRole("heading", { name: heading })).toBeNull());
 });
 
+it("allows explicit replacement when the selected receipt disappears and one compatible source remains", async () => {
+  const selected = makeCapitalDraft();
+  selected.request_id = "synthetic-withdrawn";
+  if (selected.accepted.document) selected.accepted.document.positions[0].ending_value = "5555.55";
+  mount([makeCapitalDraft(), selected]);
+  fireEvent.change(await screen.findByLabelText("Исходная выписка черновика"), {
+    target: { value: selected.request_id },
+  });
+  expect(screen.getByText("5 555,55 ₽")).toBeVisible();
+  vi.mocked(listBrokerMonths).mockResolvedValue([makeCapitalDraft()]);
+  fireEvent.click(screen.getByRole("button", { name: "Обновить DRAFT" }));
+  await screen.findByText("Выбранная выписка DRAFT недоступна. Выбери другую исходную выписку.");
+  expect(screen.queryByRole("table")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Исходная выписка черновика"), {
+    target: { value: makeCapitalDraft().request_id },
+  });
+  expect(screen.getByText("1 234,56 ₽")).toBeVisible();
+  expect(screen.queryByText("5 555,55 ₽")).toBeNull();
+});
+
 it("never implies zero inventory or cash from absent rows, or global Close readiness", async () => {
   const saved = makeCapitalDraft();
   saved.bookkeeping_ready = true;
