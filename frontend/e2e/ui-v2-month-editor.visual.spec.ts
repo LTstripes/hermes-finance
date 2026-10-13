@@ -14,7 +14,14 @@ const closed = {
 test("broker DRAFT source warnings keep headings, evidence and keyboard details @viewport-owned", async ({
   page,
 }, testInfo) => {
-  const calls = await installApi(page);
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/api/") && request.method() !== "GET") {
+      writes.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await installApi(page);
   const month = { ...closed, status: "draft" };
   const reasons = [
     ["4_Transfers_unsupported", "Переводы требуют сверки"],
@@ -76,7 +83,7 @@ test("broker DRAFT source warnings keep headings, evidence and keyboard details 
       fullPage: true,
     });
   }
-  expect(calls.filter((call) => !call.startsWith("GET "))).toEqual([]);
+  expect(writes).toEqual([]);
 });
 
 for (const outcome of ["success", "expired", "ambiguous"] as const) {
