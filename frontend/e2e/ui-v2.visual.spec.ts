@@ -4,6 +4,8 @@ import path from "node:path";
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 
 import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
+import type { BrokerMonthReadback } from "../src/api/brokerMonths";
+import { makeCapitalDraft } from "../src/test/capitalDraftFixtures";
 
 import {
   makeUiV2ArchiveHistory,
@@ -662,6 +664,14 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
   const zero = scene === "zero";
   const partial = scene === "partial";
   const state = {
+    months:
+      scene === "no-closed"
+        ? [uiV2Months[1]]
+        : scene === "first-closed"
+          ? [uiV2Months[0], uiV2Months[1]]
+          : uiV2Months,
+    brokerMonths: [] as BrokerMonthReadback[],
+    accounts: uiV2Accounts,
     monthsError: false,
     propertiesError: partial,
     riskError: partial,
@@ -712,13 +722,11 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     let json: unknown;
     let status = 200;
     if (url.pathname === "/api/months") {
-      json =
-        scene === "no-closed"
-          ? [uiV2Months[1]]
-          : scene === "first-closed"
-            ? [uiV2Months[0], uiV2Months[1]]
-            : uiV2Months;
+      json = state.months;
       status = state.monthsError ? 503 : 200;
+    } else if (url.pathname === "/api/broker-months") {
+      expect(url.searchParams.get("reporting_month_id")).toBe("12");
+      json = state.brokerMonths;
     } else if (url.pathname === "/api/analytics/closed-report-comparison") {
       json = state.comparison;
     } else if (url.pathname === "/api/analytics/capital-composition") {
@@ -740,7 +748,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       json = state.properties;
       status = state.propertiesError ? 503 : 200;
     } else if (url.pathname === "/api/accounts") {
-      json = uiV2Accounts;
+      json = state.accounts;
     } else if (url.pathname === "/api/instruments") {
       json = uiV2Instruments;
       status = state.instrumentsError ? 503 : 200;
@@ -808,6 +816,82 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     });
   });
   return { errors, reads, state, unexpected };
+}
+
+for (const scene of ["closed-only", "draft-only", "both", "inaccessible"] as const) {
+  test(`ui-v2 Capital DRAFT ${scene}: native facts and isolation @viewport-owned`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: scene === "both" ? 1440 : 1280, height: 900 });
+    const evidence = await installCapitalApi(page);
+    if (scene === "closed-only")
+      evidence.state.months = uiV2Months.filter((m) => m.status === "closed");
+    if (scene === "draft-only") evidence.state.months = [uiV2Months[1]];
+    if (scene !== "closed-only")
+      evidence.state.brokerMonths = [makeCapitalDraft(scene === "inaccessible" ? 999 : 3)];
+    await page.goto("/v2/capital");
+    const preview = page.getByRole("region", {
+      name: "Черновик / предварительная оценка, не закрытый месяц",
+    });
+    if (scene === "draft-only") {
+      await expect(page.getByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+      await expect(page.getByTestId("capital-net")).toHaveCount(0);
+      expect(evidence.reads.some((r) => r.includes("/api/analytics/"))).toBe(false);
+    } else {
+      await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+      await expect(page.getByTestId("capital-assets")).toHaveText("3 203 900 ₽");
+    }
+    if (scene === "closed-only" || scene === "inaccessible") {
+      await expect(preview).toHaveCount(0);
+    } else {
+      await expect(preview).toBeVisible();
+      await expect(preview.getByRole("table", { name: /Позиции DRAFT/ })).toContainText(
+        "1 234,56 ₽",
+      );
+      await expect(preview.getByRole("table", { name: /Позиции DRAFT/ })).toContainText(
+        "Неизвестно",
+      );
+      await expect(preview.getByRole("table", { name: "Отдельный RUB cash DRAFT" })).toContainText(
+        "789,01 ₽",
+      );
+      await expect(preview.getByText(/Close заблокирован/)).toBeVisible();
+      await expect(preview.getByText("money_semantics_unsupported")).toBeVisible();
+      await expect(preview.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+      await page.evaluate(() => {
+        document.documentElement.style.zoom = "1.25";
+      });
+      await assertBounded(page);
+      const account = preview.getByLabel("Брокерский счёт черновика");
+      await account.focus();
+      await expect(account).toBeFocused();
+      const dir = path.resolve(".visual-audit", testInfo.project.name);
+      fs.mkdirSync(dir, { recursive: true });
+      await preview.screenshot({ path: path.join(dir, `ui-v2-capital-draft-${scene}-125.png`) });
+      await account.selectOption("4");
+      await expect(preview.getByText("Для этого счёта нет совместимого DRAFT.")).toBeVisible();
+      await expect(preview.getByRole("table")).toHaveCount(0);
+      const other = makeCapitalDraft(4);
+      if (other.accepted.document) other.accepted.document.positions[0].ending_value = "4321.98";
+      evidence.state.brokerMonths.push(other);
+      await preview.getByRole("button", { name: "Обновить DRAFT" }).click();
+      await expect(preview.getByText("4 321,98 ₽")).toBeVisible();
+      await expect(preview.getByText("1 234,56 ₽")).toHaveCount(0);
+      await expect(preview.getByText(/Счёт исключён из капитала/)).toBeVisible();
+      await preview.getByRole("link", { name: "Источник и предупреждения месяца →" }).focus();
+      await expect(
+        preview.getByRole("link", { name: "Источник и предупреждения месяца →" }),
+      ).toBeFocused();
+      await preview.screenshot({
+        path: path.join(dir, `ui-v2-capital-draft-${scene}-account-b-125.png`),
+      });
+      if (scene === "both") await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+    }
+    await assertBounded(page);
+    await capture(page, testInfo, `ui-v2-capital-draft-${scene}-full`);
+    expect(evidence.reads.every((r) => r.startsWith("GET "))).toBe(true);
+    expect(evidence.unexpected).toEqual([]);
+    expect(evidence.errors).toEqual([]);
+  });
 }
 
 for (const width of [1440]) {
