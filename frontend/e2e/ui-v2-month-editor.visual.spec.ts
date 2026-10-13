@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 const closed = {
   id: 7,
@@ -10,6 +10,81 @@ const closed = {
   snapshot_date: "2030-04-30",
   source: "manual",
 };
+
+test("broker DRAFT source warnings keep headings, evidence and keyboard details @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/api/") && request.method() !== "GET") {
+      writes.push(`${request.method()} ${pathname}`);
+    }
+  });
+  await installApi(page);
+  const month = { ...closed, status: "draft" };
+  const reasons = [
+    ["4_Transfers_unsupported", "Переводы требуют сверки"],
+    ["5_UFSR_unsupported", "Данные UFSR не поддерживаются"],
+    ["commission_basis_unresolved", "Учёт комиссии не подтверждён"],
+    ["money_semantics_unsupported", "Денежные операции не разобраны"],
+    ["settlement_principal_unresolved", "Основная сумма расчётов не подтверждена"],
+    ["unparsed_source_rows", "Есть неразобранные строки отчёта"],
+    ["money_semantics_unsupported", "Денежные операции не разобраны"],
+    ["new_source_reason", "Нужно исправить перед закрытием"],
+    ["constructor", "Нужно исправить перед закрытием"],
+  ];
+  const items = reasons.map(([code], index) => ({
+    severity: "hard_blocker",
+    code,
+    message: `MyBroker счёт #${index + 1}: исходные доказательства требуют сверки.`,
+    context: { count: index + 1, coverage_state: "unknown", bookkeeping_ready: false },
+  }));
+  await page.route("**/api/months/7", (route) => route.fulfill({ json: month }));
+  await page.route("**/api/months/7/close-readiness", (route) =>
+    route.fulfill({ json: { ...month, can_close: false, items } }),
+  );
+
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/months/7?section=review");
+    const blockers = page.getByRole("region", { name: "Блокирует закрытие" });
+    const rows = blockers.getByRole("listitem");
+    await expect(rows).toHaveCount(items.length);
+    await expect(blockers.locator(".badge")).toHaveText(String(items.length));
+    await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
+    for (const [index, [, title]] of reasons.entries()) {
+      const row = rows.nth(index);
+      const heading = row.locator("strong");
+      await expect(heading).toHaveText(title);
+      await heading.scrollIntoViewIfNeeded();
+      await expect(heading).toBeVisible();
+      expect(
+        await heading.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      const details = row.locator("details");
+      const summary = row.locator("summary");
+      await summary.focus();
+      await expect(summary).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(details).toHaveAttribute("open", "");
+      await expect(row.locator("pre")).toBeVisible();
+      expect(await row.locator("pre").textContent()).toBe(
+        `Код: ${items[index].code}\nСерверное сообщение: ${items[index].message}\nКонтекст: ${JSON.stringify(items[index].context, null, 2)}`,
+      );
+      await page.keyboard.press("Space");
+      await expect(details).not.toHaveAttribute("open");
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`broker-source-warnings-${width}.png`),
+      fullPage: true,
+    });
+  }
+  expect(writes).toEqual([]);
+});
 
 for (const outcome of ["success", "expired", "ambiguous"] as const) {
   test(`ui-v2 current-day quote preview ${outcome} is explicit and never blindly retried`, async ({
