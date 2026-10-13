@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../queryClient";
+import { makeCapitalDraft } from "../test/capitalDraftFixtures";
+import type { BrokerMonthReadback } from "../api/brokerMonths";
 import {
   makeUiV2Cash,
   makeUiV2CapitalHistory,
@@ -115,6 +117,7 @@ function setup(path = "/v2/capital") {
   const reads: string[] = [];
   const state = {
     months: uiV2Months,
+    brokerMonths: [] as BrokerMonthReadback[],
     comparison: makeUiV2Comparison(),
     composition: makeUiV2CapitalHistory(),
     risk: makeUiV2RiskAllocation(),
@@ -146,6 +149,10 @@ function setup(path = "/v2/capital") {
         case "/api/months":
           data = state.months;
           failed = state.monthsError;
+          break;
+        case "/api/broker-months":
+          expect(url.searchParams.get("reporting_month_id")).toBe("12");
+          data = state.brokerMonths;
           break;
         case "/api/analytics/closed-report-comparison":
           data = state.comparison;
@@ -298,6 +305,44 @@ it("shows no capital numbers when there is no closed report yet", async () => {
   expect(screen.queryByTestId("capital-net")).toBeNull();
   expect(screen.queryByTestId("capital-composition")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
+});
+
+it("shows source DRAFT facts beside unchanged CLOSED capital without writes", async () => {
+  const { mount, reads, state } = setup();
+  state.brokerMonths = [makeCapitalDraft()];
+  mount();
+  const preview = await screen.findByRole("region", {
+    name: "Черновик / предварительная оценка, не закрытый месяц",
+  });
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  expect(within(preview).getByText("1 234,56 ₽")).toBeVisible();
+  expect(within(preview).getByText("789,01 ₽")).toBeVisible();
+  expect(within(preview).getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+  expect(reads.every((r) => r.startsWith("GET "))).toBe(true);
+});
+
+it("keeps canonical capital unavailable in DRAFT-only while exposing source facts", async () => {
+  const { mount, reads, state } = setup();
+  state.months = [uiV2Months[1]];
+  state.brokerMonths = [makeCapitalDraft()];
+  mount();
+  await screen.findByRole("region", {
+    name: "Черновик / предварительная оценка, не закрытый месяц",
+  });
+  expect(screen.getByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
+  expect(screen.queryByTestId("capital-net")).toBeNull();
+  expect(reads.some((r) => r.includes("/api/analytics/"))).toBe(false);
+});
+
+it("does not read or show DRAFT sources in CLOSED-only", async () => {
+  const { mount, reads, state } = setup();
+  state.months = uiV2Months.filter((m) => m.status === "closed");
+  mount();
+  await screen.findByTestId("capital-net");
+  expect(
+    screen.queryByRole("region", { name: "Черновик / предварительная оценка, не закрытый месяц" }),
+  ).toBeNull();
+  expect(reads.some((r) => r.includes("/api/broker-months"))).toBe(false);
 });
 
 it("distinguishes a missing comparison base from a genuine zero", async () => {

@@ -32,6 +32,7 @@ export type BrokerMonthReadback = BrokerMonthIntent & {
   status: "draft" | "closed";
   exceptions: string[];
   bookkeeping_ready: boolean;
+  coverage_state?: string;
   accepted: {
     document: MyBrokerDocument | null;
     position_ids: number[];

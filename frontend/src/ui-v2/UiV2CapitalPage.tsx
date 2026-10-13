@@ -38,6 +38,7 @@ import { formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
 import { CapitalPerformanceSummary } from "./CapitalPerformanceSummary";
+import { CapitalDraftValuation } from "./CapitalDraftValuation";
 import { performanceDetailHref } from "./capitalPerformanceContext";
 import {
   buildHoldingRows,
@@ -1040,6 +1041,9 @@ export default function UiV2CapitalPage() {
           ready={comparisonReady}
           retry={() => void comparisonQuery.refetch()}
         />
+        {accountsReady ? (
+          <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
+        ) : null}
         <div className={styles.homeGrid}>
           <CompositionOverTime
             assetClasses={compositionReady ? (compositionQuery.data?.asset_classes ?? []) : []}
@@ -1135,6 +1139,9 @@ export default function UiV2CapitalPage() {
       v1ReturnPath={v1ReturnPath}
     >
       {content}
+      {monthsReady && accountsReady && !latestClosed ? (
+        <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
+      ) : null}
     </UiV2Shell>
   );
 }
