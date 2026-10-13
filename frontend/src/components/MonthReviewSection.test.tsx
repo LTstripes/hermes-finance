@@ -88,6 +88,130 @@ beforeEach(() => {
 });
 
 describe("MonthReviewSection", () => {
+  it("shows distinct broker source headings and preserves all expanded evidence", async () => {
+    const reasons = [
+      ["4_Transfers_unsupported", "Переводы требуют сверки"],
+      ["5_UFSR_unsupported", "Данные UFSR не поддерживаются"],
+      ["commission_basis_unresolved", "Учёт комиссии не подтверждён"],
+      ["money_semantics_unsupported", "Денежные операции не разобраны"],
+      ["settlement_principal_unresolved", "Основная сумма расчётов не подтверждена"],
+      ["unparsed_source_rows", "Есть неразобранные строки отчёта"],
+    ];
+    const items = reasons.map(([code], index) => ({
+      severity: "hard_blocker" as const,
+      code,
+      message: `MyBroker счёт #${index + 1}: исходные доказательства требуют сверки.`,
+      context: { count: index + 1, coverage_state: "unknown", bookkeeping_ready: false },
+    }));
+    getCloseReadinessMock.mockResolvedValue({ ...ready, can_close: false, items });
+    const onReadinessSummaryChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <MonthReviewSection
+          dirty={false}
+          monthId={7}
+          onStatusChanged={vi.fn()}
+          onReadinessSummaryChange={onReadinessSummaryChange}
+          readOnly={false}
+          status="draft"
+        />
+      </MemoryRouter>,
+    );
+
+    const blockers = await screen.findByRole("region", { name: "Блокирует закрытие" });
+    expect(within(blockers).getAllByRole("listitem")).toHaveLength(6);
+    for (const [index, [, title]] of reasons.entries()) {
+      const row = within(blockers).getByText(title).closest("li");
+      expect(row).not.toBeNull();
+      if (!row) throw new Error("Missing blocker row");
+      const details = row.querySelector("details");
+      expect(details).not.toHaveAttribute("open");
+      await user.click(within(row).getByText("Подробности"));
+      expect(details).toHaveAttribute("open");
+      expect(row.querySelector("pre")?.textContent).toBe(
+        `Код: ${items[index].code}\nСерверное сообщение: ${items[index].message}\nКонтекст: ${JSON.stringify(items[index].context, null, 2)}`,
+      );
+    }
+    expect(onReadinessSummaryChange).toHaveBeenLastCalledWith({
+      blockerCount: 6,
+      warningCount: 0,
+      infoCount: 0,
+    });
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps mixed, repeated and unknown source reasons in their server severity groups", async () => {
+    const items = [
+      {
+        severity: "hard_blocker" as const,
+        code: "money_semantics_unsupported",
+        message: "Источник A",
+        context: { count: 2 },
+      },
+      {
+        severity: "hard_blocker" as const,
+        code: "money_semantics_unsupported",
+        message: "Источник B",
+        context: { count: 3 },
+      },
+      {
+        severity: "hard_blocker" as const,
+        code: "new_source_reason",
+        message: "Новый источник C",
+        context: { count: null },
+      },
+      {
+        severity: "hard_blocker" as const,
+        code: "constructor",
+        message: "Неизвестный код D",
+        context: { coverage_state: "unknown" },
+      },
+      {
+        severity: "warning" as const,
+        code: "new_source_warning",
+        message: "Предупреждение E",
+        context: {},
+      },
+      { severity: "info" as const, code: "new_source_context", message: "Контекст F", context: {} },
+    ];
+    getCloseReadinessMock.mockResolvedValue({ ...ready, can_close: false, items });
+    render(
+      <MemoryRouter>
+        <MonthReviewSection
+          dirty={false}
+          monthId={7}
+          onStatusChanged={vi.fn()}
+          readOnly={false}
+          status="draft"
+        />
+      </MemoryRouter>,
+    );
+
+    const blockers = await screen.findByRole("region", { name: "Блокирует закрытие" });
+    expect(within(blockers).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(blockers).getAllByText("Денежные операции не разобраны")).toHaveLength(2);
+    expect(within(blockers).getAllByText("Нужно исправить перед закрытием")).toHaveLength(2);
+    for (const item of items) {
+      const diagnostic = screen.getByText(
+        (_, element) =>
+          element?.tagName === "PRE" && element.textContent?.includes(item.message) === true,
+      );
+      expect(diagnostic.textContent).toBe(
+        `Код: ${item.code}\nСерверное сообщение: ${item.message}\nКонтекст: ${Object.keys(item.context).length ? JSON.stringify(item.context, null, 2) : "нет"}`,
+      );
+    }
+    expect(
+      within(screen.getByRole("region", { name: "Стоит проверить" })).getAllByRole("listitem"),
+    ).toHaveLength(1);
+    expect(
+      within(screen.getByRole("region", { name: "Контекст" })).getAllByRole("listitem"),
+    ).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    expect(closeMonthMock).not.toHaveBeenCalled();
+  });
+
   it("shows portfolio coverage beside the known preview subtotal", async () => {
     getDashboardMock.mockResolvedValue({
       ...dashboard,

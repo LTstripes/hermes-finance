@@ -5,6 +5,15 @@ type ReadinessCopy = {
   message: string;
 };
 
+const BROKER_SOURCE_TITLES = new Map<string, string>([
+  ["4_Transfers_unsupported", "Переводы требуют сверки"],
+  ["5_UFSR_unsupported", "Данные UFSR не поддерживаются"],
+  ["commission_basis_unresolved", "Учёт комиссии не подтверждён"],
+  ["money_semantics_unsupported", "Денежные операции не разобраны"],
+  ["settlement_principal_unresolved", "Основная сумма расчётов не подтверждена"],
+  ["unparsed_source_rows", "Есть неразобранные строки отчёта"],
+]);
+
 const READINESS_COPY: Record<string, ReadinessCopy> = {
   snapshot_date_required: {
     title: "Дата снимка не задана",
@@ -159,7 +168,11 @@ function fallbackCopy(item: CloseReadinessItem): ReadinessCopy {
 }
 
 export function readinessCopy(item: CloseReadinessItem): ReadinessCopy {
-  return READINESS_COPY[item.code] ?? fallbackCopy(item);
+  const copy = Object.hasOwn(READINESS_COPY, item.code)
+    ? READINESS_COPY[item.code]
+    : fallbackCopy(item);
+  const title = BROKER_SOURCE_TITLES.get(item.code);
+  return title ? { ...copy, title } : copy;
 }
 
 export function readinessDiagnostic(item: CloseReadinessItem): string {
