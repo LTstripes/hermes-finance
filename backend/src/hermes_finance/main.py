@@ -58,6 +58,7 @@ from hermes_finance.api.investment_flows import router as investment_flows_route
 from hermes_finance.api.month_close_workflow import router as month_close_workflow_router
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.mybroker_import import router as mybroker_import_router
+from hermes_finance.api.mybroker_preflight import router as mybroker_preflight_router
 from hermes_finance.api.payouts import router as payouts_router
 from hermes_finance.api.performance_attribution import router as performance_attribution_router
 from hermes_finance.api.performance_availability import router as performance_availability_router
@@ -166,6 +167,7 @@ def create_app(
     application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(mybroker_import_router)
+    application.include_router(mybroker_preflight_router)
     application.include_router(broker_months_router)
     application.include_router(broker_statement_return_router)
     application.include_router(historical_endpoints_router)
