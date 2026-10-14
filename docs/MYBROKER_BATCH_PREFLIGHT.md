@@ -9,6 +9,11 @@ Intent permits `account_bindings` with the existing identity-preview shape and
 optional `requested_from` / `requested_to` dates supplied together. Omitted dates
 select the uploaded filename-declared range. Bounds are 8 MiB per original,
 32 MiB per batch, 30,000 parsed rows and 120 calendar months.
+Multipart data is parsed directly from the request stream into bounded memory.
+File count, each original and aggregate bytes are checked before extending a
+buffer; originals are never spooled to temporary files. Headers and intent are
+bounded separately. Batch account bindings are validated against all observed
+aliases, then each document receives only its applicable bindings.
 
 The service uses the existing S1 original grammar selector and native reducer,
 strict identity planner, and H0 endpoint definitions inside a query-only committed

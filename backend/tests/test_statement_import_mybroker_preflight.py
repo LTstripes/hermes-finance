@@ -415,3 +415,120 @@ def test_unparsed_layout_and_mapping_metadata_conflict_are_visible(database):
     assert "instrument_metadata_conflict" in document["mappings"]["conflicts"]
     assert document["mappings"]["instruments"][0]["state"] == "ambiguous"
     assert document["statuses"]["potential_incomplete_draft"] == "blocked"
+
+
+def test_distinct_accounts_accept_only_their_applicable_batch_bindings(database):
+    from hermes_finance.services.accounts import create_account
+
+    with database.session_factory() as session:
+        account = create_account(session, name="Second synthetic account", account_type="brokerage")
+        second_id = account.id
+    first = original()
+    root = ET.fromstring(first[1])
+    for row in root.iter():
+        if row.get("acc_code") == ACCOUNT:
+            row.set("acc_code", "7654321-000")
+    second = (first[0].replace("1234567", "7654321"), ET.tostring(root))
+    bindings = [
+        {"identity": alias, "hermes_id": target}
+        for alias, target in (
+            ("1234567", 1),
+            (ACCOUNT, 1),
+            ("7654321", second_id),
+            ("7654321-000", second_id),
+        )
+    ]
+    results = [
+        run(database, order, account_bindings=bindings)
+        for order in ([first, second], [second, first])
+    ]
+    assert results[0] == results[1]
+    for document in results[0]["documents"]:
+        assert document["mappings"]["conflicts"] == []
+        assert (
+            document["statuses"]["potential_incomplete_draft"]
+            == "candidate_for_existing_separate_reviewed_draft_preview"
+        )
+        aliases = {b["identity"] for b in document["mappings"]["accounts"]}
+        expected = (
+            {"1234567", ACCOUNT}
+            if document["document"]["filename_account"] == "1234567"
+            else {"7654321", "7654321-000"}
+        )
+        assert aliases == expected
+    for bad, code in (
+        (bindings + [bindings[0]], "duplicate_account_alias"),
+        (bindings + [{"identity": "UNOBSERVED", "hermes_id": 1}], "account_alias_unobserved"),
+    ):
+        with pytest.raises(MyBrokerError, match=f"^{code}$"):
+            run(database, [first, second], account_bindings=bad)
+    conflicting = [
+        {**b, "hermes_id": second_id} if b["identity"] == ACCOUNT else b for b in bindings
+    ]
+    result = run(database, [first, second], account_bindings=conflicting)
+    assert any(
+        "account_mapping_conflict" in d["mappings"]["conflicts"] for d in result["documents"]
+    )
+
+
+def test_http_upload_never_spools_even_above_starlette_threshold(database, monkeypatch):
+    import starlette.formparsers
+
+    def no_disk(*args, **kwargs):
+        raise AssertionError("preflight must not create a spooled original")
+
+    monkeypatch.setattr(starlette.formparsers, "SpooledTemporaryFile", no_disk)
+    name, raw = original()
+    raw += b" " * (2 * 1024 * 1024)
+    client = TestClient(create_app(database=database))
+    response = client.post("/api/mybroker-preflight/preview", files={"files": (name, raw)})
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize("boundary", ["per_file", "aggregate", "count", "intent", "header"])
+def test_http_stream_bounds_reject_before_service_or_spooling(database, monkeypatch, boundary):
+    import starlette.formparsers
+
+    import hermes_finance.api.mybroker_preflight as api
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("rejected upload must not spool or enter the service")
+
+    monkeypatch.setattr(starlette.formparsers, "SpooledTemporaryFile", forbidden)
+    monkeypatch.setattr(api, "preview_batch", forbidden)
+    name, raw = original()
+    files = [("files", (name, raw))]
+    data = {}
+    expected = 413
+    if boundary == "per_file":
+        monkeypatch.setattr(api, "MAX_BYTES", len(raw) - 1)
+    elif boundary == "aggregate":
+        monkeypatch.setattr(api, "MAX_BATCH_BYTES", len(raw) * 2 - 1)
+        files *= 2
+    elif boundary == "count":
+        files *= 9
+        expected = 422
+    elif boundary == "intent":
+        monkeypatch.setattr(api, "MAX_INTENT_BYTES", 3)
+        data["intent"] = "{   }"
+    else:
+        monkeypatch.setattr(api, "MAX_HEADER_BYTES", 8)
+    client = TestClient(create_app(database=database))
+    response = client.post("/api/mybroker-preflight/preview", files=files, data=data)
+    assert response.status_code == expected, response.text
+
+
+def test_truncated_stream_and_invalid_content_type_fail_closed(database):
+    client = TestClient(create_app(database=database))
+    for body, content_type in (
+        (b"private-body", "application/xml"),
+        (
+            b'--boundary\r\nContent-Disposition: form-data; name="files"; filename="private.xml"\r\n\r\nprivate',
+            "multipart/form-data; boundary=boundary",
+        ),
+    ):
+        response = client.post(
+            "/api/mybroker-preflight/preview", content=body, headers={"content-type": content_type}
+        )
+        assert response.status_code == 422 and "preflight_multipart_invalid" in response.text
+        assert "private" not in response.text

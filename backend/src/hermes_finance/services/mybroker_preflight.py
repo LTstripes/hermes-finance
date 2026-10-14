@@ -283,10 +283,27 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
     entries = []
     seen = {}
     total_rows = 0
+    # Validate at batch grain; an alias belonging to another uploaded original
+    # must not become a false per-document account_alias_unobserved conflict.
+    evidence_by_original = {
+        (filename, raw): parse_identity(raw, filename) for filename, raw in originals
+    }
+    batch_aliases = {
+        alias for evidence in evidence_by_original.values() for alias in evidence["source_accounts"]
+    }
+    requested_aliases = [binding["identity"] for binding in account_bindings]
+    if len(set(requested_aliases)) != len(requested_aliases):
+        raise MyBrokerError("duplicate_account_alias")
+    if set(requested_aliases) - batch_aliases:
+        raise MyBrokerError("account_alias_unobserved")
     for filename, raw in sorted(originals, key=lambda item: (item[0], item[1])):
         document = parse_import_original(session, raw, filename)
-        evidence = parse_identity(raw, filename)
-        plan = identity_plan(session, evidence, account_bindings)
+        evidence = evidence_by_original[(filename, raw)]
+        plan = identity_plan(
+            session,
+            evidence,
+            [b for b in account_bindings if b["identity"] in evidence["source_accounts"]],
+        )
         document["source_accounts"] = evidence["source_accounts"]
         binder = []
         source = session.scalar(
