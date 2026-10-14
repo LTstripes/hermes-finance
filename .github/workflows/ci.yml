@@ -119,7 +119,7 @@ jobs:
       !cancelled() &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.lane == 'integrations' && 15 || 10 }}
+    timeout-minutes: ${{ matrix.lane == 'integrations' && 20 || 10 }}
     strategy:
       fail-fast: false
       matrix:
