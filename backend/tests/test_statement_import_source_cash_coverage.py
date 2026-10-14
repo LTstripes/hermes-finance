@@ -2297,6 +2297,9 @@ def test_coupon_v3_money_receipt_retires_closed_late_listener_replay_reaffirm(
         "source_account",
         "source_date",
         "source_currency",
+        "source_malformed",
+        "source_nonfinite",
+        "source_overflow",
         "target_net",
         "target_currency",
         "target_date",
@@ -2346,6 +2349,9 @@ def test_coupon_v3_corrupt_current_source_owner_target_proof_fails_closed_withou
                 "source_account": ("source_account", "foreign-alias"),
                 "source_date": ("date", "2030-01-18"),
                 "source_currency": ("currency", "USD"),
+                "source_malformed": ("amount", "not-a-number"),
+                "source_nonfinite": ("amount", "NaN"),
+                "source_overflow": ("amount", "1e1000001"),
             }[change]
             row[field] = value
             session.execute(

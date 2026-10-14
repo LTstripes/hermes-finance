@@ -5,6 +5,7 @@ ICF partition consume the same exhaustive target authority.
 """
 
 import json
+from decimal import DecimalException
 
 from hermes_finance.persistence import (
     AppliedStatementEvent,
@@ -179,7 +180,7 @@ def authority(session, account_id, a, b, scoped_money, *, retained=None):
                     if event.investment_cash_flow_id == target_id
                 ):
                     blockers.add("coupon_typed_statement_conflict")
-        except (ValueError, TypeError, KeyError, MyBrokerError, AttributeError):
+        except (ValueError, TypeError, KeyError, MyBrokerError, AttributeError, DecimalException):
             blockers.add("coupon_money_evidence_invalid")
         try:
             item["cohort_owners"] = owners(session, cohort)
