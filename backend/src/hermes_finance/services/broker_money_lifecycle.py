@@ -185,6 +185,11 @@ def _before_flush(session, _context, _instances):
             ):
                 old = inspect(row).attrs.projection_json.history.deleted
                 initial_stage = list(old) == ["{}"]
+                initial_stage |= bool(
+                    session.info.get("broker_money_stage")
+                    and session.info.get("broker_money_initial_receipt")
+                    == (row.request_id, old[0] if len(old) == 1 else None)
+                )
                 if not initial_stage:
                     raise MyBrokerError("broker_month_receipt_is_append_only")
         new_occurrences = [

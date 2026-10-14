@@ -7,7 +7,8 @@ from sqlalchemy import event, inspect, text
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain.historical_owner_flows import (
-    COMPATIBLE_FLOW_CONTRACT,
+    SECTION_FLOW_CONTRACT,
+    SOURCE_CASH_FLOW_CONTRACTS,
     SOURCE_CASH_PROVENANCE,
 )
 from hermes_finance.persistence import (
@@ -51,7 +52,7 @@ def _affects(row, core, evidence):
     deps = evidence["dependencies"]
     if (
         isinstance(row, CashBoundaryCoverage)
-        and evidence["contract_version"] == COMPATIBLE_FLOW_CONTRACT
+        and evidence["contract_version"] in SOURCE_CASH_FLOW_CONTRACTS
     ):
 
         def old(name):
@@ -117,6 +118,12 @@ def _before_flush(session, _context, _instances):
     for row in (*session.dirty, *session.deleted):
         if isinstance(row, HISTORY) and (row in session.deleted or session.is_modified(row)):
             raise ValueError("historical owner flow history is append-only")
+    if not inspect(session.connection()).has_table("historical_owner_flows"):
+        return
+    # Watch every sanctioned flush: canonical #800 support includes shared
+    # catalogue tokens, and later listeners can add receipts to this flush.
+    # V3 retires only after comparing the actual persisted bound support.
+    session.info["owner_flow_section_recheck"] = True
     changes = [
         r
         for r in (*session.new, *session.dirty, *session.deleted)
@@ -138,6 +145,8 @@ def _before_flush(session, _context, _instances):
                 continue
             core = session.get(HistoricalOwnerFlow, current.flow_id)
             evidence = json.loads(current.evidence_json)
+            if evidence.get("contract_version") == SECTION_FLOW_CONTRACT:
+                continue
             if any(_affects(change, core, evidence) for change in changes):
                 _append(
                     session,
@@ -150,6 +159,52 @@ def _before_flush(session, _context, _instances):
                 )
 
 
+def _after_flush_postexec(session, _context):
+    from hermes_finance.domain.historical_owner_flows import OwnerFlowIntent
+    from hermes_finance.services.historical_owner_flows import _append, _build, _rows, _support
+    from hermes_finance.statement_import.mybroker import MyBrokerError, digest
+
+    if not session.info.pop("owner_flow_section_recheck", False):
+        return
+    with session.no_autoflush:
+        latest = {r.flow_id: r for r in _rows(session, HistoricalOwnerFlowRevision)}
+        for current in latest.values():
+            if current.acceptance_state != "accepted":
+                continue
+            evidence = json.loads(current.evidence_json)
+            if evidence.get("contract_version") != SECTION_FLOW_CONTRACT:
+                continue
+            try:
+                frozen = OwnerFlowIntent.model_validate(evidence["intent"])
+                rebuilt, reasons, _, _ = _build(session, frozen)
+                changed = (
+                    bool(reasons)
+                    or frozen.evidence_version != SECTION_FLOW_CONTRACT
+                    or digest(_support(evidence)) != current.material_signature
+                    or _support(rebuilt) != _support(evidence)
+                )
+            except (ValueError, TypeError, KeyError, MyBrokerError):
+                changed = True
+            if changed:
+                _append(
+                    session,
+                    current.flow_id,
+                    current,
+                    evidence,
+                    "retire",
+                    "retired",
+                    "dependency_changed",
+                )
+
+
+def _after_rollback(session):
+    session.info.pop("owner_flow_section_recheck", None)
+
+
 def install_hooks():
     if not event.contains(Session, "before_flush", _before_flush):
         event.listen(Session, "before_flush", _before_flush)
+    if not event.contains(Session, "after_flush_postexec", _after_flush_postexec):
+        event.listen(Session, "after_flush_postexec", _after_flush_postexec)
+    if not event.contains(Session, "after_rollback", _after_rollback):
+        event.listen(Session, "after_rollback", _after_rollback)
