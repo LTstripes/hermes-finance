@@ -124,21 +124,36 @@ BLANKS = {
         "Tablix6/Textbox4", _branch("Textbox63", _branch("Textbox49"), _branch("Textbox50"))
     ),
 }
-SUMMARY = _branch(
-    "Tablix7",
-    _branch(
-        "oper_group_Collection",
-        *(
-            _branch(
-                "oper_group",
+
+
+def _summary(labels):
+    return _branch(
+        "Tablix7",
+        _branch(
+            "oper_group_Collection",
+            *(
                 _branch(
-                    "p_code6_Collection", _branch("p_code6", p_code6=_currency, volume6=_number)
-                ),
-                oper_group=lambda v, expected=label: v == expected,
-            )
-            for label in ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка")
+                    "oper_group",
+                    _branch(
+                        "p_code6_Collection", _branch("p_code6", p_code6=_currency, volume6=_number)
+                    ),
+                    oper_group=lambda v, expected=label: v == expected,
+                )
+                for label in labels
+            ),
         ),
-    ),
+    )
+
+
+# Three complete observed trees, not a grammar of optional economic groups.
+# Totals remain opaque bookkeeping exceptions with no financial authority.
+SUMMARIES = tuple(
+    _summary(labels)
+    for labels in (
+        ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка"),
+        ("Внесено по распоряжению Клиента", "Дивиденды", "Купоны", "Списано по тарифам Банка"),
+        ("Дивиденды", "Купоны", "Списано по тарифам Банка"),
+    )
 )
 DAILY = _branch(
     "Textbox95",
@@ -377,15 +392,15 @@ def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | Non
             ]:
                 return None
             shapes = {
-                "Tablix2": _endpoint(True),
-                "Tablix3": _endpoint(False),
-                **BLANKS,
-                "Tablix7": SUMMARY,
+                "Tablix2": (_endpoint(True),),
+                "Tablix3": (_endpoint(False),),
+                **{tag: (spec,) for tag, spec in BLANKS.items()},
+                "Tablix7": SUMMARIES,
             }
-            for tag, spec in shapes.items():
+            for tag, variants in shapes.items():
                 found = report.findall("m:" + tag, NS)
                 if found:
-                    if len(found) != 1 or not _shape(found[0], spec):
+                    if len(found) != 1 or not any(_shape(found[0], spec) for spec in variants):
                         return None
                     report.remove(found[0])
                     exceptions.append("money_controls_unresolved")
