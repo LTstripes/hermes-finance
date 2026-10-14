@@ -12,6 +12,7 @@ from hermes_finance.domain.broker_statement_return import (
     StatementCrossing,
     StatementEndpoint,
     StatementPosition,
+    StatementSectionAuthority,
     StatementSource,
     calculate_statement_return,
 )
@@ -23,7 +24,12 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services import broker_month_journal as journal
-from hermes_finance.services import broker_months, mybroker_import, source_cash_coverage
+from hermes_finance.services import (
+    broker_months,
+    broker_sections,
+    mybroker_import,
+    source_cash_coverage,
+)
 from hermes_finance.services.historical_owner_flows import read_historical_owner_flow
 from hermes_finance.services.mybroker_dispositions import effective_bindings
 from hermes_finance.services.mybroker_money_candidates import _original_equal
@@ -92,6 +98,65 @@ def _endpoint(document, instruments, account_id, day, opening, reasons):
         total_value_kopecks=total + cash if total is not None and cash is not None else None,
         inventory_state="complete" if complete else "unknown",
     )
+
+
+def _section_authority(session, sources, account_id, month_id, reasons):
+    diagnostics, material = [], []
+    for source in sorted(sources, key=lambda s: s.id):
+        # Retain even conflicting/malformed histories in freshness material. A
+        # fork has no head; adding another fork must still invalidate Preview.
+        rows = list(
+            session.scalars(
+                select(BrokerMonthApply)
+                .where(
+                    BrokerMonthApply.import_id == source.id,
+                    BrokerMonthApply.account_id == account_id,
+                    BrokerMonthApply.reporting_month_id == month_id,
+                )
+                .order_by(BrokerMonthApply.request_id)
+                .execution_options(populate_existing=True)
+            )
+        )
+        material.append(
+            [
+                [str(getattr(source, c.name)) for c in source.__table__.columns],
+                [[str(getattr(r, c.name)) for c in r.__table__.columns] for r in rows],
+            ]
+        )
+        try:
+            heads, errors = broker_sections._heads(session, source.id, account_id, month_id)
+            # Do not allow an unexpected partial/None proof to escape as a
+            # missing grant or optimistic pattern, even if the chain resolved.
+            if any(
+                proof is None or proof != broker_sections.validated_proof(row)
+                for row, proof in heads.values()
+            ):
+                raise MyBrokerError("statement_section_evidence_invalid")
+            current = {
+                section: broker_sections._valid_current(session, row, proof)
+                for section, (row, proof) in heads.items()
+            }
+        except (KeyError, TypeError, ValueError, AttributeError, MyBrokerError):
+            heads, current, errors = {}, {}, ["statement_section_evidence_invalid"]
+        reasons.update(errors)
+        for section in broker_sections.SHAPES:
+            head = heads.get(section)
+            effective = not errors and head is not None and current[section]
+            diagnostics.append(
+                StatementSectionAuthority(
+                    import_id=source.id,
+                    account_id=account_id,
+                    reporting_month_id=month_id,
+                    section=section,
+                    state="blocked"
+                    if errors or (head and not effective)
+                    else ("effective" if effective else "missing"),
+                    pattern=broker_sections.SHAPES[section]["pattern"] if effective else None,
+                    head_request_id=head[0].request_id if head else None,
+                    proof_material_signature=digest(head[1]) if head else None,
+                )
+            )
+    return tuple(diagnostics), material
 
 
 @coherent_read_operation
@@ -181,15 +246,19 @@ def read_statement_return(
         opaque |= any(t["repo_observed"] or t["section"] == "pending" for t in document["trades"])
         if opaque:
             reasons.add("material_account_exposure_unassessed")
-        others = [
-            s.id
-            for s in broker_months._intersecting_sources(session, document, account_id)
-            if s.id != source.id
-        ]
+        relevant_sources = list(broker_months._intersecting_sources(session, document, account_id))
+        others = [s.id for s in relevant_sources if s.id != source.id]
         if others:
             reasons.add("statement_overlapping_source")
     else:
-        opaque, others = True, []
+        opaque, others, relevant_sources = True, [], []
+    section_authority, section_material = _section_authority(
+        session,
+        {s.id: s for s in [source, *relevant_sources]}.values(),
+        account_id,
+        receipt.reporting_month_id,
+        reasons,
+    )
     coverages = list(
         session.scalars(
             select(CashBoundaryCoverage).where(
@@ -255,6 +324,8 @@ def read_statement_return(
             coverage,
             flow_material,
             others,
+            [s.model_dump(mode="json") for s in section_authority],
+            section_material,
             sorted(reasons),
         ]
     )
@@ -278,6 +349,7 @@ def read_statement_return(
                 ),
             ),
             material_fingerprint=material,
+            section_authority=section_authority,
             crossings=tuple(crossings),
             cash_coverage_state="complete" if effective else "unknown",
             cash_coverage_revision_id=coverage["revision_id"] if effective else None,

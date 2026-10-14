@@ -69,6 +69,20 @@ class StatementSource(StatementModel):
     confirmation_digest: str
 
 
+class StatementSectionAuthority(StatementModel):
+    """Current source-bound metadata authority; never economic-period evidence."""
+
+    import_id: int
+    account_id: int
+    reporting_month_id: int
+    section: Literal["4_Transfers", "5_UFSR"]
+    state: Literal["effective", "missing", "blocked"]
+    pattern: Literal["empty_transfers", "ufsr_open_connection"] | None = None
+    head_request_id: str | None = None
+    proof_material_signature: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    period_scope: Literal["unknown"] = "unknown"
+
+
 class BrokerStatementBasis(StatementModel):
     account_id: int
     t0: date
@@ -78,6 +92,7 @@ class BrokerStatementBasis(StatementModel):
     closing: StatementEndpoint
     sources: tuple[StatementSource, ...]
     material_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    section_authority: tuple[StatementSectionAuthority, ...] = ()
     crossings: tuple[StatementCrossing, ...] = ()
     cash_coverage_state: Literal["complete", "unknown"] = "unknown"
     cash_coverage_revision_id: int | None = None

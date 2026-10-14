@@ -21,6 +21,28 @@ discloses effective crossing IDs, dates, signs, revisions and material signature
 cash coverage state/revision, membership, exposure, NKD basis and reason codes.
 The material fingerprint binds current source, receipt, dependencies and evidence.
 
+#815 diagnostic CODE GO [6166582304](https://github.com/LTstripes/hermes-finance/issues/815#issuecomment-6166582304)
+adds immutable `section_authority` entries for the selected and intersecting
+account sources, separately for Transfers and UFSR. Each entry binds import,
+account and reporting month; reports `effective|missing|blocked`, current head
+request ID and proof material signature when a head exists. A safe `pattern` is
+disclosed only after the existing #800 chain and current dependency resolver
+validate the exact proof. Raw inventory and safe original XML alone leave the
+grant missing; stale, malformed or conflicting authority remains blocked without
+falling back to an older receipt. Superseded history does not override a valid
+fresh head. Head IDs, proof material, blocked/conflicting histories and relevant
+source changes participate in the S3 fingerprint even while reasons and rate
+remain unchanged. GET, original Preview and JSON attachment export share this DTO.
+
+These are three separate evidence layers: original-safe XML structure, accepted
+source-scoped metadata grant, and independently accepted economic-period coverage.
+Section entries always retain `period_scope=unknown`. They do not assess material
+exposure, dated crossings or continuous historical performance membership.
+`cash_coverage_state` remains owned by the unchanged H2-A2 reader: frozen S1
+Transfers/UFSR syntax blockers still block it even with both #800 grants effective.
+`material_account_exposure_unassessed`, overlapping-source and all other retained
+null reasons remain in force. Numerical compatibility is a separate #816 contract.
+
 Routes (all read-only, including POST preview):
 
 - `GET /api/broker-statement-returns/sources?account_id=...` lists accepted source
