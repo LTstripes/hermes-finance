@@ -148,7 +148,12 @@ def _overlaps(documents: list[dict], reduced: dict) -> list[dict]:
         missing = [
             d["document_sha256"]
             for d in documents
-            if projection["core"]["source_account"] in d["source_accounts"]
+            if (
+                projection["core"]["source_account"] in d["source_accounts"]
+                or any(
+                    d["filename_account"] == origin["filename_account"] for origin, _ in occurrences
+                )
+            )
             and d["covered_from"] <= projection["core"]["trade_time"][:10] <= d["covered_to"]
             and not any(t["identity"] == identity for t in d["trades"])
         ]

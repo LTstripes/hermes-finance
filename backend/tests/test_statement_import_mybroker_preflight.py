@@ -532,3 +532,14 @@ def test_truncated_stream_and_invalid_content_type_fail_closed(database):
         )
         assert response.status_code == 422 and "preflight_multipart_invalid" in response.text
         assert "private" not in response.text
+
+
+def test_settled_trade_missing_from_quiet_same_account_overlap_is_conflict(database):
+    traded = original(trades=True)
+    quiet = ("Брокерский 1234567 (01.01.30-28.02.30).xml", fixture(quiet=True))
+    results = [run(database, order) for order in ([traded, quiet], [quiet, traded])]
+    assert results[0] == results[1]
+    row = results[0]["native_trade_inventory"][0]
+    assert row["state"] == "conflict"
+    assert row["conflicts"] == ["native_identity_missing_in_overlap"]
+    assert len(row["missing_in_documents"]) == 1
