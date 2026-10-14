@@ -6,7 +6,8 @@ proof and current dependencies; originals are required at Preview and Apply.
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from calendar import monthrange
+from datetime import UTC, date, datetime
 
 from pydantic import ValidationError
 from sqlalchemy import select, update
@@ -295,6 +296,136 @@ def disposition(session, source, account_id, month_id, codes):
         if _valid_current(session, row, p)
     }
     return (set(codes) - removed) | set(errors)
+
+
+def coverage_disposition(session, source, account_id, codes):
+    """Read-only H2 provenance at exact source/month grain, never period coverage.
+
+    Bind absence and the complete scoped journal, including malformed/forked
+    history. Reuse the canonical head/currentness checks; do not select a head
+    by time or infer a ReportingMonth from intersecting dates.
+    """
+    rows = list(
+        session.scalars(
+            select(BrokerMonthApply)
+            .where(
+                BrokerMonthApply.import_id == source.id,
+                BrokerMonthApply.account_id == account_id,
+            )
+            .order_by(BrokerMonthApply.request_id)
+            .execution_options(populate_existing=True)
+        )
+    )
+    scopes, removed, errors = [], set(), set()
+    for month_id in sorted({r.reporting_month_id for r in rows}):
+        month = session.get(ReportingMonth, month_id, populate_existing=True)
+        geometry = (
+            [
+                month.id,
+                month.year,
+                month.month,
+                str(month.period_start),
+                str(month.period_end),
+                str(month.snapshot_date),
+            ]
+            if month
+            else None
+        )
+        matching = bool(
+            month
+            and (source.covered_from, source.covered_to) == (month.period_start, month.period_end)
+            and month.snapshot_date == month.period_end
+            and month.period_start == date(month.year, month.month, 1)
+            and month.period_end
+            == date(month.year, month.month, monthrange(month.year, month.month)[1])
+        )
+        scoped = [r for r in rows if r.reporting_month_id == month_id]
+        heads, refusals = _heads(session, source.id, account_id, month_id)
+        errors.update(refusals)
+        sections = []
+        for section in SHAPES:
+            head = heads.get(section)
+            current = False
+            dependency = None
+            if head:
+                row, proof = head
+                base = session.get(BrokerMonthApply, proof["intent"]["base_request_id"])
+                if base is not None and journal.kind(base) == journal.SOURCE:
+                    try:
+                        dependency = {
+                            "bindings": _bindings(
+                                session, base, source, proof["bindings"]["filename_digest"]
+                            ),
+                            "authority_token": _authority_token(session, base),
+                        }
+                    except (KeyError, TypeError, ValueError, AttributeError):
+                        dependency = {"unavailable": True}
+                current = matching and _valid_current(session, row, proof)
+            if current:
+                removed.add(f"{section}_unsupported")
+            sections.append(
+                {
+                    "section": section,
+                    "head_request_id": head[0].request_id if head else None,
+                    "state": "blocked"
+                    if refusals
+                    else "effective"
+                    if current
+                    else "stale"
+                    if head
+                    else "absent",
+                    "refusals": sorted(
+                        set(refusals)
+                        | ({"source_month_range_mismatch"} if not matching else set())
+                        | ({"section_dependency_changed"} if head and not current else set())
+                    ),
+                    "current_dependency": dependency,
+                }
+            )
+        scopes.append(
+            {
+                "reporting_month_id": month_id,
+                "month_identity": geometry,
+                "matching_range": matching,
+                "journal": [
+                    {
+                        "request_id": r.request_id,
+                        "kind": journal.kind(r),
+                        "request_fingerprint": r.request_fingerprint,
+                        "confirmation_digest": r.confirmation_digest,
+                        "proof": journal.payload(r),
+                        "payload_digest": digest(r.projection_json),
+                    }
+                    for r in scoped
+                    if journal.kind(r) != journal.MONEY
+                ],
+                "sections": sections,
+            }
+        )
+    # Multiple monthly identities cannot donate a winner's exemption.
+    if len([s for s in scopes if s["matching_range"]]) > 1:
+        removed.clear()
+        errors.add("section_month_scope_ambiguous")
+    return {
+        "import_id": source.id,
+        "account_id": account_id,
+        "original_sha256": source.document_sha256,
+        "source_digest": _source_digest(source),
+        "period_scope": "unknown",
+        "absent_sections": sorted(
+            section
+            for section in SHAPES
+            if not any(
+                s["state"] != "absent"
+                for scope in scopes
+                for s in scope["sections"]
+                if s["section"] == section
+            )
+        ),
+        "scopes": scopes,
+        "raw_blockers": sorted(set(codes)),
+        "effective_blockers": sorted((set(codes) - removed) | errors),
+    }
 
 
 def _plan(session, intent, document, filename):

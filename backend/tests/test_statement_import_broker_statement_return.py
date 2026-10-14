@@ -711,7 +711,7 @@ def test_section_safe_a_never_clears_unsafe_or_overlapping_b(database, both_safe
 
 def test_effective_sections_do_not_override_real_h2_a2_reader(database):
     # Establish real accepted H2-A2 on a clean source first. A newly disclosed
-    # opaque source invalidates it through the real reader, even after #800.
+    # opaque source retires its reviewed context, even after effective #800.
     client, _ = prepared(database, covered=True)
     with database.session_factory() as session:
         coverage_id = session.scalar(select(CashBoundaryCoverage.id))
@@ -733,7 +733,7 @@ def test_effective_sections_do_not_override_real_h2_a2_reader(database):
         frozen_s1 = session.get(MyBrokerImport, safe["import_id"]).normalized_json
         readback = read_source_cash_coverage(session, coverage_id)
         assert readback["effective_state"] == "retired"
-        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(readback["blockers"])
+        assert {"frozen_dependency_changed", "claim_binding_mismatch"} <= set(readback["blockers"])
         plan = preview_source_cash_coverage(
             session,
             SourceCashIntent(
@@ -741,7 +741,14 @@ def test_effective_sections_do_not_override_real_h2_a2_reader(database):
             ),
         )
         assert not plan["can_apply"]
-        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(plan["blockers"])
+        assert "owner_cash_coverage_claims_missing" in plan["blockers"]
+        authority = next(
+            s["section_authority"]
+            for s in plan["evidence"]["dependencies"]["sources"]
+            if s["import_id"] == safe["import_id"]
+        )
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(authority["raw_blockers"])
+        assert authority["effective_blockers"] == []
         result = read_statement_return(session, request_id="opaque-source", account_id=1)
         assert result.cash_coverage_state == "unknown"
         assert set(readback["blockers"]) <= set(result.reason_codes)

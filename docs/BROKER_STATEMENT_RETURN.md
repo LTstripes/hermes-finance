@@ -38,10 +38,23 @@ These are three separate evidence layers: original-safe XML structure, accepted
 source-scoped metadata grant, and independently accepted economic-period coverage.
 Section entries always retain `period_scope=unknown`. They do not assess material
 exposure, dated crossings or continuous historical performance membership.
-`cash_coverage_state` remains owned by the unchanged H2-A2 reader: frozen S1
-Transfers/UFSR syntax blockers still block it even with both #800 grants effective.
+`cash_coverage_state` remains owned by the H2-A2 reader. The #816
+[accepted compatibility contract](https://github.com/LTstripes/hermes-finance/issues/816#issuecomment-6168054932)
+introduces `h2-a2-source-cash-rub-v2`: each intersecting source records raw and
+effective syntax blockers, absent/current section heads, full scoped receipt
+chains and current base/grammar/mapping/dependency bindings before blocker union.
+Only current exact-month #800 authority removes its own named Transfers/UFSR
+exception. It adds no coverage dates and does not override frozen H2-A1 blockers.
+An independently complete quiet interval still needs continuous membership,
+resolved Money/exposure, all four reviewed claims and explicit zero crossings.
+New accepts and explicitly reviewed same-identity reaffirmations bind v2 context;
+v1 reads/replays retain their original evidence and never inherit section grants.
+Relevant source/section/base/dependency changes append retirement and UNKNOWN in
+the same transaction, including CLOSED and receipts from later lifecycle hooks.
+ABA and replay cannot revive retirement. Coherent GET rechecks without writes;
+positive edits/reaffirm/revoke still require explicit Reopen when CLOSED.
 `material_account_exposure_unassessed`, overlapping-source and all other retained
-null reasons remain in force. Numerical compatibility is a separate #816 contract.
+null reasons remain in force. Cash compatibility alone grants no numerical return.
 
 Routes (all read-only, including POST preview):
 

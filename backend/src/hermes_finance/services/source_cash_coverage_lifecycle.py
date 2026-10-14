@@ -10,6 +10,8 @@ from hermes_finance.persistence import (
     Account,
     AccountPerformanceScopeMembership,
     BrokerIdentityMapping,
+    BrokerMonthApply,
+    CashBalance,
     CashBoundaryCoverage,
     ExternalFlow,
     ExternalTransferLink,
@@ -19,8 +21,16 @@ from hermes_finance.persistence import (
     HistoricalOwnerFlowRevision,
     InKindBoundaryCoverage,
     InKindMovement,
+    Instrument,
     InvestmentCashFlow,
+    MyBrokerCorrectionChange,
+    MyBrokerCorrectionRevision,
+    MyBrokerDispositionChange,
+    MyBrokerDispositionRevision,
+    MyBrokerDispositionSet,
     MyBrokerImport,
+    PositionSnapshot,
+    ReportingMonth,
     SourceCashCoverageApply,
     SourceCashCoverageRevision,
 )
@@ -41,6 +51,16 @@ DEPENDENCIES = (
     InKindMovement,
     InKindBoundaryCoverage,
     CashBoundaryCoverage,
+    BrokerMonthApply,
+    CashBalance,
+    PositionSnapshot,
+    ReportingMonth,
+    Instrument,
+    MyBrokerDispositionSet,
+    MyBrokerDispositionRevision,
+    MyBrokerDispositionChange,
+    MyBrokerCorrectionRevision,
+    MyBrokerCorrectionChange,
 )
 
 
@@ -55,6 +75,33 @@ def _intersects(row, start_name, end_name, a, b):
 def _affects(session, change, row, evidence):
     deps = evidence["dependencies"]
     account_id, start, end = row.account_id, row.covered_from, row.covered_to
+    if isinstance(change, BrokerMonthApply):
+        from hermes_finance.services import broker_month_journal as journal
+        from hermes_finance.services.source_cash_coverage import CONTRACT
+
+        return (
+            evidence.get("contract_version") == CONTRACT
+            and journal.kind(change) != journal.MONEY
+            and account_id in _values(change, "account_id")
+            and any(s["import_id"] in _values(change, "import_id") for s in deps["sources"])
+        )
+    if isinstance(
+        change,
+        (
+            ReportingMonth,
+            Instrument,
+            CashBalance,
+            PositionSnapshot,
+            MyBrokerDispositionSet,
+            MyBrokerDispositionRevision,
+            MyBrokerDispositionChange,
+            MyBrokerCorrectionRevision,
+            MyBrokerCorrectionChange,
+        ),
+    ):
+        # These affect canonical section currentness through journal/projection
+        # dependencies, rather than the old H2 cash inventory's row shapes.
+        return False
     if isinstance(change, Account):
         return change.id == account_id and (
             change in session.deleted or inspect(change).attrs.account_type.history.has_changes()
@@ -139,6 +186,10 @@ def _before_flush(session, _context, _instances):
     ]
     if not changes or not inspect(session.connection()).has_table("source_cash_coverage_revisions"):
         return
+    # A later before_flush listener may append another dependency receipt. The
+    # post-flush comparison sees the whole transaction, independent of listener
+    # registration order, and commit flushes its retirement before publishing.
+    session.info["source_cash_dependency_recheck"] = True
     session.execute(text("UPDATE source_cash_coverage_revisions SET revision = revision WHERE 0"))
     with session.no_autoflush:
         latest = {r.coverage_id: r for r in _rows(session, SourceCashCoverageRevision)}
@@ -176,6 +227,64 @@ def _before_flush(session, _context, _instances):
                 )
 
 
+def _after_flush_postexec(session, _context):
+    from hermes_finance.domain.source_cash_coverage import SourceCashIntent
+    from hermes_finance.services.historical_owner_flows import _material, _rows
+    from hermes_finance.services.source_cash_coverage import (
+        CONTRACT,
+        _evidence,
+        _support,
+        append_revision,
+    )
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    if not session.info.pop("source_cash_dependency_recheck", False):
+        return
+    latest = {r.coverage_id: r for r in _rows(session, SourceCashCoverageRevision)}
+    with session.no_autoflush:
+        for current in latest.values():
+            if current.acceptance_state != "accepted":
+                continue
+            evidence = json.loads(current.evidence_json)
+            if evidence.get("contract_version") != CONTRACT:
+                continue
+            row = session.get(CashBoundaryCoverage, current.coverage_id)
+            try:
+                identity = evidence["identity"]
+                rebuilt = _evidence(
+                    session,
+                    SourceCashIntent.model_validate(evidence["intent"]),
+                    identity["account_id"],
+                    date.fromisoformat(identity["opening_date"]),
+                    date.fromisoformat(identity["closing_date"]),
+                    retained=evidence["dependencies"],
+                )
+                changed = _support(rebuilt) != _support(evidence)
+            except (ValueError, TypeError, KeyError, MyBrokerError):
+                changed = True
+            if changed:
+                previous = _material(row)
+                row.coverage_state = "unknown"
+                append_revision(
+                    session,
+                    row,
+                    current,
+                    evidence,
+                    "retire",
+                    "retired",
+                    previous,
+                    "dependency_changed",
+                )
+
+
+def _after_rollback(session):
+    session.info.pop("source_cash_dependency_recheck", None)
+
+
 def install_hooks():
     if not event.contains(Session, "before_flush", _before_flush):
         event.listen(Session, "before_flush", _before_flush)
+    if not event.contains(Session, "after_flush_postexec", _after_flush_postexec):
+        event.listen(Session, "after_flush_postexec", _after_flush_postexec)
+    if not event.contains(Session, "after_rollback", _after_rollback):
+        event.listen(Session, "after_rollback", _after_rollback)
