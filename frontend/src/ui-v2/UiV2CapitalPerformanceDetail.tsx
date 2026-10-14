@@ -44,11 +44,13 @@ function accountName(accounts: Account[] | undefined, id: number): string {
 function AccountPerformanceRow({
   accountId,
   end,
+  membershipGap,
   name,
   start,
 }: {
   accountId: number;
   end: string;
+  membershipGap: boolean;
   name: string;
   start: string;
 }) {
@@ -87,7 +89,12 @@ function AccountPerformanceRow({
             : "недоступен";
   return (
     <tr data-testid={`performance-account-row-${accountId}`}>
-      <td>{name}</td>
+      <td>
+        {name}
+        {membershipGap ? (
+          <p className={styles.metricNote}>История участия отсутствует или неоднозначна.</p>
+        ) : null}
+      </td>
       <td className={styles.numeric}>{twrrText}</td>
       <td className={styles.numeric}>{xirrText}</td>
       <td>
@@ -169,11 +176,13 @@ function MetricPanel({
 
 function ReadinessBody({
   accounts,
+  catalogueEmpty,
   context,
   readiness,
   retry,
 }: {
   accounts: Account[] | undefined;
+  catalogueEmpty: boolean;
   context: PerformanceContext;
   readiness: PerformanceReadiness;
   retry: () => void;
@@ -186,7 +195,14 @@ function ReadinessBody({
   const inKindIds = evidence.in_kind_boundary_coverage.account_ids;
   const catalogueIds = evidence.scope_membership.account_ids;
   const gapIds = evidence.scope_membership.missing_or_ambiguous_account_ids;
-  const rowIds = [...new Set([...cashIds, ...inKindIds])].sort((a, b) => a - b);
+  // These are investigation candidates, never a reconstructed included-account set.
+  const rowIds = [...new Set([...catalogueIds, ...gapIds, ...cashIds, ...inKindIds])].sort(
+    (a, b) => a - b,
+  );
+  const membershipComplete =
+    evidence.scope_membership.status === "complete" &&
+    evidence.scope_membership.reason_codes.length === 0 &&
+    gapIds.length === 0;
 
   return (
     <div className={styles.summary}>
@@ -198,7 +214,11 @@ function ReadinessBody({
           <p>
             {cashIds.length > 0
               ? cashIds.map((id) => accountName(accounts, id)).join("; ")
-              : "Денежная проверка не требует счетов за этот интервал."}
+              : membershipComplete &&
+                  evidence.cash_boundary_coverage.status === "complete" &&
+                  evidence.cash_boundary_coverage.reason_codes.length === 0
+                ? "Для этого интервала нет счетов, требующих денежной проверки."
+                : "Список счетов денежной проверки не подтверждён за этот интервал."}
           </p>
         </div>
         {inKindIds.length > 0 ? (
@@ -216,7 +236,9 @@ function ReadinessBody({
               : "—"}
             {gapIds.length > 0
               ? ` Проблемные identity: ${gapIds.map((id) => accountName(accounts, id)).join("; ")}.`
-              : " Проблем нет."}
+              : membershipComplete
+                ? " История участия проверена."
+                : " История участия за интервал не подтверждена."}
           </p>
         </div>
       </section>
@@ -225,11 +247,17 @@ function ReadinessBody({
         <section aria-label="По счетам">
           <h3>По счетам</h3>
           <p className={styles.periodLine}>
-            У каждой строки свои availability/quality при том же интервале. Проценты строк не
-            суммируются и не усредняются; доступные счета не делают итог портфеля доступным.
+            Счета для проверки по данным каталога и истории участия. Наличие строки не подтверждает
+            включение счёта в итог портфеля. У каждой строки свои availability/quality при том же
+            интервале. Проценты строк не суммируются и не усредняются; доступные счета не делают
+            итог портфеля доступным.
           </p>
           {rowIds.length === 0 ? (
-            <p className={styles.periodLine}>Нет счетов для табличного разреза за этот интервал.</p>
+            <p className={styles.periodLine}>
+              {catalogueEmpty
+                ? "Каталог счетов пуст. Исторический состав расчёта не подтверждён."
+                : "Нет подтверждённого списка счетов для проверки за этот интервал. Исторический состав расчёта не определён."}
+            </p>
           ) : (
             <div className={styles.accountsTableWrap}>
               <table className={styles.accountsTable} data-testid="performance-accounts-table">
@@ -247,6 +275,7 @@ function ReadinessBody({
                       accountId={id}
                       end={context.end}
                       key={id}
+                      membershipGap={gapIds.includes(id)}
                       name={accountName(accounts, id)}
                       start={context.start}
                     />
@@ -502,6 +531,7 @@ export default function UiV2CapitalPerformanceDetail() {
       <>
         <ReadinessBody
           accounts={accounts}
+          catalogueEmpty={isQueryReady(accountsQuery) && accounts?.length === 0}
           context={context}
           readiness={readiness}
           retry={() => void readinessQuery.refetch()}
