@@ -60,6 +60,11 @@ def _difference(left: str | None, right: str | None, *, money: bool = False) -> 
                 )
                 else "sub_kopeck_observation"
             )
+            if result["minor_unit_state"] != "exact":
+                # An integral delta (including zero) cannot prove valid money
+                # operands. Preserve the Decimal observation without rounding.
+                result["state"] = "unknown"
+                result["delta_kopecks"] = None
         return result
 
 
@@ -108,6 +113,11 @@ def _seam(left: dict, right: dict, alias: str) -> dict:
     )
     if any("position_row_unclassified" in d["endpoint_blockers"] for d in (a, b)):
         blockers.append("position_row_unclassified")
+    if any(
+        comparison.get("minor_unit_state") == "sub_kopeck_observation"
+        for comparison in [cash, *(row["value"] for row in securities)]
+    ):
+        blockers.append("monetary_endpoint_precision_invalid")
     return {
         "source_account": alias,
         "left_document": a["document_sha256"],
@@ -191,6 +201,22 @@ def _overlaps(documents: list[dict], reduced: dict) -> list[dict]:
             }
         )
     return result
+
+
+def _adjacent_month_originals(entries: list[dict], account: str) -> bool:
+    months = [
+        e
+        for e in entries
+        if e["range_kind"] == "whole_month"
+        and e["document"]["filename_account"] == account
+        and not e["binder_blockers"]
+    ]
+    return any(
+        date.fromisoformat(left["document"]["covered_to"]) + timedelta(days=1)
+        == date.fromisoformat(right["document"]["covered_from"])
+        for left in months
+        for right in months
+    )
 
 
 def _calendar(entries: list[dict], start: date, end: date) -> list[dict]:
@@ -291,7 +317,8 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
     # Validate at batch grain; an alias belonging to another uploaded original
     # must not become a false per-document account_alias_unobserved conflict.
     evidence_by_original = {
-        (filename, raw): parse_identity(raw, filename) for filename, raw in originals
+        (filename, raw): parse_identity(raw, filename, incomplete_draft=True)
+        for filename, raw in originals
     }
     batch_aliases = {
         alias for evidence in evidence_by_original.values() for alias in evidence["source_accounts"]
@@ -347,6 +374,7 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
             "filename": filename,
             "document": document,
             "identity_plan": plan,
+            "draft_structure": evidence.get("draft_structure"),
             "binder_blockers": binder,
             "upload_count": 1,
             "source_acceptance": "persisted_source_reference"
@@ -444,11 +472,20 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
             for a in entry["accounts"]
             for s in ("beginning", "ending")
         )
+        # Reuse #804's byte/inventory-bound proof for the advisory DRAFT marker
+        # only. Do not remove any warning from S1, H0 endpoints or seam evidence.
+        draft_syntax_blockers = set(document["syntax_blockers"])
+        if entry["draft_structure"] is not None:
+            draft_syntax_blockers -= {
+                "unparsed_source_rows",
+                "4_Transfers_unsupported",
+                "5_UFSR_unsupported",
+            }
         candidate = (
             full_month
             and observed
             and plan["can_stage"]
-            and not (entry["binder_blockers"] or batch_conflicts or document["syntax_blockers"])
+            and not (entry["binder_blockers"] or batch_conflicts or draft_syntax_blockers)
         )
         entry["statuses"] = {
             "source_observations": "observed" if observed else "partial_or_unknown",
@@ -495,7 +532,12 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
             if "conflict" in related
             else ("unknown" if not related or "unknown" in related else "equal_observations")
         )
-        if "conflict" in related or entry["binder_blockers"]:
+        precision_blocked = any(
+            "monetary_endpoint_precision_invalid" in s["blockers"]
+            and entry["document"]["document_sha256"] in (s["left_document"], s["right_document"])
+            for s in seams
+        )
+        if "conflict" in related or precision_blocked or entry["binder_blockers"]:
             entry["statuses"]["potential_incomplete_draft"] = "blocked"
     start = requested_from or min(date.fromisoformat(d["covered_from"]) for d in documents)
     end = requested_to or max(date.fromisoformat(d["covered_to"]) for d in documents)
@@ -511,14 +553,7 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
             )
             else "unknown_missing_original",
             "adjacent_originals": "observed"
-            if any(
-                s
-                for s in seams
-                if any(
-                    d["filename_account"] == account and d["document_sha256"] == s["left_document"]
-                    for d in documents
-                )
-            )
+            if _adjacent_month_originals(entries, account)
             else "unknown_missing_adjacent_original",
         }
         for account in sorted({d["filename_account"] for d in documents})

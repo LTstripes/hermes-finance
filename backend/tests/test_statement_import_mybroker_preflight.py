@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event, select
 from test_statement_import_mybroker import ACCOUNT, FILENAME, fixture, native_money_xml
 from test_statement_import_mybroker import database as database
-from test_statement_import_mybroker_endpoints import broker_month_xml, node
+from test_statement_import_mybroker_endpoints import broker_month_xml, draft_structure_xml, node
 
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, MyBrokerImport
@@ -543,3 +543,161 @@ def test_settled_trade_missing_from_quiet_same_account_overlap_is_conflict(datab
     assert row["state"] == "conflict"
     assert row["conflicts"] == ["native_identity_missing_in_overlap"]
     assert len(row["missing_in_documents"]) == 1
+
+
+@pytest.mark.parametrize("footer,money", [(True, False), (False, True), (True, True)])
+def test_preflight_accepted_incomplete_draft_identity_retains_all_financial_warnings(
+    database, footer, money
+):
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    root = ET.fromstring(draft_structure_xml(footer=footer, money=money))
+    root.find(".//{MyBroker}Details[@trade_no]").set("summ_nkd", "3.50")
+    root.find(".//{MyBroker}Details[@trade_no]").set("bank_tax", "2.45")
+    root.find(".//{MyBroker}comment[@comment]").set("comment", "Fabricated opaque Money")
+    raw = ET.tostring(root)
+    frozen = parse_mybroker(raw, FILENAME)
+    assert "unparsed_source_rows" in parse_identity(raw, FILENAME)["conflicts"]
+    expected = parse_identity(raw, FILENAME, incomplete_draft=True)
+    assert expected["conflicts"] == [] and "draft_structure" in expected
+    before = snapshot(database)
+    client = TestClient(create_app(database=database))
+    response = client.post("/api/mybroker-preflight/preview", files={"files": (FILENAME, raw)})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    document = result["documents"][0]
+    assert document["mappings"]["conflicts"] == []
+    assert (
+        document["statuses"]["potential_incomplete_draft"]
+        == "candidate_for_existing_separate_reviewed_draft_preview"
+    )
+    assert document["draft_structure"] == expected["draft_structure"]
+    assert document["draft_structure"]["financial_authority"] == "none"
+    assert document["inventory"]["syntax_blockers"] == frozen["syntax_blockers"]
+    assert "unparsed_source_rows" in document["inventory"]["syntax_blockers"]
+    assert {
+        "money_semantics_unsupported",
+        "commission_basis_unresolved",
+        "settlement_cash_missing_or_ambiguous",
+    } <= set(document["inventory"]["cash_blockers"])
+    assert document["inventory"]["trades"][0]["accrued_interest"] == "3.5"
+    assert document["inventory"]["trades"][0]["bank_commission"] == "2.45"
+    assert document["inventory"]["unsupported_money_count"] == len(frozen["money"]) == 1
+    assert document["statuses"]["financial_completeness"] == result["coverage_state"] == "unknown"
+    assert document["statuses"]["close_performance"] == "blocked"
+    assert not result["financial_apply_available"]
+    assert all(
+        "unparsed_source_rows" in document["accounts"][0][side]["blockers"]
+        for side in ("beginning", "ending")
+    )
+    assert snapshot(database) == before
+    assert client.post("/api/mybroker-preflight/apply").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "mutation", ["hidden_identity", "unknown_section", "currency", "repo", "duplicate_money"]
+)
+def test_preflight_incomplete_draft_proof_never_waives_suspicious_identity_or_economic_evidence(
+    database, mutation
+):
+    root = ET.fromstring(draft_structure_xml())
+    if mutation == "hidden_identity":
+        root.find(".//{MyBroker}Details1").set("acc_code", "HIDDEN-SYNTHETIC-ALIAS")
+    elif mutation == "unknown_section":
+        node(root, "OtherSource")
+    elif mutation == "currency":
+        root.find(".//{MyBroker}Details[@trade_no]").set("Textbox14", "USD")
+    elif mutation == "repo":
+        root.find(".//{MyBroker}Details[@trade_no]").set("repo_no", "9000")
+    else:
+        parent = root.find(
+            ".//{MyBroker}comment/{MyBroker}money_volume_begin1_Collection/{MyBroker}money_volume_begin1/{MyBroker}p_code_Collection/{MyBroker}p_code"
+        )
+        parent.append(deepcopy(parent[0]))
+    before = snapshot(database)
+    document = run(database, [(FILENAME, ET.tostring(root))])["documents"][0]
+    assert document["mappings"]["conflicts"]
+    assert document["statuses"]["potential_incomplete_draft"] == "blocked"
+    assert "unparsed_source_rows" in document["inventory"]["syntax_blockers"]
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("case", ["partial_pair", "wide_then_month", "month_then_partial"])
+def test_contiguous_reports_do_not_prove_adjacent_calendar_month_originals(database, case):
+    left, right = adjacent()
+    if case == "partial_pair":
+        left = (left[0].replace("31.01.30", "15.01.30"), left[1])
+        right = ("Брокерский 1234567 (16.01.30-31.01.30).xml", right[1])
+    elif case == "wide_then_month":
+        left = ("Брокерский 1234567 (01.12.29-31.01.30).xml", left[1])
+    else:
+        right = (right[0].replace("28.02.30", "15.02.30"), right[1])
+    result = run(database, [left, right])
+    assert result["seams"][0]["state"] == "equal_observations"
+    assert (
+        result["report_availability"][0]["adjacent_originals"]
+        == "unknown_missing_adjacent_original"
+    )
+
+
+def test_two_complete_same_account_months_are_adjacent_even_across_year_boundary(database):
+    left, right = adjacent()
+    left = ("Брокерский 1234567 (01.12.30-31.12.30).xml", left[1])
+    right = ("Брокерский 1234567 (01.01.31-31.01.31).xml", right[1])
+    result = run(database, [right, left])
+    assert result["seams"][0]["state"] == "equal_observations"
+    assert result["report_availability"][0]["adjacent_originals"] == "observed"
+
+
+def test_complete_months_with_different_filename_accounts_are_not_same_account_adjacent_originals(
+    database,
+):
+    left, right = adjacent()
+    # An identical native row alias cannot attest a different filename account.
+    right = (right[0].replace("1234567", "7654321"), right[1])
+    result = run(database, [left, right])
+    assert result["seams"][0]["state"] == "equal_observations"
+    assert all(
+        r["adjacent_originals"] == "unknown_missing_adjacent_original"
+        for r in result["report_availability"]
+    )
+
+
+@pytest.mark.parametrize("component", ["cash", "value"])
+@pytest.mark.parametrize("left_value,right_value", [("400.001", "400.001"), ("400.001", "401.001")])
+def test_http_sub_kopeck_monetary_endpoints_never_establish_equal_seam(
+    database, component, left_value, right_value
+):
+    left, right = adjacent()
+    left_root, right_root = ET.fromstring(left[1]), ET.fromstring(right[1])
+    if component == "cash":
+        left_root.find(".//{MyBroker}Details[@active_name='RUB']").set("real_rest", left_value)
+        right_root.find(".//{MyBroker}Details[@active_name='RUB']").set("income_rest", right_value)
+    else:
+        left_root.find(".//{MyBroker}Details[@ISIN1]").set("real_volume", left_value)
+        right_root.find(".//{MyBroker}Details[@ISIN1]").set("income_volume", right_value)
+    before = snapshot(database)
+    client = TestClient(create_app(database=database))
+    response = client.post(
+        "/api/mybroker-preflight/preview",
+        files=[
+            ("files", (left[0], ET.tostring(left_root))),
+            ("files", (right[0], ET.tostring(right_root))),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    seam = result["seams"][0]
+    comparison = seam["rub_cash"] if component == "cash" else seam["securities"][0]["value"]
+    assert comparison["left"] == left_value and comparison["right"] == right_value
+    assert comparison["minor_unit_state"] == "sub_kopeck_observation"
+    assert comparison["delta_kopecks"] is None
+    assert comparison["state"] == seam["state"] == "unknown"
+    assert "monetary_endpoint_precision_invalid" in seam["blockers"]
+    assert all(
+        d["statuses"]["calendar_seam"] == "unknown"
+        and d["statuses"]["potential_incomplete_draft"] == "blocked"
+        for d in result["documents"]
+    )
+    assert result["financial_completeness"] == "unknown" and not result["financial_apply_available"]
+    assert snapshot(database) == before

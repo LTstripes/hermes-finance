@@ -17,8 +17,11 @@ aliases, then each document receives only its applicable bindings.
 
 The service uses the existing S1 original grammar selector and native reducer,
 strict identity planner, and H0 endpoint definitions inside a query-only committed
-snapshot. Previously persisted originals retain their recorded Money grammar and
-must match their immutable binder. H0 remains the inventory of persisted accepted
+snapshot. The existing #804 original/inventory-bound incomplete-DRAFT classifier
+may clear only proved nonidentity structure for the advisory DRAFT candidate
+marker. Standalone identity stays strict; S1 warnings and all financial, H0 and
+seam blockers remain visible. Previously persisted originals retain their recorded
+Money grammar and must match their immutable binder. H0 remains the inventory of persisted accepted
 sources; this preflight does not replace it. A new original's range is declared
 by its filename under the S1 contract, not independently attested by this Preview.
 
@@ -38,7 +41,11 @@ The response separates:
 - `seams`: adjacent ending versus opening quantities, source values and RUB cash,
   compared only for the same native source account. Differences use exact Decimal
   arithmetic; one kopeck is a conflict. Missing/ambiguous rows stay unknown. These
-  comparisons do not attest complete settled inventory or financial coverage.
+  comparisons also stay unknown for sub-kopeck cash or security values, even if
+  the Decimal values are equal or their difference is an integral number of
+  kopecks. No rounding or monetary minor-unit assertion is made in that case.
+  The precision blocker prevents DRAFT candidacy for the affected seam.
+  These comparisons do not attest complete settled inventory or financial coverage.
 - `native_trade_inventory`: existing reducer projections plus occurrence lineage,
   exact duplicate/enrichment/pending-to-settled, changed core/material, missing
   overlap and multiplicity diagnostics. Repeated identical file uploads are
@@ -46,6 +53,9 @@ The response separates:
   economically deduplicated. No second ledger is persisted.
 - `report_availability`: explicit missing adjacent and 2025 originals. A known
   range is an observation, not proof of historical financial completeness.
+  Adjacent originals are observed only for two consecutive full calendar-month
+  originals with the same filename account and valid immutable binders. A
+  contiguous seam between partial/wide reports cannot establish this availability.
 
 `coverage_state` and `financial_completeness` remain `unknown`;
 `financial_apply_available` is false and `close_performance` is blocked. Preflight
