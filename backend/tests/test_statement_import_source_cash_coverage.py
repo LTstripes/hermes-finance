@@ -192,6 +192,197 @@ def section_coverage_assert(session, intent, state):
     return view
 
 
+def section_cash_prepared(database):
+    from test_statement_import_historical_owner_flows import section_cash_setup
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    client, section, document, raw = section_cash_setup(database)
+    with database.session_factory() as session:
+        continuous_membership(session, raw.account_id)
+    _section_accept(client, section, document, "proof-A")
+    with database.session_factory() as session:
+        flow_intent = attest(session, raw)
+        flow = accept(session, flow_intent)["readback"]
+    interval = SourceCashIntent(
+        account_id=raw.account_id, opening_date=date(2029, 12, 31), closing_date=date(2030, 1, 31)
+    )
+    return client, section, document, flow_intent, flow, interval
+
+
+def test_v3_real_a2_reader_shared_assessor_and_directed_reaffirmation(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.services.source_cash_coverage import LEGACY_CONTRACT, inventory
+
+    client, section, document, flow_intent, flow, raw = section_cash_prepared(database)
+    with database.session_factory() as session:
+        legacy = inventory(
+            session, raw.account_id, raw.opening_date, raw.closing_date, contract=LEGACY_CONTRACT
+        )
+        assert "reviewed_flow_compatibility_required" in legacy["blockers"]
+        accepted = certify(session, claims(session, raw))["readback"]
+        assert accepted["effective_state"] == "accepted"
+        dependency = accepted["evidence"]["dependencies"]["flows"][0]
+        assert dependency["contract_version"] == "h2-a1-owner-rub-v3"
+        assert dependency["revision_id"] == flow["revision_id"]
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+        assert read_historical_owner_flow(session, flow["flow_id"])["revision"] == 1
+        before = _all_month_tables(database)
+        for _ in range(10):
+            section_coverage_assert(session, renew(raw, accepted), "complete")
+            assert (
+                read_historical_owner_flow(session, flow["flow_id"])["effective_state"]
+                == "accepted"
+            )
+        assert _all_month_tables(database) == before
+        revoke = SourceCashIntent(
+            operation="revoke",
+            coverage_id=accepted["coverage_id"],
+            expected_revision=1,
+            reason_code="attestation_withdrawn",
+        )
+        withdrawn = certify(session, revoke, "withdraw-a2")["readback"]
+        assert read_historical_owner_flow(session, flow["flow_id"])["revision"] == 1
+        restored = certify(session, claims(session, renew(raw, withdrawn)), "reaffirm-a2")[
+            "readback"
+        ]
+        assert restored["effective_state"] == "accepted"
+        assert read_historical_owner_flow(session, flow["flow_id"])["revision"] == 1
+
+
+@pytest.mark.parametrize("closed", [True, False])
+def test_v3_late_receipt_retires_a1_and_a2_transactionally_even_closed(database, closed):
+    from datetime import UTC, datetime
+
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.persistence import BrokerMonthApply
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.statement_import.mybroker import canonical
+
+    # Create unrelated catalogue support before granting #800: its shared token matters.
+    with database.session_factory() as session:
+        other_id = create_account(session, name="Synthetic unrelated", account_type="brokerage").id
+    client, section, document, flow_intent, flow, raw = section_cash_prepared(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw))["readback"]
+        month = session.get(ReportingMonth, section["reporting_month_id"])
+        if closed:
+            month.status = "closed"
+            session.commit()
+        assert read_historical_owner_flow(session, flow["flow_id"])["effective_state"] == "accepted"
+
+        def receipt(request, relevant=False):
+            return BrokerMonthApply(
+                request_id=request,
+                request_fingerprint="a" * 64,
+                confirmation_digest="b" * 64,
+                account_id=raw.account_id if relevant else other_id,
+                reporting_month_id=section["reporting_month_id"],
+                import_id=section["import_id"],
+                accepted_at=datetime.now(UTC),
+                projection_json=canonical(
+                    {
+                        "contract_version": "broker_money_dependency_v1",
+                        "base_request_id": section["base_request_id"]
+                        if relevant
+                        else "foreign-base",
+                        "reason_code": "synthetic-late",
+                    }
+                ),
+            )
+
+        session.add(receipt("unrelated"))
+        session.commit()
+        assert read_historical_owner_flow(session, flow["flow_id"])["revision"] == 1
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+
+        def late_listener(current, _context, _instances):
+            if current is session and not current.info.get("v3_late"):
+                current.info["v3_late"] = True
+                current.add(receipt("late-receipt", True))
+
+        event.listen(type(session), "before_flush", late_listener)
+        try:
+            session.add(receipt("unrelated-trigger"))
+            session.commit()
+        finally:
+            event.remove(type(session), "before_flush", late_listener)
+        retired_flow = read_historical_owner_flow(session, flow["flow_id"])
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired_flow["acceptance_state"] == retired["acceptance_state"] == "retired"
+        assert retired_flow["revision"] == retired["revision"] == 2
+        if closed:
+            assert month.status == "closed"
+            assert (
+                "closed_reporting_month_requires_reopen"
+                in preview_source_cash_coverage(session, renew(raw, retired))["blockers"]
+            )
+            month.status = "draft"
+            session.commit()
+    _section_accept(
+        client,
+        {
+            **section,
+            "sections": [{**s, "expected_predecessor": "proof-A"} for s in section["sections"]],
+        },
+        document,
+        "proof-B",
+    )
+    with database.session_factory() as session:
+        assert read_historical_owner_flow(session, flow["flow_id"])["effective_state"] == "retired"
+        assert (
+            read_source_cash_coverage(session, accepted["coverage_id"])["effective_state"]
+            == "retired"
+        )
+        assert (
+            "reviewed_reaffirmation_required"
+            in preview_historical_owner_flow(
+                session, attest(session, target(flow_intent, retired_flow, "corroborate"))
+            )["blockers"]
+        )
+        renewed_flow = accept(
+            session, attest(session, target(flow_intent, retired_flow)), "reaffirm-v3"
+        )["readback"]
+        assert renewed_flow["revision"] == 3
+        assert (
+            read_source_cash_coverage(session, accepted["coverage_id"])["effective_state"]
+            == "retired"
+        )
+        renewed = certify(session, claims(session, renew(raw, retired)), "reaffirm-coverage")[
+            "readback"
+        ]
+        assert renewed["effective_state"] == "accepted"
+        assert read_historical_owner_flow(session, flow["flow_id"])["revision"] == 3
+
+
+def test_v3_transaction_failure_rolls_back_dependency_and_both_retirements(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.persistence import Account
+
+    _, section, _, _, flow, raw = section_cash_prepared(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw))["readback"]
+        before = _all_month_tables(database)
+
+        def fail(_mapper, _connection, revision):
+            if revision.operation == "retire":
+                raise RuntimeError("synthetic-retirement-failure")
+
+        event.listen(SourceCashCoverageRevision, "before_insert", fail)
+        try:
+            session.get(Account, raw.account_id).name += " changed"
+            with pytest.raises(RuntimeError, match="synthetic-retirement-failure"):
+                session.commit()
+            session.rollback()
+        finally:
+            event.remove(SourceCashCoverageRevision, "before_insert", fail)
+        assert _all_month_tables(database) == before
+        assert read_historical_owner_flow(session, flow["flow_id"])["effective_state"] == "accepted"
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+
+
 def test_section_aware_quiet_real_reader_shared_assessor_and_ten_gets_no_writes(database):
     from test_statement_import_mybroker_endpoints import _all_month_tables
     from test_statement_import_mybroker_metadata import _section_accept
@@ -703,7 +894,8 @@ def test_section_aware_no_month_get_never_creates_scope_and_legacy_warnings_stay
             assert count(session, ReportingMonth) == 0
 
 
-def test_section_aware_signed_pair_stays_two_dated_crossings_and_a1_frozen_gate(database):
+@pytest.mark.parametrize("version", [COMPATIBLE_FLOW_CONTRACT, "h2-a1-owner-rub-v3"])
+def test_section_aware_signed_pair_stays_two_dated_crossings_and_a1_frozen_gate(database, version):
     from test_statement_import_mybroker_metadata import metadata_xml
 
     with database.session_factory() as session:
@@ -713,7 +905,7 @@ def test_section_aware_signed_pair_stays_two_dated_crossings_and_a1_frozen_gate(
         for ordinal in (0, 1):
             intent = raw.model_copy(
                 update={
-                    "evidence_version": COMPATIBLE_FLOW_CONTRACT,
+                    "evidence_version": version,
                     "seed": raw.seed.model_copy(update={"ordinal": ordinal}),
                 }
             )

@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.historical_owner_flows import (
     CLAIMS,
-    COMPATIBLE_FLOW_CONTRACT,
+    SECTION_FLOW_CONTRACT,
+    SOURCE_CASH_FLOW_CONTRACTS,
     SOURCE_CASH_PROVENANCE,
     OwnerFlowIntent,
 )
@@ -210,7 +211,16 @@ def _build(session, intent):
                 or other["covered_to"] != source.covered_to.isoformat()
             ):
                 blockers.add("source_integrity_or_version")
-            blockers.update(other["syntax_blockers"])
+            section_authority = None
+            if intent.evidence_version == SECTION_FLOW_CONTRACT:
+                from hermes_finance.services.broker_sections import coverage_disposition
+
+                section_authority = coverage_disposition(
+                    session, source, intent.account_id, other["syntax_blockers"]
+                )
+                blockers.update(section_authority["effective_blockers"])
+            else:
+                blockers.update(other["syntax_blockers"])
             # S1 discards arbitrary money comments, including B-linked REPO
             # text. An unsupported one-part REPO observation in this account's
             # scoped source set cannot therefore be reinterpreted as owner cash
@@ -270,6 +280,8 @@ def _build(session, intent):
                     "money_inventory": money,
                 }
             )
+            if section_authority is not None:
+                sources[-1]["section_authority"] = section_authority
         membership = [
             _material(m)
             for m in _rows(session, AccountPerformanceScopeMembership)
@@ -294,7 +306,7 @@ def _build(session, intent):
             if c.account_id == intent.account_id
             and c.covered_from <= day <= c.covered_to
             and not (
-                intent.evidence_version == COMPATIBLE_FLOW_CONTRACT
+                intent.evidence_version in SOURCE_CASH_FLOW_CONTRACTS
                 and (c.provenance_kind == SOURCE_CASH_PROVENANCE or c.coverage_state != "complete")
             )
         ]
@@ -407,7 +419,7 @@ def _withdrawal_context(session, flow, evidence):
     ]
     links = {f.transfer_link_id for f in legacy} | {int(t["id"]) for t in deps["transfer_links"]}
     account = session.get(Account, account_id)
-    return {
+    context = {
         "sources": sources,
         "mappings": [
             _material(m)
@@ -434,7 +446,7 @@ def _withdrawal_context(session, flow, evidence):
             _material(c)
             for c in _rows(session, CashBoundaryCoverage)
             if not (
-                evidence["contract_version"] == COMPATIBLE_FLOW_CONTRACT
+                evidence["contract_version"] in SOURCE_CASH_FLOW_CONTRACTS
                 and (c.provenance_kind == SOURCE_CASH_PROVENANCE or c.coverage_state != "complete")
             )
             and (
@@ -449,6 +461,19 @@ def _withdrawal_context(session, flow, evidence):
             if o.flow_id == flow.id
         ],
     }
+    if evidence["contract_version"] == SECTION_FLOW_CONTRACT:
+        from hermes_finance.services.broker_sections import coverage_disposition
+
+        context["section_authority"] = []
+        for material in sources:
+            source = session.get(MyBrokerImport, int(material["id"]))
+            try:
+                codes = json.loads(source.normalized_json)["syntax_blockers"]
+                authority = coverage_disposition(session, source, account_id, codes)
+            except (KeyError, TypeError, ValueError, AttributeError):
+                authority = {"import_id": source.id, "unavailable": True}
+            context["section_authority"].append(authority)
+    return context
 
 
 def _plan(session, intent):
@@ -503,7 +528,11 @@ def _plan(session, intent):
                 current.acceptance_state == "accepted" and identical
             ):
                 blockers.add("reviewed_reaffirmation_required")
-            if intent.operation == "corroborate" and current.acceptance_state == "revoked":
+            if intent.operation == "corroborate" and (
+                current.acceptance_state == "revoked"
+                or intent.evidence_version == SECTION_FLOW_CONTRACT
+                and current.acceptance_state == "retired"
+            ):
                 blockers.add("reviewed_reaffirmation_required")
         elif evidence["core"]:
             # Equal account/date/currency/signed-amount cores form a comparison

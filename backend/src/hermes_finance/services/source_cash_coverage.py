@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.historical_owner_flows import (
     COMPATIBLE_FLOW_CONTRACT,
+    SOURCE_CASH_FLOW_CONTRACTS,
     SOURCE_CASH_PROVENANCE,
 )
 from hermes_finance.domain.source_cash_coverage import CLAIMS, SourceCashIntent
@@ -329,7 +330,9 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
             view = _read_historical_owner_flow(session, flow.id)
             if view["effective_state"] != "accepted":
                 blockers.add("historical_flow_not_effective")
-            elif view["evidence"]["contract_version"] != COMPATIBLE_FLOW_CONTRACT:
+            elif view["evidence"]["contract_version"] not in (
+                SOURCE_CASH_FLOW_CONTRACTS if contract == CONTRACT else {COMPATIBLE_FLOW_CONTRACT}
+            ):
                 blockers.add("reviewed_flow_compatibility_required")
             else:
                 effective_ids.add(flow.id)

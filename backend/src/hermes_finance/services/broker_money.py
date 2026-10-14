@@ -18,7 +18,11 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import RubleAmount
 from hermes_finance.domain.broker_money import MoneyIntent
-from hermes_finance.domain.historical_owner_flows import OwnerFlowIntent
+from hermes_finance.domain.historical_owner_flows import (
+    COMPATIBLE_FLOW_CONTRACT,
+    SOURCE_CASH_FLOW_CONTRACTS,
+    OwnerFlowIntent,
+)
 from hermes_finance.persistence import (
     Account,
     AppliedStatementEvent,
@@ -493,7 +497,7 @@ def _funding(session, intent, decision, occurrences, blockers):
     found = owners(session, occurrences)
     ids = {o["target_id"] for o in found if o["role"] == "account_funding"}
     requested = decision.owner_flow_intent
-    if requested is not None and requested.evidence_version != h2.COMPATIBLE_FLOW_CONTRACT:
+    if requested is not None and requested.evidence_version not in SOURCE_CASH_FLOW_CONTRACTS:
         blockers.add("money_h2_v2_required")
         return {"target_id": requested.flow_id, "action": "blocked", "h2_plan": None}
     if ids and len(ids) == 1 and requested is None:
@@ -506,11 +510,13 @@ def _funding(session, intent, decision, occurrences, blockers):
             blockers.add("reviewed_reaffirmation_required")
         if (
             read["effective_state"] == "accepted"
-            and read["evidence"]["contract_version"] == h2.COMPATIBLE_FLOW_CONTRACT
+            and read["evidence"]["contract_version"] in SOURCE_CASH_FLOW_CONTRACTS
         ):
             return {"target_id": flow_id, "action": "reuse", "h2_readback": read, "h2_plan": None}
         requested = OwnerFlowIntent(
-            evidence_version="h2-a1-owner-rub-v2",
+            evidence_version=read["evidence"]["contract_version"]
+            if read["evidence"]["contract_version"] in SOURCE_CASH_FLOW_CONTRACTS
+            else COMPATIBLE_FLOW_CONTRACT,
             account_id=intent.account_id,
             seed=decision.seed,
             flow_id=flow_id,
@@ -766,7 +772,7 @@ def proof_blockers(session, receipt, proof, target):
     if target["role"] == "account_funding" and (
         current.get("h2") is None
         or current["h2"]["effective_state"] != "accepted"
-        or current["h2"]["evidence"]["contract_version"] != h2.COMPATIBLE_FLOW_CONTRACT
+        or current["h2"]["evidence"]["contract_version"] not in SOURCE_CASH_FLOW_CONTRACTS
     ):
         blockers.add("h2_authority_unavailable")
     for source_snapshot in proof["sources"]:
@@ -942,10 +948,23 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                 reporting_month_id=intent.reporting_month_id,
                 account_id=intent.account_id,
                 import_id=base.import_id,
-                projection_json="{}",
+                # Reserve a typed, authority-free Money envelope. An invalid
+                # '{}' journal row would invalidate #800 support during H2
+                # staging, before the final proof can be sealed.
+                projection_json=canonical(
+                    {
+                        "contract_version": CONTRACT,
+                        "base_request_id": intent.base_request_id,
+                        "operation": "accept",
+                        "sources": plan["sources"],
+                        "targets": [],
+                        "occurrences": [],
+                    }
+                ),
                 accepted_at=datetime.now(UTC),
             )
             session.info["broker_money_stage"] = True
+            session.info["broker_money_initial_receipt"] = (request_id, receipt.projection_json)
             session.add(receipt)
             session.flush()
             target_refs, occurrence_refs = [], []
@@ -1045,9 +1064,11 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
             receipt.projection_json = canonical(proof)
             session.flush()
             session.info.pop("broker_money_stage", None)
+            session.info.pop("broker_money_initial_receipt", None)
             session.commit()
     except BaseException:
         session.info.pop("broker_money_stage", None)
+        session.info.pop("broker_money_initial_receipt", None)
         session.rollback()
         raise
     with Session(session.get_bind(), autoflush=False) as fresh:
