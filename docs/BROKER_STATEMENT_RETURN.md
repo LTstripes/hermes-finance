@@ -44,7 +44,7 @@ introduces `h2-a2-source-cash-rub-v2`: each intersecting source records raw and
 effective syntax blockers, absent/current section heads, full scoped receipt
 chains and current base/grammar/mapping/dependency bindings before blocker union.
 Only current exact-month #800 authority removes its own named Transfers/UFSR
-exception. It adds no coverage dates and does not override frozen H2-A1 blockers.
+exception. It adds no coverage dates; H2-A1 v1/v2 retain their frozen raw-S1 blockers.
 An independently complete quiet interval still needs continuous membership,
 resolved Money/exposure, all four reviewed claims and explicit zero crossings.
 New accepts and explicitly reviewed same-identity reaffirmations bind v2 context;
@@ -55,6 +55,38 @@ ABA and replay cannot revive retirement. Coherent GET rechecks without writes;
 positive edits/reaffirm/revoke still require explicit Reopen when CLOSED.
 `material_account_exposure_unassessed`, overlapping-source and all other retained
 null reasons remain in force. Cash compatibility alone grants no numerical return.
+
+The [#819 accepted implementation contract](https://github.com/LTstripes/hermes-finance/issues/819#issuecomment-6170897968)
+introduces separate `h2-a1-owner-rub-v3` account crossing evidence. Each source in
+the full discovered account/date cohort binds canonical #800 provenance before
+blocker union: raw/effective codes, absent/present heads, exact original/month
+geometry, full relevant journal and current source/base/mapping/dependency support.
+Only its own current Transfers/UFSR authority removes those named codes. Another
+unsafe or ambiguous source still blocks; section authority supplies neither an
+economic zero nor Owner externality. Exact signed RUB cash, complete occurrence
+claims and permanent H2/Money ownership remain required. No month or financial
+cash is created by Preview/GET or metadata acceptance.
+
+V1/v2 serialized identities, builders, evidence, signatures and replay retain
+their original contracts. Cross-version acceptance requires reviewed same-core
+`reaffirm` with expected revision and freshly bound claims. Accepted v3 support
+is compared after every sanctioned flush, including receipts from late listeners;
+dependency loss appends retirement in the same transaction, then retires dependent
+A2 evidence. CLOSED calendar overlap and ordinary Close alone do not retire A1;
+dependency-loss retirement does not reopen or change CLOSED financial facts.
+ABA, section reacceptance and old request replay cannot restore A1/A2 authority.
+Retired v3 needs explicit reviewed A1 reaffirmation, followed by separate A2 review.
+Source-aware/noncomplete A2 coverage is excluded from intrinsic v3 dependencies,
+preserving the directed S1/section → A1 → A2 relationship and legacy COMPLETE conflicts.
+
+Existing BrokerMoney account_funding creation/reuse/proof and only the A2 v2
+account reader accept exact independently effective A1 v2/v3, binding the actual
+version/revision/signature. Money's default remains v2; A2 v1 and shared assessor
+ledger/portfolio dispatch are unchanged. Money reserves an authority-free typed
+envelope during its atomic staging, then seals the final receipt; transient staging
+must not look like a malformed #800 journal. Reuse, corroboration and replay add no
+second economic amount, CashBalance, ExternalFlow or InvestmentCashFlow. No new
+coupon/NKD/trade exemption, portfolio authority or numerical return follows.
 
 Routes (all read-only, including POST preview):
 

@@ -1296,6 +1296,87 @@ def _money_apply(session, intent, originals, request_id="money-accepted"):
     )
 
 
+@pytest.mark.parametrize("existing_h2", [True, False])
+def test_money_v3_funding_real_route_reuse_replay_stale_proof_no_double_cash(database, existing_h2):
+    from test_statement_import_historical_owner_flows import (
+        accept,
+        attest,
+        count,
+        section_cash_setup,
+    )
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.persistence import (
+        Account,
+        CashBalance,
+        ExternalFlow,
+        HistoricalOwnerFlow,
+        HistoricalOwnerFlowOccurrence,
+    )
+    from hermes_finance.services.broker_money import apply_money, preview_money, read_money
+    from hermes_finance.services.historical_owner_flows import read_historical_owner_flow
+
+    client, section, document, owner = section_cash_setup(database)
+    _section_accept(client, section, document)
+    originals = [(FILENAME, document)]
+    with database.session_factory() as session:
+        owner = attest(session, owner)
+        accepted = accept(session, owner)["readback"] if existing_h2 else None
+        cash = session.scalar(select(CashBalance.amount_kopecks))
+        payload = {"role": "account_funding", "seed": owner.seed.model_dump()}
+        if not existing_h2:
+            payload["owner_flow_intent"] = owner.model_dump(mode="json")
+        intent = MoneyIntent(
+            contract_version="broker_money_v1",
+            base_request_id=section["base_request_id"],
+            account_id=section["account_id"],
+            reporting_month_id=section["reporting_month_id"],
+            money_decisions=[payload],
+        )
+        plan = preview_money(session, intent, originals)
+        assert plan["can_apply"], plan["blockers"]
+        saved = _money_apply(session, intent, originals, "money-v3")
+        assert all(t["effective"] for t in saved["targets"])
+        funding = saved["targets"][0]
+        assert funding["h2"]["evidence"]["contract_version"] == "h2-a1-owner-rub-v3"
+        flow_id = funding["target_id"]
+        assert accepted is None or accepted["flow_id"] == flow_id
+        assert (
+            count(session, HistoricalOwnerFlow)
+            == count(session, HistoricalOwnerFlowOccurrence)
+            == 1
+        )
+        assert session.scalar(select(CashBalance.amount_kopecks)) == cash
+        assert count(session, ExternalFlow) == count(session, InvestmentCashFlow) == 0
+        before = _all_month_tables(database)
+        for _ in range(10):
+            replay = apply_money(
+                session,
+                intent,
+                originals,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="money-v3",
+            )
+            assert replay["duplicate"] and replay["targets"][0]["effective"]
+        assert _all_month_tables(database) == before
+        session.get(Account, owner.account_id).name += " changed"
+        session.commit()
+        assert read_historical_owner_flow(session, flow_id)["effective_state"] == "retired"
+        readback = read_money(session, "money-v3")
+        assert not readback["targets"][0]["effective"]
+        replay = apply_money(
+            session,
+            intent,
+            originals,
+            confirmation_digest=plan["confirmation_digest"],
+            request_id="money-v3",
+        )
+        assert replay["duplicate"] and not replay["targets"][0]["effective"]
+        assert count(session, HistoricalOwnerFlow) == 1
+        assert session.scalar(select(CashBalance.amount_kopecks)) == cash
+
+
 def test_money_batch_atomic_net_coupons_h2_get_ten_replays_no_extra_cash(database):
     from hermes_finance.persistence import (
         BrokerMoneyOccurrenceOwner,

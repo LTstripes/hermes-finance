@@ -35,15 +35,423 @@ from hermes_finance.services.historical_owner_flows import (
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 DAY = date(2030, 1, 17)
+V3 = "h2-a1-owner-rub-v3"
 
 
-def test_b_repo_cash_cannot_be_attested_as_owner_flow(database):
+def section_cash_xml(**kwargs):
+    from test_statement_import_source_cash_coverage import section_quiet_xml
+
+    root = ET.fromstring(section_quiet_xml())
+    collection = root.find(".//{MyBroker}rn_Collection")
+    for row in ET.fromstring(xml(**kwargs)).findall(".//{MyBroker}rn"):
+        row.find("{MyBroker}oper_type").set("oper_type", "Перевод")
+        row.find(".//{MyBroker}comment").set("comment", "из АО Synthetic bank")
+        collection.append(row)
+    return ET.tostring(root, encoding="utf-8")
+
+
+def section_cash_setup(database, **kwargs):
+    from test_statement_import_mybroker_metadata import section_setup
+
+    client, section, raw = section_setup(database, raw=section_cash_xml(**kwargs))
+    intent = OwnerFlowIntent(
+        evidence_version=V3,
+        account_id=section["account_id"],
+        seed={"import_id": section["import_id"], "ordinal": 0},
+    )
+    return client, section, raw, intent
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["Брокерский 1234567 (01.01.30-31.01.30).xml", "Брокерский 1234567 (01.01.30-28.02.30).xml"],
+)
+def test_v3_unscoped_metadata_cannot_create_month_or_borrow_foreign_grant(database, filename):
+    from test_statement_import_mybroker_metadata import _section_accept, section_setup
+
+    # A genuine monthly grant on A cannot supply authority to another original B.
+    client, section, raw = section_setup(database, raw=section_cash_xml())
+    _section_accept(client, section, raw)
+    with database.session_factory() as session:
+        other = section_cash_xml(stamp="11")
+        imported = apply(session, other, preview(session, other, filename), filename)
+        before = count(session, ReportingMonth)
+        intent = OwnerFlowIntent(
+            evidence_version=V3,
+            account_id=section["account_id"],
+            seed={"import_id": imported["import_id"], "ordinal": 0},
+        )
+        for _ in range(10):
+            plan = preview_historical_owner_flow(session, intent)
+            authority = next(
+                s["section_authority"]
+                for s in plan["evidence"]["dependencies"]["sources"]
+                if s["import_id"] == imported["import_id"]
+            )
+            assert authority["scopes"] == []
+            assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(plan["blockers"])
+        assert count(session, ReportingMonth) == before
+        assert count(session, HistoricalOwnerFlow) == 0
+
+
+@pytest.mark.parametrize("amount", ["12.34", "-12.34"])
+def test_v3_real_grants_claims_exact_sign_and_ten_reads_replays_no_cash(database, amount):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    client, section, raw, intent = section_cash_setup(database, amount=amount)
+    with database.session_factory() as session:
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(
+            preview_historical_owner_flow(session, attest(session, intent))["blockers"]
+        )
+    _section_accept(client, {**section, "sections": section["sections"][:1]}, raw, "transfers")
+    with database.session_factory() as session:
+        plan = preview_historical_owner_flow(session, intent)
+        assert "5_UFSR_unsupported" in plan["blockers"]
+        assert "4_Transfers_unsupported" not in plan["blockers"]
+    _section_accept(client, {**section, "sections": section["sections"][1:]}, raw, "ufsr")
+    before = _all_month_tables(database)
+    with database.session_factory() as session:
+        assert (
+            "owner_cash_claims_missing"
+            in preview_historical_owner_flow(session, intent)["blockers"]
+        )
+        for version in ("h2-a1-owner-rub-v1", "h2-a1-owner-rub-v2"):
+            old = intent.model_copy(update={"evidence_version": version})
+            assert (
+                "4_Transfers_unsupported" in preview_historical_owner_flow(session, old)["blockers"]
+            )
+        accepted_intent = attest(session, intent)
+        plan = preview_historical_owner_flow(session, accepted_intent)
+        accepted = accept(session, accepted_intent)["readback"]
+        assert accepted["core"]["signed_source_amount"] == amount
+        assert accepted["boundary_amount_kopecks"] == 1234
+        assert accepted["portfolio_scope"]["status"] == accepted["cash_coverage"] == "unknown"
+        authority = accepted["evidence"]["dependencies"]["sources"][0]["section_authority"]
+        assert authority["raw_blockers"] == ["4_Transfers_unsupported", "5_UFSR_unsupported"]
+        assert authority["effective_blockers"] == [] and authority["period_scope"] == "unknown"
+        after = _all_month_tables(database)
+        added = {
+            "historical_owner_flows",
+            "historical_owner_flow_occurrences",
+            "historical_owner_flow_revisions",
+            "historical_owner_flow_applies",
+        }
+        assert all(after[t] == before[t] for t in before if t not in added)
+
+        def forbid_write(_connection, _cursor, statement, *_args):
+            assert statement.split()[0].upper() not in {
+                "INSERT",
+                "UPDATE",
+                "DELETE",
+                "REPLACE",
+                "CREATE",
+                "ALTER",
+                "DROP",
+            }
+
+        event.listen(database.engine, "before_cursor_execute", forbid_write)
+        try:
+            for _ in range(10):
+                read_historical_owner_flow(session, accepted["flow_id"])
+                preview_historical_owner_flow(session, accepted_intent)
+        finally:
+            event.remove(database.engine, "before_cursor_execute", forbid_write)
+        for _ in range(10):
+            assert (
+                read_historical_owner_flow(session, accepted["flow_id"])["effective_state"]
+                == "accepted"
+            )
+            preview_historical_owner_flow(session, accepted_intent)
+            replay = apply_historical_owner_flow(
+                session,
+                accepted_intent,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="synthetic-apply",
+            )
+            assert replay["replayed"] and replay["committed_revision_id"] == accepted["revision_id"]
+        assert _all_month_tables(database) == after
+
+
+@pytest.mark.parametrize("safe_first", [True, False])
+@pytest.mark.parametrize("overlap", ["same-event", "missing-event", "multiplicity"])
+def test_v3_safe_source_never_donates_authority_to_overlap(database, safe_first, overlap):
+    from test_statement_import_mybroker_metadata import (
+        _section_accept,
+        _section_second_source,
+        section_setup,
+    )
+
+    safe = section_cash_xml()
+    unsafe = section_cash_xml(money=overlap != "missing-event", duplicate=overlap == "multiplicity")
+    root = ET.fromstring(unsafe)
+    root.find("{MyBroker}Trades3/{MyBroker}Report/{MyBroker}Tablix1").set("volume", "5")
+    unsafe = ET.tostring(root)
+    client, first, _ = section_setup(database, raw=safe if safe_first else unsafe)
+    second = _section_second_source(client, first, unsafe if safe_first else safe, "second-base")
+    section = first if safe_first else second
+    _section_accept(client, section, safe)
+    with database.session_factory() as session:
+        intent = OwnerFlowIntent(
+            evidence_version=V3,
+            account_id=section["account_id"],
+            seed={"import_id": section["import_id"], "ordinal": 0},
+        )
+        plan = preview_historical_owner_flow(session, attest(session, intent))
+        assert "4_Transfers_unsupported" in plan["blockers"] and not plan["can_apply"]
+        assert len(plan["evidence"]["dependencies"]["sources"]) == 2
+        if overlap != "same-event":
+            assert (
+                "overlapping_source_event_missing"
+                if overlap == "missing-event"
+                else "same_report_multiplicity"
+            ) in plan["blockers"]
+        assert count(session, HistoricalOwnerFlow) == 0
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "fork",
+        "missing-predecessor",
+        "cycle",
+        "unknown",
+        "wrong-import",
+        "wrong-account",
+        "wrong-month",
+    ],
+)
+def test_v3_bad_section_heads_retire_real_reader_without_history_fallback(database, problem):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_metadata import _insert_section_history, _section_accept
+
+    client, section, raw, intent = section_cash_setup(database)
+    section_plan = _section_accept(client, section, raw, "proof-A")
+    with database.session_factory() as session:
+        accepted = accept(session, attest(session, intent))["readback"]
+    bad = copy.deepcopy(section_plan["proof"])
+    if problem == "unknown":
+        bad["contract_version"] = "future"
+    elif problem.startswith("wrong-"):
+        bad["intent"][
+            {
+                "wrong-import": "import_id",
+                "wrong-account": "account_id",
+                "wrong-month": "reporting_month_id",
+            }[problem]
+        ] = 999
+    elif problem in {"missing-predecessor", "cycle"}:
+        for decision in bad["intent"]["sections"]:
+            decision["expected_predecessor"] = (
+                "missing" if problem == "missing-predecessor" else "bad"
+            )
+    _insert_section_history(database, section, "bad", bad)
+    before = _all_month_tables(database)
+    with database.session_factory() as session:
+        read = read_historical_owner_flow(session, accepted["flow_id"])
+        assert read["acceptance_state"] == read["effective_state"] == "retired"
+        plan = preview_historical_owner_flow(session, attest(session, target(intent, read)))
+        assert not plan["can_apply"] and "4_Transfers_unsupported" in plan["blockers"]
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("change", ["account", "cash", "source", "mapping", "snapshot"])
+@pytest.mark.parametrize("closed", [True, False])
+def test_v3_section_aba_closed_retirement_replay_and_explicit_reaffirm(database, change, closed):
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.persistence import Account, MyBrokerImport
+
+    client, section, raw, intent = section_cash_setup(database)
+    _section_accept(client, section, raw, "proof-A")
+    with database.session_factory() as session:
+        accepted_intent = attest(session, intent)
+        plan = preview_historical_owner_flow(session, accepted_intent)
+        accepted = accept(session, accepted_intent)["readback"]
+        envelope = session.get(HistoricalOwnerFlowRevision, accepted["revision_id"]).evidence_json
+        month = session.get(ReportingMonth, section["reporting_month_id"])
+        if closed:
+            month.status = "closed"
+            session.commit()
+            assert (
+                read_historical_owner_flow(session, accepted["flow_id"])["effective_state"]
+                == "accepted"
+            )
+        row, field, replacement = {
+            "account": (session.get(Account, intent.account_id), "name", "synthetic ABA"),
+            "cash": (session.scalar(select(CashBalance)), "amount_kopecks", 40001),
+            "source": (
+                session.get(MyBrokerImport, section["import_id"]),
+                "confirmation_digest",
+                "a" * 64,
+            ),
+            "mapping": (session.scalar(select(BrokerIdentityMapping)), "source_as_of", DAY),
+            "snapshot": (month, "snapshot_date", date(2030, 1, 30)),
+        }[change]
+        old = getattr(row, field)
+        setattr(row, field, replacement)
+        session.commit()
+        retired = read_historical_owner_flow(session, accepted["flow_id"])
+        assert retired["acceptance_state"] == "retired" and retired["revision"] == 2
+        if closed:
+            assert month.status == "closed"
+        setattr(row, field, old)
+        session.commit()
+        replay = apply_historical_owner_flow(
+            session,
+            accepted_intent,
+            confirmation_digest=plan["confirmation_digest"],
+            request_id="synthetic-apply",
+        )
+        assert replay["committed_revision_id"] == accepted["revision_id"]
+        assert replay["readback"]["effective_state"] == "retired"
+        assert (
+            session.get(HistoricalOwnerFlowRevision, accepted["revision_id"]).evidence_json
+            == envelope
+        )
+        if closed:
+            month.status = "draft"
+            session.commit()
+    _section_accept(
+        client,
+        {
+            **section,
+            "sections": [{**s, "expected_predecessor": "proof-A"} for s in section["sections"]],
+        },
+        raw,
+        "proof-B",
+    )
+    with database.session_factory() as session:
+        retired = read_historical_owner_flow(session, accepted["flow_id"])
+        assert retired["effective_state"] == "retired"
+        renewed = accept(session, attest(session, target(intent, retired)), "reviewed-v3")[
+            "readback"
+        ]
+        assert renewed["revision"] == 3 and renewed["effective_state"] == "accepted"
+
+
+@pytest.mark.parametrize("old_version", ["h2-a1-owner-rub-v1", "h2-a1-owner-rub-v2"])
+def test_v3_only_reviewed_same_core_upgrade_preserves_legacy_wire_evidence_receipt(
+    database, old_version
+):
+    from hermes_finance.services.historical_owner_flows import _intent_dump
+    from hermes_finance.statement_import.mybroker import canonical, digest
+
+    with database.session_factory() as session:
+        old_intent = attest(session, source(session, evidence_version=old_version))
+        old_plan = preview_historical_owner_flow(session, old_intent)
+        flow = accept(session, old_intent)["readback"]
+        revision = session.get(HistoricalOwnerFlowRevision, flow["revision_id"])
+        receipt = session.scalar(select(HistoricalOwnerFlowApply))
+        frozen = (
+            revision.evidence_json,
+            revision.material_signature,
+            receipt.intent_digest,
+            receipt.confirmation_digest,
+        )
+        assert receipt.intent_digest == digest(_intent_dump(old_intent))
+        assert ("evidence_version" in _intent_dump(old_intent)) == (
+            old_version != "h2-a1-owner-rub-v1"
+        )
+        assert "section_authority" not in flow["evidence"]["dependencies"]["sources"][0]
+        upgraded = target(old_intent, flow).model_copy(update={"evidence_version": V3})
+        for operation in ("accept", "corroborate"):
+            proposed = attest(session, upgraded.model_copy(update={"operation": operation}))
+            assert (
+                "reviewed_version_reaffirmation_required"
+                in preview_historical_owner_flow(session, proposed)["blockers"]
+            )
+        current = accept(session, attest(session, upgraded), "reviewed-upgrade")["readback"]
+        assert current["revision"] == 2 and current["core"] == flow["core"]
+        replay = apply_historical_owner_flow(
+            session,
+            old_intent,
+            confirmation_digest=old_plan["confirmation_digest"],
+            request_id="synthetic-apply",
+        )
+        assert (
+            replay["committed_revision_id"] == flow["revision_id"]
+            and replay["readback"]["revision"] == 2
+        )
+        assert frozen == (
+            revision.evidence_json,
+            revision.material_signature,
+            receipt.intent_digest,
+            receipt.confirmation_digest,
+        )
+        assert canonical(flow["evidence"]) == revision.evidence_json
+
+
+def test_v3_withdrawal_broken_support_stales_on_new_section_and_stale_apply_atomic(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.persistence import Account
+
+    client, section, raw, intent = section_cash_setup(database)
+    _section_accept(client, section, raw, "proof-A")
+    with database.session_factory() as session:
+        attested = attest(session, intent)
+        stale = preview_historical_owner_flow(session, attested)
+        account = session.get(Account, intent.account_id)
+        account.name += " changed"
+        session.commit()
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_historical_owner_flow(
+                session,
+                attested,
+                confirmation_digest=stale["confirmation_digest"],
+                request_id="stale",
+            )
+        assert _all_month_tables(database) == before
+    successor = {
+        **section,
+        "sections": [{**s, "expected_predecessor": "proof-A"} for s in section["sections"]],
+    }
+    _section_accept(client, successor, raw, "proof-B")
+    with database.session_factory() as session:
+        accepted = accept(session, attest(session, intent))["readback"]
+        account = session.get(Account, intent.account_id)
+        account.name += " broken"
+        session.commit()
+        retired = read_historical_owner_flow(session, accepted["flow_id"])
+        revoke = OwnerFlowIntent(
+            operation="revoke",
+            flow_id=accepted["flow_id"],
+            expected_revision=retired["revision"],
+            reason_code="evidence_disputed",
+        )
+        withdrawal = preview_historical_owner_flow(session, revoke)
+        assert withdrawal["can_apply"]
+    successor = {
+        **section,
+        "sections": [{**s, "expected_predecessor": "proof-B"} for s in section["sections"]],
+    }
+    _section_accept(client, successor, raw, "proof-C")
+    with database.session_factory() as session:
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_historical_owner_flow(
+                session,
+                revoke,
+                confirmation_digest=withdrawal["confirmation_digest"],
+                request_id="stale-revoke",
+            )
+        assert _all_month_tables(database) == before
+        assert accept(session, revoke, "withdraw")["readback"]["effective_state"] == "revoked"
+
+
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_b_repo_cash_cannot_be_attested_as_owner_flow(database, version):
     with database.session_factory() as session:
         raw = repo_fixture(pair=True)
         result = apply(session, raw, preview(session, raw))
         account_id = next(b["hermes_id"] for b in result["mappings"] if b["kind"] == "account")
         intent = OwnerFlowIntent(
-            account_id=account_id, seed={"import_id": result["import_id"], "ordinal": 0}
+            evidence_version=version,
+            account_id=account_id,
+            seed={"import_id": result["import_id"], "ordinal": 0},
         )
         intent = attest(session, intent)
         plan = preview_historical_owner_flow(session, intent)
@@ -144,12 +552,14 @@ def xml(
     return ET.tostring(root, encoding="utf-8")
 
 
-def source(session, **kwargs):
+def source(session, *, evidence_version="h2-a1-owner-rub-v1", **kwargs):
     raw = xml(**kwargs)
     result = apply(session, raw, preview(session, raw))
     account = next(b["hermes_id"] for b in result["mappings"] if b["kind"] == "account")
     return OwnerFlowIntent(
-        account_id=account, seed={"import_id": result["import_id"], "ordinal": 0}
+        evidence_version=evidence_version,
+        account_id=account,
+        seed={"import_id": result["import_id"], "ordinal": 0},
     )
 
 
@@ -248,9 +658,10 @@ def test_exact_source_core_no_month_or_coverage_materialization(database, amount
         ({"duplicate": True}, "same_report_multiplicity"),
     ],
 )
-def test_incompatible_source_blocks_atomic_acceptance(database, kwargs, reason):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_incompatible_source_blocks_atomic_acceptance(database, kwargs, reason, version):
     with database.session_factory() as session:
-        intent = attest(session, source(session, **kwargs))
+        intent = attest(session, source(session, evidence_version=version, **kwargs))
         plan = preview_historical_owner_flow(session, intent)
         assert reason in plan["blockers"], plan["blockers"]
         with pytest.raises(MyBrokerError, match=reason):
@@ -270,9 +681,10 @@ def test_incompatible_source_blocks_atomic_acceptance(database, kwargs, reason):
 
 
 @pytest.mark.parametrize("name", CLAIMS)
-def test_every_semantic_claim_is_explicit_and_unconfirmed_by_default(database, name):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_every_semantic_claim_is_explicit_and_unconfirmed_by_default(database, name, version):
     with database.session_factory() as session:
-        raw = source(session)
+        raw = source(session, evidence_version=version)
         assert (
             "owner_cash_claims_missing" in preview_historical_owner_flow(session, raw)["blockers"]
         )
@@ -304,9 +716,10 @@ def test_claim_binding_cannot_override_source(database, field, value, reason):
         )
 
 
-def test_new_report_requires_full_set_review_then_corroborates_same_identity(database):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_new_report_requires_full_set_review_then_corroborates_same_identity(database, version):
     with database.session_factory() as session:
-        intent = attest(session, source(session))
+        intent = attest(session, source(session, evidence_version=version))
         initial_plan = preview_historical_owner_flow(session, intent)
         first = accept(session, intent)
         flow_id = first["readback"]["flow_id"]
@@ -314,7 +727,9 @@ def test_new_report_requires_full_set_review_then_corroborates_same_identity(dat
         retired = read_historical_owner_flow(session, flow_id)
         assert retired["effective_state"] == "retired"
         assert retired["boundary_amount_kopecks"] is None
-        review = attest(session, target(intent, retired, "corroborate"))
+        review = attest(
+            session, target(intent, retired, "reaffirm" if version == V3 else "corroborate")
+        )
         assert len(preview_historical_owner_flow(session, review)["evidence"]["occurrences"]) == 2
         renewed = accept(session, review, "corroborate")["readback"]
         assert renewed["flow_id"] == flow_id and renewed["boundary_amount_kopecks"] == 1234
@@ -435,9 +850,10 @@ def test_stale_competing_acceptance_and_request_id_conflict(database):
         assert count(session, HistoricalOwnerFlowApply) == 1
 
 
-def test_receipt_failure_rolls_back_core_ownership_and_revision(database):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_receipt_failure_rolls_back_core_ownership_and_revision(database, version):
     with database.session_factory() as session:
-        intent = attest(session, source(session))
+        intent = attest(session, source(session, evidence_version=version))
         plan = preview_historical_owner_flow(session, intent)
 
         def fail(*_args):
@@ -554,9 +970,10 @@ def test_api_independent_get_strict_financial_inputs_and_read_only(database):
         session.rollback()
 
 
-def test_source_dependency_read_fails_closed_without_repair_on_direct_sql(database):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_source_dependency_read_fails_closed_without_repair_on_direct_sql(database, version):
     with database.session_factory() as session:
-        intent = attest(session, source(session))
+        intent = attest(session, source(session, evidence_version=version))
         first = accept(session, intent)["readback"]
         session.execute(
             text(
@@ -591,12 +1008,13 @@ def test_request_shape_rejects_category_and_replacement_expansion(data):
         OwnerFlowIntent.model_validate(data)
 
 
-def test_simultaneous_competing_writers_one_identity_and_atomic_loser(database):
+@pytest.mark.parametrize("version", ["h2-a1-owner-rub-v1", V3])
+def test_simultaneous_competing_writers_one_identity_and_atomic_loser(database, version):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
     with database.session_factory() as session:
-        intent = attest(session, source(session))
+        intent = attest(session, source(session, evidence_version=version))
         plan = preview_historical_owner_flow(session, intent)
     barrier = Barrier(2)
 

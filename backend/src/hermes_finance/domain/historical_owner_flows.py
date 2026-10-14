@@ -8,6 +8,8 @@ from hermes_finance.domain.historical_endpoints import Digest, Label, StrictMode
 
 SOURCE_CASH_PROVENANCE = "owner_attested_source_cash_history"
 COMPATIBLE_FLOW_CONTRACT = "h2-a1-owner-rub-v2"
+SECTION_FLOW_CONTRACT = "h2-a1-owner-rub-v3"
+SOURCE_CASH_FLOW_CONTRACTS = frozenset({COMPATIBLE_FLOW_CONTRACT, SECTION_FLOW_CONTRACT})
 
 
 class MoneyOccurrence(StrictModel):
@@ -40,7 +42,9 @@ CLAIMS = tuple(
 
 
 class OwnerFlowIntent(StrictModel):
-    evidence_version: Literal["h2-a1-owner-rub-v1", "h2-a1-owner-rub-v2"] = "h2-a1-owner-rub-v1"
+    evidence_version: Literal["h2-a1-owner-rub-v1", "h2-a1-owner-rub-v2", "h2-a1-owner-rub-v3"] = (
+        "h2-a1-owner-rub-v1"
+    )
     operation: Literal["accept", "corroborate", "reaffirm", "revoke"] = "accept"
     account_id: int | None = Field(default=None, gt=0, strict=True)
     seed: MoneyOccurrence | None = None
