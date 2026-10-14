@@ -47,7 +47,7 @@ Only current exact-month #800 authority removes its own named Transfers/UFSR
 exception. It adds no coverage dates; H2-A1 v1/v2 retain their frozen raw-S1 blockers.
 An independently complete quiet interval still needs continuous membership,
 resolved Money/exposure, all four reviewed claims and explicit zero crossings.
-New accepts and explicitly reviewed same-identity reaffirmations bind v2 context;
+Section-aware v2 accepts and explicitly reviewed same-identity reaffirmations bind v2 context;
 v1 reads/replays retain their original evidence and never inherit section grants.
 Relevant source/section/base/dependency changes append retirement and UNKNOWN in
 the same transaction, including CLOSED and receipts from later lifecycle hooks.
@@ -88,6 +88,26 @@ must not look like a malformed #800 journal. Reuse, corroboration and replay add
 second economic amount, CashBalance, ExternalFlow or InvestmentCashFlow. No new
 coupon/NKD/trade exemption, portfolio authority or numerical return follows.
 
+The [#820 coupon contract and CODE GO](https://github.com/LTstripes/hermes-finance/issues/820#issuecomment-6172319178)
+adds `h2-a2-source-cash-rub-v3`. New accepts and reviewed reaffirmations use this
+version. V1/v2 retain their literal evidence, signatures, readback and replay;
+v3 continues to accept independently effective A1 v2/v3 revisions.
+Only a current target-specific BrokerMoney proof can classify a permanently
+owned exact Money occurrence as `accepted_non_owner_coupon`. V3 binds the full
+target occurrence/owner cohort, relevant Money journal, canonical existing ICF,
+account/month/instrument/source facts and optional typed PDF event/revision
+support. No PDF is invented for net-native payouts; unavailable tax stays null.
+The same exhaustive authority partitions only those existing effective coupon
+ICF IDs out of legacy overlap. Every other ICF, ExternalFlow, unresolved Money,
+NKD, membership, source gap and retained exposure blocker remains effective.
+Coupon cash creates no second payout, cash row or Owner/investor external flow.
+
+Receipt, ownership, target and typed PDF changes retire accepted v3 in the
+dependency transaction, including CLOSED and late listeners. Presence and
+absence participate in review binding. Restoring facts, replaying an old request
+or independently reaffirming Money does not revive H2-A2; fresh reviewed coverage
+reaffirmation is required. Reads only assess current authority and never repair it.
+
 Routes (all read-only, including POST preview):
 
 - `GET /api/broker-statement-returns/sources?account_id=...` lists accepted source
@@ -127,8 +147,8 @@ an incomplete DRAFT or `include_in_returns=false` proves no zero-crossing schedu
 Positive crossings enter this **account**; portfolio externality is not inferred.
 No new H2 acceptance or source classification is performed here.
 
-The existing H2-A2 contract currently rejects some legacy cash, transfers,
-net-only payouts and unresolved Money inventories. This adapter preserves those
+H2-A2 still rejects unrelated legacy cash, transfers, unproved payouts and
+unresolved Money inventories. This adapter preserves those
 unavailable results; it does not invent a compatible broader coverage contract.
 It also blocks competing sources and unassessed REPO/pending/Transfers/UFSR
 exposure, including diagnostic-only wrapper evidence. Structural disposition

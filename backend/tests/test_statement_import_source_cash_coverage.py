@@ -412,7 +412,7 @@ def test_section_aware_quiet_real_reader_shared_assessor_and_ten_gets_no_writes(
         accepted = certify(session, claims(session, intent, zero=True))["readback"]
         assert accepted["effective_state"] == "accepted"
         assert accepted["portfolio_scope"] == "unknown"
-        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v2"
+        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v3"
         authority = accepted["evidence"]["dependencies"]["sources"][0]["section_authority"]
         assert codes <= set(authority["raw_blockers"])
         assert authority["effective_blockers"] == [] and authority["period_scope"] == "unknown"
@@ -647,9 +647,11 @@ def test_section_aware_stale_apply_and_retirement_rollback_are_atomic(database):
         section_coverage_assert(session, renew(raw, accepted), "complete")
 
 
+@pytest.mark.parametrize("version", ["h2-a2-source-cash-rub-v1", "h2-a2-source-cash-rub-v2"])
 def test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version_reaffirm(
     database,
     monkeypatch,
+    version,
 ):
     from test_statement_import_mybroker_endpoints import _all_month_tables
 
@@ -661,10 +663,10 @@ def test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version
         raw = quiet_intent(session)
         evidence_builder = service._evidence
         with monkeypatch.context() as legacy:
-            legacy.setattr(service, "CONTRACT", service.LEGACY_CONTRACT)
+            legacy.setattr(service, "CONTRACT", version)
 
             def legacy_evidence(*args, **kwargs):
-                return evidence_builder(*args, **{**kwargs, "contract": service.LEGACY_CONTRACT})
+                return evidence_builder(*args, **{**kwargs, "contract": version})
 
             legacy.setattr(service, "_evidence", legacy_evidence)
             old_intent = claims(session, raw, zero=True)
@@ -672,7 +674,7 @@ def test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version
             old = certify(session, old_intent, "v1-original")["readback"]
         revision = session.get(SourceCashCoverageRevision, old["revision_id"])
         envelope, signature = revision.evidence_json, revision.material_signature
-        assert old["evidence"]["contract_version"] == service.LEGACY_CONTRACT
+        assert old["evidence"]["contract_version"] == version
         assert (
             read_source_cash_coverage(session, old["coverage_id"])["effective_state"] == "accepted"
         )
@@ -684,7 +686,7 @@ def test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version
             request_id="v1-original",
         )
         assert replay["replayed"] and replay["committed_revision_id"] == old["revision_id"]
-        assert replay["readback"]["evidence"]["contract_version"] == service.LEGACY_CONTRACT
+        assert replay["readback"]["evidence"]["contract_version"] == version
         assert _all_month_tables(database) == frozen
         assert (
             "claim_binding_mismatch"
@@ -1985,3 +1987,671 @@ def test_source_preview_stays_read_only_with_legacy_preparation_header(database)
         headers={"X-Performance-Evidence": legacy_token},
     )
     assert response.status_code == 200, response.text
+
+
+def coupon_xml(
+    *, stamp="10", bank=False, nkd=False, coupons=("1000", "1000", "2000", "3000", "4000")
+):
+    from decimal import Decimal
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_mybroker_endpoints import money_batch_xml
+    from test_statement_import_mybroker_money_candidates import CASH_IN
+
+    root = ET.fromstring(money_batch_xml(coupons=coupons, distinct=True, stamp=stamp, nkd=nkd))
+    if not bank:
+        collection = root.find(".//{MyBroker}rn_Collection")
+        for row in list(collection):
+            comment = row.find("{MyBroker}oper_type/{MyBroker}comment")
+            if comment is not None and comment.get("comment") == CASH_IN:
+                collection.remove(row)
+                cash = root.find(".//{MyBroker}Details[@active_name='RUB']")
+                cash.set("real_rest", str(Decimal(cash.get("real_rest")) - 50000))
+    return ET.tostring(root, encoding="utf-8")
+
+
+def coupon_setup(database, *, raw=None, overlap=False, reverse=False, accepted=True):
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide, _money_setup
+
+    raw = raw or coupon_xml()
+    other = coupon_xml(stamp="11") if overlap else None
+    client, first, intent, bond, base = _money_setup(database, other if reverse else raw)
+    originals = [(FILENAME, first)]
+    with database.session_factory() as session:
+        if overlap:
+            second = raw if reverse else other
+            apply(session, second, preview(session, second))
+            originals.append((FILENAME, second))
+        continuous_membership(session, intent.account_id)
+        if accepted:
+            reviewed = _money_decide(session, intent, originals, bond, funding=False)
+            saved = _money_apply(session, reviewed, originals)
+            assert len(saved["targets"]) == 5
+            assert all(t["effective"] for t in saved["targets"])
+        coverage = SourceCashIntent(
+            account_id=intent.account_id,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+        )
+    return client, intent, bond, originals, coverage
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_coupon_v3_real_money_five_targets_overlap_no_write_no_owner_cash(database, reverse):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.persistence import (
+        BrokerMoneyOccurrenceOwner,
+        CashBalance,
+        HistoricalOwnerFlow,
+    )
+    from hermes_finance.services.broker_money import latest_proofs, proof_blockers, read_money
+    from hermes_finance.services.broker_statement_return import read_statement_return
+    from hermes_finance.services.source_cash_coverage import SECTION_CONTRACT, inventory
+
+    _, money_intent, _, _, raw = coupon_setup(database, overlap=True, reverse=reverse)
+    with database.session_factory() as session:
+        before = _all_month_tables(database)
+        old = inventory(
+            session, raw.account_id, raw.opening_date, raw.closing_date, contract=SECTION_CONTRACT
+        )
+        assert {"money_disposition_unresolved", "legacy_cash_or_transfer_overlap"} <= set(
+            old["blockers"]
+        )
+        assert "coupon_authority" not in old
+        for receipt, proof, target in latest_proofs(session).values():
+            assert not proof_blockers(session, receipt, proof, target)
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        deps = accepted["evidence"]["dependencies"]
+        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v3"
+        assert (
+            len(deps["effective_coupon_icf_ids"]) == len(set(deps["effective_coupon_icf_ids"])) == 5
+        )
+        assert len(deps["legacy_cash"]) == 5  # retained evidence, exact partition only
+        assert (
+            sum(o["disposition"] == "accepted_non_owner_coupon" for o in deps["money_dispositions"])
+            == 10
+        )
+        assert all(
+            not t["blockers"] and len(t["owners"]) == 2 for t in deps["coupon_authority"]["targets"]
+        )
+        assert count(session, BrokerMoneyOccurrenceOwner) == 10
+        assert count(session, InvestmentCashFlow) == 5
+        assert count(session, HistoricalOwnerFlow) == count(session, ExternalFlow) == 0
+        after = _all_month_tables(database)
+        for table in before:
+            if table not in {
+                "cash_boundary_coverages",
+                "source_cash_coverage_revisions",
+                "source_cash_coverage_applies",
+            }:
+                assert before[table] == after[table]
+        assert count(session, CashBalance) == 1
+        for _ in range(10):
+            section_coverage_assert(session, renew(raw, accepted), "complete")
+            assert all(t["effective"] for t in read_money(session, "money-accepted")["targets"])
+            s3 = read_statement_return(
+                session, request_id=money_intent.base_request_id, account_id=raw.account_id
+            )
+            assert s3.rate_fraction is None
+        assert _all_month_tables(database) == after
+
+
+@pytest.mark.parametrize(
+    "shape", ["candidates", "bank", "nkd", "membership", "other_icf", "external"]
+)
+def test_coupon_v3_only_proven_icf_partition_other_conflicts_stay_unknown(database, shape):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    raw_xml = coupon_xml(bank=shape == "bank", nkd=shape == "nkd")
+    _, _, _, _, raw = coupon_setup(database, raw=raw_xml, accepted=shape != "candidates")
+    with database.session_factory() as session:
+        if shape == "membership":
+            membership = session.scalar(
+                select(AccountPerformanceScopeMembership).where(
+                    AccountPerformanceScopeMembership.account_id == raw.account_id
+                )
+            )
+            membership.include_in_returns = False
+            session.commit()
+        elif shape == "other_icf":
+            existing = session.scalar(select(InvestmentCashFlow))
+            session.add(
+                InvestmentCashFlow(
+                    reporting_month_id=existing.reporting_month_id,
+                    account_id=raw.account_id,
+                    instrument_id=existing.instrument_id,
+                    flow_type="interest",
+                    event_date=B,
+                    gross_amount_kopecks=1,
+                    tax_amount_kopecks=0,
+                    commission_amount_kopecks=0,
+                    net_amount_kopecks=1,
+                    currency="RUB",
+                    source="synthetic",
+                )
+            )
+            session.commit()
+        elif shape == "external":
+            from hermes_finance.services.external_flows import create_external_flow
+
+            create_external_flow(
+                session,
+                reporting_month_id=session.scalar(select(ReportingMonth.id)),
+                account_id=raw.account_id,
+                event_date=B,
+                direction="contribution",
+                kind="external_contribution",
+                boundary_amount="1.00",
+            )
+        before = _all_month_tables(database)
+        plan = preview_source_cash_coverage(session, claims(session, raw, zero=True))
+        assert not plan["can_apply"]
+        deps = plan["evidence"]["dependencies"]
+        if shape in ("bank", "nkd"):
+            assert len(deps["effective_coupon_icf_ids"]) == 5
+            assert "legacy_cash_or_transfer_overlap" not in deps["blockers"]
+            assert "money_disposition_unresolved" in deps["blockers"]
+        if shape == "candidates":
+            assert not deps["effective_coupon_icf_ids"]
+            assert all(
+                o["disposition"] != "accepted_non_owner_coupon" for o in deps["money_dispositions"]
+            )
+        assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("closed", [False, True])
+@pytest.mark.parametrize("trigger", ["journal", "comment"])
+def test_coupon_v3_money_receipt_retires_closed_late_listener_replay_reaffirm(
+    database, closed, trigger
+):
+    import json
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide
+
+    from hermes_finance.persistence import BrokerMonthApply, MonthlyComment
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.broker_money_lifecycle import next_journal_revision
+    from hermes_finance.statement_import.mybroker import canonical
+
+    _, money_intent, bond, originals, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        reviewed = claims(session, raw, zero=True)
+        old_plan = preview_source_cash_coverage(session, reviewed)
+        accepted = certify(session, reviewed)["readback"]
+        frozen = session.get(SourceCashCoverageRevision, accepted["revision_id"]).evidence_json
+        month = session.get(ReportingMonth, money_intent.reporting_month_id)
+        if closed:
+            month.status = "closed"
+            session.commit()
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+        receipt = session.get(BrokerMonthApply, "money-accepted")
+        proof = json.loads(receipt.projection_json)
+        from hermes_finance.services.reporting_months import create_reporting_month
+
+        other_month_id = create_reporting_month(
+            session, year=2030, month=2, snapshot_date=date(2030, 2, 28)
+        ).id
+
+        def late(current, _context, _instances):
+            if current is session and not current.info.get("coupon_late"):
+                current.info["coupon_late"] = True
+                current.add(
+                    BrokerMonthApply(
+                        request_id="late-coupon-retire",
+                        request_fingerprint="a" * 64,
+                        confirmation_digest="b" * 64,
+                        account_id=receipt.account_id,
+                        reporting_month_id=receipt.reporting_month_id,
+                        import_id=receipt.import_id,
+                        projection_json=canonical(
+                            {
+                                **proof,
+                                "operation": "retire",
+                                "journal_revision": next_journal_revision(current),
+                            }
+                        ),
+                        accepted_at=datetime.now(UTC),
+                    )
+                )
+
+        event.listen(type(session), "before_flush", late)
+        try:
+            # An unrelated journal change triggers the flush before late listener.
+            token = uuid4().hex
+            if trigger == "comment":
+                session.add(
+                    MonthlyComment(
+                        reporting_month_id=other_month_id,
+                        position=1,
+                        text="Synthetic unrelated flush",
+                    )
+                )
+            else:
+                session.add(
+                    BrokerMonthApply(
+                        request_id=token,
+                        request_fingerprint="c" * 64,
+                        confirmation_digest="d" * 64,
+                        account_id=receipt.account_id,
+                        reporting_month_id=receipt.reporting_month_id,
+                        import_id=receipt.import_id,
+                        projection_json=canonical(
+                            {
+                                "contract_version": "broker_money_v1",
+                                "base_request_id": "foreign-base",
+                                "operation": "accept",
+                                "sources": [],
+                                "occurrences": [],
+                                "targets": [],
+                            }
+                        ),
+                        accepted_at=datetime.now(UTC),
+                    )
+                )
+            session.commit()
+        finally:
+            event.remove(type(session), "before_flush", late)
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired" and retired["revision"] == 2
+        assert not any(t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        replay = apply_source_cash_coverage(
+            session,
+            reviewed,
+            confirmation_digest=old_plan["confirmation_digest"],
+            request_id="coverage-apply",
+        )
+        assert replay["replayed"] and replay["readback"]["effective_state"] == "retired"
+        assert (
+            session.get(SourceCashCoverageRevision, accepted["revision_id"]).evidence_json == frozen
+        )
+        if closed:
+            assert (
+                "closed_reporting_month_requires_reopen"
+                in preview_source_cash_coverage(session, renew(raw, retired))["blockers"]
+            )
+            month.status = "draft"
+            session.commit()
+        fresh_money = _money_decide(
+            session, money_intent, originals, bond, funding=False, operation="reaffirm"
+        )
+        _money_apply(session, fresh_money, originals, "money-reaffirmed")
+        assert (
+            read_source_cash_coverage(session, accepted["coverage_id"])["effective_state"]
+            == "retired"
+        )
+        renewed = certify(
+            session, claims(session, renew(raw, retired), zero=True), "coverage-reaffirmed"
+        )["readback"]
+        assert renewed["effective_state"] == "accepted" and renewed["revision"] == 3
+        assert count(session, InvestmentCashFlow) == 5
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "source_plus",
+        "source_minus",
+        "source_account",
+        "source_date",
+        "source_currency",
+        "source_malformed",
+        "source_nonfinite",
+        "source_overflow",
+        "target_net",
+        "target_currency",
+        "target_date",
+        "target_instrument",
+        "target_month",
+        "target_tax",
+        "missing_owner",
+        "owner_fingerprint",
+        "owner_target",
+        "missing_proof",
+        "wrong_receipt_account",
+        "wrong_receipt_month",
+        "malformed_occurrence",
+        "malformed_receipt",
+    ],
+)
+def test_coupon_v3_corrupt_current_source_owner_target_proof_fails_closed_without_read_repair(
+    database, change
+):
+    import json
+
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.persistence import BrokerMoneyOccurrenceOwner, BrokerMonthApply
+    from hermes_finance.services.source_cash_coverage import inventory
+    from hermes_finance.statement_import.mybroker import canonical
+
+    _, _, _, _, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        target_ids = accepted["evidence"]["dependencies"]["effective_coupon_icf_ids"]
+        owner = session.scalar(
+            select(BrokerMoneyOccurrenceOwner).where(
+                BrokerMoneyOccurrenceOwner.investment_cash_flow_id == target_ids[0]
+            )
+        )
+        source_id, ordinal, owner_id = owner.import_id, owner.ordinal, owner.id
+        # Deliberate synthetic storage corruption bypasses the immutable writers.
+        # The reader must still refuse authority, without repairing history.
+        if change.startswith("source_"):
+            source = session.get(MyBrokerImport, source_id)
+            payload = json.loads(source.normalized_json)
+            row = next(r for r in payload["money"] if r["ordinal"] == ordinal)
+            field, value = {
+                "source_plus": ("amount", "1000.01"),
+                "source_minus": ("amount", "999.99"),
+                "source_account": ("source_account", "foreign-alias"),
+                "source_date": ("date", "2030-01-18"),
+                "source_currency": ("currency", "USD"),
+                "source_malformed": ("amount", "not-a-number"),
+                "source_nonfinite": ("amount", "NaN"),
+                "source_overflow": ("amount", "1e1000001"),
+            }[change]
+            row[field] = value
+            session.execute(
+                text("UPDATE mybroker_imports SET normalized_json=:payload WHERE id=:id"),
+                {"payload": canonical(payload), "id": source_id},
+            )
+        elif change.startswith("target_"):
+            field, value = {
+                "target_net": ("net_amount_kopecks", 100001),
+                "target_currency": ("currency", "USD"),
+                "target_date": ("event_date", "2030-01-18"),
+                "target_instrument": ("instrument_id", 1),
+                "target_month": ("reporting_month_id", 999),
+                "target_tax": ("tax_amount_kopecks", 0),
+            }[change]
+            if change in ("target_currency", "target_tax"):
+                from sqlalchemy.exc import IntegrityError
+
+                before = _all_month_tables(database)
+                with pytest.raises(IntegrityError, match="ck_investment_cash_flows_amount_basis"):
+                    session.execute(
+                        text(f"UPDATE investment_cash_flows SET {field}=:value WHERE id=:id"),
+                        {"value": value, "id": target_ids[0]},
+                    )
+                session.rollback()
+                assert _all_month_tables(database) == before
+                section_coverage_assert(session, renew(raw, accepted), "complete")
+                return
+            if change == "target_month":
+                from hermes_finance.services.reporting_months import create_reporting_month
+
+                value = create_reporting_month(
+                    session, year=2030, month=2, snapshot_date=date(2030, 2, 28)
+                ).id
+            session.execute(
+                text(f"UPDATE investment_cash_flows SET {field}=:value WHERE id=:id"),
+                {"value": value, "id": target_ids[0]},
+            )
+        elif change == "missing_owner":
+            session.execute(
+                text("DELETE FROM broker_money_occurrence_owners WHERE id=:id"), {"id": owner_id}
+            )
+        elif change.startswith("owner_"):
+            field, value = (
+                ("row_fingerprint", "b" * 64)
+                if change == "owner_fingerprint"
+                else ("investment_cash_flow_id", target_ids[1])
+            )
+            session.execute(
+                text(f"UPDATE broker_money_occurrence_owners SET {field}=:value WHERE id=:id"),
+                {"value": value, "id": owner_id},
+            )
+        elif change in ("missing_proof", "malformed_occurrence", "malformed_receipt"):
+            receipt = session.get(BrokerMonthApply, "money-accepted")
+            payload = json.loads(receipt.projection_json)
+            if change == "missing_proof":
+                payload["targets"] = payload["targets"][1:]
+            elif change == "malformed_occurrence":
+                del payload["occurrences"][0]["ordinal"]
+            session.execute(
+                text(
+                    "UPDATE broker_month_applies SET projection_json=:value WHERE request_id='money-accepted'"
+                ),
+                {"value": "invalid-json" if change == "malformed_receipt" else canonical(payload)},
+            )
+        else:
+            field, value = (
+                ("account_id", 2)
+                if change == "wrong_receipt_account"
+                else ("reporting_month_id", 999)
+            )
+            if field == "account_id":
+                from hermes_finance.services.accounts import create_account
+
+                value = create_account(session, name="Foreign", account_type="brokerage").id
+            else:
+                from hermes_finance.services.reporting_months import create_reporting_month
+
+                value = create_reporting_month(
+                    session, year=2030, month=2, snapshot_date=date(2030, 2, 28)
+                ).id
+            session.execute(
+                text(
+                    f"UPDATE broker_month_applies SET {field}=:value WHERE request_id='money-accepted'"
+                ),
+                {"value": value},
+            )
+        session.commit()
+        session.expire_all()
+        before = _all_month_tables(database)
+        deps = inventory(session, raw.account_id, raw.opening_date, raw.closing_date)
+        assert target_ids[0] not in deps["effective_coupon_icf_ids"]
+        assert "legacy_cash_or_transfer_overlap" in deps["blockers"]
+        view = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert view["effective_state"] in {"invalidated", "retired"}
+        assert _all_month_tables(database) == before
+
+
+def test_coupon_v3_account_aba_stales_preview_and_never_revives_retired_coverage(database):
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide
+
+    from hermes_finance.persistence import Account
+    from hermes_finance.services.broker_money import read_money
+
+    _, money_intent, bond, originals, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        intent = claims(session, raw, zero=True)
+        plan = preview_source_cash_coverage(session, intent)
+        accepted = certify(session, intent)["readback"]
+        account = session.get(Account, raw.account_id)
+        name = account.name
+        account.name += " B"
+        session.commit()
+        account.name = name
+        session.commit()
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired" and retired["revision"] == 2
+        assert all(not t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_source_cash_coverage(
+                session,
+                intent,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="old-unused-request",
+            )
+        fresh_money = _money_decide(
+            session, money_intent, originals, bond, funding=False, operation="reaffirm"
+        )
+        _money_apply(session, fresh_money, originals, "aba-money-reaffirm")
+        section_coverage_assert(session, renew(raw, accepted), "unknown")
+        certify(session, claims(session, renew(raw, retired), zero=True), "aba-coverage-reaffirm")
+
+
+@pytest.mark.parametrize("change", ["event_aba", "revision_aba", "retract"])
+def test_coupon_v3_typed_pdf_addition_retires_coverage_and_mutations_are_monotonic(
+    database, change
+):
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+    from test_statement_import_mybroker_endpoints import money_coupon_pdf
+
+    from hermes_finance.persistence import AppliedStatementEvent, AppliedStatementEventRevision
+    from hermes_finance.services.broker_money import read_money
+    from hermes_finance.services.statement_import_apply import StatementApplyAction
+    from hermes_finance.services.statement_import_retract import retract_applied_statement_event
+
+    _, _, _, _, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        deps = accepted["evidence"]["dependencies"]
+        target_id = deps["effective_coupon_icf_ids"][0]
+        pdf = money_coupon_pdf()
+        row = income_preview(session, pdf, raw.account_id).rows[0]
+        result = income_apply(
+            session,
+            pdf,
+            raw.account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=target_id,
+                    expected_candidate_ids=tuple(deps["effective_coupon_icf_ids"]),
+                ),
+            ),
+        )
+        assert result.success, result
+        assert all(t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired"
+        renewed = certify(session, claims(session, renew(raw, retired), zero=True), "pdf-reviewed")[
+            "readback"
+        ]
+        event_row = session.get(AppliedStatementEvent, result.items[0].applied_statement_event_id)
+        if change == "retract":
+            result = retract_applied_statement_event(session, event_row.id)
+            assert not result.cash_flow_deleted
+        else:
+            obj = (
+                event_row
+                if change == "event_aba"
+                else session.get(AppliedStatementEventRevision, result.items[0].revision_id)
+            )
+            field = "material_fingerprint" if change == "event_aba" else "net_amount_kopecks"
+            old = getattr(obj, field)
+            setattr(obj, field, "b" * 64 if change == "event_aba" else old + 1)
+            session.commit()
+            setattr(obj, field, old)
+            session.commit()
+        view = section_coverage_assert(session, renew(raw, renewed), "unknown")
+        assert view["acceptance_state"] == "retired"
+        targets = read_money(session, "money-accepted")["targets"]
+        assert not targets[0]["effective"] and all(t["effective"] for t in targets[1:])
+        assert count(session, InvestmentCashFlow) == 5
+
+
+def test_coupon_v3_pdf_first_real_money_links_existing_target_tax_unknown(database):
+    from test_statement_import_apply import apply as income_apply
+    from test_statement_import_apply import preview as income_preview
+    from test_statement_import_apply import selection_from_row
+    from test_statement_import_mybroker_endpoints import (
+        _money_apply,
+        _money_decide,
+        _money_setup,
+        money_coupon_pdf,
+    )
+
+    from hermes_finance.domain.broker_money import MoneyIntent
+    from hermes_finance.services.broker_money import preview_money
+
+    _, document, money_intent, bond, _ = _money_setup(
+        database, coupon_xml(coupons=("1000", "2000", "3000", "4000", "5000"))
+    )
+    originals = [(FILENAME, document)]
+    with database.session_factory() as session:
+        continuous_membership(session, money_intent.account_id)
+        pdf = money_coupon_pdf()
+        row = income_preview(session, pdf, money_intent.account_id).rows[0]
+        applied = income_apply(session, pdf, money_intent.account_id, (selection_from_row(row),))
+        assert applied.success, applied
+        target_id = applied.items[0].investment_cash_flow_id
+        reviewed = _money_decide(session, money_intent, originals, bond, funding=False)
+        decisions = reviewed.model_dump()["money_decisions"]
+        decisions[0]["investment_cash_flow_id"] = target_id
+        requested = MoneyIntent.model_validate(
+            {**reviewed.model_dump(), "money_decisions": decisions}
+        )
+        plan = preview_money(session, requested, originals)
+        decisions[0]["coupon_claims"]["review_context_digest"] = plan["decisions"][0][
+            "review_context_digest"
+        ]
+        requested = MoneyIntent.model_validate(
+            {**reviewed.model_dump(), "money_decisions": decisions}
+        )
+        saved = _money_apply(session, requested, originals)
+        assert all(t["effective"] for t in saved["targets"])
+        raw = SourceCashIntent(
+            account_id=money_intent.account_id,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+        )
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+        deps = accepted["evidence"]["dependencies"]
+        assert target_id in deps["effective_coupon_icf_ids"]
+        target = next(t for t in deps["coupon_authority"]["targets"] if t["target_id"] == target_id)
+        assert target["current_target"]["components"]["tax_amount_kopecks"] is None
+        assert len(target["current_target"]["statement_support"]["events"]) == 1
+        assert count(session, InvestmentCashFlow) == 5
+
+
+def test_coupon_v3_late_source_add_remove_aba_requires_both_reviews(database):
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide
+
+    from hermes_finance.services.broker_money import read_money
+
+    _, money_intent, bond, originals, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        # A covering original with missing coupon events cannot inherit authority.
+        other = coupon_xml(stamp="11", coupons=("1000",))
+        added = apply(session, other, preview(session, other))
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired"
+        assert all(not t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        session.delete(session.get(MyBrokerImport, added["import_id"]))
+        session.commit()
+        section_coverage_assert(session, renew(raw, retired), "unknown")
+        assert all(not t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        fresh = _money_decide(
+            session, money_intent, originals, bond, funding=False, operation="reaffirm"
+        )
+        _money_apply(session, fresh, originals, "source-aba-money")
+        section_coverage_assert(session, renew(raw, retired), "unknown")
+        certify(session, claims(session, renew(raw, retired), zero=True), "source-aba-coverage")
+        assert count(session, InvestmentCashFlow) == 5
+
+
+def test_coupon_v3_dependency_retirement_late_failure_rolls_back_all_tables(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.persistence import Account
+
+    _, _, _, _, raw = coupon_setup(database)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        before = _all_month_tables(database)
+
+        def fail(current, _context):
+            if current is session:
+                raise RuntimeError("synthetic after-retirement failure")
+
+        event.listen(type(session), "after_flush_postexec", fail)
+        try:
+            session.get(Account, raw.account_id).name += " failed B"
+            with pytest.raises(RuntimeError, match="after-retirement failure"):
+                session.commit()
+            session.rollback()
+        finally:
+            event.remove(type(session), "after_flush_postexec", fail)
+        assert _all_month_tables(database) == before
+        section_coverage_assert(session, renew(raw, accepted), "complete")
