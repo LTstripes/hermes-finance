@@ -1,5 +1,7 @@
 """Synthetic S3 equation, source identity, read-only API/export and strict isolation."""
 
+import json
+from copy import deepcopy
 from datetime import date
 from decimal import Decimal, localcontext
 from xml.etree import ElementTree as ET
@@ -15,6 +17,13 @@ from test_statement_import_mybroker_endpoints import (
     _broker_month_setup,
     broker_month_xml,
 )
+from test_statement_import_mybroker_metadata import (
+    _insert_section_history,
+    _section_accept,
+    _section_second_source,
+    metadata_xml,
+    section_setup,
+)
 from test_statement_import_source_cash_coverage import certify, claims, continuous_membership
 
 from hermes_finance.domain.broker_statement_return import (
@@ -29,8 +38,17 @@ from hermes_finance.domain.broker_statement_return import (
 )
 from hermes_finance.domain.source_cash_coverage import SourceCashIntent
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Account, MyBrokerImport, ReportingMonth
+from hermes_finance.persistence import (
+    Account,
+    CashBoundaryCoverage,
+    MyBrokerImport,
+    ReportingMonth,
+)
 from hermes_finance.services.broker_statement_return import read_statement_return
+from hermes_finance.services.source_cash_coverage import (
+    preview_source_cash_coverage,
+    read_source_cash_coverage,
+)
 
 T0, MID, T1 = date(2026, 8, 31), date(2026, 9, 15), date(2026, 9, 30)
 
@@ -416,3 +434,321 @@ def test_native_midpoint_deposit_from_existing_money_and_h2_coverage(database):
     assert len(value.crossings) == 1
     assert value.crossings[0].event_date == date(2030, 9, 15)
     assert value.crossings[0].signed_amount_kopecks == 100000
+
+
+def section_result(client, *, request_id="section-base", expected=None, export=False):
+    response = client.get(
+        "/api/broker-statement-returns" + ("/export" if export else ""),
+        params={
+            "account_id": 1,
+            "request_id": request_id,
+            **({"expected_fingerprint": expected} if expected else {}),
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def assert_opaque_unavailable(value):
+    assert value["status"] == value["quality"] == "unavailable"
+    assert value["rate_fraction"] is None and not value["annualized"]
+    assert value["exposure_state"] == "unknown"
+    assert "material_account_exposure_unassessed" in value["reason_codes"]
+    assert all(s["period_scope"] == "unknown" for s in value["section_authority"])
+
+
+def test_section_safe_xml_missing_and_partial_grants_are_not_period_evidence(database):
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    missing = section_result(client)
+    assert_opaque_unavailable(missing)
+    assert [s["state"] for s in missing["section_authority"]] == ["missing"] * 2
+    assert all(
+        s["pattern"] is None and s["head_request_id"] is None for s in missing["section_authority"]
+    )
+    single = {**intent, "sections": [{"section": "4_Transfers"}]}
+    _section_accept(client, single, raw)
+    partial = section_result(client)
+    assert_opaque_unavailable(partial)
+    assert [s["state"] for s in partial["section_authority"]] == ["effective", "missing"]
+    assert partial["section_authority"][0]["pattern"] == "empty_transfers"
+    assert partial["section_authority"][1]["pattern"] is None
+    assert "5_UFSR_unsupported" in partial["reason_codes"]
+    assert partial["cash_coverage_state"] == "unknown"
+    assert partial["material_fingerprint"] != missing["material_fingerprint"]
+
+
+def test_section_effective_get_original_export_ten_reads_no_writes(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    proof = _section_accept(client, intent, raw)["proof"]
+    before = _all_month_tables(database)
+    writes = []
+
+    def spy(_connection, _cursor, statement, _parameters, _context, _many):
+        if (
+            statement.lstrip()
+            .upper()
+            .startswith(("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "ALTER", "DROP"))
+        ):
+            writes.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", spy)
+    try:
+        result = section_result(client)
+        assert_opaque_unavailable(result)
+        for s, shape in zip(result["section_authority"], proof["sections"], strict=True):
+            assert (s["import_id"], s["account_id"], s["reporting_month_id"]) == (
+                intent["import_id"],
+                intent["account_id"],
+                intent["reporting_month_id"],
+            )
+            assert s["state"] == "effective" and s["pattern"] == shape["pattern"]
+            assert s["head_request_id"] == "section-proof"
+            assert len(s["proof_material_signature"]) == 64
+        for _ in range(10):
+            assert section_result(client) == result
+            previewed = client.post(
+                "/api/broker-statement-returns/preview",
+                data={"account_id": "1", "request_id": "section-base"},
+                files={"file": (FILENAME, raw, "application/xml")},
+            )
+            assert previewed.status_code == 200, previewed.text
+            assert previewed.json() == result
+            exported = client.get(
+                "/api/broker-statement-returns/export",
+                params={
+                    "account_id": 1,
+                    "request_id": "section-base",
+                    "expected_fingerprint": result["material_fingerprint"],
+                },
+            )
+            assert exported.headers["content-type"] == "application/json"
+            assert "attachment" in exported.headers["content-disposition"]
+            assert json.loads(exported.content) == result
+        assert writes == []
+        assert _all_month_tables(database) == before
+    finally:
+        event.remove(database.engine, "before_cursor_execute", spy)
+
+
+@pytest.mark.parametrize("change", ["account", "source", "mapping", "month"])
+def test_section_stale_dependencies_never_disclose_a_safe_pattern(database, change):
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    _section_accept(client, intent, raw)
+    original = section_result(client)
+    with database.session_factory() as session:
+        if change == "account":
+            session.get(Account, 1).status = "frozen"
+        elif change == "source":
+            session.get(MyBrokerImport, intent["import_id"]).normalized_json += " "
+        elif change == "mapping":
+            source = session.get(MyBrokerImport, intent["import_id"])
+            bindings = json.loads(source.mappings_json)
+            next(b for b in bindings if b["kind"] == "account")["hermes_id"] = 2
+            source.mappings_json = json.dumps(bindings)
+        else:
+            session.get(ReportingMonth, intent["reporting_month_id"]).snapshot_date = date(
+                2030, 1, 30
+            )
+        session.commit()
+    result = section_result(client, expected=original["material_fingerprint"])
+    assert_opaque_unavailable(result)
+    assert all(
+        s["state"] == "blocked" and s["pattern"] is None for s in result["section_authority"]
+    )
+    assert "statement_preview_stale" in result["reason_codes"]
+    assert section_result(client, expected=original["material_fingerprint"], export=True) == result
+
+
+def test_section_aba_fresh_reacceptance_uses_only_current_head(database):
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    _section_accept(client, intent, raw, "proof-A")
+    first = section_result(client)
+    with database.session_factory() as session:
+        account = session.get(Account, 1)
+        name = account.name
+        account.name = "Synthetic ABA"
+        session.commit()
+        account.name = name
+        session.commit()
+    aba = section_result(client, expected=first["material_fingerprint"])
+    assert all(s["state"] == "blocked" and s["pattern"] is None for s in aba["section_authority"])
+    assert "statement_preview_stale" in aba["reason_codes"]
+    replacement = {
+        **intent,
+        "sections": [{**s, "expected_predecessor": "proof-A"} for s in intent["sections"]],
+    }
+    _section_accept(client, replacement, raw, "proof-C")
+    fresh = section_result(client)
+    assert_opaque_unavailable(fresh)
+    assert all(
+        s["state"] == "effective" and s["head_request_id"] == "proof-C"
+        for s in fresh["section_authority"]
+    )
+    assert fresh["reason_codes"] == first["reason_codes"]
+    assert fresh["material_fingerprint"] != first["material_fingerprint"]
+
+
+def test_section_head_change_with_unchanged_null_reasons_invalidates_preview_and_export(database):
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    proof = _section_accept(client, intent, raw, "proof-A")["proof"]
+    first = section_result(client)
+    # Synthetic sealed successor changes only the immutable head/chain material;
+    # financial inputs and current dependencies stay identical.
+    successor = deepcopy(proof)
+    for s in successor["intent"]["sections"]:
+        s["expected_predecessor"] = "proof-A"
+    _insert_section_history(database, intent, "proof-B", successor)
+    changed = section_result(client)
+    assert changed["reason_codes"] == first["reason_codes"]
+    assert changed["rate_fraction"] is first["rate_fraction"] is None
+    assert (
+        changed["section_authority"][0]["proof_material_signature"]
+        != first["section_authority"][0]["proof_material_signature"]
+    )
+    assert all(s["head_request_id"] == "proof-B" for s in changed["section_authority"])
+    assert changed["material_fingerprint"] != first["material_fingerprint"]
+    stale = section_result(client, expected=first["material_fingerprint"])
+    assert "statement_preview_stale" in stale["reason_codes"]
+    assert section_result(client, expected=first["material_fingerprint"], export=True) == stale
+
+
+@pytest.mark.parametrize(
+    "case", ["corrupt", "fork", "missing-predecessor", "cycle", "cross-account", "shape"]
+)
+def test_section_bad_proof_chain_never_falls_back_to_old_safe_head(database, case):
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    proof = _section_accept(client, intent, raw, "proof-A")["proof"]
+    first = section_result(client)
+    bad = deepcopy(proof)
+    if case == "corrupt":
+        bad.pop("bindings")
+    elif case == "missing-predecessor":
+        for s in bad["intent"]["sections"]:
+            s["expected_predecessor"] = "absent"
+    elif case == "cycle":
+        for s in bad["intent"]["sections"]:
+            s["expected_predecessor"] = "bad-proof"
+    elif case == "cross-account":
+        bad["intent"]["account_id"] = 2
+    elif case == "shape":
+        bad["sections"][0]["pattern"] = "economic_transfer"
+    _insert_section_history(database, intent, "bad-proof", bad)
+    result = section_result(client, expected=first["material_fingerprint"])
+    assert_opaque_unavailable(result)
+    assert all(
+        s["state"] == "blocked" and s["pattern"] is None and s["head_request_id"] is None
+        for s in result["section_authority"]
+    )
+    expected = (
+        "section_authority_chain_conflict"
+        if case in {"fork", "missing-predecessor", "cycle"}
+        else "broker_month_receipt_invalid"
+    )
+    assert expected in result["reason_codes"]
+    assert "statement_preview_stale" in result["reason_codes"]
+    # Another unresolved fork must change material even with the same blockers.
+    _insert_section_history(database, intent, "bad-proof-2", bad)
+    second = section_result(client)
+    assert second["material_fingerprint"] != result["material_fingerprint"]
+
+
+def test_section_unexpected_none_proof_is_blocked_not_partial_response(database, monkeypatch):
+    from hermes_finance.services import broker_sections
+
+    client, intent, raw = section_setup(database, raw=metadata_xml(native_xml()))
+    _section_accept(client, intent, raw)
+    original = section_result(client)
+    resolve_heads = broker_sections._heads
+
+    def broken_heads(*args):
+        heads, errors = resolve_heads(*args)
+        return {s: (row, None) for s, (row, _proof) in heads.items()}, errors
+
+    monkeypatch.setattr(broker_sections, "_heads", broken_heads)
+    result = section_result(client, expected=original["material_fingerprint"])
+    assert_opaque_unavailable(result)
+    assert all(
+        s["state"] == "blocked" and s["pattern"] is None for s in result["section_authority"]
+    )
+    assert "statement_section_evidence_invalid" in result["reason_codes"]
+
+
+@pytest.mark.parametrize("both_safe", [False, True])
+def test_section_safe_a_never_clears_unsafe_or_overlapping_b(database, both_safe):
+    raw_a = metadata_xml(native_xml())
+    root = ET.fromstring(raw_a)
+    root.find(".//{MyBroker}Details[@ISIN1]").set("active_name", "Synthetic source B")
+    if not both_safe:
+        root.find("{MyBroker}Trades3/{MyBroker}Report/{MyBroker}Tablix1").set("volume", "5.00")
+        root.find("{MyBroker}Trades4/{MyBroker}Report/{MyBroker}Tablix1").set(
+            "Textbox4", "Неизвестен"
+        )
+    raw_b = ET.tostring(root)
+    client, intent_a, _ = section_setup(database, raw=raw_a)
+    intent_b = _section_second_source(client, intent_a, raw_b, "source-B")
+    _section_accept(client, intent_a, raw_a, "proof-A")
+    if both_safe:
+        _section_accept(client, intent_b, raw_b, "proof-B")
+    for request_id in ("section-base", "source-B"):
+        result = section_result(client, request_id=request_id)
+        assert_opaque_unavailable(result)
+        assert "statement_overlapping_source" in result["reason_codes"]
+        by_source = {
+            i: [s for s in result["section_authority"] if s["import_id"] == i]
+            for i in (intent_a["import_id"], intent_b["import_id"])
+        }
+        assert all(s["state"] == "effective" for s in by_source[intent_a["import_id"]])
+        assert all(
+            s["state"] == ("effective" if both_safe else "missing")
+            for s in by_source[intent_b["import_id"]]
+        )
+        if not both_safe:
+            assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(result["reason_codes"])
+            assert all(s["pattern"] is None for s in by_source[intent_b["import_id"]])
+
+
+def test_effective_sections_do_not_override_real_h2_a2_reader(database):
+    # Establish real accepted H2-A2 on a clean source first. A newly disclosed
+    # opaque source invalidates it through the real reader, even after #800.
+    client, _ = prepared(database, covered=True)
+    with database.session_factory() as session:
+        coverage_id = session.scalar(select(CashBoundaryCoverage.id))
+        assert read_source_cash_coverage(session, coverage_id)["effective_state"] == "accepted"
+        source_id = session.scalar(select(MyBrokerImport.id))
+        month_id = session.scalar(select(ReportingMonth.id))
+    intent = {
+        "contract_version": "mybroker-section-disposition-v1",
+        "account_id": 1,
+        "reporting_month_id": month_id,
+        "import_id": source_id,
+        "base_request_id": "synthetic-batch",
+        "sections": [{"section": "4_Transfers"}, {"section": "5_UFSR"}],
+    }
+    raw = metadata_xml(native_xml())
+    safe = _section_second_source(client, intent, raw, "opaque-source")
+    _section_accept(client, safe, raw)
+    with database.session_factory() as session:
+        frozen_s1 = session.get(MyBrokerImport, safe["import_id"]).normalized_json
+        readback = read_source_cash_coverage(session, coverage_id)
+        assert readback["effective_state"] == "retired"
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(readback["blockers"])
+        plan = preview_source_cash_coverage(
+            session,
+            SourceCashIntent(
+                account_id=1, opening_date=date(2029, 12, 31), closing_date=date(2030, 1, 31)
+            ),
+        )
+        assert not plan["can_apply"]
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(plan["blockers"])
+        result = read_statement_return(session, request_id="opaque-source", account_id=1)
+        assert result.cash_coverage_state == "unknown"
+        assert set(readback["blockers"]) <= set(result.reason_codes)
+        assert all(
+            s.state == "effective"
+            for s in result.section_authority
+            if s.import_id == safe["import_id"]
+        )
+        assert session.get(MyBrokerImport, safe["import_id"]).normalized_json == frozen_s1
+        assert_opaque_unavailable(result.model_dump(mode="json"))
