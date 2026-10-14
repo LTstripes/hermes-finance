@@ -138,6 +138,610 @@ def renew(intent, view):
     )
 
 
+def section_quiet_xml():
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_mybroker_endpoints import broker_month_xml
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    root = ET.fromstring(broker_month_xml())
+    for parent in root.iter():
+        for child in list(parent):
+            if "trade_no" in child.attrib or child.tag == "{MyBroker}rn":
+                parent.remove(child)
+    cash = root.find(".//{MyBroker}Details[@active_name='RUB']")
+    cash.set("income_rest", "400.00")
+    security = root.find(".//{MyBroker}Details[@ISIN1]")
+    security.set("income_rest", security.get("real_rest"))
+    return metadata_xml(ET.tostring(root, encoding="utf-8"))
+
+
+def section_quiet_setup(database, *, raw=None):
+    from test_statement_import_mybroker_metadata import section_setup
+
+    raw = raw or section_quiet_xml()
+    client, section, raw = section_setup(database, raw=raw)
+    with database.session_factory() as session:
+        continuous_membership(session, section["account_id"])
+    return (
+        client,
+        section,
+        raw,
+        SourceCashIntent(
+            account_id=section["account_id"],
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+        ),
+    )
+
+
+def section_coverage_assert(session, intent, state):
+    view = read_source_cash_coverage(session, intent.coverage_id)
+    assert view["coverage_state"] == state
+    membership = list(session.scalars(select(AccountPerformanceScopeMembership)))
+    shared = assess_cash_boundary_coverage(
+        session,
+        scope="account",
+        account_id=intent.account_id,
+        start_date=date(2030, 1, 1),
+        end_date=intent.closing_date,
+        rows_by_account={intent.account_id: membership},
+        ledger_binding=COMPATIBLE_FLOW_CONTRACT,
+    )
+    assert shared.status == state
+    return view
+
+
+def test_section_aware_quiet_real_reader_shared_assessor_and_ten_gets_no_writes(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    client, section, raw, intent = section_quiet_setup(database)
+    codes = {"4_Transfers_unsupported", "5_UFSR_unsupported"}
+    with database.session_factory() as session:
+        plan = preview_source_cash_coverage(session, claims(session, intent, zero=True))
+        assert codes <= set(plan["blockers"])
+        authority = plan["evidence"]["dependencies"]["sources"][0]["section_authority"]
+        assert authority["absent_sections"] == ["4_Transfers", "5_UFSR"]
+    _section_accept(client, {**section, "sections": section["sections"][:1]}, raw, "transfers")
+    with database.session_factory() as session:
+        assert "5_UFSR_unsupported" in preview_source_cash_coverage(session, intent)["blockers"]
+        assert (
+            "4_Transfers_unsupported"
+            not in preview_source_cash_coverage(session, intent)["blockers"]
+        )
+    _section_accept(client, {**section, "sections": section["sections"][1:]}, raw, "ufsr")
+    with database.session_factory() as session:
+        assert (
+            "owner_cash_coverage_claims_missing"
+            in preview_source_cash_coverage(session, intent)["blockers"]
+        )
+        no_zero = preview_source_cash_coverage(session, claims(session, intent))
+        assert "zero_owner_cash_crossings_unconfirmed" in no_zero["blockers"]
+        accepted = certify(session, claims(session, intent, zero=True))["readback"]
+        assert accepted["effective_state"] == "accepted"
+        assert accepted["portfolio_scope"] == "unknown"
+        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v2"
+        authority = accepted["evidence"]["dependencies"]["sources"][0]["section_authority"]
+        assert codes <= set(authority["raw_blockers"])
+        assert authority["effective_blockers"] == [] and authority["period_scope"] == "unknown"
+        from hermes_finance.services.broker_statement_return import read_statement_return
+
+        s3 = read_statement_return(
+            session, request_id=section["base_request_id"], account_id=intent.account_id
+        )
+        assert s3.cash_coverage_state == "complete"
+        assert s3.rate_fraction is None
+        assert "material_account_exposure_unassessed" in s3.reason_codes
+        target = renew(intent, accepted)
+        before = _all_month_tables(database)
+        for _ in range(10):
+            section_coverage_assert(session, target, "complete")
+        assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("safe_first", [True, False])
+def test_section_aware_safe_a_never_clears_unsafe_b_both_orders(database, safe_first):
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_mybroker_metadata import _section_accept, _section_second_source
+
+    safe = section_quiet_xml()
+    root = ET.fromstring(safe)
+    root.find("{MyBroker}Trades3/{MyBroker}Report/{MyBroker}Tablix1").set("volume", "5.00")
+    unsafe = ET.tostring(root, encoding="utf-8")
+    client, first, _, intent = section_quiet_setup(database, raw=safe if safe_first else unsafe)
+    if safe_first:
+        _section_accept(client, first, safe, "initial-safe")
+    second = _section_second_source(client, first, unsafe if safe_first else safe, "second-base")
+    section, unsafe_section = (first, second) if safe_first else (second, first)
+    if safe_first:
+        section = {
+            **section,
+            "sections": [
+                {**s, "expected_predecessor": "initial-safe"} for s in section["sections"]
+            ],
+        }
+    _section_accept(client, section, safe, "current-safe")
+    with database.session_factory() as session:
+        plan = preview_source_cash_coverage(session, claims(session, intent, zero=True))
+        assert "4_Transfers_unsupported" in plan["blockers"] and not plan["can_apply"]
+        sources = {s["import_id"]: s for s in plan["evidence"]["dependencies"]["sources"]}
+        assert len(sources) == 2
+        assert sources[section["import_id"]]["section_authority"]["effective_blockers"] == []
+        assert (
+            "4_Transfers_unsupported"
+            in sources[unsafe_section["import_id"]]["section_authority"]["effective_blockers"]
+        )
+
+
+@pytest.mark.parametrize("closed", [True, False])
+@pytest.mark.parametrize("change", ["account", "cash", "snapshot", "source", "mapping"])
+def test_section_aware_dependency_aba_retirement_closed_replay_and_reviewed_reaffirm(
+    database,
+    change,
+    closed,
+):
+    from test_statement_import_mybroker_metadata import _section_accept, section_apply
+
+    from hermes_finance.persistence import CashBalance
+
+    client, section, document, raw = section_quiet_setup(database)
+    section_plan = _section_accept(client, section, document, "proof-A")
+    with database.session_factory() as session:
+        accepted_intent = claims(session, raw, zero=True)
+        accepted_plan = preview_source_cash_coverage(session, accepted_intent)
+        accepted = certify(session, accepted_intent)["readback"]
+        envelope = session.get(SourceCashCoverageRevision, accepted["revision_id"]).evidence_json
+        month = session.get(ReportingMonth, section["reporting_month_id"])
+        if closed:
+            month.status = "closed"
+            session.commit()
+            section_coverage_assert(session, renew(raw, accepted), "complete")
+        row, field, replacement = {
+            "account": (session.get(Account, raw.account_id), "name", "synthetic ABA"),
+            "cash": (session.scalar(select(CashBalance)), "amount_kopecks", 40001),
+            "snapshot": (month, "snapshot_date", date(2030, 1, 30)),
+            "source": (
+                session.get(MyBrokerImport, section["import_id"]),
+                "confirmation_digest",
+                "a" * 64,
+            ),
+            "mapping": (session.scalar(select(BrokerIdentityMapping)), "source_as_of", B),
+        }[change]
+        previous = getattr(row, field)
+        setattr(row, field, replacement)
+        session.commit()
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired" and retired["revision"] == 2
+        assert (
+            session.get(SourceCashCoverageRevision, accepted["revision_id"]).evidence_json
+            == envelope
+        )
+        setattr(row, field, previous)
+        session.commit()
+        section_coverage_assert(session, renew(raw, retired), "unknown")
+        replay = apply_source_cash_coverage(
+            session,
+            accepted_intent,
+            confirmation_digest=accepted_plan["confirmation_digest"],
+            request_id="coverage-apply",
+        )
+        assert replay["replayed"] and replay["committed_revision_id"] == accepted["revision_id"]
+        assert replay["readback"]["effective_state"] == "retired"
+        fresh = renew(raw, retired)
+        if closed:
+            assert (
+                "closed_reporting_month_requires_reopen"
+                in preview_source_cash_coverage(session, fresh)["blockers"]
+            )
+            month.status = "draft"
+            session.commit()
+    replay = section_apply(client, section, document, section_plan, request_id="proof-A")
+    assert all(s["disposition_status"] == "blocked" for s in replay.json()["sections"])
+    successor = {
+        **section,
+        "sections": [{**s, "expected_predecessor": "proof-A"} for s in section["sections"]],
+    }
+    _section_accept(client, successor, document, "proof-B")
+    with database.session_factory() as session:
+        section_coverage_assert(session, fresh, "unknown")
+        assert (
+            "claim_binding_mismatch"
+            in preview_source_cash_coverage(session, accepted_intent)["blockers"]
+        )
+        renewed = certify(session, claims(session, fresh, zero=True), "reviewed-new-context")[
+            "readback"
+        ]
+        assert renewed["revision"] == 3
+        section_coverage_assert(session, renew(raw, renewed), "complete")
+
+
+@pytest.mark.parametrize(
+    "problem",
+    ["fork", "missing-predecessor", "invalid", "wrong-month", "wrong-account", "wrong-source"],
+)
+def test_section_aware_bad_receipt_scope_or_chain_real_reader_fails_closed(database, problem):
+    from copy import deepcopy
+
+    from test_statement_import_mybroker_metadata import _insert_section_history, _section_accept
+
+    client, section, document, raw = section_quiet_setup(database)
+    plan = _section_accept(client, section, document, "valid-proof")
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+    bad = deepcopy(plan["proof"])
+    scoped = dict(section)
+    if problem == "missing-predecessor":
+        for decision in bad["intent"]["sections"]:
+            decision["expected_predecessor"] = "missing"
+    elif problem == "invalid":
+        bad["sections"][0]["derived_movements"] = 1
+    elif problem == "wrong-month":
+        scoped["reporting_month_id"] = 999
+    elif problem == "wrong-account":
+        scoped["account_id"] = 2
+    elif problem == "wrong-source":
+        scoped["import_id"] = 999
+    if problem in {"wrong-month", "wrong-account", "wrong-source"}:
+        # A mismatched/invalid row cannot donate authority to its new grain.
+        with database.session_factory() as session:
+            from hermes_finance.services.broker_sections import coverage_disposition
+
+            source_row = session.get(MyBrokerImport, section["import_id"])
+            if problem == "wrong-account":
+                authority = coverage_disposition(
+                    session, source_row, 2, ["4_Transfers_unsupported"]
+                )
+                assert authority["effective_blockers"] == ["4_Transfers_unsupported"]
+            else:
+                # Persisting a sealed row at a different identity fails proof validation.
+                bad["intent"]["reporting_month_id" if problem == "wrong-month" else "import_id"] = (
+                    999
+                )
+                _insert_section_history(database, section, "bad-scope", bad)
+                section_coverage_assert(session, renew(raw, accepted), "unknown")
+        return
+    _insert_section_history(database, scoped, "bad-head", bad)
+    with database.session_factory() as session:
+        view = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert view["acceptance_state"] == "retired"
+        fresh = preview_source_cash_coverage(session, claims(session, renew(raw, view), zero=True))
+        assert "4_Transfers_unsupported" in fresh["blockers"] and not fresh["can_apply"]
+
+
+def test_section_aware_stale_apply_and_retirement_rollback_are_atomic(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.persistence import CashBalance
+
+    client, section, document, raw = section_quiet_setup(database)
+    _section_accept(client, section, document)
+    with database.session_factory() as session:
+        reviewed = claims(session, raw, zero=True)
+        stale = preview_source_cash_coverage(session, reviewed)
+        cash = session.scalar(select(CashBalance))
+        old = cash.amount_kopecks
+        cash.amount_kopecks += 1
+        session.commit()
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError, match="preview_stale"):
+            apply_source_cash_coverage(
+                session,
+                reviewed,
+                confirmation_digest=stale["confirmation_digest"],
+                request_id="stale",
+            )
+        assert _all_month_tables(database) == before
+        cash.amount_kopecks = old
+        session.commit()
+    successor = {
+        **section,
+        "sections": [{**s, "expected_predecessor": "section-proof"} for s in section["sections"]],
+    }
+    _section_accept(client, successor, document, "replacement")
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        before = _all_month_tables(database)
+        cash = session.scalar(select(CashBalance))
+        cash.amount_kopecks += 1
+        session.flush()
+        session.flush()  # post-flush retirement stays in the same transaction
+        assert (
+            session.get(CashBoundaryCoverage, accepted["coverage_id"]).coverage_state == "unknown"
+        )
+        session.rollback()
+        assert _all_month_tables(database) == before
+        section_coverage_assert(session, renew(raw, accepted), "complete")
+
+
+def test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version_reaffirm(
+    database,
+    monkeypatch,
+):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.services import source_cash_coverage as service
+
+    # Simulate only the legacy producer's version selection. Both versions use
+    # the real inventory, claims, writer and reader; no financial result is mocked.
+    with database.session_factory() as session:
+        raw = quiet_intent(session)
+        evidence_builder = service._evidence
+        with monkeypatch.context() as legacy:
+            legacy.setattr(service, "CONTRACT", service.LEGACY_CONTRACT)
+
+            def legacy_evidence(*args, **kwargs):
+                return evidence_builder(*args, **{**kwargs, "contract": service.LEGACY_CONTRACT})
+
+            legacy.setattr(service, "_evidence", legacy_evidence)
+            old_intent = claims(session, raw, zero=True)
+            old_plan = preview_source_cash_coverage(session, old_intent)
+            old = certify(session, old_intent, "v1-original")["readback"]
+        revision = session.get(SourceCashCoverageRevision, old["revision_id"])
+        envelope, signature = revision.evidence_json, revision.material_signature
+        assert old["evidence"]["contract_version"] == service.LEGACY_CONTRACT
+        assert (
+            read_source_cash_coverage(session, old["coverage_id"])["effective_state"] == "accepted"
+        )
+        frozen = _all_month_tables(database)
+        replay = apply_source_cash_coverage(
+            session,
+            old_intent,
+            confirmation_digest=old_plan["confirmation_digest"],
+            request_id="v1-original",
+        )
+        assert replay["replayed"] and replay["committed_revision_id"] == old["revision_id"]
+        assert replay["readback"]["evidence"]["contract_version"] == service.LEGACY_CONTRACT
+        assert _all_month_tables(database) == frozen
+        assert (
+            "claim_binding_mismatch"
+            in preview_source_cash_coverage(session, old_intent)["blockers"]
+        )
+        new = certify(session, claims(session, renew(raw, old), zero=True), "v2-reviewed")[
+            "readback"
+        ]
+        assert new["coverage_id"] == old["coverage_id"] and new["revision"] == 2
+        assert new["evidence"]["contract_version"] == service.CONTRACT
+        assert revision.evidence_json == envelope and revision.material_signature == signature
+
+
+def test_section_aware_legacy_raw_blockers_never_inherit_grant(database):
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.services.source_cash_coverage import LEGACY_CONTRACT, _evidence
+
+    client, section, document, intent = section_quiet_setup(database)
+    _section_accept(client, section, document)
+    with database.session_factory() as session:
+        legacy = _evidence(
+            session,
+            intent,
+            intent.account_id,
+            intent.opening_date,
+            intent.closing_date,
+            contract=LEGACY_CONTRACT,
+        )
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(
+            legacy["dependencies"]["blockers"]
+        )
+        assert "section_authority" not in legacy["dependencies"]["sources"][0]
+        assert preview_source_cash_coverage(session, claims(session, intent, zero=True))[
+            "can_apply"
+        ]
+
+
+def test_section_aware_late_listener_receipt_retires_in_same_transaction_and_unrelated_does_not(
+    database,
+):
+    from datetime import UTC, datetime
+
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    from hermes_finance.persistence import BrokerMonthApply
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.statement_import.mybroker import canonical
+
+    client, section, document, intent = section_quiet_setup(database)
+    with database.session_factory() as session:
+        unrelated_account = create_account(
+            session, name="Unrelated synthetic", account_type="brokerage"
+        ).id
+    _section_accept(client, section, document)
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, intent, zero=True))["readback"]
+
+        def dependency(request_id, account_id):
+            return BrokerMonthApply(
+                request_id=request_id,
+                request_fingerprint="a" * 64,
+                confirmation_digest="b" * 64,
+                account_id=account_id,
+                import_id=section["import_id"],
+                reporting_month_id=section["reporting_month_id"],
+                projection_json=canonical(
+                    {
+                        "contract_version": "broker_money_dependency_v1",
+                        "base_request_id": section["base_request_id"],
+                        "reason_code": "late-dependency",
+                    }
+                ),
+                accepted_at=datetime.now(UTC),
+            )
+
+        # Another account's unrelated receipt has no authority at this source grain.
+        unrelated = dependency("unrelated", unrelated_account)
+        unrelated.projection_json = canonical(
+            {
+                "contract_version": "broker_money_dependency_v1",
+                "base_request_id": "other-base",
+                "reason_code": "unrelated",
+            }
+        )
+        session.add(unrelated)
+        session.commit()
+        section_coverage_assert(session, renew(intent, accepted), "complete")
+
+        def late_listener(current, _context, _instances):
+            if current is session and any(isinstance(r, BrokerMonthApply) for r in current.new):
+                if not current.info.get("late_test_receipt"):
+                    current.info["late_test_receipt"] = True
+                    current.add(dependency("late-receipt", intent.account_id))
+
+        event.listen(type(session), "before_flush", late_listener)
+        try:
+            session.add(dependency("unrelated-trigger", unrelated_account))
+            session.commit()
+        finally:
+            event.remove(type(session), "before_flush", late_listener)
+        retired = section_coverage_assert(session, renew(intent, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired" and retired["revision"] == 2
+
+
+def test_section_aware_extra_quiet_report_retirement_keeps_overlapping_source_inventory(database):
+    from test_statement_import_mybroker_metadata import _section_accept
+
+    client, section, document, raw = section_quiet_setup(database)
+    _section_accept(client, section, document, "proof-A")
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, raw, zero=True))["readback"]
+        quiet = fixture(quiet=True)
+        apply(session, quiet, preview(session, quiet))
+        retired = section_coverage_assert(session, renew(raw, accepted), "unknown")
+        assert retired["acceptance_state"] == "retired"
+        assert (
+            len(preview_source_cash_coverage(session, raw)["evidence"]["dependencies"]["sources"])
+            == 2
+        )
+    successor = {
+        **section,
+        "sections": [{**s, "expected_predecessor": "proof-A"} for s in section["sections"]],
+    }
+    _section_accept(client, successor, document, "proof-B")
+    with database.session_factory() as session:
+        updated = certify(
+            session, claims(session, renew(raw, retired), zero=True), "overlap-reviewed"
+        )["readback"]
+        deps = updated["evidence"]["dependencies"]
+        assert len(deps["sources"]) == 2
+        assert deps["source_range_union"] == [["2030-01-01", "2030-01-31"]]
+        section_coverage_assert(session, renew(raw, updated), "complete")
+
+
+@pytest.mark.parametrize("problem", ["pending", "repo", "coupon", "nkd", "custody"])
+def test_section_aware_grants_do_not_waive_money_or_material_exposure(database, problem):
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_mybroker_endpoints import broker_month_xml
+    from test_statement_import_mybroker_metadata import _section_accept, metadata_xml, section_setup
+
+    raw = broker_month_xml()
+    root = ET.fromstring(raw)
+    if problem in {"pending", "repo"}:
+        trade = root.find(".//{MyBroker}Details[@trade_no]")
+        trade.set(
+            "save_settlement_date" if problem == "pending" else "repo_no",
+            "18.01.2030" if problem == "pending" else "123",
+        )
+    elif problem in {"coupon", "nkd"}:
+        root.find(".//{MyBroker}comment").set(
+            "comment", "Купон" if problem == "coupon" else "НКД по сделке"
+        )
+    else:
+        root.find("{MyBroker}Trades3/{MyBroker}Report").set("custody", "unresolved")
+    raw = metadata_xml(ET.tostring(root, encoding="utf-8"))
+    if problem == "repo":
+        from test_statement_import_mybroker_endpoints import (
+            _broker_month_apply,
+            _broker_month_preview,
+            _broker_month_setup,
+        )
+
+        client = TestClient(create_app(database=database))
+        scope = _broker_month_setup(database)
+        plan = _broker_month_preview(client, scope, raw)
+        assert _broker_month_apply(client, scope, plan, raw).status_code == 409
+        # REPO already prevents the base authority required for a section grant.
+        with database.session_factory() as session:
+            imported = apply(session, raw, preview(session, raw))
+            account_id = imported["mappings"][0]["hermes_id"]
+            continuous_membership(session, account_id)
+            intent = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=B)
+            coverage = preview_source_cash_coverage(session, claims(session, intent, zero=True))
+            assert "money_disposition_unresolved" in coverage["blockers"]
+            assert not coverage["can_apply"]
+        return
+    client, section, document = section_setup(database, raw=raw)
+    if problem != "custody":
+        _section_accept(client, section, document)
+    with database.session_factory() as session:
+        continuous_membership(session, section["account_id"])
+        intent = SourceCashIntent(account_id=section["account_id"], opening_date=A, closing_date=B)
+        plan = preview_source_cash_coverage(session, claims(session, intent, zero=True))
+        assert not plan["can_apply"]
+        assert (
+            "4_Transfers_unsupported" if problem == "custody" else "money_disposition_unresolved"
+        ) in plan["blockers"]
+        assert count(session, SourceCashCoverageRevision) == 0
+
+
+def test_section_aware_no_month_get_never_creates_scope_and_legacy_warnings_stay(database):
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    with database.session_factory() as session:
+        document = metadata_xml(fixture(quiet=True))
+        imported = apply(session, document, preview(session, document))
+        account_id = imported["mappings"][0]["hermes_id"]
+        continuous_membership(session, account_id)
+        intent = SourceCashIntent(account_id=account_id, opening_date=A, closing_date=B)
+        for _ in range(10):
+            plan = preview_source_cash_coverage(session, claims(session, intent, zero=True))
+            assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(plan["blockers"])
+            authority = plan["evidence"]["dependencies"]["sources"][0]["section_authority"]
+            assert authority["scopes"] == []
+            assert count(session, ReportingMonth) == 0
+
+
+def test_section_aware_signed_pair_stays_two_dated_crossings_and_a1_frozen_gate(database):
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    with database.session_factory() as session:
+        raw = source(session, amount="100.00", extra_amounts=("-100.00",))
+        continuous_membership(session, raw.account_id)
+        flows = []
+        for ordinal in (0, 1):
+            intent = raw.model_copy(
+                update={
+                    "evidence_version": COMPATIBLE_FLOW_CONTRACT,
+                    "seed": raw.seed.model_copy(update={"ordinal": ordinal}),
+                }
+            )
+            flows.append(
+                accept(session, attest(session, intent), "signed-" + str(ordinal))["readback"]
+            )
+        intent = SourceCashIntent(account_id=raw.account_id, opening_date=A, closing_date=B)
+        accepted = certify(session, claims(session, intent))["readback"]
+        assert len(accepted["evidence"]["dependencies"]["effective_flow_ids"]) == 2
+        assert [f["core"]["signed_source_amount"] for f in flows] == ["100", "-100"]
+        assert (
+            "zero_owner_cash_crossings_conflicts"
+            in preview_source_cash_coverage(session, claims(session, intent, zero=True))["blockers"]
+        )
+        # Safe metadata syntax on a newly accepted source does not alter A1.
+        document = metadata_xml(xml(amount="100.00"))
+        imported = apply(session, document, preview(session, document))
+        blocked_a1 = OwnerFlowIntent(
+            account_id=raw.account_id,
+            evidence_version=COMPATIBLE_FLOW_CONTRACT,
+            seed={"import_id": imported["import_id"], "ordinal": 0},
+        )
+        assert (
+            "4_Transfers_unsupported"
+            in preview_historical_owner_flow(session, blocked_a1)["blockers"]
+        )
+
+
 def test_positive_one_day_directed_dependency_and_legacy_reader_refusal(database):
     with database.session_factory() as session:
         flow_intent, flow, raw = prepared(session)

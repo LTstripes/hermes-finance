@@ -54,7 +54,8 @@ from hermes_finance.services.mybroker_import import _reduce
 from hermes_finance.services.performance_availability import _history_covers_interval
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
-CONTRACT = "h2-a2-source-cash-rub-v1"
+LEGACY_CONTRACT = "h2-a2-source-cash-rub-v1"
+CONTRACT = "h2-a2-source-cash-rub-v2"
 # These accounting limitations do not contradict exact non-owner linkage.
 # Keep them in linked_trade evidence; every other (including future) blocker
 # still prevents excluding Money from Owner boundary crossings.
@@ -97,7 +98,7 @@ def _union_and_gaps(ranges, start, end):
     )
 
 
-def inventory(session, account_id, a, b, *, retained=None):
+def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
     """Discover the full inventory, including absence sets and ineffective history.
 
     Raw accepted material is always bound. Invalid envelopes stay disclosed and
@@ -236,7 +237,15 @@ def inventory(session, account_id, a, b, *, retained=None):
                 blockers.add("source_integrity_or_version")
             # Opaque sections cannot be scoped more finely than the full range.
             if intersects:
-                blockers.update(document["syntax_blockers"])
+                if contract == LEGACY_CONTRACT:
+                    blockers.update(document["syntax_blockers"])
+                else:
+                    from hermes_finance.services.broker_sections import coverage_disposition
+
+                    item["section_authority"] = coverage_disposition(
+                        session, source, account_id, document["syntax_blockers"]
+                    )
+                    blockers.update(item["section_authority"]["effective_blockers"])
                 if "position_row_unclassified" in document["endpoint_blockers"]:
                     blockers.add("source_cash_scope_uninterpretable")
             item["section_inventory"] = document["section_inventory"]
@@ -500,8 +509,10 @@ def _support(evidence):
     return {k: v for k, v in evidence.items() if k != "intent"}
 
 
-def _evidence(session, intent, account_id, a, b, *, retained=None):
-    deps = inventory(session, account_id, a, b, retained=retained)
+def _evidence(session, intent, account_id, a, b, *, retained=None, contract=CONTRACT):
+    if contract not in (LEGACY_CONTRACT, CONTRACT):
+        raise MyBrokerError("source_coverage_contract_invalid")
+    deps = inventory(session, account_id, a, b, retained=retained, contract=contract)
     identity = {
         "account_id": account_id,
         "scope": "account",
@@ -511,9 +522,9 @@ def _evidence(session, intent, account_id, a, b, *, retained=None):
         "covered_from": (a + timedelta(days=1)).isoformat(),
         "covered_to": b.isoformat(),
     }
-    context = digest({"contract_version": CONTRACT, "identity": identity, "dependencies": deps})
+    context = digest({"contract_version": contract, "identity": identity, "dependencies": deps})
     return {
-        "contract_version": CONTRACT,
+        "contract_version": contract,
         "identity": identity,
         "dependencies": deps,
         "review_context_digest": context,
@@ -566,7 +577,7 @@ def _plan(session, intent):
         context = {
             model.__tablename__: [
                 _material(r)
-                for r in _rows(session, model)
+                for r in session.scalars(select(model).order_by(*model.__table__.primary_key))
                 if (isinstance(r, Account) and r.id == account_id)
                 or old
                 and _affects(session, r, row, old)
@@ -648,9 +659,10 @@ def read_source_cash_coverage(session, coverage_id):
                 date.fromisoformat(identity["opening_date"]),
                 date.fromisoformat(identity["closing_date"]),
                 retained=evidence["dependencies"],
+                contract=evidence["contract_version"],
             )
             if (
-                evidence["contract_version"] != CONTRACT
+                evidence["contract_version"] not in (LEGACY_CONTRACT, CONTRACT)
                 or frozen.claims is None
                 or digest(_support(evidence)) != current.material_signature
                 or _support(rebuilt) != _support(evidence)
