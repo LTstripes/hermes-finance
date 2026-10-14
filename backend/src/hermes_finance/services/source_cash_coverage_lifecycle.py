@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from hermes_finance.persistence import (
     Account,
     AccountPerformanceScopeMembership,
+    AppliedStatementEvent,
+    AppliedStatementEventRevision,
     BrokerIdentityMapping,
+    BrokerMoneyOccurrenceOwner,
     BrokerMonthApply,
     CashBalance,
     CashBoundaryCoverage,
@@ -39,6 +42,9 @@ from hermes_finance.services.historical_owner_flow_lifecycle import _values
 DEPENDENCIES = (
     Account,
     AccountPerformanceScopeMembership,
+    AppliedStatementEvent,
+    AppliedStatementEventRevision,
+    BrokerMoneyOccurrenceOwner,
     BrokerIdentityMapping,
     MyBrokerImport,
     HistoricalOwnerFlow,
@@ -77,14 +83,20 @@ def _affects(session, change, row, evidence):
     account_id, start, end = row.account_id, row.covered_from, row.covered_to
     if isinstance(change, BrokerMonthApply):
         from hermes_finance.services import broker_month_journal as journal
-        from hermes_finance.services.source_cash_coverage import CONTRACT
+        from hermes_finance.services.source_cash_coverage import CONTRACT, SECTION_CONTRACT
 
         return (
-            evidence.get("contract_version") == CONTRACT
+            evidence.get("contract_version") in (SECTION_CONTRACT, CONTRACT)
             and journal.kind(change) != journal.MONEY
             and account_id in _values(change, "account_id")
             and any(s["import_id"] in _values(change, "import_id") for s in deps["sources"])
         )
+    if isinstance(
+        change, (BrokerMoneyOccurrenceOwner, AppliedStatementEvent, AppliedStatementEventRevision)
+    ):
+        # v3 binds exact target ownership/PDF sets in the post-flush comparison.
+        # Old readers must retain their literal dependency meaning.
+        return False
     if isinstance(
         change,
         (
@@ -184,12 +196,14 @@ def _before_flush(session, _context, _instances):
         if isinstance(r, DEPENDENCIES)
         and (r in session.new or r in session.deleted or session.is_modified(r))
     ]
-    if not changes or not inspect(session.connection()).has_table("source_cash_coverage_revisions"):
+    if not inspect(session.connection()).has_table("source_cash_coverage_revisions"):
         return
     # A later before_flush listener may append another dependency receipt. The
     # post-flush comparison sees the whole transaction, independent of listener
     # registration order, and commit flushes its retirement before publishing.
     session.info["source_cash_dependency_recheck"] = True
+    if not changes:
+        return
     session.execute(text("UPDATE source_cash_coverage_revisions SET revision = revision WHERE 0"))
     with session.no_autoflush:
         latest = {r.coverage_id: r for r in _rows(session, SourceCashCoverageRevision)}
@@ -232,6 +246,7 @@ def _after_flush_postexec(session, _context):
     from hermes_finance.services.historical_owner_flows import _material, _rows
     from hermes_finance.services.source_cash_coverage import (
         CONTRACT,
+        SECTION_CONTRACT,
         _evidence,
         _support,
         append_revision,
@@ -246,7 +261,7 @@ def _after_flush_postexec(session, _context):
             if current.acceptance_state != "accepted":
                 continue
             evidence = json.loads(current.evidence_json)
-            if evidence.get("contract_version") != CONTRACT:
+            if evidence.get("contract_version") not in (SECTION_CONTRACT, CONTRACT):
                 continue
             row = session.get(CashBoundaryCoverage, current.coverage_id)
             try:
@@ -258,6 +273,7 @@ def _after_flush_postexec(session, _context):
                     date.fromisoformat(identity["opening_date"]),
                     date.fromisoformat(identity["closing_date"]),
                     retained=evidence["dependencies"],
+                    contract=evidence["contract_version"],
                 )
                 changed = _support(rebuilt) != _support(evidence)
             except (ValueError, TypeError, KeyError, MyBrokerError):

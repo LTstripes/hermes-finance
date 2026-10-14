@@ -56,7 +56,9 @@ from hermes_finance.services.performance_availability import _history_covers_int
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, canonical, digest
 
 LEGACY_CONTRACT = "h2-a2-source-cash-rub-v1"
-CONTRACT = "h2-a2-source-cash-rub-v2"
+SECTION_CONTRACT = "h2-a2-source-cash-rub-v2"
+COUPON_CONTRACT = "h2-a2-source-cash-rub-v3"
+CONTRACT = COUPON_CONTRACT
 # These accounting limitations do not contradict exact non-owner linkage.
 # Keep them in linked_trade evidence; every other (including future) blocker
 # still prevents excluding Money from Owner boundary crossings.
@@ -331,7 +333,9 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
             if view["effective_state"] != "accepted":
                 blockers.add("historical_flow_not_effective")
             elif view["evidence"]["contract_version"] not in (
-                SOURCE_CASH_FLOW_CONTRACTS if contract == CONTRACT else {COMPATIBLE_FLOW_CONTRACT}
+                SOURCE_CASH_FLOW_CONTRACTS
+                if contract in (SECTION_CONTRACT, COUPON_CONTRACT)
+                else {COMPATIBLE_FLOW_CONTRACT}
             ):
                 blockers.add("reviewed_flow_compatibility_required")
             else:
@@ -362,6 +366,19 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
     except (KeyError, ValueError, TypeError, InvalidOperation, OverflowError):
         trades = {}
         blockers.add("source_trade_envelope_invalid")
+    coupon_authority, coupon_keys, coupon_ids = None, set(), set()
+    if contract == COUPON_CONTRACT:
+        from hermes_finance.services.source_cash_coupons import authority
+
+        coupon_authority, coupon_keys, coupon_ids = authority(
+            session,
+            account_id,
+            a,
+            b,
+            scoped_money,
+            retained=retained.get("coupon_authority"),
+        )
+        blockers.update(coupon_authority["blockers"])
     dispositions = []
     corrections = correction_dependencies(session, (account_id,))
     corrected_identities, corrected_executions = set(), {}
@@ -401,6 +418,9 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
             and owned[0].row_fingerprint == digest(row)
         ):
             occurrence["disposition"] = "effective_owner_flow"
+        elif not owned and (import_id, "money", row["ordinal"]) in coupon_keys:
+            occurrence["disposition"] = "accepted_non_owner_coupon"
+            occurrence["coupon_target_id"] = coupon_keys[import_id, "money", row["ordinal"]]
         elif not owned and row["kind"] in ("settlement", "commission"):
             identity = row.get("trade_identity")
             trade = trades.get(identity)
@@ -450,7 +470,7 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
         for f in _rows(session, InvestmentCashFlow)
         if f.account_id == account_id and a < f.event_date <= b
     ]
-    if legacy or legacy_cash:
+    if legacy or any(f.id not in coupon_ids for f in legacy_cash):
         blockers.add("legacy_cash_or_transfer_overlap")
     in_kind = [
         m
@@ -505,6 +525,9 @@ def inventory(session, account_id, a, b, *, retained=None, contract=CONTRACT):
         result["corrected_executions"] = corrected_executions
     if exclusions:
         result["instrument_dispositions"] = exclusions
+    if coupon_authority is not None:
+        result["coupon_authority"] = coupon_authority
+        result["effective_coupon_icf_ids"] = sorted(coupon_ids)
     return result
 
 
@@ -513,7 +536,7 @@ def _support(evidence):
 
 
 def _evidence(session, intent, account_id, a, b, *, retained=None, contract=CONTRACT):
-    if contract not in (LEGACY_CONTRACT, CONTRACT):
+    if contract not in (LEGACY_CONTRACT, SECTION_CONTRACT, CONTRACT):
         raise MyBrokerError("source_coverage_contract_invalid")
     deps = inventory(session, account_id, a, b, retained=retained, contract=contract)
     identity = {
@@ -665,7 +688,7 @@ def read_source_cash_coverage(session, coverage_id):
                 contract=evidence["contract_version"],
             )
             if (
-                evidence["contract_version"] not in (LEGACY_CONTRACT, CONTRACT)
+                evidence["contract_version"] not in (LEGACY_CONTRACT, SECTION_CONTRACT, CONTRACT)
                 or frozen.claims is None
                 or digest(_support(evidence)) != current.material_signature
                 or _support(rebuilt) != _support(evidence)
