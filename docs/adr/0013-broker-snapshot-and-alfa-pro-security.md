@@ -75,9 +75,19 @@ The adapter must **not** use ConnectionState `#Data.Query` as the production aut
 
 If authentication becomes non-`2` while a snapshot is being collected, the collection is not eligible for apply. A partial snapshot may be surfaced diagnostically only if it remains sanitized and clearly marked non-applicable.
 
+### 2a. v2.2 handshake credential, amended 2026-10-14
+
+The public Alfa Investments PRO API v2.2 document requires `Authorization: Bearer <token>` on the WebSocket opening handshake. The verified public bytes are the PDF at `https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf`, HTTP Last-Modified `2026-10-12T07:08:30Z`, SHA-256 `e25ef5d5d736821e8cbba64d732b5542e922b91a5db498bf731e5713bac90087`. The endpoint remains `ws://127.0.0.1:3366/router/`.
+
+The adapter and the diagnostic probe send that one header and no other credential. They do not send the superseded `Authentication` spelling, a second header, a query-string token, or an authentication frame. A missing, blank, or header-unsafe token fails closed before any socket call (`failure_class=auth`, `failure_code=alfa_token_missing`). An observed HTTP 401 or 403 with a configured token is `alfa_token_rejected` and a non-applicable `compatibility_error`. Other handshake failures stay `websocket_handshake_rejected`. Response bodies, headers, and exception text are not copied into diagnostics.
+
+The token is `HERMES_ALFA_PRO_TOKEN` in the environment inherited by the Hermes process, read only while opening the socket. It is not an API, UI, mapping, query, or database field. The loopback socket is opened directly (`proxy` disabled) so the token is not sent to a system proxy.
+
+This handshake does not replace section 2. Client reads still require an observed `AuthStatus==2`.
+
 ### 3. Read-only safety is structural, not credential-scoped
 
-No separate provider-level read-only credential/scope has been established for the observed PRO integration. The same authenticated terminal can be ready to sign trading instructions. Therefore Hermes read-only safety must exist **by construction**.
+The v2.2 handshake uses a local read-only bearer token. That token is not a proven provider-enforced read-only scope: the same authenticated terminal can be ready to sign trading instructions. Therefore Hermes read-only safety must exist **by construction**.
 
 The production Alfa snapshot adapter must have:
 
@@ -313,7 +323,19 @@ ADR 0016 is the contract-first follow-up for persistent broker-identity mappings
 - R06-01 issue #71 and accepted owner-live evidence
 - R06-01 sanitized probe review: `docs/reviews/2026-08-19-r06-01-alfa-pro-live-probe.md`
 - Alfa Investments PRO product page: `https://alfabank.ru/make-money/investments/pro-terminal/`
-- Alfa Investments PRO WebSocket API v2.1: `https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf`
+- Alfa Investments PRO WebSocket API v2.2 (public revision SHA-256 `e25ef5d5d736821e8cbba64d732b5542e922b91a5db498bf731e5713bac90087`, Last-Modified `2026-10-12T07:08:30Z`): `https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf`
+
+## Owner configuration and retest
+
+This is the configuration step for a later Owner live retest. It is not acceptance and it does not close #646.
+
+1. In Alfa PRO, open Integrations and set the API/Trading core Online.
+2. Issue or select a read-only token. Do not put that token in Git, issues, logs, or Hermes fields.
+3. Set `HERMES_ALFA_PRO_TOKEN` to the token only, without a `Bearer` prefix, in the environment inherited by the Hermes backend process. Restart Hermes.
+4. Run one explicit Alfa refresh. Share the snapshot status and the sanitized diagnostic code only.
+5. A successful refresh still has to show an observed `AuthStatus==2` before client reads. Stop if the diagnostic code is `alfa_token_missing`, `alfa_token_rejected`, or `websocket_handshake_rejected`.
+
+No live provider call, trading action, or issue closure is part of the implementation that adds this handshake.
 
 ## Non-goals
 

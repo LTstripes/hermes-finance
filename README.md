@@ -149,7 +149,7 @@ The normal sequence remains exact-SHA isolated UAT → Owner acceptance → guar
 
 - **#702 read-only statement-backed class-event research** is selected and can run independently of Owner UAT. Its output is a proposed contract/source matrix and ordered implementation slices, not code delivery.
 - Owner plans UAT tomorrow or in the following days. Class-return testing needs an explicitly prepared post-#701 candidate: published v1.2.0 does not contain it. No UAT PASS or local deployment is implied. The missing class-attestation/legacy-identity UI remains a product gap; do not assign Owner database/JSON/PowerShell workarounds.
-- #646 Alfa remains a known limitation: Trading core UI Online on 3366 and read-only token issued, but Hermes reports unrecognized protocol. No new token/handshake contract is proven. Owner elected to wait several days/about a week before support. This does not block statement research.
+- #646 Alfa handshake now sends the documented v2.2 loopback `Authorization: Bearer` header from `HERMES_ALFA_PRO_TOKEN`. `AuthStatus==2` remains the read gate. Owner live retest is still required; the issue stays open and this does not block statement research. See [ADR 0013](docs/adr/0013-broker-snapshot-and-alfa-pro-security.md).
 - #389 composer is deferred. #630/#573/#127 are closed not-planned; #528/#541 are closed coordination. `/v1` stays.
 - CI/test optimization #668–#671/#629 is complete; #691 was NO-GO with no delivered change. [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
 - Migration/janitor setup #679/#666 is complete. Preserve the active separate Ops installation; [janitor rules](docs/WORKSPACE_JANITOR.md) do not grant arbitrary deletion.

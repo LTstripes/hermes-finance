@@ -33,11 +33,20 @@ an absent or invalid hint remains `unresolved`.
 The current accepted contract does not prove that an Alfa API version hint or a
 router/protocol version hint uses the API-documentation version namespace. The
 adapter therefore records both as observational evidence and does not compare
-either value to `api_doc_version`. An observed value that differs from `2.1`
-does not by itself mean `unsupported`; compatibility is decided by the
-confirmed structural protocol and layout guards below. A future `unsupported`
-classification requires a separately accepted supported-protocol/version
-contract or mapping.
+either value to `api_doc_version`. An observed value that differs from the
+configured document version (currently `2.2`) does not by itself mean
+`unsupported`; compatibility is decided by the confirmed structural protocol
+and layout guards below. A future `unsupported` classification requires a
+separately accepted supported-protocol/version contract or mapping.
+
+`api_doc_version` is part of the diagnostic fingerprint. Moving it from `2.1`
+to `2.2` changes the fingerprint even when the provider layout is unchanged.
+That difference is the document revision, not evidence of a new protocol or
+layout. The accepted layout family remains `snapshot-v2.1`. The v2.2 revision
+checked on 2026-10-14 is the public PDF whose SHA-256 is
+`e25ef5d5d736821e8cbba64d732b5542e922b91a5db498bf731e5713bac90087` and whose
+HTTP Last-Modified is `2026-10-12T07:08:30Z`. Do not treat that pin as version
+`2.3`.
 
 Compatibility has three explicit states:
 

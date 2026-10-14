@@ -928,6 +928,144 @@ class DelayedAuthScriptedTransport:
         self.inner.close()
 
 
+_SENTINEL = "HF646-SENTINEL-TOKEN-NOT-A-SECRET"
+
+
+class _LeakyResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        self.reason = _SENTINEL
+        self.headers = {"Authorization": f"Bearer {_SENTINEL}"}
+        self.body = _SENTINEL.encode()
+
+    def __str__(self) -> str:
+        return _SENTINEL
+
+
+class _LeakyStatus(Exception):
+    def __init__(self, status_code: int) -> None:
+        self.response = _LeakyResponse(status_code)
+
+    def __str__(self) -> str:
+        return f"HTTP {self.response.status_code} {_SENTINEL} Authentication"
+
+
+def _patch_router_connect(monkeypatch: pytest.MonkeyPatch, connect: object) -> None:
+    import websockets.sync.client as client
+
+    monkeypatch.setattr(client, "connect", connect)
+    monkeypatch.setattr(socket, "create_connection", connect)
+
+
+def test_probe_authorization_header_is_exact_bearer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from hermes_finance.alfa_pro_probe.live import open_websocket
+
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", _SENTINEL)
+    calls: list[dict[str, object]] = []
+
+    class Sock:
+        def close(self) -> None:
+            return None
+
+    def fake_connect(_url: str, **kwargs: object) -> Sock:
+        calls.append(kwargs)
+        return Sock()
+
+    _patch_router_connect(monkeypatch, fake_connect)
+    transport = open_websocket(
+        "ws://127.0.0.1:3366/router/",
+        origin=None,
+        open_timeout=1.0,
+    )
+    transport.close()
+    headers = calls[0]["additional_headers"]
+    assert isinstance(headers, dict)
+    assert list(headers) == ["Authorization"]
+    assert headers["Authorization"] == f"Bearer {_SENTINEL}"
+    assert "Authentication" not in headers
+    assert calls[0]["proxy"] is None
+    assert "origin" not in calls[0]
+    logger = calls[0]["logger"]
+    assert getattr(logger, "propagate", True) is False
+    assert getattr(logger, "disabled", False) is True
+
+    calls.clear()
+    transport = open_websocket(
+        "ws://127.0.0.1:3366/router/",
+        origin="https://example.invalid",
+        open_timeout=1.0,
+    )
+    transport.close()
+    assert calls[0]["origin"] == "https://example.invalid"
+    assert list(calls[0]["additional_headers"]) == ["Authorization"]
+
+
+def test_probe_missing_token_does_not_open_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    from hermes_finance.alfa_pro_probe.live import LiveConfig, run_live
+
+    monkeypatch.delenv("HERMES_ALFA_PRO_TOKEN", raising=False)
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("socket")
+
+    _patch_router_connect(monkeypatch, boom)
+    report = run_live(LiveConfig(endpoint="ws://127.0.0.1:3366/router/"))
+    text = report.to_text()
+    assert report.connection == "fail"
+    assert report.authenticated_read == "unresolved"
+    assert report.error.startswith("alfa_token_missing:")
+    assert "HERMES_ALFA_PRO_TOKEN" in text
+    assert _SENTINEL not in text
+    assert "Bearer" not in text
+    assert "Authentication" not in text
+    assert repr(report).count(_SENTINEL) == 0
+
+
+def test_probe_401_is_distinct_from_generic_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    from hermes_finance.alfa_pro_handshake import AlfaTokenRejected
+    from hermes_finance.alfa_pro_probe.live import LiveConfig, open_websocket, run_live
+
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", _SENTINEL)
+
+    def reject(_url: str, **_kwargs: object) -> object:
+        raise _LeakyStatus(401)
+
+    _patch_router_connect(monkeypatch, reject)
+    with pytest.raises(AlfaTokenRejected) as caught:
+        open_websocket("ws://127.0.0.1:3366/router/", origin=None, open_timeout=1.0)
+    assert _SENTINEL not in str(caught.value)
+    assert _SENTINEL not in repr(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    report = run_live(LiveConfig(endpoint="ws://127.0.0.1:3366/router/"))
+    text = report.to_text()
+    assert report.connection == "fail"
+    assert report.authenticated_read == "unresolved"
+    assert report.error.startswith("alfa_token_rejected:")
+    assert _SENTINEL not in text
+    assert "Authentication" not in text
+    assert "Bearer" not in text
+
+    def generic(_url: str, **_kwargs: object) -> object:
+        raise _LeakyStatus(400)
+
+    _patch_router_connect(monkeypatch, generic)
+    generic_report = run_live(LiveConfig(endpoint="ws://127.0.0.1:3366/router/"))
+    assert "websocket handshake rejected" in generic_report.error
+    assert "alfa_token_rejected" not in generic_report.error
+    assert _SENTINEL not in generic_report.to_text()
+
+
+def test_probe_cli_has_no_token_argument(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("socket")
+
+    _patch_router_connect(monkeypatch, boom)
+    with pytest.raises(SystemExit) as caught:
+        main(["--live", "--token", _SENTINEL])
+    assert caught.value.code == 2
+
+
 def _has_connection_state_data_query(sent: list[str]) -> bool:
     for payload in _request_payloads(sent):
         entity = payload.get("Type")

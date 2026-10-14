@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from hermes_finance.alfa_pro_handshake import TOKEN_MISSING_HINT, TOKEN_REJECTED_MESSAGE
 from hermes_finance.alfa_pro_probe.channels import API_DOC_VERSION, CLIENT_ENTITY_TYPES
 from hermes_finance.alfa_pro_probe.reader import CollectedState
 from hermes_finance.settings import REPOSITORY_ROOT
@@ -247,13 +248,23 @@ def sanitize_error(exc: BaseException) -> str:
     name = type(exc).__name__
     if name == "ForbiddenAlfaChannel":
         return f"{name}: order/trading channel denied"
+    if name == "AlfaTokenMissing":
+        return f"alfa_token_missing: {TOKEN_MISSING_HINT}"
+    if name == "AlfaTokenRejected":
+        return f"alfa_token_rejected: {TOKEN_REJECTED_MESSAGE}"
     if name in {"TimeoutError", "Timeout"}:
         return f"{name}: bounded wait elapsed"
     if name in {"OSError", "ConnectionRefusedError", "ConnectionResetError"}:
         return f"{name}: connection failed"
-    if name in {"InvalidHandshake", "InvalidStatus", "InvalidStatusCode", "InvalidHeader"}:
+    if name in {
+        "InvalidHandshake",
+        "InvalidStatus",
+        "InvalidStatusCode",
+        "InvalidHeader",
+        "AlfaHandshakeRejected",
+    }:
         return f"{name}: websocket handshake rejected"
-    if name == "AlfaProbeEndpointError":
+    if name in {"AlfaProbeEndpointError", "AlfaLoopbackEndpointError"}:
         return f"{name}: invalid endpoint or origin"
     return f"{name}: probe failed"
 

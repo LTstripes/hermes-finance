@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-После публикации v1.2.0 новых продуктовых изменений пока не заявлено.
+- #646: the read-only Alfa PRO adapter and probe send one loopback WebSocket header, `Authorization: Bearer`, from `HERMES_ALFA_PRO_TOKEN`. A missing or rejected token fails closed and is not eligible for Preview/Apply. `AuthStatus==2` remains the client-read gate. Owner live retest is still required.
 
 ## [1.2.0] — 2026-10-04
 
