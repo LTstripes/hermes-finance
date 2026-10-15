@@ -67,6 +67,79 @@ def files(path):
     return {str(p): p.read_bytes() for p in path.parent.iterdir() if p.is_file()}
 
 
+def test_nested_prepared_validate_uses_windows_powershell_modules(monkeypatch, tmp_path):
+    executable = tmp_path / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    inherited = "C:/PowerShell/7/Modules;C:/untrusted-modules"
+    monkeypatch.setenv("PSModulePath", inherited)
+    monkeypatch.setattr(scratch.shutil, "which", lambda name: str(executable))
+    observed = {}
+
+    def capture(arguments, **kwargs):
+        observed["arguments"] = arguments
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(arguments, 0)
+
+    monkeypatch.setattr(scratch.subprocess, "run", capture)
+    scratch._prepared(tmp_path)
+    assert observed["arguments"][0] == str(executable)
+    assert observed["environment"]["PSModulePath"] == str(executable.parent / "Modules")
+    assert observed["environment"]["PSModulePath"] != inherited
+    assert os.environ["PSModulePath"] == inherited
+
+
+def test_nested_prepared_validate_fail_closed_on_missing_powershell(monkeypatch, tmp_path):
+    monkeypatch.setattr(scratch.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        scratch.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("subprocess launched without powershell"),
+    )
+    with pytest.raises(scratch.ScratchError, match="scratch_powershell_unavailable"):
+        scratch._prepared(tmp_path)
+
+
+def test_nested_prepared_validate_failure_stays_blocking(monkeypatch, tmp_path):
+    executable = tmp_path / "powershell.exe"
+    executable.touch()
+    monkeypatch.setattr(scratch.shutil, "which", lambda name: str(executable))
+    monkeypatch.setattr(
+        scratch.subprocess,
+        "run",
+        lambda arguments, **kwargs: subprocess.CompletedProcess(arguments, 1),
+    )
+    with pytest.raises(scratch.ScratchError, match="scratch_runtime_not_prepared"):
+        scratch._prepared(tmp_path)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell Get-FileHash resolution")
+def test_nested_prepared_validate_real_get_file_hash_with_inherited_pwsh_modules(
+    monkeypatch, tmp_path
+):
+    checkout = tmp_path / "synthetic checkout"
+    scripts = checkout / "scripts"
+    scripts.mkdir(parents=True)
+    evidence = checkout / "evidence.bin"
+    evidence.write_bytes(b"fabricated prepared-runtime fingerprint")
+    expected = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    (scripts / "prepare-runtime.ps1").write_text(
+        "param([string]$Checkout, [switch]$Validate)\n"
+        "$ErrorActionPreference = 'Stop'\n"
+        "if (-not $Validate) { exit 7 }\n"
+        "$path = Join-Path $Checkout 'evidence.bin'\n"
+        "$actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()\n"
+        f"if ($actual -ne '{expected}') {{ exit 8 }}\n",
+        encoding="utf-8-sig",
+    )
+    inherited_modules = tmp_path / "pwsh7-prefixed-modules"
+    inherited_modules.mkdir()
+    original = os.environ.get("PSModulePath", "")
+    monkeypatch.setenv("PSModulePath", str(inherited_modules) + os.pathsep + original)
+    scratch._prepared(checkout)
+    assert os.environ["PSModulePath"].startswith(str(inherited_modules))
+
+
 def test_standard_path_reaches_upgrade_but_scratch_dispatch_does_not(monkeypatch, tmp_path):
     def bomb(*args, **kwargs):
         raise AssertionError("migration reached")
