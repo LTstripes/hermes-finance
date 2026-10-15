@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from hermes_finance.alfa_pro_handshake import open_readonly_websocket
 from hermes_finance.alfa_pro_probe.protocol import (
     DEFAULT_HANDSHAKE_ORIGIN,
     validate_handshake_origin,
@@ -57,12 +58,9 @@ class WebsocketTransport:
 
 
 def open_websocket(endpoint: str, *, origin: str | None, open_timeout: float) -> WebsocketTransport:
-    from websockets.sync.client import connect
-
-    kwargs: dict[str, object] = {"open_timeout": open_timeout, "close_timeout": 2.0}
-    if origin is not None:
-        kwargs["origin"] = origin
-    return WebsocketTransport(connect(endpoint, **kwargs))
+    return WebsocketTransport(
+        open_readonly_websocket(endpoint, open_timeout=open_timeout, origin=origin)
+    )
 
 
 def run_live(config: LiveConfig) -> ProbeReport:
@@ -89,7 +87,10 @@ def _run_origin_handshake(config: LiveConfig) -> ProbeReport:
         report.foreign_origin_websocket_handshake = "accepted"
     except Exception as exc:
         report.error = sanitize_error(exc)
-        if _is_handshake_rejection(exc):
+        if _is_token_or_endpoint_failure(exc):
+            report.connection = "fail"
+            report.foreign_origin_websocket_handshake = "unresolved"
+        elif _is_handshake_rejection(exc):
             report.connection = "pass"
             report.foreign_origin_websocket_handshake = "rejected"
         else:
@@ -111,12 +112,11 @@ def _run_connection_state_bus(config: LiveConfig) -> ProbeReport:
         state = run_connection_state_bus_session(reader, deadline=deadline)
         return build_report(state, connection="pass")
     except Exception as exc:
-        report = ProbeReport(
-            connection="fail",
+        report = _failed_probe_report(
+            exc,
             authenticated_read="unresolved",
             probe_mode="connection-state-bus-only",
         )
-        report.error = sanitize_error(exc)
         return report
     finally:
         if reader is not None:
@@ -135,12 +135,11 @@ def _run_bus_gated_client(config: LiveConfig) -> ProbeReport:
         state = run_bus_gated_client_session(reader, deadline=deadline)
         return build_report(state, connection="pass", id_compare_store=config.id_compare_store)
     except Exception as exc:
-        report = ProbeReport(
-            connection="fail",
+        report = _failed_probe_report(
+            exc,
             authenticated_read="unresolved",
             probe_mode="bus-gated-client-read",
         )
-        report.error = sanitize_error(exc)
         return report
     finally:
         if reader is not None:
@@ -159,14 +158,38 @@ def _run_readonly_live(config: LiveConfig) -> ProbeReport:
         state = run_readonly_session(reader, deadline=deadline)
         return build_report(state, connection="pass", id_compare_store=config.id_compare_store)
     except Exception as exc:
-        report = ProbeReport(connection="fail", authenticated_read="fail")
-        report.error = sanitize_error(exc)
+        report = _failed_probe_report(exc, authenticated_read="fail")
         return report
     finally:
         if reader is not None:
             reader.close()
         elif socket is not None:
             socket.close()
+
+
+def _failed_probe_report(
+    exc: BaseException,
+    *,
+    authenticated_read: str,
+    probe_mode: str = "",
+) -> ProbeReport:
+    if _is_token_or_endpoint_failure(exc):
+        authenticated_read = "unresolved"
+    report = ProbeReport(
+        connection="fail",
+        authenticated_read=authenticated_read,
+        probe_mode=probe_mode,
+    )
+    report.error = sanitize_error(exc)
+    return report
+
+
+def _is_token_or_endpoint_failure(exc: BaseException) -> bool:
+    return type(exc).__name__ in {
+        "AlfaTokenMissing",
+        "AlfaTokenRejected",
+        "AlfaLoopbackEndpointError",
+    }
 
 
 def _is_handshake_rejection(exc: BaseException) -> bool:
@@ -176,4 +199,5 @@ def _is_handshake_rejection(exc: BaseException) -> bool:
         "InvalidStatusCode",
         "InvalidHeader",
         "SecurityError",
+        "AlfaHandshakeRejected",
     }

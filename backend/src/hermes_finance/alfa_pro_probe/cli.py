@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Optional live Alfa PRO read-only probe. Loopback-only. "
+            "Reads HERMES_ALFA_PRO_TOKEN from the process environment when connecting. "
+            "Does not accept the token as an argument. "
             "Does not trade, sign, persist, or write Hermes database files."
         )
     )

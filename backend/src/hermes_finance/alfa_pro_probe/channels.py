@@ -1,14 +1,16 @@
 """Explicit Alfa PRO read-only channel allowlist and trading denylist.
 
-Official API: Alfa Investments PRO WebSocket API v2.1
+Official API: Alfa Investments PRO WebSocket API v2.2
 (`https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf`).
+The verified public revision is pinned in alfa_pro_diagnostics. The accepted
+snapshot layout family remains snapshot-v2.1.
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-API_DOC_VERSION: Final = "2.1"
+API_DOC_VERSION: Final = "2.2"
 DEFAULT_ENDPOINT: Final = "ws://127.0.0.1:3366/router/"
 ORDER_CHANNEL_PREFIX: Final = "#Order."
 

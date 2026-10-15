@@ -1,7 +1,9 @@
-"""Exact Alfa PRO v2.1 raw-field mapping for the production snapshot.
+"""Exact Alfa PRO raw-field mapping for the production snapshot.
 
-A field name is not evidence. Only official PDF wording is accepted.
-Undocumented live fields such as account-kind extras are ignored.
+The accepted field layout remains snapshot-v2.1. API document revision 2.2
+changes the WebSocket handshake credential, not these fields. A field name
+is not evidence. Only official PDF wording is accepted. Undocumented live
+fields such as account-kind extras are ignored.
 """
 
 from __future__ import annotations
@@ -19,8 +21,9 @@ from hermes_finance.broker_data.dto import (
 )
 
 OFFICIAL_API_SOURCE: Final = (
-    "Alfa Investments PRO WebSocket API v2.1, "
-    "https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf"
+    "Alfa Investments PRO WebSocket API v2.2, "
+    "https://alfadt.servicecdn.ru/alfadt/ad5/Alfa-Investments-Pro-API.pdf; "
+    "accepted snapshot field layout remains snapshot-v2.1"
 )
 
 

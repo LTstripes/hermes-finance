@@ -1041,3 +1041,281 @@ def test_valid_integer_error_is_incomplete_not_complete() -> None:
     assert snapshot.provenance.eligible_for_apply is False
     assert snapshot.status is not SnapshotStatus.COMPLETE
     assert snapshot.status is not SnapshotStatus.MALFORMED_RESPONSE
+
+
+_SENTINEL = "HF646-SENTINEL-TOKEN-NOT-A-SECRET"
+_DOC_SHA256 = "e25ef5d5d736821e8cbba64d732b5542e922b91a5db498bf731e5713bac90087"
+
+
+def _patch_router_connect(monkeypatch: pytest.MonkeyPatch, connect: object) -> None:
+    import websockets.sync.client as client
+
+    monkeypatch.setattr(client, "connect", connect)
+    monkeypatch.setattr(socket, "create_connection", connect)
+
+
+def _rendered_snapshot(snapshot: object) -> str:
+    diagnostics = getattr(snapshot, "diagnostics")
+    provenance = getattr(snapshot, "provenance")
+    return "\n".join(
+        [
+            str(getattr(snapshot, "message") or ""),
+            diagnostics.to_text(),
+            diagnostics.to_json(),
+            repr(snapshot),
+            repr(diagnostics),
+            repr(provenance),
+            str(getattr(snapshot, "status")),
+        ]
+    )
+
+
+class _LeakyResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        self.reason = _SENTINEL
+        self.headers = {"Authorization": f"Bearer {_SENTINEL}", "WWW-Authenticate": _SENTINEL}
+        self.body = _SENTINEL.encode()
+
+    def __str__(self) -> str:
+        return _SENTINEL
+
+    def __repr__(self) -> str:
+        return f"response {_SENTINEL}"
+
+
+class _LeakyStatus(Exception):
+    def __init__(self, status_code: int) -> None:
+        self.response = _LeakyResponse(status_code)
+
+    def __str__(self) -> str:
+        return f"HTTP {self.response.status_code} {_SENTINEL} Authentication"
+
+
+def test_document_revision_is_pinned_without_changing_layout_family() -> None:
+    from hermes_finance.alfa_pro_diagnostics import (
+        API_DOC_LAST_MODIFIED_UTC,
+        API_DOC_REVISION_SHA256,
+        DEFAULT_API_DOC_VERSION,
+        evaluate_compatibility,
+    )
+    from hermes_finance.alfa_pro_probe.channels import API_DOC_VERSION as probe_version
+    from hermes_finance.broker_data.alfa_pro.channels import API_DOC_VERSION as adapter_version
+
+    assert adapter_version == probe_version == DEFAULT_API_DOC_VERSION == "2.2"
+    assert API_DOC_REVISION_SHA256 == _DOC_SHA256
+    assert API_DOC_LAST_MODIFIED_UTC == "2026-10-12T07:08:30Z"
+    common = {
+        "observed_alfa_pro_version": None,
+        "observed_api_version": None,
+        "observed_protocol_version": None,
+        "message_shapes": ["connection_state_bus"],
+        "entity_payload_fields": {},
+        "entity_fields": {},
+    }
+    previous = evaluate_compatibility(api_doc_version="2.1", **common)
+    current = evaluate_compatibility(api_doc_version="2.2", **common)
+    assert previous.compatibility_fingerprint != current.compatibility_fingerprint
+    assert previous.layout_family == current.layout_family
+
+
+def test_injected_transport_does_not_require_token_or_open_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HERMES_ALFA_PRO_TOKEN", raising=False)
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("socket")
+
+    _patch_router_connect(monkeypatch, boom)
+    snapshot = AlfaProBrokerSnapshotProvider(
+        transport=ScriptedTransport(load_fixture()),
+        total_deadline=2,
+    ).fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.COMPLETE
+    assert snapshot.diagnostics.api_doc_version == "2.2"
+    assert snapshot.diagnostics.layout_family == "snapshot-v2.1"
+    assert snapshot.provenance.auth_status == 2
+    assert snapshot.provenance.eligible_for_apply is True
+    assert _SENTINEL not in _rendered_snapshot(snapshot)
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\n", "tok\nen", "a" * 2049])
+def test_missing_or_unsafe_token_does_not_open_socket(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str,
+) -> None:
+    from hermes_finance.broker_data.reconciliation.dto import HermesStateView, OwnerMappingInput
+    from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
+
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", raw)
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("socket")
+
+    _patch_router_connect(monkeypatch, boom)
+    snapshot = AlfaProBrokerSnapshotProvider().fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.AUTH_NOT_AUTHORIZED
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.provenance.auth_status is None
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.AUTH
+    assert snapshot.diagnostics.failure_codes == ("alfa_token_missing",)
+    assert "HERMES_ALFA_PRO_TOKEN" in (snapshot.message or "")
+    rendered = _rendered_snapshot(snapshot)
+    assert raw.strip() not in rendered or raw.strip() == ""
+    assert "Bearer" not in rendered
+    preview = build_reconciliation_preview(
+        snapshot=snapshot,
+        hermes=HermesStateView(
+            month_id=1,
+            month_status="open",
+            accounts=(),
+            instruments=(),
+            positions=(),
+            cash_balances=(),
+        ),
+        mapping=OwnerMappingInput(),
+    )
+    assert preview.status.value == "non_applicable"
+    assert preview.eligible_for_apply is False
+    assert _SENTINEL not in " ".join(preview.warnings)
+
+
+def test_absent_environment_token_does_not_open_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HERMES_ALFA_PRO_TOKEN", raising=False)
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("socket")
+
+    _patch_router_connect(monkeypatch, boom)
+    snapshot = AlfaProBrokerSnapshotProvider().fetch_snapshot()
+    assert snapshot.diagnostics.failure_codes == ("alfa_token_missing",)
+    assert snapshot.accounts == ()
+    assert snapshot.positions == ()
+
+
+def test_authorization_header_is_exact_bearer_and_loopback_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hermes_finance.alfa_pro_handshake import AlfaLoopbackEndpointError
+    from hermes_finance.broker_data.alfa_pro.adapter import open_websocket
+
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", f"  {_SENTINEL}  ")
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class Sock:
+        def close(self) -> None:
+            return None
+
+    def fake_connect(url: str, **kwargs: object) -> Sock:
+        calls.append((url, kwargs))
+        return Sock()
+
+    _patch_router_connect(monkeypatch, fake_connect)
+    transport = open_websocket("ws://127.0.0.1:3366/router/", open_timeout=1.0)
+    transport.close()
+    assert len(calls) == 1
+    url, kwargs = calls[0]
+    assert url == "ws://127.0.0.1:3366/router/"
+    assert "?" not in url
+    headers = kwargs["additional_headers"]
+    assert isinstance(headers, dict)
+    assert list(headers) == ["Authorization"]
+    assert headers["Authorization"] == f"Bearer {_SENTINEL}"
+    assert "Authentication" not in headers
+    assert kwargs["proxy"] is None
+    assert "origin" not in kwargs
+    logger = kwargs["logger"]
+    assert getattr(logger, "propagate", True) is False
+    assert getattr(logger, "disabled", False) is True
+    assert _SENTINEL not in repr(transport)
+
+    calls.clear()
+    for blocked in (
+        "ws://8.8.8.8:3366/router/",
+        f"ws://127.0.0.1:3366/router/?token={_SENTINEL}",
+        f"ws://user:{_SENTINEL}@127.0.0.1:3366/router/",
+        "wss://127.0.0.1:3366/router/",
+    ):
+        with pytest.raises(AlfaLoopbackEndpointError) as caught:
+            open_websocket(blocked, open_timeout=1.0)
+        assert _SENTINEL not in str(caught.value)
+        assert _SENTINEL not in repr(caught.value)
+    assert calls == []
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+def test_observed_401_and_403_are_token_rejection_without_response_text(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    from hermes_finance.broker_data.reconciliation.dto import HermesStateView, OwnerMappingInput
+    from hermes_finance.broker_data.reconciliation.preview import build_reconciliation_preview
+
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", _SENTINEL)
+
+    def fake_connect(_url: str, **_kwargs: object) -> object:
+        raise _LeakyStatus(status_code)
+
+    _patch_router_connect(monkeypatch, fake_connect)
+    snapshot = AlfaProBrokerSnapshotProvider().fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.COMPATIBILITY_ERROR
+    assert snapshot.provenance.eligible_for_apply is False
+    assert snapshot.provenance.auth_status is None
+    assert snapshot.diagnostics.failure_class is AlfaDiagnosticFailureClass.AUTH
+    assert snapshot.diagnostics.failure_codes == ("alfa_token_rejected",)
+    rendered = _rendered_snapshot(snapshot)
+    assert _SENTINEL not in rendered
+    assert "Authentication" not in rendered
+    assert "Bearer" not in rendered
+    preview = build_reconciliation_preview(
+        snapshot=snapshot,
+        hermes=HermesStateView(
+            month_id=1,
+            month_status="open",
+            accounts=(),
+            instruments=(),
+            positions=(),
+            cash_balances=(),
+        ),
+        mapping=OwnerMappingInput(),
+    )
+    assert preview.eligible_for_apply is False
+    assert preview.status.value == "non_applicable"
+    assert _SENTINEL not in repr(preview)
+
+
+@pytest.mark.parametrize("status_code", [400, 500])
+def test_other_handshake_status_is_not_token_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+) -> None:
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", _SENTINEL)
+
+    def fake_connect(_url: str, **_kwargs: object) -> object:
+        raise _LeakyStatus(status_code)
+
+    _patch_router_connect(monkeypatch, fake_connect)
+    snapshot = AlfaProBrokerSnapshotProvider().fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.COMPATIBILITY_ERROR
+    assert snapshot.diagnostics.failure_codes == ("websocket_handshake_rejected",)
+    assert snapshot.provenance.eligible_for_apply is False
+    assert _SENTINEL not in _rendered_snapshot(snapshot)
+
+
+def test_connect_oserror_stays_transport_failure_and_hides_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HERMES_ALFA_PRO_TOKEN", _SENTINEL)
+
+    def fake_connect(_url: str, **_kwargs: object) -> object:
+        raise ConnectionRefusedError(f"down {_SENTINEL}")
+
+    _patch_router_connect(monkeypatch, fake_connect)
+    snapshot = AlfaProBrokerSnapshotProvider().fetch_snapshot()
+    assert snapshot.status is SnapshotStatus.PROVIDER_UNAVAILABLE
+    assert snapshot.diagnostics.failure_codes == ("transport_failed",)
+    assert snapshot.provenance.eligible_for_apply is False
+    rendered = _rendered_snapshot(snapshot)
+    assert _SENTINEL not in rendered
+    assert "down" not in rendered

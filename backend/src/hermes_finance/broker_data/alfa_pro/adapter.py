@@ -15,6 +15,14 @@ from hermes_finance.alfa_pro_diagnostics import (
     evaluate_compatibility,
     safe_field_names,
 )
+from hermes_finance.alfa_pro_handshake import (
+    TOKEN_MISSING_HINT,
+    TOKEN_REJECTED_MESSAGE,
+    AlfaLoopbackEndpointError,
+    AlfaTokenMissing,
+    AlfaTokenRejected,
+    open_readonly_websocket,
+)
 from hermes_finance.broker_data.alfa_pro.channels import (
     API_DOC_VERSION,
     REQUIRED_SNAPSHOT_ENTITIES,
@@ -82,9 +90,7 @@ class WebsocketTransport:
 
 
 def open_websocket(endpoint: str, *, open_timeout: float) -> WebsocketTransport:
-    from websockets.sync.client import connect
-
-    return WebsocketTransport(connect(endpoint, open_timeout=open_timeout, close_timeout=2.0))
+    return WebsocketTransport(open_readonly_websocket(endpoint, open_timeout=open_timeout))
 
 
 class AlfaProBrokerSnapshotProvider:
@@ -136,6 +142,30 @@ class AlfaProBrokerSnapshotProvider:
             reader = AlfaProSnapshotReader(transport, read_timeout=self._read_timeout)
             state = run_snapshot_session(reader, deadline=time.monotonic() + self._total_deadline)
             return build_snapshot(state, captured_at=captured_at)
+        except AlfaLoopbackEndpointError as exc:
+            return _empty_snapshot(
+                captured_at,
+                SnapshotStatus.PROVIDER_UNAVAILABLE,
+                sanitize_error(exc),
+                failure_class=AlfaDiagnosticFailureClass.CONNECTION,
+                failure_code="endpoint_rejected",
+            )
+        except AlfaTokenMissing:
+            return _empty_snapshot(
+                captured_at,
+                SnapshotStatus.AUTH_NOT_AUTHORIZED,
+                TOKEN_MISSING_HINT,
+                failure_class=AlfaDiagnosticFailureClass.AUTH,
+                failure_code="alfa_token_missing",
+            )
+        except AlfaTokenRejected:
+            return _empty_snapshot(
+                captured_at,
+                SnapshotStatus.COMPATIBILITY_ERROR,
+                TOKEN_REJECTED_MESSAGE,
+                failure_class=AlfaDiagnosticFailureClass.AUTH,
+                failure_code="alfa_token_rejected",
+            )
         except AlfaSnapshotEndpointError as exc:
             return _empty_snapshot(
                 captured_at,
@@ -161,6 +191,7 @@ class AlfaProBrokerSnapshotProvider:
                 "InvalidStatus",
                 "InvalidStatusCode",
                 "InvalidHeader",
+                "AlfaHandshakeRejected",
             }:
                 status = SnapshotStatus.COMPATIBILITY_ERROR
                 failure_class = AlfaDiagnosticFailureClass.PROTOCOL
@@ -268,13 +299,23 @@ def sanitize_error(exc: BaseException) -> str:
     name = type(exc).__name__
     if name == "ForbiddenAlfaChannel":
         return f"{name}: order/trading channel denied"
+    if name == "AlfaTokenMissing":
+        return f"{name}: {TOKEN_MISSING_HINT}"
+    if name == "AlfaTokenRejected":
+        return f"{name}: {TOKEN_REJECTED_MESSAGE}"
     if name in {"TimeoutError", "Timeout"}:
         return f"{name}: bounded wait elapsed"
     if name in {"OSError", "ConnectionRefusedError", "ConnectionResetError"}:
         return f"{name}: connection failed"
-    if name in {"InvalidHandshake", "InvalidStatus", "InvalidStatusCode", "InvalidHeader"}:
+    if name in {
+        "InvalidHandshake",
+        "InvalidStatus",
+        "InvalidStatusCode",
+        "InvalidHeader",
+        "AlfaHandshakeRejected",
+    }:
         return f"{name}: websocket handshake rejected"
-    if name == "AlfaSnapshotEndpointError":
+    if name in {"AlfaSnapshotEndpointError", "AlfaLoopbackEndpointError"}:
         return f"{name}: invalid endpoint"
     if name == "AlfaSnapshotTimeoutError":
         return f"{name}: timeout outside bounds"

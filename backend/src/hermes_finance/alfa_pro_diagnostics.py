@@ -17,8 +17,14 @@ from enum import StrEnum
 
 DIAGNOSTIC_SCHEMA_VERSION = "alfa-pro-diagnostics/v1"
 FINGERPRINT_SCHEMA_VERSION = "alfa-pro-fingerprint/v1"
-DEFAULT_API_DOC_VERSION = "2.1"
+DEFAULT_API_DOC_VERSION = "2.2"
+# Public PDF bytes checked on 2026-10-14. Last-Modified is not part of the
+# compatibility fingerprint; a document revision is not layout drift.
+API_DOC_REVISION_SHA256 = "e25ef5d5d736821e8cbba64d732b5542e922b91a5db498bf731e5713bac90087"
+API_DOC_LAST_MODIFIED_UTC = "2026-10-12T07:08:30Z"
 KNOWN_PROTOCOL_FAMILY = "router-v1"
+# Entity layout accepted for the snapshot. v2.2 changes the handshake header,
+# not this structural family.
 KNOWN_LAYOUT_FAMILY = "snapshot-v2.1"
 
 REQUIRED_SNAPSHOT_ENTITY_FIELDS: dict[str, tuple[str, ...]] = {
