@@ -234,6 +234,7 @@ _INTEGRATION_FILES = frozenset(
 )
 _RUNTIME_FILES = frozenset(
     {
+        "test_scratch_preflight_runtime.py",
         "test_owner_workspace_inventory.py",
         "test_owner_machine_relocation.py",
         "test_app_settings.py",

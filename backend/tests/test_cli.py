@@ -9,6 +9,11 @@ from pytest import MonkeyPatch
 from hermes_finance import cli
 
 
+@pytest.fixture(autouse=True)
+def standard_cli_arguments(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["hermes-finance-api"])
+
+
 class StubEngine:
     def __init__(self) -> None:
         self.dispose_calls = 0

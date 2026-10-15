@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [switch]$ExitAfterReady,
-    [switch]$RecoveryReadiness
+    [switch]$RecoveryReadiness,
+    [switch]$ScratchPreflight,
+    [string]$ScratchManifest
 )
 
 Set-StrictMode -Version 2.0
@@ -66,6 +68,95 @@ function Assert-ProcessRunning {
     if ($Process.HasExited) {
         throw "$Name stopped unexpectedly with exit code $($Process.ExitCode)."
     }
+}
+
+function Get-HermesScratchDriveType {
+    param([string]$Root)
+    return ([IO.DriveInfo]::new($Root)).DriveType
+}
+
+function Assert-HermesScratchLocalPathSyntax {
+    param([string]$Path)
+    # Syntax only: do not Test-Path/Get-Item/resolve an untrusted remote path.
+    if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(3).Contains(':') -or $Path.Contains('"') -or
+        @($Path -split '[\\/]' | Where-Object { $_ -eq '..' }).Count -gt 0) {
+        throw "Scratch requires an absolute local filesystem path."
+    }
+    $driveType = Get-HermesScratchDriveType -Root ([IO.Path]::GetPathRoot($Path))
+    if ([int]$driveType -notin @(2, 3, 5, 6)) {
+        throw "Scratch requires a local available drive."
+    }
+}
+
+function Assert-HermesScratchPathBoundary {
+    param([string]$Path)
+    Assert-HermesScratchLocalPathSyntax -Path $Path
+    $components = New-Object 'System.Collections.Generic.List[string]'
+    $current = [IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        $components.Add($current)
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ($parent -eq $current) { break }
+        $current = $parent
+    }
+    $components.Reverse()
+    foreach ($component in $components) {
+        # Get-Item on this component inspects the reparse entry itself. Do not
+        # Test-Path/probe a descendant until every ancestor has been inspected.
+        $item = Get-Item -LiteralPath $component -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Scratch path contains a reparse boundary."
+        }
+    }
+}
+
+function Assert-HermesScratchInterpreterBoundary {
+    param([string]$Checkout)
+    $python = Join-Path $Checkout "backend\.venv\Scripts\python.exe"
+    Assert-HermesScratchPathBoundary -Path $python
+    $item = Get-Item -LiteralPath $python -Force -ErrorAction Stop
+    if ($item.PSIsContainer -or $item.LinkType -eq "HardLink") {
+        throw "Scratch requires its own unlinked prepared interpreter."
+    }
+}
+
+function Wait-ForScratchPreflight {
+    param($Backend, [string]$Token, $Binding)
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Assert-ProcessRunning -Process $Backend -Name "Scratch preflight"
+        $listeners = @(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue)
+        if ($listeners.Count -eq 0) {
+            Start-Sleep -Milliseconds 250
+            continue
+        }
+        $rows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+        if (-not (Test-HermesLoopbackListenerOwnership -RootProcessId $Backend.Id -Listeners $listeners -ProcessRows $rows)) {
+            Start-Sleep -Milliseconds 250
+            continue
+        }
+        try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -UseBasicParsing -TimeoutSec 2
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+            continue
+        }
+        if (-not (Test-HermesRecoveryHeaders -Response $response -ExpectedToken $Token -ExpectedDatabaseIdentity $Binding.database_identity -ExpectedCheckoutSha $Binding.checkout_sha)) {
+            throw "Scratch process identity mismatch."
+        }
+        $health = $response.Content | ConvertFrom-Json
+        $listener = @($listeners | Where-Object { $_.LocalAddress -eq "127.0.0.1" -and $_.LocalPort -eq 8000 })
+        $process = @($rows | Where-Object { $_.ProcessId -eq $health.pid })
+        if ($health.mode -ne "mybroker_preflight_scratch" -or $health.pid -ne $listener[0].OwningProcess -or
+            $process.Count -ne 1 -or $null -eq $process[0].CreationDate -or
+            [string]::IsNullOrWhiteSpace($process[0].ExecutablePath)) {
+            throw "Scratch listener/process binding is unavailable."
+        }
+        return
+    }
+    throw "Scratch readiness timed out."
 }
 
 function Invoke-PreparedRuntimeValidation {
@@ -264,6 +355,19 @@ function Stop-ProcessTree {
 }
 
 try {
+    if ($ScratchPreflight -or -not [string]::IsNullOrWhiteSpace($ScratchManifest)) {
+        if (-not $ScratchPreflight -or [string]::IsNullOrWhiteSpace($ScratchManifest) -or $RecoveryReadiness) {
+            throw "Scratch preflight requires its explicit manifest and cannot use recovery readiness."
+        }
+        foreach ($command in @("Get-NetTCPConnection", "Get-CimInstance")) {
+            if ($null -eq (Get-Command $command -ErrorAction SilentlyContinue)) {
+                throw "Scratch process ownership checks are unavailable."
+            }
+        }
+        Assert-HermesScratchLocalPathSyntax -Path $ScratchManifest
+        Assert-HermesScratchPathBoundary -Path $ScratchManifest
+        Assert-HermesScratchInterpreterBoundary -Checkout $repoRoot
+    }
     if ($RecoveryReadiness -and -not $ExitAfterReady) {
         throw "Recovery readiness is a bounded smoke and requires -ExitAfterReady."
     }
@@ -327,18 +431,34 @@ try {
         $env:UV_PROJECT_ENVIRONMENT = [IO.Path]::GetFullPath((Join-Path $backendDir ".venv"))
         $env:PYTHONPATH = ""
 
-        $pinnedDatabase = Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot
-        if ($null -ne $pinnedDatabase) {
-            $env:HERMES_FINANCE_DATABASE_PATH = $pinnedDatabase
+        if ($ScratchPreflight) {
+            # The backend checks the exact same binding even when called directly.
+            # This check serves nothing, creates nothing and cannot run migrations.
+            $scratchToken = [Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")
+            $scratchBinding = Get-Content -LiteralPath $ScratchManifest -Raw | ConvertFrom-Json
+            Assert-HermesScratchInterpreterBoundary -Checkout $repoRoot
+            $python = Join-Path $backendDir ".venv\Scripts\python.exe"
+            & $python -m hermes_finance.scratch_preflight --manifest $ScratchManifest --readiness-token $scratchToken --check
+            if ($LASTEXITCODE -ne 0) { throw "Scratch validation failed." }
+            $backendArguments = @("run", "--locked", "--offline", "--no-sync", "hermes-finance-api", "scratch-preflight",
+                "--manifest", ('"' + $ScratchManifest + '"'), "--readiness-token", $scratchToken)
+        }
+        else {
+            $pinnedDatabase = Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot
+            if ($null -ne $pinnedDatabase) {
+                $env:HERMES_FINANCE_DATABASE_PATH = $pinnedDatabase
+            }
+            $backendArguments = @("run", "--locked", "--offline", "--no-sync", "hermes-finance-api")
         }
 
-        Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
-        $backendProcess = Start-Process `
-            -FilePath $uv `
-            -ArgumentList @("run", "--locked", "--offline", "--no-sync", "hermes-finance-api") `
-            -WorkingDirectory $backendDir `
-            -NoNewWindow `
-            -PassThru
+        if ($ScratchPreflight) {
+            Write-Host "Starting Hermes Finance scratch preflight reader..." -ForegroundColor Cyan
+            $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
+        }
+        else {
+            Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
+            $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -NoNewWindow -PassThru
+        }
     }
     finally {
         foreach ($name in $savedEnvironment.Keys) {
@@ -352,15 +472,25 @@ try {
         }
     }
 
-    Wait-ForProductionStack `
+    if ($ScratchPreflight) {
+        Wait-ForScratchPreflight -Backend $backendProcess -Token $scratchToken -Binding $scratchBinding
+    }
+    else {
+        Wait-ForProductionStack `
         -Backend $backendProcess `
         -RequireRecoverySurfaces ([bool]$RecoveryReadiness) `
         -ExpectedRecoveryToken $env:HERMES_FINANCE_RECOVERY_READINESS_TOKEN `
         -ExpectedDatabaseIdentity $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY `
         -ExpectedCheckoutSha $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA
+    }
     Write-Host "Hermes Finance is ready: http://127.0.0.1:8000" -ForegroundColor Green
     if ($ExitAfterReady) {
-        Write-Host "Production readiness smoke test passed." -ForegroundColor Green
+        if ($ScratchPreflight) {
+            Write-Host "Scratch preflight readiness smoke test passed." -ForegroundColor Green
+        }
+        else {
+            Write-Host "Production readiness smoke test passed." -ForegroundColor Green
+        }
     }
     else {
         Write-Host "Press Ctrl+C to stop Hermes Finance." -ForegroundColor DarkGray
@@ -378,6 +508,9 @@ catch {
         }
         Write-Output ("HERMES_RECOVERY_READINESS_FAILURE=" + $classification)
         Write-Host "ERROR: Recovery readiness failed ($classification)." -ForegroundColor Red
+    }
+    elseif ($ScratchPreflight) {
+        Write-Host "ERROR: Scratch preflight failed closed." -ForegroundColor Red
     }
     else {
         Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red

@@ -63,3 +63,70 @@ grants no source-account/portfolio crossing, H2, Close, XIRR or TWRR authority.
 The Owner-original pilot is a separate later read-only UAT. Automated evidence
 uses fabricated originals only; originals and private response values belong
 outside Git, logs and public issue/PR evidence.
+
+## Explicit scratch-only reader Start
+
+Windows `scripts/start-local.ps1 -ScratchPreflight -ScratchManifest <absolute-manifest>`
+opts into the separate read-only reader. `-ExitAfterReady` performs the bounded
+owned-process smoke and cleans up its process tree. Without that switch the
+reader stays available until its owning Start process is stopped. Standard Start
+and recovery readiness retain their existing migration behavior. This mode cannot
+be combined with recovery readiness and has no generic skip-migrations setting.
+
+Prepare/Validate the independent detached exact-SHA checkout with its existing
+supported commands first. The reader neither prepares nor restores anything.
+An already authorized operator supplies one existing consistent standalone backup
+in a physically separate scratch data directory, with no WAL/SHM/journal. The
+database is opened with SQLite `mode=ro&immutable=1` after snapshot identity/hash
+and isolation checks; immutable prevents sidecar creation even for a standalone
+backup with a WAL-mode header. Live databases are not supported inputs. Windows
+handles deny other write/delete opens and pin its ancestry for the runtime's life.
+Missing/corrupt/linked files, sidecars, changed snapshot, schema drift and any
+non-exact/multiple Alembic head refuse startup. No migration entry point is imported
+or called. Clearing `query_only` cannot turn this connection into a writer.
+
+The external Owner-local manifest has exactly these fields (placeholders below
+are replaced privately; never commit a populated manifest):
+
+```json
+{
+  "version": 1,
+  "kind": "mybroker_preflight_scratch",
+  "profile_id": "one-disposable-reader",
+  "checkout": "<absolute independent prepared checkout>",
+  "checkout_sha": "<full verified commit SHA>",
+  "database": "<absolute existing scratch snapshot>",
+  "database_identity": "<recovery_process.file_identity_token(snapshot)>",
+  "snapshot_sha256": "<verified consistent snapshot SHA256>",
+  "runtime_inventory": "<absolute current runtime-inventory JSON>",
+  "control_checkout": "<absolute independent control checkout>",
+  "owner_root": "<absolute protected Owner root>",
+  "ops_root": "<absolute protected Ops root>",
+  "workspace_roots": ["<absolute active client workspace root>"]
+}
+```
+
+`runtime_inventory` follows `runtime-inventory.example.json`, with canonical
+Stable and explicit Test/preview boundaries. Every active workspace root must be
+declared; control worktrees are also excluded. The data directory's existing
+`.hermes-data-identity.json` must equal
+`{"kind":"mybroker_preflight_scratch","id":"one-disposable-reader"}`.
+This is a disposable explicit binding, not a global registered runtime profile or
+permission to create a backup, account or mapping. The code checkout cannot
+contain `.env`, private data or a Preview pin. Its own prepared interpreter is
+required, including for direct CLI `hermes-finance-api scratch-preflight` use.
+Remote/device/ADS path syntax is rejected before filesystem probing, including
+every runtime inventory boundary. Linked environments/interpreters are rejected
+before preparation validation or invoking the backend interpreter.
+The scratch Windows guard inspects components from the drive root downwards;
+it rejects a reparse entry before probing any descendant or reading the manifest.
+Mapped network, unknown and unavailable drive types are refused before path probes.
+
+Only `GET /api/health` and the existing `POST /api/mybroker-preflight/preview`
+are registered. There is no frontend, generic catalogue/provider API, OpenAPI,
+Apply or Close route. Localhost Host/Origin checks remain active. Health returns
+the current PID, interpreter, process-start marker, SHA and bound DB identity;
+Start verifies its fresh challenge headers and listener ownership before reporting
+ready. These identity values and full preflight responses stay Owner-local.
+Second-account mappings may remain blocked while source-native diagnostics are
+available; this grants no mapping, DRAFT, financial or return acceptance.
