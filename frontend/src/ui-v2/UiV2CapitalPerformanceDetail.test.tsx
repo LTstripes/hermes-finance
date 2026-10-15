@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { PerformanceReadiness } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { classReturnsFixture } from "../test/classReturnsFixture";
 import UiV2CapitalPerformanceDetail from "./UiV2CapitalPerformanceDetail";
@@ -20,12 +21,15 @@ function readinessFixture(options: {
   accountId?: number | null;
   xirr?: string | null;
   twrr?: string | null;
-}) {
+}): PerformanceReadiness {
   const scope = options.scope ?? "portfolio";
   const accountId = options.accountId ?? null;
   const xirr = options.xirr ?? "7.42";
   const twrr = options.twrr ?? "6.10";
-  const forMetric = (kind: "xirr" | "twrr", value: string | null) => ({
+  const forMetric = (
+    kind: "xirr" | "twrr",
+    value: string | null,
+  ): PerformanceReadiness["xirr"] => ({
     metric: kind,
     scope,
     account_id: accountId,
@@ -78,7 +82,16 @@ function readinessFixture(options: {
   };
 }
 
-function setup(path: string, months?: Array<Record<string, unknown>>) {
+function setup(
+  path: string,
+  months?: Array<Record<string, unknown>>,
+  scenario?: {
+    portfolio: ReturnType<typeof readinessFixture>;
+    account?: (id: number) => ReturnType<typeof readinessFixture>;
+    accounts?: Array<Record<string, unknown>>;
+    accountsError?: boolean;
+  },
+) {
   const client = createQueryClient();
   const reads: string[] = [];
   const monthRows = months ?? [
@@ -104,13 +117,16 @@ function setup(path: string, months?: Array<Record<string, unknown>>) {
     vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
       reads.push(`${options?.method ?? "GET"} ${url.pathname}${url.search}`);
+      if (url.pathname === "/api/accounts" && scenario?.accountsError) {
+        return new Response(null, { status: 503 });
+      }
       let data: unknown;
       switch (url.pathname) {
         case "/api/performance/class-returns":
           data = classReturnsFixture(url.searchParams.get("asset_class") as string, START, END);
           break;
         case "/api/accounts":
-          data = [
+          data = scenario?.accounts ?? [
             { id: 1, name: "Депозитный счёт", account_type: "cash", status: "active" },
             { id: 3, name: "Брокерский счёт", account_type: "brokerage", status: "active" },
           ];
@@ -120,14 +136,16 @@ function setup(path: string, months?: Array<Record<string, unknown>>) {
           break;
         case "/api/performance/readiness":
           if (url.searchParams.get("scope") === "account") {
-            data = readinessFixture({
-              scope: "account",
-              accountId: Number(url.searchParams.get("account_id")),
-              xirr: "8.00",
-              twrr: "7.00",
-            });
+            data =
+              scenario?.account?.(Number(url.searchParams.get("account_id"))) ??
+              readinessFixture({
+                scope: "account",
+                accountId: Number(url.searchParams.get("account_id")),
+                xirr: "8.00",
+                twrr: "7.00",
+              });
           } else {
-            data = readinessFixture({});
+            data = scenario?.portfolio ?? readinessFixture({});
           }
           break;
         case "/api/performance/attribution":
@@ -193,7 +211,145 @@ afterEach(() => {
 
 const PORTFOLIO_PATH = `/v2/capital/performance?start=${START}&end=${END}&scope=portfolio`;
 
+function missingCoverageFixture(options: Parameters<typeof readinessFixture>[0] = {}) {
+  const body = readinessFixture(options);
+  for (const coverage of [
+    body.evidence.cash_boundary_coverage,
+    body.evidence.in_kind_boundary_coverage,
+  ]) {
+    coverage.account_ids = [];
+    coverage.status = "unknown";
+  }
+  body.evidence.scope_membership.status = "unknown";
+  body.evidence.scope_membership.missing_or_ambiguous_account_ids = [1, 3];
+  for (const metric of [body.xirr, body.twrr]) {
+    Object.assign(metric, { value: null, availability: "not_computable", quality: "unavailable" });
+  }
+  return body;
+}
+
 describe("UiV2CapitalPerformanceDetail", () => {
+  it("shows catalogue and ambiguous candidates without cash/in-kind coverage or invented returns", async () => {
+    const portfolio = missingCoverageFixture();
+    portfolio.evidence.scope_membership.account_ids = [1];
+    const { mount, reads } = setup(PORTFOLIO_PATH, undefined, {
+      portfolio,
+      accounts: [
+        { id: 1, name: "Исторический счёт", status: "archived", include_in_returns: false },
+      ],
+      account: (id) => {
+        return missingCoverageFixture({ scope: "account", accountId: id });
+      },
+    });
+    mount();
+    const table = await screen.findByTestId("performance-accounts-table");
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(screen.getByTestId("performance-account-row-1")).toHaveTextContent("Исторический счёт");
+    const ambiguous = within(table).getByTestId("performance-account-row-3");
+    await waitFor(() => expect(ambiguous).toHaveTextContent("недоступен"));
+    expect(ambiguous).toHaveTextContent("Счёт 3");
+    expect(ambiguous).toHaveTextContent("История участия отсутствует или неоднозначна");
+    expect(within(ambiguous).getAllByText("—")).toHaveLength(2);
+    expect(screen.getByTestId("performance-detail-xirr")).not.toHaveTextContent(/\d[,.]\d+%/);
+    expect(screen.getByTestId("performance-composition-cash")).toHaveTextContent(
+      "Список счетов денежной проверки не подтверждён",
+    );
+    expect(reads).toContain(
+      `GET /api/performance/readiness?start_date=${START}&end_date=${END}&scope=account&account_id=3`,
+    );
+  });
+
+  it("deduplicates disjoint evidence candidates and keeps each metric independently available", async () => {
+    const portfolio = missingCoverageFixture();
+    portfolio.evidence.scope_membership.account_ids = [1, 1];
+    portfolio.evidence.scope_membership.missing_or_ambiguous_account_ids = [1, 3];
+    portfolio.evidence.cash_boundary_coverage.account_ids = [3, 4];
+    portfolio.evidence.in_kind_boundary_coverage.account_ids = [4, 5];
+    const { mount } = setup(PORTFOLIO_PATH, undefined, {
+      portfolio,
+      account: (id) => {
+        const row = readinessFixture({ scope: "account", accountId: id, xirr: "0.00" });
+        Object.assign(row.twrr, {
+          value: null,
+          availability: "not_computable",
+          quality: "unavailable",
+        });
+        return row;
+      },
+    });
+    mount();
+    const table = await screen.findByTestId("performance-accounts-table");
+    expect(within(table).getAllByRole("row")).toHaveLength(5);
+    const row = within(table).getByTestId("performance-account-row-4");
+    await waitFor(() => expect(row).toHaveTextContent("частично доступен"));
+    expect(within(row).getByText("0,00%")).toBeVisible();
+    expect(within(row).getByText("—")).toBeVisible();
+    expect(screen.getByTestId("performance-detail-xirr")).not.toHaveTextContent("0,00%");
+  });
+
+  it("distinguishes an empty catalogue from an undetermined historical scope", async () => {
+    const portfolio = missingCoverageFixture();
+    portfolio.evidence.scope_membership.account_ids = [];
+    portfolio.evidence.scope_membership.missing_or_ambiguous_account_ids = [];
+    const { mount } = setup(PORTFOLIO_PATH, undefined, { portfolio, accounts: [] });
+    mount();
+    expect(
+      await screen.findByText("Каталог счетов пуст. Исторический состав расчёта не подтверждён."),
+    ).toBeVisible();
+    expect(screen.queryByTestId("performance-accounts-table")).toBeNull();
+    expect(screen.getByTestId("performance-composition-membership")).not.toHaveTextContent(
+      "Проблем нет",
+    );
+  });
+
+  it("does not declare an empty catalogue when its lookup is unavailable", async () => {
+    const portfolio = missingCoverageFixture();
+    portfolio.evidence.scope_membership.account_ids = [];
+    portfolio.evidence.scope_membership.missing_or_ambiguous_account_ids = [];
+    const { mount } = setup(PORTFOLIO_PATH, undefined, { portfolio, accountsError: true });
+    mount();
+    expect(
+      await screen.findByText(
+        "Нет подтверждённого списка счетов для проверки за этот интервал. Исторический состав расчёта не определён.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Каталог счетов пуст/)).toBeNull();
+  });
+
+  it("keeps a membership-checked account available for investigation when cash checks require no accounts", async () => {
+    const portfolio = readinessFixture({});
+    portfolio.evidence.cash_boundary_coverage.account_ids = [];
+    const { mount } = setup(PORTFOLIO_PATH, undefined, { portfolio });
+    mount();
+    expect(await screen.findByTestId("performance-account-row-1")).toBeVisible();
+    expect(screen.getByTestId("performance-account-row-3")).toBeVisible();
+    expect(screen.getByTestId("performance-composition-cash")).toHaveTextContent(
+      "Для этого интервала нет счетов, требующих денежной проверки",
+    );
+    expect(screen.getByRole("region", { name: "По счетам" })).toHaveTextContent(
+      "Наличие строки не подтверждает включение счёта в итог портфеля",
+    );
+  });
+
+  it("hides stale account metrics without hiding the source-backed candidate", async () => {
+    const { mount } = setup(PORTFOLIO_PATH, undefined, {
+      portfolio: missingCoverageFixture(),
+      account: (id) => ({
+        ...readinessFixture({ scope: "account", accountId: id }),
+        end_date: START,
+      }),
+    });
+    mount();
+    const row = await screen.findByTestId("performance-account-row-1");
+    await waitFor(() => expect(row).toHaveTextContent("проверка не завершилась"));
+    expect(within(row).getAllByText("—")).toHaveLength(2);
+    expect(row).not.toHaveTextContent(/\d[,.]\d+%/);
+    expect(within(row).getByRole("link", { name: "Открыть" })).toHaveAttribute(
+      "href",
+      `${PORTFOLIO_PATH.replace("scope=portfolio", "scope=account")}&account_id=1`,
+    );
+  });
+
   it("shows independent metrics, composition and the accounts table", async () => {
     const { mount, reads } = setup(PORTFOLIO_PATH);
     mount();

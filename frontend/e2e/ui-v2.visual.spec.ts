@@ -535,6 +535,8 @@ type CapitalScene =
   | "zero"
   | "partial"
   | "coverage"
+  | "readiness-missing"
+  | "readiness-empty"
   | "excluded";
 
 /** Coherent readiness projection mirroring the synthetic performance fixture. */
@@ -660,6 +662,28 @@ function makeExcludedReadiness(performance: ReturnType<typeof makeUiV2Performanc
 }
 
 async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
+  const candidateScene = scene === "readiness-missing" || scene === "readiness-empty";
+  const readinessFor = (url: URL) => {
+    const body = makeExcludedReadiness(state.performance, url);
+    if (!candidateScene) return body;
+    const ids = scene === "readiness-empty" ? [] : [1, 3];
+    const accountId = body.account_id;
+    body.evidence.scope_membership.account_ids = accountId === null ? ids : [accountId];
+    body.evidence.scope_membership.missing_or_ambiguous_account_ids =
+      accountId === null ? ids : [accountId];
+    body.diagnostics = body.diagnostics.filter(
+      (diagnostic) => diagnostic.key !== "excluded_source",
+    );
+    if (accountId === 1) {
+      Object.assign(body.xirr, {
+        value: "0.00",
+        availability: "available",
+        quality: "exact",
+        reason_codes: [],
+      });
+    }
+    return body;
+  };
   const firstClosed = scene === "first-closed";
   const zero = scene === "zero";
   const partial = scene === "partial";
@@ -671,7 +695,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
           ? [uiV2Months[0], uiV2Months[1]]
           : uiV2Months,
     brokerMonths: [] as BrokerMonthReadback[],
-    accounts: uiV2Accounts,
+    accounts: scene === "readiness-empty" ? [] : uiV2Accounts,
     monthsError: false,
     propertiesError: partial,
     riskError: partial,
@@ -756,16 +780,16 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       json = state.performance.attribution;
     } else if (url.pathname === "/api/performance/readiness") {
       json = makeReadinessBody(state.performance);
-      if (scene === "excluded") json = makeExcludedReadiness(state.performance, url);
+      if (scene === "excluded" || candidateScene) json = readinessFor(url);
     } else if (
-      scene === "excluded" &&
+      (scene === "excluded" || candidateScene) &&
       [
         "/api/performance/valuation-captures",
         "/api/performance/membership",
         "/api/performance/preparation",
       ].includes(url.pathname)
     ) {
-      const readiness = makeExcludedReadiness(state.performance, url);
+      const readiness = readinessFor(url);
       const context = {
         scope: readiness.scope,
         account_id: readiness.account_id,
@@ -969,6 +993,61 @@ for (const width of [1440]) {
     expect(evidence.unexpected).toEqual([]);
   });
 }
+
+test("ui-v2 readiness candidates: missing coverage, ambiguity and keyboard Back @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installCapitalApi(page, "readiness-missing");
+  const path = "/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=portfolio";
+  await page.goto(path);
+  const table = page.getByTestId("performance-accounts-table");
+  await expect(table.getByRole("row")).toHaveCount(3);
+  const ambiguous = page.getByTestId("performance-account-row-3");
+  await expect(ambiguous).toContainText("История участия отсутствует или неоднозначна");
+  await expect(ambiguous).toContainText("недоступен");
+  await expect(ambiguous.getByRole("cell").nth(1)).toHaveText("—");
+  await expect(ambiguous.getByRole("cell").nth(2)).toHaveText("—");
+  const mixed = page.getByTestId("performance-account-row-1");
+  await expect(mixed).toContainText("частично доступен");
+  await expect(mixed).toContainText("0,00%");
+  await expect(page.getByTestId("performance-detail-xirr")).not.toContainText(/\d[,.]\d+%/);
+  await expect(page.getByTestId("performance-composition-cash")).toContainText(
+    "Список счетов денежной проверки не подтверждён",
+  );
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-readiness-candidates");
+  const open = ambiguous.getByRole("link", { name: "Открыть" });
+  await open.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(`${path.replace("scope=portfolio", "scope=account")}&account_id=3`);
+  await expect(page.getByTestId("performance-detail-period")).toContainText("31.05.2031");
+  await expect(page.getByTestId("performance-detail-period")).toContainText("31.07.2031");
+  await expect(page.getByTestId("performance-detail-xirr")).not.toContainText(/\d[,.]\d+%/);
+  await page.goBack();
+  await expect(page).toHaveURL(path);
+  await expect(page.getByTestId("performance-account-row-3")).toBeVisible();
+  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 readiness empty catalogue: honest empty state @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installCapitalApi(page, "readiness-empty");
+  await page.goto("/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=portfolio");
+  await expect(
+    page.getByText("Каталог счетов пуст. Исторический состав расчёта не подтверждён."),
+  ).toBeVisible();
+  await expect(page.getByTestId("performance-accounts-table")).toHaveCount(0);
+  await expect(page.getByTestId("performance-composition-membership")).not.toContainText(
+    "Проблем нет",
+  );
+  await assertBounded(page);
+  await capture(page, testInfo, "ui-v2-readiness-empty");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
 
 test("ui-v2 Capital desktop: closed composition, accounts and performance stay bounded", async ({
   page,
