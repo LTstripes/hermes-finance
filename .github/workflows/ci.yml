@@ -510,6 +510,7 @@ jobs:
             tests/test_recovery_process.py `
             tests/test_settings.py `
             tests/test_startup.py `
+            tests/test_scratch_preflight_runtime.py `
             --basetemp $recoveryBaseTemp
           $recoveryExitCode = $LASTEXITCODE
           Pop-Location

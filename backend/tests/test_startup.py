@@ -19,6 +19,11 @@ from hermes_finance.database import create_database
 from hermes_finance.services.migrations import ALEMBIC_CONFIG_PATH
 
 
+@pytest.fixture(autouse=True)
+def standard_cli_arguments(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["hermes-finance-api"])
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows guarded Start boundary")
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
 @pytest.mark.parametrize("configuration", ["match", "wrong", "invalid"])
