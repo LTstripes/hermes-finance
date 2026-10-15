@@ -60,8 +60,10 @@ def _pairs(pairs):
 def _path(value) -> Path:
     if not isinstance(value, str) or not value or not Path(value).is_absolute():
         raise ScratchError("scratch_path_invalid")
-    if value.replace("\\", "/").startswith("//") or (
-        sys.platform == "win32" and any(":" in p for p in Path(value).parts[1:])
+    if (
+        ".." in Path(value).parts
+        or value.replace("\\", "/").startswith("//")
+        or (sys.platform == "win32" and any(":" in p for p in Path(value).parts[1:]))
     ):
         raise ScratchError("scratch_local_path_required")
     return safety._absolute_path(Path(value), stage="scratch")
@@ -102,6 +104,57 @@ def _prepared(checkout: Path) -> None:
         raise ScratchError("scratch_runtime_not_prepared")
 
 
+def _interpreter(checkout: Path) -> None:
+    expected = checkout / "backend/.venv"
+    prefix = _path(sys.prefix)
+    executable = _path(sys.executable)
+    if safety._path_key(prefix) != safety._path_key(expected) or safety._path_key(
+        executable
+    ) != safety._path_key(expected / "Scripts/python.exe"):
+        raise ScratchError("scratch_interpreter_mismatch")
+    file_identity_token(executable)  # Also rejects a hardlinked launcher.
+
+
+def _inventory(path: Path) -> tuple[Path, ...]:
+    # Keep the reused reader's second read bound to the same immutable config.
+    # Otherwise it could read newly substituted UNC paths after our syntax check.
+    with _hold_snapshot(path):
+        inventory = _read_json(path)
+        profiles = inventory.get("profiles")
+        canonical = inventory.get("canonical_production")
+        if not isinstance(profiles, list) or not isinstance(canonical, dict):
+            raise ScratchError("scratch_config_invalid")
+        if not any(isinstance(p, dict) and p.get("type") == "preview" for p in profiles):
+            raise ScratchError("scratch_test_inventory_required")
+        for item in [canonical, *profiles]:
+            if not isinstance(item, dict):
+                raise ScratchError("scratch_config_invalid")
+            for key in ("checkout", "data_dir", "database"):
+                _path(item.get(key))
+        return safety._runtime_inventory(path)
+
+
+def _git_boundary(checkout: Path) -> None:
+    git_directory = _path(str(checkout / ".git"))
+    if not git_directory.is_dir():
+        raise ScratchError("scratch_git_not_independent")
+    for name in ("objects", "config", "HEAD"):
+        _path(str(git_directory / name))
+    for name in ("commondir", "objects/info/alternates"):
+        if _path(str(git_directory / name)).exists():
+            raise ScratchError("scratch_git_not_independent")
+
+
+def _worktrees(control: Path) -> tuple[Path, ...]:
+    # Same control-worktree exclusion inventory, with local syntax validated
+    # before the recovery helper's filesystem normalization could follow a UNC.
+    output = safety._run_git(control, ["worktree", "list", "--porcelain"], stage="scratch")
+    roots = tuple(_path(line[9:]) for line in output.splitlines() if line.startswith("worktree "))
+    if not roots:
+        raise ScratchError("scratch_workspace_inventory_required")
+    return roots
+
+
 def validate_manifest(path: Path) -> dict:
     """Prove declared isolation before any SQLite connection or listener."""
     path = _path(str(path))
@@ -133,16 +186,15 @@ def validate_manifest(path: Path) -> dict:
     inventory_path = _path(document["runtime_inventory"])
     if any(safety._path_is_within(p, checkout) for p in (path, inventory_path)):
         raise ScratchError("scratch_config_in_checkout")
-    inventory = _read_json(inventory_path)
-    if not any(p.get("type") == "preview" for p in inventory.get("profiles", [])):
-        raise ScratchError("scratch_test_inventory_required")
-    forbidden = list(safety._runtime_inventory(inventory_path))
+    forbidden = list(_inventory(inventory_path))
     roots = document["workspace_roots"]
     if not isinstance(roots, list) or not roots or len(roots) > 64:
         raise ScratchError("scratch_workspace_inventory_required")
     forbidden.extend(_path(value) for value in roots)
     forbidden.extend((_path(document["owner_root"]), _path(document["ops_root"]), control))
-    forbidden.extend(safety._worktree_inventory(control))
+    _git_boundary(control)
+    _git_boundary(checkout)
+    forbidden.extend(_worktrees(control))
     if any(
         safety._paths_overlap(candidate, boundary)
         for candidate in (checkout, database.parent)
@@ -152,10 +204,7 @@ def validate_manifest(path: Path) -> dict:
     if safety._path_key(checkout) != safety._path_key(ROOT):
         raise ScratchError("scratch_executing_checkout_mismatch")
     safety._validate_recovery_checkout(checkout, control, document["checkout_sha"])
-    if sys.prefix != str(checkout / "backend/.venv"):
-        # Exact interpreter binding; never use another checkout's environment.
-        if Path(sys.prefix).resolve() != (checkout / "backend/.venv").resolve():
-            raise ScratchError("scratch_interpreter_mismatch")
+    _interpreter(checkout)
     for key in ("database_identity", "snapshot_sha256"):
         if not isinstance(document[key], str) or not HEX64.fullmatch(document[key]):
             raise ScratchError("scratch_snapshot_binding_invalid")
@@ -168,6 +217,7 @@ def validate_manifest(path: Path) -> dict:
     _check_snapshot(document)
     _prepared(checkout)
     safety._validate_recovery_checkout(checkout, control, document["checkout_sha"])
+    document["database"] = str(database)
     return document
 
 

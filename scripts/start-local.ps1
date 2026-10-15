@@ -70,6 +70,25 @@ function Assert-ProcessRunning {
     }
 }
 
+function Assert-HermesScratchLocalPathSyntax {
+    param([string]$Path)
+    # Syntax only: do not Test-Path/Get-Item/resolve an untrusted remote path.
+    if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(3).Contains(':') -or $Path.Contains('"')) {
+        throw "Scratch requires an absolute local filesystem path."
+    }
+}
+
+function Assert-HermesScratchInterpreterBoundary {
+    param([string]$Checkout)
+    $python = Join-Path $Checkout "backend\.venv\Scripts\python.exe"
+    Assert-HermesScratchLocalPathSyntax -Path $python
+    Assert-HermesPreviewNoReparsePath -Path $python -Label "Scratch interpreter"
+    $item = Get-Item -LiteralPath $python -Force -ErrorAction Stop
+    if ($item.PSIsContainer -or $item.LinkType -eq "HardLink") {
+        throw "Scratch requires its own unlinked prepared interpreter."
+    }
+}
+
 function Wait-ForScratchPreflight {
     param($Backend, [string]$Token, $Binding)
 
@@ -314,10 +333,9 @@ try {
                 throw "Scratch process ownership checks are unavailable."
             }
         }
+        Assert-HermesScratchLocalPathSyntax -Path $ScratchManifest
         Assert-HermesPreviewNoReparsePath -Path $ScratchManifest -Label "Scratch manifest"
-        if (-not [IO.Path]::IsPathRooted($ScratchManifest) -or $ScratchManifest.Contains('"')) {
-            throw "Scratch manifest path is invalid."
-        }
+        Assert-HermesScratchInterpreterBoundary -Checkout $repoRoot
     }
     if ($RecoveryReadiness -and -not $ExitAfterReady) {
         throw "Recovery readiness is a bounded smoke and requires -ExitAfterReady."
@@ -387,6 +405,7 @@ try {
             # This check serves nothing, creates nothing and cannot run migrations.
             $scratchToken = [Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")
             $scratchBinding = Get-Content -LiteralPath $ScratchManifest -Raw | ConvertFrom-Json
+            Assert-HermesScratchInterpreterBoundary -Checkout $repoRoot
             $python = Join-Path $backendDir ".venv\Scripts\python.exe"
             & $python -m hermes_finance.scratch_preflight --manifest $ScratchManifest --readiness-token $scratchToken --check
             if ($LASTEXITCODE -ne 0) { throw "Scratch validation failed." }

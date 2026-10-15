@@ -115,6 +115,9 @@ This is a disposable explicit binding, not a global registered runtime profile o
 permission to create a backup, account or mapping. The code checkout cannot
 contain `.env`, private data or a Preview pin. Its own prepared interpreter is
 required, including for direct CLI `hermes-finance-api scratch-preflight` use.
+Remote/device/ADS path syntax is rejected before filesystem probing, including
+every runtime inventory boundary. Linked environments/interpreters are rejected
+before preparation validation or invoking the backend interpreter.
 
 Only `GET /api/health` and the existing `POST /api/mybroker-preflight/preview`
 are registered. There is no frontend, generic catalogue/provider API, OpenAPI,

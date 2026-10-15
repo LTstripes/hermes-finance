@@ -138,6 +138,19 @@ def test_remote_and_stream_paths_reject_before_filesystem_access(monkeypatch, pa
         scratch._path(path)
 
 
+def test_control_worktree_remote_path_rejects_before_filesystem_probe(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        scratch.safety,
+        "_run_git",
+        lambda *a, **kw: "worktree //synthetic-host/share/code\nHEAD " + "a" * 40,
+    )
+    monkeypatch.setattr(
+        scratch.safety, "_absolute_path", lambda *a, **kw: pytest.fail("remote filesystem probed")
+    )
+    with pytest.raises(scratch.ScratchError):
+        scratch._worktrees(tmp_path)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows file sharing and junctions")
 def test_windows_snapshot_guard_denies_other_writers_and_junction(snapshot, tmp_path):
     before = files(snapshot)
@@ -305,7 +318,10 @@ def synthetic_layout(tmp_path, snapshot):
     # Isolate process/path tests from frontend preparation. The real validator
     # remains exercised by the existing prepared-runtime Windows suite.
     (checkout / "scripts/prepare-runtime.ps1").write_text(
-        "param($Checkout,[switch]$Validate)\nexit 0\n"
+        "param($Checkout,[switch]$Validate)\n"
+        "if ($env:HERMES_SYNTHETIC_PREPARE_MARKER) { "
+        "[IO.File]::WriteAllText($env:HERMES_SYNTHETIC_PREPARE_MARKER, 'prepared') }\n"
+        "exit 0\n"
     )
     git(checkout, "init")
     git(checkout, "add", ".")
@@ -411,6 +427,10 @@ def test_manifest_guards_before_connection(snapshot, tmp_path, monkeypatch, faul
     monkeypatch.setattr(scratch, "ROOT", checkout)
     monkeypatch.setattr(scratch.safety, "_executing_checkout", lambda: checkout)
     monkeypatch.setattr(sys, "prefix", str(checkout / "backend/.venv"))
+    interpreter = checkout / "backend/.venv/Scripts/python.exe"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_bytes(b"synthetic interpreter identity; never executed")
+    monkeypatch.setattr(sys, "executable", str(interpreter))
     monkeypatch.setattr(scratch, "_prepared", lambda c: None)
     if fault == "protected":
         document["workspace_roots"] = [document["checkout"]]
@@ -447,7 +467,7 @@ def test_manifest_guards_before_connection(snapshot, tmp_path, monkeypatch, faul
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Start/process/handle integration")
-@pytest.mark.parametrize("fault", [None, "port", "identity", "unprepared"])
+@pytest.mark.parametrize("fault", [None, "port", "identity", "unprepared", "linked_environment"])
 def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, fault):
     with socket.socket() as probe:
         try:
@@ -474,6 +494,8 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
     for key in tuple(environment):
         if key.startswith(("HERMES_FINANCE_", "UV_", "PYTHON")):
             environment.pop(key)
+    prepared_marker = tmp_path / "prepared-marker"
+    environment["HERMES_SYNTHETIC_PREPARE_MARKER"] = str(prepared_marker)
     held = None
     if fault == "port":
         held = socket.socket()
@@ -500,6 +522,20 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
         )
         document["checkout_sha"] = git(checkout, "rev-parse", "HEAD")
         manifest.write_text(json.dumps(document), encoding="utf-8")
+    elif fault == "linked_environment":
+        env_path = checkout / "backend/.venv"
+        outside = tmp_path / "external-environment"
+        env_path.rename(outside)
+        subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(env_path), str(outside)],
+            check=True,
+            capture_output=True,
+        )
+        # Direct CLI validation must reject this too, before prepared validation.
+        monkeypatch.setattr(sys, "prefix", str(env_path))
+        monkeypatch.setattr(sys, "executable", str(env_path / "Scripts/python.exe"))
+        with pytest.raises(Exception):
+            scratch._interpreter(checkout)
     before = files(Path(document["database"]))
     try:
         result = subprocess.run(
@@ -523,8 +559,77 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
         assert (result.returncode == 0) == (fault is None), result.stdout + result.stderr
         assert ("is ready" in result.stdout) == (fault is None)
         assert files(Path(document["database"])) == before
+        if fault == "linked_environment":
+            assert not prepared_marker.exists()
     finally:
         if held:
             held.close()
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 8000))  # Owned process tree must be gone.
+
+
+@pytest.mark.parametrize("section", ["canonical_production", "profile"])
+@pytest.mark.parametrize("key", ["checkout", "data_dir", "database"])
+def test_inventory_remote_boundary_rejects_before_delegation(
+    snapshot, tmp_path, monkeypatch, section, key
+):
+    manifest, document = synthetic_layout(tmp_path, snapshot)
+    path = Path(document["runtime_inventory"])
+    inventory = json.loads(path.read_text())
+    target = (
+        inventory["canonical_production"]
+        if section == "canonical_production"
+        else inventory["profiles"][0]
+    )
+    target[key] = r"\\synthetic-host\share\remote"
+    path.write_text(json.dumps(inventory))
+    monkeypatch.setattr(
+        scratch.safety,
+        "_runtime_inventory",
+        lambda *a: pytest.fail("unvalidated inventory delegated"),
+    )
+    with pytest.raises(scratch.ScratchError):
+        scratch._inventory(path)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows script entry path guard")
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        r"\\synthetic-host\share\manifest.json",
+        r"\\?\C:\synthetic\manifest.json",
+        r"C:\synthetic\manifest.json:stream",
+    ],
+)
+def test_windows_manifest_syntax_rejects_before_any_filesystem_probe(tmp_path, unsafe):
+    marker = tmp_path / "filesystem-was-probed"
+    harness = tmp_path / "guard.ps1"
+    harness.write_text(
+        "function Probe-Filesystem { [IO.File]::WriteAllText('"
+        + str(marker)
+        + "', 'probe'); throw 'unexpected probe' }\n"
+        "function Test-Path { Probe-Filesystem }\n"
+        "function Get-Item { Probe-Filesystem }\n"
+        "function Get-Content { Probe-Filesystem }\n"
+        "& $args[0] -ScratchPreflight -ScratchManifest $args[1] -ExitAfterReady\n"
+        "exit $LASTEXITCODE\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+            str(REPO / "scripts/start-local.ps1"),
+            unsafe,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode != 0
+    assert "failed closed" in result.stdout
+    assert not marker.exists()
