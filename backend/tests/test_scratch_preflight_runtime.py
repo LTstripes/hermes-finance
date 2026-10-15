@@ -151,6 +151,19 @@ def test_control_worktree_remote_path_rejects_before_filesystem_probe(tmp_path, 
         scratch._worktrees(tmp_path)
 
 
+@pytest.mark.parametrize("drive_type", [0, 1, 4])
+def test_unavailable_and_mapped_remote_drive_reject_before_filesystem(
+    tmp_path, monkeypatch, drive_type
+):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(scratch, "_drive_type", lambda root: drive_type)
+    monkeypatch.setattr(
+        scratch.safety, "_absolute_path", lambda *a, **kw: pytest.fail("filesystem probed")
+    )
+    with pytest.raises(scratch.ScratchError, match="scratch_local_drive_required"):
+        scratch._path(str(tmp_path / "synthetic.db"))
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows file sharing and junctions")
 def test_windows_snapshot_guard_denies_other_writers_and_junction(snapshot, tmp_path):
     before = files(snapshot)
@@ -302,6 +315,49 @@ def git(root, *args):
     return subprocess.check_output(
         ["git", "-c", f"safe.directory={root}", *args], cwd=root, text=True, stderr=subprocess.PIPE
     ).strip()
+
+
+def ancestor_traps(alias, marker, trace, *, simulated_remote=False):
+    """Observe actual Start's probe ordering without contacting a remote share.
+
+    One test uses real junction metadata; the other supplies the same reparse
+    attributes with a UNC Target. Neither permits a probe below that ancestor.
+    """
+    script = r"""
+$global:HermesSyntheticAncestor = '__ALIAS__'
+function Assert-NoDescendantProbe {
+    param([string]$Value)
+    if ([IO.Path]::GetFullPath($Value).StartsWith($global:HermesSyntheticAncestor + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        [IO.File]::WriteAllText('__MARKER__', 'descendant probed')
+        throw 'unexpected descendant probe'
+    }
+}
+function Get-Item {
+    param([string]$LiteralPath, [switch]$Force, [string]$ErrorAction)
+    Assert-NoDescendantProbe $LiteralPath
+    [IO.File]::AppendAllText('__TRACE__', [IO.Path]::GetFullPath($LiteralPath) + "`n")
+    if (__SIMULATED__ -and [string]::Equals([IO.Path]::GetFullPath($LiteralPath), $global:HermesSyntheticAncestor, [StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{ Attributes = ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint); Target = '\\synthetic-host\share'; LinkType = 'SymbolicLink' }
+    }
+    Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath -Force -ErrorAction Stop
+}
+function Test-Path {
+    param([string]$LiteralPath, [string]$Path)
+    $value = if ($LiteralPath) { $LiteralPath } else { $Path }
+    Assert-NoDescendantProbe $value
+    Microsoft.PowerShell.Management\Test-Path -LiteralPath $value
+}
+function Get-Content {
+    param([string]$LiteralPath, [switch]$Raw)
+    Assert-NoDescendantProbe $LiteralPath
+    Microsoft.PowerShell.Management\Get-Content -LiteralPath $LiteralPath -Raw:$Raw
+}
+& $args[0] -ScratchPreflight -ScratchManifest $args[1] -ExitAfterReady
+exit $LASTEXITCODE
+"""
+    for key, value in (("__ALIAS__", alias), ("__MARKER__", marker), ("__TRACE__", trace)):
+        script = script.replace(key, str(value).replace("'", "''"))
+    return script.replace("__SIMULATED__", "$true" if simulated_remote else "$false")
 
 
 def synthetic_layout(tmp_path, snapshot):
@@ -537,6 +593,15 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
         with pytest.raises(Exception):
             scratch._interpreter(checkout)
     before = files(Path(document["database"]))
+    target_script = checkout / "scripts/start-local.ps1"
+    arguments = ["-ScratchPreflight", "-ScratchManifest", str(manifest), "-ExitAfterReady"]
+    if fault == "linked_environment":
+        descendant_marker = tmp_path / "descendant-probed"
+        trace = tmp_path / "ancestor-trace"
+        harness = tmp_path / "ancestor-guard.ps1"
+        harness.write_text(ancestor_traps(env_path, descendant_marker, trace), encoding="utf-8-sig")
+        arguments = [str(target_script), str(manifest)]
+        target_script = harness
     try:
         result = subprocess.run(
             [
@@ -545,11 +610,8 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                str(checkout / "scripts/start-local.ps1"),
-                "-ScratchPreflight",
-                "-ScratchManifest",
-                str(manifest),
-                "-ExitAfterReady",
+                str(target_script),
+                *arguments,
             ],
             env=environment,
             capture_output=True,
@@ -561,6 +623,8 @@ def test_windows_guarded_start_and_cleanup(snapshot, tmp_path, monkeypatch, faul
         assert files(Path(document["database"])) == before
         if fault == "linked_environment":
             assert not prepared_marker.exists()
+            assert not descendant_marker.exists()
+            assert trace.read_text(encoding="utf-8").splitlines()[-1] == str(env_path)
     finally:
         if held:
             held.close()
@@ -633,3 +697,76 @@ def test_windows_manifest_syntax_rejects_before_any_filesystem_probe(tmp_path, u
     assert result.returncode != 0
     assert "failed closed" in result.stdout
     assert not marker.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows root-first ancestor inspection")
+@pytest.mark.parametrize("kind", ["manifest", "interpreter"])
+def test_windows_remote_ancestor_rejects_without_descendant_probe(tmp_path, kind):
+    code = tmp_path / "synthetic-code"
+    (code / "scripts").mkdir(parents=True)
+    (code / "backend").mkdir()
+    for name in (
+        "start-local.ps1",
+        "prepare-preview-lib.ps1",
+        "recovery-runtime-safety.ps1",
+        "recovery-readiness.ps1",
+    ):
+        shutil.copyfile(REPO / "scripts" / name, code / "scripts" / name)
+    alias = tmp_path / "remote-parent" if kind == "manifest" else code / "backend/.venv"
+    manifest = alias / "manifest.json" if kind == "manifest" else tmp_path / "manifest.json"
+    if kind == "interpreter":
+        manifest.write_text("{}")
+    marker, trace = tmp_path / "descendant-probed", tmp_path / "trace"
+    harness = tmp_path / "remote-ancestor.ps1"
+    harness.write_text(
+        ancestor_traps(alias, marker, trace, simulated_remote=True), encoding="utf-8-sig"
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+            str(code / "scripts/start-local.ps1"),
+            str(manifest),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode != 0
+    assert "failed closed" in result.stdout
+    assert not marker.exists()
+    assert trace.read_text(encoding="utf-8").splitlines()[-1] == str(alias)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows mapped-drive syntax guard")
+def test_windows_mapped_drive_refusal_before_item_probe(tmp_path):
+    harness = tmp_path / "mapped-drive.ps1"
+    harness.write_text(
+        "$tokens=$null; $parseErrors=$null\n"
+        "$ast=[System.Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$tokens,[ref]$parseErrors)\n"
+        "$functions=$ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Get-HermesScratchDriveType','Assert-HermesScratchLocalPathSyntax')},$true)\n"
+        "foreach($function in $functions) { Invoke-Expression $function.Extent.Text }\n"
+        "function Get-HermesScratchDriveType { return [IO.DriveType]::Network }\n"
+        "try { Assert-HermesScratchLocalPathSyntax -Path 'Z:\\synthetic\\manifest.json'; exit 9 }\n"
+        "catch { if ($_.Exception.Message -ne 'Scratch requires a local available drive.') { throw }; exit 0 }\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+            str(REPO / "scripts/start-local.ps1"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

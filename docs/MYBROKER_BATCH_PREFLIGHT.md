@@ -118,6 +118,9 @@ required, including for direct CLI `hermes-finance-api scratch-preflight` use.
 Remote/device/ADS path syntax is rejected before filesystem probing, including
 every runtime inventory boundary. Linked environments/interpreters are rejected
 before preparation validation or invoking the backend interpreter.
+The scratch Windows guard inspects components from the drive root downwards;
+it rejects a reparse entry before probing any descendant or reading the manifest.
+Mapped network, unknown and unavailable drive types are refused before path probes.
 
 Only `GET /api/health` and the existing `POST /api/mybroker-preflight/preview`
 are registered. There is no frontend, generic catalogue/provider API, OpenAPI,

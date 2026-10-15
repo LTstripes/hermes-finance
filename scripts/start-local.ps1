@@ -70,19 +70,50 @@ function Assert-ProcessRunning {
     }
 }
 
+function Get-HermesScratchDriveType {
+    param([string]$Root)
+    return ([IO.DriveInfo]::new($Root)).DriveType
+}
+
 function Assert-HermesScratchLocalPathSyntax {
     param([string]$Path)
     # Syntax only: do not Test-Path/Get-Item/resolve an untrusted remote path.
-    if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(3).Contains(':') -or $Path.Contains('"')) {
+    if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(3).Contains(':') -or $Path.Contains('"') -or
+        @($Path -split '[\\/]' | Where-Object { $_ -eq '..' }).Count -gt 0) {
         throw "Scratch requires an absolute local filesystem path."
+    }
+    $driveType = Get-HermesScratchDriveType -Root ([IO.Path]::GetPathRoot($Path))
+    if ([int]$driveType -notin @(2, 3, 5, 6)) {
+        throw "Scratch requires a local available drive."
+    }
+}
+
+function Assert-HermesScratchPathBoundary {
+    param([string]$Path)
+    Assert-HermesScratchLocalPathSyntax -Path $Path
+    $components = New-Object 'System.Collections.Generic.List[string]'
+    $current = [IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        $components.Add($current)
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ($parent -eq $current) { break }
+        $current = $parent
+    }
+    $components.Reverse()
+    foreach ($component in $components) {
+        # Get-Item on this component inspects the reparse entry itself. Do not
+        # Test-Path/probe a descendant until every ancestor has been inspected.
+        $item = Get-Item -LiteralPath $component -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Scratch path contains a reparse boundary."
+        }
     }
 }
 
 function Assert-HermesScratchInterpreterBoundary {
     param([string]$Checkout)
     $python = Join-Path $Checkout "backend\.venv\Scripts\python.exe"
-    Assert-HermesScratchLocalPathSyntax -Path $python
-    Assert-HermesPreviewNoReparsePath -Path $python -Label "Scratch interpreter"
+    Assert-HermesScratchPathBoundary -Path $python
     $item = Get-Item -LiteralPath $python -Force -ErrorAction Stop
     if ($item.PSIsContainer -or $item.LinkType -eq "HardLink") {
         throw "Scratch requires its own unlinked prepared interpreter."
@@ -334,7 +365,7 @@ try {
             }
         }
         Assert-HermesScratchLocalPathSyntax -Path $ScratchManifest
-        Assert-HermesPreviewNoReparsePath -Path $ScratchManifest -Label "Scratch manifest"
+        Assert-HermesScratchPathBoundary -Path $ScratchManifest
         Assert-HermesScratchInterpreterBoundary -Checkout $repoRoot
     }
     if ($RecoveryReadiness -and -not $ExitAfterReady) {

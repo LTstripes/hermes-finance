@@ -57,6 +57,15 @@ def _pairs(pairs):
     return result
 
 
+def _drive_type(root: str) -> int:
+    from ctypes import wintypes
+
+    query = ctypes.WinDLL("kernel32", use_last_error=True).GetDriveTypeW
+    query.argtypes = (wintypes.LPCWSTR,)
+    query.restype = wintypes.UINT
+    return query(root)
+
+
 def _path(value) -> Path:
     if not isinstance(value, str) or not value or not Path(value).is_absolute():
         raise ScratchError("scratch_path_invalid")
@@ -66,6 +75,8 @@ def _path(value) -> Path:
         or (sys.platform == "win32" and any(":" in p for p in Path(value).parts[1:]))
     ):
         raise ScratchError("scratch_local_path_required")
+    if sys.platform == "win32" and _drive_type(Path(value).anchor) not in {2, 3, 5, 6}:
+        raise ScratchError("scratch_local_drive_required")
     return safety._absolute_path(Path(value), stage="scratch")
 
 
