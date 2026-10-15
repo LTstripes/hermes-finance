@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -96,9 +97,17 @@ def _digest(path: Path) -> str:
 
 
 def _prepared(checkout: Path) -> None:
+    powershell = shutil.which("powershell.exe")
+    if powershell is None:
+        raise ScratchError("scratch_powershell_unavailable")
+    # A pwsh parent may prepend PowerShell 7 modules to PSModulePath. The
+    # nested Windows PowerShell Validate must load its own inbox Get-FileHash,
+    # just as the established recovery-rehearsal runtime already does.
+    environment = os.environ.copy()
+    environment["PSModulePath"] = str(Path(powershell).resolve().parent / "Modules")
     result = subprocess.run(
         [
-            "powershell.exe",
+            powershell,
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
@@ -108,6 +117,7 @@ def _prepared(checkout: Path) -> None:
             str(checkout),
             "-Validate",
         ],
+        env=environment,
         capture_output=True,
         timeout=90,
     )
