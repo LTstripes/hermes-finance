@@ -4,7 +4,16 @@
 
 ## [Unreleased]
 
-После публикации v1.2.0 новых продуктовых изменений пока не заявлено.
+### 1.3.0 candidate — UAT-PENDING, не опубликован
+
+- Упаковка принятого main: source-first MyBroker Import/Preview → incomplete DRAFT → GET/reload, immutable receipts, zero-write multi-original preflight и отдельная DRAFT source valuation.
+- Ограниченные reviewed Money/H2 proofs, исторические endpoints/crossings/coverage и их retirement; отсутствующие tax/cost/NKD не заменяются нулём, cash/payout не дублируются.
+- Отдельный indicative account-period S3 и bounded RUB class-return Phase 1; реальный сентябрь `rate_fraction=null`, exact XIRR/TWRR остаются evidence-gated. WHAT-IF — отдельная недобавленная возможность.
+- Source/account Close guards сохранены: incomplete DRAFT не означает bookkeeping completeness; нет auto-close, универсального импорта или автоматического historical mapping.
+- Version/lock identity 1.3.0; synthetic compatibility для общей v1.1.0/v1.2.0 schema 0044 через 0045–0058, failure rollback, consistent backup/recovery и сохранность CLOSED/provenance.
+- PR #744/#829, #814 finance authority и #769 financial Apply/Close исключены. Подготовка не меняет Owner DB/Stable/Test, не выполняет OPS02, merge, публикацию или миграцию реальных данных.
+
+Ограничения и будущие gates: [candidate notes](docs/release-notes-1.3.0.md), [release preparation / post-move plan](docs/release-preparation-1.3.0.md). Published baseline остаётся v1.2.0 до отдельного принятого release closeout.
 
 ## [1.2.0] — 2026-10-04
 
