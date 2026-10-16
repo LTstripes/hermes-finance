@@ -15,6 +15,20 @@ export type BrokerMonthPreview = BrokerMonthIntent & {
     mapping_id: number | null;
   })[];
   document: MyBrokerDocument;
+  identity?: {
+    instruments: {
+      isin: string;
+      hermes_id: number | null;
+      instrument_type: string | null;
+      currency: string | null;
+      action: "reuse" | "stage_create";
+      mapping_id: number | null;
+      mapping_action: "reuse" | "stage_create";
+      evidence_gaps: string[];
+    }[];
+    evidence_gaps: { isin: string; code: string }[];
+  };
+  quantity_controls?: { isin: string; difference: string | null }[];
   conflicts: string[];
   exceptions: string[];
   can_apply: boolean;
