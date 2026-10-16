@@ -94,5 +94,7 @@ Integration requires successful exact-candidate PR CI and canonical exact-main p
 Return one concise report: issue/status; baseline/target, branch/workspace and exact candidate SHA; changed files/diff stat;
 actual checks and results; material limitations/blockers; final local HEAD/remote/working-tree read-back, or the truthful GitHub-native equivalent.
 
+CBM use is optional. Do not require CBM availability, a used/skipped report or index maintenance for task completion or acceptance. Check any index result against the assigned checkout; existing source-search and verification requirements remain unchanged.
+
 Normal handoffs do not request or record model/provider identity, benchmark grades or usage telemetry.
 Keep new operational detail in its existing procedure, not as another copy here. Change this file for shared boundaries, authority or the minimum task entrypoint.
