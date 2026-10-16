@@ -1,0 +1,51 @@
+.panel {
+  margin-top: 24px;
+  padding: 24px;
+  border: 2px solid #8a671c;
+  border-radius: 12px;
+  background: #fffcf3;
+  color: #28251c;
+  overflow-wrap: anywhere;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.panel label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.panel select,
+.panel button,
+.panel input {
+  font: inherit;
+  max-width: 100%;
+}
+.panel select,
+.panel button {
+  padding: 8px 12px;
+}
+.panel button {
+  margin: 8px 12px 8px 0;
+}
+.panel pre {
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+.rate {
+  font-size: 28px;
+  font-weight: 700;
+}
+.qualification {
+  border-left: 4px solid #8a671c;
+  padding-left: 12px;
+}
+.panel :focus-visible {
+  outline: 3px solid #2864c8;
+  outline-offset: 3px;
+}
