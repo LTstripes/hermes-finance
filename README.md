@@ -2,19 +2,21 @@
 
 Hermes Finance — локальное однопользовательское Windows-first приложение для ежемесячного учёта и анализа личных финансов.
 
-Оно помогает закрывать месяц, видеть ликвидный капитал и долги, анализировать инвестиционный результат и пассивный доход, работать с целями/Tax/IIS/Scenario Lab, проверять reconciliation/freshness и экспортировать read-only AI Analysis Bundle.
+Оно помогает закрывать месяц, видеть ликвидный капитал и долги, анализировать инвестиционный результат и пассивный доход, работать с целями/Tax/IIS/Scenario Lab, проверять reconciliation/freshness и экспортировать read-only AI Analysis Bundle. Source-first брокерский месяц собирается из оригинального MyBroker XML; неполные данные и недоступная доходность показываются явно, а не заменяются нулями.
 
 ## Current status
 
-Published release is **v1.2.0** at `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`; annotated tag object `f9311d26c1aae7295361937096844f4dde615b55` peels to that exact commit. Canonical CI `37206069556` and Guarded Release `37206660242` succeeded. Last locally confirmed Stable is v1.1.0; the authorized backup-first update to 1.2.0 has not been reported complete here. [Release record](docs/releases/1.2.0.md).
+**Checkpoint: 2026-10-16.** Verified canonical code is `2051862bd2bdef0441580ec700e1844e5b6b9f6a` after [PR #837](https://github.com/LTstripes/hermes-finance/pull/837); exact [post-main push CI #38799966374](https://github.com/LTstripes/hermes-finance/actions/runs/38799966374) completed successfully, attempt 1. Later documentation commits may advance main; live GitHub remains authoritative.
 
-**Development code milestone:** `8ae9ead35d6a988cd2e4c8d967a04bc2c27825a4` (merge #701), exact-main CI `37226437369` SUCCESS. Class-return Phase 1 (#696/#698/#535/#540) is integrated on main **after v1.2.0**, not in that published release or automatically installed in Stable/Test. Live GitHub remains authoritative; later documentation commits may advance main.
+**Published release: v1.2.0. Prepared code candidate: v1.3.0, NOT published.** The v1.2.0 annotated tag `f9311d26c1aae7295361937096844f4dde615b55` peels to `8a0cb257da6ca6a661eb5044d0dd72dac28d90fc`. The 1.3.0 package/lock, release notes and synthetic 0044→0058 migration regressions are integrated, but the notes intentionally retain `UAT-PENDING`. [#836](https://github.com/LTstripes/hermes-finance/issues/836) remains open for actual recovered-copy UAT, guarded publication and backup-first Stable rollout; merge is not installation.
 
-#572 is CLOSED with **Owner PASS WITH DOCUMENTED LIMITATIONS**, including manual/v1 use and provider limitations. The earlier deferral is historical, superseded by [actual acceptance](https://github.com/LTstripes/hermes-finance/issues/572#issuecomment-5937693786), not retroactively relabelled PASS. UI v2 is primary at `/`; `/v1` remains available.
+**Owner reports the Tecno→HONOR data transfer is complete.** [#838](https://github.com/LTstripes/hermes-finance/issues/838) now verifies the completed move's existing preservation/recovery evidence; it does not request another transfer. The [pre-move operator receipt](https://github.com/LTstripes/hermes-finance/issues/838#issuecomment-6202472514) measured OLD Tecno Stable **v1.2.0 / Alembic 0044**, superseding the historical v1.1.0 observation on that machine. Actual HONOR Stable pin/schema and technical post-move acceptance remain to be verified. Owner-reported completion is not a fabricated runtime or recovery PASS.
 
-v1.2.0 includes the accepted #662 post-v1.1.0 product wave, #667/#674, CI optimization #668–#671 and repository Launcher retirement #629. #646 remains a separate Alfa compatibility limitation. #679/#666 migration/legacy cleanup and #685 janitor deployment are complete; [machine layout](docs/OWNER_MACHINE_LAYOUT.md) protects the separate active Ops installation.
+**Next product goal: useful return calculation.** [#774](https://github.com/LTstripes/hermes-finance/issues/774) S3 is CODE COMPLETE and its real unavailable-path UAT passed; the real September numeric result remains `rate_fraction=null`. [#839](https://github.com/LTstripes/hermes-finance/issues/839) separately defines a clearly labelled account-period WHAT-IF with explicit assumptions, without changing actual S3, exact XIRR/TWRR or Close. It is contract work, not shipped functionality, and is outside frozen v1.3.0.
 
-Current detail: [CURRENT_STATUS](docs/CURRENT_STATUS.md). Restart brief: [SESSION_CLOSEOUT_2026-10-04](docs/SESSION_CLOSEOUT_2026-10-04.md).
+UI v2 is primary at `/`; `/v1` remains available. Open PRs [#744](https://github.com/LTstripes/hermes-finance/pull/744) and [#829](https://github.com/LTstripes/hermes-finance/pull/829) are not part of v1.3.0. The earlier #572 Owner PASS WITH DOCUMENTED LIMITATIONS remains a historical release-era acceptance, not a waiver for new releases.
+
+Current detail: [CURRENT_STATUS](docs/CURRENT_STATUS.md). Restart/history: [post-move and returns checkpoint, 16 October](docs/history/POST_MOVE_RETURNS_CHECKPOINT_2026-10-16.md). Published release record: [v1.2.0](docs/releases/1.2.0.md).
 
 ## Product/runtime invariants
 
@@ -33,6 +35,8 @@ Native month/editor operations, explicit imports/Preview/Apply/readback, exact-m
 
 The accepted product wave adds exact-month navigation, saved-only reread, Settings/Diagnostics, collapsed bulk/individual future payouts, contextual verified mapping, exception-first Alfa, money/debt readability and linked-pair explanation. Lifecycle/financial boundaries are unchanged.
 
+The post-v1.2.0 broker-month line adds original MyBroker XML → reviewed zero-write Preview → atomic possibly incomplete DRAFT → authoritative GET/reload. Real September passed that bounded incomplete-DRAFT route; financial bookkeeping/Close did not pass. Native positions, separate RUB cash, Money/source/H2 authority and read-only historical batch diagnostics keep independent completeness gates. See [current outcomes](docs/CURRENT_STATUS.md) and [v1.3.0 preparation](docs/release-preparation-1.3.0.md).
+
 Evidence: [UI completion](docs/UI_V2_COMPLETION_CLOSEOUT_2026-09-20.md), [default switch](docs/UI_V2_DEFAULT_SWITCH_CLOSEOUT_2026-09-21.md), [post-release UAT](docs/POST_RELEASE_UAT_CLOSEOUT_2026-10-03.md).
 
 ### Decision Support v1
@@ -43,11 +47,13 @@ Closeout: [Decision Support v1](docs/DECISION_SUPPORT_V1_CLOSEOUT_2026-09-09.md)
 
 ### Performance and data integrity
 
-Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards, diagnostics/preparation and PERF04A monetary bridge are delivered.
+Portfolio/account XIRR, exact TWRR, flow/valuation/membership/transfer/in-kind safeguards, diagnostics/preparation and PERF04A monetary bridge are delivered. Availability still depends on accepted inputs; code delivery is not proof that the Owner's history has computable returns.
 
-**Class-return Phase 1 is integrated in development main.** The existing Performance detail now has Accounts/Classes, exact-date presets and independent annualized XIRR / period TWRR. Stock/bond/gold require historical C1 identity, explicit no-crossing coverage, both full endpoint inventory claims and exact persisted RUB valuations. Deposits are visibly unsupported. Evidence gaps and numerical limitations remain distinct.
+**Class-return Phase 1 is integrated in development main.** The existing Performance detail has Accounts/Classes, exact-date presets and independent annualized XIRR / period TWRR. Stock/bond/gold require historical C1 identity, explicit no-crossing coverage, both full endpoint inventory claims and exact persisted RUB valuations. Deposits are visibly unsupported. Evidence gaps and numerical limitations remain distinct.
 
 This first slice does not import purchases/sales/distributions, implement flow-bearing class TWRR/FX, or provide a class-attestation input form. Legacy C1 remains unknown, not backfilled. The read-only class table does not imply that personal history already has computable percentages. [Class contract](docs/performance/ASSET_CLASS_RETURNS_CONTRACT.md), [endpoint evidence](docs/performance/CLASS_NO_CROSSING_ENDPOINTS.md), [API](docs/performance/CLASS_RETURNS_API.md).
+
+The separate [broker statement S3](docs/BROKER_STATEMENT_RETURN.md) reads source-native account EOD values and accepted dated account crossings. It reports a nonannualized indicative period MWR only when its evidence gates pass. Unknown bond NKD basis is disclosed, never set to zero. An assumed WHAT-IF result is a different future output, not an override of unavailable actual performance.
 
 `value_change_after_external_flows` is not return/profit/P&L. The backend-only decomposition `B_portfolio = Σ B_account + Σ T_internal_transfer` has no residual bucket or partial exact split. Class return does not implement additive class attribution, price/FX decomposition or cost-basis accounting. [PERF04B contract](docs/performance/PERF04B_COMPONENT_ATTRIBUTION_CONTRACT.md).
 
@@ -147,12 +153,11 @@ The normal sequence remains exact-SHA isolated UAT → Owner acceptance → guar
 
 ## What comes next
 
-- **#702 read-only statement-backed class-event research** is selected and can run independently of Owner UAT. Its output is a proposed contract/source matrix and ordered implementation slices, not code delivery.
-- Owner plans UAT tomorrow or in the following days. Class-return testing needs an explicitly prepared post-#701 candidate: published v1.2.0 does not contain it. No UAT PASS or local deployment is implied. The missing class-attestation/legacy-identity UI remains a product gap; do not assign Owner database/JSON/PowerShell workarounds.
-- #646 Alfa remains a known limitation: Trading core UI Online on 3366 and read-only token issued, but Hermes reports unrecognized protocol. No new token/handshake contract is proven. Owner elected to wait several days/about a week before support. This does not block statement research.
-- #389 composer is deferred. #630/#573/#127 are closed not-planned; #528/#541 are closed coordination. `/v1` stays.
-- CI/test optimization #668–#671/#629 is complete; #691 was NO-GO with no delivered change. [CI/test closeout](docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md).
-- Migration/janitor setup #679/#666 is complete. Preserve the active separate Ops installation; [janitor rules](docs/WORKSPACE_JANITOR.md) do not grant arbitrary deletion.
+- **Completed-move verification → Stable:** [#838](https://github.com/LTstripes/hermes-finance/issues/838) reconciles existing HONOR relocation/recovery receipts and actual pin/schema without repeating transport. Then [#836](https://github.com/LTstripes/hermes-finance/issues/836) owns isolated recovered-copy UAT, Owner acceptance, guarded v1.3.0 publication and separately authorized OPS02/Start. Keep Tecno rollback intact.
+- **Useful returns:** [#839](https://github.com/LTstripes/hermes-finance/issues/839) defines one separate read-only account-period scenario with explicit assumptions. [#774](https://github.com/LTstripes/hermes-finance/issues/774) stays open for real numeric acceptance; its code is already complete. Scenario work must not enlarge frozen v1.3.0.
+- **Source evidence:** [#814](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6200022502) has a prepared consolidated broker letter, not a sent request. [#769](https://github.com/LTstripes/hermes-finance/issues/769#issuecomment-6199824580) remains FINANCIAL NOT_READY; preserve its completed read-only pilot and do not rerun the same batch without new evidence. Catalogue #752 and denomination #777 remain separate.
+- **Next monthly report:** when the October original is available, use the existing one-month Preview/DRAFT/GET route with its own source/mapping warnings. No automatic Close or exact return is promised. This is not permission to import into protected data now.
+- **Separate backlog:** #646 / draft #829 and draft #744 are outside this release. #389 composer remains deferred; `/v1` stays. Completed #831/#837 and historical migration/janitor or CI work are not new assignments; preserve the separate active Ops installation.
 
 ## Health
 
@@ -168,9 +173,10 @@ Published v1.2.0 reports `status=ok`, `version=1.2.0` after actual local update.
 
 - [AGENTS](AGENTS.md), [verification](docs/VERIFICATION_POLICY.md), [routing](docs/MODEL_ROUTING.md): authority and proportional procedures. Worker prompts normally stay 5–10 lines and reference the task instead of duplicating it.
 - [MASTER_SPEC](docs/MASTER_SPEC.md), accepted ADRs and linked task contracts: product semantics.
-- [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [latest closeout](docs/SESSION_CLOSEOUT_2026-10-04.md): active state and restart brief.
+- [CURRENT_STATUS](docs/CURRENT_STATUS.md), [PROJECT_WIKI](docs/PROJECT_WIKI.md), [16 October checkpoint](docs/history/POST_MOVE_RETURNS_CHECKPOINT_2026-10-16.md): active state, durable context and restart brief. Dated earlier closeouts remain historical evidence.
 - [Layout](docs/OWNER_MACHINE_LAYOUT.md), [runtime operations](docs/OWNER_RUNTIME_OPERATIONS.md), [janitor](docs/WORKSPACE_JANITOR.md): folders and direct operations.
 - [EXECUTION_HISTORY](docs/EXECUTION_HISTORY.md) and dated closeouts preserve history; old model attribution is not reporting policy.
+- [v1.3.0 preparation](docs/release-preparation-1.3.0.md) and [candidate notes](docs/release-notes-1.3.0.md): code candidate and remaining release gates, not a publication record.
 - [v1.2.0 record](docs/releases/1.2.0.md), [v1.2.0 notes](docs/release-notes-1.2.0.md), [v1.1.0 record](docs/releases/1.1.0.md): release-era evidence, not instructions to repeat completed work.
 
 ## Privacy
