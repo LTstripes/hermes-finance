@@ -108,6 +108,19 @@ absence participate in review binding. Restoring facts, replaying an old request
 or independently reaffirming Money does not revive H2-A2; fresh reviewed coverage
 reaffirmation is required. Reads only assess current authority and never repair it.
 
+Under [#849](https://github.com/LTstripes/hermes-finance/issues/849), an otherwise
+validated exact source/account/interval with no coverage row also reads the
+existing H2-A2 inventory under the current accepted v3 coupon contract, in that
+same coherent snapshot. Its stable blockers join `reason_codes`; the full relevant
+dependency material and contract version participate in the opaque fingerprint.
+Raw diagnostic rows/identifiers are not added to the response or logs. Source,
+binding or currentness failures prevent this diagnostic lookup; no guessed scope
+is used. GET, original Preview, desktop reasons and JSON export retain parity.
+Even a valid inventory with no blockers is not accepted coverage: the generic
+`account_crossing_coverage_unproved` and null rate remain. Existing coverage-row
+branches retain their established versioned readers and availability. Accepted
+paid-NKD still has no H2-A2 disposition; this diagnostic slice grants no authority.
+
 Routes (all read-only, including POST preview):
 
 - `GET /api/broker-statement-returns/sources?account_id=...` lists accepted source

@@ -269,10 +269,46 @@ def read_statement_return(
         )
     )
     coverage = None
+    diagnostic_material = None
     if len(coverages) == 1:
         try:
             coverage = source_cash_coverage.read_source_cash_coverage(session, coverages[0].id)
             reasons.update(coverage["blockers"])
+        except (KeyError, TypeError, ValueError, MyBrokerError, DecimalException):
+            reasons.add("account_crossing_coverage_invalid")
+    elif (
+        not coverages
+        and member
+        and not reasons.intersection(
+            {
+                "statement_source_revision_changed",
+                "statement_source_evidence_invalid",
+                "statement_original_mismatch",
+                "statement_endpoint_date_mismatch",
+                "statement_account_evidence_invalid",
+                "statement_dependencies_invalid",
+                "account_binding_changed",
+                "accepted_mapping_changed",
+                "source_authority_changed",
+                "source_disposition_changed",
+                "source_projection_changed",
+                "instrument_metadata_changed",
+                "canonical_trade_projection_changed",
+                "canonical_trade_authority_unavailable",
+                "broker_month_receipt_invalid",
+            }
+        )
+    ):
+        # Explain missing evidence only after validating the exact source scope.
+        # Inventory is not acceptance: even an empty blocker set grants nothing.
+        # Keep raw dependency material private, but bind it (not just codes) so
+        # unchanged explanations cannot make an old Preview/export look current.
+        try:
+            diagnostic_material = {
+                "contract": source_cash_coverage.CONTRACT,
+                "inventory": source_cash_coverage.inventory(session, account_id, t0, t1),
+            }
+            reasons.update(diagnostic_material["inventory"]["blockers"])
         except (KeyError, TypeError, ValueError, MyBrokerError, DecimalException):
             reasons.add("account_crossing_coverage_invalid")
     effective = coverage is not None and coverage["effective_state"] == "accepted"
@@ -326,6 +362,7 @@ def read_statement_return(
             others,
             [s.model_dump(mode="json") for s in section_authority],
             section_material,
+            diagnostic_material,
             sorted(reasons),
         ]
     )
