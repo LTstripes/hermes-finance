@@ -88,14 +88,13 @@ test("exact structural exceptions permit reviewed incomplete DRAFT and GET, whil
   await page.setViewportSize({ width: 1280, height: 900 });
   const xml = await (await request.get("/api/synthetic-broker-source/structure")).body();
   await page.goto("/v2/close?month=6&step=final_review_close");
-  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("3");
   await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
     name: "Брокерский 7654321 (01.06.30-30.06.30).xml",
     mimeType: "application/xml",
     buffer: xml,
   });
   const response = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
-  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("3");
   const preview = await (await response).json();
   expect(preview).toMatchObject({
     can_apply: true,
@@ -164,14 +163,13 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   const xml = await (await request.get("/api/synthetic-broker-source/complete")).body();
   const filename = "Брокерский 1234567 (01.01.30-31.01.30).xml";
   await page.goto("/v2/close?month=1&step=final_review_close");
-  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
   await page
     .getByLabel("Оригинальный XML MyBroker", { exact: true })
     .setInputFiles({ name: filename, mimeType: "application/xml", buffer: xml });
   const previewResponse = page.waitForResponse((response) =>
     response.url().endsWith("/api/broker-months/preview"),
   );
-  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
   const preview = await (await previewResponse).json();
   expect(preview.account_bindings).toHaveLength(3);
   const aliases = page.getByRole("table", { name: "Привязки исходных счетов" });
@@ -272,13 +270,12 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
 
   await page.goto("/v2/close?month=2&step=final_review_close");
   const partial = await (await request.get("/api/synthetic-broker-source/partial")).body();
-  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
   await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
     name: "Брокерский 1234567 (01.02.30-28.02.30).xml",
     mimeType: "application/xml",
     buffer: partial,
   });
-  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
   await expect(page.getByRole("table", { name: "Привязки исходных счетов" })).toContainText(
     "Существующая",
   );
@@ -646,5 +643,90 @@ test("stock separate fee explicit independent basis Preview Apply GET reload Clo
   expect((await closed).status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible({
     timeout: 30000,
+  });
+});
+
+test("original-first exact known account uses ordinary Preview with zero persisted writes until explicit Save", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const xml = await (await request.get("/api/synthetic-broker-source/original-first")).body();
+  const filename = "Брокерский 8480000 (01.08.30-31.08.30).xml";
+  const file = { name: filename, mimeType: "application/xml", buffer: xml };
+  const before = await (await request.get("/api/synthetic-broker-inventory")).json();
+  let applies = 0;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/api/broker-months/apply")) applies++;
+  });
+  await page.goto("/v2/close?month=8&step=final_review_close");
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
+  await expect(page.getByText(/Период XML не совпадает с открытым DRAFT/)).toBeVisible();
+  await expect(page.getByLabel("Брокерский счёт", { exact: true })).toHaveValue("");
+  await page.screenshot({
+    path: info.outputPath("original-first-wrong-month-1440.png"),
+    fullPage: true,
+  });
+  await page.goto("/v2/close?month=7&step=final_review_close");
+  const discovery = page.waitForResponse((r) =>
+    r.url().endsWith("/api/mybroker-preflight/preview"),
+  );
+  const ordinary = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
+  const preflight = await (await discovery).json();
+  const auto = await (await ordinary).json();
+  expect(preflight.documents[0].mappings.state).toBe("blocked"); // compatible instruments need new mappings
+  expect(auto).toMatchObject({
+    account_id: 4,
+    reporting_month_id: 7,
+    can_apply: true,
+    bookkeeping_ready: false,
+    account_bindings: [],
+  });
+  await expect(page.getByLabel("Брокерский счёт", { exact: true })).toHaveValue("4");
+  const manual = await (
+    await request.post("/api/broker-months/preview", {
+      multipart: {
+        file: { name: filename, mimeType: "application/xml", buffer: xml },
+        intent: JSON.stringify({ account_id: 4, reporting_month_id: 7 }),
+      },
+    })
+  ).json();
+  expect(auto).toEqual(manual);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(before);
+  const save = page.getByRole("button", { name: "Сформировать неполный черновик", exact: true });
+  await expect(save).toBeDisabled();
+  await page.screenshot({
+    path: info.outputPath("original-first-auto-preview-1440.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  const consent = page.getByRole("checkbox", {
+    name: "Я проверил весь счёт и видимую неполноту черновика.",
+  });
+  await consent.focus();
+  await page.keyboard.press("Space");
+  await expect(save).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(applies).toBe(0);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(before);
+  await page.screenshot({
+    path: info.outputPath("original-first-reviewed-1280-125.png"),
+    fullPage: true,
+  });
+  await save.click();
+  await expect(
+    page.getByText(/Сохранённый результат подтверждён независимым чтением/),
+  ).toBeVisible();
+  expect(applies).toBe(1);
+  const saved = await (await request.get("/api/broker-months?reporting_month_id=7")).json();
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({ account_id: 4, bookkeeping_ready: false });
+  await page.screenshot({
+    path: info.outputPath("original-first-saved-1280-125.png"),
+    fullPage: true,
   });
 });

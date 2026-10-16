@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { listAccounts } from "../../api/accounts";
@@ -11,8 +11,12 @@ import {
   type BrokerMonthPreview,
   type BrokerMonthReadback,
 } from "../../api/brokerMonths";
+import { getMonth } from "../../api/months";
+import { previewOriginalContext } from "../../api/mybrokerPreflight";
 import { BrokerMonthReview } from "./BrokerMonthReview";
 
+vi.mock("../../api/months", () => ({ getMonth: vi.fn() }));
+vi.mock("../../api/mybrokerPreflight", () => ({ previewOriginalContext: vi.fn() }));
 vi.mock("../../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../../api/brokerMonths", () => ({
   applyBrokerMonth: vi.fn(),
@@ -111,6 +115,19 @@ function persisted(requestId: string, accountId = 7): BrokerMonthReadback {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getMonth).mockResolvedValue({
+    id: 1,
+    year: 2030,
+    month: 1,
+    snapshot_date: "2030-01-31",
+    status: "draft",
+    source: "manual",
+  });
+  vi.mocked(previewOriginalContext).mockResolvedValue({
+    coveredFrom: "2030-01-01",
+    coveredTo: "2030-01-31",
+    accountId: null,
+  });
   vi.mocked(listAccounts).mockResolvedValue([
     { id: 7, name: "Synthetic broker", status: "active", account_type: "brokerage" },
   ] as Awaited<ReturnType<typeof listAccounts>>);
@@ -134,12 +151,11 @@ function show(closed = false) {
 }
 async function inspect(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("option", { name: "Synthetic broker" });
-  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await user.upload(
     screen.getByLabelText("Оригинальный XML MyBroker"),
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
-  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await screen.findByRole("button", { name: "Сформировать неполный черновик" });
 }
 it("requires explicit whole-account review and confirms partial DRAFT only after GET", async () => {
@@ -291,12 +307,11 @@ it("a refreshed source GET overrides earlier ready Apply readback", async () => 
   });
   const user = show();
   await screen.findByRole("option", { name: "Synthetic broker" });
-  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await user.upload(
     screen.getByLabelText("Оригинальный XML MyBroker"),
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
-  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await screen.findByRole("button", { name: "Сформировать черновик" });
   await user.click(screen.getByRole("checkbox"));
   await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
@@ -336,12 +351,11 @@ it.each([true, false])(
     });
     const user = show();
     await screen.findByRole("option", { name: "Synthetic broker" });
-    await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
     await user.upload(
       screen.getByLabelText("Оригинальный XML MyBroker"),
       new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
     );
-    await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+    await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
     await screen.findByRole("button", { name: "Сформировать черновик" });
     await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
@@ -352,3 +366,230 @@ it.each([true, false])(
     ).not.toBeInTheDocument();
   },
 );
+
+function mounted() {
+  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const node = (id: number, closed = false) => (
+    <QueryClientProvider client={query}>
+      <BrokerMonthReview monthId={id} closed={closed} />
+    </QueryClientProvider>
+  );
+  const view = render(node(1));
+  return {
+    ...view,
+    query,
+    user: userEvent.setup(),
+    change: (id: number, closed = false) => view.rerender(node(id, closed)),
+  };
+}
+const original = (name = "synthetic.xml") =>
+  new File([`<${name}/>`], name, { type: "application/xml" });
+function known() {
+  vi.mocked(previewOriginalContext).mockResolvedValue({
+    coveredFrom: "2030-01-01",
+    coveredTo: "2030-01-31",
+    accountId: 7,
+  });
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+async function upload(user: ReturnType<typeof userEvent.setup>, file = original()) {
+  await screen.findByRole("option", { name: "Synthetic broker" });
+  await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), file);
+}
+it("known original automatically uses ordinary Preview; can_apply is authoritative and Save remains explicit", async () => {
+  known();
+  const { user } = mounted();
+  const file = original();
+  await upload(user, file);
+  const save = await screen.findByRole("button", { name: "Сформировать неполный черновик" });
+  expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
+  expect(previewBrokerMonth).toHaveBeenCalledWith(
+    file,
+    { reporting_month_id: 1, account_id: 7 },
+    expect.any(AbortSignal),
+  );
+  expect(save).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  expect(readBrokerMonth).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("checkbox"));
+  expect(save).toBeEnabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+it("ordinary can_apply=false cannot be bypassed by known account or review", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    can_apply: false,
+    conflicts: ["instrument_currency_unproven"],
+  });
+  const { user } = mounted();
+  await upload(user);
+  expect(await screen.findByRole("checkbox")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Сформировать неполный черновик" })).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+it.each(["wrong", "partial", "wide", "snapshot", "closed", "inactive", "empty"])(
+  "does not auto-select for %s context",
+  async (kind) => {
+    known();
+    if (["wrong", "partial", "wide"].includes(kind))
+      vi.mocked(previewOriginalContext).mockResolvedValue({
+        coveredFrom:
+          kind === "wide" ? "2029-01-01" : kind === "partial" ? "2030-01-02" : "2030-02-01",
+        coveredTo: "2030-01-31",
+        accountId: 7,
+      });
+    if (kind === "snapshot" || kind === "closed")
+      vi.mocked(getMonth).mockResolvedValue({
+        id: 1,
+        year: 2030,
+        month: 1,
+        snapshot_date: kind === "snapshot" ? "2030-01-30" : "2030-01-31",
+        status: kind === "closed" ? "closed" : "draft",
+        source: "manual",
+      });
+    const { user } = mounted();
+    await screen.findByRole("option", { name: "Synthetic broker" });
+    if (kind === "empty") vi.mocked(listAccounts).mockResolvedValue([]);
+    if (kind === "inactive")
+      vi.mocked(listAccounts).mockResolvedValue([
+        { id: 7, name: "Synthetic broker", status: "closed", account_type: "brokerage" },
+      ] as Awaited<ReturnType<typeof listAccounts>>);
+    await upload(user);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Проверить MyBroker" })).toBeEnabled(),
+    );
+    expect(previewBrokerMonth).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("");
+    expect(applyBrokerMonth).not.toHaveBeenCalled();
+  },
+);
+it("discovery error leaves manual selection and retry available", async () => {
+  vi.mocked(previewOriginalContext).mockRejectedValue(new Error("Malformed discovery"));
+  const { user } = mounted();
+  await upload(user);
+  await screen.findByText("Malformed discovery");
+  await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
+  await screen.findByRole("checkbox");
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
+});
+it.each(["success", "error"])("file A→B→A rejects late discovery %s", async (outcome) => {
+  known();
+  const late = deferred<Awaited<ReturnType<typeof previewOriginalContext>>>();
+  vi.mocked(previewOriginalContext).mockReturnValueOnce(late.promise);
+  const { user } = mounted();
+  const a = original();
+  await upload(user, a);
+  await upload(user, original("b.xml"));
+  await screen.findByRole("checkbox");
+  await upload(user, a);
+  await screen.findByRole("checkbox");
+  await user.click(screen.getByRole("checkbox"));
+  await act(async () => {
+    if (outcome === "success")
+      late.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 8 });
+    else late.reject(new Error("late-error"));
+  });
+  expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
+  expect(screen.queryByText("late-error")).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox")).toBeChecked();
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
+});
+it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
+  "late ordinary Preview cannot revive review after %s change",
+  async (kind) => {
+    known();
+    const late = deferred<BrokerMonthPreview>();
+    vi.mocked(previewBrokerMonth).mockReturnValueOnce(late.promise);
+    const { user, change, unmount, query } = mounted();
+    await upload(user);
+    await waitFor(() => expect(previewBrokerMonth).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(previewBrokerMonth).mock.calls[0][2];
+    if (kind === "file") {
+      await upload(user, original("b.xml"));
+      await screen.findByRole("checkbox");
+    }
+    if (kind === "account") await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "");
+    if (kind === "month") {
+      change(2);
+      change(1);
+    }
+    if (kind === "closed") change(1, true);
+    if (kind === "unmount") unmount();
+    if (kind === "mappings")
+      await act(async () => {
+        query.setQueryData(["broker-identity-mappings"], ["changed"]);
+      });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      late.resolve({ ...preview, confirmation_digest: "late" });
+    });
+    if (kind !== "file") expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(applyBrokerMonth).not.toHaveBeenCalled();
+  },
+);
+it("mapping invalidation immediately drops both whole-account and alias consent", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    account_bindings: [{ identity: "NEW", hermes_id: 7 }],
+  });
+  const { user, query } = mounted();
+  await upload(user);
+  await screen.findByRole("checkbox", { name: /Я проверил/ });
+  for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
+  await act(async () => {
+    query.setQueryData(["broker-identity-mappings"], ["A"]);
+    query.setQueryData(["broker-identity-mappings"], ["B"]);
+    query.setQueryData(["broker-identity-mappings"], ["A"]);
+  });
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+
+it("upload before initial account list completes still reaches automatic ordinary Preview", async () => {
+  known();
+  const initial = deferred<Awaited<ReturnType<typeof listAccounts>>>();
+  const available = [
+    { id: 7, name: "Synthetic broker", status: "active", account_type: "brokerage" },
+  ] as Awaited<ReturnType<typeof listAccounts>>;
+  vi.mocked(listAccounts).mockReturnValueOnce(initial.promise).mockResolvedValue(available);
+  const plan = deferred<Awaited<ReturnType<typeof previewOriginalContext>>>();
+  vi.mocked(previewOriginalContext).mockReturnValueOnce(plan.promise);
+  const { user } = mounted();
+  await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), original());
+  await act(async () => {
+    initial.resolve(available);
+  });
+  await act(async () => {
+    plan.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 7 });
+  });
+  await screen.findByRole("checkbox");
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
+});
+
+it("late ordinary Preview error after selecting another original cannot replace current ready state", async () => {
+  known();
+  const late = deferred<BrokerMonthPreview>();
+  vi.mocked(previewBrokerMonth).mockReturnValueOnce(late.promise);
+  const { user } = mounted();
+  await upload(user);
+  await waitFor(() => expect(previewBrokerMonth).toHaveBeenCalledTimes(1));
+  await upload(user, original("b.xml"));
+  await screen.findByRole("checkbox");
+  await user.click(screen.getByRole("checkbox"));
+  await act(async () => {
+    late.reject(new Error("old-original-error"));
+  });
+  expect(screen.queryByText("old-original-error")).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox")).toBeChecked();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listAccounts } from "../../api/accounts";
@@ -12,6 +12,8 @@ import {
   type BrokerMonthReadback,
 } from "../../api/brokerMonths";
 import type { MyBrokerDocument } from "../../api/mybrokerImport";
+import { getMonth } from "../../api/months";
+import { previewOriginalContext } from "../../api/mybrokerPreflight";
 import { formatDate, formatMoney } from "../../lib/format";
 import { sumMoneyAmounts } from "../../lib/money";
 import { queryKeys } from "../../queryClient";
@@ -177,54 +179,142 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<string | null>(null);
-  const active = useRef(true);
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
+  const generation = useRef(0);
+  const controller = useRef<AbortController | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const invalidateReview = useCallback((preserveReadback = false) => {
+    generation.current++;
+    controller.current?.abort();
+    setBusy(false);
+    setPreview(null);
+    if (!preserveReadback) setReadback(null);
+    setReviewed(false);
+    setBindingsReviewed(false);
+    setError(null);
+    setNotice(null);
+    request.current = null;
   }, []);
+  // A context transition invalidates even A→B→A responses and consents.
+  useLayoutEffect(() => {
+    invalidateReview();
+    if (closed) controller.current?.abort();
+    setAccountId("");
+    setFile(null);
+    setConfirmedRequestId(
+      queryClient.getQueryData<string>(["broker-month-confirmed", monthId]) ?? null,
+    );
+    return () => {
+      generation.current++;
+      controller.current?.abort();
+    };
+  }, [monthId, closed, queryClient, invalidateReview]);
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const key = String(event.query.queryKey[0]);
+        if (
+          event.type === "updated" &&
+          (event.action.type === "invalidate" ||
+            (event.action.type === "success" &&
+              (event.action.manual || event.query.state.dataUpdateCount > 1))) &&
+          [
+            "accounts",
+            "instruments",
+            "broker-identity-mappings",
+            "months",
+            "month-close-workflow",
+          ].includes(key)
+        ) {
+          invalidateReview(true);
+        }
+      }),
+    [queryClient, invalidateReview],
+  );
 
-  function invalidateReview() {
-    setPreview(null);
-    setReadback(null);
-    setReviewed(false);
-    setBindingsReviewed(false);
-    setError(null);
-    request.current = null;
-  }
-  async function inspect() {
-    if (!file || !accountId || busy || closed) return;
+  async function inspect(original = file, selected = accountId) {
+    if (!original || closed) return;
+    invalidateReview();
+    const version = generation.current;
+    const abort = new AbortController();
+    controller.current = abort;
+    const current = () => generation.current === version && !abort.signal.aborted;
     setBusy(true);
-    setError(null);
-    setReadback(null);
-    setPreview(null);
-    request.current = null;
-    setReviewed(false);
-    setBindingsReviewed(false);
     try {
-      const result = await previewBrokerMonth(file, {
-        reporting_month_id: monthId,
-        account_id: Number(accountId),
-      });
-      if (!active.current) return;
+      let target = selected;
+      if (!target) {
+        const [context, month, available] = await Promise.all([
+          previewOriginalContext(original, abort.signal),
+          getMonth(monthId, abort.signal),
+          listAccounts(abort.signal),
+        ]);
+        if (!current()) return;
+        const end =
+          Number.isInteger(month.year) &&
+          Number.isInteger(month.month) &&
+          month.month >= 1 &&
+          month.month <= 12
+            ? new Date(Date.UTC(month.year, month.month, 0)).toISOString().slice(0, 10)
+            : "";
+        if (
+          month.id !== monthId ||
+          month.status !== "draft" ||
+          !end ||
+          month.snapshot_date !== end ||
+          context.coveredFrom !== `${end.slice(0, 7)}-01` ||
+          context.coveredTo !== end
+        ) {
+          setNotice(
+            "Период XML не совпадает с открытым DRAFT и его снимком. Открой соответствующий месяц или выбери полный XML этого месяца; месяц автоматически не меняется.",
+          );
+          return;
+        }
+        if (!Array.isArray(available)) throw new Error("Список счетов не подтверждён.");
+        const matches = available.filter(
+          (a) =>
+            a.id === context.accountId &&
+            a.status === "active" &&
+            ["brokerage", "iis"].includes(a.account_type),
+        );
+        if (!context.accountId || matches.length !== 1) {
+          setNotice(
+            "Точная привязка оригинала не подтверждена. Выбери счёт вручную; новые aliases потребуют отдельного подтверждения.",
+          );
+          return;
+        }
+        target = String(context.accountId);
+        setAccountId(target);
+      }
+      const result = await previewBrokerMonth(
+        original,
+        {
+          reporting_month_id: monthId,
+          account_id: Number(target),
+        },
+        abort.signal,
+      );
+      if (!current()) return;
       if (
         result.contract_version !== "broker_month_v1" ||
         result.reporting_month_id !== monthId ||
-        result.account_id !== Number(accountId)
+        result.account_id !== Number(target)
       )
         throw new Error("Получен Preview другого счёта или месяца.");
       setPreview(result);
       request.current = crypto.randomUUID();
     } catch (e) {
-      if (active.current) setError(formatApiError(e));
+      if (current()) {
+        setError(formatApiError(e));
+        setNotice("Выбери счёт вручную для обычного Preview или повтори проверку оригинала.");
+      }
     } finally {
-      if (active.current) setBusy(false);
+      if (current()) setBusy(false);
     }
   }
   async function apply() {
     if (!file || !preview?.can_apply || !reviewed || busy || closed || !request.current) return;
     if (preview.account_bindings.length && !bindingsReviewed) return;
+    const version = generation.current;
+    const requestId = request.current;
     setBusy(true);
     setError(null);
     try {
@@ -233,14 +323,15 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         file,
         intent,
         preview.confirmation_digest,
-        request.current,
+        requestId,
         preview.account_bindings,
       );
-      const persisted = await readBrokerMonth(request.current);
-      if (!active.current) return;
+      if (generation.current !== version) return;
+      const persisted = await readBrokerMonth(requestId);
+      if (generation.current !== version) return;
       if (
         persisted.contract_version !== "broker_month_v1" ||
-        persisted.request_id !== request.current ||
+        persisted.request_id !== requestId ||
         persisted.reporting_month_id !== monthId ||
         persisted.account_id !== intent.account_id ||
         persisted.confirmation_digest !== preview.confirmation_digest ||
@@ -258,9 +349,9 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       setReviewed(false);
       await queryClient.invalidateQueries();
     } catch (e) {
-      if (active.current) setError(formatApiError(e));
+      if (generation.current === version) setError(formatApiError(e));
     } finally {
-      if (active.current) setBusy(false);
+      if (generation.current === version) setBusy(false);
     }
   }
   const currentBatches = batches.data ?? [];
@@ -286,8 +377,9 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     <Panel title="Месяц из MyBroker" label="Исходный отчёт">
       <div className={styles.stack}>
         <p>
-          Один оригинальный XML → проверка всего счёта → черновик. После независимого чтения
-          используй общую итоговую проверку и закрытие месяца.
+          Выбери оригинальный XML: для известного счёта и точного месяца Preview появится
+          автоматически. Проверь весь счёт и подтверди черновик. После независимого чтения используй
+          общую итоговую проверку и закрытие месяца.
         </p>
         <p>
           Полнота всего портфеля этим отчётом не подтверждается. Неразобранные движения остаются
@@ -296,14 +388,31 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         {!closed ? (
           <>
             <label className={styles.field}>
+              Оригинальный XML MyBroker{" "}
+              <input
+                aria-label="Оригинальный XML MyBroker"
+                type="file"
+                accept=".xml"
+                key={monthId}
+                onChange={(e) => {
+                  const original = e.target.files?.[0] ?? null;
+                  setFile(original);
+                  setAccountId("");
+                  invalidateReview();
+                  if (original) void inspect(original, "");
+                }}
+              />
+            </label>
+            <label className={styles.field}>
               Брокерский счёт{" "}
               <select
                 aria-label="Брокерский счёт"
                 value={accountId}
-                disabled={busy}
                 onChange={(e) => {
-                  setAccountId(e.target.value);
+                  const target = e.target.value;
+                  setAccountId(target);
                   invalidateReview();
+                  if (file && target) void inspect(file, target);
                 }}
               >
                 <option value="">Выбери счёт</option>
@@ -318,24 +427,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                   ))}
               </select>
             </label>
-            <label className={styles.field}>
-              Оригинальный XML MyBroker{" "}
-              <input
-                aria-label="Оригинальный XML MyBroker"
-                type="file"
-                accept=".xml"
-                disabled={busy}
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  invalidateReview();
-                }}
-              />
-            </label>
-            <Button
-              type="button"
-              onClick={() => void inspect()}
-              disabled={!file || !accountId || busy}
-            >
+            <Button type="button" onClick={() => void inspect()} disabled={!file || busy}>
               {busy ? "Проверяем…" : "Проверить MyBroker"}
             </Button>
           </>
@@ -349,7 +441,8 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
           </p>
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
-        {preview ? (
+        {notice ? <p role="status">{notice}</p> : null}
+        {preview && !closed ? (
           <>
             <SourceInventory document={preview.document} />
             <Table aria-label="Привязки исходных счетов">

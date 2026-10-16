@@ -1,5 +1,7 @@
 """Synthetic disposable source-first broker-month runtime; never a real profile."""
 
+import hashlib
+import json
 import os
 import sys
 from datetime import date
@@ -12,8 +14,10 @@ from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.broker_identity_mappings import confirm_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.reporting_months import create_reporting_month
+from sqlalchemy import select
 
 
 def main():
@@ -49,7 +53,14 @@ def main():
                 isin="RU000A000001",
                 currency="RUB",
             )
-            for number, end in ((1, 31), (2, 28), (3, 31), (4, 30), (5, 31), (6, 30)):
+            for number, end in (
+                (1, 31),
+                (2, 28),
+                (3, 31),
+                (4, 30),
+                (5, 31),
+                (6, 30),
+            ):
                 create_reporting_month(
                     session,
                     year=2030,
@@ -58,11 +69,52 @@ def main():
                 )
         from statement_return_seed import seed_statement_return
 
+        with database.session_factory() as session:
+            known = create_account(
+                session, name="Synthetic original-first broker", account_type="iis"
+            )
+            for alias in ("8480000", "848-ROW-A", "848-ROW-B"):
+                confirm_mapping(
+                    session,
+                    provider="alfa_mybroker",
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_target_id=known.id,
+                )
+            for number, end in ((8, 31), (9, 30)):
+                create_reporting_month(
+                    session,
+                    year=2030,
+                    month=number,
+                    snapshot_date=date(2030, number, end),
+                )
+            for isin, kind in (("RU000A000848", "stock"), ("RU000A000849", "bond")):
+                create_instrument(
+                    session,
+                    name=f"Synthetic original-first {kind}",
+                    instrument_type=kind,
+                    isin=isin,
+                    currency="RUB",
+                )
         seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "original-first":
+                xml = (
+                    broker_month_alias_xml(bond=True, unsupported=True)
+                    .replace(b".01.2030", b".08.2030")
+                    .replace(b"2030-01-", b"2030-08-")
+                    .replace(b"10000000001", b"10000000848")
+                    .replace(b"2000000001", b"2000000848")
+                    .replace(b"1234567", b"8480000")
+                    .replace(b"ROW-A", b"848-ROW-A")
+                    .replace(b"ROW-B", b"848-ROW-B")
+                    .replace(b"RU000A000000", b"RU000A000848")
+                    .replace(b"RU000A000001", b"RU000A000849")
+                )
+                return Response(xml, media_type="application/xml")
             if kind == "structure":
                 xml = (
                     draft_structure_xml(bond=True)
@@ -116,6 +168,23 @@ def main():
             return Response(xml, media_type="application/xml")
 
         # Test-only XML endpoint must precede the app's SPA catch-all.
+        app.router.routes.insert(0, app.router.routes.pop())
+
+        @app.get("/api/synthetic-broker-inventory")
+        def inventory():
+            # Every persisted table, including identities, source and audit rows.
+            with database.engine.connect() as connection:
+                rows = {
+                    table.name: sorted(
+                        [list(map(str, row)) for row in connection.execute(select(table))]
+                    )
+                    for table in Base.metadata.sorted_tables
+                }
+            return {
+                "counts": {name: len(items) for name, items in rows.items()},
+                "digest": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),
+            }
+
         app.router.routes.insert(0, app.router.routes.pop())
         uvicorn.run(
             app,
