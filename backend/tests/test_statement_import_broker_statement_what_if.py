@@ -518,8 +518,12 @@ def test_permanent_owned_occurrence_cannot_become_optional(database, change):
     assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
 
 
-def test_ownership_absence_stales_context_even_with_same_actual_fingerprint(database):
+@pytest.mark.parametrize("preserve_actual_fingerprint", [False, True])
+def test_ownership_absence_stales_actual_context_and_export(
+    database, monkeypatch, preserve_actual_fingerprint
+):
     from hermes_finance.persistence import HistoricalOwnerFlow, HistoricalOwnerFlowOccurrence
+    from hermes_finance.services import broker_statement_what_if as service
 
     client, raw, filename = incoming_source(database)
     context = request(client, raw, filename=filename).json()
@@ -539,11 +543,23 @@ def test_ownership_absence_stales_context_even_with_same_actual_fingerprint(data
         session.flush()
         session.add(HistoricalOwnerFlowOccurrence(flow_id=flow.id, **occurrence))
         session.commit()
-    fresh = request(client, raw, filename=filename).json()
+    old_actual = context["actual_result"]["material_fingerprint"]
+    binding = {}
+    if preserve_actual_fingerprint:
+        # Explicit composition probe: retain independent context protection even
+        # if an actual reader's fingerprint omits this dependency. The real S3
+        # path now binds this ownership material under #850 (the other case).
+        reader = service.read_statement_return
+
+        def frozen_fingerprint(*args, **kwargs):
+            return reader(*args, **kwargs).model_copy(update={"material_fingerprint": old_actual})
+
+        monkeypatch.setattr(service, "read_statement_return", frozen_fingerprint)
+        binding = {"expected_actual_fingerprint": old_actual}
+    fresh = request(client, raw, filename=filename, **binding).json()
     assert (
-        fresh["actual_result"]["material_fingerprint"]
-        == context["actual_result"]["material_fingerprint"]
-    )
+        fresh["actual_result"]["material_fingerprint"] == old_actual
+    ) is preserve_actual_fingerprint
     assert fresh["context_fingerprint"] != context["context_fingerprint"]
     assert fresh["optional_candidate"] is None
     assert "what_if_ownership_ineffective_or_incompatible" in fresh["hard_blockers"]
@@ -555,12 +571,28 @@ def test_ownership_absence_stales_context_even_with_same_actual_fingerprint(data
             context=context,
             filename=filename,
             result=result if operation == "export" else None,
+            **binding,
         )
         assert stale.status_code == 409
         assert stale.json()["error"]["code"] == "what_if_context_stale"
         assert stale.headers["cache-control"] == "no-store"
         assert "content-disposition" not in stale.headers
         assert "scenario_rate_fraction" not in stale.text
+        if not preserve_actual_fingerprint:
+            old_view = request(
+                client,
+                raw,
+                operation,
+                context=context,
+                filename=filename,
+                result=result if operation == "export" else None,
+                expected_actual_fingerprint=old_actual,
+            )
+            assert old_view.status_code == 409
+            assert old_view.json()["error"]["code"] == "what_if_actual_stale"
+            assert old_view.headers["cache-control"] == "no-store"
+            assert "content-disposition" not in old_view.headers
+            assert "scenario_rate_fraction" not in old_view.text
 
 
 @pytest.mark.parametrize("change", ["source", "mapping", "month", "cash", "nonfinite", "subkopeck"])
@@ -610,7 +642,17 @@ def test_bad_current_provenance_never_relabels_cached_amounts_observed(database,
     assert result["status"] == "blocked"
 
 
-def test_unknown_future_actual_reason_is_hard_and_not_an_assumption(database, monkeypatch):
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "future_new_reason",
+        "settlement_principal_unresolved",
+        "unparsed_source_rows",
+        "legacy_cash_or_transfer_overlap",
+        "coupon_target_scope_conflict",
+    ],
+)
+def test_unmapped_actual_reason_is_hard_and_not_an_assumption(database, monkeypatch, reason):
     from hermes_finance.services import broker_statement_what_if as service
 
     client, raw = prepared(database)
@@ -618,15 +660,16 @@ def test_unknown_future_actual_reason_is_hard_and_not_an_assumption(database, mo
 
     def future(*args, **kwargs):
         actual = reader(*args, **kwargs)
-        return actual.model_copy(
-            update={"reason_codes": (*actual.reason_codes, "future_new_reason")}
-        )
+        return actual.model_copy(update={"reason_codes": (*actual.reason_codes, reason)})
 
     monkeypatch.setattr(service, "read_statement_return", future)
     context = request(client, raw).json()
-    assert "future_new_reason" in context["hard_blockers"]
+    assert reason in context["hard_blockers"]
     result = request(client, raw, "evaluate", context=context).json()
     assert result["status"] == "blocked"
+    assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+    exported = request(client, raw, "export", context=context, result=result)
+    assert exported.status_code == 200 and exported.json() == result
 
 
 def test_fixed_capacity_never_truncates_inventory(database, monkeypatch):

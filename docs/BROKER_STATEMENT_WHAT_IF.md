@@ -2,8 +2,11 @@
 
 Contract: [#839 architecture and C1–C4](https://github.com/LTstripes/hermes-finance/issues/839#issuecomment-6211969149),
 [Integrator CODE GO](https://github.com/LTstripes/hermes-finance/issues/839#issuecomment-6212289246).
-This separate read-only feature is outside frozen v1.3.0. Integration remains held
-until an explicit release-unfreeze in #836; a draft PR or green CI does not release it.
+This separate read-only feature is outside published v1.3.0. The
+[#839 post-release gate](https://github.com/LTstripes/hermes-finance/issues/839#issuecomment-6225439311)
+records the explicit #836 unfreeze and authorizes compatibility with accepted
+#850/#851 on future main. Integrator still owns guarded merge and post-main CI;
+a draft PR or green candidate CI does not itself authorize integration or release.
 
 ## Scope and provenance
 

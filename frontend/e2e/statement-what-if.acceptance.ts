@@ -17,6 +17,10 @@ test("synthetic desktop: real context → explicit choices → 211 RUB / 2.01% �
   await page.goto("/v2/capital/statement-return");
   await page.getByLabel("Брокерский счёт").selectOption("1");
   await page.getByLabel("Принятая выписка").selectOption("synthetic-batch");
+  await expect(page.getByText(/H2 не может подтвердить назначение/)).toBeVisible();
+  await page.getByRole("region", { name: "Результат по выписке" }).screenshot({
+    path: info.outputPath("synthetic-what-if-actual-s3-1440.png"),
+  });
   const panel = page.getByRole("region", { name: "Условная оценка / сценарий" });
   await panel.getByLabel("Оригинал WHAT-IF").setInputFiles({
     name: "Брокерский 1234567 (01.09.30-30.09.30).xml",
@@ -46,6 +50,10 @@ test("synthetic desktop: real context → explicit choices → 211 RUB / 2.01% �
   ).toBeVisible();
   await expect(panel.getByText(/Фактический S3: Недоступна/)).toBeVisible();
   await panel.screenshot({ path: info.outputPath("synthetic-what-if-1440.png") });
+  await page.screenshot({
+    path: info.outputPath("synthetic-what-if-combined-1440.png"),
+    fullPage: true,
+  });
   const download = page.waitForEvent("download");
   await panel.getByRole("button", { name: "Экспорт сценария JSON с перепроверкой" }).click();
   const path = await (await download).path();
