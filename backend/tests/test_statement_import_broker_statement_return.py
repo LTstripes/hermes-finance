@@ -449,6 +449,334 @@ def section_result(client, *, request_id="section-base", expected=None, export=F
     return response.json()
 
 
+def coupon_result(client, intent, *, expected=None, export=False):
+    return section_result(
+        client, request_id=intent.base_request_id, expected=expected, export=export
+    )
+
+
+def assert_coupon_preview_parity(client, intent, originals, value):
+    filename, raw = originals[0]
+    response = client.post(
+        "/api/broker-statement-returns/preview",
+        data={"account_id": str(intent.account_id), "request_id": intent.base_request_id},
+        files={"file": (filename, raw, "application/xml")},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == value
+    assert coupon_result(client, intent, export=True) == value
+
+
+def test_missing_coverage_exposes_real_h2_unresolved_and_acceptance_is_still_required(database):
+    from test_statement_import_mybroker_endpoints import (
+        _all_month_tables,
+        _money_apply,
+        _money_decide,
+    )
+    from test_statement_import_source_cash_coverage import coupon_setup
+
+    from hermes_finance.services.source_cash_coverage import inventory
+
+    client, intent, bond, originals, candidate = coupon_setup(database, accepted=False)
+    before = _all_month_tables(database)
+    with database.session_factory() as session:
+        deps = inventory(session, intent.account_id, candidate.opening_date, candidate.closing_date)
+    for _ in range(10):
+        value = coupon_result(client, intent)
+        assert value["rate_fraction"] is None and value["cash_coverage_state"] == "unknown"
+        assert set(deps["blockers"]) <= set(value["reason_codes"])
+        assert {"money_disposition_unresolved", "account_crossing_coverage_unproved"} <= set(
+            value["reason_codes"]
+        )
+        assert_coupon_preview_parity(client, intent, originals, value)
+    assert _all_month_tables(database) == before
+    # Real Money acceptance resolves the coupon inventory under v3, not legacy
+    # rules. It still cannot create coverage or grant a numerical S3 result.
+    with database.session_factory() as session:
+        reviewed = _money_decide(session, intent, originals, bond, funding=False)
+        _money_apply(session, reviewed, originals)
+        deps = inventory(session, intent.account_id, candidate.opening_date, candidate.closing_date)
+        assert deps["blockers"] == []
+    before = _all_month_tables(database)
+    value = coupon_result(client, intent)
+    assert value["reason_codes"] == ["account_crossing_coverage_unproved"]
+    assert value["rate_fraction"] is None and value["cash_coverage_revision_id"] is None
+    assert_coupon_preview_parity(client, intent, originals, value)
+    assert _all_month_tables(database) == before
+    # Only stable codes and the opaque digest are added to the existing DTO.
+    assert not {"inventory", "money_dispositions", "coupon_authority"}.intersection(value)
+
+
+def test_missing_coverage_diagnostic_material_changes_even_with_identical_codes(database):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_source_cash_coverage import coupon_setup
+
+    from hermes_finance.persistence import AccountPerformanceScopeMembership
+
+    client, intent, _, originals, _ = coupon_setup(database)
+    original = coupon_result(client, intent)
+    with database.session_factory() as session:
+        membership = session.scalar(select(AccountPerformanceScopeMembership))
+        membership.effective_from = date(2028, 1, 1)  # still continuously covers this window
+        session.commit()
+    before = _all_month_tables(database)
+    fresh = coupon_result(client, intent)
+    assert fresh["reason_codes"] == original["reason_codes"]
+    assert fresh["material_fingerprint"] != original["material_fingerprint"]
+    assert fresh["rate_fraction"] is None
+    assert_coupon_preview_parity(client, intent, originals, fresh)
+    stale = coupon_result(client, intent, expected=original["material_fingerprint"])
+    assert "statement_preview_stale" in stale["reason_codes"] and stale["rate_fraction"] is None
+    assert (
+        coupon_result(client, intent, expected=original["material_fingerprint"], export=True)
+        == stale
+    )
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "source",
+        "mapping",
+        "account",
+        "date",
+        "projection",
+        "instrument",
+        "canonical",
+        "wrong_account",
+        "missing",
+    ],
+)
+def test_missing_coverage_never_guesses_diagnostic_scope(database, monkeypatch, change):
+    from hermes_finance.services import source_cash_coverage
+
+    if change == "canonical":
+        intent = _broker_month_setup(database)
+        client = TestClient(create_app(database=database))
+        raw = broker_month_xml()
+        plan = _broker_month_preview(client, intent, raw)
+        assert _broker_month_apply(client, intent, plan, raw).status_code == 200
+    else:
+        client, _ = prepared(database)
+    with database.session_factory() as session:
+        if change == "source":
+            session.scalar(select(MyBrokerImport)).normalized_json += " "
+        elif change == "mapping":
+            from hermes_finance.persistence import BrokerIdentityMapping
+            from hermes_finance.services.broker_identity_mappings import revoke_mapping
+
+            mapping = session.scalar(
+                select(BrokerIdentityMapping).where(BrokerIdentityMapping.subject_kind == "account")
+            )
+            revoke_mapping(session, mapping.id, reason="synthetic scope withdrawal")
+        elif change == "account":
+            session.get(Account, 1).status = "frozen"
+        elif change == "date":
+            session.scalar(select(ReportingMonth)).snapshot_date = date(2030, 1, 30)
+        elif change == "projection":
+            session.execute(
+                text("UPDATE position_snapshots SET market_value_kopecks=market_value_kopecks+1")
+            )
+        elif change == "instrument":
+            from hermes_finance.persistence import Instrument
+
+            session.get(Instrument, 1).currency = "USD"
+        elif change == "canonical":
+            session.execute(text("DELETE FROM executed_trade_occurrences"))
+        session.commit()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("diagnostic inventory must not read an unvalidated source/account scope")
+
+    monkeypatch.setattr(source_cash_coverage, "inventory", forbidden)
+    response = client.get(
+        "/api/broker-statement-returns",
+        params={
+            "account_id": 2 if change == "wrong_account" else 1,
+            "request_id": "missing" if change == "missing" else "synthetic-batch",
+        },
+    )
+    assert response.status_code == (404 if change in {"wrong_account", "missing"} else 200)
+    if response.status_code == 200:
+        assert response.json()["rate_fraction"] is None
+        if change == "canonical":
+            assert "canonical_trade_projection_changed" in response.json()["reason_codes"]
+
+
+def test_missing_coverage_unknown_inventory_code_stays_null_and_export_parity(
+    database, monkeypatch
+):
+    from hermes_finance.services import source_cash_coverage
+
+    client, _ = prepared(database)
+    inventory = source_cash_coverage.inventory
+
+    def future_inventory(*args, **kwargs):
+        deps = inventory(*args, **kwargs)
+        deps["blockers"].append("future_h2_code")
+        return deps
+
+    monkeypatch.setattr(source_cash_coverage, "inventory", future_inventory)
+    value = section_result(client, request_id="synthetic-batch")
+    assert value["rate_fraction"] is None
+    assert {"future_h2_code", "account_crossing_coverage_unproved"} <= set(value["reason_codes"])
+    assert section_result(client, request_id="synthetic-batch", export=True) == value
+
+
+def test_missing_coverage_diagnostics_share_the_source_read_snapshot(database, monkeypatch):
+    from hermes_finance.persistence import AccountPerformanceScopeMembership
+    from hermes_finance.services import source_cash_coverage
+
+    client, _ = prepared(database)
+    with database.session_factory() as session:
+        continuous_membership(session, 1)
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+    original = section_result(client, request_id="synthetic-batch")
+    inventory = source_cash_coverage.inventory
+    changed = False
+
+    def mutate_before_diagnostics(session, *args, **kwargs):
+        nonlocal changed
+        if not changed:
+            changed = True
+            with database.session_factory() as writer:
+                membership = writer.scalar(select(AccountPerformanceScopeMembership))
+                membership.effective_from = date(2028, 1, 1)
+                writer.commit()
+        return inventory(session, *args, **kwargs)
+
+    monkeypatch.setattr(source_cash_coverage, "inventory", mutate_before_diagnostics)
+    during = section_result(client, request_id="synthetic-batch")
+    assert changed and during == original
+    fresh = section_result(client, request_id="synthetic-batch")
+    assert fresh["reason_codes"] == original["reason_codes"]
+    assert fresh["material_fingerprint"] != original["material_fingerprint"]
+    stale = section_result(
+        client, request_id="synthetic-batch", expected=original["material_fingerprint"], export=True
+    )
+    assert stale["rate_fraction"] is None and "statement_preview_stale" in stale["reason_codes"]
+
+
+@pytest.mark.parametrize("retirement", ["aba", "revoke"])
+def test_real_five_coupon_a2_v3_numeric_s3_then_retired_null_api_export(database, retirement):
+    from test_statement_import_historical_owner_flows import count
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_source_cash_coverage import coupon_setup
+
+    from hermes_finance.persistence import (
+        BrokerMoneyOccurrenceOwner,
+        CashBalance,
+        ExternalFlow,
+        HistoricalOwnerFlow,
+        Instrument,
+        InvestmentCashFlow,
+    )
+
+    client, intent, bond, originals, candidate = coupon_setup(database)
+
+    def economic_counts():
+        with database.session_factory() as session:
+            return tuple(
+                count(session, model)
+                for model in (
+                    InvestmentCashFlow,
+                    CashBalance,
+                    HistoricalOwnerFlow,
+                    ExternalFlow,
+                    BrokerMoneyOccurrenceOwner,
+                )
+            )
+
+    assert economic_counts() == (5, 1, 0, 0, 5)
+    missing = coupon_result(client, intent)
+    assert missing["rate_fraction"] is None
+    assert missing["reason_codes"] == ["account_crossing_coverage_unproved"]
+    with database.session_factory() as session:
+        accepted = certify(session, claims(session, candidate, zero=True))["readback"]
+        assert accepted["effective_state"] == "accepted"
+        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v3"
+        ids = accepted["evidence"]["dependencies"]["effective_coupon_icf_ids"]
+        assert len(ids) == len(set(ids)) == 5
+    before = _all_month_tables(database)
+    numeric = coupon_result(client, intent)
+    assert numeric["status"] == "indicative", numeric["reason_codes"]
+    assert numeric["crossings"] == []
+    with localcontext() as context:
+        context.prec = 60
+        reference = (
+            Decimal(numeric["closing"]["total_value_kopecks"])
+            / Decimal(numeric["opening"]["total_value_kopecks"])
+            - 1
+        )
+        assert abs(Decimal(numeric["rate_fraction"]) - reference) <= Decimal("1e-8")
+    for _ in range(10):
+        assert coupon_result(client, intent) == numeric
+        assert_coupon_preview_parity(client, intent, originals, numeric)
+    assert _all_month_tables(database) == before
+    with database.session_factory() as session:
+        if retirement == "aba":
+            instrument = session.get(Instrument, bond)
+            instrument.currency = "USD"
+            session.commit()
+            assert (
+                read_source_cash_coverage(session, accepted["coverage_id"])["acceptance_state"]
+                == "retired"
+            )
+            instrument.currency = "RUB"
+            session.commit()
+        else:
+            withdrawn = candidate.model_copy(
+                update={
+                    "operation": "revoke",
+                    "coverage_id": accepted["coverage_id"],
+                    "expected_revision": accepted["revision"],
+                    "reason_code": "synthetic_review_withdrawn",
+                }
+            )
+            certify(session, withdrawn, "coupon-coverage-revoke")
+        current = read_source_cash_coverage(session, accepted["coverage_id"])
+        assert current["effective_state"] == ("retired" if retirement == "aba" else "revoked")
+    assert economic_counts() == (5, 1, 0, 0, 5)
+    before = _all_month_tables(database)
+    fresh = coupon_result(client, intent)
+    assert fresh["rate_fraction"] is None and fresh["cash_coverage_state"] == "unknown"
+    assert_coupon_preview_parity(client, intent, originals, fresh)
+    stale = coupon_result(client, intent, expected=numeric["material_fingerprint"])
+    assert stale["rate_fraction"] is None and "statement_preview_stale" in stale["reason_codes"]
+    assert (
+        coupon_result(client, intent, expected=numeric["material_fingerprint"], export=True)
+        == stale
+    )
+    assert _all_month_tables(database) == before
+
+
+def test_accepted_paid_nkd_remains_h2_unresolved_in_actual_s3(database):
+    from test_statement_import_mybroker_endpoints import (
+        _money_apply,
+        _money_decide,
+        _money_setup,
+        _trade_decide,
+        trade_money_xml,
+    )
+
+    client, raw, intent, bond, _ = _money_setup(database, trade_money_xml())
+    originals = [(FILENAME, raw)]
+    with database.session_factory() as session:
+        continuous_membership(session, intent.account_id)
+        _money_apply(session, _money_decide(session, intent, originals, bond), originals)
+        _money_apply(
+            session, _trade_decide(session, intent, originals), originals, request_id="paid-nkd"
+        )
+    value = coupon_result(client, intent)
+    assert value["rate_fraction"] is None
+    assert {"money_disposition_unresolved", "account_crossing_coverage_unproved"} <= set(
+        value["reason_codes"]
+    )
+    assert_coupon_preview_parity(client, intent, originals, value)
+
+
 def assert_opaque_unavailable(value):
     assert value["status"] == value["quality"] == "unavailable"
     assert value["rate_fraction"] is None and not value["annualized"]
