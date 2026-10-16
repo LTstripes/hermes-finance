@@ -43,11 +43,11 @@ export type BrokerMonthReadback = BrokerMonthIntent & {
   };
 };
 
-export function previewBrokerMonth(file: File, intent: BrokerMonthIntent) {
+export function previewBrokerMonth(file: File, intent: BrokerMonthIntent, signal?: AbortSignal) {
   const form = new FormData();
   form.append("file", file);
   form.append("intent", JSON.stringify(intent));
-  return apiMultipart<BrokerMonthPreview>("/api/broker-months/preview", form);
+  return apiMultipart<BrokerMonthPreview>("/api/broker-months/preview", form, signal);
 }
 
 export function applyBrokerMonth(
