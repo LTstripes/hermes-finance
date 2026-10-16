@@ -147,7 +147,11 @@ it("shows null with native facts and missing-flow reason, never guessed zero", a
     rate_fraction: null,
     crossings: [],
     cash_coverage_state: "unknown",
-    reason_codes: ["account_crossing_coverage_unproved"],
+    reason_codes: [
+      "account_crossing_coverage_unproved",
+      "money_disposition_unresolved",
+      "future_h2_code",
+    ],
   });
   const user = setup();
   await choose(user);
@@ -156,6 +160,8 @@ it("shows null with native facts and missing-flow reason, never guessed zero", a
     screen.getByText("Не подтверждён полный список датированных пополнений и выводов счёта."),
   ).toBeVisible();
   expect(screen.queryByText("0,00%")).not.toBeInTheDocument();
+  expect(screen.getByText(/H2 не может подтвердить назначение/)).toBeVisible();
+  expect(screen.getByText(/Не подтверждено основание: future_h2_code/)).toBeVisible();
   expect(screen.getAllByText(/10\s000,00 ₽/)).toHaveLength(2);
 });
 it("rejects wrong account, period, endpoint and annualization responses", async () => {

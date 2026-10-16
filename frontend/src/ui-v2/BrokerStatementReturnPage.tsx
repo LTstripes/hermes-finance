@@ -18,6 +18,12 @@ import { UiV2Shell } from "./UiV2Shell";
 const REASONS: Record<string, string> = {
   account_crossing_coverage_unproved:
     "Не подтверждён полный список датированных пополнений и выводов счёта.",
+  money_disposition_unresolved:
+    "H2 не может подтвердить назначение одного или нескольких денежных событий. Принятого Money proof может быть недостаточно для поддержки события в H2.",
+  legacy_cash_or_transfer_overlap:
+    "Есть денежные события или переводы без совместимого подтверждения H2.",
+  coupon_target_scope_conflict:
+    "Основания купона не соответствуют счёту, периоду или инструменту H2.",
   material_account_exposure_unassessed:
     "Не подтверждено влияние REPO, UFSR, custody или движений бумаг.",
   statement_inventory_incomplete: "Не подтверждён полный состав счёта на обе даты.",

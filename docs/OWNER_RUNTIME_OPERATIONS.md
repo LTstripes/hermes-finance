@@ -1,6 +1,6 @@
 # Hermes Finance — owner runtime operations
 
-Current guide, synchronized 2026-10-03 after completed #679/#666 relocation. Publication is separate: [RELEASE_AUTOMATION](RELEASE_AUTOMATION.md), permanent #124. [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md) owns the current roles and local mapping, including the active deployed Ops directory. Do not restart migration or reinstall Launcher from historical instructions.
+Current guide; Stable identity checkpoint refreshed **2026-10-16** after accepted HONOR v1.3.0 deployment. Publication is separate: [RELEASE_AUTOMATION](RELEASE_AUTOMATION.md), permanent #124. [OWNER_MACHINE_LAYOUT](OWNER_MACHINE_LAYOUT.md) owns the roles and Owner-local mapping, including active Ops. Do not rerun the completed migration or reinstall Launcher from historical instructions.
 
 ## 1. Architecture in one sentence
 
@@ -14,13 +14,15 @@ Hermes uses separate explicit Prepare/Validate, deterministic Start, exact-SHA T
 
 #313 composable-runtime redesign is complete. A failure in one operation does not automatically authorize Start, migration, Test mutation or release publication.
 
-## 2. Current published Stable
+## 2. Current published and installed Stable (2026-10-16)
 
-Published and locally confirmed **v1.1.0**: `32c905cfc938fd1aeaeb67643eb6fa77e8644a64`; annotated tag object `9b402190bafc5d8415b217580da5e18ed35a6331`. Expected `/api/health` version is `1.1.0`. Release push CI `36776904188` and Guarded Release `36777962224` succeeded.
+**Published:** [Hermes Finance v1.3.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), annotated tag object `13e727903c18484b8ff817f0b16f71664060c1d3` → exact commit `a9c88266fffe26e83688c52fc8f425b04fa14812`. [Exact post-main push CI #38933101012](https://github.com/LTstripes/hermes-finance/actions/runs/38933101012) and [Guarded Release #38937979090](https://github.com/LTstripes/hermes-finance/actions/runs/38937979090) completed SUCCESS.
 
-#572 is Owner PASS WITH DOCUMENTED LIMITATIONS. The later filesystem operation moved the same release, preserved DB identity/content/schema, recreated its path-bound Python environment with supported locked preparation and passed Start/readiness. It did not promote current main. [Release record](releases/1.1.0.md); [actual migration/closeout](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455).
+**HONOR Stable installed and left running (Owner-local Operator evidence):** [final #836 release/UAT technical closeout](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6222421447) attests one stock backup-first OPS02, one normal stock Start against the **same original physical production database**, guarded `0044→0058_broker_money_ownership` migration, health version 1.3.0, nine preserved CLOSED months, SQLite integrity OK/FK0 and read-only API/UI/reload PASS. This local runtime cannot be inspected directly via GitHub; a checkout or CI PASS alone is not a production health claim. The Owner's financial-semantic UAT is intentionally limited, even with a successful installation.
 
-At closeout, persistent Test retains `d282d09647f129cd83c99e14a10024901a1cf6da` and independent data. Re-preparation/isolation are reported; Test Start was not run simultaneously with Stable on port 8000. A remote docs merge updates neither local Main nor either runtime automatically.
+**Rollback:** accepted managed pre-upgrade 0044 recovery point, separate restore evidence and stock OPS02's verified additional SQLite 0044 backup remain preserved; pair old v1.2.0 code with the **matching 0044 database**, never open a migrated 0058 database with old code. [#838](https://github.com/LTstripes/hermes-finance/issues/838) remains OPEN for unverified off-device/TECNO recovery and inherited broad agent Modify ACL. Local/synced-filesystem publication/readback is **not** proof of off-device visibility or encryption.
+
+Historical releases and earlier runtime states, including v1.1.0, remain in [v1.1.0 record](releases/1.1.0.md), [#679 migration closeout](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455) and [v1.2.0 release record](releases/1.2.0.md). They do not describe today's HONOR Stable. Preserve Test/Owner/Ops as separate roles and never infer Test's present version from an earlier dated acceptance.
 
 ## 3. Windows launcher — retired
 
@@ -102,10 +104,12 @@ Run OPS02 from trusted canonical Main outside mutable Stable for one Owner-selec
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.ps1 `
   -StableCheckout <stable-checkout-path> `
-  -TargetVersion X.Y.Z
+  -TargetVersion X.Y.Z `
+  -DatabasePath <verified-absolute-production-sqlite-path> `
+  -BackupDirectory <verified-disjoint-backup-directory>
 ```
 
-Optional `-DatabasePath`, `-BackupDirectory` and `-ControlCheckout` retain their supported meanings. The updater proves current Stable and target annotated publication, makes a verified SQLite backup before Git/ref mutation, fetches only the selected tag, pins the exact peeled commit, runs target Prepare/Validate and stops.
+`-ControlCheckout` remains an optional parameter pointing to a separately verified trusted Control/Main. The updater's optional-path code defaults to its **Process environment selector or `Stable/data/finance.db`**, not to the contents of `Stable/.env`. Therefore, for the installed HONOR layout, **explicit `-DatabasePath` matching the accepted existing physical production database is mandatory in the actual operation**; choose a separate verified `-BackupDirectory` as shown. The updater proves current Stable and target annotated publication, makes and verifies a SQLite backup before Git/ref mutation, fetches only the tag, pins the exact peeled commit, runs target Prepare/Validate and stops. Do not run a new OPS02 against already installed Stable solely to confirm this documentation.
 
 It never selects latest, follows main, updates Test, starts Hermes, runs DB migration, publishes a tag/release or automatically rolls back/downgrades. Publication, local update and Start remain separate Owner actions.
 
@@ -115,7 +119,7 @@ The first real `v0.8.2 -> v0.9.0` transition and subsequent Start/data-continuit
 
 ## 8A. Second real owner transition — v1.0.0
 
-The `v0.9.0 -> v1.0.0` backup-first transition, exact-SHA UAT, publication, production Start and data-continuity PASS remain in [R10_RELEASE_CLOSEOUT_2026-09-21](R10_RELEASE_CLOSEOUT_2026-09-21.md). Current Stable is v1.1.0; dated predecessors are not pending updates.
+The `v0.9.0 -> v1.0.0` backup-first transition, exact-SHA UAT, publication, production Start and data-continuity PASS remain in [R10_RELEASE_CLOSEOUT_2026-09-21](R10_RELEASE_CLOSEOUT_2026-09-21.md). These are historical predecessor states; today's installed Stable is stated in §2 above.
 
 ## 9. Normal future release sequence
 

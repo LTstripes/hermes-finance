@@ -1,10 +1,41 @@
-# Hermes Finance 1.3.0 candidate
+# Hermes Finance 1.3.0
 
-UAT-PENDING. Code-only preparation under #836; not published. Publication remains
-blocked until independent review, exact CI, post-move acceptance and an explicit
-Owner release decision. These candidate lifecycle lines must be replaced with
-accepted publication facts before the guarded #124 request; the existing release
-helper rejects them. This document grants no local runtime or data operation.
+## Owner-accepted limited release scope (2026-10-16)
+
+The Owner explicitly accepted a **limited local release for weekend UX exploration**
+after [independent UAT-1B coverage review](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6219722047)
+and [Integrator/Owner release decision](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6219807480).
+This is **not full business/financial UAT**, permission for unresolved financial
+Apply/Close, proof of actual returns, or a blanket declaration of UI correctness.
+User-facing questions may be assessed in a separate post-installation Owner session.
+
+On the moved HONOR, isolated v1.2.0/0044 recovery to sole v1.3.0/0058, code and
+database binding, integrity/FK checks, controlled startup/shutdown, genuine
+MyBroker original zero-write Preview API/UI parity, retained source blockers and
+70-table unchanged database readback were independently reviewed within their
+bounded evidence scope. Stable v1.2.0 and the recovery point remained unchanged
+during UAT. The inspected recovered copy had **9 CLOSED months, no DRAFT month,
+and no matching accepted S3 source**; its Save action correctly remained disabled
+on unresolved mappings and source warnings.
+
+**Not exercised on this moved HONOR 0058 copy:** browser reload parity, positive
+DRAFT Apply → GET/replay, source-bound S3 unavailable/null-reason output, and full
+Owner semantic UX acceptance. Earlier separate [#773 real-original DRAFT/GET/reload
+UAT](https://github.com/LTstripes/hermes-finance/issues/773#issuecomment-6132814727)
+and [#774 real September S3 unavailable-path
+UAT](https://github.com/LTstripes/hermes-finance/issues/774#issuecomment-6139144470)
+provide prior bounded evidence at different isolated source/code checkpoints,
+**not new PASS results on the moved HONOR copy**. The independent review result
+remains **PARTIAL** for total release-UAT coverage; the Owner knowingly accepts
+these exclusions for limited local exploration. Financial/source authority stays
+fail-closed until its independent evidence and UAT are completed.
+
+Publication is separate from installing and starting Stable. The protected
+production 0044 database must be covered by a **fresh, independently verified
+pre-upgrade recovery point** before any separately authorized backup-first OPS02;
+then a distinct guarded Start and 0044→0058 post-upgrade financial/CLOSED data
+continuity review are required. Rollback pairs preserved v1.2.0 code with its
+verified 0044 database, never old code with a 0058 database.
 
 ## Broker month and source history
 
@@ -42,9 +73,10 @@ helper rejects them. This document grants no local runtime or data operation.
 - BrokerStatementReturn (S3) is a separate read-only, nonannualized **indicative
   account period MWR**, with provenance, exposure and coverage reasons. It is not
   exact portfolio/account XIRR or TWRR. Real September remains unavailable:
-  `rate_fraction=null`; accepted incomplete-DRAFT UAT proves no numeric return.
-- The optional #774 WHAT-IF scenario remains separate from actual S3 and is not
-  added by this candidate. Assumptions cannot complete actual coverage or Close.
+  `rate_fraction=null` on the previously accepted unavailable path; no numeric
+  September return is financially accepted.
+- The separate #839 WHAT-IF scenario (Draft PR #841) is excluded from this
+  release. Assumptions cannot complete actual coverage or Close.
 - Historical account/portfolio exact returns remain evidence-gated. Asset-class
   Phase 1 exposes bounded RUB stock/bond/gold no-crossing endpoint returns and
   evidence preparation; legacy unknown identity, unsupported crossings/classes,
@@ -53,7 +85,7 @@ helper rejects them. This document grants no local runtime or data operation.
 
 ## Compatibility and runtime
 
-Published v1.1.0 and v1.2.0 share Alembic head 0044. The candidate adds 0045–0058.
+Published v1.1.0 and v1.2.0 share Alembic head 0044. Version 1.3.0 adds 0045–0058.
 Synthetic tests cover direct and revision-by-revision upgrade, CLOSED/DRAFT and
 legacy provenance preservation, duplicate guards, repeat upgrade, transaction
 failure and consistent backup recovery. This supports the **code/schema path**
@@ -63,12 +95,13 @@ verified pre-upgrade recovery copy; source-owned evidence can prohibit downgrade
 
 Direct Windows Prepare/Validate/Start, backup-first immutable Stable update and
 explicit Start remain separate operations. Read-only scratch preflight startup
-has additional boundary checks. No Stable/Test update, Owner migration, OPS02,
-tag, release, merge or runtime deployment is performed by candidate preparation.
+has additional boundary checks. Publishing the release does not install it to
+Owner Stable, migrate any database or authorize OPS02/Start by itself.
 
-PRs #744/#829, suspended #814 finance authority and #769 financial Apply/Close
-are excluded. Alfa PRO protocol compatibility #646 remains unresolved. Hermes
-remains local, single-user, Windows-first, loopback by default; no cloud, trading,
+PRs #744/#829/#841, #814 broker-proof-dependent finance authority, and #769
+financial Apply/Close are excluded. Alfa PRO protocol compatibility #646 remains
+unresolved.
+Hermes remains local, single-user, Windows-first, loopback by default; no cloud, trading,
 telemetry or background provider refresh.
 
 Evidence and post-move gates: [release preparation record](release-preparation-1.3.0.md).
