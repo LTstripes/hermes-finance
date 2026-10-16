@@ -23,7 +23,7 @@ Required independent review, project acceptance and Owner UAT remain separate fr
 Canonical main, published release, installed Stable and persistent Test are different identities.
 A main merge does not install software, migrate a protected database, refresh Test or move a release tag.
 Exact-candidate PR CI and exact-main push CI prove their own candidates; local runtime/data continuity needs its own evidence.
-Published-release records live in [releases](releases/1.2.0.md); current identities and remaining gates live in CURRENT_STATUS.
+The latest [published v1.3.0 release](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0) and dated predecessor [v1.2.0 record](releases/1.2.0.md) remain separate from Owner-local installation; current identities and remaining gates live in [CURRENT_STATUS](CURRENT_STATUS.md).
 Export schema versions are independent of application versions.
 
 ## Financial truth and Owner data
