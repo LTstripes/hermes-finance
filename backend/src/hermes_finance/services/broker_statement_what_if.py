@@ -52,6 +52,7 @@ MONEY_DIAGNOSTICS = frozenset(
         "5_UFSR_unsupported",
     }
 )
+H2_PATTERN_DIAGNOSTICS = frozenset({"source_pattern_unproven", "candidate_direction_invalid"})
 LIMITATIONS = (
     "Условная модель выбранного счёта, не фактическая доходность и не доходность портфеля.",
     "Условный результат после учёта выбранных внешних движений",
@@ -179,9 +180,16 @@ def read_context(
         )
 
     require("native_basis", "native_basis", [native_ref], "native_totals_continuously")
-    cash = source_cash_coverage.inventory(
-        session, account_id, actual.t0, actual.t1, contract=source_cash_coverage.CONTRACT
-    )
+    try:
+        cash = source_cash_coverage.inventory(
+            session, account_id, actual.t0, actual.t1, contract=source_cash_coverage.CONTRACT
+        )
+        cash_error = None
+    except (MyBrokerError, DecimalException, ValueError, TypeError, KeyError) as error:
+        # The unchanged reader may refuse a corrupt dependency before returning
+        # diagnostics. Unavailable is not an invented empty inventory.
+        cash, cash_error = None, type(error).__name__
+        hard.add("what_if_h2_inventory_invalid")
     money, metadata, ownership = None, None, []
     try:
         money = read_money_candidates(
@@ -212,18 +220,26 @@ def read_context(
     if len(fixed) > 128:
         hard.add("what_if_crossing_capacity_exceeded")
     fixed_ids = {c.event_id for c in actual.crossings}
-    if fixed_ids != set(cash["effective_flow_ids"]):
+    if cash is not None and fixed_ids != set(cash["effective_flow_ids"]):
         hard.add("what_if_fixed_schedule_mismatch")
     optional = []
     dispositions = {
-        (d["import_id"], d["section"], d["ordinal"]): d for d in cash["money_dispositions"]
+        (d["import_id"], d["section"], d["ordinal"]): d
+        for d in (cash["money_dispositions"] if cash else [])
     }
     money_refs = []
     if money:
         if money.overlapping_sources:
             hard.add("what_if_overlapping_source")
-        hard.update(set(money.exceptions) - MONEY_DIAGNOSTICS)
+        occurrence_reasons = {reason for o in money.observations for reason in o.reasons}
+        hard.update(set(money.exceptions) - occurrence_reasons - MONEY_DIAGNOSTICS)
         for observed in money.observations:
+            # Narrative discovery is not accepted H2 authority. Keep every raw
+            # diagnostic, but resolve only these two pattern gaps behind a
+            # compatible effective fixed crossing. Unknown/integrity codes block
+            # even an otherwise accepted occurrence.
+            hard.update(set(observed.reasons) - MONEY_DIAGNOSTICS - H2_PATTERN_DIAGNOSTICS)
+            pattern_gaps = set(observed.reasons) & H2_PATTERN_DIAGNOSTICS
             occurrence = asdict(observed.occurrence)
             ref = _reference(occurrence)
             money_subject = f"{observed.date} · {observed.s1_kind} / {observed.candidate_kind} · {observed.amount_minor} коп."
@@ -263,11 +279,22 @@ def read_context(
                 )
                 if not compatible:
                     hard.add("what_if_ownership_ineffective_or_incompatible")
+                elif role != "account_funding":
+                    hard.update(pattern_gaps)
+                if compatible and role == "trade":
+                    require(
+                        ref,
+                        "money_basis",
+                        [ref],
+                        "no_additional_flow_or_adjustment",
+                        subject=money_subject,
+                    )
                 continue
             if accepted in {"effective_owner_flow", "accepted_non_owner_coupon"}:
                 hard.add("what_if_ownership_inventory_mismatch")
                 continue
             if accepted == "accepted_non_owner_trade_cash":
+                hard.update(pattern_gaps)
                 require(
                     ref,
                     "money_basis",
@@ -370,7 +397,7 @@ def read_context(
                     "no_additional_channel_effect",
                     subject=f"{channel['section']} · {channel['pattern'] or 'empty_observed_inventory'} · охват периода неизвестен",
                 )
-    codes = set(actual.reason_codes) | set(cash["blockers"])
+    codes = set(actual.reason_codes) | set(cash["blockers"] if cash else [])
     if metadata:
         codes.update(metadata["source_warnings"])
     for code in codes:
@@ -389,12 +416,18 @@ def read_context(
     ):
         hard.add("what_if_unmodelled_exposure")
     # Use the full H2 source dependency inventory to find parsed REPO/pending facts.
-    stored = json.loads(session.get(MyBrokerImport, source.import_id).normalized_json)
-    if any(t["repo_observed"] or t["section"] == "pending" for t in stored["trades"]):
-        hard.add("what_if_unmodelled_exposure")
+    try:
+        stored = json.loads(session.get(MyBrokerImport, source.import_id).normalized_json)
+        if any(t["repo_observed"] or t["section"] == "pending" for t in stored["trades"]):
+            hard.add("what_if_unmodelled_exposure")
+    except (ValueError, TypeError, KeyError):
+        # S3 can itself return unavailable for a corrupt envelope. Do not let a
+        # second diagnostic read escape that fail-closed context or its no-store API.
+        hard.add("what_if_source_inventory_invalid")
     raw_inventory = {
         "money": asdict(money) if money else None,
         "h2": cash,
+        "h2_inventory_error": cash_error,
         "metadata": metadata,
         "ownership": sorted(ownership, key=digest),
         "inventory_error": inventory_error,

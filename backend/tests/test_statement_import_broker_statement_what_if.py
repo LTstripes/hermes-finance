@@ -107,8 +107,16 @@ def incoming_source(
     unsafe=False,
     cash_opening="0",
     operation="Перевод",
+    bond=False,
 ):
     root = ET.fromstring(native_xml())
+    if bond:
+        from hermes_finance.persistence import Instrument
+
+        root.find(".//{MyBroker}Details[@ISIN1]").set("active_type", "Облигации")
+        with database.session_factory() as session:
+            session.get(Instrument, 1).instrument_type = "bond"
+            session.commit()
     table = deepcopy(
         ET.fromstring(original()).find("{MyBroker}Trades2/{MyBroker}Report/{MyBroker}Tablix1")
     )
@@ -162,6 +170,9 @@ def test_real_reader_context_evaluate_export_reference_and_isolation(database):
         "/api/months",
         "/api/cash-boundary-coverages?account_id=1",
         "/api/performance/readiness?start_date=2030-08-31&end_date=2030-09-30&scope=account&account_id=1",
+        "/api/performance/xirr?start_date=2030-08-31&end_date=2030-09-30&scope=account&account_id=1",
+        "/api/performance/twrr?start_date=2030-08-31&end_date=2030-09-30&scope=account&account_id=1",
+        "/api/months/1/close-readiness",
     ]
     invariant_before = []
     for path in invariant_routes:
@@ -717,3 +728,130 @@ def test_section_head_change_without_coverage_stales_bound_export(database):
         )
         assert response.status_code == 409
         assert "content-disposition" not in response.headers
+
+
+def test_malformed_accepted_source_stays_blocked_and_no_store_on_all_routes(database):
+    from hermes_finance.persistence import MyBrokerImport
+
+    client, raw = prepared(database)
+    with database.session_factory() as session:
+        session.scalar(select(MyBrokerImport)).normalized_json = "not JSON"
+        session.commit()
+    before = _all_month_tables(database)
+    response = request(client, raw)
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    context = response.json()
+    assert "what_if_source_inventory_invalid" in context["hard_blockers"]
+    assert context["observed"]["opening"] is context["observed"]["closing"] is None
+    response = request(client, raw, "evaluate", context=context)
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    result = response.json()
+    assert result["status"] == "blocked"
+    assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+    exported = request(client, raw, "export", context=context, result=result)
+    assert exported.status_code == 200, exported.text
+    assert exported.headers["cache-control"] == "no-store"
+    assert exported.json() == result
+    assert _all_month_tables(database) == before
+
+
+def test_current_coupon_authority_change_without_coverage_stales_context_and_export(database):
+    from test_statement_import_mybroker_money_candidates import COUPON
+
+    from hermes_finance.persistence import CashBoundaryCoverage, InvestmentCashFlow
+
+    client, raw, filename = incoming_source(database, narrative=COUPON, bond=True)
+    accept_funding(database, raw, filename)
+    context = request(client, raw, filename=filename).json()
+    assert not context["hard_blockers"], context["hard_blockers"]
+    assert (
+        context["diagnostic_inventory"]["h2"]["money_dispositions"][0]["disposition"]
+        == "accepted_non_owner_coupon"
+    )
+    result = request(client, raw, "evaluate", context=context, filename=filename).json()
+    assert result["status"] == "hypothetical", result["reason_codes"]
+    assert result["assumed_schedule"] == []
+    with database.session_factory() as session:
+        assert session.scalar(select(CashBoundaryCoverage.id)) is None
+        payout = session.scalar(select(InvestmentCashFlow))
+        # Deliberate synthetic corruption: supported writers require a reviewed
+        # source revision. Fresh reads must detect altered coupon target material
+        # even without a coverage row or a lifecycle retirement being appended.
+        session.execute(
+            InvestmentCashFlow.__table__.update()
+            .where(InvestmentCashFlow.id == payout.id)
+            .values(net_amount_kopecks=payout.net_amount_kopecks + 1)
+        )
+        session.commit()
+    for operation in ("evaluate", "export"):
+        response = request(
+            client,
+            raw,
+            operation,
+            context=context,
+            filename=filename,
+            result=result if operation == "export" else None,
+        )
+        assert response.status_code == 409, response.text
+        assert "content-disposition" not in response.headers
+        assert response.headers["cache-control"] == "no-store"
+        assert "scenario_rate_fraction" not in response.text
+
+
+@pytest.mark.parametrize("operation", ["context", "evaluate", "export"])
+def test_malformed_multipart_and_missing_upload_are_typed_no_store(database, operation):
+    client, raw = prepared(database)
+    response = client.post(
+        PREFIX + "/" + operation,
+        content=b"malformed synthetic form",
+        headers={"Content-Type": "multipart/form-data"},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "what_if_request_invalid"
+    assert response.headers["cache-control"] == "no-store"
+    assert "content-disposition" not in response.headers
+    missing = client.post(PREFIX + "/" + operation, data={"account_id": "1"})
+    assert missing.status_code == 422
+    assert missing.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("narrative", ["Synthetic outgoing", "из АО Synthetic bank"])
+def test_real_effective_h2_withdrawal_needs_no_incoming_narrative_classifier(database, narrative):
+    from test_statement_import_historical_owner_flows import accept, attest
+
+    from hermes_finance.domain.historical_owner_flows import OwnerFlowIntent
+    from hermes_finance.persistence import MyBrokerImport
+
+    client, raw, filename = incoming_source(
+        database, narrative=narrative, amount="-1000", cash_opening="1000"
+    )
+    with database.session_factory() as session:
+        source = session.scalar(select(MyBrokerImport))
+        intent = OwnerFlowIntent(
+            evidence_version="h2-a1-owner-rub-v2",
+            account_id=1,
+            seed={"import_id": source.id, "ordinal": 0},
+        )
+        flow = accept(session, attest(session, intent))["readback"]
+        assert flow["effective_state"] == "accepted"
+    before = _all_month_tables(database)
+    context = request(client, raw, filename=filename).json()
+    assert not context["hard_blockers"], context["hard_blockers"]
+    assert context["optional_candidate"] is None
+    assert context["fixed_schedule"][0]["signed_amount_kopecks"] == "-100000"
+    assert (
+        context["diagnostic_inventory"]["h2"]["money_dispositions"][0]["disposition"]
+        == "effective_owner_flow"
+    )
+    result = request(client, raw, "evaluate", context=context, filename=filename).json()
+    assert result["status"] == "hypothetical", result["reason_codes"]
+    assert len(result["assumed_schedule"]) == 1
+    assert result["scenario_result_kopecks"] == "21100"
+    assert result["actual_result"]["rate_fraction"] is None
+    assert (
+        request(client, raw, "export", context=context, result=result, filename=filename).json()
+        == result
+    )
+    assert _all_month_tables(database) == before

@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
 from hermes_finance.api.mybroker_import import _bytes
@@ -27,14 +28,16 @@ class WhatIfRoute(APIRoute):
         async def guarded(request):
             try:
                 response = await handler(request)
-            except (HTTPException, RequestValidationError) as error:
+            except (StarletteHTTPException, RequestValidationError) as error:
                 code = (
                     str(error.detail)
-                    if isinstance(error, HTTPException)
+                    if isinstance(error, StarletteHTTPException) and error.status_code != 400
                     else "what_if_request_invalid"
                 )
                 response = JSONResponse(
-                    status_code=error.status_code if isinstance(error, HTTPException) else 422,
+                    status_code=error.status_code
+                    if isinstance(error, StarletteHTTPException) and error.status_code != 400
+                    else 422,
                     content={"error": {"code": code, "message": code, "details": []}},
                 )
             response.headers.update(NO_STORE)
