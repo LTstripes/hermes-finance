@@ -82,7 +82,7 @@ rights, current execution policy, ACLs and credentials. Do not start/restart Fin
 Validate one installed-pair synthetic roundtrip, then run Scan without Retire and
 review every record. The independent daily task uses the current logged-in user,
 InteractiveToken/Limited, hidden WinPS5.1, IgnoreNew and StartWhenAvailable with
-Operation Scan, Retire and RetentionDays 7. No ExecutionPolicy override is required.
+`-Operation Scan -Retire -RetentionDays 7`. No ExecutionPolicy override is required.
 
 Recovery is a separate fixed same-volume directory; it is never a scan root.
 Relocation does not free space. Stop future invocations to roll back and preserve

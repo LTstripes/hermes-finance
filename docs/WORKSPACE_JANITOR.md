@@ -23,7 +23,7 @@ Ops and recovery are excluded. Do not relocate Ops or change its ACLs/security.
 After exact project acceptance and matched installation/rollback, validate synthetic
 restore and review a fresh Scan. A separately authorized daily task uses the logged-in
 Owner Interactive/Limited context, hidden WinPS5.1, IgnoreNew, StartWhenAvailable,
-Operation Scan, Retire and RetentionDays 7. Keep existing execution policy and
+`-Operation Scan -Retire -RetentionDays 7`. Keep existing execution policy and
 credentials; do not add an ExecutionPolicy override. No Finance runtime operations
 or automatic classification of old tasks are involved.
 
