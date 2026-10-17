@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    manifest: true,
+    rollupOptions: { input: { main: "index.html", instrumentUat: "instrument-uat.html" } },
+  },
   server: {
     host: "127.0.0.1",
     proxy: {

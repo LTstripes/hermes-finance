@@ -306,6 +306,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --config=playwright.broker-month.config.ts
 
+      - name: Run isolated read-only instrument UAT desktop journey
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --config=playwright.instrument-uat.config.ts
+
       - name: Upload synthetic real-backend journey evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -316,6 +322,7 @@ jobs:
             ${{ runner.temp }}/hermes-statement-playwright-results
             ${{ runner.temp }}/hermes-571-playwright
             ${{ runner.temp }}/hermes-broker-month-playwright
+            ${{ runner.temp }}/hermes-instrument-uat-playwright
           if-no-files-found: warn
 
   visual-audit-paths:
@@ -511,6 +518,7 @@ jobs:
             tests/test_settings.py `
             tests/test_startup.py `
             tests/test_scratch_preflight_runtime.py `
+            tests/test_instrument_uat_runtime.py `
             --basetemp $recoveryBaseTemp
           $recoveryExitCode = $LASTEXITCODE
           Pop-Location
