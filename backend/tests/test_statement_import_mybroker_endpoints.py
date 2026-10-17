@@ -3657,6 +3657,7 @@ SUMMARY_LABEL_VARIANTS = (
     ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка"),
     ("Внесено по распоряжению Клиента", "Дивиденды", "Купоны", "Списано по тарифам Банка"),
     ("Дивиденды", "Купоны", "Списано по тарифам Банка"),
+    ("Купоны", "Списано по тарифам Банка"),
 )
 
 
@@ -3775,6 +3776,8 @@ def draft_structure_xml(*, footer=True, money=True, bond=False, summary_variant=
         (True, True, True, 2),
         (True, True, False, 1),
         (True, True, False, 2),
+        (True, True, True, 3),
+        (True, True, False, 3),
     ],
 )
 def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
@@ -3792,7 +3795,9 @@ def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
     frozen = parse_mybroker(xml, FILENAME)
     # Standalone identity and its ordinary staging contract stay strict.
     assert "unparsed_source_rows" in parse_identity(xml, FILENAME)["conflicts"]
+    before = _all_month_tables(database)
     reviewed = _broker_month_preview(client, intent, xml)
+    assert _all_month_tables(database) == before
     assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"], reviewed["conflicts"]
     assert reviewed["conflicts"] == []
     assert "unparsed_source_rows" in reviewed["exceptions"]
@@ -3857,7 +3862,7 @@ def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
         assert performance.json()["value"] is None
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_draft_exact_summary_variants_use_actual_original_bound_reader(summary_variant):
     from hermes_finance.statement_import.mybroker_draft_structure import draft_structure_exceptions
     from hermes_finance.statement_import.mybroker_identity import parse_identity
@@ -3881,7 +3886,107 @@ def test_draft_exact_summary_variants_use_actual_original_bound_reader(summary_v
     assert parse_mybroker(raw, FILENAME) == frozen
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+def test_june_two_group_summary_preview_is_zero_write_incomplete_draft(database):
+    from hermes_finance.services.reporting_months import create_reporting_month
+    from hermes_finance.statement_import.mybroker_identity import parse_identity
+
+    with database.session_factory() as session:
+        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 30))
+        scope = {"reporting_month_id": month.id, "account_id": 1}
+    filename = FILENAME.replace("01.01.30-31.01.30", "01.06.30-30.06.30")
+    raw = draft_structure_xml(summary_variant=3)
+    raw = raw.replace(b".01.2030", b".06.2030").replace(b"2030-01-", b"2030-06-")
+    root = ET.fromstring(raw)
+    leaves = root.findall(".//{MyBroker}oper_group/{MyBroker}p_code6_Collection/{MyBroker}p_code6")
+    leaves[0].set("volume6", "12.34")
+    leaves[1].set("volume6", "-0.01")
+    raw = ET.tostring(root, encoding="utf-8")
+    frozen = parse_mybroker(raw, filename)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw, filename=filename)
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    for key in (
+        "document_sha256",
+        "section_inventory",
+        "syntax_blockers",
+        "positions",
+        "rub_money",
+    ):
+        assert reviewed["document"][key] == frozen[key]
+    assert parse_mybroker(raw, filename) == frozen
+    assert reviewed["identity"]["evidence"]["source_warnings"] == frozen["syntax_blockers"]
+    assert reviewed["identity"]["evidence"]["draft_structure"]["financial_authority"] == "none"
+    assert "unparsed_source_rows" in reviewed["exceptions"]
+    assert (
+        "money_controls_unresolved"
+        in reviewed["identity"]["evidence"]["draft_structure"]["exceptions"]
+    )
+    assert reviewed["coverage_state"] == "unknown"
+    assert not reviewed["indicative_return_ready"] and not reviewed["exact_return_ready"]
+    assert "unparsed_source_rows" in parse_identity(raw, filename)["conflicts"]
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("denomination", ["missing", "USD"])
+def test_two_group_summary_cannot_prove_security_denomination(database, denomination):
+    from hermes_finance.persistence import Instrument
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    raw = draft_structure_xml(summary_variant=3)
+    if denomination == "missing":
+        # A source ISIN/name/type and RUB settlement cannot prove a new security's currency.
+        raw = raw.replace(ISIN.encode(), b"RU000A000009")
+        expected = "instrument_currency_unproven"
+    else:
+        with database.session_factory() as session:
+            session.get(Instrument, 1).currency = denomination
+            session.commit()
+        expected = "instrument_currency_unsupported"
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert not reviewed["can_apply"] and expected in reviewed["conflicts"]
+    assert _all_month_tables(database) == before
+    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("change", ["original", "binding", "closed"])
+def test_two_group_summary_cannot_reuse_stale_or_closed_preview(database, change):
+    from hermes_finance.persistence import Account
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    raw = draft_structure_xml(summary_variant=3)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert reviewed["can_apply"]
+    if change == "original":
+        raw = raw.replace(b'volume6="-1000.0000000000"', b'volume6="-1000.01"')
+    else:
+        with database.session_factory() as session:
+            if change == "binding":
+                session.get(Account, 1).status = "frozen"
+            else:
+                session.get(ReportingMonth, scope["reporting_month_id"]).status = "closed"
+            session.commit()
+    before = _all_month_tables(database)
+    refused = _broker_month_apply(client, scope, reviewed, raw)
+    assert refused.status_code == 409
+    assert refused.json()["error"]["message"] == "broker_month_preview_stale"
+    assert _all_month_tables(database) == before
+    fresh = _broker_month_preview(client, scope, raw)
+    if change == "original":
+        assert (
+            fresh["can_apply"] and fresh["confirmation_digest"] != reviewed["confirmation_digest"]
+        )
+    else:
+        expected = "account_binding_invalid" if change == "binding" else "reporting_month_closed"
+        assert not fresh["can_apply"] and expected in fresh["conflicts"]
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 @pytest.mark.parametrize(
     "token,valid",
     [
@@ -3909,7 +4014,7 @@ def test_draft_summary_decimal_grammar_retains_exact_minor_units(summary_variant
     assert ("unparsed_source_rows" in observed["conflicts"]) != valid
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -3930,9 +4035,16 @@ def test_draft_summary_decimal_grammar_retains_exact_minor_units(summary_variant
         "invalid_amount",
         "wrong_parent",
         "collection_attr",
+        "extra_group",
+        "hidden_money",
+        "hidden_trade",
+        "missing_currency",
+        "missing_amount",
+        "label_whitespace",
+        "namespace_declaration",
     ],
 )
-def test_draft_summary_requires_exact_ordered_rub_variants(summary_variant, mutation):
+def test_draft_summary_requires_exact_ordered_rub_variants(database, summary_variant, mutation):
     from copy import deepcopy
 
     from hermes_finance.statement_import.mybroker_identity import parse_identity
@@ -3975,10 +4087,35 @@ def test_draft_summary_requires_exact_ordered_rub_variants(summary_variant, muta
         groups[0].append(leaf)
     elif mutation == "collection_attr":
         groups.set("oper_group", "Дивиденды")
+    elif mutation == "extra_group":
+        extra = deepcopy(groups[0])
+        extra.set("oper_group", "Unexpected economic group")
+        groups.append(extra)
+    elif mutation == "hidden_money":
+        groups[0].append(deepcopy(root.find(".//{MyBroker}rn")))
+    elif mutation == "hidden_trade":
+        groups[0][0][0].append(deepcopy(root.find(".//{MyBroker}Details[@trade_no]")))
+    elif mutation == "missing_currency":
+        groups[0][0][0].attrib.pop("p_code6")
+    elif mutation == "missing_amount":
+        groups[0][0][0].attrib.pop("volume6")
+    elif mutation == "label_whitespace":
+        groups[0].set("oper_group", groups[0].get("oper_group") + " ")
+    elif mutation == "namespace_declaration":
+        groups[0].set("xmlns:hidden", "Foreign")
     raw = ET.tostring(root)
     observed = parse_identity(raw, FILENAME, incomplete_draft=True)
     assert "unparsed_source_rows" in observed["conflicts"]
     assert "draft_structure" not in observed
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    reviewed = _broker_month_preview(client, scope, raw)
+    assert not reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
+    assert "identity_batch_conflict" in reviewed["conflicts"]
+    assert _all_month_tables(database) == before
+    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    assert _all_month_tables(database) == before
 
 
 @pytest.mark.parametrize(
@@ -4084,7 +4221,7 @@ def test_draft_daily_displays_empty_before_final_rn_without_semantic_inference(m
         "economic_section",
     ],
 )
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_draft_complete_root_and_consumed_inventory_refuse_new_evidence(
     database, mutation, summary_variant
 ):
@@ -4147,7 +4284,7 @@ def test_draft_source_controls_must_reconcile_before_new_structural_eligibility(
     assert _all_month_tables(database) == before
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_draft_old_s1_receipt_stays_immutable_and_unsafe_overlap_still_blocks_close(
     database, summary_variant
 ):
@@ -4203,7 +4340,7 @@ def test_draft_old_s1_receipt_stays_immutable_and_unsafe_overlap_still_blocks_cl
         ) == old
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_draft_structure_original_inventory_and_hash_cannot_be_borrowed(summary_variant):
     from copy import deepcopy
 
@@ -4435,7 +4572,7 @@ def test_draft_structural_guard_rejects_hidden_identity_or_changed_shape(path, m
         "pending_attributes",
     ],
 )
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_draft_structural_guard_retains_semantic_and_unvisited_source_conflicts(
     mutation, summary_variant
 ):
@@ -4487,7 +4624,7 @@ def test_draft_structural_guard_retains_semantic_and_unvisited_source_conflicts(
     assert result["conflicts"]
 
 
-@pytest.mark.parametrize("summary_variant", [0, 1, 2])
+@pytest.mark.parametrize("summary_variant", [0, 1, 2, 3])
 def test_broker_month_draft_structural_stale_and_late_failure_rollback(
     database, monkeypatch, summary_variant
 ):

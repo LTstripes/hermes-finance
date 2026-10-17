@@ -57,11 +57,13 @@ Money numeric displays use bounded signed decimals (48 characters) with exact
 minor-unit representation; sub-kopecks are rejected without rounding. Daily
 displays are explicitly empty before each group's last rn and populated together
 only on that last rn; missing, empty and numeric zero remain distinct.
-Currency labels are literal RUB. Tablix7 accepts only three complete ordered
-label sequences under [#828](https://github.com/LTstripes/hermes-finance/issues/828):
+Currency labels are literal RUB. Tablix7 accepts only four complete ordered
+label sequences under [#828](https://github.com/LTstripes/hermes-finance/issues/828)
+and [#872](https://github.com/LTstripes/hermes-finance/issues/872):
 [`Внесено по распоряжению Клиента`, `Купоны`, `Списано по тарифам Банка`],
 [`Внесено по распоряжению Клиента`, `Дивиденды`, `Купоны`, `Списано по тарифам Банка`],
-or [`Дивиденды`, `Купоны`, `Списано по тарифам Банка`]. Each group retains exactly
+[`Дивиденды`, `Купоны`, `Списано по тарифам Банка`],
+or [`Купоны`, `Списано по тарифам Банка`]. Each group retains exactly
 one childless p_code6/volume6 leaf under p_code6_Collection. This is not an optional
 group grammar; totals do not classify dividend/coupon/fee events or Owner flows.
 Keys, expanded namespaces, paths,
