@@ -275,7 +275,12 @@ def read_context(
                     and accepted == "accepted_non_owner_coupon"
                     and disposition.get("coupon_target_id") == target
                     or role == "trade"
-                    and accepted == "accepted_non_owner_trade_cash"
+                    and (
+                        accepted == "accepted_non_owner_trade_cash"
+                        or accepted == "accepted_non_owner_paid_nkd"
+                        and len(owned) == 1
+                        and disposition.get("trade_target_id") == target
+                    )
                 )
                 if not compatible:
                     hard.add("what_if_ownership_ineffective_or_incompatible")
@@ -290,7 +295,11 @@ def read_context(
                         subject=money_subject,
                     )
                 continue
-            if accepted in {"effective_owner_flow", "accepted_non_owner_coupon"}:
+            if accepted in {
+                "effective_owner_flow",
+                "accepted_non_owner_coupon",
+                "accepted_non_owner_paid_nkd",
+            }:
                 hard.add("what_if_ownership_inventory_mismatch")
                 continue
             if accepted == "accepted_non_owner_trade_cash":
