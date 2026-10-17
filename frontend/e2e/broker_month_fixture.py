@@ -10,6 +10,8 @@ from tempfile import TemporaryDirectory
 
 import uvicorn
 from fastapi import Response
+from sqlalchemy import select
+
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
@@ -17,7 +19,6 @@ from hermes_finance.services.accounts import create_account
 from hermes_finance.services.broker_identity_mappings import confirm_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.reporting_months import create_reporting_month
-from sqlalchemy import select
 
 
 def main():
@@ -81,7 +82,7 @@ def main():
                     provider_identity=alias,
                     hermes_target_id=known.id,
                 )
-            for number, end in ((8, 31), (9, 30)):
+            for number, end in ((8, 31), (9, 30), (10, 31)):
                 create_reporting_month(
                     session,
                     year=2030,
@@ -101,7 +102,7 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
-            if kind == "original-first":
+            if kind in {"original-first", "session"}:
                 xml = (
                     broker_month_alias_xml(bond=True, unsupported=True)
                     .replace(b".01.2030", b".08.2030")
@@ -114,6 +115,13 @@ def main():
                     .replace(b"RU000A000000", b"RU000A000848")
                     .replace(b"RU000A000001", b"RU000A000849")
                 )
+                if kind == "session":
+                    xml = (
+                        xml.replace(b".08.2030", b".10.2030")
+                        .replace(b"2030-08-", b"2030-10-")
+                        .replace(b"10000000848", b"10000000854")
+                        .replace(b"2000000848", b"2000000854")
+                    )
                 return Response(xml, media_type="application/xml")
             if kind == "structure":
                 xml = (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listInstruments } from "../../api/instruments";
 import { formatApiError } from "../../api/client";
@@ -155,6 +155,8 @@ export function BrokerMoneyReview({
   importId,
   closed,
   stored,
+  originalFile,
+  sessionEpoch,
 }: {
   baseRequestId: string;
   monthId: number;
@@ -162,6 +164,8 @@ export function BrokerMoneyReview({
   importId: number;
   closed: boolean;
   stored?: MoneyReadback | null;
+  originalFile?: File;
+  sessionEpoch?: number;
 }) {
   const cache = useQueryClient();
   const instruments = useQuery({
@@ -169,7 +173,7 @@ export function BrokerMoneyReview({
     queryFn: ({ signal }) => listInstruments({ instrument_type: "bond" }, signal),
     enabled: !closed,
   });
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(() => (originalFile ? [originalFile] : []));
   const [preview, setPreview] = useState<MoneyPreview | null>(null);
   const [decisions, setDecisions] = useState<MoneyDecision[]>([]);
   const [tradeBases, setTradeBases] = useState<
@@ -194,9 +198,28 @@ export function BrokerMoneyReview({
     id: string;
   } | null>(null);
   const active = useRef(true);
+  const generation = useRef(0);
+  const scope = `${baseRequestId}:${monthId}:${accountId}:${sessionEpoch}`;
+  const currentScope = useRef(scope);
   const closedRef = useRef(closed);
   closedRef.current = closed;
   const request = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    currentScope.current = scope;
+    generation.current++;
+    setFiles(originalFile && !closed ? [originalFile] : []);
+    setPreview(null);
+    setDecisions([]);
+    setTradeBases({});
+    setStockBasisReferences({});
+    setReviewed(false);
+    setCurrentPlan(false);
+    setPending(null);
+    setSaved(null);
+    setBusy(false);
+    setError(null);
+    request.current = null;
+  }, [originalFile, scope, closed]);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -214,6 +237,7 @@ export function BrokerMoneyReview({
     money_decisions: selected,
   });
   function invalidate() {
+    generation.current++;
     setReviewed(false);
     setCurrentPlan(false);
     request.current = null;
@@ -231,22 +255,41 @@ export function BrokerMoneyReview({
   async function inspect() {
     if (!files.length || busy || closed) return;
     invalidate();
+    const version = generation.current;
     setBusy(true);
     try {
       const result = await previewBrokerMoney(files, intent());
       valid(result);
-      if (active.current) {
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      ) {
         setPreview(result);
         setCurrentPlan(true);
       }
     } catch (e) {
-      if (active.current) setError(formatApiError(e));
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setError(formatApiError(e));
     } finally {
-      if (active.current) setBusy(false);
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setBusy(false);
     }
   }
   async function apply() {
     if (!preview || !reviewed || !currentPlan || busy || closed || pending) return;
+    const version = generation.current;
     setBusy(true);
     setError(null);
     try {
@@ -312,9 +355,20 @@ export function BrokerMoneyReview({
       const requested = intent(selected);
       const confirmed = await previewBrokerMoney(files, requested);
       valid(confirmed);
-      if (!active.current || closedRef.current) return;
+      if (
+        !active.current ||
+        generation.current !== version ||
+        currentScope.current !== scope ||
+        closedRef.current
+      )
+        return;
       if (!confirmed.can_apply) {
-        if (active.current) {
+        if (
+          active.current &&
+          generation.current === version &&
+          currentScope.current === scope &&
+          !closedRef.current
+        ) {
           setPreview(confirmed);
           setReviewed(false);
         }
@@ -328,7 +382,13 @@ export function BrokerMoneyReview({
         request.current,
       );
       const awaiting = { committed, digest: confirmed.confirmation_digest, id: request.current };
-      if (active.current) setPending(awaiting);
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setPending(awaiting);
       const read = await readBrokerMoney(awaiting.id);
       valid(read);
       if (
@@ -341,20 +401,39 @@ export function BrokerMoneyReview({
         throw new Error(
           "Независимое GET не подтвердило Money. Обнови состояние; повтор не создаёт новые деньги.",
         );
-      if (!active.current) return;
+      if (
+        !active.current ||
+        generation.current !== version ||
+        currentScope.current !== scope ||
+        closedRef.current
+      )
+        return;
       setSaved(read);
       setPending(null);
       setPreview(null);
       setReviewed(false);
       await cache.invalidateQueries();
     } catch (e) {
-      if (active.current) setError(formatApiError(e));
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setError(formatApiError(e));
     } finally {
-      if (active.current) setBusy(false);
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setBusy(false);
     }
   }
   async function retryRead() {
     if (!pending || busy) return;
+    const version = generation.current;
     setBusy(true);
     setError(null);
     try {
@@ -368,16 +447,34 @@ export function BrokerMoneyReview({
         JSON.stringify(read.current_targets) !== JSON.stringify(pending.committed.current_targets)
       )
         throw new Error("Независимое GET Money не совпало с сохранённым batch.");
-      if (!active.current) return;
+      if (
+        !active.current ||
+        generation.current !== version ||
+        currentScope.current !== scope ||
+        closedRef.current
+      )
+        return;
       setSaved(read);
       setPending(null);
       setPreview(null);
       setReviewed(false);
       await cache.invalidateQueries();
     } catch (e) {
-      if (active.current) setError(formatApiError(e));
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setError(formatApiError(e));
     } finally {
-      if (active.current) setBusy(false);
+      if (
+        active.current &&
+        generation.current === version &&
+        currentScope.current === scope &&
+        !closedRef.current
+      )
+        setBusy(false);
     }
   }
   function update(decision: MoneyDecision) {
@@ -422,7 +519,9 @@ export function BrokerMoneyReview({
                 multiple
                 disabled={busy || pending != null}
                 onChange={(e) => {
-                  setFiles(Array.from(e.target.files ?? []));
+                  const additions = Array.from(e.target.files ?? []);
+                  setFiles((prior) => [...prior, ...additions]);
+                  e.target.value = "";
                   setDecisions([]);
                   setTradeBases({});
                   setPreview(null);
@@ -430,6 +529,32 @@ export function BrokerMoneyReview({
                 }}
               />
             </label>
+            <p>
+              Сохранённый оригинал — только начальный кандидат. Добавь все принятые пересекающиеся
+              отчёты; один файл не подтверждает полноту Money.
+            </p>
+            <ul aria-label="Выбранные оригиналы Money">
+              {files.map((file, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: Preserve duplicate exact originals for backend conflict checks; these rows have no local state.
+                <li key={`${index}:${file.name}`}>
+                  {file.name}{" "}
+                  <Button
+                    type="button"
+                    disabled={busy || pending != null}
+                    onClick={() => {
+                      setFiles((prior) => prior.filter((_, i) => i !== index));
+                      setDecisions([]);
+                      setTradeBases({});
+                      setStockBasisReferences({});
+                      setPreview(null);
+                      invalidate();
+                    }}
+                  >
+                    Убрать {file.name}
+                  </Button>
+                </li>
+              ))}
+            </ul>
             <Button
               type="button"
               disabled={busy || !files.length || pending != null}

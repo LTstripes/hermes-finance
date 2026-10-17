@@ -1,3 +1,4 @@
+import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
@@ -65,6 +66,7 @@ export function MonthlyCloseWorkflowPage() {
     requestReopen,
     workflowQuery,
   } = useMonthCloseLifecycle(monthId);
+  useBrokerOriginalContext(monthId, workflowQuery.data?.month.status === "closed");
   const [statementOutcome] = useState<AlfaStatementTransientOutcome | null>(() =>
     parseAlfaStatementTransientOutcome(
       (location.state as { alfaStatementOutcome?: unknown } | null)?.alfaStatementOutcome,

@@ -1,3 +1,4 @@
+import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -105,6 +106,7 @@ export default function UiV2ClosePage() {
         ? newestDraft
         : null;
   const monthId = selectedMonth?.id ?? null;
+  useBrokerOriginalContext(monthId, selectedMonth?.status === "closed");
   const selectionKey = params.getAll("month").join(":");
   const identity = useRef<{
     key: string;
