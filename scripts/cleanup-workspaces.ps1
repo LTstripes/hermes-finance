@@ -2,12 +2,13 @@
 .SYNOPSIS
 Fail-closed cleanup of disposable Hermes Finance task workspaces (Windows PowerShell 5.1+).
 .DESCRIPTION
-Dry-run is the default. -Apply is the only deletion switch. Roots are a fixed
+Dry-run is the default. -Retire relocates eligible roots; -Apply is refused. Roots are a fixed
 allowlist, not an arbitrary filesystem cleanup interface. Fetch updates only local
 origin tracking refs. No remote branch is deleted. Every unknown is PRESERVE.
 A bounded, overwritten JSON summary is saved to the fixed Owner Ops directory.
-Run after code acceptance from canonical main, with no concurrent workspace writers.
-Fetch is mandatory even in dry-run and updates local Git metadata. Conservatively,
+Use the matching lifecycle operations before any managed checkout writes/resume.
+Only explicitly completed enrolled standalone clones may reach fetch/retirement.
+Fetch is mandatory for completed candidates even in dry-run and updates local Git metadata. Conservatively,
 that write can postpone eligibility at a later invocation. Unknown process command
 lines, ignored non-cache files, non-cache hardlinks, SSH/alternate origin URL spellings and
 metadata outside these roots are preserved. Max 200 tasks / 25,000 entries per task.
@@ -16,7 +17,12 @@ metadata outside these roots are preserved. Max 200 tasks / 25,000 entries per t
 param(
     [string[]]$Root = @(),
     [int]$RetentionDays = 7,
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$Retire,
+    [ValidateSet('Scan','Create','Bind','Check','CheckActive','Pause','Resume','Complete','Recover','Restore')][string]$Operation='Scan',
+    [string]$Workspace,
+    [string]$Owner,
+    [string]$ClaimId
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -27,8 +33,11 @@ $script:ApprovedRoots = @('codex', 'opencode', 'grok', 'hermes' | ForEach-Object
 if (-not $PSBoundParameters.ContainsKey('Root')) { $Root = $script:ApprovedRoots }
 $script:ExpectedOrigin = 'https://github.com/LTstripes/hermes-finance.git'
 $script:LogDirectory = Join-Path $script:FinanceDirectory 'ops'
+$script:RecoveryDirectory = Join-Path $script:FinanceDirectory 'recovery\workspaces'
 $script:EntryLimit = 25000
 $script:TaskLimit = 200
+$script:WorkspaceMutexName = 'Global\HermesFinance.WorkspaceCleanup'
+$script:WorkspaceMutexHeld = $false
 
 function Initialize-JanitorNative {
     if (-not ('HermesFinance.WorkspaceCleanup.Tree' -as [type])) {
@@ -160,7 +169,7 @@ function Test-JanitorMarkers($Entries, [string]$Path) {
             # Strong private boundaries are never exempted, even within a cache.
             if ($name -match '^(private|profiles?|backups?|recovery|credentials?|secrets?|tokens?|\.aws|\.ssh|\.gnupg)$') { throw 'private-runtime-marker' }
             # Known caches may contain normal package data, images, logs and runtime assets.
-            if (-not $cache -and $relative -notin @('.git\logs') -and
+            if (-not $cache -and $relative -ne '.git\logs' -and
                 $relative -notmatch '^\.git\\worktrees\\[A-Za-z0-9._-]+\\logs$' -and $name -match '^(data|runtime|artifacts|payloads?|photos?|screenshots?|logs|reports)$') { throw 'private-runtime-marker' }
         } else {
             if ($name -match '(?i)\.(db|sqlite|sqlite3)(-|$)|\.(age|bak|backup|key|pfx|secret|token)$' -or
@@ -249,6 +258,191 @@ function Test-JanitorRefs([string]$Path) {
         if ($count -ne '0') { throw 'unique-local-ref' }
     }
 }
+# Versioned cooperative lifecycle. No adoption of existing/legacy checkouts.
+# Callers must use the same mutex before writing, resuming or retiring a checkout.
+function Assert-WorkspaceLock {
+    if (-not $script:WorkspaceMutexHeld) { throw 'lifecycle-lock-required' }
+}
+function Get-LifecycleFile([string]$Path) {
+    return Join-Path $script:LogDirectory ('workspace-claim-' + [HermesFinance.WorkspaceCleanup.Tree]::StateKey($Path) + '.state')
+}
+function ConvertTo-LifecycleText($Record, [switch]$Marker) {
+    $keys = @('Format','Path','RootId','GitId','Enrollment')
+    if (-not $Marker) { $keys += @('Owner','Claim','Generation','State','Head','Completed'); if ($Record.Format -eq '2') { $keys += 'Transaction' } }
+    return (($keys | ForEach-Object { $_ + '=' + [string]$Record[$_] }) -join "`n") + "`n"
+}
+function Read-LifecycleRecord([string]$File, [switch]$Marker) {
+    # Exact ordered ASCII schema rejects duplicates, unknown fields, versions,
+    # newline injection and malformed encodings. No permissive JSON coercions.
+    $text = [HermesFinance.WorkspaceCleanup.Tree]::ReadState($File)
+    $keys = @('Format','Path','RootId','GitId','Enrollment')
+    if (-not $Marker) { $keys += @('Owner','Claim','Generation','State','Head','Completed') }
+    if (-not $Marker -and $text.StartsWith("Format=2`n")) { $keys += 'Transaction' }
+    $lines = $text.Split([char]10)
+    if ($lines.Count -ne $keys.Count + 1 -or $lines[-1] -cne '') { throw 'lifecycle-invalid' }
+    $record = [ordered]@{}
+    for ($i=0; $i -lt $keys.Count; $i++) {
+        $prefix=$keys[$i] + '='
+        if (-not $lines[$i].StartsWith($prefix, [StringComparison]::Ordinal)) { throw 'lifecycle-invalid' }
+        $record[$keys[$i]]=$lines[$i].Substring($prefix.Length)
+    }
+    if (($record.Format -cne '1' -and ($Marker -or $record.Format -cne '2')) -or $record.Path -cnotmatch '^[A-Za-z0-9+/]+={0,2}$' -or
+        $record.RootId -cnotmatch '^\d+:\d+:\d+:\d+$' -or
+        $record.GitId -cnotmatch '^(-|\d+:\d+:\d+:\d+)$' -or
+        $record.Enrollment -cnotmatch '^[a-f0-9]{32}$') { throw 'lifecycle-invalid' }
+    try {
+        $decoded=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($record.Path))
+        if ([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($decoded)) -cne $record.Path) { throw 'invalid' }
+        [void](Get-JanitorPath $decoded)
+    } catch { throw 'lifecycle-invalid' }
+    if (-not $Marker) {
+        if ($record.Owner -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' -or
+            $record.Claim -cnotmatch '^[a-f0-9]{32}$' -or $record.Generation -cnotmatch '^[1-9][0-9]{0,8}$' -or
+            $record.State -cnotmatch '^(active|paused|completed|deleting|deleted|retiring|retired|restoring|needs_review)$' -or
+            $record.Head -cnotmatch '^(-|[a-f0-9]{40}|[a-f0-9]{64})$' -or
+            $record.Completed -cnotmatch '^(-|[0-9]{18})$') { throw 'lifecycle-invalid' }
+        if (($record.Format -eq '2' -and ($record.State -notin @('retiring','retired','restoring','needs_review') -or $record.Transaction -cnotmatch '^[a-f0-9]{32}$')) -or
+            ($record.Format -eq '1' -and $record.State -in @('retiring','retired','restoring','needs_review'))) { throw 'lifecycle-invalid' }
+        if ($record.State -in @('completed','deleting','deleted','retiring','retired','restoring','needs_review')) {
+            if ($record.GitId -eq '-' -or $record.Head -eq '-' -or $record.Completed -eq '-') { throw 'lifecycle-invalid' }
+            try { [void](New-Object datetime ([long]$record.Completed, [DateTimeKind]::Utc)) } catch { throw 'lifecycle-invalid' }
+        } elseif ($record.Head -ne '-' -or $record.Completed -ne '-') { throw 'lifecycle-invalid' }
+    }
+    return $record
+}
+function Write-LifecycleRecord([string]$Path, $Record, [switch]$Create) {
+    Assert-WorkspaceLock
+    [HermesFinance.WorkspaceCleanup.Tree]::WriteState((Get-LifecycleFile $Path), (ConvertTo-LifecycleText $Record), [bool]$Create)
+}
+function Get-LifecycleRecord([string]$Path) {
+    Assert-WorkspaceLock
+    $file=Get-LifecycleFile $Path
+    if (-not [IO.File]::Exists($file)) { throw 'lifecycle-unmanaged' }
+    $record=Read-LifecycleRecord $file
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path.ToUpperInvariant()))
+    if ($record.Path -cne $encoded) { throw 'lifecycle-identity-changed' }
+    return $record
+}
+function Assert-LifecycleIdentity([string]$Path, $Record, [switch]$Bound) {
+    if ($Record.RootId -cne [HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($Path)) { throw 'lifecycle-identity-changed' }
+    $git=Join-Path $Path '.git'
+    # v1 deliberately supports standalone clones only; no shared Common mutation.
+    if ([IO.File]::Exists($git)) { throw 'shared-worktree-preserved' }
+    if ($Record.GitId -ne '-') {
+        if ($Record.GitId -cne [HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($git)) { throw 'lifecycle-identity-changed' }
+        $marker=Read-LifecycleRecord (Join-Path $git 'workspace-enrollment.state') -Marker
+        foreach ($key in @('Format','Path','RootId','GitId','Enrollment')) {
+            if ($marker[$key] -cne $Record[$key]) { throw 'lifecycle-identity-changed' }
+        }
+    } elseif ($Bound) { throw 'lifecycle-unbound' }
+    $legacy=Join-Path $git 'codex-owner.json'
+    if ([IO.File]::Exists($legacy) -or [IO.Directory]::Exists($legacy)) { throw 'lifecycle-legacy-metadata' }
+}
+function Assert-LifecycleComplete([string]$Path, $Record, [datetime]$Now) {
+    Assert-LifecycleIdentity $Path $Record -Bound
+    if ($Record.State -cne 'completed') { throw 'lifecycle-not-completed' }
+    if ((Get-JanitorGitText $Path @('rev-parse','HEAD')) -cne $Record.Head) { throw 'lifecycle-head-changed' }
+    $completed=New-Object datetime ([long]$Record.Completed, [DateTimeKind]::Utc)
+    if ($completed -gt $Now) { throw 'age-unknown' }
+    return ($Now - $completed).TotalDays
+}
+function Invoke-WorkspaceLifecycle([string]$Action, [string]$Path, [string]$Owner, [string]$Token) {
+    Assert-WorkspaceLock
+    $path=Assert-JanitorChild $Path
+    if ($Owner -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$') { throw 'lifecycle-owner-rejected' }
+    $guard=New-Object HermesFinance.WorkspaceCleanup.Tree($false)
+    $tree=$null
+    try {
+        $guard.PinAncestors([IO.Path]::GetDirectoryName($path))
+        $guard.PinAncestors($script:LogDirectory)
+        if ($Action -eq 'Create') {
+            if ([IO.File]::Exists((Get-LifecycleFile $path))) { throw 'lifecycle-exists' }
+            [HermesFinance.WorkspaceCleanup.Tree]::CreateFresh($path)
+            $guard.PinAncestors($path)
+            $record=[ordered]@{ Format='1'; Path=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant()));
+                RootId=[HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($path); GitId='-';
+                Enrollment=[guid]::NewGuid().ToString('N'); Owner=$Owner; Claim=[guid]::NewGuid().ToString('N');
+                Generation='1'; State='active'; Head='-'; Completed='-' }
+            Write-LifecycleRecord $path $record -Create
+            return [pscustomobject]$record
+        }
+        $record=Get-LifecycleRecord $path
+        if ($record.Owner -cne $Owner -or $record.Claim -cne $Token) { throw 'lifecycle-owner-or-claim-mismatch' }
+        if ($record.State -in @('deleting','deleted','retiring','retired','restoring','needs_review')) { throw 'lifecycle-retired' }
+        Assert-NoPendingRetirement $path
+        $guard.PinAncestors($path)
+        Assert-LifecycleIdentity $path $record
+        switch ($Action) {
+            'Check' { }
+            'CheckActive' {
+                Assert-LifecycleIdentity $path $record -Bound
+                if ($record.State -cne 'active') { throw 'lifecycle-not-active' }
+            }
+            'Bind' {
+                if ($record.State -ne 'active' -or $record.GitId -ne '-') { throw 'lifecycle-transition-rejected' }
+                $state=Get-JanitorGitState $path $guard
+                if ($state.Kind -ne 'clone') { throw 'shared-worktree-preserved' }
+                $guard.PinAncestors($state.Common)
+                $record.GitId=[HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($state.Common)
+                # Marker first: crash before registry commit leaves unbound => PRESERVE.
+                [HermesFinance.WorkspaceCleanup.Tree]::WriteState((Join-Path $state.Common 'workspace-enrollment.state'), (ConvertTo-LifecycleText $record -Marker), $true)
+                Write-LifecycleRecord $path $record
+            }
+            'Pause' {
+                if ($record.State -ne 'active') { throw 'lifecycle-transition-rejected' }
+                $record.State='paused'; Write-LifecycleRecord $path $record
+            }
+            'Resume' {
+                if ($record.State -notin @('paused','completed')) { throw 'lifecycle-transition-rejected' }
+                if ([int]$record.Generation -ge 999999999) { throw 'lifecycle-transition-rejected' }
+                $record.Generation=([int]$record.Generation + 1).ToString([Globalization.CultureInfo]::InvariantCulture)
+                $record.Claim=[guid]::NewGuid().ToString('N'); $record.State='active'; $record.Head='-'; $record.Completed='-'
+                Write-LifecycleRecord $path $record
+            }
+            'Complete' {
+                if ($record.State -ne 'active') { throw 'lifecycle-transition-rejected' }
+                Assert-LifecycleIdentity $path $record -Bound
+                $tree=New-Object HermesFinance.WorkspaceCleanup.Tree($false); $tree.Scan($path,$script:EntryLimit)
+                Test-JanitorMarkers @($tree.Entries | Where-Object { $null -eq $_.CacheRoot }) $path
+                [void](Get-JanitorGitState $path $guard)
+                [void](Get-JanitorCacheProof $tree $path); Test-JanitorMarkers $tree.Entries $path
+                Test-JanitorClean $path
+                $record.Head=Get-JanitorGitText $path @('rev-parse','HEAD')
+                $record.Completed=[datetime]::UtcNow.Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+                $record.State='completed'; Write-LifecycleRecord $path $record
+            }
+            default { throw 'lifecycle-transition-rejected' }
+        }
+        return [pscustomobject]$record
+    } finally { if ($null -ne $tree) { $tree.Dispose() }; $guard.Dispose() }
+}
+function Invoke-WorkspaceLock([scriptblock]$Body) {
+    $mutex=New-Object Threading.Mutex($false, $script:WorkspaceMutexName)
+    $held=$false
+    try {
+        try { $held=$mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held=$true }
+        if (-not $held) { throw 'workspace-busy' }
+        $script:WorkspaceMutexHeld=$true
+        & $Body
+    } finally { $script:WorkspaceMutexHeld=$false; if ($held) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+}
+
+function Invoke-WorkerLifecycle {
+    <# Worker-facing consumer API. Dot-source the accepted installed pair first.
+       Explicit checkout workflow, not a platform task event hook.
+       Returns one claim object, or throws; does not launch an agent/runtime. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet('Create','Bind','CheckActive','Pause','Resume','Complete')][string]$Action,
+        [Parameter(Mandatory=$true)][string]$Workspace,
+        [Parameter(Mandatory=$true)][string]$Owner,
+        [string]$ClaimId=''
+    )
+    if ($Action -ne 'Create' -and $ClaimId -cnotmatch '^[a-f0-9]{32}$') { throw 'lifecycle-owner-or-claim-mismatch' }
+    Initialize-JanitorNative
+    Invoke-WorkspaceLock { Invoke-WorkspaceLifecycle $Action $Workspace $Owner $ClaimId }
+}
 function New-JanitorRecord([string]$Path) {
     return [pscustomobject]@{ Task=[IO.Path]::GetFileName($Path); Path=$Path; AgeDays=$null; Git='unknown'; HiddenProcessCommandLines=$null; Result='PRESERVE'; Reason='check-unknown' }
 }
@@ -267,16 +461,22 @@ function Assert-JanitorSnapshot($Before, $After) {
     foreach ($key in $Before.Keys) { if (-not $After.ContainsKey($key) -or $Before[$key] -ne $After[$key]) { throw 'workspace-changed' } }
 }
 function Invoke-JanitorTask([string]$Path, [int]$Days, [bool]$Delete, [datetime]$Now) {
+    Assert-WorkspaceLock
     $record = New-JanitorRecord $Path
     $guard = $null; $tree = $null; $fresh = $null
     try {
         $path = Assert-JanitorChild $Path
+        Assert-NoPendingRetirement $path
         $guard = New-Object HermesFinance.WorkspaceCleanup.Tree($false)
         $guard.PinAncestors([IO.Path]::GetDirectoryName($path))
         $tree = New-Object HermesFinance.WorkspaceCleanup.Tree($false)
         $tree.Scan($path, $script:EntryLimit)
         Test-JanitorMarkers @($tree.Entries | Where-Object { $null -eq $_.CacheRoot }) $path
         $state = Get-JanitorGitState $path $guard
+        if ($state.Kind -ne 'clone') { throw 'shared-worktree-preserved' }
+        $lifecycle=Get-LifecycleRecord $path
+        Assert-LifecycleIdentity $path $lifecycle -Bound
+        if ($lifecycle.State -cne 'completed') { throw 'lifecycle-not-completed' }
         $cacheProof = Get-JanitorCacheProof $tree $path
         Test-JanitorMarkers $tree.Entries $path
         $processes = Get-JanitorProcesses
@@ -284,7 +484,7 @@ function Invoke-JanitorTask([string]$Path, [int]$Days, [bool]$Delete, [datetime]
         Test-JanitorProcess $path $processes
         $record.Git = $state.Kind
         Test-JanitorClean $path
-        $age = Get-JanitorAge $tree $path $Now
+        $age = [math]::Min((Get-JanitorAge $tree $path $Now), (Assert-LifecycleComplete $path $lifecycle $Now))
         $record.AgeDays = [math]::Round($age, 2)
         if ($age -lt $Days) { throw 'younger-than-retention' }
         $before = Get-JanitorSnapshot $tree $path
@@ -306,28 +506,20 @@ function Invoke-JanitorTask([string]$Path, [int]$Days, [bool]$Delete, [datetime]
         Test-JanitorProcess $path $processes
         $record.Result='ELIGIBLE'; $record.Reason='clean-published-inactive'
         if (-not $Delete) { return $record }
-        # Print sanitized decision before the destructive operation, not raw Git diagnostics.
-        Write-Information ($record | ConvertTo-Json -Compress) -InformationAction Continue
-        if ($state.Kind -eq 'worktree') {
-            # Git must own registration cleanup and enforce its clean/locked checks.
-            # Release task pins for Git's non-force removal; keep approved-root/common pins.
-            $fresh.Dispose(); $fresh=$null
-            [void](Get-JanitorGitText $state.Owner @('worktree', 'remove', '--', $path))
-            # Successful remove unregisters this worktree itself. Never broad-prune siblings.
-            $remaining = Get-JanitorGitText $state.Owner @('worktree', 'list', '--porcelain')
-            if (($remaining -split "`n") -contains ('worktree ' + $path.Replace('\','/'))) { throw 'delete-failed' }
-        } else { $fresh.Delete() }
-        if ([IO.Directory]::Exists($path) -or [IO.File]::Exists($path)) { throw 'delete-failed' }
-        $record.Result='REMOVED'; $record.Reason='removed'
+        $relocation=Invoke-RetirementMove $path $lifecycle $fresh
+        if ($relocation.State -eq 'NEEDS_REVIEW') { $record.Result='ERROR'; $record.Reason='retirement-needs-review-stop' }
+        else { $record.Result='RETIRED'; $record.Reason='recoverably-retired' }
     } catch {
         $reason = [string]$_.Exception.Message
         $known = @('path-rejected','root-rejected','task-name-rejected','process-state-unknown','active-process',
             'private-runtime-marker','generated-cache-unproven','not-task-checkout','external-git-metadata','wrong-origin','remote-rewrite-or-unknown',
             'registration-unknown','dependent-worktrees','dirty-or-untracked','submodule-unknown','unknown-ignored-material',
             'age-unknown','younger-than-retention','unique-head-commit','ancestry-unknown','unknown-local-ref','unique-local-ref',
-            'workspace-changed','git-check-failed','git-timeout','git-output-limit','delete-failed')
+            'shared-worktree-preserved','lifecycle-unmanaged','lifecycle-invalid','lifecycle-identity-changed',
+            'lifecycle-unbound','lifecycle-legacy-metadata','lifecycle-not-completed','lifecycle-head-changed',
+            'retirement-pending','workspace-changed','git-check-failed','git-timeout','git-output-limit','delete-failed')
         $record.Reason = if ($known -contains $reason) { $reason } else { 'filesystem-or-check-unknown' }
-        if ($record.Result -eq 'ELIGIBLE' -and $Delete) { $record.Result='ERROR'; $record.Reason='delete-failed-stop' }
+        if ($record.Result -eq 'ELIGIBLE' -and $Delete) { $record.Result='ERROR'; $record.Reason='retirement-failed-stop' }
     } finally {
         foreach ($handle in @($fresh,$tree,$guard)) { if ($null -ne $handle) { $handle.Dispose() } }
     }
@@ -341,11 +533,12 @@ function Save-JanitorReport($Report) {
     } finally { $pins.Dispose() }
 }
 function Invoke-JanitorRun([string[]]$Roots, [int]$Days=7, [switch]$Delete) {
+    Assert-WorkspaceLock
     if ($Days -lt 7) { throw 'retention-rejected' }
     $approved = @($Roots | ForEach-Object { Assert-JanitorRoot $_ } | Select-Object -Unique)
     if (-not $approved.Count) { throw 'root-rejected' }
     Initialize-JanitorNative
-    $report = [pscustomobject]@{ Version=1; Mode=$(if ($Delete) {'Apply'} else {'DryRun'}); RetentionDays=$Days;
+    $report = [pscustomobject]@{ Version=1; Mode=$(if ($Delete) {'Retire'} else {'DryRun'}); RetentionDays=$Days;
         Utc=[datetime]::UtcNow.ToString('o'); Records=@(); Status='complete' }
     # Fail before deletion if the bounded Ops summary cannot be safely written.
     Save-JanitorReport $report
@@ -377,18 +570,238 @@ function Invoke-JanitorRun([string[]]$Roots, [int]$Days=7, [switch]$Delete) {
     return $report
 }
 function Invoke-WorkspaceJanitor([string[]]$Roots, [int]$Days=7, [switch]$Delete) {
-    $mutex=New-Object Threading.Mutex($false, 'Global\HermesFinance.WorkspaceCleanup')
-    $held=$false
-    try {
-        try { $held=$mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held=$true }
-        if (-not $held) { throw 'janitor-already-running' }
-        return Invoke-JanitorRun $Roots $Days -Delete:$Delete
-    } finally { if ($held) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+    Initialize-JanitorNative
+    Invoke-WorkspaceLock { Invoke-JanitorRun $Roots $Days -Delete:$Delete }
 }
+# Container relocation, not snapshot/backup. No automatic recovery or purge.
+function Get-RetirementFile([string]$Path) {
+    Join-Path $script:LogDirectory ('workspace-retirement-'+[HermesFinance.WorkspaceCleanup.Tree]::StateKey($Path)+'.state')
+}
+function Get-RetirementKeys {
+    @('Format','Transaction','Path','Destination','RootId','GitId','Enrollment','Owner','Claim','Generation','Head','Completed','BeforeDigest','AfterDigest','BeforeObservation','AfterObservation','Phase','Issue','NextClaim','NextGeneration')
+}
+function Write-RetirementJournal([string]$Path,$Journal,[switch]$Create) {
+    Assert-WorkspaceLock
+    $text=((Get-RetirementKeys|ForEach-Object {$_+'='+[string]$Journal[$_]}) -join "`n")+"`n"
+    [HermesFinance.WorkspaceCleanup.Tree]::WriteState((Get-RetirementFile $Path),$text,[bool]$Create)
+}
+function Read-RetirementJournal([string]$Path) {
+    Assert-WorkspaceLock
+    $text=[HermesFinance.WorkspaceCleanup.Tree]::ReadState((Get-RetirementFile $Path))
+    $keys=@(Get-RetirementKeys);$lines=$text.Split([char]10);$j=[ordered]@{}
+    if($lines.Count -ne $keys.Count+1 -or $lines[-1] -cne ''){throw 'retirement-journal-invalid'}
+    for($i=0;$i -lt $keys.Count;$i++){
+        $prefix=$keys[$i]+'='
+        if(-not $lines[$i].StartsWith($prefix,[StringComparison]::Ordinal)){throw 'retirement-journal-invalid'}
+        $j[$keys[$i]]=$lines[$i].Substring($prefix.Length)
+    }
+    if($j.Format -cne '2' -or $j.Transaction -cnotmatch '^[a-f0-9]{32}$' -or
+       $j.Path -cne [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path.ToUpperInvariant())) -or
+       $j.Destination -cne (Join-Path $script:RecoveryDirectory $j.Transaction).ToUpperInvariant() -or
+       $j.RootId -cnotmatch '^\d+:\d+:\d+:\d+$' -or $j.GitId -cnotmatch '^\d+:\d+:\d+:\d+$' -or
+       $j.Enrollment -cnotmatch '^[a-f0-9]{32}$' -or $j.Claim -cnotmatch '^[a-f0-9]{32}$' -or
+       $j.Owner -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' -or $j.Generation -cnotmatch '^[1-9][0-9]{0,8}$' -or
+       $j.Head -cnotmatch '^([a-f0-9]{40}|[a-f0-9]{64})$' -or $j.Completed -cnotmatch '^[0-9]{18}$' -or
+       $j.BeforeDigest -cnotmatch '^[A-F0-9]{64}$' -or $j.AfterDigest -cnotmatch '^(-|[A-F0-9]{64})$' -or
+       $j.Phase -cnotmatch '^(prepared|retired|restore_prepared|restored|cancelled|needs_review)$' -or
+       $j.Issue -cnotmatch '^[a-z-]{1,64}$' -or $j.NextClaim -cnotmatch '^(-|[a-f0-9]{32})$' -or
+       $j.NextGeneration -cnotmatch '^(-|[1-9][0-9]{0,8})$'){throw 'retirement-journal-invalid'}
+    foreach($key in @('BeforeObservation','AfterObservation')){
+        if($j[$key] -cne '-' -and $j[$key] -cnotmatch ('^workspace-retirement-observation-'+$j.Transaction+'-[a-f0-9]{32}\.state$')){throw 'retirement-journal-invalid'}
+    }
+    if(($j.NextClaim -eq '-') -ne ($j.NextGeneration -eq '-')){throw 'retirement-journal-invalid'}
+    if($j.NextClaim -ne '-' -and [int]$j.NextGeneration -ne ([int]$j.Generation+1)){throw 'retirement-journal-invalid'}
+    if($j.Phase -in @('restore_prepared','restored','cancelled') -and $j.NextClaim -eq '-'){throw 'retirement-journal-invalid'}
+    return $j
+}
+function Assert-NoPendingRetirement([string]$Path) {
+    if([IO.File]::Exists((Get-RetirementFile $Path)) -or [IO.Directory]::Exists((Get-RetirementFile $Path))){
+        $j=Read-RetirementJournal $Path
+        if($j.Phase -notin @('restored','cancelled')){throw 'retirement-pending'}
+        # A closed journal alone is not proof the fresh paused claim committed.
+        # Later legitimate Resume/Complete cycles increment generation under this
+        # same helper/mutex; an old completed record must never auto-retry.
+        $r=Get-LifecycleRecord $Path
+        foreach($key in @('Path','RootId','GitId','Enrollment','Owner')){if($r[$key] -cne $j[$key]){throw 'retirement-pending'}}
+        if($r.Format -cne '1' -or $r.State -notin @('active','paused','completed') -or [int]$r.Generation -lt [int]$j.NextGeneration){throw 'retirement-pending'}
+        if($r.Generation -ceq $j.NextGeneration -and ($r.Claim -cne $j.NextClaim -or $r.State -cne 'paused')){throw 'retirement-pending'}
+    }
+}
+function Get-RetirementRows($Tree,[string]$Path) {
+    @($Tree.Entries|ForEach-Object {
+        $relative=$_.Path.Substring($Path.Length).ToUpperInvariant()
+        $stamp=if($relative.Length){$_.Stamp}else{$_.Identity}
+        [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($relative))+':'+$_.Directory+':'+$stamp
+    }|Sort-Object -CaseSensitive)
+}
+function Get-RetirementDigest($Tree,[string]$Path) {
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try{([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(((Get-RetirementRows $Tree $Path) -join "`n"))))).Replace('-','')}finally{$sha.Dispose()}
+}
+function Save-RetirementObservation($Tree,[string]$Location,$Journal,[string]$Stage,[string]$Issue='none') {
+    $leaf='workspace-retirement-observation-'+$Journal.Transaction+'-'+[guid]::NewGuid().ToString('N')+'.state'
+    $text="Format=1`nNonSnapshot=true`nStage=$Stage`nIssue=$Issue`nUtc=$([datetime]::UtcNow.ToString('o'))`nLocation=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Location)))`n"+((Get-RetirementRows $Tree $Location) -join "`n")+"`n"
+    [HermesFinance.WorkspaceCleanup.Tree]::WriteObservation((Join-Path $script:LogDirectory $leaf),$text)
+    return $leaf
+}
+function Get-RetirementInspection([string]$Location,$Journal,$Binding=$null) {
+    Assert-WorkspaceLock
+    $tree=New-Object HermesFinance.WorkspaceCleanup.Tree($false)
+    $ownBinding=$false
+    $out=[pscustomobject]@{Good=$false;Digest='-';Observation='-';Issue='inspection-incomplete'}
+    try{
+        if($null -eq $Binding){$Binding=New-Object HermesFinance.WorkspaceCleanup.Tree($true);$ownBinding=$true;$Binding.BindRootOnly($Location,$Journal.RootId)}
+        $tree.ObserveBound($Binding,$Location,$Journal.RootId,$script:EntryLimit)
+        $out.Digest=Get-RetirementDigest $tree $Location
+        $out.Observation=Save-RetirementObservation $tree $Location $Journal 'post'
+        if([HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($Location) -cne $Journal.RootId){$out.Issue='root-identity-changed';return $out}
+        if($out.Digest -cne $Journal.BeforeDigest){$out.Issue='manifest-changed';return $out}
+        if([HermesFinance.WorkspaceCleanup.Tree]::IdentityOf((Join-Path $Location '.git')) -cne $Journal.GitId){$out.Issue='git-identity-changed';return $out}
+        $m=Read-LifecycleRecord (Join-Path $Location '.git\workspace-enrollment.state') -Marker
+        foreach($k in @('Path','RootId','GitId','Enrollment')){if($m[$k] -cne $Journal[$k]){$out.Issue='enrollment-changed';return $out}}
+        # A full matching metadata digest transfers the PRE-flight cache proof.
+        # It is never an atomic content snapshot or permission to purge later.
+        foreach($e in $tree.Entries){if($null -ne $e.CacheRoot){$tree.ApproveGeneratedCache($e.Path,$e.Stamp)}}
+        Test-JanitorMarkers $tree.Entries $Location
+        $out.Good=$true;$out.Issue='none'
+    }catch{
+        try{$out.Observation=Save-RetirementObservation $tree $Location $Journal 'partial' 'inspection-incomplete'}catch{}
+    }finally{$tree.Dispose();if($ownBinding){$Binding.Dispose()}}
+    return $out
+}
+function Set-RetirementReview([string]$Path,$Record,$Journal,[string]$Issue) {
+    $Journal.Phase='needs_review';$Journal.Issue=$Issue
+    Write-RetirementJournal $Path $Journal
+    # Finish-return may have prepared a fresh paused claim before a failed write.
+    # An uncertain return never grants it: retain the original retirement authority.
+    foreach($key in @('Path','RootId','GitId','Enrollment','Owner','Claim','Generation','Head','Completed')){$Record[$key]=$Journal[$key]}
+    $Record.Format='2';$Record.State='needs_review';$Record['Transaction']=$Journal.Transaction
+    Write-LifecycleRecord $Path $Record
+    return [pscustomobject]@{State='NEEDS_REVIEW';Transaction=$Journal.Transaction;Issue=$Issue}
+}
+function Complete-RetirementInspection([string]$Path,$Record,$Journal,[string]$Location,$Binding=$null) {
+    $ownBinding=$false
+    try{
+    if($null -eq $Binding){$Binding=New-Object HermesFinance.WorkspaceCleanup.Tree($true);$ownBinding=$true;$Binding.BindRootOnly($Location,$Journal.RootId)}
+    $inspection=Get-RetirementInspection $Location $Journal $Binding
+    $Journal.AfterDigest=$inspection.Digest;$Journal.AfterObservation=$inspection.Observation
+    if(-not $inspection.Good){return Set-RetirementReview $Path $Record $Journal $inspection.Issue}
+    # Another object at the original path is never removed or overwritten.
+    if($Location -cne $Path -and ([IO.Directory]::Exists($Path) -or [IO.File]::Exists($Path))){return Set-RetirementReview $Path $Record $Journal 'original-path-occupied'}
+    $Journal.Phase='retired';$Journal.Issue='none';Write-RetirementJournal $Path $Journal
+    $Record.Format='2';$Record.State='retired';$Record['Transaction']=$Journal.Transaction;Write-LifecycleRecord $Path $Record
+    [pscustomobject]@{State='RETIRED';Transaction=$Journal.Transaction;Issue='none'}
+    }catch{return Set-RetirementReview $Path $Record $Journal 'inspection-binding-unknown'}
+    finally{if($ownBinding){$Binding.Dispose()}}
+}
+function Invoke-RetirementMove([string]$Path,$Record,$Tree) {
+    Assert-WorkspaceLock
+    $pins=New-Object HermesFinance.WorkspaceCleanup.Tree($false);$j=$null;$intent=$false
+    try{
+        $pins.PinAncestors($script:LogDirectory);$pins.PinAncestors($script:RecoveryDirectory)
+        Assert-LifecycleIdentity $Path $Record -Bound
+        $Tree.Freeze()
+        $tx=[guid]::NewGuid().ToString('N')
+        $j=[ordered]@{Format='2';Transaction=$tx;Path=$Record.Path;Destination=(Join-Path $script:RecoveryDirectory $tx).ToUpperInvariant();
+            RootId=$Record.RootId;GitId=$Record.GitId;Enrollment=$Record.Enrollment;Owner=$Record.Owner;Claim=$Record.Claim;Generation=$Record.Generation;Head=$Record.Head;Completed=$Record.Completed;
+            BeforeDigest=(Get-RetirementDigest $Tree $Path);AfterDigest='-';BeforeObservation='-';AfterObservation='-';Phase='prepared';Issue='none';NextClaim='-';NextGeneration='-'}
+        $j.BeforeObservation=Save-RetirementObservation $Tree $Path $j 'pre'
+        $file=Get-RetirementFile $Path
+        if([IO.File]::Exists($file)){
+            $old=Read-RetirementJournal $Path
+            if($old.Phase -notin @('restored','cancelled')){throw 'retirement-pending'}
+            [HermesFinance.WorkspaceCleanup.Tree]::WriteState((Join-Path $script:LogDirectory ('workspace-retirement-history-'+$old.Transaction+'.state')),[HermesFinance.WorkspaceCleanup.Tree]::ReadState($file),$true)
+        }
+        Write-RetirementJournal $Path $j;$intent=$true
+        $Record.Format='2';$Record.State='retiring';$Record['Transaction']=$tx;Write-LifecycleRecord $Path $Record
+        $Tree.ReleaseDescendantsForRelocation($j.RootId)
+        $Tree.RenameTo($Path,$j.Destination)
+        return Complete-RetirementInspection $Path $Record $j $j.Destination $Tree
+    }catch{
+        if($intent){return Set-RetirementReview $Path $Record $j 'operation-outcome-unknown'}
+        throw
+    }finally{$pins.Dispose()}
+}
+function Finish-RetirementReturn([string]$Path,$Record,$Journal,[string]$Phase,$Binding=$null) {
+    $ownBinding=$false
+    try{
+    if($null -eq $Binding){$Binding=New-Object HermesFinance.WorkspaceCleanup.Tree($true);$ownBinding=$true;$Binding.BindRootOnly($Path,$Journal.RootId)}
+    $inspection=Get-RetirementInspection $Path $Journal $Binding
+    $Journal.AfterDigest=$inspection.Digest;$Journal.AfterObservation=$inspection.Observation
+    if(-not $inspection.Good){return Set-RetirementReview $Path $Record $Journal $inspection.Issue}
+    if([IO.Directory]::Exists($Journal.Destination) -or [IO.File]::Exists($Journal.Destination)){return Set-RetirementReview $Path $Record $Journal 'recovery-path-occupied'}
+    if($Journal.NextClaim -eq '-'){
+        if([int]$Record.Generation -ge 999999999){return Set-RetirementReview $Path $Record $Journal 'generation-exhausted'}
+        $Journal.NextClaim=[guid]::NewGuid().ToString('N');$Journal.NextGeneration=([int]$Record.Generation+1).ToString()
+    }
+    $Journal.Phase=$Phase;$Journal.Issue='none';Write-RetirementJournal $Path $Journal
+    $Record.Format='1';$Record.Remove('Transaction');$Record.State='paused';$Record.Claim=$Journal.NextClaim;$Record.Generation=$Journal.NextGeneration;$Record.Head='-';$Record.Completed='-'
+    Write-LifecycleRecord $Path $Record
+    return [pscustomobject]$Record
+    }catch{return Set-RetirementReview $Path $Record $Journal 'return-binding-or-state-unknown'}
+    finally{if($ownBinding){$Binding.Dispose()}}
+}
+function Invoke-RetirementRecovery([string]$Path,[string]$Owner,[string]$Token,[switch]$Restore) {
+    Assert-WorkspaceLock
+    $Path=Assert-JanitorChild $Path
+    $guard=New-Object HermesFinance.WorkspaceCleanup.Tree($false);$tree=$null
+    try{
+        $guard.PinAncestors($script:LogDirectory);$guard.PinAncestors([IO.Path]::GetDirectoryName($Path));$guard.PinAncestors($script:RecoveryDirectory)
+        $j=Read-RetirementJournal $Path;$r=Get-LifecycleRecord $Path
+        if($Owner -cne $j.Owner -or $Token -cne $j.Claim){throw 'lifecycle-owner-or-claim-mismatch'}
+        foreach($k in @('Path','RootId','GitId','Enrollment','Owner')){if($r[$k] -cne $j[$k]){throw 'retirement-record-mismatch'}}
+        if($j.Phase -eq 'needs_review' -or $r.State -eq 'needs_review'){throw 'retirement-needs-review'}
+        if($j.Phase -in @('restored','cancelled')){
+            if($Restore){throw 'retirement-already-resolved'}
+            if($r.Format -eq '1' -and $r.State -eq 'paused' -and $r.Claim -ceq $j.NextClaim -and $r.Generation -ceq $j.NextGeneration){return Finish-RetirementReturn $Path $r $j $j.Phase}
+            if($r.Claim -cne $j.Claim -or $r.Generation -cne $j.Generation){throw 'retirement-record-mismatch'}
+            return Finish-RetirementReturn $Path $r $j $j.Phase
+        }
+        if($r.Claim -cne $j.Claim -or $r.Generation -cne $j.Generation -or $r.Head -cne $j.Head -or $r.Completed -cne $j.Completed -or
+           ($r.Format -eq '2' -and $r.Transaction -cne $j.Transaction)){throw 'retirement-record-mismatch'}
+        $original=[IO.Directory]::Exists($Path) -or [IO.File]::Exists($Path)
+        $recovery=[IO.Directory]::Exists($j.Destination) -or [IO.File]::Exists($j.Destination)
+        if($original -eq $recovery){return Set-RetirementReview $Path $r $j 'locations-ambiguous'}
+        if($original){
+            if($Restore){throw 'retirement-not-in-recovery'}
+            if($j.Phase -eq 'prepared'){return Finish-RetirementReturn $Path $r $j 'cancelled'}
+            if($j.Phase -eq 'restore_prepared'){return Finish-RetirementReturn $Path $r $j 'restored'}
+            return Set-RetirementReview $Path $r $j 'unexpected-original-location'
+        }
+        if($j.Phase -eq 'restore_prepared'){return Set-RetirementReview $Path $r $j 'restore-outcome-pending'}
+        if(-not $Restore){return Complete-RetirementInspection $Path $r $j $j.Destination}
+        if($r.Format -ne '2' -or $r.State -ne 'retired' -or $j.Phase -ne 'retired' -or [int]$r.Generation -ge 999999999){throw 'retirement-not-ready-to-restore'}
+        $inspection=Get-RetirementInspection $j.Destination $j
+        if(-not $inspection.Good){return Set-RetirementReview $Path $r $j $inspection.Issue}
+        $tree=New-Object HermesFinance.WorkspaceCleanup.Tree($true);$tree.BindRootOnly($j.Destination,$j.RootId);$tree.Scan($j.Destination,$script:EntryLimit)
+        if((Get-RetirementDigest $tree $j.Destination) -cne $j.BeforeDigest -or [HermesFinance.WorkspaceCleanup.Tree]::IdentityOf($j.Destination) -cne $j.RootId){return Set-RetirementReview $Path $r $j 'restore-preflight-changed'}
+        # No blanket approval for changed cache data; matching metadata retains preflight proof.
+        foreach($e in $tree.Entries){if($null -ne $e.CacheRoot){$tree.ApproveGeneratedCache($e.Path,$e.Stamp)}}
+        $tree.Freeze()
+        $j.NextClaim=[guid]::NewGuid().ToString('N');$j.NextGeneration=([int]$r.Generation+1).ToString();$j.Phase='restore_prepared';Write-RetirementJournal $Path $j
+        $r.State='restoring';Write-LifecycleRecord $Path $r
+        try{
+            $tree.ReleaseDescendantsForRelocation($j.RootId);$tree.RenameTo($j.Destination,$Path)
+            return Finish-RetirementReturn $Path $r $j 'restored' $tree
+        }catch{return Set-RetirementReview $Path $r $j 'restore-outcome-unknown'}
+    }finally{if($null -ne $tree){$tree.Dispose()};$guard.Dispose()}
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $results = @(Invoke-WorkspaceJanitor $Root $RetentionDays -Delete:$Apply)
-        foreach ($result in $results) { if ($result -is [string]) { Write-Output $result } else { $result | ConvertTo-Json -Depth 5 } }
-        if ($results[-1].Status -ne 'complete') { exit 2 }
-    } catch { Write-Output '{"Status":"rejected","Reason":"configuration-or-log-unavailable"}'; exit 2 }
+        Initialize-JanitorNative
+        if ($Operation -ne 'Scan') {
+            if ($Apply -or $Retire -or $PSBoundParameters.ContainsKey('Root') -or $PSBoundParameters.ContainsKey('RetentionDays')) { throw 'invalid-operation-options' }
+            $operationResult=if ($Operation -in @('Recover','Restore')) {
+                Invoke-WorkspaceLock { Invoke-RetirementRecovery $Workspace $Owner $ClaimId -Restore:($Operation -eq 'Restore') }
+            } else { Invoke-WorkspaceLock { Invoke-WorkspaceLifecycle $Operation $Workspace $Owner $ClaimId } }
+            $operationResult | ConvertTo-Json -Depth 5
+        } else {
+            if ($Apply) { throw 'permanent-delete-disabled-use-retire' }
+            if ($Workspace -or $Owner -or $ClaimId) { throw 'invalid-operation-options' }
+            $results = @(Invoke-WorkspaceJanitor $Root $RetentionDays -Delete:$Retire)
+            foreach ($result in $results) { if ($result -is [string]) { Write-Output $result } else { $result | ConvertTo-Json -Depth 5 } }
+            if ($results[-1].Status -ne 'complete') { exit 2 }
+        }
+    } catch { Write-Output '{"Status":"rejected","Reason":"configuration-state-or-log-unavailable"}'; exit 2 }
 }
