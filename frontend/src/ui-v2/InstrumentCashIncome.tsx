@@ -8,6 +8,7 @@ import { formatDate } from "../lib/format";
 import incomeStyles from "./InstrumentCashIncome.module.css";
 import { InstrumentEodEvidence } from "./InstrumentEodEvidence";
 import { InstrumentTrades } from "./InstrumentTrades";
+import { InstrumentWhatIf } from "./InstrumentWhatIf";
 import styles from "./UiV2CapitalPerformance.module.css";
 
 const stateLabels = {
@@ -308,6 +309,12 @@ export function InstrumentCashIncome({
                 </details>
               </section>
             </div>
+          ) : null}
+          {valid ? (
+            <InstrumentWhatIf
+              key={`${JSON.stringify(scope)}:${request?.generation ?? 0}`}
+              scope={scope}
+            />
           ) : null}
         </>
       ) : null}

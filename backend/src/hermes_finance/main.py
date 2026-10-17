@@ -59,6 +59,7 @@ from hermes_finance.api.instrument_eod_observations import (
 )
 from hermes_finance.api.instrument_mappings import router as instrument_mappings_router
 from hermes_finance.api.instrument_trades import router as instrument_trades_router
+from hermes_finance.api.instrument_what_if import router as instrument_what_if_router
 from hermes_finance.api.instruments import router as instruments_router
 from hermes_finance.api.investment_flows import router as investment_flows_router
 from hermes_finance.api.month_close_workflow import router as month_close_workflow_router
@@ -189,6 +190,7 @@ def create_app(
     application.include_router(instruments_router)
     application.include_router(instrument_cash_income_router)
     application.include_router(instrument_trades_router)
+    application.include_router(instrument_what_if_router)
     application.include_router(instrument_eod_observations_router)
     application.include_router(instrument_mappings_router)
     application.include_router(iis_router)

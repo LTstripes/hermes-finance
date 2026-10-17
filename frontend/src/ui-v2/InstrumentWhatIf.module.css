@@ -1,0 +1,44 @@
+.panel {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #dbe2ea;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.choices {
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 12px;
+  min-width: 0;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  cursor: pointer;
+}
+.choice input {
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.choice small {
+  display: block;
+  margin-top: 4px;
+  color: #475569;
+  line-height: 1.5;
+}
+.value {
+  font-weight: 650;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.panel button {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.panel :focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
