@@ -1,3 +1,4 @@
+import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { type UseQueryResult, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -398,6 +399,7 @@ export default function UiV2DataFilesPage() {
     setPreRestoreEvidence(null);
     setBackupError(null);
     try {
+      brokerOriginalSession(queryClient).clear();
       const result: unknown = await restoreBackup(candidate.id);
       if (!isRestoreResponse(result)) {
         throw new Error("Restore response payload is missing or malformed");

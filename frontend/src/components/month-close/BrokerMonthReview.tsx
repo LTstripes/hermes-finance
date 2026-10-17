@@ -2,12 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listAccounts } from "../../api/accounts";
-import { ApiClientError, formatApiError } from "../../api/client";
+import { formatApiError } from "../../api/client";
 import {
-  applyBrokerMonth,
   listBrokerMonths,
   previewBrokerMonth,
-  readBrokerMonth,
   type BrokerMonthPreview,
   type BrokerMonthReadback,
 } from "../../api/brokerMonths";
@@ -20,6 +18,7 @@ import { Button, Panel, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
 import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
 import { BrokerMoneyReview } from "./BrokerMoneyReview";
+import { useBrokerOriginalSession } from "./brokerOriginalSession";
 
 function SourceInventory({ document }: { document: MyBrokerDocument }) {
   return (
@@ -160,6 +159,8 @@ function AccountAliases({ preview }: { preview: BrokerMonthPreview }) {
 
 export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed: boolean }) {
   const queryClient = useQueryClient();
+  const { session, original } = useBrokerOriginalSession();
+  const { file, accountId } = original;
   const accounts = useQuery({
     queryKey: queryKeys.accounts,
     queryFn: async ({ signal }) => {
@@ -183,26 +184,23 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       return result;
     },
   });
-  const [accountId, setAccountId] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<BrokerMonthPreview | null>(null);
-  const [readback, setReadback] = useState<BrokerMonthReadback | null>(null);
-  const [confirmedRequestId, setConfirmedRequestId] = useState<string | null>(
-    () => queryClient.getQueryData<string>(["broker-month-confirmed", monthId]) ?? null,
-  );
+  const [previewEpoch, setPreviewEpoch] = useState<number | null>(null);
+  const readback = original.confirmed;
+  const confirmedRequestId = readback?.request_id;
   const [bindingsReviewed, setBindingsReviewed] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [checking, setBusy] = useState(false);
+  const busy = checking || original.busy;
   const [error, setError] = useState<string | null>(null);
   const request = useRef<string | null>(null);
   const generation = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const invalidateReview = useCallback((preserveReadback = false) => {
+  const invalidateReview = useCallback(() => {
     generation.current++;
     controller.current?.abort();
     setBusy(false);
     setPreview(null);
-    if (!preserveReadback) setReadback(null);
     setBindingsReviewed(false);
     setError(null);
     setNotice(null);
@@ -211,17 +209,12 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
   // A context transition invalidates even A→B→A responses and consents.
   useLayoutEffect(() => {
     invalidateReview();
-    if (closed) controller.current?.abort();
-    setAccountId("");
-    setFile(null);
-    setConfirmedRequestId(
-      queryClient.getQueryData<string>(["broker-month-confirmed", monthId]) ?? null,
-    );
+    session.context(monthId, closed);
     return () => {
       generation.current++;
       controller.current?.abort();
     };
-  }, [monthId, closed, queryClient, invalidateReview]);
+  }, [monthId, closed, session, invalidateReview]);
   useEffect(
     () =>
       queryClient.getQueryCache().subscribe((event) => {
@@ -239,19 +232,21 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
             "month-close-workflow",
           ].includes(key)
         ) {
-          invalidateReview(true);
+          invalidateReview();
         }
       }),
     [queryClient, invalidateReview],
   );
 
   async function inspect(original = file, selected = accountId) {
-    if (!original || closed) return;
+    if (!original || closed || session.snapshot().pending) return;
     invalidateReview();
     const version = generation.current;
+    const epoch = session.snapshot().epoch;
     const abort = new AbortController();
     controller.current = abort;
-    const current = () => generation.current === version && !abort.signal.aborted;
+    const current = () =>
+      generation.current === version && session.snapshot().epoch === epoch && !abort.signal.aborted;
     setBusy(true);
     try {
       let target = selected;
@@ -296,7 +291,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
           return;
         }
         target = String(context.accountId);
-        setAccountId(target);
+        session.identify(target);
       }
       const result = await previewBrokerMonth(
         original,
@@ -313,6 +308,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         result.account_id !== Number(target)
       )
         throw new Error("Получен Preview другого счёта или месяца.");
+      setPreviewEpoch(session.snapshot().epoch);
       setPreview(result);
       request.current = crypto.randomUUID();
     } catch (e) {
@@ -325,62 +321,19 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     }
   }
   async function apply() {
-    if (!file || !preview?.can_apply || busy || closed || !request.current) return;
+    if (
+      !file ||
+      !preview?.can_apply ||
+      busy ||
+      closed ||
+      !request.current ||
+      previewEpoch !== session.snapshot().epoch
+    )
+      return;
     if (preview.account_bindings.length && !bindingsReviewed) return;
-    const version = generation.current;
-    const requestId = request.current;
-    setBusy(true);
-    setError(null);
-    try {
-      const intent = { reporting_month_id: monthId, account_id: Number(accountId) };
-      const committed = await applyBrokerMonth(
-        file,
-        intent,
-        preview.confirmation_digest,
-        requestId,
-        preview.account_bindings,
-      );
-      if (generation.current !== version) return;
-      const persisted = await readBrokerMonth(requestId);
-      if (generation.current !== version) return;
-      if (
-        persisted.contract_version !== "broker_month_v1" ||
-        persisted.request_id !== requestId ||
-        persisted.reporting_month_id !== monthId ||
-        persisted.account_id !== intent.account_id ||
-        persisted.confirmation_digest !== preview.confirmation_digest ||
-        JSON.stringify(committed.accepted) !== JSON.stringify(persisted.accepted)
-      )
-        throw new Error(
-          "Независимое чтение не подтвердило сохранённый результат. Обнови состояние.",
-        );
-      setReadback(persisted);
-      setConfirmedRequestId(persisted.request_id);
-      // Parent workflow refresh may temporarily unmount this panel. Retain
-      // only the proven request marker, never a cached financial readiness.
-      queryClient.setQueryData(["broker-month-confirmed", monthId], persisted.request_id);
-      setPreview(null);
-      await queryClient.invalidateQueries();
-    } catch (e) {
-      if (generation.current === version) {
-        setBindingsReviewed(false);
-        setError(formatApiError(e));
-        // A rejected stale intent needs a new Preview. Network/GET failures
-        // retain the exact request/digest/alias batch for explicit same-key retry.
-        if (
-          (e instanceof ApiClientError && e.status === 409) ||
-          (e instanceof Error &&
-            /^broker_month_(preview_stale|reconciliation_required|account_bindings_unconfirmed)$/.test(
-              e.message,
-            ))
-        ) {
-          setPreview(null);
-          setNotice("Источник или привязки изменились. Повтори Preview и заново проверь сводку.");
-        }
-      }
-    } finally {
-      if (generation.current === version) setBusy(false);
-    }
+    setBindingsReviewed(false);
+    setPreview(null);
+    await session.start(preview, request.current);
   }
   const currentBatches = batches.data ?? [];
   const saved = Array.from(
@@ -424,8 +377,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                 key={monthId}
                 onChange={(e) => {
                   const original = e.target.files?.[0] ?? null;
-                  setFile(original);
-                  setAccountId("");
+                  session.select(original, monthId, "");
                   invalidateReview();
                   if (original) void inspect(original, "");
                 }}
@@ -438,7 +390,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                 value={accountId}
                 onChange={(e) => {
                   const target = e.target.value;
-                  setAccountId(target);
+                  session.select(file, monthId, target);
                   invalidateReview();
                   if (file && target) void inspect(file, target);
                 }}
@@ -455,7 +407,11 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                   ))}
               </select>
             </label>
-            <Button type="button" onClick={() => void inspect()} disabled={!file || busy}>
+            <Button
+              type="button"
+              onClick={() => void inspect()}
+              disabled={!file || busy || original.pending != null}
+            >
               {busy ? "Проверяем…" : "Проверить MyBroker"}
             </Button>
           </>
@@ -468,9 +424,27 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
             {formatApiError(accounts.error ?? batches.error)}
           </p>
         ) : null}
-        {error ? <p role="alert">{error}</p> : null}
+        {file ? <p>Оригинал в текущем сеансе: {file.name}</p> : null}
+        {error || original.error ? <p role="alert">{error ?? original.error}</p> : null}
+        {original.pending && !closed ? (
+          <div className={styles.stack}>
+            <p role="status">
+              {original.pending.committed
+                ? "Сохранение подтверждено сервером, независимое чтение не завершено — повторить чтение"
+                : "Ответ сохранения не подтверждён. Сначала проверь результат по исходному запросу."}
+            </p>
+            <Button type="button" disabled={busy} onClick={() => void session.retryRead()}>
+              Повторить чтение
+            </Button>
+            {!original.pending.committed && original.pending.replayAllowed && !busy ? (
+              <Button type="button" onClick={() => void session.post()}>
+                Повторить сохранение с прежним запросом
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {notice ? <p role="status">{notice}</p> : null}
-        {preview && !closed ? (
+        {preview && previewEpoch === original.epoch && !closed && !original.pending ? (
           <>
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
@@ -534,13 +508,15 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
               )}
               <Exceptions codes={previous.exceptions} />
               <BrokerMoneyReview
-                key={previous.request_id}
+                key={`${previous.request_id}:${original.epoch}`}
                 baseRequestId={previous.request_id}
                 monthId={monthId}
                 accountId={previous.account_id}
                 importId={previous.import_id}
                 closed={closed}
                 stored={previous.money_acceptance}
+                originalFile={!closed ? session.candidate(previous) : undefined}
+                sessionEpoch={original.epoch}
               />
             </div>
           ))

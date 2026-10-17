@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -170,7 +170,7 @@ it("legacy PDF technical tax zero remains unknown when provenance says unavailab
   render(<MoneyStored saved={saved} />);
   expect(screen.getByRole("table")).toHaveTextContent("Неизвестно");
 });
-function show(closed = false) {
+function show(closed = false, originalFile?: File) {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -181,6 +181,7 @@ function show(closed = false) {
         accountId={1}
         importId={10}
         closed={closed}
+        originalFile={originalFile}
       />
     </QueryClientProvider>,
   );
@@ -430,3 +431,98 @@ it("offers native stock commission and requires independent basis evidence befor
   expect(screen.getByRole("table")).toHaveTextContent("independent-source-v1");
   expect(screen.getByRole("table")).not.toHaveTextContent("НКД");
 });
+
+it.each([false, true])(
+  "retained primary plus supplemental keep exact bytes/name and union order (reverse=%s)",
+  async (reverse) => {
+    const primary = new File(["primary exact bytes"], "primary.xml", { type: "application/xml" });
+    const supplemental = new File(["supplemental exact bytes"], "overlap.xml", {
+      type: "application/xml",
+    });
+    show(false, reverse ? supplemental : primary);
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Принять Money в этот черновик"));
+    expect(previewBrokerMoney).not.toHaveBeenCalled();
+    expect(applyBrokerMoney).not.toHaveBeenCalled();
+    await user.upload(
+      screen.getByLabelText(/Оригинальные XML для Money/),
+      reverse ? primary : supplemental,
+    );
+    await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+    expect(vi.mocked(previewBrokerMoney).mock.calls[0][0]).toEqual(
+      reverse ? [supplemental, primary] : [primary, supplemental],
+    );
+    expect(applyBrokerMoney).not.toHaveBeenCalled();
+  },
+);
+it("bad supplemental remains selected after rejection and can be removed without losing the primary", async () => {
+  const primary = new File(["primary"], "primary.xml", { type: "application/xml" });
+  const bad = new File(["bad"], "bad.xml", { type: "application/xml" });
+  show(false, primary);
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Принять Money в этот черновик"));
+  await user.upload(screen.getByLabelText(/Оригинальные XML для Money/), bad);
+  vi.mocked(previewBrokerMoney).mockRejectedValueOnce(new Error("invalid supplemental"));
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  await screen.findByText("invalid supplemental");
+  const selected = screen.getByRole("list", { name: "Выбранные оригиналы Money" });
+  expect(selected).toHaveTextContent(primary.name);
+  expect(selected).toHaveTextContent(bad.name);
+  expect(applyBrokerMoney).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Убрать bad.xml" }));
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  expect(vi.mocked(previewBrokerMoney).mock.calls[1][0]).toEqual([primary]);
+});
+
+it.each(["account", "month", "base", "file", "closed", "epoch"])(
+  "late Money Preview cannot revive decisions after %s ABA",
+  async (kind) => {
+    const primary = new File(["primary"], "primary.xml", { type: "application/xml" });
+    const initial = {
+      baseRequestId: "base",
+      monthId: 1,
+      accountId: 1,
+      importId: 10,
+      closed: false,
+      sessionEpoch: 1,
+      originalFile: primary,
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (props: typeof initial) => (
+      <QueryClientProvider client={client}>
+        <BrokerMoneyReview {...props} />
+      </QueryClientProvider>
+    );
+    const result = await vi.mocked(previewBrokerMoney).getMockImplementation()?.([primary], {
+      contract_version: "broker_money_v1",
+      base_request_id: "base",
+      reporting_month_id: 1,
+      account_id: 1,
+      money_decisions: [],
+    });
+    let resolve!: (value: MoneyPreview) => void;
+    vi.mocked(previewBrokerMoney).mockReturnValueOnce(
+      new Promise<MoneyPreview>((done) => {
+        resolve = done;
+      }),
+    );
+    const view = render(tree(initial));
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Принять Money в этот черновик"));
+    await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+    const changed = { ...initial };
+    if (kind === "account") changed.accountId++;
+    if (kind === "month") changed.monthId++;
+    if (kind === "base") changed.baseRequestId = "other";
+    if (kind === "file") changed.originalFile = new File(["other"], "other.xml");
+    if (kind === "closed") changed.closed = true;
+    if (kind === "epoch") changed.sessionEpoch++;
+    view.rerender(tree(changed));
+    view.rerender(tree(initial));
+    await act(async () => {
+      resolve(result as MoneyPreview);
+    });
+    expect(screen.queryByRole("table", { name: "Все наблюдения Money" })).not.toBeInTheDocument();
+    expect(applyBrokerMoney).not.toHaveBeenCalled();
+  },
+);

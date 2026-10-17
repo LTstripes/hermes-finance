@@ -1,3 +1,4 @@
+import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -202,6 +203,7 @@ export function ExportPage() {
     setRestoreError(null);
     setRestoreSuccess(null);
     try {
+      brokerOriginalSession(queryClient).clear();
       const result = await restoreBackup(candidate.id);
       const previousSelectedMonthId = selectedMonthId;
       monthRequestGeneration.current += 1;

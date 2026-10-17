@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +13,8 @@ import {
 } from "../../api/brokerMonths";
 import { getMonth } from "../../api/months";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
+import { ApiClientError } from "../../api/client";
+import { brokerOriginalSession } from "./brokerOriginalSession";
 import { BrokerMonthReview } from "./BrokerMonthReview";
 
 vi.mock("../../api/months", () => ({ getMonth: vi.fn() }));
@@ -136,7 +138,11 @@ beforeEach(() => {
   vi.mocked(applyBrokerMonth).mockImplementation(async (_file, _intent, _digest, requestId) =>
     persisted(requestId),
   );
-  vi.mocked(readBrokerMonth).mockImplementation(async (id) => persisted(id));
+  vi.mocked(readBrokerMonth).mockImplementation(async (id) => {
+    const result = persisted(id);
+    vi.mocked(listBrokerMonths).mockResolvedValue([result]);
+    return result;
+  });
 });
 function show(closed = false) {
   const query = new QueryClient({
@@ -240,7 +246,7 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
   await user.click(
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   );
-  await screen.findByText("broker_month_preview_stale");
+  await screen.findByText(/Источник или привязки изменились/);
   expect(readBrokerMonth).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
   await screen.findByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ });
@@ -251,22 +257,21 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).toBeDisabled();
 });
-it("does not claim success after failed GET and reuses request identity on retry", async () => {
+it("acknowledged Apply retries only the same GET after a read failure", async () => {
   vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic read failed"));
   const user = show();
   await inspect(user);
-
   await user.click(
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   );
   await screen.findByText("Synthetic read failed");
   expect(screen.queryByText(/Сохранённый результат подтверждён/)).not.toBeInTheDocument();
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Повторить чтение" }));
   await screen.findByText(/Сохранённый результат подтверждён/);
-  const calls = vi.mocked(applyBrokerMonth).mock.calls;
-  expect(calls[0][3]).toBe(calls[1][3]);
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(readBrokerMonth).mock.calls[0]).toEqual(
+    vi.mocked(readBrokerMonth).mock.calls[1],
+  );
 });
 it("rejects independent readback from another account", async () => {
   vi.mocked(readBrokerMonth).mockImplementation(async (id) => persisted(id, 8));
@@ -764,31 +769,26 @@ it("missing currency and source conflict give next actions without an enable/ign
   ).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
-it("failed post-Apply GET clears new-alias consent and explicit retry retains the exact batch/key/digest", async () => {
+it("acknowledged source retains the exact reviewed alias batch without asking for a second write consent", async () => {
   known();
   const bindings = [{ identity: "NEW", hermes_id: 7 }];
   vi.mocked(previewBrokerMonth).mockResolvedValue({ ...preview, account_bindings: bindings });
   vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic GET failed"));
   const { user } = mounted();
   await upload(user);
-  const consent = await screen.findByRole("checkbox", { name: /Я подтверждаю/ });
-  const save = screen.getByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
-  });
-  await user.click(consent);
-  await user.click(save);
-  await screen.findByText("Synthetic GET failed");
-  expect(consent).not.toBeChecked();
-  expect(save).toBeDisabled();
-  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
-  expect(readBrokerMonth).toHaveBeenCalledTimes(1);
-  await user.click(consent);
-  await user.click(save);
-  await screen.findByText(/Сохранённый результат подтверждён/);
-  expect(vi.mocked(applyBrokerMonth).mock.calls[1]).toEqual(
-    vi.mocked(applyBrokerMonth).mock.calls[0],
+  await user.click(await screen.findByRole("checkbox", { name: /Я подтверждаю/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   );
-  expect(vi.mocked(applyBrokerMonth).mock.calls[1][4]).toEqual(bindings);
+  await screen.findByText("Synthetic GET failed");
+  expect(screen.queryByRole("checkbox", { name: /Я подтверждаю/ })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: /сохранить неполный source-DRAFT/ }),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Повторить чтение" }));
+  await screen.findByText(/Сохранённый результат подтверждён/);
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(applyBrokerMonth).mock.calls[0][4]).toEqual(bindings);
 });
 it("a double click while saving cannot submit a second financial intent", async () => {
   known();
@@ -801,7 +801,7 @@ it("a double click while saving cannot submit a second financial intent", async 
   });
   await user.dblClick(save);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
-  expect(save).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Повторить чтение" })).toBeDisabled();
   const id = vi.mocked(applyBrokerMonth).mock.calls[0][3];
   await act(async () => {
     pending.resolve(persisted(id));
@@ -856,4 +856,254 @@ it("a supported new instrument plan is disclosed without a new per-ISIN decision
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).toBeEnabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+
+function sessionFixture() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const session = brokerOriginalSession(client);
+  const file = original();
+  session.context(1, false);
+  session.select(file, 1, "7");
+  return { session, client, file };
+}
+const missing = () =>
+  new ApiClientError(404, { code: "not_found", message: "not found", details: [] });
+it.each(["timeout", "404", "account", "month", "request", "digest", "payload"])(
+  "acknowledged %s GET failure keeps original key and only GET recovery",
+  async (kind) => {
+    const { session, file } = sessionFixture();
+    const bad = persisted("fixed");
+    if (kind === "timeout") vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("timeout"));
+    else if (kind === "404") vi.mocked(readBrokerMonth).mockRejectedValueOnce(missing());
+    else {
+      if (kind === "account") bad.account_id++;
+      if (kind === "month") bad.reporting_month_id++;
+      if (kind === "request") bad.request_id = "foreign";
+      if (kind === "digest") bad.confirmation_digest = "changed";
+      if (kind === "payload") bad.accepted.cash_id++;
+      vi.mocked(readBrokerMonth).mockResolvedValueOnce(bad);
+    }
+    await session.start(preview, "fixed");
+    expect(session.snapshot().pending?.committed).toBeTruthy();
+    expect(session.snapshot().confirmed).toBeNull();
+    expect(session.candidate(persisted("fixed"))).toBeUndefined();
+    await session.post();
+    expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+    await session.retryRead();
+    expect(session.candidate(persisted("fixed"))).toBe(file);
+    expect(vi.mocked(readBrokerMonth).mock.calls).toEqual([["fixed"], ["fixed"]]);
+  },
+);
+it("lost POST first GET recovers committed receipt without another POST", async () => {
+  const { session, file } = sessionFixture();
+  vi.mocked(applyBrokerMonth).mockRejectedValueOnce(new Error("lost response"));
+  await session.start(preview, "lost");
+  expect(session.candidate(persisted("lost"))).toBe(file);
+  expect(vi.mocked(applyBrokerMonth).mock.invocationCallOrder[0]).toBeLessThan(
+    vi.mocked(readBrokerMonth).mock.invocationCallOrder[0],
+  );
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+});
+it("lost POST + absent GET offers only exact-key replay with the original File/digest/aliases", async () => {
+  const { session } = sessionFixture();
+  vi.mocked(applyBrokerMonth).mockRejectedValueOnce(new Error("lost response"));
+  vi.mocked(readBrokerMonth).mockRejectedValueOnce(missing());
+  const plan = { ...preview, account_bindings: [{ identity: "NEW", hermes_id: 7 }] };
+  await session.start(plan, "lost");
+  expect(session.snapshot().pending?.committed).toBeNull();
+  expect(session.snapshot().pending?.replayAllowed).toBe(true);
+  expect(session.snapshot().confirmed).toBeNull();
+  await session.post();
+  expect(vi.mocked(applyBrokerMonth).mock.calls[1]).toEqual(
+    vi.mocked(applyBrokerMonth).mock.calls[0],
+  );
+});
+it.each(["source_projection_changed", "accepted_mapping_changed", "account_binding_changed"])(
+  "lost response cannot confirm or replay invalidated receipt %s",
+  async (code) => {
+    const { session } = sessionFixture();
+    vi.mocked(applyBrokerMonth).mockRejectedValueOnce(new Error("lost response"));
+    vi.mocked(readBrokerMonth).mockResolvedValueOnce({ ...persisted("lost"), exceptions: [code] });
+    await session.start(preview, "lost");
+    expect(session.snapshot().confirmed).toBeNull();
+    expect(session.snapshot().pending).toBeNull();
+    await session.post();
+    expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  },
+);
+it.each(["file", "account", "month", "closed", "restore", "mapping-ABA"])(
+  "late acknowledged POST cannot cross %s session boundary",
+  async (kind) => {
+    const { session, file, client } = sessionFixture();
+    const late = deferred<BrokerMonthReadback>();
+    vi.mocked(applyBrokerMonth).mockReturnValueOnce(late.promise);
+    const work = session.start(preview, "late");
+    if (kind === "file") {
+      session.select(original("b.xml"), 1, "7");
+      session.select(file, 1, "7");
+    }
+    if (kind === "account") {
+      session.select(file, 1, "8");
+      session.select(file, 1, "7");
+    }
+    if (kind === "month") {
+      session.context(2, false);
+      session.context(1, false);
+    }
+    if (kind === "closed") {
+      session.context(1, true);
+      session.context(1, false);
+    }
+    if (kind === "restore") session.clear();
+    if (kind === "mapping-ABA") {
+      client.setQueryData(["broker-identity-mappings"], ["A"]);
+      client.setQueryData(["broker-identity-mappings"], ["B"]);
+      client.setQueryData(["broker-identity-mappings"], ["A"]);
+    }
+    late.resolve(persisted("late"));
+    await work;
+    expect(session.snapshot().pending).toBeNull();
+    expect(session.snapshot().confirmed).toBeNull();
+    expect(readBrokerMonth).not.toHaveBeenCalled();
+  },
+);
+it("unmount/remount keeps exact original and acknowledged recovery; reload uses a fresh empty session", async () => {
+  known();
+  vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("offline"));
+  const { user, query, unmount } = mounted();
+  const file = original();
+  await upload(user, file);
+  await user.click(await screen.findByRole("button", { name: /Подтвердить сводку и сохранить/ }));
+  await screen.findByText("offline");
+  unmount();
+  render(
+    <QueryClientProvider client={query}>
+      <BrokerMonthReview monthId={1} closed={false} />
+    </QueryClientProvider>,
+  );
+  expect(brokerOriginalSession(query).snapshot().file).toBe(file);
+  await user.click(await screen.findByRole("button", { name: "Повторить чтение" }));
+  await screen.findByText(/Сохранённый результат подтверждён/);
+  expect(screen.getByRole("list", { name: "Выбранные оригиналы Money" })).toHaveTextContent(
+    file.name,
+  );
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  expect(brokerOriginalSession(new QueryClient()).snapshot().file).toBeNull();
+});
+it("catalogue mutation while unmounted retains File but drops proof; returning requires fresh Preview", async () => {
+  known();
+  const { user, query, unmount } = mounted();
+  const file = original();
+  await upload(user, file);
+  unmount();
+  query.setQueryData(["broker-identity-mappings"], ["changed"]);
+  render(
+    <QueryClientProvider client={query}>
+      <BrokerMonthReview monthId={1} closed={false} />
+    </QueryClientProvider>,
+  );
+  expect(brokerOriginalSession(query).snapshot().file).toBe(file);
+  expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await screen.findByRole("button", { name: /Подтвердить сводку/ });
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+
+it("late GET cannot hand original across a file ABA transition", async () => {
+  const { session, file } = sessionFixture();
+  const late = deferred<BrokerMonthReadback>();
+  vi.mocked(readBrokerMonth).mockReturnValueOnce(late.promise);
+  const work = session.start(preview, "late-get");
+  await waitFor(() => expect(readBrokerMonth).toHaveBeenCalledTimes(1));
+  session.select(original("b.xml"), 1, "7");
+  session.select(file, 1, "7");
+  late.resolve(persisted("late-get"));
+  await work;
+  expect(session.snapshot().confirmed).toBeNull();
+  expect(session.candidate(persisted("late-get"))).toBeUndefined();
+});
+it("an independently refreshed mapping change evicts confirmed candidate even while panel is unmounted", async () => {
+  const { session, client } = sessionFixture();
+  await client.fetchQuery({ queryKey: ["broker-identity-mappings"], queryFn: async () => ["A"] });
+  await session.start(preview, "mapped");
+  expect(session.snapshot().confirmed).toBeTruthy();
+  await client.fetchQuery({ queryKey: ["broker-identity-mappings"], queryFn: async () => ["B"] });
+  expect(session.snapshot().confirmed).toBeNull();
+  expect(session.snapshot().file).toBeTruthy();
+});
+it("CLOSED GET evicts raw original and pending state; reopen cannot revive them", async () => {
+  const { session } = sessionFixture();
+  vi.mocked(readBrokerMonth).mockResolvedValueOnce({ ...persisted("closed"), status: "closed" });
+  await session.start(preview, "closed");
+  session.context(1, false);
+  expect(session.snapshot().file).toBeNull();
+  expect(session.snapshot().pending).toBeNull();
+  expect(session.snapshot().confirmed).toBeNull();
+});
+
+it("normalized JSON object key order does not reject the exact source; array order and values remain evidence", async () => {
+  const { session, file } = sessionFixture();
+  vi.mocked(readBrokerMonth).mockImplementationOnce(async (id) => ({
+    ...persisted(id),
+    accepted: {
+      ...persisted(id).accepted,
+      document: Object.fromEntries(Object.entries(document).reverse()) as typeof document,
+    },
+  }));
+  await session.start(preview, "reordered");
+  expect(session.candidate(persisted("reordered"))).toBe(file);
+});
+
+it("wrong-context 200 POST response is an unknown outcome, never a true acknowledgement", async () => {
+  const { session } = sessionFixture();
+  vi.mocked(applyBrokerMonth).mockResolvedValueOnce(persisted("wrong-request", 8));
+  vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("GET timeout"));
+  await session.start(preview, "original-key");
+  expect(session.snapshot().pending?.committed).toBeNull();
+  expect(session.snapshot().confirmed).toBeNull();
+  expect(readBrokerMonth).toHaveBeenCalledWith("original-key");
+});
+it("a newly introduced receipt exception after a lost POST requires fresh Preview rather than aggregate readiness or replay", async () => {
+  const { session } = sessionFixture();
+  vi.mocked(applyBrokerMonth).mockRejectedValueOnce(new Error("lost"));
+  vi.mocked(readBrokerMonth).mockResolvedValueOnce({
+    ...persisted("changed"),
+    exceptions: [...preview.exceptions, "overlapping_endpoint_conflict"],
+  });
+  await session.start(preview, "changed");
+  expect(session.snapshot().confirmed).toBeNull();
+  expect(session.snapshot().pending).toBeNull();
+  await session.post();
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+});
+
+it("observed nonmanual mapping refetch still invalidates proof despite observer notification order", async () => {
+  const { session, client } = sessionFixture();
+  const key = ["broker-identity-mappings"];
+  await client.fetchQuery({ queryKey: key, queryFn: async () => ["A"] });
+  const observer = new QueryObserver(client, {
+    queryKey: key,
+    queryFn: async () => ["B"],
+    enabled: false,
+  });
+  const stop = observer.subscribe(() => undefined);
+  await session.start(preview, "observed");
+  expect(session.snapshot().confirmed).toBeTruthy();
+  await client.fetchQuery({ queryKey: key, queryFn: async () => ["B"] });
+  expect(session.snapshot().confirmed).toBeNull();
+  stop();
+});
+
+it("explicit Preview after a confirmed source Save displays the fresh summary instead of a retained receipt hiding it", async () => {
+  known();
+  const { user } = mounted();
+  await upload(user);
+  await user.click(await screen.findByRole("button", { name: /Подтвердить сводку и сохранить/ }));
+  await screen.findByText(/Сохранённый результат подтверждён/);
+  expect(screen.queryByRole("region", { name: "Сводка исходного DRAFT" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
 });

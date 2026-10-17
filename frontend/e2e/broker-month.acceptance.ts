@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 test("statement returns show native EOD facts, NKD caveat, exact export and stale/null account isolation on desktop", async ({
@@ -730,21 +731,82 @@ test("exceptions-first known account needs only original plus explicit source-DR
     path: info.outputPath("source-draft-single-confirm-1280-125.png"),
     fullPage: true,
   });
+  let attempts = 0;
+  await page.route("**/api/broker-months/*", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    attempts++;
+    if (attempts === 1) return route.abort("timedout");
+    if (attempts === 2)
+      return route.fulfill({
+        status: 404,
+        json: { error: { code: "not_found", message: "Synthetic delayed GET", details: [] } },
+      });
+    if (attempts === 3) {
+      const response = await route.fetch();
+      const wrong = await response.json();
+      wrong.accepted.cash_id++;
+      return route.fulfill({ response, json: wrong });
+    }
+    return route.continue();
+  });
   const appliedResponse = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/apply"));
-  const readResponse = page.waitForResponse(
-    (r) => /\/api\/broker-months\/[A-Za-z0-9_-]+$/.test(r.url()) && r.request().method() === "GET",
-  );
   await page.keyboard.press("Enter");
   const applied = await (await appliedResponse).json();
-  const reread = await (await readResponse).json();
-  expect(reread.accepted).toEqual(applied.accepted);
-  expect(reread.confirmation_digest).toBe(applied.confirmation_digest);
-  expect(reread.request_id).toBe(applied.request_id);
+  const retry = page.getByRole("button", { name: "Повторить чтение", exact: true });
+  await expect(
+    page.getByText(
+      "Сохранение подтверждено сервером, независимое чтение не завершено — повторить чтение",
+    ),
+  ).toBeVisible();
+  await expect(retry).toBeEnabled();
+  await expect(page.getByRole("list", { name: "Выбранные оригиналы Money" })).toHaveCount(0);
+  const afterPost = await (await request.get("/api/synthetic-broker-inventory")).json();
+  for (let i = 0; i < 2; i++) {
+    await retry.click();
+    await expect(retry).toBeEnabled();
+    await expect(
+      page.getByText(/Сохранённый результат подтверждён независимым чтением/),
+    ).toHaveCount(0);
+    expect(applies).toBe(1);
+    expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterPost);
+  }
+  await page.screenshot({
+    path: info.outputPath("source-ack-get-only-recovery-1280-125.png"),
+    fullPage: true,
+  });
+  await retry.click();
   await expect(
     page.getByText(/Сохранённый результат подтверждён независимым чтением/),
   ).toBeVisible();
   expect(applies).toBe(1);
-  expect(reads).toBe(1);
+  expect(reads).toBe(4);
+  const reread = await (await request.get(`/api/broker-months/${applied.request_id}`)).json();
+  expect(reread.accepted).toEqual(applied.accepted);
+  await page.unroute("**/api/broker-months/*");
+  await page.getByText("Принять Money в этот черновик", { exact: true }).click();
+  await expect(page.getByRole("list", { name: "Выбранные оригиналы Money" })).toContainText(
+    filename,
+  );
+  const primaryPreview = page.waitForResponse((r) =>
+    r.url().endsWith("/api/broker-months/preview"),
+  );
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const primary = await (await primaryPreview).json();
+  expect(primary.contract_version).toBe("broker_money_v1");
+  expect(primary.sources).toHaveLength(1);
+  // Real backend accepts only SHA-matching original bytes with the valid filename;
+  // normalized JSON or a reconstructed File cannot satisfy this source union.
+  expect(primary.sources[0].source.document_sha256).toBe(
+    createHash("sha256").update(xml).digest("hex"),
+  );
+  expect(primary.sources[0].adapter).toBe("mybroker-money-candidates-v1");
+  expect(primary.sources[0].original_required).not.toBe(true);
+  expect(primary.blockers).not.toContain("overlapping_original_required");
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterPost);
+  await page.screenshot({
+    path: info.outputPath("retained-primary-money-1280-125.png"),
+    fullPage: true,
+  });
   const saved = await (await request.get("/api/broker-months?reporting_month_id=7")).json();
   expect(saved).toHaveLength(1);
   expect(saved[0]).toMatchObject({ account_id: 4, bookkeeping_ready: false });
@@ -815,4 +877,176 @@ test("exceptions-first known account needs only original plus explicit source-DR
   });
   expect(applies).toBe(1);
   expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterSave);
+});
+
+test("lost source POST response reads old key first, exact replay is duplicate, and catalogue return retains File", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const xml = await (await request.get("/api/synthetic-broker-source/session")).body();
+  const file = {
+    name: "Брокерский 8480000 (01.10.30-31.10.30).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  };
+  await page.goto("/v2/close?month=9&step=final_review_close");
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
+  const save = page.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    exact: true,
+  });
+  await expect(save).toBeEnabled();
+  // SPA navigation must keep the actual File; a full reload deliberately does not.
+  await page.getByRole("link", { name: "Данные", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Справочники и сопоставления", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Справочники и сопоставления", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText(`Оригинал в текущем сеансе: ${file.name}`)).toBeVisible();
+  await expect(save).toHaveCount(0);
+  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await expect(save).toBeEnabled();
+  const order: string[] = [];
+  let id = "";
+  let committedInventory: unknown;
+  let posts = 0;
+  let delayRead = true;
+  await page.route("**/api/broker-months/*", async (route) => {
+    const req = route.request();
+    if (req.url().endsWith("/apply")) {
+      order.push("POST");
+      posts++;
+      if (posts === 1) {
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        id = (await response.json()).request_id;
+        committedInventory = await (await request.get("/api/synthetic-broker-inventory")).json();
+        return route.abort("connectionreset");
+      }
+    } else if (req.method() === "GET") {
+      order.push(`GET:${req.url().split("/").at(-1)}`);
+      if (delayRead) {
+        delayRead = false;
+        return route.fulfill({
+          status: 404,
+          json: { error: { code: "not_found", message: "Synthetic read lag", details: [] } },
+        });
+      }
+    }
+    return route.continue();
+  });
+  await save.click();
+  const replay = page.getByRole("button", {
+    name: "Повторить сохранение с прежним запросом",
+    exact: true,
+  });
+  await expect(replay).toBeEnabled();
+  expect(order.slice(0, 2)).toEqual(["POST", `GET:${id}`]);
+  await expect(
+    page.getByText(
+      "Сохранение подтверждено сервером, независимое чтение не завершено — повторить чтение",
+    ),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("source-lost-post-get-first-1440.png"),
+    fullPage: true,
+  });
+  const response = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/apply"));
+  await replay.click();
+  const duplicate = await (await response).json();
+  expect(duplicate.duplicate).toBe(true);
+  expect(duplicate.request_id).toBe(id);
+  await expect(
+    page.getByText(/Сохранённый результат подтверждён независимым чтением/),
+  ).toBeVisible();
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(
+    committedInventory,
+  );
+  await page.unroute("**/api/broker-months/*");
+  await page.getByText("Принять Money в этот черновик", { exact: true }).click();
+  const selected = page.getByRole("list", { name: "Выбранные оригиналы Money" });
+  await expect(selected).toContainText(file.name);
+  // Register a second intersecting source using the existing S1 route. The
+  // retained primary alone must not be mistaken for a complete Money union.
+  const overlap = { ...file, buffer: Buffer.concat([xml, Buffer.from("\n")]) };
+  const sourcePlan = await (
+    await request.post("/api/mybroker-import/preview", { multipart: { file: overlap } })
+  ).json();
+  expect(sourcePlan.can_apply).toBe(true);
+  const sourceApply = await request.post("/api/mybroker-import/apply", {
+    multipart: {
+      file: overlap,
+      confirmation: JSON.stringify({
+        confirmation_digest: sourcePlan.confirmation_digest,
+        covered_from: sourcePlan.document.covered_from,
+        covered_to: sourcePlan.document.covered_to,
+        mappings: sourcePlan.mappings,
+        skipped_isins: [],
+        owner_reviewed: false,
+        request_id: "desktop-session-overlap",
+      }),
+    },
+  });
+  expect(sourceApply.ok()).toBe(true);
+  const afterOverlap = await (await request.get("/api/synthetic-broker-inventory")).json();
+  const missingResponse = page.waitForResponse((r) =>
+    r.url().endsWith("/api/broker-months/preview"),
+  );
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const missing = await (await missingResponse).json();
+  expect(missing.can_apply).toBe(false);
+  expect(missing.blockers).toContain("overlapping_original_required");
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterOverlap);
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles({
+    name: "invalid.xml",
+    mimeType: "application/xml",
+    buffer: Buffer.from("<invalid/>"),
+  });
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await expect(page.getByRole("alert").last()).toBeVisible();
+  await expect(selected).toContainText(file.name);
+  await expect(selected).toContainText("invalid.xml");
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterOverlap);
+  await page.getByRole("button", { name: "Убрать invalid.xml", exact: true }).click();
+  await expect(selected).not.toContainText("invalid.xml");
+  await page.screenshot({
+    path: info.outputPath("money-supplemental-correction-1440.png"),
+    fullPage: true,
+  });
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(overlap);
+  const union = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const forward = await (await union).json();
+  expect(forward.blockers).not.toContain("overlapping_original_required");
+  expect(forward.blockers).not.toContain("original_not_in_accepted_source_union");
+  expect(forward.sources).toHaveLength(2);
+  await page
+    .getByRole("button", { name: `Убрать ${file.name}`, exact: true })
+    .first()
+    .click();
+  await page.getByRole("button", { name: `Убрать ${file.name}`, exact: true }).click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles([overlap, file]);
+  const reversed = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const backward = await (await reversed).json();
+  expect(backward.inventory).toEqual(forward.inventory);
+  expect(backward.blockers).toEqual(forward.blockers);
+  expect(backward.confirmation_digest).toBe(forward.confirmation_digest);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterOverlap);
+  await page.screenshot({
+    path: info.outputPath("money-overlap-both-orders-1440.png"),
+    fullPage: true,
+  });
+  await page.reload();
+  await page.getByText("Принять Money в этот черновик", { exact: true }).click();
+  await expect(page.getByRole("list", { name: "Выбранные оригиналы Money" })).toBeEmpty();
 });
