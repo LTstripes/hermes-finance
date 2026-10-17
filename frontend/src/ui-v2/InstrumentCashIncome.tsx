@@ -53,6 +53,7 @@ export function InstrumentCashIncome({
 }) {
   const [open, setOpen] = useState(false);
   const generation = useRef(0);
+  const evidenceRead = useRef(0);
   const [account, setAccount] = useState(accountId ? String(accountId) : "");
   const [instrument, setInstrument] = useState("");
   const [t0, setT0] = useState(start);
@@ -68,16 +69,21 @@ export function InstrumentCashIncome({
   const matching = request !== null && JSON.stringify(request.scope) === JSON.stringify(scope);
   const result = useQuery({
     queryKey: ["instrument-observations-and-payouts", request],
-    queryFn: ({ signal }) => {
+    queryFn: async ({ signal }) => {
       if (!request) throw new Error("Choose a payout scope");
-      return getInstrumentObservations(request.scope, signal);
+      // Each GET is a new authority epoch, even for identical data or batched
+      // fetching notifications. Never derive it from amounts/fingerprints/time.
+      const epoch = ++evidenceRead.current;
+      return { epoch, response: await getInstrumentObservations(request.scope, signal) };
     },
     enabled: open && matching,
     staleTime: 0,
     gcTime: 0,
     retry: false,
+    refetchOnWindowFocus: true,
   });
-  const response = open && matching && !result.isFetching && !result.isError ? result.data : null;
+  const response =
+    open && matching && !result.isFetching && !result.isError ? result.data?.response : null;
   const data = response?.known_payouts ?? null;
   const fresh =
     response &&
@@ -310,9 +316,9 @@ export function InstrumentCashIncome({
               </section>
             </div>
           ) : null}
-          {valid ? (
+          {valid && (!request || fresh) ? (
             <InstrumentWhatIf
-              key={`${JSON.stringify(scope)}:${request?.generation ?? 0}`}
+              key={`${JSON.stringify(scope)}:${request?.generation ?? 0}:${result.data?.epoch ?? 0}`}
               scope={scope}
             />
           ) : null}
