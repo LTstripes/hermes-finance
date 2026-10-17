@@ -91,6 +91,7 @@ CI_CORE_SHARD_WEIGHTS = {
     "test_passive_income_service.py": 14.37,
     "test_instrument_cash_income_service.py": 8.0,
     "test_instrument_eod_observations_service.py": 8.0,
+    "test_instrument_trades_service.py": 8.0,
     "test_perf04a_attribution.py": 49.68,
     "test_planned_budget_service.py": 3.67,
     "test_portfolio_review_package.py": 24.54,
