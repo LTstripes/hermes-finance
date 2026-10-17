@@ -1,4 +1,4 @@
-import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../api/instrumentWhatIf";
 import { listInstruments } from "../api/instruments";
 import type { Account, Instrument } from "../api/types";
+import { createQueryClient } from "../queryClient";
 import { InstrumentCashIncome } from "./InstrumentCashIncome";
 import { InstrumentWhatIf } from "./InstrumentWhatIf";
 
@@ -147,7 +148,7 @@ function mount(parent = false) {
   vi.mocked(listInstruments).mockResolvedValue([
     { id: 9, name: "Synthetic stock", is_active: true },
   ] as Instrument[]);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createQueryClient();
   render(
     <QueryClientProvider client={client}>
       {parent ? (

@@ -70,9 +70,9 @@ test("parent focus read invalidates late hypothetical response after synthetic p
   const focusRefresh = async () =>
     page.evaluate(() => {
       Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
-      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("visibilitychange"));
       Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("visibilitychange"));
       delete (document as unknown as Record<string, unknown>).visibilityState;
     });
   await focusRefresh();
