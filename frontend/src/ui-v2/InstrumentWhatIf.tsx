@@ -69,6 +69,8 @@ export function InstrumentWhatIf({ scope }: { scope: PayoutScope }) {
     staleTime: 0,
     gcTime: 0,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const data = request && !query.isFetching && !query.isError ? query.data : null;
   const fresh = data && request && matchesWhatIf(data, request);

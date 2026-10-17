@@ -1,5 +1,115 @@
 import { expect, test } from "@playwright/test";
 
+test("parent focus read invalidates late hypothetical response after synthetic payout retraction", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const instruments = await (await request.get("/api/instruments")).json();
+  const stock = instruments.find((i: { instrument_type: string }) => i.instrument_type === "stock");
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(
+    "/v2/capital/performance?start=2030-01-31&end=2030-02-28&scope=account&account_id=1&view=accounts",
+  );
+  const parent = page.getByRole("region", { name: "Известные выплаты по бумаге", exact: true });
+  await parent.getByRole("button", { name: "Выбрать бумагу и период" }).click();
+  await parent.getByLabel("Бумага выплат").selectOption(String(stock.id));
+  const read = parent.getByRole("button", { name: "Прочитать оценки и выплаты" });
+  await read.click();
+  await expect(parent.getByTestId("known-payouts-result")).toBeVisible();
+  const panel = parent.getByRole("region", { name: "Условный результат бумаги", exact: true });
+  const calculate = panel.getByRole("button", { name: "Рассчитать условный результат" });
+  for (const checkbox of await panel.getByRole("checkbox").all()) await checkbox.check();
+  let releaseA!: () => void;
+  let receivedA!: () => void;
+  let completedA!: () => void;
+  const heldA = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  const startedA = new Promise<void>((resolve) => {
+    receivedA = resolve;
+  });
+  const finishedA = new Promise<void>((resolve) => {
+    completedA = resolve;
+  });
+  const conditional = `**/api/instruments/${stock.id}/conditional-return?**`;
+  let evaluations = 0;
+  await page.route(conditional, async (route) => {
+    evaluations++;
+    const response = await route.fetch();
+    receivedA();
+    await heldA;
+    await route.fulfill({ response }).catch((error) => {
+      if (!String(error).includes("Route is already handled")) throw error;
+    });
+    completedA();
+  });
+  await calculate.click();
+  await startedA;
+  let releaseB!: () => void;
+  const heldB = new Promise<void>((resolve) => {
+    releaseB = resolve;
+  });
+  const eod = `**/api/instruments/${stock.id}/eod-observations?**`;
+  await page.route(eod, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    // Change only the synthetic network response; never write a source receipt or database.
+    Object.assign(body.known_payouts, {
+      events: [],
+      event_count: 0,
+      known_event_count: 0,
+      known_booked_net: { coupon: null, dividend: null },
+      dependency_fingerprint: "0".repeat(64),
+    });
+    await heldB;
+    await route.fulfill({ response, json: body });
+  });
+  // Exercise the production React Query visibility listener while retaining the native UI.
+  const focusRefresh = async () =>
+    page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+    });
+  await focusRefresh();
+  await expect(parent.getByText("Проверяем записи и текущие подтверждения…")).toBeVisible();
+  await expect(panel).toHaveCount(0);
+  releaseB();
+  await expect(parent.getByText(/Записей не обнаружено/)).toBeVisible();
+  for (const checkbox of await panel.getByRole("checkbox").all())
+    await expect(checkbox).not.toBeChecked();
+  releaseA();
+  await finishedA;
+  await expect(parent.getByText(/Условно:/)).toHaveCount(0);
+  expect(evaluations).toBe(1);
+  await parent.screenshot({ path: info.outputPath("focus-retracted-payout-late-a-1440.png") });
+
+  await page.unroute(conditional);
+  await page.unroute(eod);
+  await read.click();
+  await expect(parent.getByTestId("known-payouts-result")).toBeVisible();
+  for (const checkbox of await panel.getByRole("checkbox").all()) await checkbox.check();
+  await calculate.click();
+  await expect(panel.getByText("Условно: +50,00 ₽ / +5% за период")).toBeVisible();
+  await page.route(eod, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: '{"detail":"synthetic refresh failure"}',
+    }),
+  );
+  await focusRefresh();
+  await expect(parent.getByText("Не удалось проверить выплаты. Повторите чтение.")).toBeVisible();
+  await expect(parent.getByText(/Условно:/)).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
+  await parent.screenshot({ path: info.outputPath("focus-failed-refresh-no-scenario-1440.png") });
+  expect(errors).toEqual([]);
+});
+
 test("source-backed hypothetical stock HPR API/desktop parity and invalidation", async ({
   page,
   request,
