@@ -78,7 +78,7 @@ function Old([string]$Path) {
 function Commit([string]$Path, [string]$Value) {
     [IO.File]::WriteAllText((Join-Path $Path 'file.txt'), $Value)
     [void](Git $Path @('add','file.txt'))
-    [void](Git $Path @('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','commit','-m','synthetic'))
+    [void](Git $Path @('-c','user.name=Synthetic','-c','user.email=synthetic@example.com','commit','-m','synthetic'))
 }
 function Fixture([string]$Name) {
     $repo = Join-Path $script:Client $Name
@@ -167,7 +167,7 @@ try {
     [void](Check $ref 'unique-local-ref')
     $stash=Fixture 'unique-stash'
     [IO.File]::WriteAllText((Join-Path $stash 'file.txt'),'stash-work')
-    [void](Git $stash @('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','stash','push'))
+    [void](Git $stash @('-c','user.name=Synthetic','-c','user.email=synthetic@example.com','stash','push'))
     Old $stash
     [void](Check $stash 'unique-local-ref')
     $young=Fixture 'young'
@@ -242,7 +242,7 @@ try {
     $unknown=Fixture 'unknown-ignored'
     [IO.File]::WriteAllText((Join-Path $unknown '.gitignore'),'opaque.bin')
     [void](Git $unknown @('add','.gitignore'))
-    [void](Git $unknown @('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','commit','-m','ignore'))
+    [void](Git $unknown @('-c','user.name=Synthetic','-c','user.email=synthetic@example.com','commit','-m','ignore'))
     [IO.File]::WriteAllText((Join-Path $unknown 'opaque.bin'),'SECRET_FINANCE_VALUE')
     [void](Check $unknown 'unknown-ignored-material')
 
@@ -254,7 +254,7 @@ try {
     # Different commit message proves patch equivalence, not identical SHA ancestry.
     [IO.File]::WriteAllText((Join-Path $seed 'file.txt'),'same-patch')
     [void](Git $seed @('add','file.txt'))
-    [void](Git $seed @('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','commit','-m','equivalent main patch'))
+    [void](Git $seed @('-c','user.name=Synthetic','-c','user.email=synthetic@example.com','commit','-m','equivalent main patch'))
     Assert ((Git $seed @('rev-parse','HEAD')) -ne (Git $equivalent @('rev-parse','HEAD'))) 'equivalent fixture has distinct commits'
     [void](Git $seed @('push',$script:Remote,'main'))
     Old $equivalent
