@@ -176,7 +176,7 @@ def _worktrees(control: Path) -> tuple[Path, ...]:
     return roots
 
 
-def validate_manifest(path: Path) -> dict:
+def validate_manifest(path: Path, *, expected_kind: str = KIND) -> dict:
     """Prove declared isolation before any SQLite connection or listener."""
     path = _path(str(path))
     document = _read_json(path)
@@ -195,7 +195,7 @@ def validate_manifest(path: Path) -> dict:
         "ops_root",
         "workspace_roots",
     }
-    if set(document) != required or document["version"] != 1 or document["kind"] != KIND:
+    if set(document) != required or document["version"] != 1 or document["kind"] != expected_kind:
         raise ScratchError("scratch_config_invalid")
     if not isinstance(document["profile_id"], str) or not re.fullmatch(
         r"[a-zA-Z0-9-]{1,64}", document["profile_id"]
@@ -230,7 +230,7 @@ def validate_manifest(path: Path) -> dict:
         if not isinstance(document[key], str) or not HEX64.fullmatch(document[key]):
             raise ScratchError("scratch_snapshot_binding_invalid")
     sidecar = _read_json(database.parent / ".hermes-data-identity.json")
-    if sidecar != {"kind": KIND, "id": document["profile_id"]}:
+    if sidecar != {"kind": expected_kind, "id": document["profile_id"]}:
         raise ScratchError("scratch_profile_mismatch")
     for private in (checkout / ".hermes-preview-boundary.json", checkout / ".env"):
         if private.exists():

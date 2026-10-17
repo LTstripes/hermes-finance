@@ -46,6 +46,11 @@ def main(arguments: list[str] | None = None) -> None:
 
         scratch_main(arguments[1:])
         return
+    if arguments[:1] == ["instrument-uat"]:
+        from hermes_finance.instrument_uat import main as instrument_uat_main
+
+        instrument_uat_main(arguments[1:])
+        return
     if arguments:
         raise SystemExit("unsupported_start_mode")
     from hermes_finance.main import app as standard_app
