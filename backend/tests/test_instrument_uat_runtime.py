@@ -378,7 +378,8 @@ def test_windows_start_and_owned_cleanup(snapshot, tmp_path, fault):
     venv.EnvBuilder().create(checkout / "backend/.venv")
     site = checkout / "backend/.venv/Lib/site-packages"
     (site / "fixture.pth").write_text(
-        str(Path(sys.prefix) / "Lib/site-packages") + "\n" + str(checkout / "backend/src") + "\n"
+        str(Path(sys.prefix) / "Lib/site-packages") + "\n" + str(checkout / "backend/src") + "\n",
+        encoding="utf-8",
     )
     if fault == "identity":
         document["database_identity"] = "0" * 64
