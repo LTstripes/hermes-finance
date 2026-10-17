@@ -40,6 +40,9 @@ def stock_xml(*, closing=False, quantity="10", closing_value="900.00", mutation=
     collection = root.find(".//{MyBroker}rn_Collection")
     for child in list(collection):
         collection.remove(child)
+    # Empty Money must reconcile internally. A typed PDF dividend is separate
+    # evidence; these source controls do not certify whole-account cash coverage.
+    root.find(".//{MyBroker}Details[@active_name='RUB']").set("real_rest", "1000.00")
     for row in root.findall(".//{MyBroker}Details[@ISIN1]"):
         if row.get("ISIN1") == ISIN and closing:
             row.set("real_rest", quantity)
@@ -469,3 +472,24 @@ def test_reader_binding_is_checked_before_any_number(database, monkeypatch, part
         result = read(session, stock)
         assert_null(result)
         assert "reader_context_mismatch" in result["hard_blockers"]
+
+
+@pytest.mark.parametrize("kind", ["opening_cash", "opening_quantity"])
+def test_late_s1_original_derived_controls_cannot_be_assumed_away(database, kind):
+    _, stock, _ = setup_stock(database)
+    with database.session_factory() as session:
+        assert read(session, stock)["hypothetical_result"]["conditional_result"] == "50.00"
+
+        def change(root):
+            if kind == "opening_cash":
+                root.find(".//{MyBroker}Details[@active_name='RUB']").set("income_rest", "900.00")
+            else:
+                root.find(f".//{{MyBroker}}Details[@ISIN1='{ISIN}']").set("income_rest", "9")
+
+        accept_source(session, stock_xml(closing=True, mutation=change), FEB_FILE)
+        result = read(session, stock)
+        assert_null(result)
+        expected = (
+            "cash_control_mismatch" if kind == "opening_cash" else "quantity_control_mismatch"
+        )
+        assert expected in result["hard_blockers"]

@@ -32,6 +32,9 @@ executions and crossing/pending events, REPO/opaque transfers, principal,
 persisted in-kind movements, source binding/integrity/disposition conflicts,
 unparsed sections, source-calendar gaps and ambiguous overlapping originals.
 The source inventory is inspected even when the accepted trade list is empty.
+Current S1 preparation and the existing derived cash/quantity controls are
+recomputed for each scoped original, including S1-only originals whose ending
+economics agree but whose opening cash or inventory contradicts the source.
 Account-scoped Money rows inside the period conservatively block with
 `money_economic_effect_unproven`: this stock slice has no independent authority
 to dismiss their economic effect or attribute them to a dividend. Even an

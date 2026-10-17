@@ -18,7 +18,7 @@ from hermes_finance.persistence import (
     InvestmentCashFlow,
     MyBrokerImport,
 )
-from hermes_finance.services import broker_months
+from hermes_finance.services import broker_months, mybroker_import
 from hermes_finance.services.instrument_eod_observations import instrument_eod_observations
 from hermes_finance.services.instrument_trades import known_instrument_trades
 from hermes_finance.services.mybroker_corrections import _source_integrity
@@ -134,6 +134,15 @@ def _source_guards(session, account, instrument, t0, t1, quantity):
         if not crossing and (source.covered_from > t1 or source.covered_to < t0):
             continue
         reasons = set(document.get("syntax_blockers", [])) | set(document.get("blockers", []))
+        # Stored syntax flags are not the derived reconciliation controls. A
+        # newly retained S1-only original can contradict opening cash/units while
+        # preserving the ending economics used by EOD overlap comparison.
+        prepared = mybroker_import._prepare(session, document)
+        reasons.update(prepared["conflicts"])
+        if prepared["missing_mappings"]:
+            reasons.add("source_mappings_unavailable")
+        controls, _, _ = broker_months._controls(prepared["document"], session)
+        reasons.update(controls)
         reasons.update(document.get("endpoint_blockers", []))
         reasons.update(document.get("endpoint_conflicts", []))
         if not _source_integrity(source, document):
