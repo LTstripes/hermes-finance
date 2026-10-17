@@ -1,0 +1,47 @@
+.panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #e8ecf0;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.panel > button {
+  justify-self: start;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  padding: 12px;
+  border-bottom: 1px solid #e8ecf0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table td:first-child {
+  min-width: 120px;
+}
+
+.table td:nth-child(2) {
+  min-width: 130px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table td:nth-child(3) {
+  min-width: 170px;
+}
+
+.table td:last-child {
+  min-width: 230px;
+  overflow-wrap: anywhere;
+}
