@@ -844,7 +844,7 @@ def test_section_aware_grants_do_not_waive_money_or_material_exposure(database, 
         )
     elif problem in {"coupon", "nkd"}:
         root.find(".//{MyBroker}comment").set(
-            "comment", "РљСѓРїРѕРЅ" if problem == "coupon" else "РќРљР” РїРѕ СЃРґРµР»РєРµ"
+            "comment", "Купон" if problem == "coupon" else "НКД по сделке"
         )
     else:
         root.find("{MyBroker}Trades3/{MyBroker}Report").set("custody", "unresolved")
@@ -1186,9 +1186,7 @@ def trade_cash_with_commission_limitation(*, missing=False, commission_row=False
         trade.set("bank_tax", "1.23")
     if commission_row:
         row = deepcopy(root.find(".//{MyBroker}rn"))
-        row.find(".//{MyBroker}comment").set(
-            "comment", "РљРѕРјРёСЃСЃРёСЏ РїРѕ СЃРґРµР»РєРµ 10000000001"
-        )
+        row.find(".//{MyBroker}comment").set("comment", "Комиссия по сделке 10000000001")
         row.find(".//{MyBroker}p_code[@volume]").set("volume", "-1.23")
         root.find(".//{MyBroker}rn_Collection").append(row)
     return ET.tostring(root, encoding="utf-8")
