@@ -12,6 +12,7 @@ import {
 import { formatApiError } from "../api/client";
 import { formatDate } from "../lib/format";
 import styles from "./BrokerStatementReturnPage.module.css";
+import { BrokerStatementWhatIfPanel } from "./BrokerStatementWhatIfPanel";
 import { UiV2Shell } from "./UiV2Shell";
 
 const REASONS: Record<string, string> = {
@@ -232,6 +233,12 @@ export default function BrokerStatementReturnPage() {
               </p>
             </details>
           </section>
+        )}
+        {data && (
+          <BrokerStatementWhatIfPanel
+            key={`${data.account_id}:${request}:${data.material_fingerprint}`}
+            actual={data}
+          />
         )}
       </div>
     </UiV2Shell>

@@ -1,0 +1,15 @@
+{
+  "source_candidate_sha": "b2a2cdd20b0aaa88a4c46e4cd32c6267f8e936b1",
+  "base_sha": "461c2f3f44a599b87c0429739ea03ae00a78fd83",
+  "source_tree": "3f4a0f9b649bf1bfea8a1c05eb99e75033a7fb13",
+  "runtime": "production-dist served by disposable synthetic backend; Chromium Linux; viewport 1440x1000; no Owner profile/provider",
+  "command": "npm run build; playwright test --config=playwright.what-if.config.ts",
+  "browser_journey": "1 passed; actual S3 unchanged; included211 RUB/2.01%; excluded1211 RUB/12.11%; fresh full JSON equality; refresh clears",
+  "production_dist_manifest_sha256": "bfbe29818fa206652920f56126019d8dc4fa789f6bd9e6bf1068bd7642a29686",
+  "screenshots": {
+    "excluded-1440.png": "9a117fd0ba41a41a659e02be60a1993a62e585f537316627cabfbfaaa96f0d9c",
+    "included-1440.png": "c850bba7299ef48ebd3088b1b0de8f0357405d91ed35339c8c184bf87e6736cd"
+  },
+  "frontend_build_source_sha": "4191820950e6721ee180c36317c51486333a81bc",
+  "frontend_build_reuse": "git diff 4191820..b2a2cdd -- frontend is empty"
+}
