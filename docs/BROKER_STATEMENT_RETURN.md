@@ -89,8 +89,8 @@ second economic amount, CashBalance, ExternalFlow or InvestmentCashFlow. No new
 coupon/NKD/trade exemption, portfolio authority or numerical return follows.
 
 The [#820 coupon contract and CODE GO](https://github.com/LTstripes/hermes-finance/issues/820#issuecomment-6172319178)
-adds `h2-a2-source-cash-rub-v3`. New accepts and reviewed reaffirmations use this
-version. V1/v2 retain their literal evidence, signatures, readback and replay;
+adds `h2-a2-source-cash-rub-v3`. This remains the frozen coupon-only version.
+V1/v2 retain their literal evidence, signatures, readback and replay;
 v3 continues to accept independently effective A1 v2/v3 revisions.
 Only a current target-specific BrokerMoney proof can classify a permanently
 owned exact Money occurrence as `accepted_non_owner_coupon`. V3 binds the full
@@ -110,7 +110,7 @@ reaffirmation is required. Reads only assess current authority and never repair 
 
 Under [#849](https://github.com/LTstripes/hermes-finance/issues/849), an otherwise
 validated exact source/account/interval with no coverage row also reads the
-existing H2-A2 inventory under the current accepted v3 coupon contract, in that
+existing H2-A2 inventory under the current accepted contract, in that
 same coherent snapshot. Its stable blockers join `reason_codes`; the full relevant
 dependency material and contract version participate in the opaque fingerprint.
 Raw diagnostic rows/identifiers are not added to the response or logs. Source,
@@ -119,7 +119,45 @@ is used. GET, original Preview, desktop reasons and JSON export retain parity.
 Even a valid inventory with no blockers is not accepted coverage: the generic
 `account_crossing_coverage_unproved` and null rate remain. Existing coverage-row
 branches retain their established versioned readers and availability. Accepted
-paid-NKD still has no H2-A2 disposition; this diagnostic slice grants no authority.
+paid-NKD has no disposition in v1-v3; the diagnostic itself grants no authority.
+
+The [#870 accepted v4 contract](https://github.com/LTstripes/hermes-finance/issues/870#issuecomment-6237129361)
+adds `h2-a2-source-cash-rub-v4` for new accepts and explicit reviewed reaffirmations.
+V1/v2/v3 retain their literal evidence, readbacks and receipt replay, including v3
+coupon currentness and unresolved paid NKD. V4 preserves A1 v2/v3 compatibility.
+
+`source_cash_trade_money` is a query-only adapter from permanent trade ownership
+and the latest target-specific Money receipt to the frozen trade revision and
+full current canonical source union. Only a unique exact original Money
+occurrence in the reviewed `nkd_leg` may become `accepted_non_owner_paid_nkd`.
+The complete three-leg owner/receipt cohort, ordered native ID pair, current
+active settled RUB bond BUY revision, account/mapping/month/settlement/custody
+support and all independent claims must agree. Exact signed kopecks validate
+an already proved includes/excludes basis; arithmetic never selects that basis.
+Overlapping originals, duplicate roles/rows, missing owners, stale/retracted
+proofs and unknown operations remain unresolved. There is no cross-original
+paid-NKD deduplication or new authority from date/amount/ISIN matching.
+
+V4 freezes relevant target/history, journal, source, owner and absence sets in
+`paid_nkd_authority`. Trade revision/occurrence and Money dependencies participate
+in the full post-flush comparison, including receipts appended by later listeners.
+Dependency loss appends retirement in the same transaction even in CLOSED;
+rollback restores both dependency and retirement. Close alone changes no proof.
+ABA, replay, reopening and independent Money reaffirmation cannot revive A2:
+fresh claims, expected revision and separate A2 reaffirmation are required.
+GET/Preview/export only read currentness and never repair persisted authority.
+
+Synthetic acceptance uses the original reviewed Money fixture: S -10,000.00,
+N -125.50, F -10.00, debit 10,135.50 RUB; opening cash 10,000.00, coupons
++3,000.00 and Owner funding +50,000.00 yield EOD 52,864.50 and zero residual.
+Six occurrences partition into two coupons, one Owner funding, two trade cash
+legs and one paid-NKD non-Owner occurrence. Economic row counts remain
+CashBalance/ICF/HistoricalOwnerFlow/ExternalFlow/ExecutedTrade = 1/2/1/0/1.
+The adapter adds zero economic rows or amounts. It grants neither automatic
+A2 COMPLETE nor S3 numeric; all independent coverage, membership, endpoint and
+exposure gates still apply. Paid NKD is not a coupon, Owner contribution or
+bond EOD accrued NKD. Real September source authority (0/5 independently proved
+links under #814), actual S3/Close and exact-return/export authority remain BLOCKED.
 
 Routes (all read-only, including POST preview):
 

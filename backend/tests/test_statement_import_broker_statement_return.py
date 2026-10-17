@@ -25,6 +25,9 @@ from test_statement_import_mybroker_metadata import (
     section_setup,
 )
 from test_statement_import_source_cash_coverage import certify, claims, continuous_membership
+from test_statement_import_source_cash_coverage import (
+    coupon_coverage_version as coupon_coverage_version,
+)
 
 from hermes_finance.domain.broker_statement_return import (
     NKD_WARNING,
@@ -660,7 +663,9 @@ def test_missing_coverage_diagnostics_share_the_source_read_snapshot(database, m
 
 
 @pytest.mark.parametrize("retirement", ["aba", "revoke"])
-def test_real_five_coupon_a2_v3_numeric_s3_then_retired_null_api_export(database, retirement):
+def test_real_five_coupon_a2_v3_numeric_s3_then_retired_null_api_export(
+    database, retirement, coupon_coverage_version
+):
     from test_statement_import_historical_owner_flows import count
     from test_statement_import_mybroker_endpoints import _all_month_tables
     from test_statement_import_source_cash_coverage import coupon_setup
@@ -696,7 +701,7 @@ def test_real_five_coupon_a2_v3_numeric_s3_then_retired_null_api_export(database
     with database.session_factory() as session:
         accepted = certify(session, claims(session, candidate, zero=True))["readback"]
         assert accepted["effective_state"] == "accepted"
-        assert accepted["evidence"]["contract_version"] == "h2-a2-source-cash-rub-v3"
+        assert accepted["evidence"]["contract_version"] == coupon_coverage_version
         ids = accepted["evidence"]["dependencies"]["effective_coupon_icf_ids"]
         assert len(ids) == len(set(ids)) == 5
     before = _all_month_tables(database)
@@ -752,7 +757,7 @@ def test_real_five_coupon_a2_v3_numeric_s3_then_retired_null_api_export(database
     assert _all_month_tables(database) == before
 
 
-def test_accepted_paid_nkd_remains_h2_unresolved_in_actual_s3(database):
+def test_accepted_paid_nkd_v4_does_not_automatically_accept_coverage_or_s3(database):
     from test_statement_import_mybroker_endpoints import (
         _money_apply,
         _money_decide,
@@ -771,9 +776,8 @@ def test_accepted_paid_nkd_remains_h2_unresolved_in_actual_s3(database):
         )
     value = coupon_result(client, intent)
     assert value["rate_fraction"] is None
-    assert {"money_disposition_unresolved", "account_crossing_coverage_unproved"} <= set(
-        value["reason_codes"]
-    )
+    assert "money_disposition_unresolved" not in value["reason_codes"]
+    assert "account_crossing_coverage_unproved" in value["reason_codes"]
     assert_coupon_preview_parity(client, intent, originals, value)
 
 

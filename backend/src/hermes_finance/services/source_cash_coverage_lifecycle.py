@@ -16,6 +16,9 @@ from hermes_finance.persistence import (
     BrokerMonthApply,
     CashBalance,
     CashBoundaryCoverage,
+    ExecutedTrade,
+    ExecutedTradeOccurrence,
+    ExecutedTradeRevision,
     ExternalFlow,
     ExternalTransferLink,
     ExternalTransferReconciliationEvidence,
@@ -50,6 +53,9 @@ DEPENDENCIES = (
     HistoricalOwnerFlow,
     HistoricalOwnerFlowRevision,
     HistoricalOwnerFlowOccurrence,
+    ExecutedTrade,
+    ExecutedTradeRevision,
+    ExecutedTradeOccurrence,
     ExternalFlow,
     InvestmentCashFlow,
     ExternalTransferLink,
@@ -81,12 +87,20 @@ def _intersects(row, start_name, end_name, a, b):
 def _affects(session, change, row, evidence):
     deps = evidence["dependencies"]
     account_id, start, end = row.account_id, row.covered_from, row.covered_to
+    if isinstance(change, (ExecutedTrade, ExecutedTradeRevision, ExecutedTradeOccurrence)):
+        # Only v4 binds these in the complete post-flush signature.
+        return False
     if isinstance(change, BrokerMonthApply):
         from hermes_finance.services import broker_month_journal as journal
-        from hermes_finance.services.source_cash_coverage import CONTRACT, SECTION_CONTRACT
+        from hermes_finance.services.source_cash_coverage import (
+            COUPON_CONTRACT,
+            PAID_NKD_CONTRACT,
+            SECTION_CONTRACT,
+        )
 
         return (
-            evidence.get("contract_version") in (SECTION_CONTRACT, CONTRACT)
+            evidence.get("contract_version")
+            in (SECTION_CONTRACT, COUPON_CONTRACT, PAID_NKD_CONTRACT)
             and journal.kind(change) != journal.MONEY
             and account_id in _values(change, "account_id")
             and any(s["import_id"] in _values(change, "import_id") for s in deps["sources"])
@@ -245,7 +259,8 @@ def _after_flush_postexec(session, _context):
     from hermes_finance.domain.source_cash_coverage import SourceCashIntent
     from hermes_finance.services.historical_owner_flows import _material, _rows
     from hermes_finance.services.source_cash_coverage import (
-        CONTRACT,
+        COUPON_CONTRACT,
+        PAID_NKD_CONTRACT,
         SECTION_CONTRACT,
         _evidence,
         _support,
@@ -261,7 +276,11 @@ def _after_flush_postexec(session, _context):
             if current.acceptance_state != "accepted":
                 continue
             evidence = json.loads(current.evidence_json)
-            if evidence.get("contract_version") not in (SECTION_CONTRACT, CONTRACT):
+            if evidence.get("contract_version") not in (
+                SECTION_CONTRACT,
+                COUPON_CONTRACT,
+                PAID_NKD_CONTRACT,
+            ):
                 continue
             row = session.get(CashBoundaryCoverage, current.coverage_id)
             try:
