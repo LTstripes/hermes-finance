@@ -7,6 +7,7 @@ import type { Account } from "../api/types";
 import { formatDate } from "../lib/format";
 import incomeStyles from "./InstrumentCashIncome.module.css";
 import { InstrumentEodEvidence } from "./InstrumentEodEvidence";
+import { InstrumentTrades } from "./InstrumentTrades";
 import styles from "./UiV2CapitalPerformance.module.css";
 
 const stateLabels = {
@@ -195,6 +196,7 @@ export function InstrumentCashIncome({
               Прочитать оценки и выплаты
             </button>
           </form>
+          <InstrumentTrades request={open && matching ? request : null} />
           {instruments.isError ? (
             <p role="alert">
               Не удалось загрузить список бумаг.{" "}

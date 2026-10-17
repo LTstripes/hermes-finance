@@ -12,6 +12,7 @@ import { InstrumentCashIncome } from "./InstrumentCashIncome";
 
 vi.mock("../api/instrumentEodObservations", () => ({ getInstrumentObservations: vi.fn() }));
 vi.mock("../api/instruments", () => ({ listInstruments: vi.fn() }));
+vi.mock("./InstrumentTrades", () => ({ InstrumentTrades: () => null }));
 const accounts = [
   { id: 1, name: "Synthetic A", account_type: "brokerage" },
   { id: 2, name: "Synthetic B", account_type: "iis" },
