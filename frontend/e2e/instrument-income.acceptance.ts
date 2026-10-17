@@ -22,9 +22,9 @@ test("known net payout API→desktop: supported source, tax NULL, exited stock, 
   );
   const block = page.getByRole("region", { name: "Известные выплаты по бумаге" });
   await block.getByRole("button", { name: "Выбрать бумагу и период" }).click();
-  await expect(block.getByRole("button", { name: "Прочитать выплаты" })).toBeDisabled();
+  await expect(block.getByRole("button", { name: "Прочитать оценки и выплаты" })).toBeDisabled();
   await block.getByLabel("Бумага выплат").selectOption(String(bond.id));
-  await block.getByRole("button", { name: "Прочитать выплаты" }).click();
+  await block.getByRole("button", { name: "Прочитать оценки и выплаты" }).click();
   await expect(block.getByText("Источник подтверждён", { exact: true })).toBeVisible();
   await expect(block.getByText(/купоны 120,00 ₽; дивиденды Неизвестно/)).toBeVisible();
   await block.getByText(/Детали записи ICF/).click();
@@ -33,11 +33,11 @@ test("known net payout API→desktop: supported source, tax NULL, exited stock, 
   await block.screenshot({ path: info.outputPath("known-coupon-1440.png") });
   await block.getByLabel("Бумага выплат").selectOption(String(stock.id));
   await expect(block.getByTestId("known-payouts-result")).toHaveCount(0);
-  await block.getByRole("button", { name: "Прочитать выплаты" }).click();
+  await block.getByRole("button", { name: "Прочитать оценки и выплаты" }).click();
   await expect(block.getByText(/дивиденды 120,00 ₽/)).toBeVisible();
   await block.getByLabel("Счёт выплат").selectOption(String(empty.id));
   await expect(block.getByTestId("known-payouts-result")).toHaveCount(0);
-  await block.getByRole("button", { name: "Прочитать выплаты" }).click();
+  await block.getByRole("button", { name: "Прочитать оценки и выплаты" }).click();
   await expect(block.getByText(/Это не подтверждает нулевой доход/)).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.evaluate(() => {

@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { getKnownPayouts, type PayoutScope } from "../api/instrumentCashIncome";
+import type { PayoutScope } from "../api/instrumentCashIncome";
+import { getInstrumentObservations } from "../api/instrumentEodObservations";
 import { listInstruments } from "../api/instruments";
 import type { Account } from "../api/types";
 import { formatDate } from "../lib/format";
 import incomeStyles from "./InstrumentCashIncome.module.css";
+import { InstrumentEodEvidence } from "./InstrumentEodEvidence";
 import styles from "./UiV2CapitalPerformance.module.css";
 
 const stateLabels = {
@@ -63,18 +65,32 @@ export function InstrumentCashIncome({
   const valid = !!account && !!instrument && !!t0 && !!t1 && t0 < t1;
   const matching = request !== null && JSON.stringify(request.scope) === JSON.stringify(scope);
   const result = useQuery({
-    queryKey: ["known-instrument-payouts", request],
+    queryKey: ["instrument-observations-and-payouts", request],
     queryFn: ({ signal }) => {
       if (!request) throw new Error("Choose a payout scope");
-      return getKnownPayouts(request.scope, signal);
+      return getInstrumentObservations(request.scope, signal);
     },
     enabled: open && matching,
     staleTime: 0,
     gcTime: 0,
     retry: false,
   });
-  const data = open && matching && !result.isFetching && !result.isError ? result.data : null;
+  const response = open && matching && !result.isFetching && !result.isError ? result.data : null;
+  const data = response?.known_payouts ?? null;
   const fresh =
+    response &&
+    response.method === "persisted-instrument-eod-pair" &&
+    response.version === 1 &&
+    response.account.id === scope.accountId &&
+    response.instrument.id === scope.instrumentId &&
+    response.t0 === t0 &&
+    response.t1 === t1 &&
+    [response.opening, response.closing].every(
+      (b, i) =>
+        b.account_id === scope.accountId &&
+        b.instrument_id === scope.instrumentId &&
+        b.date === (i === 0 ? t0 : t1),
+    ) &&
     data &&
     data.account.id === scope.accountId &&
     data.instrument.id === scope.instrumentId &&
@@ -91,7 +107,7 @@ export function InstrumentCashIncome({
       aria-label="Известные выплаты по бумаге"
       className={`${styles.preparation} ${incomeStyles.panel}`}
     >
-      <h2>Известные выплаты по бумаге</h2>
+      <h2>Наблюдения и выплаты по бумаге</h2>
       <button
         type="button"
         className={styles.inlineButton}
@@ -150,7 +166,7 @@ export function InstrumentCashIncome({
                 </select>
               </label>
               <label>
-                После даты
+                Начальная дата EOD (выплаты — после неё)
                 <input
                   aria-label="Выплаты после даты"
                   type="date"
@@ -159,7 +175,7 @@ export function InstrumentCashIncome({
                 />
               </label>
               <label>
-                По дату включительно
+                Конечная дата EOD (выплаты — включительно)
                 <input
                   aria-label="Выплаты по дату"
                   type="date"
@@ -176,7 +192,7 @@ export function InstrumentCashIncome({
               type="submit"
               disabled={!valid || result.isFetching}
             >
-              Прочитать выплаты
+              Прочитать оценки и выплаты
             </button>
           </form>
           {instruments.isError ? (
@@ -197,93 +213,98 @@ export function InstrumentCashIncome({
             <p role="alert">Ответ не соответствует выбранному контексту. Повторите чтение.</p>
           ) : null}
           {fresh ? (
-            <div data-testid="known-payouts-result">
+            <div>
               <h3>
                 {data.account.name} · {data.instrument.name}
               </h3>
               <p>
-                {formatDate(data.t0)} (не включая) — {formatDate(data.t1)} (включая) · RUB
+                {formatDate(data.t0)} EOD — {formatDate(data.t1)} EOD · RUB · выплаты за (t0,t1]
               </p>
-              <p>
-                Известные зачисления: купоны {rub(data.known_booked_net.coupon)}; дивиденды{" "}
-                {rub(data.known_booked_net.dividend)}.
-              </p>
-              <p>
-                Записей: {data.event_count}; включено в известную сумму: {data.known_event_count}.
-                Полнота периода неизвестна.
-              </p>
-              {data.event_count === 0 ? (
-                <p>Записей не обнаружено. Это не подтверждает нулевой доход за период.</p>
-              ) : null}
-              {data.event_count > 0 ? (
-                <div className={incomeStyles.tableWrap}>
-                  <table className={incomeStyles.table}>
-                    <thead>
-                      <tr>
-                        <th>Дата / вид</th>
-                        <th>Зачислено net</th>
-                        <th>Подтверждение</th>
-                        <th>Происхождение</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.events.map((event) => (
-                        <tr key={event.cash_flow_id}>
-                          <td>
-                            {formatDate(event.date)} ·{" "}
-                            {event.kind === "coupon" ? "Купон" : "Дивиденд"}
-                          </td>
-                          <td>
-                            {rub(event.booked_net)}
-                            {!event.included_in_known_net ? (
-                              <p>В известную сумму не включено</p>
-                            ) : null}
-                          </td>
-                          <td>
-                            <span>{stateLabels[event.proof_state]}</span>
-                            <p>
-                              {event.currentness === "current"
-                                ? "Проверено при чтении"
-                                : "Текущее подтверждение недоступно"}
-                            </p>
-                          </td>
-                          <td>
-                            <details>
-                              <summary>Детали записи ICF #{event.cash_flow_id}</summary>
-                              <p>
-                                {event.provenance.map((p) => provenanceLabels[p] ?? p).join("; ") ||
-                                  "Источник не подтверждён"}
-                              </p>
-                              <p>
-                                Gross: {rub(event.gross)}; налог: {rub(event.tax)}; комиссия:{" "}
-                                {rub(event.fee)}. Net уже учитывает включённые удержания.
-                              </p>
-                              {event.receipt_ids.map((id) => (
-                                <p key={id}>Подтверждение: {id}</p>
-                              ))}
-                              {event.reason_codes.map((code) => (
-                                <p key={code}>
-                                  {payoutGap(code)} <small>({code})</small>
-                                </p>
-                              ))}
-                            </details>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-              <details>
-                <summary>Версия проверки</summary>
+              {response ? <InstrumentEodEvidence result={response} /> : null}
+              <section aria-label="Известные net-выплаты" data-testid="known-payouts-result">
+                <h3>Известные net-выплаты</h3>
                 <p>
-                  {data.method} v{data.version}
+                  Известные зачисления: купоны {rub(data.known_booked_net.coupon)}; дивиденды{" "}
+                  {rub(data.known_booked_net.dividend)}.
                 </p>
-                <code style={{ overflowWrap: "anywhere" }}>
-                  {data.dependency_fingerprint ??
-                    "Проверка версий недоступна: нет полного журнала изменений записи. Повторите чтение для нового снимка."}
-                </code>
-              </details>
+                <p>
+                  Записей: {data.event_count}; включено в известную сумму: {data.known_event_count}.
+                  Полнота периода неизвестна.
+                </p>
+                {data.event_count === 0 ? (
+                  <p>Записей не обнаружено. Это не подтверждает нулевой доход за период.</p>
+                ) : null}
+                {data.event_count > 0 ? (
+                  <div className={incomeStyles.tableWrap}>
+                    <table className={incomeStyles.table}>
+                      <thead>
+                        <tr>
+                          <th>Дата / вид</th>
+                          <th>Зачислено net</th>
+                          <th>Подтверждение</th>
+                          <th>Происхождение</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.events.map((event) => (
+                          <tr key={event.cash_flow_id}>
+                            <td>
+                              {formatDate(event.date)} ·{" "}
+                              {event.kind === "coupon" ? "Купон" : "Дивиденд"}
+                            </td>
+                            <td>
+                              {rub(event.booked_net)}
+                              {!event.included_in_known_net ? (
+                                <p>В известную сумму не включено</p>
+                              ) : null}
+                            </td>
+                            <td>
+                              <span>{stateLabels[event.proof_state]}</span>
+                              <p>
+                                {event.currentness === "current"
+                                  ? "Проверено при чтении"
+                                  : "Текущее подтверждение недоступно"}
+                              </p>
+                            </td>
+                            <td>
+                              <details>
+                                <summary>Детали записи ICF #{event.cash_flow_id}</summary>
+                                <p>
+                                  {event.provenance
+                                    .map((p) => provenanceLabels[p] ?? p)
+                                    .join("; ") || "Источник не подтверждён"}
+                                </p>
+                                <p>
+                                  Gross: {rub(event.gross)}; налог: {rub(event.tax)}; комиссия:{" "}
+                                  {rub(event.fee)}. Net уже учитывает включённые удержания.
+                                </p>
+                                {event.receipt_ids.map((id) => (
+                                  <p key={id}>Подтверждение: {id}</p>
+                                ))}
+                                {event.reason_codes.map((code) => (
+                                  <p key={code}>
+                                    {payoutGap(code)} <small>({code})</small>
+                                  </p>
+                                ))}
+                              </details>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+                <details>
+                  <summary>Версия проверки</summary>
+                  <p>
+                    {data.method} v{data.version}
+                  </p>
+                  <code style={{ overflowWrap: "anywhere" }}>
+                    {data.dependency_fingerprint ??
+                      "Проверка версий недоступна: нет полного журнала изменений записи. Повторите чтение для нового снимка."}
+                  </code>
+                </details>
+              </section>
             </div>
           ) : null}
         </>

@@ -54,6 +54,9 @@ from hermes_finance.api.in_kind_boundary_coverage import (
 )
 from hermes_finance.api.incomes import router as incomes_router
 from hermes_finance.api.instrument_cash_income import router as instrument_cash_income_router
+from hermes_finance.api.instrument_eod_observations import (
+    router as instrument_eod_observations_router,
+)
 from hermes_finance.api.instrument_mappings import router as instrument_mappings_router
 from hermes_finance.api.instruments import router as instruments_router
 from hermes_finance.api.investment_flows import router as investment_flows_router
@@ -184,6 +187,7 @@ def create_app(
     application.include_router(backups_router)
     application.include_router(instruments_router)
     application.include_router(instrument_cash_income_router)
+    application.include_router(instrument_eod_observations_router)
     application.include_router(instrument_mappings_router)
     application.include_router(iis_router)
     application.include_router(positions_router)
