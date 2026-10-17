@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listAccounts } from "../../api/accounts";
-import { formatApiError } from "../../api/client";
+import { ApiClientError, formatApiError } from "../../api/client";
 import {
   applyBrokerMonth,
   listBrokerMonths,
@@ -15,26 +15,13 @@ import type { MyBrokerDocument } from "../../api/mybrokerImport";
 import { getMonth } from "../../api/months";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
 import { formatDate, formatMoney } from "../../lib/format";
-import { sumMoneyAmounts } from "../../lib/money";
 import { queryKeys } from "../../queryClient";
 import { Button, Panel, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
+import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
 import { BrokerMoneyReview } from "./BrokerMoneyReview";
 
 function SourceInventory({ document }: { document: MyBrokerDocument }) {
-  const total = (side: "beginning" | "ending") => {
-    const values = document.positions.map((p) =>
-      side === "beginning" ? p.beginning_value : p.ending_value,
-    );
-    values.push(
-      document.rub_money?.length === 1
-        ? side === "beginning"
-          ? document.rub_money[0].beginning_amount
-          : document.rub_money[0].ending_amount
-        : null,
-    );
-    return values.every((v): v is string => typeof v === "string") ? sumMoneyAmounts(values) : null;
-  };
   return (
     <div className={styles.stack}>
       <p>
@@ -42,8 +29,10 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
         Начальная оценка относится к предыдущему дню, конечная — к последнему дню отчёта.
       </p>
       <p>
-        Общая оценка источника, включая отдельный RUB cash: {formatMoney(total("beginning"))} →{" "}
-        {formatMoney(total("ending"))}. Это оценки брокера; полнота движений проверяется отдельно.
+        Общая оценка источника, включая отдельный RUB cash:{" "}
+        {formatMoney(sourceTotal(document, "beginning"))} →{" "}
+        {formatMoney(sourceTotal(document, "ending"))}. Это оценки брокера; полнота движений
+        проверяется отдельно.
       </p>
       <Table>
         <caption>Позиции по исходному отчёту</caption>
@@ -142,6 +131,33 @@ function Exceptions({ codes }: { codes: string[] }) {
   );
 }
 
+function AccountAliases({ preview }: { preview: BrokerMonthPreview }) {
+  return (
+    <Table aria-label="Привязки исходных счетов">
+      <thead>
+        <tr>
+          <Th>Точный alias</Th>
+          <Th>Происхождение</Th>
+          <Th>Счёт Hermes</Th>
+          <Th>Привязка</Th>
+        </tr>
+      </thead>
+      <tbody>
+        {preview.account_aliases.map((alias) => (
+          <tr key={alias.identity}>
+            <Td>{alias.identity}</Td>
+            <Td>{alias.origins.join(", ")}</Td>
+            <Td>
+              {alias.target_name ?? "Неизвестен"} (#{alias.hermes_id})
+            </Td>
+            <Td>{alias.action === "reuse" ? "Существующая" : "Новая — требует подтверждения"}</Td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
 export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed: boolean }) {
   const queryClient = useQueryClient();
   const accounts = useQuery({
@@ -174,7 +190,6 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
   const [confirmedRequestId, setConfirmedRequestId] = useState<string | null>(
     () => queryClient.getQueryData<string>(["broker-month-confirmed", monthId]) ?? null,
   );
-  const [reviewed, setReviewed] = useState(false);
   const [bindingsReviewed, setBindingsReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,7 +203,6 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     setBusy(false);
     setPreview(null);
     if (!preserveReadback) setReadback(null);
-    setReviewed(false);
     setBindingsReviewed(false);
     setError(null);
     setNotice(null);
@@ -311,7 +325,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     }
   }
   async function apply() {
-    if (!file || !preview?.can_apply || !reviewed || busy || closed || !request.current) return;
+    if (!file || !preview?.can_apply || busy || closed || !request.current) return;
     if (preview.account_bindings.length && !bindingsReviewed) return;
     const version = generation.current;
     const requestId = request.current;
@@ -346,10 +360,24 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       // only the proven request marker, never a cached financial readiness.
       queryClient.setQueryData(["broker-month-confirmed", monthId], persisted.request_id);
       setPreview(null);
-      setReviewed(false);
       await queryClient.invalidateQueries();
     } catch (e) {
-      if (generation.current === version) setError(formatApiError(e));
+      if (generation.current === version) {
+        setBindingsReviewed(false);
+        setError(formatApiError(e));
+        // A rejected stale intent needs a new Preview. Network/GET failures
+        // retain the exact request/digest/alias batch for explicit same-key retry.
+        if (
+          (e instanceof ApiClientError && e.status === 409) ||
+          (e instanceof Error &&
+            /^broker_month_(preview_stale|reconciliation_required|account_bindings_unconfirmed)$/.test(
+              e.message,
+            ))
+        ) {
+          setPreview(null);
+          setNotice("Источник или привязки изменились. Повтори Preview и заново проверь сводку.");
+        }
+      }
     } finally {
       if (generation.current === version) setBusy(false);
     }
@@ -378,8 +406,8 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       <div className={styles.stack}>
         <p>
           Выбери оригинальный XML: для известного счёта и точного месяца Preview появится
-          автоматически. Проверь весь счёт и подтверди черновик. После независимого чтения используй
-          общую итоговую проверку и закрытие месяца.
+          автоматически. Проверь сводку и явно сохрани source-DRAFT. После независимого чтения
+          используй общую итоговую проверку и закрытие месяца.
         </p>
         <p>
           Полнота всего портфеля этим отчётом не подтверждается. Неразобранные движения остаются
@@ -444,79 +472,46 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         {notice ? <p role="status">{notice}</p> : null}
         {preview && !closed ? (
           <>
-            <SourceInventory document={preview.document} />
-            <Table aria-label="Привязки исходных счетов">
-              <thead>
-                <tr>
-                  <Th>Точный alias</Th>
-                  <Th>Происхождение</Th>
-                  <Th>Счёт Hermes</Th>
-                  <Th>Привязка</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.account_aliases.map((alias) => (
-                  <tr key={alias.identity}>
-                    <Td>{alias.identity}</Td>
-                    <Td>{alias.origins.join(", ")}</Td>
-                    <Td>
-                      {alias.target_name ?? "Неизвестен"} (#{alias.hermes_id})
-                    </Td>
-                    <Td>
-                      {alias.action === "reuse" ? "Существующая" : "Новая — требует подтверждения"}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
-              <label className={styles.review}>
-                <input
-                  type="checkbox"
-                  checked={bindingsReviewed}
-                  disabled={busy || !preview.can_apply}
-                  onChange={(e) => setBindingsReviewed(e.target.checked)}
-                />{" "}
-                Я подтверждаю, что все новые aliases в таблице относятся к указанному счёту Hermes.
-              </label>
+              <>
+                <AccountAliases preview={preview} />
+                <label className={styles.review}>
+                  <input
+                    type="checkbox"
+                    checked={bindingsReviewed}
+                    disabled={busy || !preview.can_apply}
+                    onChange={(e) => setBindingsReviewed(e.target.checked)}
+                  />{" "}
+                  Я подтверждаю, что все новые aliases в таблице относятся к указанному счёту
+                  Hermes.
+                </label>
+              </>
             ) : null}
-            <Exceptions codes={preview.exceptions} />
-            {preview.conflicts.length ? (
-              <div role="alert">
-                <p>
-                  Черновик нельзя сформировать: требуется разрешить конфликт источника или
-                  идентичности.
-                </p>
-                <ul>
-                  {preview.conflicts.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <label className={styles.review}>
-              <input
-                type="checkbox"
-                checked={reviewed}
-                disabled={busy || !preview.can_apply}
-                onChange={(e) => setReviewed(e.target.checked)}
-              />{" "}
-              Я проверил весь счёт и видимую неполноту черновика.
-            </label>
+            <p>
+              Кнопка сохраняет только показанные факты источника в DRAFT. Она не подтверждает Money,
+              комиссии, НКД, Close или точную доходность.
+            </p>
             <Button
               type="button"
               onClick={() => void apply()}
               disabled={
                 busy ||
                 !preview.can_apply ||
-                !reviewed ||
                 (preview.account_bindings.length > 0 && !bindingsReviewed)
               }
             >
               {preview.bookkeeping_ready
-                ? "Сформировать черновик"
-                : "Сформировать неполный черновик"}
+                ? "Подтвердить сводку и сохранить source-DRAFT"
+                : "Подтвердить сводку и сохранить неполный source-DRAFT"}
             </Button>
+            <details>
+              <summary>Полный состав источника и привязки</summary>
+              <div className={styles.stack}>
+                {!preview.account_bindings.length ? <AccountAliases preview={preview} /> : null}
+                <SourceInventory document={preview.document} />
+              </div>
+            </details>
           </>
         ) : saved.length ? (
           saved.map((previous) => (

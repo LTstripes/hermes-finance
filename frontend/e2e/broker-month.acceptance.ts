@@ -104,14 +104,14 @@ test("exact structural exceptions permit reviewed incomplete DRAFT and GET, whil
   });
   expect(preview.exceptions).toContain("unparsed_source_rows");
   expect(preview.identity.evidence.draft_structure.financial_authority).toBe("none");
-  const apply = page.getByRole("button", { name: "Сформировать неполный черновик", exact: true });
+  const apply = page.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    exact: true,
+  });
   await expect(apply).toBeDisabled();
-  await expect(page.getByText(/Черновик неполный. Есть неразобранные/)).toBeVisible();
+  await expect(page.getByText(/Можно сохранить неполный source-DRAFT/)).toBeVisible();
   const aliases = page.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ });
   if (await aliases.count()) await aliases.check();
-  await page
-    .getByRole("checkbox", { name: "Я проверил весь счёт и видимую неполноту черновика." })
-    .check();
   await expect(apply).toBeEnabled();
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";
@@ -172,21 +172,20 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
   const preview = await (await previewResponse).json();
   expect(preview.account_bindings).toHaveLength(3);
+  await page.getByText("Полный состав источника и привязки", { exact: true }).click();
   const aliases = page.getByRole("table", { name: "Привязки исходных счетов" });
   for (const identity of ["1234567", "ROW-A", "ROW-B", "filename_account", "acc_code"])
     await expect(aliases).toContainText(identity);
   await expect(page.getByRole("table", { name: "Позиции по исходному отчёту" })).toContainText(
     "RU000A000001",
   );
-  await expect(page.getByText(/Общая оценка источника/)).toContainText("2 400,01");
-  const apply = page.getByRole("button", { name: "Сформировать черновик", exact: true });
-  await expect(apply).toBeDisabled();
-  const reviewed = page.getByRole("checkbox", {
-    name: "Я проверил весь счёт и видимую неполноту черновика.",
+  await expect(page.getByText(/Общая оценка источника, включая отдельный RUB cash/)).toContainText(
+    "2 400,01",
+  );
+  const apply = page.getByRole("button", {
+    name: "Подтвердить сводку и сохранить source-DRAFT",
+    exact: true,
   });
-  await reviewed.focus();
-  await page.keyboard.press("Space");
-  await expect(reviewed).toBeChecked();
   await expect(apply).toBeDisabled();
   expect(writes).toBe(0);
   const bindingReview = page.getByRole("checkbox", {
@@ -276,19 +275,22 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
     buffer: partial,
   });
   await page.getByLabel("Брокерский счёт", { exact: true }).selectOption("1");
+  await page.getByText("Полный состав источника и привязки", { exact: true }).click();
   await expect(page.getByRole("table", { name: "Привязки исходных счетов" })).toContainText(
     "Существующая",
   );
   await expect(
     page.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }),
   ).toHaveCount(0);
-  await expect(page.getByText(/Черновик неполный. Есть неразобранные/)).toBeVisible();
+  await expect(page.getByText(/Можно сохранить неполный source-DRAFT/)).toBeVisible();
   await page.getByText("Все денежные строки и секции источника").click();
   await expect(page.getByText("Не разобрано — требуется доказательство")).toBeVisible();
   await page
-    .getByRole("checkbox", { name: "Я проверил весь счёт и видимую неполноту черновика." })
-    .check();
-  await page.getByRole("button", { name: "Сформировать неполный черновик", exact: true }).click();
+    .getByRole("button", {
+      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+      exact: true,
+    })
+    .click();
   await expect(page.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
   const blocked = await (await request.get("/api/months/2/close-workflow")).json();
   expect(blocked.readiness.can_close).toBe(false);
@@ -646,7 +648,7 @@ test("stock separate fee explicit independent basis Preview Apply GET reload Clo
   });
 });
 
-test("original-first exact known account uses ordinary Preview with zero persisted writes until explicit Save", async ({
+test("exceptions-first known account needs only original plus explicit source-DRAFT Save, with zero writes and exact replay", async ({
   page,
   request,
 }, info) => {
@@ -656,8 +658,10 @@ test("original-first exact known account uses ordinary Preview with zero persist
   const file = { name: filename, mimeType: "application/xml", buffer: xml };
   const before = await (await request.get("/api/synthetic-broker-inventory")).json();
   let applies = 0;
+  let reads = 0;
   page.on("request", (r) => {
     if (r.url().endsWith("/api/broker-months/apply")) applies++;
+    if (/\/api\/broker-months\/[A-Za-z0-9_-]+$/.test(r.url()) && r.method() === "GET") reads++;
   });
   await page.goto("/v2/close?month=8&step=final_review_close");
   await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
@@ -694,39 +698,121 @@ test("original-first exact known account uses ordinary Preview with zero persist
   ).json();
   expect(auto).toEqual(manual);
   expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(before);
-  const save = page.getByRole("button", { name: "Сформировать неполный черновик", exact: true });
-  await expect(save).toBeDisabled();
+  const save = page.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    exact: true,
+  });
+  await expect(save).toBeEnabled();
+  const summary = page.getByRole("region", { name: "Сводка исходного DRAFT" });
+  await expect(summary.getByText("Денежные операции не разобраны", { exact: true })).toBeVisible();
+  await expect(summary).toContainText("Synthetic original-first broker (#4)");
+  await expect(summary).toContainText("01.08.2030 — 31.08.2030");
+  await expect(
+    summary.getByText("Общая оценка источника, включая cash").locator(".."),
+  ).toContainText("2 400,01");
+  await expect(page.getByRole("table", { name: "Позиции по исходному отчёту" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page.screenshot({
-    path: info.outputPath("original-first-auto-preview-1440.png"),
+    path: info.outputPath("source-draft-summary-1440.png"),
     fullPage: true,
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";
   });
-  const consent = page.getByRole("checkbox", {
-    name: "Я проверил весь счёт и видимую неполноту черновика.",
-  });
-  await consent.focus();
-  await page.keyboard.press("Space");
+  await expect(page.getByRole("checkbox", { name: /Я проверил весь счёт/ })).toHaveCount(0);
+  await save.focus();
   await expect(save).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(applies).toBe(0);
   expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(before);
   await page.screenshot({
-    path: info.outputPath("original-first-reviewed-1280-125.png"),
+    path: info.outputPath("source-draft-single-confirm-1280-125.png"),
     fullPage: true,
   });
-  await save.click();
+  const appliedResponse = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/apply"));
+  const readResponse = page.waitForResponse(
+    (r) => /\/api\/broker-months\/[A-Za-z0-9_-]+$/.test(r.url()) && r.request().method() === "GET",
+  );
+  await page.keyboard.press("Enter");
+  const applied = await (await appliedResponse).json();
+  const reread = await (await readResponse).json();
+  expect(reread.accepted).toEqual(applied.accepted);
+  expect(reread.confirmation_digest).toBe(applied.confirmation_digest);
+  expect(reread.request_id).toBe(applied.request_id);
   await expect(
     page.getByText(/Сохранённый результат подтверждён независимым чтением/),
   ).toBeVisible();
   expect(applies).toBe(1);
+  expect(reads).toBe(1);
   const saved = await (await request.get("/api/broker-months?reporting_month_id=7")).json();
   expect(saved).toHaveLength(1);
   expect(saved[0]).toMatchObject({ account_id: 4, bookkeeping_ready: false });
   await page.screenshot({
-    path: info.outputPath("original-first-saved-1280-125.png"),
+    path: info.outputPath("source-draft-saved-1280-125.png"),
     fullPage: true,
   });
+  // Same original + same reviewed intent/key is a zero-economic-write replay.
+  const afterSave = await (await request.get("/api/synthetic-broker-inventory")).json();
+  const replay = await request.post("/api/broker-months/apply", {
+    multipart: {
+      file: { name: filename, mimeType: "application/xml", buffer: xml },
+      confirmation: JSON.stringify({
+        reporting_month_id: 7,
+        account_id: 4,
+        confirmation_digest: auto.confirmation_digest,
+        request_id: saved[0].request_id,
+        reviewed_account_bindings: auto.account_bindings,
+      }),
+    },
+  });
+  expect(replay.ok()).toBe(true);
+  expect((await replay.json()).duplicate).toBe(true);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterSave);
+
+  const altered = Buffer.from(
+    xml.toString().replace('real_volume="1000.01"', 'real_volume="1001.01"'),
+  );
+  expect(altered.equals(xml)).toBe(false);
+  const conflictResponse = page.waitForResponse((r) =>
+    r.url().endsWith("/api/broker-months/preview"),
+  );
+  await page
+    .getByLabel("Оригинальный XML MyBroker", { exact: true })
+    .setInputFiles({ ...file, buffer: altered });
+  const conflict = await (await conflictResponse).json();
+  expect(conflict.can_apply).toBe(false);
+  expect(conflict.conflicts).toContain("overlapping_endpoint_conflict");
+  await expect(page.getByRole("region", { name: "Сводка исходного DRAFT" })).toContainText(
+    "Пересекающиеся источники противоречат друг другу",
+  );
+  await expect(save).toBeDisabled();
+  await page.screenshot({
+    path: info.outputPath("source-draft-conflict-1280-125.png"),
+    fullPage: true,
+  });
+
+  const currencyResponse = page.waitForResponse((r) =>
+    r.url().endsWith("/api/broker-months/preview"),
+  );
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
+    ...file,
+    buffer: Buffer.from(xml.toString().replaceAll("RU000A000848", "RU000A000777")),
+  });
+  const currency = await (await currencyResponse).json();
+  expect(currency.can_apply).toBe(false);
+  expect(currency.conflicts).toContain("instrument_currency_unproven");
+  await expect(page.getByRole("region", { name: "Сводка исходного DRAFT" })).toContainText(
+    "Валюта инструмента не подтверждена",
+  );
+  await expect(page.getByRole("region", { name: "Сводка исходного DRAFT" })).toContainText(
+    "RUB автоматически не назначается",
+  );
+  await expect(save).toBeDisabled();
+  await page.screenshot({
+    path: info.outputPath("source-draft-unknown-currency-1280-125.png"),
+    fullPage: true,
+  });
+  expect(applies).toBe(1);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(afterSave);
 });

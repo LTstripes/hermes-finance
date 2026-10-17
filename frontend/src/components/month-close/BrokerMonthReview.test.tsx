@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { listAccounts } from "../../api/accounts";
@@ -156,20 +156,31 @@ async function inspect(user: ReturnType<typeof userEvent.setup>) {
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-  await screen.findByRole("button", { name: "Сформировать неполный черновик" });
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+  await user.click(screen.getByText("Полный состав источника и привязки"));
 }
-it("requires explicit whole-account review and confirms partial DRAFT only after GET", async () => {
+it("one explicit summary button saves partial source-DRAFT and confirms only after GET", async () => {
   const user = show();
   await inspect(user);
-  const apply = screen.getByRole("button", { name: "Сформировать неполный черновик" });
-  expect(apply).toBeDisabled();
+  const apply = screen.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+  expect(apply).toBeEnabled();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
   expect(screen.getByRole("table", { name: "Привязки исходных счетов" })).toHaveTextContent(
     "Существующая",
   );
-  expect(screen.getByText(/Общая оценка источника/)).toHaveTextContent("— → 1");
+  expect(
+    within(screen.getByRole("region", { name: "Сводка исходного DRAFT" })).getByText(
+      "Общая оценка источника, включая cash",
+    ).parentElement,
+  ).toHaveTextContent("Неизвестно → 1");
   await user.click(screen.getByText("Все денежные строки и секции источника"));
   expect(screen.getByText("Не разобрано — требуется доказательство")).toBeVisible();
-  await user.click(screen.getByRole("checkbox"));
+
   await user.click(apply);
   await screen.findByText(/Сохранённый результат подтверждён независимым чтением/);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
@@ -205,10 +216,9 @@ it("discloses every new alias and sends the exact batch decision only after expl
     "Synthetic broker (#7)",
   ])
     expect(table).toHaveTextContent(alias);
-  await user.click(
-    screen.getByRole("checkbox", { name: "Я проверил весь счёт и видимую неполноту черновика." }),
-  );
-  const apply = screen.getByRole("button", { name: "Сформировать неполный черновик" });
+  const apply = screen.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
   expect(apply).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
   await user.click(screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }));
@@ -227,8 +237,9 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
   const user = show();
   await inspect(user);
   await user.click(screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }));
-  await user.click(screen.getByRole("checkbox", { name: /Я проверил весь счёт/ }));
-  await user.click(screen.getByRole("button", { name: "Сформировать неполный черновик" }));
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  );
   await screen.findByText("broker_month_preview_stale");
   expect(readBrokerMonth).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
@@ -236,17 +247,23 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
   expect(
     screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }),
   ).not.toBeChecked();
-  expect(screen.getByRole("button", { name: "Сформировать неполный черновик" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeDisabled();
 });
 it("does not claim success after failed GET and reuses request identity on retry", async () => {
   vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic read failed"));
   const user = show();
   await inspect(user);
-  await user.click(screen.getByRole("checkbox"));
-  await user.click(screen.getByRole("button", { name: "Сформировать неполный черновик" }));
+
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  );
   await screen.findByText("Synthetic read failed");
   expect(screen.queryByText(/Сохранённый результат подтверждён/)).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Сформировать неполный черновик" }));
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  );
   await screen.findByText(/Сохранённый результат подтверждён/);
   const calls = vi.mocked(applyBrokerMonth).mock.calls;
   expect(calls[0][3]).toBe(calls[1][3]);
@@ -255,22 +272,24 @@ it("rejects independent readback from another account", async () => {
   vi.mocked(readBrokerMonth).mockImplementation(async (id) => persisted(id, 8));
   const user = show();
   await inspect(user);
-  await user.click(screen.getByRole("checkbox"));
-  await user.click(screen.getByRole("button", { name: "Сформировать неполный черновик" }));
+
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  );
   await screen.findByText(/Независимое чтение не подтвердило/);
   expect(screen.queryByText(/Сохранённый результат подтверждён/)).not.toBeInTheDocument();
 });
 it("new original file invalidates the previous review", async () => {
   const user = show();
   await inspect(user);
-  await user.click(screen.getByRole("checkbox"));
+
   await user.upload(
     screen.getByLabelText("Оригинальный XML MyBroker"),
     new File(["<changed/>"], "changed.xml", { type: "application/xml" }),
   );
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Сформировать неполный черновик" }),
+    screen.queryByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).not.toBeInTheDocument();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -312,9 +331,11 @@ it("a refreshed source GET overrides earlier ready Apply readback", async () => 
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-  await screen.findByRole("button", { name: "Сформировать черновик" });
-  await user.click(screen.getByRole("checkbox"));
-  await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
+  await screen.findByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" });
+
+  await user.click(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
+  );
   await screen.findByText(/Черновик неполный; Close заблокирован/);
   expect(screen.queryByText(/Брокерский компонент готов к общей проверке/)).not.toBeInTheDocument();
 });
@@ -356,9 +377,11 @@ it.each([true, false])(
       new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
     );
     await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-    await screen.findByRole("button", { name: "Сформировать черновик" });
-    await user.click(screen.getByRole("checkbox"));
-    await user.click(screen.getByRole("button", { name: "Сформировать черновик" }));
+    await screen.findByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" });
+
+    await user.click(
+      screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
+    );
     await screen.findByText(/Сохранённый источник месяца/);
     expect(screen.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
     expect(
@@ -409,17 +432,20 @@ it("known original automatically uses ordinary Preview; can_apply is authoritati
   const { user } = mounted();
   const file = original();
   await upload(user, file);
-  const save = await screen.findByRole("button", { name: "Сформировать неполный черновик" });
+  const save = await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
   expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
   expect(previewBrokerMonth).toHaveBeenCalledWith(
     file,
     { reporting_month_id: 1, account_id: 7 },
     expect.any(AbortSignal),
   );
-  expect(save).toBeDisabled();
+  expect(save).toBeEnabled();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
   expect(readBrokerMonth).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("checkbox"));
+
   expect(save).toBeEnabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -432,8 +458,14 @@ it("ordinary can_apply=false cannot be bypassed by known account or review", asy
   });
   const { user } = mounted();
   await upload(user);
-  expect(await screen.findByRole("checkbox")).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Сформировать неполный черновик" })).toBeDisabled();
+  expect(
+    await screen.findByRole("button", {
+      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 it.each(["wrong", "partial", "wide", "snapshot", "closed", "inactive", "empty"])(
@@ -478,7 +510,9 @@ it("discovery error leaves manual selection and retry available", async () => {
   await upload(user);
   await screen.findByText("Malformed discovery");
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-  await screen.findByRole("checkbox");
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
 });
 it.each(["success", "error"])("file A→B→A rejects late discovery %s", async (outcome) => {
@@ -489,10 +523,14 @@ it.each(["success", "error"])("file A→B→A rejects late discovery %s", async 
   const a = original();
   await upload(user, a);
   await upload(user, original("b.xml"));
-  await screen.findByRole("checkbox");
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
   await upload(user, a);
-  await screen.findByRole("checkbox");
-  await user.click(screen.getByRole("checkbox"));
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+
   await act(async () => {
     if (outcome === "success")
       late.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 8 });
@@ -500,7 +538,9 @@ it.each(["success", "error"])("file A→B→A rejects late discovery %s", async 
   });
   expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
   expect(screen.queryByText("late-error")).not.toBeInTheDocument();
-  expect(screen.getByRole("checkbox")).toBeChecked();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeEnabled();
   expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
 });
 it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
@@ -515,7 +555,9 @@ it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
     const signal = vi.mocked(previewBrokerMonth).mock.calls[0][2];
     if (kind === "file") {
       await upload(user, original("b.xml"));
-      await screen.findByRole("checkbox");
+      await screen.findByRole("button", {
+        name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+      });
     }
     if (kind === "account") await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "");
     if (kind === "month") {
@@ -532,7 +574,12 @@ it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
     await act(async () => {
       late.resolve({ ...preview, confirmation_digest: "late" });
     });
-    if (kind !== "file") expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    if (kind !== "file")
+      expect(
+        screen.queryByRole("button", {
+          name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+        }),
+      ).not.toBeInTheDocument();
     expect(applyBrokerMonth).not.toHaveBeenCalled();
   },
 );
@@ -544,7 +591,7 @@ it("mapping invalidation immediately drops both whole-account and alias consent"
   });
   const { user, query } = mounted();
   await upload(user);
-  await screen.findByRole("checkbox", { name: /Я проверил/ });
+  await screen.findByRole("checkbox", { name: /Я подтверждаю/ });
   for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
   await act(async () => {
     query.setQueryData(["broker-identity-mappings"], ["A"]);
@@ -572,7 +619,9 @@ it("upload before initial account list completes still reaches automatic ordinar
   await act(async () => {
     plan.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 7 });
   });
-  await screen.findByRole("checkbox");
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
 });
 
@@ -584,12 +633,227 @@ it("late ordinary Preview error after selecting another original cannot replace 
   await upload(user);
   await waitFor(() => expect(previewBrokerMonth).toHaveBeenCalledTimes(1));
   await upload(user, original("b.xml"));
-  await screen.findByRole("checkbox");
-  await user.click(screen.getByRole("checkbox"));
+  await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+
   await act(async () => {
     late.reject(new Error("old-original-error"));
   });
   expect(screen.queryByText("old-original-error")).not.toBeInTheDocument();
-  expect(screen.getByRole("checkbox")).toBeChecked();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeEnabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+
+it("exceptions lead a compact exact-source summary while full inventory and known codes stay expandable", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    identity: {
+      evidence_gaps: [],
+      instruments: [
+        {
+          isin: "RU000A000000",
+          hermes_id: 11,
+          instrument_type: "stock",
+          currency: "RUB",
+          action: "reuse",
+          mapping_id: null,
+          mapping_action: "stage_create",
+          evidence_gaps: [],
+        },
+      ],
+    },
+    quantity_controls: [{ isin: "RU000A000000", difference: null }],
+  });
+  const { user } = mounted();
+  await upload(user);
+  const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(within(summary).getByText("Денежные операции не разобраны")).toBeVisible();
+  expect(summary).toHaveTextContent("Synthetic broker (#7)");
+  expect(summary).toHaveTextContent("01.01.2030 — 31.01.2030");
+  expect(summary).toHaveTextContent("Оригинал: synthetic.xml");
+  expect(summary).toHaveTextContent("Инструменты каталога: переиспользуются 1; новых решений 0");
+  expect(summary).toHaveTextContent(
+    "Привязки инструментов: существующих 0; новых в source-DRAFT 1",
+  );
+  expect(screen.getByRole("table", { name: "Позиции по исходному отчёту" })).not.toBeVisible();
+  expect(within(summary).getByText("money_semantics_unsupported")).not.toBeVisible();
+  await user.click(within(summary).getByText("Технические причины Preview"));
+  expect(within(summary).getByText("money_semantics_unsupported")).toBeVisible();
+  await user.click(within(summary).getByText("Инструменты и контроль количества"));
+  expect(summary).toHaveTextContent("разница количества Неизвестно");
+  await user.click(screen.getByText("Полный состав источника и привязки"));
+  expect(screen.getByRole("table", { name: "Позиции по исходному отчёту" })).toBeVisible();
+  expect(
+    summary.compareDocumentPosition(
+      screen.getByRole("table", { name: "Позиции по исходному отчёту" }),
+    ) & 4,
+  ).toBeTruthy();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+
+it("unknown diagnostics stay visible and do not invent an Apply gate for a supported incomplete DRAFT", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    exceptions: ["future_unknown", "__proto__"],
+  });
+  const { user } = mounted();
+  await upload(user);
+  const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  for (const code of ["future_unknown", "__proto__"])
+    expect(
+      within(summary)
+        .getAllByText(code)
+        .some((node) => node.closest("details") === null),
+    ).toBe(true);
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeEnabled();
+  expect(summary).toHaveTextContent("Покрытие счёта, себестоимость, налоги и НКД не подтверждены");
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+it.each([null, "0.001", ""])(
+  "missing or unrepresentable source value %s remains UNKNOWN instead of a partial zero total",
+  async (value) => {
+    known();
+    vi.mocked(previewBrokerMonth).mockResolvedValue({
+      ...preview,
+      document: {
+        ...document,
+        positions: [{ ...document.positions[0], ending_value: value }],
+        rub_money: [],
+      },
+    });
+    const { user } = mounted();
+    await upload(user);
+    const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+    expect(
+      within(summary).getByText("Общая оценка источника, включая cash").parentElement,
+    ).toHaveTextContent("Неизвестно → Неизвестно");
+    expect(within(summary).getByText("Отдельный RUB cash").parentElement).toHaveTextContent(
+      "Неизвестно → Неизвестно",
+    );
+    expect(summary).toHaveTextContent("Решения по инструментам в Preview не указаны — неизвестно");
+  },
+);
+it("missing currency and source conflict give next actions without an enable/ignore control", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    can_apply: false,
+    conflicts: ["instrument_currency_unproven", "overlapping_endpoint_conflict"],
+    identity: {
+      instruments: [],
+      evidence_gaps: [{ isin: "RU000A000777", code: "instrument_currency_unproven" }],
+    },
+  });
+  const { user } = mounted();
+  await upload(user);
+  const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(summary).toHaveTextContent("Валюта инструмента не подтверждена");
+  expect(summary).toHaveTextContent("RUB автоматически не назначается");
+  expect(summary).toHaveTextContent("RU000A000777");
+  expect(summary).toHaveTextContent("Пересекающиеся источники противоречат друг другу");
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
+it("failed post-Apply GET clears new-alias consent and explicit retry retains the exact batch/key/digest", async () => {
+  known();
+  const bindings = [{ identity: "NEW", hermes_id: 7 }];
+  vi.mocked(previewBrokerMonth).mockResolvedValue({ ...preview, account_bindings: bindings });
+  vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic GET failed"));
+  const { user } = mounted();
+  await upload(user);
+  const consent = await screen.findByRole("checkbox", { name: /Я подтверждаю/ });
+  const save = screen.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+  await user.click(consent);
+  await user.click(save);
+  await screen.findByText("Synthetic GET failed");
+  expect(consent).not.toBeChecked();
+  expect(save).toBeDisabled();
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  expect(readBrokerMonth).toHaveBeenCalledTimes(1);
+  await user.click(consent);
+  await user.click(save);
+  await screen.findByText(/Сохранённый результат подтверждён/);
+  expect(vi.mocked(applyBrokerMonth).mock.calls[1]).toEqual(
+    vi.mocked(applyBrokerMonth).mock.calls[0],
+  );
+  expect(vi.mocked(applyBrokerMonth).mock.calls[1][4]).toEqual(bindings);
+});
+it("a double click while saving cannot submit a second financial intent", async () => {
+  known();
+  const pending = deferred<BrokerMonthReadback>();
+  vi.mocked(applyBrokerMonth).mockReturnValueOnce(pending.promise);
+  const { user } = mounted();
+  await upload(user);
+  const save = await screen.findByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+  await user.dblClick(save);
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+  expect(save).toBeDisabled();
+  const id = vi.mocked(applyBrokerMonth).mock.calls[0][3];
+  await act(async () => {
+    pending.resolve(persisted(id));
+  });
+  await screen.findByText(/Сохранённый результат подтверждён/);
+});
+
+it("absent position evidence does not turn a known cash amount into a portfolio total", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    document: { ...document, positions: [] },
+  });
+  const { user } = mounted();
+  await upload(user);
+  const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(
+    within(summary).getByText("Общая оценка источника, включая cash").parentElement,
+  ).toHaveTextContent("Неизвестно → Неизвестно");
+  expect(within(summary).getByText("Отдельный RUB cash").parentElement).toHaveTextContent(
+    "400 ₽ → 400 ₽",
+  );
+});
+it("a supported new instrument plan is disclosed without a new per-ISIN decision gate", async () => {
+  known();
+  vi.mocked(previewBrokerMonth).mockResolvedValue({
+    ...preview,
+    identity: {
+      evidence_gaps: [],
+      instruments: [
+        {
+          isin: "RU000A000777",
+          hermes_id: null,
+          instrument_type: "stock",
+          currency: "RUB",
+          action: "stage_create",
+          mapping_id: null,
+          mapping_action: "stage_create",
+          evidence_gaps: [],
+        },
+      ],
+    },
+  });
+  const { user } = mounted();
+  await upload(user);
+  const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(summary).toHaveTextContent("Инструменты каталога: переиспользуются 0; новых решений 1");
+  await user.click(within(summary).getByText("Инструменты и контроль количества"));
+  expect(summary).toHaveTextContent("Планируется новый инструмент по доказательствам Preview");
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeEnabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });

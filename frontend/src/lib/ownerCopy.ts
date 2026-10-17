@@ -167,6 +167,10 @@ function fallbackCopy(item: CloseReadinessItem): ReadinessCopy {
   };
 }
 
+export function brokerSourceTitle(code: string): string | null {
+  return BROKER_SOURCE_TITLES.get(code) ?? null;
+}
+
 export function readinessCopy(item: CloseReadinessItem): ReadinessCopy {
   const copy = Object.hasOwn(READINESS_COPY, item.code)
     ? READINESS_COPY[item.code]
