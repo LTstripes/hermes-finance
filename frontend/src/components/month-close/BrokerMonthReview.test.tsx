@@ -1094,3 +1094,16 @@ it("observed nonmanual mapping refetch still invalidates proof despite observer 
   expect(session.snapshot().confirmed).toBeNull();
   stop();
 });
+
+it("explicit Preview after a confirmed source Save displays the fresh summary instead of a retained receipt hiding it", async () => {
+  known();
+  const { user } = mounted();
+  await upload(user);
+  await user.click(await screen.findByRole("button", { name: /Подтвердить сводку и сохранить/ }));
+  await screen.findByText(/Сохранённый результат подтверждён/);
+  expect(screen.queryByRole("region", { name: "Сводка исходного DRAFT" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+});

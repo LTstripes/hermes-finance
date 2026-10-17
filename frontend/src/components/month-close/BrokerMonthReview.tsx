@@ -332,6 +332,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
       return;
     if (preview.account_bindings.length && !bindingsReviewed) return;
     setBindingsReviewed(false);
+    setPreview(null);
     await session.start(preview, request.current);
   }
   const currentBatches = batches.data ?? [];
@@ -443,7 +444,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
           </div>
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
-        {preview && previewEpoch === original.epoch && !closed && !original.pending && !readback ? (
+        {preview && previewEpoch === original.epoch && !closed && !original.pending ? (
           <>
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
