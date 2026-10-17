@@ -899,6 +899,17 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   await expect(save).toBeEnabled();
   // SPA navigation must keep the actual File; a full reload deliberately does not.
   await page.getByRole("link", { name: "Данные", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Справочники и сопоставления", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Справочники и сопоставления", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
+  ).toBeVisible();
   await page.goBack();
   await expect(page.getByText(`Оригинал в текущем сеансе: ${file.name}`)).toBeVisible();
   await expect(save).toHaveCount(0);
