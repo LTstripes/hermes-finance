@@ -64,6 +64,294 @@ def choices(context, *, include=True):
     }
 
 
+def paid_nkd_what_if(database, *, accepted=True, **kwargs):
+    from test_statement_import_source_cash_coverage import certify, claims, paid_nkd_setup
+
+    client, intent, originals, coverage = paid_nkd_setup(database, **kwargs)
+    if accepted:
+        with database.session_factory() as session:
+            certify(session, claims(session, coverage))
+
+    def call(operation="context", **fields):
+        return request(
+            client,
+            originals[0][1],
+            operation,
+            request_id=intent.base_request_id,
+            **fields,
+        )
+
+    return call, intent, coverage, originals
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_paid_nkd_v4_context_evaluate_export_no_duplicate_cash(database, inclusive):
+    from collections import Counter
+
+    call, _, _, _ = paid_nkd_what_if(database, inclusive=inclusive)
+    before = _all_month_tables(database)
+    writes = []
+
+    def spy(_conn, _cursor, statement, *_args):
+        if statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "REPLACE")):
+            writes.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", spy)
+    try:
+        response = call()
+        assert response.status_code == 200, response.text
+        context = response.json()
+        assert context["hard_blockers"] == []
+        actual = context["actual_result"]
+        assert actual["reason_codes"] == [] and actual["rate_fraction"] is not None
+        assert context["optional_candidate"] is None
+        assert [f["signed_amount_kopecks"] for f in context["fixed_schedule"]] == ["5000000"]
+        dispositions = context["diagnostic_inventory"]["h2"]["money_dispositions"]
+        assert Counter(d["disposition"] for d in dispositions) == {
+            "accepted_non_owner_coupon": 2,
+            "effective_owner_flow": 1,
+            "accepted_non_owner_trade_cash": 2,
+            "accepted_non_owner_paid_nkd": 1,
+        }
+        money_basis = [r for r in context["required_assumptions"] if r["slot"] == "money_basis"]
+        assert len(money_basis) == 3
+        selected = choices(context)
+        for missing in money_basis:
+            partial = deepcopy(selected)
+            partial["selections"] = [
+                s for s in partial["selections"] if s["requirement_id"] != missing["requirement_id"]
+            ]
+            response = call("evaluate", context=context, assumptions=partial)
+            assert response.status_code == 200, response.text
+            result = response.json()
+            assert result["status"] == "needs_assumptions"
+            assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+        response = call("evaluate", context=context)
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["status"] == "hypothetical", result["reason_codes"]
+        assert result["actual_result"] == actual
+        assert abs(
+            Decimal(result["scenario_rate_fraction"]) - Decimal(actual["rate_fraction"])
+        ) < Decimal("1e-8")
+        assert result["scenario_result_kopecks"] == str(
+            int(actual["closing"]["total_value_kopecks"])
+            - int(actual["opening"]["total_value_kopecks"])
+            - 5000000
+        )
+        exported = call("export", context=context, result=result)
+        assert exported.status_code == 200, exported.text
+        assert exported.json() == result
+        assert exported.headers["cache-control"] == "no-store"
+        assert "attachment" in exported.headers["content-disposition"]
+        assert writes == []
+        assert _all_month_tables(database) == before
+    finally:
+        event.remove(database.engine, "before_cursor_execute", spy)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "target",
+        "missing_target",
+        "absent_owner",
+        "role",
+        "owner_target",
+        "fingerprint",
+        "ordinal",
+        "source",
+        "duplicate",
+        "pattern_gap",
+    ],
+)
+def test_paid_nkd_v4_consumer_rejects_forged_inventory(database, monkeypatch, change):
+    from dataclasses import asdict, replace
+
+    from hermes_finance.services import broker_statement_what_if as service
+
+    call, intent, coverage, _ = paid_nkd_what_if(database)
+    with database.session_factory() as session:
+        actual = service.read_statement_return(
+            session, account_id=intent.account_id, request_id=intent.base_request_id
+        )
+        cash = service.source_cash_coverage.inventory(
+            session, intent.account_id, coverage.opening_date, coverage.closing_date
+        )
+    context = call().json()
+    ownership = deepcopy(context["diagnostic_inventory"]["ownership"])
+    nkd = next(
+        d for d in cash["money_dispositions"] if d["disposition"] == "accepted_non_owner_paid_nkd"
+    )
+    key = (nkd["import_id"], nkd["section"], nkd["ordinal"])
+    owner = next(o for o in ownership if tuple(o["key"]) == key)
+    if change == "target":
+        nkd["trade_target_id"] = "synthetic-wrong-trade"
+    elif change == "missing_target":
+        nkd.pop("trade_target_id")
+    elif change == "absent_owner":
+        ownership.remove(owner)
+    elif change == "role":
+        owner["role"] = "account_funding"
+    elif change == "owner_target":
+        owner["target_id"] = "synthetic-wrong-trade"
+    elif change == "fingerprint":
+        owner["row_fingerprint"] = "0" * 64
+    elif change in {"ordinal", "source"}:
+        owner["key"][2 if change == "ordinal" else 0] += 1000
+    elif change == "duplicate":
+        ownership.append(deepcopy(owner))
+    else:
+        reader = service.read_money_candidates
+
+        def with_gap(*args, **kwargs):
+            result = reader(*args, **kwargs)
+            return replace(
+                result,
+                observations=tuple(
+                    replace(o, reasons=(*o.reasons, "source_pattern_unproven"))
+                    if service.broker_money_ownership.key(asdict(o.occurrence)) == key
+                    else o
+                    for o in result.observations
+                ),
+            )
+
+        monkeypatch.setattr(service, "read_money_candidates", with_gap)
+    # Deliberately forge only the consumer boundary, after obtaining genuine
+    # accepted material. Canonical authority itself rejects these corruptions.
+    monkeypatch.setattr(service, "read_statement_return", lambda *a, **k: actual)
+    monkeypatch.setattr(service.source_cash_coverage, "inventory", lambda *a, **k: cash)
+    monkeypatch.setattr(service.broker_money_ownership, "owners", lambda *a, **k: ownership)
+    response = call(expected_actual_fingerprint=actual.material_fingerprint)
+    assert response.status_code == 200, response.text
+    fresh = response.json()
+    assert fresh["hard_blockers"]
+    assert fresh["optional_candidate"] is None
+    response = call(
+        "evaluate", context=fresh, expected_actual_fingerprint=actual.material_fingerprint
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["status"] == "blocked"
+    assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+
+
+@pytest.mark.parametrize("closed", [False, True])
+@pytest.mark.parametrize(
+    "change", ["revoke", "account_aba", "source_aba", "trade_revision", "fork"]
+)
+def test_paid_nkd_v4_changed_proof_stales_routes_no_aba_revival(database, closed, change):
+    from datetime import UTC, datetime
+
+    from test_statement_import_mybroker_endpoints import _money_apply, _trade_decide
+
+    from hermes_finance.persistence import (
+        BrokerMonthApply,
+        CashBoundaryCoverage,
+        ExecutedTradeRevision,
+        ReportingMonth,
+    )
+    from hermes_finance.services.broker_money_lifecycle import next_journal_revision
+    from hermes_finance.services.source_cash_coverage import read_source_cash_coverage
+    from hermes_finance.statement_import.mybroker import canonical
+
+    call, intent, _, originals = paid_nkd_what_if(database)
+    context = call().json()
+    assert context["hard_blockers"] == []
+    result = call("evaluate", context=context).json()
+    assert result["status"] == "hypothetical"
+    with database.session_factory() as session:
+        receipt = session.get(BrokerMonthApply, "paid-nkd")
+        proof = json.loads(receipt.projection_json)
+        coverage_id = session.scalar(select(CashBoundaryCoverage.id))
+        if closed:
+            session.get(ReportingMonth, intent.reporting_month_id).status = "closed"
+            session.commit()
+        if change == "account_aba":
+            account = session.get(Account, intent.account_id)
+            name = account.name
+            account.name += " changed"
+            session.commit()
+            account.name = name
+        elif change == "source_aba":
+            from hermes_finance.persistence import MyBrokerImport
+
+            source = session.get(MyBrokerImport, receipt.import_id)
+            old = source.normalized_json
+            data = json.loads(old)
+            data["money"][0]["amount"] = "123.45"
+            source.normalized_json = canonical(data)
+            session.commit()
+            source.normalized_json = old
+        elif change == "trade_revision":
+            previous = session.scalar(
+                select(ExecutedTradeRevision).order_by(ExecutedTradeRevision.revision.desc())
+            )
+            fields = {
+                c.name: getattr(previous, c.name)
+                for c in previous.__table__.columns
+                if c.name != "id"
+            }
+            fields.update(
+                revision=previous.revision + 1,
+                acceptance_state="retracted",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(ExecutedTradeRevision(**fields))
+        else:
+            fields = {c.name: getattr(receipt, c.name) for c in receipt.__table__.columns}
+            if change == "revoke":
+                proof.update(operation="retire", journal_revision=next_journal_revision(session))
+            fields.update(
+                request_id="synthetic-changed-proof",
+                projection_json=canonical(proof),
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(BrokerMonthApply(**fields))
+        session.commit()
+        assert read_source_cash_coverage(session, coverage_id)["effective_state"] == "retired"
+    for operation in ("evaluate", "export"):
+        response = call(
+            operation, context=context, **({"result": result} if operation == "export" else {})
+        )
+        assert response.status_code == 409, response.text
+        assert response.headers["cache-control"] == "no-store"
+        assert "content-disposition" not in response.headers
+    fresh = call().json()
+    assert fresh["actual_result"]["rate_fraction"] is None
+    assert fresh["hard_blockers"]
+    assert fresh["optional_candidate"] is None
+    if change == "revoke" and not closed:
+        # Genuine reviewed Money reaffirmation restores the exact occurrence,
+        # but cannot revive H2 acceptance or any previously bound scenario.
+        with database.session_factory() as session:
+            _money_apply(
+                session,
+                _trade_decide(session, intent, originals, operation="reaffirm"),
+                originals,
+                "synthetic-reaffirm",
+            )
+            assert read_source_cash_coverage(session, coverage_id)["effective_state"] == "retired"
+        assert call("export", context=context, result=result).status_code == 409
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_paid_nkd_v4_does_not_waive_legacy_v3_or_extra_money(database, monkeypatch, extra):
+    from hermes_finance.services import source_cash_coverage
+
+    # Opaque extra Money prevents A2 acceptance in the genuine fixture itself.
+    call, _, _, _ = paid_nkd_what_if(database, accepted=not extra, extra=extra)
+    if not extra:
+        monkeypatch.setattr(source_cash_coverage, "CONTRACT", source_cash_coverage.COUPON_CONTRACT)
+    response = call()
+    assert response.status_code == 200, response.text
+    context = response.json()
+    assert context["hard_blockers"]
+    result = call("evaluate", context=context).json()
+    assert result["status"] == "blocked"
+    assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+
+
 def request(
     client,
     raw,

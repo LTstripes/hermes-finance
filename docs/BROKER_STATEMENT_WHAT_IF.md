@@ -25,6 +25,11 @@ endpoints as observations. All effective H2 crossings are mandatory and counted
 once. Compatible H2/Money ownership of the same target is one event; incompatible,
 conflicting or ineffective ownership cannot become an optional candidate.
 Coupon and trade dispositions come from the existing H2 inventory.
+H2-A2 v4 `accepted_non_owner_paid_nkd` is compatible only with one exact permanent
+trade owner and its matching `trade_target_id`; missing ownership is a hard
+inventory mismatch. It retains the separate `money_basis` choice and pattern
+blockers, without adding an economic row or investor crossing. Legacy v3 unresolved
+paid NKD and all other authority/currentness gates retain their existing behavior.
 
 There is no generic outgoing classifier, manual amount/date/endpoint entry, IIS
 extension, arbitrary interval, portfolio aggregation, saved scenario or batch mode.
