@@ -27,6 +27,7 @@ import {
   periodPresets,
 } from "./capitalPerformanceContext";
 import { capabilityCopy, diagnosticCopy, hasWorkingAction } from "./capitalPerformanceCopy";
+import { InstrumentCashIncome } from "./InstrumentCashIncome";
 import { sortReportingMonths } from "./monthSelection";
 import { ObservedValuationCapture } from "./ObservedValuationCapture";
 import { PerformancePreparation } from "./PerformancePreparation";
@@ -711,6 +712,15 @@ export default function UiV2CapitalPerformanceDetail() {
         ) : null}
       </section>
       {content}
+      {context ? (
+        <InstrumentCashIncome
+          key={`${context.start}:${context.end}:${context.accountId}`}
+          accounts={accounts}
+          start={context.start}
+          end={context.end}
+          accountId={context.accountId}
+        />
+      ) : null}
       {context !== null && context.view === "accounts" ? (
         <ObservedValuationCapture
           key={[
