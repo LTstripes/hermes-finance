@@ -104,7 +104,6 @@ def main():
                     isin=isin,
                     currency="RUB",
                 )
-        seed_statement_return(database)
         # One isolated #886 original; public metadata is fixture-only transport.
         inbox_root = ET.fromstring(broker_month_xml(bond=True, unsupported=True))
         stock = inbox_root.find(".//{MyBroker}Details[@ISIN1='RU000A000000']")
@@ -202,6 +201,8 @@ def main():
                 return actual_lookup(isins, consent=consent, client=client)
 
         registry.lookup_public = mocked_lookup
+        # Build the accepted return proof after all catalogue/account dependencies.
+        seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
         @app.get("/api/synthetic-broker-source/{kind}")
