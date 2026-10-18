@@ -144,6 +144,193 @@ def test_finance_link_validates_own_receipt_without_circular_readiness(database,
         )
 
 
+@pytest.mark.parametrize("choice", ["incompatible", "defer"])
+@pytest.mark.parametrize("legacy_link", [False, True])
+def test_current_journal_choice_cannot_be_laundered_by_strict_receipt(
+    database, choice, legacy_link
+):
+    from test_statement_import_broker_statement_return import prepared
+
+    from hermes_finance.persistence import (
+        CashBoundaryCoverage,
+        ReportingMonth,
+        SourceIntakeOriginal,
+    )
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_months import broker_month_close_blockers
+    from hermes_finance.services.instruments import create_instrument
+    from hermes_finance.services.reporting_months import close_reporting_month
+    from hermes_finance.services.source_cash_coverage import read_source_cash_coverage
+
+    with database.session_factory() as session:
+        wrong = create_instrument(
+            session, name="Different synthetic stock", instrument_type="stock", isin="RU000A000002"
+        )
+        other = create_account(
+            session, name="Unaffected synthetic account", account_type="brokerage"
+        )
+    # The clean strict SOURCE and effective actual cash proof precede the intake.
+    client, xml = prepared(database, covered=True)
+    returns_url = "/api/broker-statement-returns?account_id=1&request_id=synthetic-batch"
+    assert client.get(returns_url).json()["status"] == "indicative"
+    with database.session_factory() as session:
+        month_id = session.scalar(select(ReportingMonth.id))
+        coverage_id = session.scalar(select(CashBoundaryCoverage.id))
+        assert read_source_cash_coverage(session, coverage_id)["effective_state"] == "accepted"
+        assert broker_month_close_blockers(session, month_id) == ()
+    view = save(client, xml, {"account_id": 1, "reporting_month_id": month_id})
+    proposal = view["proposals"][0]
+    with database.session_factory() as session:
+        clean_link = source_intake._link_authority(
+            session, session.get(SourceIntakeOriginal, view["id"]), view["state"], "synthetic-batch"
+        )
+    economic_before = _all_month_tables(database)
+    changes = (
+        {"instrument_decisions": [{"isin": proposal["isin"], "hermes_id": wrong.id}]}
+        if choice == "incompatible"
+        else {"deferred_isins": [proposal["isin"]]}
+    )
+    assert (
+        review(client, view, xml, intent(view, **changes), "unresolved-choice").status_code == 200
+    )
+    pending = client.get(f"{BASE}/{view['id']}").json()
+    if legacy_link:
+        # Fabricate an old-version journal link that omitted identity choices from
+        # its signature. GET must revalidate current state, not trust old acceptance.
+        with database.session_factory() as session:
+            source_intake._append(
+                session,
+                request_id="legacy-link",
+                fingerprint="a" * 64,
+                operation="finance_link",
+                payload={"state": pending["state"], "link": clean_link},
+                original=session.get(SourceIntakeOriginal, view["id"]),
+                account_id=1,
+                month_id=month_id,
+                predecessor=pending["head_seq"],
+            )
+            session.commit()
+    else:
+        requested = intent(pending, finance_request_id="synthetic-batch")
+        before_attempt = _tables(database)
+        preview = upload(client, f"{BASE}/{view['id']}/review-preview", xml, "intent", requested)
+        assert preview.status_code == 409, preview.text
+        confirmed = upload(
+            client,
+            f"{BASE}/{view['id']}/finance-link",
+            xml,
+            "confirmation",
+            {**requested, "request_id": "refused-link", "confirmation_digest": "0" * 64},
+        )
+        assert confirmed.status_code == 409, confirmed.text
+        assert _tables(database) == before_attempt
+    current = client.get(f"{BASE}/{view['id']}").json()
+    expected = (
+        "instrument_owner_selection_incompatible"
+        if choice == "incompatible"
+        else "source_intake_identity_deferred"
+    )
+    assert current["finance_link"] is None and not current["bookkeeping_ready"]
+    assert not current["can_close"] and {source_intake.PENDING, expected} <= set(
+        current["exceptions"]
+    )
+    listed = client.get(f"{BASE}?reporting_month_id={month_id}").json()
+    assert listed[0]["exceptions"] == current["exceptions"]
+    with database.session_factory() as session:
+        assert source_intake.scoped_status(session, month_id, 1)["status"] == "partial"
+        assert source_intake.scoped_status(session, month_id, other.id)["status"] == "complete"
+        assert (
+            source_intake.interval_blockers(
+                session, date(2029, 12, 31), date(2030, 1, 31), [other.id]
+            )
+            == []
+        )
+        cash = read_source_cash_coverage(session, coverage_id)
+        assert (
+            cash["effective_state"] == "invalidated" and source_intake.PENDING in cash["blockers"]
+        )
+        assert source_intake.PENDING in {
+            code for code, _ in broker_month_close_blockers(session, month_id)
+        }
+        with pytest.raises(ValueError, match="MyBroker"):
+            close_reporting_month(session, month_id)
+    affected = client.get(returns_url).json()
+    assert affected["rate_fraction"] is None and source_intake.PENDING in affected["reason_codes"]
+    exact = client.get(
+        "/api/performance/xirr?scope=account&account_id=1&start_date=2029-12-31&end_date=2030-01-31"
+    ).json()
+    # Source-native XIRR already refuses earlier for its unproved exact basis.
+    assert exact["quality"] == "unavailable" and exact["value"] is None
+    assert _all_month_tables(database) == economic_before
+    # Only an explicit compatible decision/removal of deferral permits a fresh
+    # link to the SAME strict receipt; no new financial Apply is involved.
+    compatible = [{"isin": proposal["isin"], "hermes_id": proposal["hermes_id"]}]
+    assert (
+        review(
+            client,
+            current,
+            xml,
+            intent(current, instrument_decisions=compatible, deferred_isins=[]),
+            "resolve-choice",
+        ).status_code
+        == 200
+    )
+    resolved = client.get(f"{BASE}/{view['id']}").json()
+    requested = intent(resolved, finance_request_id="synthetic-batch")
+    plan = upload(client, f"{BASE}/{view['id']}/review-preview", xml, "intent", requested).json()
+    confirmed = {
+        **requested,
+        "request_id": "resolved-link",
+        "confirmation_digest": plan["confirmation_digest"],
+    }
+    assert (
+        upload(
+            client, f"{BASE}/{view['id']}/finance-link", xml, "confirmation", confirmed
+        ).status_code
+        == 200
+    )
+    replay = upload(client, f"{BASE}/{view['id']}/finance-link", xml, "confirmation", confirmed)
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    complete = client.get(f"{BASE}/{view['id']}").json()
+    assert complete["finance_link"] and not complete["exceptions"] and complete["bookkeeping_ready"]
+    assert client.get(returns_url).json()["status"] == "indicative"
+    # Equal restored choices cannot resurrect an older accepted link or its ACK.
+    assert (
+        review(client, complete, xml, intent(complete, **changes), "aba-choice").status_code == 200
+    )
+    interrupted = client.get(f"{BASE}/{view['id']}").json()
+    assert (
+        review(
+            client,
+            interrupted,
+            xml,
+            intent(interrupted, instrument_decisions=compatible, deferred_isins=[]),
+            "aba-resolve",
+        ).status_code
+        == 200
+    )
+    replay = upload(client, f"{BASE}/{view['id']}/finance-link", xml, "confirmation", confirmed)
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    restored = client.get(f"{BASE}/{view['id']}").json()
+    assert restored["finance_link"] is None and source_intake.PENDING in restored["exceptions"]
+    assert client.get(returns_url).json()["rate_fraction"] is None
+    assert (
+        review(
+            client,
+            restored,
+            xml,
+            intent(restored, finance_request_id="synthetic-batch"),
+            "aba-fresh-link",
+            link=True,
+        ).status_code
+        == 200
+    )
+    assert client.get(returns_url).json()["status"] == "indicative"
+    assert _all_month_tables(database) == economic_before
+    with database.session_factory() as session:
+        assert broker_month_close_blockers(session, month_id) == ()
+
+
 def test_intake_delete_rebind_close_and_period_guards(database):
     scope = _broker_month_setup(database)
     xml = broker_month_xml()

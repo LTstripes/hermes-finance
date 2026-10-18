@@ -405,6 +405,25 @@ def _scope_revision(session, account_id, month_id, instrument_ids, mapping_ids):
     return result
 
 
+def _journal_identity(session, evidence, state):
+    bindings = (
+        [
+            {"identity": alias, "hermes_id": state["account_id"]}
+            for alias in evidence["source_accounts"]
+        ]
+        if state["account_id"]
+        else []
+    )
+    identity = mybroker_identity._prepare(
+        session, evidence, bindings, state["instrument_decisions"], source_intake=True
+    )
+    reasons = set(identity["conflicts"])
+    reasons.update(gap["code"] for gap in identity["evidence_gaps"])
+    if state["deferred_isins"]:
+        reasons.add("source_intake_identity_deferred")
+    return identity, reasons
+
+
 def _link_authority(session, original, state, request_id):
     from hermes_finance.services import broker_month_journal as journal
     from hermes_finance.services import broker_months
@@ -425,6 +444,37 @@ def _link_authority(session, original, state, request_id):
     ):
         raise MyBrokerError("source_intake_receipt_original_mismatch")
     accepted = journal.payload(receipt)
+    manifest = json.loads(_events(session, original.id)[0].payload_json)["manifest"]
+    identity, identity_reasons = _journal_identity(session, manifest["identity_evidence"], state)
+    bindings = [
+        {
+            "kind": "account",
+            "identity": p["identity"],
+            "hermes_id": p["hermes_id"],
+            "mapping_id": p["mapping_id"],
+        }
+        for p in identity["accounts"]
+    ] + [
+        {
+            "kind": "instrument",
+            "identity": p["isin"],
+            "hermes_id": p["hermes_id"],
+            "mapping_id": p["mapping_id"],
+        }
+        for p in identity["instruments"]
+    ]
+    instruments = {
+        str(p["hermes_id"]): [p["isin"], p["instrument_type"], p["currency"]]
+        for p in identity["instruments"]
+    }
+    # A receipt affirms its frozen S1 bindings, never an incompatible later Owner
+    # proposal or a deferred obligation. Recheck on both reserved linking and GET.
+    if identity_reasons or (
+        sorted(bindings, key=lambda b: (b["kind"], b["identity"]))
+        != sorted(json.loads(source.mappings_json), key=lambda b: (b["kind"], b["identity"]))
+        or instruments != accepted["instruments"]
+    ):
+        raise MyBrokerError("source_intake_identity_review_required")
     # Validate the receipt itself, deliberately excluding aggregate intake blockers.
     if (
         broker_months._projection(session, receipt) != accepted["projection_digest"]
@@ -550,17 +600,7 @@ def _view(session, original):
     ):
         raise MyBrokerError("source_intake_inventory_invalid")
     evidence = manifest["identity_evidence"]
-    bindings = (
-        [
-            {"identity": alias, "hermes_id": state["account_id"]}
-            for alias in evidence["source_accounts"]
-        ]
-        if state["account_id"]
-        else []
-    )
-    identity = mybroker_identity._prepare(
-        session, evidence, bindings, state["instrument_decisions"], source_intake=True
-    )
+    identity, identity_reasons = _journal_identity(session, evidence, state)
     decision_seq = next(
         (
             r.seq
@@ -587,13 +627,12 @@ def _view(session, original):
                 pass
             break
     reasons = set(link["blockers"] if link else [PENDING])
+    reasons.update(identity_reasons)
     if link is None:
         source = manifest["source"]
         reasons.update(source["syntax_blockers"])
         reasons.update(source["endpoint_blockers"])
         reasons.update(source["endpoint_conflicts"])
-        reasons.update(identity["conflicts"])
-        reasons.update(gap["code"] for gap in identity["evidence_gaps"])
     if any(p["currency_assessment"]["basis"] == "conflict" for p in proposals):
         reasons.add("source_intake_currency_conflict")
     for proposal in proposals:

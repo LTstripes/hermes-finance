@@ -173,6 +173,7 @@ export function brokerSourceTitle(code: string): string | null {
     instrument_type_unproven: "Тип бумаги не подтверждён",
     repo_identity_unsupported: "Финансовый смысл REPO не установлен",
     source_intake_pending: "Разбор ещё не сверён с принятым финансовым DRAFT",
+    source_intake_identity_deferred: "В разборе остались отложенные решения по бумагам",
     source_intake_currency_conflict: "Валюта предложения противоречит подтверждённым данным",
     source_intake_currency_unsupported: "Финансовое принятие этой валюты не поддерживается",
     source_intake_public_proof_stale: "Публичное подтверждение устарело; требуется обновление",

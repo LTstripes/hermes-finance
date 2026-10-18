@@ -64,6 +64,12 @@ authority under the writer reservation. It does not require aggregate Close
 readiness, which includes the unsatisfied intake and would create a circular gate.
 Incomplete strict receipts keep their financial/source blockers. Links become
 ineffective on affected authority/decision/ABA changes; history remains intact.
+Current journal identity conflicts, evidence gaps and explicit deferrals remain
+pending even when an earlier strict SOURCE receipt is otherwise clean. Link preview,
+reserved confirmation and every GET revalidate all current journal choices against
+the exact accepted S1 mappings and receipt instrument binding. An incompatible choice
+or deferral requires explicit journal resolution before fresh linking; an old link
+cannot waive it. Acknowledged replay never restores the effectiveness of an old link.
 
 ## Binding, consumers and protected lifecycle
 
