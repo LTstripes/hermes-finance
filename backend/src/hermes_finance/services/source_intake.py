@@ -405,7 +405,33 @@ def _scope_revision(session, account_id, month_id, instrument_ids, mapping_ids):
     return result
 
 
-def _journal_identity(session, evidence, state):
+def _journal_identity(session, evidence, state, *, accepted=None):
+    decisions = state["instrument_decisions"]
+    if accepted is not None:
+        from hermes_finance.services.public_security_registry import denomination_proof
+
+        reconciled = []
+        for decision in decisions:
+            selected = decision
+            if decision.get("hermes_id") is None and decision.get("proof_id"):
+                matches = [
+                    (target_id, attrs)
+                    for target_id, attrs in accepted["instruments"].items()
+                    if isinstance(attrs, list) and len(attrs) == 3 and attrs[0] == decision["isin"]
+                ]
+                if len(matches) == 1:
+                    target_id, attrs = matches[0]
+                    proof = denomination_proof(decision["proof_id"], decision["isin"], attrs[1])
+                    if (
+                        proof is not None
+                        and proof in accepted.get("identity_proofs", [])
+                        and attrs == [proof["isin"], proof["instrument_type"], proof["currency"]]
+                    ):
+                        # Read-only reconciliation of a creation choice accepted by
+                        # this exact receipt. Keep its original proof and journal state.
+                        selected = {**decision, "hermes_id": int(target_id)}
+            reconciled.append(selected)
+        decisions = reconciled
     bindings = (
         [
             {"identity": alias, "hermes_id": state["account_id"]}
@@ -415,7 +441,7 @@ def _journal_identity(session, evidence, state):
         else []
     )
     identity = mybroker_identity._prepare(
-        session, evidence, bindings, state["instrument_decisions"], source_intake=True
+        session, evidence, bindings, decisions, source_intake=True
     )
     reasons = set(identity["conflicts"])
     reasons.update(gap["code"] for gap in identity["evidence_gaps"])
@@ -445,7 +471,9 @@ def _link_authority(session, original, state, request_id):
         raise MyBrokerError("source_intake_receipt_original_mismatch")
     accepted = journal.payload(receipt)
     manifest = json.loads(_events(session, original.id)[0].payload_json)["manifest"]
-    identity, identity_reasons = _journal_identity(session, manifest["identity_evidence"], state)
+    identity, identity_reasons = _journal_identity(
+        session, manifest["identity_evidence"], state, accepted=accepted
+    )
     bindings = [
         {
             "kind": "account",
@@ -609,10 +637,6 @@ def _view(session, original):
         ),
         events[0].seq,
     )
-    proposals = [
-        {**p, "currency_assessment": _assessment(p, state, events[-1].seq, decision_seq)}
-        for p in identity["instruments"]
-    ]
     link = None
     for row in reversed(events):
         if row.operation == "decision" and not json.loads(row.payload_json).get("no_change"):
@@ -623,9 +647,17 @@ def _view(session, original):
                 current = _link_authority(session, original, state, stored["request_id"])
                 if current["signature"] == stored["signature"]:
                     link = current
+                    receipt = session.get(BrokerMonthApply, current["request_id"])
+                    identity, identity_reasons = _journal_identity(
+                        session, evidence, state, accepted=json.loads(receipt.projection_json)
+                    )
             except MyBrokerError:
                 pass
             break
+    proposals = [
+        {**p, "currency_assessment": _assessment(p, state, events[-1].seq, decision_seq)}
+        for p in identity["instruments"]
+    ]
     reasons = set(link["blockers"] if link else [PENDING])
     reasons.update(identity_reasons)
     if link is None:

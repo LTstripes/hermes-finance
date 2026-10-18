@@ -70,6 +70,11 @@ reserved confirmation and every GET revalidate all current journal choices again
 the exact accepted S1 mappings and receipt instrument binding. An incompatible choice
 or deferral requires explicit journal resolution before fresh linking; an old link
 cannot waive it. Acknowledged replay never restores the effectiveness of an old link.
+A saved proof-only creation choice can reconcile read-only to the card created by
+its own strict receipt only when the exact frozen receipt proof is still current
+and its ISIN/type/currency, accepted instrument and S1 mapping all match. The saved
+choice remains unchanged; expiry, replacement proof or an incompatible target stays
+pending. No RUB assumption supplies this proof.
 
 ## Binding, consumers and protected lifecycle
 

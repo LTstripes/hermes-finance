@@ -331,6 +331,114 @@ def test_current_journal_choice_cannot_be_laundered_by_strict_receipt(
         assert broker_month_close_blockers(session, month_id) == ()
 
 
+@pytest.mark.parametrize("changed_proof", ["expired", "different"])
+def test_saved_creation_proof_reconciles_only_to_exact_current_receipt_proof(
+    database, monkeypatch, changed_proof
+):
+    from datetime import timedelta
+
+    from hermes_finance.persistence import BrokerMonthApply
+    from hermes_finance.services import broker_months
+    from hermes_finance.services import public_security_registry as registry
+
+    scope = _broker_month_setup(database)
+    xml = broker_month_xml(bond=True)
+    _public_inbox_fixture(monkeypatch)
+    client = TestClient(create_app(database=database))
+    proof = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001"]},
+    ).json()[0]
+    view = save(client, xml, scope)
+    decisions = [{"isin": "RU000A000001", "proof_id": proof["proof_id"]}]
+    assert (
+        review(
+            client, view, xml, intent(view, instrument_decisions=decisions), "save-proof-choice"
+        ).status_code
+        == 200
+    )
+    saved = client.get(f"{BASE}/{view['id']}").json()
+    financial_intent = {**scope, "instrument_decisions": decisions}
+    plan = _broker_month_preview(client, financial_intent, xml)
+    assert plan["can_apply"], plan
+    assert _broker_month_apply(client, financial_intent, plan, xml).status_code == 200
+    financial_get = client.get("/api/broker-months/synthetic-batch")
+    assert financial_get.status_code == 200
+    before = _all_month_tables(database)
+    requested = intent(saved, finance_request_id="synthetic-batch")
+    link_plan = upload(
+        client, f"{BASE}/{view['id']}/review-preview", xml, "intent", requested
+    ).json()
+    assert (
+        review(
+            client,
+            saved,
+            xml,
+            intent(saved, finance_request_id="synthetic-batch"),
+            "proof-link",
+            link=True,
+        ).status_code
+        == 200
+    )
+    linked = client.get(f"{BASE}/{view['id']}").json()
+    assert linked["finance_link"] and source_intake.PENDING not in linked["exceptions"]
+    assert linked["state"] == saved["state"]  # No transformed decision is persisted.
+    replay = upload(
+        client,
+        f"{BASE}/{view['id']}/finance-link",
+        xml,
+        "confirmation",
+        {
+            **requested,
+            "request_id": "proof-link",
+            "confirmation_digest": link_plan["confirmation_digest"],
+        },
+    )
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    with database.session_factory() as session:
+        # Any financial/NKD limitation is retained verbatim, never waived by proof.
+        receipt = session.get(BrokerMonthApply, "synthetic-batch")
+        assert set(linked["exceptions"]) == set(broker_months._readiness(session, receipt))
+    assert _all_month_tables(database) == before
+    if changed_proof == "expired":
+        monkeypatch.setattr(registry, "_now", lambda: datetime(2099, 1, 1, tzinfo=UTC))
+    else:
+        later = datetime.now(UTC) + timedelta(minutes=1)
+        monkeypatch.setattr(registry, "_now", lambda: later)
+        registry._cache.clear()
+        next_proof = client.post(
+            "/api/broker-months/public-identity-lookup",
+            json={"consent": True, "isins": ["RU000A000001"]},
+        ).json()[0]
+        assert next_proof["proof_id"] != proof["proof_id"]
+        assert (
+            review(
+                client,
+                linked,
+                xml,
+                intent(
+                    linked,
+                    instrument_decisions=[
+                        {"isin": "RU000A000001", "proof_id": next_proof["proof_id"]}
+                    ],
+                ),
+                "different-proof-choice",
+            ).status_code
+            == 200
+        )
+    stale = client.get(f"{BASE}/{view['id']}").json()
+    assert stale["finance_link"] is None and source_intake.PENDING in stale["exceptions"]
+    rejected = upload(
+        client,
+        f"{BASE}/{view['id']}/review-preview",
+        xml,
+        "intent",
+        intent(stale, finance_request_id="synthetic-batch"),
+    )
+    assert rejected.status_code == 409
+    assert _all_month_tables(database) == before
+
+
 def test_intake_delete_rebind_close_and_period_guards(database):
     scope = _broker_month_setup(database)
     xml = broker_month_xml()
