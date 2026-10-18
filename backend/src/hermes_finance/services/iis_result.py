@@ -4,14 +4,14 @@ Loads persisted rows for an IIS account, maps them into the pure
 domain calculator input, and returns the domain result DTO.  No API,
 no Pydantic, no React.
 
-Implements MASTER_SPEC §10.16:
+Implements docs/ARCHITECTURE_AND_CONTRACTS.md#c8:
 
     portfolio_result_without_tax_benefit
     portfolio_result_with_tax_benefit =
         portfolio_result_without_tax_benefit
       + received_tax_benefits
 
-Key invariants (AGENTS.md / wiki §7):
+Key invariants (docs/ARCHITECTURE_AND_CONTRACTS.md#c8):
 - Money is always integer kopecks; never binary ``float``.
 - Bond principal repayment (redemption) is NOT income and never
   appears in the result.

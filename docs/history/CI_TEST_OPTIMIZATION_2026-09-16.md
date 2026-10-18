@@ -4,11 +4,11 @@ Historical pointer for the bounded Hermes Finance CI/test-execution optimization
 
 Canonical project-specific closeout:
 
-- [`docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`](../CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md)
+- [`docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`](../archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md)
 
 Reusable cross-project method:
 
-- [`docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`](../CI_TEST_OPTIMIZATION_PLAYBOOK.md)
+- [`docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md`](../archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md)
 
 Accepted implementation PRs:
 

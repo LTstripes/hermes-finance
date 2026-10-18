@@ -1,6 +1,6 @@
 # Post-move / returns checkpoint — 2026-10-16
 
-This dated receipt records the Owner's changed situation and the Integrator's live GitHub recheck. It supersedes stale *current-status* scheduling, not historical evidence or financial/runtime contracts. Earlier [12 October](../SESSION_CLOSEOUT_2026-10-12.md), [11 October](../SESSION_CLOSEOUT_2026-10-11.md), [10 October](../SESSION_CLOSEOUT_2026-10-10.md) and [4 October](../SESSION_CLOSEOUT_2026-10-04.md) records remain intact.
+This dated receipt records the Owner's changed situation and the Integrator's live GitHub recheck. It supersedes stale *current-status* scheduling, not historical evidence or financial/runtime contracts. Earlier [12 October](../archive/2026-10-18/docs/SESSION_CLOSEOUT_2026-10-12.md), [11 October](../archive/2026-10-18/docs/SESSION_CLOSEOUT_2026-10-11.md), [10 October](../archive/2026-10-18/docs/SESSION_CLOSEOUT_2026-10-10.md) and [4 October](../archive/2026-10-18/docs/SESSION_CLOSEOUT_2026-10-04.md) records remain intact.
 
 ## Code and release evidence
 
@@ -15,7 +15,7 @@ This dated receipt records the Owner's changed situation and the Integrator's li
 | v1.3.0 | Code complete, **unpublished**; candidate notes deliberately `UAT-PENDING` |
 | Excluded open candidates | #744 and #829 remain outside this release |
 
-The pre-packaging inventory at `46a9e6db01fcbf868362028957678b0d856d804c` counted 122 commits / 273 changed files since v1.2.0 and 14 new migrations. [Release preparation](../release-preparation-1.3.0.md) records synthetic 0044→0058 compatibility, preservation, duplicates and migration failure/recovery; it does not prove a real production upgrade. This docs-only refresh does not change that product candidate, its package version or its publication guard.
+The pre-packaging inventory at `46a9e6db01fcbf868362028957678b0d856d804c` counted 122 commits / 273 changed files since v1.2.0 and 14 new migrations. [Release preparation](../archive/2026-10-18/docs/release-preparation-1.3.0.md) records synthetic 0044→0058 compatibility, preservation, duplicates and migration failure/recovery; it does not prove a real production upgrade. This docs-only refresh does not change that product candidate, its package version or its publication guard.
 
 ## Owner update and local evidence boundary
 

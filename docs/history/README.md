@@ -8,8 +8,8 @@ Authoritative current agent operation:
 
 - [`AGENTS.md`](../../AGENTS.md)
 - [`docs/agents/`](../agents/)
-- [`docs/MODEL_ROUTING.md`](../MODEL_ROUTING.md)
-- [`docs/VERIFICATION_POLICY.md`](../VERIFICATION_POLICY.md)
+- [`docs/MODEL_ROUTING.md`](../archive/2026-10-18/docs/MODEL_ROUTING.md)
+- [`docs/VERIFICATION_POLICY.md`](../archive/2026-10-18/docs/VERIFICATION_POLICY.md)
 
 Active task scope comes from the assigned task or current release contract, not from these files.
 

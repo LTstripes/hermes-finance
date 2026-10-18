@@ -4,9 +4,9 @@
 >
 > Superseded by:
 > - [`AGENTS.md`](../../AGENTS.md)
-> - [`docs/agents/hermes.md`](../agents/hermes.md)
-> - [`docs/MODEL_ROUTING.md`](../MODEL_ROUTING.md)
-> - [`docs/VERIFICATION_POLICY.md`](../VERIFICATION_POLICY.md)
+> - [`docs/agents/hermes.md`](../archive/2026-10-18/docs/agents/hermes.md)
+> - [`docs/MODEL_ROUTING.md`](../archive/2026-10-18/docs/MODEL_ROUTING.md)
+> - [`docs/VERIFICATION_POLICY.md`](../archive/2026-10-18/docs/VERIFICATION_POLICY.md)
 >
 > Old mentions of local `private/` or runtime data do **not** override current runtime-isolation rules in `AGENTS.md` and ADR 0012. Development agents must not access production runtime data.
 

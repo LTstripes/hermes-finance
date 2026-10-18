@@ -104,4 +104,4 @@ unresolved.
 Hermes remains local, single-user, Windows-first, loopback by default; no cloud, trading,
 telemetry or background provider refresh.
 
-Evidence and post-move gates: [release preparation record](release-preparation-1.3.0.md).
+Evidence and post-move gates: [release preparation record](archive/2026-10-18/docs/release-preparation-1.3.0.md).

@@ -1,934 +1,34 @@
-# Личный финансовый дашборд — мастер-спецификация
+# Product and user journeys
 
-**Рабочее название:** Finance Dashboard  
-**Версия документа:** 1.0  
-**Статус:** требования к MVP зафиксированы  
-**Основной пользователь:** один владелец приложения  
-**Целевая платформа:** локальный Windows-ноутбук; интерфейс только для desktop-браузера (Owner, 2026-10-09)
-**Язык интерфейса:** русский  
-**Валюта по умолчанию:** RUB  
+Current normative handbook. Historical evidence and section-by-section provenance are in the [migration map](archive/2026-10-18/MIGRATION_MAP.md); it is not required reading for ordinary work. Current delivery/installation/task state is owned by [CURRENT_STATUS](CURRENT_STATUS.md).
 
----
+[1. Purpose and product boundaries](#p1) | [2. Monthly workflows](#p2) | [3. Screens and honest interpretation](#p3) | [4. Supported source families](#p4) | [5. Goals, scenarios and exports](#p5) | [6. Desktop UX](#p6)
 
-## 1. Назначение документа
+<a id="p1"></a>
+## 1. Purpose and product boundaries
 
-Этот документ описывает самостоятельное локальное веб-приложение для ведения личных финансов, которое должно заменить текущий Excel-файл, сохранить полезные расчёты и постепенно добавить автоматизацию.
+Hermes Finance is a local single-user Windows application for monthly personal finance, portfolio evidence, actual income, planning and review. The normal endpoint is `127.0.0.1:8000`; the owner-facing UI is Russian. It supports desktop/laptop browser use, keyboard navigation and browser zoom. Public hosting, multi-user authentication, telemetry, trading and autonomous investment actions require a separate product decision.
 
-Документ является бизнес- и продуктовым контрактом. Реализацию нужно вести небольшими назначенными задачами; нельзя пытаться реализовать весь документ одним запросом. Исторический backlog MVP хранится в `docs/history/HERMES_TASKS.md` и не является источником новой post-MVP работы. Операционный протокол агентов — в `AGENTS.md`.
+The five books are the complete current handbook: product here; [financial/data contracts](ARCHITECTURE_AND_CONTRACTS.md); [development and integration](DEVELOPMENT.md); [runtime, releases and recovery](OWNER_RUNTIME_OPERATIONS.md); and [current evidence, limitations and next actions](CURRENT_STATUS.md). ADRs explain decisions, release notes describe their version, and the archive preserves provenance. Their historical next-task lists are not standing instructions.
 
----
+Reporting month and snapshot date are separate identities. A month may contain a later observation date; the UI must show both. CLOSED financial facts remain immutable until explicit Reopen. Money and rates use exact backend arithmetic; frontend display is never financial authority. C2 owns definitions and formulas; no display may silently fill absent observations with zero.
 
-## 2. Цель продукта
+<a id="p2"></a>
+## 2. Monthly workflows
 
-Приложение должно помогать владельцу один раз в месяц фиксировать финансовое состояние и отвечать на вопросы:
+Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
-1. Каков текущий ликвидный капитал после долгов?
-2. Как меняется капитал по месяцам?
-3. Сколько чистого пассивного дохода реально получено?
-4. Каков прогноз чистого пассивного дохода на следующие 12 месяцев?
-5. Какой процент обязательных расходов покрывается пассивным доходом?
-6. Как близко цель в 100 000 ₽ чистого пассивного дохода в месяц?
-7. Какие классы активов и счета дали большую или меньшую прибыль?
-8. Хватит ли ликвидных активов для закрытия остатка ипотеки?
-9. Какова фактическая и нормализованная зарплата с учётом премий и прогрессивного НДФЛ?
-10. Каков результат ИИС с учётом налоговой выгоды и без неё?
+Data → Files permits source review without selecting a month. Keep every observed position, trade, Money occurrence and unsupported branch visible. The full original is indivisible: hiding one problem row does not turn 12 of 13 into a complete source. A default RUB preference is a proposal with provenance, not denomination proof. An incomplete DRAFT may retain unresolved evidence under its explicit contract; it does not waive financial or Close guards.
 
-Приложение не является бухгалтерской, налоговой или торговой системой. Оно предназначено для личной аналитики и планирования.
+After a successful ACK, failed readback is recovered by GET. Never replay a financial POST merely because GET failed. If ACK itself is lost, the outcome is uncertain: resolve the same immutable intent/key and committed state. After mapping changes obtain a fresh full-original Preview. Saved decisions may survive restart; original bytes must be reselected for mutations/reparse. C3–C5 own exact rules.
 
----
+The monthly workflow derives progress from authoritative read models, not a second progress ledger. It presents one next useful action, keeps optional provider stages conditional on supported accounts/data and returns native month edits to the selected Close context. Final review composes existing income, capital, budget, tax and readiness reads. Close is explicit; next-month outlook is read-only until an explicit month-create/copy action.
 
-## 3. Источники требований
+<a id="p2-master_spec-931"></a>
+### Manual month lifecycle and editor capabilities
 
-Требования основаны на:
-
-- текущем Excel-файле с листами `Сводка`, месячными листами, `Шаблон` и `Инструкция`;
-- PDF-выгрузке Альфа-Инвестиций за период 01.07.2026–02.08.2026;
-- ответах владельца приложения в ходе обсуждения;
-- желании развивать продукт поэтапно небольшими задачами.
-
-### 3.1. Важные выводы из текущего Excel
-
-1. Текущий файл полезен как визуальная модель, но его структуру не следует переносить буквально.
-2. В инструкции сказано, что блоки являются Excel-таблицами с именованными ссылками, но фактически книга содержит обычные диапазоны.
-3. На листе `Сводка` часть показателей содержит ошибки `#NAME?`.
-4. Месячный лист фактически является большим набором независимых блоков и формул.
-5. В текущем пассивном доходе смешаны:
-   - расчётный среднемесячный доход депозитов;
-   - купоны;
-   - усреднённые дивиденды;
-   - кэшбэк.
-6. Кэшбэк нужно исключить из пассивного дохода.
-7. Лист `Август_2026` подтверждён как отчёт за июль 2026 года, сформированный 2 августа 2026 года.
-8. Поэтому в приложении обязательно раздельно хранить:
-   - отчётный месяц;
-   - дату фактического снимка.
-9. История начинается с мая 2026 года. Апрель не переносится.
-10. Точное сопоставление остальных старых листов отчётным месяцам должно быть подтверждено при разовой миграции, а не угадано по имени вкладки.
-
-### 3.2. Узкий PDF-контракт Альфа-Инвестиций
-
-Принятый PDF-путь ограничен стандартизированным отчётом о произведённых
-выплатах доходов по ценным бумагам (`Отчет о произведенных выплатах доходов
-по ценным бумагам`). Он предназначен для явного разбора фактических
-statement events — например, купонов, дивидендов и погашений — и их
-сопоставления с локальными счетами, инструментами и денежными потоками.
-
-PDF может содержать поля счёта, ISIN, количества и сумм, необходимые для
-проверки строки выплаты, но это не делает его источником истины для общего
-состава портфеля, рыночных или учётных цен, оценки позиций либо текущего
-результата. Такие provider valuation fields остаются comparison-only; локальная
-модель и явно подтверждённые owner actions сохраняют свои принятые границы.
-
-Будущие выплаты берутся из ручного календаря и принятого отдельного контракта
-T-Invest, а не из Alfa PDF. Generic импорт брокерских holdings/prices/future
-payouts этим контрактом не предусмотрен и не возобновляется; для него
-потребовался бы отдельный явно принятый контракт.
-
----
-
-## 4. Границы продукта
-
-## 4.1. Входит в MVP 0.1
-
-- локальное веб-приложение;
-- локальная база SQLite;
-- один пользователь без авторизации;
-- месячные финансовые снимки;
-- создание нового месяца копированием предыдущего;
-- редактирование прошлых месяцев;
-- счета и классы активов;
-- депозиты и накопительные счета;
-- позиции акций, облигаций и фондов;
-- денежные средства;
-- физическое золото и другие ликвидные активы;
-- зарплата gross/net;
-- премии;
-- дополнительные доходы;
-- прогрессивный НДФЛ через настраиваемые налоговые правила;
-- фактический пассивный доход;
-- прогнозный пассивный доход;
-- обязательные расходы;
-- долг по кредитке;
-- ипотека и недвижимость справочно;
-- ИИС-профиль и налоговая выгода;
-- цели;
-- комментарий к месяцу;
-- современный дашборд;
-- графики в умеренном количестве;
-- экспорт отчёта в Markdown и JSON;
-- локальное резервное копирование;
-- разовая миграция истории из текущего Excel.
-
-## 4.2. Не входит в MVP 0.1
-
-- автоматические котировки;
-- импорт PDF Альфа-Инвестиций;
-- Альфа PRO API;
-- покупка и продажа ценных бумаг;
-- банковские транзакции;
-- мобильное приложение;
-- VPS и публичный доступ;
-- многопользовательский режим;
-- регистрация и пароли;
-- произвольный визуальный конструктор блоков;
-- AI-советник, который самостоятельно меняет данные или совершает действия;
-- сравнение с индексами, инфляцией и депозитами;
-- полноценный учёт всех бытовых расходов;
-- прогноз комфортного бюджета — это отдельная будущая цель.
-
----
-
-## 5. Пользователь и среда
-
-### 5.1. Пользователь
-
-Один владелец приложения. Роли и разграничение доступа в MVP не нужны.
-
-### 5.2. Среда запуска
-
-- Windows 10/11;
-- запуск локально;
-- интерфейс открывается в браузере по `localhost`;
-- должен быть простой PowerShell- или CMD-скрипт запуска;
-- позже приложение должно переноситься на VPS без полной смены архитектуры.
-
-**Актуальное решение владельца (2026-10-09):** Hermes Finance — персональное приложение для браузера на Windows-ноутбуке. Мобильный сайт, отдельный phone UI и адаптация под телефонные ширины (в том числе 390 px) не входят в продуктовую цель. Не планировать мобильные возможности, макеты или Owner UAT для телефонов. Поддерживать удобство на рабочих размерах окна ноутбука, нормальное масштабирование браузера, клавиатуру, читаемость и доступность. Ранее созданные mobile/responsive CSS и автотесты — историческое покрытие; их безопасное исключение из CI, если полезно, выполнять отдельной ограниченной задачей, а не менять финансовую логику или актуальный PR на ходу.
-
-### 5.3. Хранение данных
-
-По умолчанию:
-
-```text
-./data/finance.db
-./data/uploads/
-./data/exports/
-./data/backups/
-```
-
-Папка `data` и любые приватные конфигурации должны быть исключены из Git.
-
----
-
-## 6. Рекомендуемый технический стек
-
-Технический стек фиксируется, чтобы Hermes не тратил время на бесконечный выбор фреймворка.
-
-### Backend
-
-- Python;
-- FastAPI;
-- SQLAlchemy 2;
-- Alembic;
-- Pydantic;
-- SQLite для MVP;
-- `Decimal` в расчётах;
-- денежные значения в базе — целое количество копеек либо другая строго согласованная точная схема без `float`.
-
-### Frontend
-
-- React;
-- TypeScript;
-- Vite;
-- React Router;
-- TanStack Query;
-- Recharts;
-- Tailwind CSS;
-- shadcn/ui или сопоставимые простые компоненты.
-
-### Тестирование
-
-- pytest для доменной логики и API;
-- Vitest + Testing Library для компонентов;
-- Playwright для минимальных сквозных сценариев.
-
-### Поставка
-
-- в режиме разработки backend и frontend могут запускаться отдельно;
-- локальная сборка должна обслуживать статический frontend через backend или единый запускной скрипт;
-- Docker допускается позже, но не должен быть обязательным для первого локального запуска.
-
----
-
-## 7. Основные термины
-
-### 7.1. Отчётный месяц
-
-Календарный месяц, за который фиксируются результаты, например июль 2026.
-
-### 7.2. Дата снимка
-
-Дата фактического ввода или импорта данных. Например, отчёт за июль может иметь дату снимка 02.08.2026.
-
-### 7.3. Ликвидный финансовый капитал
-
-Сумма ликвидных активов за вычетом краткосрочных долгов:
-
-```text
-денежные средства
-+ депозиты и накопительные счета
-+ рыночная стоимость брокерских активов
-+ рыночная стоимость ИИС
-+ стоимость старого санкционного счёта
-+ физическое золото и другие ликвидные активы
-- долг по кредитной карте
-```
-
-Недвижимость сюда не входит.
-
-### 7.4. Общий справочный капитал
-
-```text
-ликвидный финансовый капитал
-+ стоимость недвижимости
-- остаток ипотеки
-```
-
-Этот показатель справочный и не используется в расчёте инвестиционной доходности.
-
-### 7.5. Чистый пассивный доход
-
-Включает:
-
-- проценты по депозитам и накопительным счетам;
-- купоны;
-- дивиденды;
-- другие доходы непосредственно от капитала;
-- минус относимые к ним налоги и комиссии.
-
-Не включает:
-
-- зарплату;
-- премию;
-- дополнительную работу;
-- кэшбэк;
-- пополнения счёта;
-- выводы;
-- погашение номинала облигации;
-- нереализованный рост цены активов.
-
-### 7.6. Инвестиционный результат
-
-Отдельный показатель, включающий денежный доход и изменение рыночной стоимости. Он не равен пассивному доходу.
-
----
-
-## 8. Приватная конфигурация
-
-Точные номера счетов и стартовые персональные значения не должны находиться в основном Git-репозитории. Они описаны в файле:
-
-```text
-../private/PRIVATE_SEED_NOT_FOR_GIT.md
-```
-
-Для приложения следует создать локальный файл вида:
-
-```text
-data/private_seed.json
-```
-
-и добавить его в `.gitignore`.
-
-В коде и тестах использовать синтетические номера и суммы.
-
----
-
-## 9. Модель данных
-
-Ниже приведена логическая модель. Названия таблиц могут быть уточнены, но смысл сущностей менять нельзя без обновления спецификации.
-
-## 9.1. `app_settings`
-
-Глобальные настройки:
-
-- базовая валюта;
-- локаль;
-- часовой пояс;
-- текущая цель пассивного дохода;
-- нижняя граница полной истории пассивного дохода `passive_income_history_start_month`, допускается `null` и логически представляется как `YYYY-MM`;
-- налоговые правила;
-- настройки экспорта;
-- путь резервных копий.
-
-`passive_income_history_start_month=null` означает прежнее поведение: вся доступная история CLOSED месяцев допускается в исторические passive-income метрики. Граница включительна и подробно определена в ADR 0008.
-
-## 9.2. `reporting_months`
-
-Поля:
-
-- `id`;
-- `year`;
-- `month`;
-- `period_start`;
-- `period_end`;
-- `snapshot_date`;
-- `status`: `draft` / `closed`;
-- `source`: `manual` / `excel_migration` / `alfa_pdf`;
-- `created_at`;
-- `updated_at`.
-
-Ограничение: один отчётный месяц на комбинацию `year + month`.
-
-## 9.3. `accounts`
-
-Поля:
-
-- `id`;
-- `name`;
-- `account_type`: `brokerage`, `iis`, `deposit`, `savings`, `cash`, `other`;
-- `external_code` — локальный идентификатор брокера;
-- `status`: `active`, `frozen`, `closed`, `hidden`;
-- `include_in_capital`;
-- `include_in_returns`;
-- `notes`.
-
-## 9.4. `iis_profiles`
-
-Поля:
-
-- `account_id`;
-- `iis_type`;
-- `opened_at`;
-- `eligible_close_at`;
-- `notes`.
-
-Юридическую допустимость закрытия приложение не определяет. Оно показывает введённую пользователем контрольную дату.
-
-## 9.5. `iis_contributions`
-
-Поля:
-
-- `id`;
-- `account_id`;
-- `tax_year`;
-- `amount`;
-- `is_target_reached`;
-- `notes`.
-
-## 9.6. `tax_benefits`
-
-Поля:
-
-- `id`;
-- `account_id`;
-- `tax_year`;
-- `benefit_type`;
-- `status`: `planned`, `submitted`, `received`, `rejected`;
-- `amount`;
-- `received_at`;
-- `notes`.
-
-## 9.7. `instruments`
-
-Поля:
-
-- `id`;
-- `name`;
-- `instrument_type`: `stock`, `bond`, `fund`, `currency`, `gold`, `other`;
-- `isin`;
-- `ticker`;
-- `moex_secid`;
-- `currency`;
-- `nominal_value` для облигаций;
-- `is_active`;
-- `manual_price_allowed`;
-- `notes`.
-
-ISIN является предпочтительным внешним идентификатором, но не обязан быть заполнен в MVP.
-
-## 9.8. `position_snapshots`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `account_id`;
-- `instrument_id`;
-- `quantity`;
-- `average_cost_per_unit`;
-- `market_price_per_unit`;
-- `accrued_interest` при необходимости;
-- `market_value`;
-- `cost_basis`;
-- `unrealized_result`;
-- `price_date`;
-- `price_source`: `manual`, `moex`, `alfa_pdf`;
-- `manual_adjustment`;
-- `notes`.
-
-Все расчётные поля должны либо пересчитываться сервером, либо быть явно помечены как импортированные. Нельзя бездумно доверять значениям, присланным frontend.
-
-Удаление позиции из DRAFT-месяца исключает её из активного снимка. Если на неё
-ссылается применённая выплата провайдера или её append-only revision, строка
-позиции сохраняется как историческая идентичность: `reporting_month_id = NULL`,
-`archived_from_period = YYYY-MM`. Применённая выплата с этой позицией как
-текущим источником также выходит из активного календаря, сохраняя provider
-identity, исходную позицию и все revisions. Новую исправленную позицию для того
-же месяца/счёта/инструмента можно создать отдельно. Историческая reconciliation
-с ручным потоком остаётся доступной для аудита и освобождает только активную
-уникальную привязку этого потока: исправленная выплата может связаться с ним,
-а историческая связь не удаляется и не редактируется. Удаление ручного потока,
-который служит исторической reconciliation, запрещено. При удалении DRAFT-месяца
-сохраняются связанные выплаты, revisions и reconciliation с ручным потоком;
-их исторические строки отвязываются от удаляемого месяца. FK остаются
-ограничивающими, а удаление CLOSED-месяца по-прежнему требует reopen.
-
-## 9.9. `deposit_snapshots`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `account_id`;
-- `name`;
-- `deposit_type`: `deposit`, `savings`;
-- `balance`;
-- `annual_rate`;
-- `expected_monthly_interest`;
-- `actual_interest_received`;
-- `notes`.
-
-Даты открытия и окончания в MVP необязательны.
-
-## 9.10. `cash_balances`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `name`;
-- `amount`;
-- `currency`;
-- `include_in_capital`;
-- `notes`.
-
-Допускается одна агрегированная строка «Денежные средства».
-
-## 9.11. `income_entries`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `income_type`: `salary`, `bonus`, `side_income`, `cashback`, `other`;
-- `name`;
-- `gross_amount`;
-- `tax_amount`;
-- `net_amount`;
-- `received_at`;
-- `is_recurring`;
-- `include_in_cash_flow`;
-- `include_in_passive_income`;
-- `notes`.
-
-Для зарплаты и премии должны храниться gross и фактический net. Расчётный net показывается отдельно.
-
-## 9.12. `investment_cash_flows`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `account_id`;
-- `instrument_id`, допускается `null`;
-- `flow_type`: `interest`, `coupon`, `dividend`, `redemption`, `deposit`, `withdrawal`, `commission`, `tax`, `realized_profit`, `realized_loss`, `other`;
-- `event_date`;
-- `gross_amount`;
-- `tax_amount`;
-- `commission_amount`;
-- `net_amount`;
-- `currency`;
-- `source`;
-- `notes`.
-
-Погашение облигации хранится как `redemption` и не входит в пассивный доход.
-
-## 9.13. `expected_cash_flows`
-
-Поля:
-
-- `id`;
-- `account_id`;
-- `instrument_id`;
-- `flow_type`: `coupon`, `dividend`, `interest`, `redemption`, `other`;
-- `expected_date`;
-- `gross_amount`;
-- `expected_tax_amount`;
-- `expected_net_amount`;
-- `currency`;
-- `source`;
-- `source_as_of_date`;
-- `is_confirmed`;
-- `notes`.
-
-В прогноз пассивного дохода погашение номинала не включается.
-
-## 9.14. `expense_entries`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `category`;
-- `amount`;
-- `expense_type`: `mandatory`, `comfortable`, `other`;
-- `is_recurring`;
-- `notes`.
-
-В MVP основной расчёт использует только `mandatory`.
-
-## 9.15. `saving_allocations`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `destination`;
-- `amount`;
-- `notes`.
-
-Это план/факт откладывания и не является расходом для расчёта покрытия обязательных расходов.
-
-## 9.16. `planned_budget_lines`
-
-Owner-entered план расходов на выбранный reporting month. Отдельная таблица, чтобы
-фактические `expense_entries` никогда не читались как бюджет и наоборот.
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `category` (та же форма, что `expense_entries.category`);
-- `planned_amount_kopecks`;
-- `expense_type`: `mandatory`, `comfortable`, `other`;
-- `notes`.
-
-Правила:
-
-- пустой план — валидное состояние и не блокирует закрытие месяца;
-- `planned_amount_kopecks = 0` — явный ноль владельца, а не «не заполнено»;
-- сопоставление план/факт идёт по точной паре `(category, expense_type)`: одинаковые
-  строки суммируются с обеих сторон, односторонние ключи показываются отдельной
-  строкой с отсутствующей стороной (`null`) и никогда не «склеиваются» по другому ключу;
-- отсутствие стороны и явный ноль — разные вещи: `null` означает «не введено»,
-  `planned_amount_kopecks = 0` — явный ноль владельца; UI показывает отсутствие как `—`,
-  а не как `0 ₽`;
-- план не является расходом и не участвует в расчёте покрытия обязательных расходов;
-- #336 не вводит новых формул: план/факт — представление, а не расчёт.
-
-## 9.17. `debts`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `debt_type`: `credit_card`, `other`;
-- `name`;
-- `current_balance`;
-- `include_in_liquid_capital`;
-- `annual_rate_basis_points`, допускается `null`;
-- `next_due_date`, допускается `null`;
-- `contract_end_date`, допускается `null`;
-- `notes`.
-
-Правила:
-
-- `null` означает «неизвестно», `0` — реальную ставку 0%. Ставка никогда не выводится
-  из суммы платежа, остатка или notes;
-- `next_due_date` (ближайший обязательный платёж на `snapshot_date`) и
-  `contract_end_date` (окончание договора) — разные смыслы и не смешиваются;
-- при копировании месяца ставка и `contract_end_date` переносятся как стабильные
-  условия, а `next_due_date` очищается: это событие, подтверждаемое в новом месяце.
-
-## 9.18. `property_snapshots`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `name`;
-- `estimated_value`;
-- `mortgage_balance`;
-- `monthly_payment`;
-- `mortgage_annual_rate_basis_points`, допускается `null`;
-- `notes`.
-
-`null` означает «неизвестно», `0` — реальную ставку 0%; ставка не выводится из платежа,
-остатка или notes. Ставка month-local и переносится при копировании месяца.
-
-Недвижимость не входит в ликвидный капитал.
-
-## 9.19. `goals`
-
-Поля:
-
-- `id`;
-- `name`;
-- `goal_type`: `passive_income`, `capital`, `expense_coverage`, `mortgage_coverage`, `other`;
-- `target_value`;
-- `target_date`, допускается `null`;
-- `is_active`;
-- `calculation_mode`;
-- `notes`.
-
-Основная цель MVP: 100 000 ₽ чистого пассивного дохода в месяц.
-
-## 9.20. `monthly_comments`
-
-Поля:
-
-- `id`;
-- `reporting_month_id`;
-- `position`;
-- `text`.
-
-Нужно поддерживать несколько заметок, а не только одно большое поле.
-
-## 9.21. `import_sessions`
-
-Заготовка для будущих импортов:
-
-- `id`;
-- `source_type`;
-- `file_name`;
-- `file_hash`;
-- `status`;
-- `started_at`;
-- `finished_at`;
-- `summary_json`;
-- `error_text`.
-
-В MVP может использоваться только при разовой миграции Excel.
-
----
-
-## 10. Бизнес-правила и формулы
-
-Все денежные расчёты выполняются на backend. Frontend не является источником финансовой логики.
-
-## 10.1. Ликвидный капитал
-
-```text
-liquid_assets =
-    cash_balances
-  + deposit_balances
-  + securities_market_value
-  + other_liquid_assets
-
-liquid_capital_net = liquid_assets - credit_card_debt - other_included_debts
-```
-
-Недвижимость и остаток ипотеки не входят в `liquid_capital_net`.
-
-Формула — известный итог по сохранённым включённым строкам. Счёт без снимка остаётся в каталоге; в сумму не входит его отсутствующее значение, и нулём оно не подставляется. Строка `CashBalance` с `account_id = NULL` — непривязанный кэш и не закрывает снимок ни одного реального счёта. Слова `available`, `exact`, `partial` и `complete` для этого итога, полнота источников портфеля и отдельная полнота cash-history/performance заданы в [`docs/financial-completeness-contract.md`](financial-completeness-contract.md).
-
-## 10.2. Чистая стоимость недвижимости
-
-```text
-property_equity = estimated_property_value - mortgage_balance
-```
-
-## 10.3. Покрытие ипотеки ликвидными активами
-
-```text
-mortgage_coverage_pct = liquid_capital_net / mortgage_balance * 100
-mortgage_coverage_gap = liquid_capital_net - mortgage_balance
-```
-
-Если ипотека равна нулю, процент не делится на ноль; UI показывает «ипотека закрыта».
-
-## 10.4. Фактический чистый пассивный доход месяца
-
-```text
-actual_net_passive_income =
-    deposit_interest_net
-  + bond_coupons_net
-  + dividends_net
-  + other_capital_income_net
-```
-
-Комиссии и налоги должны учитываться только один раз. Если `net_amount` уже рассчитан в событии, повторно вычитать налог нельзя.
-
-Кэшбэк не включается.
-
-## 10.5. Средний фактический пассивный доход
-
-Среднее строится по **eligible CLOSED reporting months**, а не по календарному году и не по всем календарным слотам подряд.
-
-Глобальная настройка:
-
-```text
-passive_income_history_start_month: YYYY-MM | null
-```
-
-задаёт включительную нижнюю границу полной истории пассивного дохода. `null` означает прежнее поведение — использовать всю доступную историю CLOSED месяцев.
-
-Месяц участвует в историческом среднем, только если он CLOSED и находится на/после границы. Сумма не определяет eligibility: настоящий CLOSED месяц с нулевым или отрицательным пассивным доходом участвует. DRAFT/reopened month не участвует до повторного закрытия. Отсутствующий календарный месяц не превращается в нулевой месяц и не увеличивает знаменатель.
-
-До накопления 12 eligible CLOSED месяцев:
-
-```text
-actual_passive_income_avg =
-    sum(actual_net_passive_income for eligible available months)
-    / count(eligible available months)
-```
-
-После накопления 12 используются последние 12 **eligible CLOSED reporting-month records** по `(year, month)`. Это rolling window, а не calendar-year average.
-
-UI показывает фактически использованный count и настроенную границу, например:
-
-```text
-Среднее за 5 закрытых месяцев из 12 · учёт с мая 2026
-```
-
-Если eligible CLOSED месяцев нет, UI сообщает отсутствие закрытой истории в выбранном периоде, а не выдаёт это за измеренный нулевой месяц.
-
-Единый backend eligibility source применяется также к current/progress passive-income Goal и к actual-dividend history component прогноза. Подробный normative contract, migration/default и примеры определены в ADR 0008.
-
-## 10.6. Прогнозный чистый пассивный доход
-
-```text
-forecast_12m_net_passive_income =
-    expected_deposit_interest_next_12m
-  + expected_coupon_net_next_12m
-  + expected_dividend_component
-  + other_expected_capital_income
-```
-
-Для MVP:
-
-- ожидаемые купоны берутся из ручного календаря ожидаемых выплат;
-- проценты по депозитам могут рассчитываться из текущего остатка и ставки;
-- дивидендная часть строится из фактического среднего net dividends по той же eligible CLOSED history и той же lower boundary, что определены §10.5 / ADR 0008; после 12 eligible месяцев используется rolling last-12;
-- граница исторического passive income не фильтрует forward-looking `expected_cash_flows` купонов, процентов и прочего ожидаемого дохода;
-- погашения облигаций исключаются;
-- налоги учитываются, если известны, иначе сумма маркируется как приблизительная.
-
-```text
-forecast_monthly_net_passive_income = forecast_12m_net_passive_income / 12
-```
-
-## 10.7. Прогресс к цели
-
-Для passive-income Goal текущее значение и прогресс используют фактическое rolling average из §10.5 (R02-27), а C04 forecast остаётся отдельной прогнозной метрикой:
-
-```text
-passive_income_goal_progress_pct =
-    actual_passive_income_avg / passive_income_goal_target * 100
-```
-
-Точная цель берётся из canonical Goals source of truth, а не hardcode UI. Прогнозный passive income показывается рядом отдельно и не подменяет фактический current value цели.
-
-## 10.8. Покрытие обязательных расходов
-
-```text
-mandatory_expense_coverage_pct =
-    forecast_monthly_net_passive_income / mandatory_expenses * 100
-```
-
-Если обязательные расходы равны нулю, UI не показывает бесконечность.
-
-Дополнительно:
-
-```text
-passive_income_minus_mandatory_expenses =
-    forecast_monthly_net_passive_income - mandatory_expenses
-```
-
-## 10.9. Остаток денежного потока месяца
-
-```text
-monthly_cash_balance =
-    actual_net_salary
-  + actual_net_bonus
-  + side_income_net
-  + cashback
-  + other_income
-  + actual_net_passive_income
-  - mandatory_expenses
-  - other_recorded_expenses
-  - saving_allocations
-```
-
-Кэшбэк участвует в денежном потоке, но не в пассивном доходе.
-
-Для `income_entries` месячный денежный поток учитывает только строки с
-`include_in_cash_flow=true`. `OTHER` с `include_in_passive_income=false`
-попадает в отдельный `other_income`; пассивный `OTHER` учитывается через
-`actual_net_passive_income` только если он также включён в cash flow.
-Пассивный `OTHER` с `include_in_cash_flow=false` остаётся в аналитике
-фактического пассивного дохода, но исключается из остатка денежного потока.
-
-## 10.10. Депозиты
-
-Упрощённый ожидаемый среднемесячный доход:
-
-```text
-expected_monthly_interest = balance * annual_rate / 12
-```
-
-Фактически полученные проценты хранятся отдельно и не должны заменяться прогнозом.
-
-## 10.11. Позиция ценной бумаги
-
-```text
-market_value = quantity * market_price_per_unit + accrued_interest_if_applicable
-cost_basis = quantity * average_cost_per_unit
-unrealized_result = market_value - cost_basis
-```
-
-Для облигаций нужно чётко договориться о единицах цены. Внутри доменной модели хранить денежную цену за штуку. Процентную котировку преобразовывать на границе импорта/интерфейса.
-
-## 10.12. Инвестиционный результат MVP
-
-В ручном MVP показываются раздельно:
-
-- фактический денежный доход;
-- изменение рыночной стоимости;
-- нереализованный результат текущих позиций;
-- комиссии;
-- налоги;
-- пополнения и выводы.
-
-Нельзя называть простое изменение стоимости портфеля «доходностью», если не учтены внешние потоки.
-
-## 10.13. Доходность по модифицированному Дитцу
-
-Добавляется в отдельной версии после появления датированных пополнений и выводов.
-
-Формула должна быть покрыта unit-тестами и подробно описана в коде. До её внедрения UI показывает, что точная доходность периода недоступна.
-
-## 10.14. Зарплата и НДФЛ
-
-Налоговые ступени хранятся в конфигурационной таблице, а не зашиваются в компоненты интерфейса.
-
-Алгоритм:
-
-1. взять накопленный облагаемый gross с начала года;
-2. разбить текущую выплату по действующим диапазонам;
-3. применить ставку к части суммы внутри каждого диапазона;
-4. суммировать налог;
-5. рассчитать `calculated_net`;
-6. сохранить отдельно фактический net, потому что выплата работодателя может отличаться из-за вычетов и перерасчётов.
-
-Для 2026 года в приватном seed задаётся gross за январь–апрель по 420 000 ₽ ежемесячно.
-
-Перед реализацией конкретных ставок разработчик должен проверить действующие правила по официальному источнику. Приложение должно позволять редактировать пороги и ставки без изменения кода.
-
-## 10.15. Премия
-
-Премия хранится как отдельная фактическая выплата.
-
-Нормализованный показатель:
-
-```text
-normalized_bonus_monthly = sum(bonuses for selected 12m period) / 12
-```
-
-Он используется только для аналитики и не подмешивается в фактический денежный поток других месяцев.
-
-## 10.16. ИИС
-
-Показываются два результата:
-
-```text
-portfolio_result_without_tax_benefit
-portfolio_result_with_tax_benefit =
-    portfolio_result_without_tax_benefit
-  + received_tax_benefits
-```
-
-Планируемый, но ещё не полученный вычет показывается отдельно и не прибавляется к фактическому результату.
-
----
-
-## 11. Функциональные требования
-
-## 11.1. Главный дашборд
-
-Пользователь видит выбранный отчётный месяц и может переключить период.
-
-### Верхние KPI-карточки
-
-1. Ликвидный капитал после долгов.
-2. Изменение ликвидного капитала к предыдущему месяцу.
-3. Прогнозный чистый пассивный доход в месяц.
-4. Фактический средний чистый пассивный доход.
-5. Прогресс к цели 100 000 ₽.
-6. Обязательные расходы.
-7. Покрытие обязательных расходов.
-8. Остаток ипотеки и покрытие ликвидными активами.
-
-### Основные графики
-
-1. Динамика ликвидного капитала по месяцам.
-2. Фактический и прогнозный пассивный доход с линией цели 100 000 ₽.
-3. Распределение ликвидных активов по классам.
-4. Инвестиционный результат по классам активов.
-5. Небольшой календарь будущих выплат на 12 месяцев.
-
-Графики должны быть читаемыми и не дублировать друг друга.
-
-## 11.2. Список месяцев
+<a id="p2-master_spec-931-112-список-месяцев"></a>
+#### 11.2. Список месяцев
 
 Функции:
 
@@ -941,7 +41,9 @@ portfolio_result_with_tax_benefit =
 - изменить дату снимка;
 - увидеть источник данных.
 
-## 11.3. Копирование месяца
+
+<a id="p2-master_spec-931-113-копирование-месяца"></a>
+#### 11.3. Копирование месяца
 
 При копировании переносятся:
 
@@ -975,7 +77,9 @@ portfolio_result_with_tax_benefit =
 
 Копирование должно быть транзакционным: либо создаётся весь новый месяц, либо ничего.
 
-## 11.4. Редактор месяца
+
+<a id="p2-master_spec-931-114-редактор-месяца"></a>
+#### 11.4. Редактор месяца
 
 Редактор состоит из разделов:
 
@@ -996,7 +100,9 @@ portfolio_result_with_tax_benefit =
 
 Каждый раздел поддерживает добавление, изменение и удаление строк.
 
-## 11.5. Счета
+
+<a id="p2-master_spec-931-115-счета"></a>
+#### 11.5. Счета
 
 Нужны статусы:
 
@@ -1007,7 +113,9 @@ portfolio_result_with_tax_benefit =
 
 Замороженный счёт может входить в капитал, но не предполагает новых операций.
 
-## 11.6. Депозиты
+
+<a id="p2-master_spec-931-116-депозиты"></a>
+#### 11.6. Депозиты
 
 Для каждой строки:
 
@@ -1019,7 +127,9 @@ portfolio_result_with_tax_benefit =
 - фактически полученные проценты;
 - комментарий.
 
-## 11.7. Инструменты и позиции
+
+<a id="p2-master_spec-931-117-инструменты-и-позиции"></a>
+#### 11.7. Инструменты и позиции
 
 Пользователь может:
 
@@ -1035,7 +145,9 @@ portfolio_result_with_tax_benefit =
 
 Должно быть видно, рассчитана цена вручную или получена из источника.
 
-## 11.8. Доходы
+
+<a id="p2-master_spec-931-118-доходы"></a>
+#### 11.8. Доходы
 
 Поля для зарплаты:
 
@@ -1049,7 +161,9 @@ portfolio_result_with_tax_benefit =
 
 Кэшбэк отображается в прочих доходах/экономии и не попадает в пассивный доход.
 
-## 11.9. Расходы
+
+<a id="p2-master_spec-931-119-расходы"></a>
+#### 11.9. Расходы
 
 В MVP ведутся обязательные расходы по категориям. Структура позволяет вести
 «комфортный бюджет» без миграции всей модели.
@@ -1057,7 +171,9 @@ portfolio_result_with_tax_benefit =
 Плановый бюджет ведётся отдельно от фактических расходов (§9.16 `planned_budget_lines`)
 и не считается «бюджетом» по факту. Пустой план валиден и не блокирует закрытие месяца.
 
-## 11.10. Долги
+
+<a id="p2-master_spec-931-1110-долги"></a>
+#### 11.10. Долги
 
 Для долга владелец ведёт:
 
@@ -1070,7 +186,9 @@ portfolio_result_with_tax_benefit =
 
 Даты и ставки необязательны: их отсутствие не мешает закрытию месяца.
 
-## 11.11. Недвижимость
+
+<a id="p2-master_spec-931-1111-недвижимость"></a>
+#### 11.11. Недвижимость
 
 Поля:
 
@@ -1083,7 +201,9 @@ portfolio_result_with_tax_benefit =
 Ставка вводится владельцем вручную и не выводится из платежа или остатка. Расчёт графика
 амортизации, процентов и даты окончания ипотеки в scope не входит.
 
-## 11.12. ИИС
+
+<a id="p2-master_spec-931-1112-иис"></a>
+#### 11.12. ИИС
 
 Для основного ИИС показывать:
 
@@ -1097,61 +217,305 @@ portfolio_result_with_tax_benefit =
 - результат без налоговой выгоды;
 - результат с полученной налоговой выгодой.
 
-## 11.13. Комментарии
+
+<a id="p2-master_spec-931-1113-комментарии"></a>
+#### 11.13. Комментарии
 
 Пользователь может добавлять несколько заметок к месяцу, менять порядок и удалять их.
 
-## 11.14. Экспорт
+<a id="p3"></a>
+## 3. Screens and honest interpretation
 
-### Markdown
+Home and Capital show the selected monthly/closed-history known subtotals with coverage. An exact sum of known rows may have partial source coverage. Keep missing accounts visible and attach reasons to totals, deltas, goals and allocation; C2 owns the required-account rule. Missing calendar months are gaps, not zero points.
 
-Имя файла:
+Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
-```text
-finance_report_YYYY-MM.md
-```
+Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
 
-Содержимое:
+<a id="p3-ui_v2_analytics_reconciliation-25"></a>
+### Preserved analytics meanings
 
-- метаданные периода;
-- итоговые KPI;
-- изменения к предыдущему месяцу;
-- активы по классам и счетам;
-- доходы;
-- пассивный доход;
-- инвестиционные выплаты;
-- расходы;
-- долги;
-- ипотека;
-- цели;
-- комментарии;
-- предупреждения о неполных данных.
+<a id="p3-ui_v2_analytics_reconciliation-25-2-semantic-guardrails"></a>
+#### 2. Semantic guardrails
 
-### JSON
+1. **Monetary result for a reporting month is not XIRR/TWRR or profit earned during that month.** [Dashboard result service](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/backend/src/hermes_finance/services/dashboard.py) and [DTO/chart](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/components/charts/InvestmentResultChart.tsx) combine cash income recorded in the selected month with unrealized result from open-position snapshots. The latter is not the month-over-month change in unrealized result. Keep both components separately labelled; do not rename their displayed sum to "earned this month".
+2. Account results and instrument-class results are not identical scopes. Cash events without an instrument can appear by account but not by class. A cash-income-only class has no current market/cost/unrealized evidence; preserve its null values and unavailable total, not invented zeros. Class grouping here is `instrument_type`, not a new Performance asset-class taxonomy. [S3]
+3. Capital delta is a change of state, not investment return. Home/Capital already label the distinction; class transfers may change rows without increasing capital. [Home](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
+4. The exact monetary bridge after external flows is not P&L, "earned" or class/instrument return attribution. Preserve the existing labels, exactness gate, scope, currency and interval. [Analytics](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/AnalyticsPage.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
+5. Allocation/concentration is not class performance. Risk allocation describes denominators, support, holdings and future payout/redemption concentration; #534/#535/#540 own the delivered bounded class-specific rate capability in C7. [Risk](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/frontend/src/pages/RiskAllocationPage.tsx), [Performance plan](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/docs/performance/PERFORMANCE_UI_V2_PLAN.md)
+6. Current v2 Home/Capital and Income planning use latest closed data; historical facts and draft work have separate destinations. D2 below approves not recreating the old global selected-month planning mode, not deleting local factual or workflow context. The new allocation detail has its own local month selector, including drafts; the monetary-result detail selects closed months only. [Allocation detail](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx), [Monthly result](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx)
 
-Имя файла:
+<a id="p3-ui_v2_analytics_reconciliation-86"></a>
+### Current route, period and scope rules
 
-```text
-finance_data_YYYY-MM.json
-```
+<a id="p3-ui_v2_analytics_reconciliation-86-5-route--period--scope-contract"></a>
+#### 5. Route / period / scope contract
 
-JSON содержит точные данные, единицы измерения, версии расчётов и структуру, пригодную для анализа Hermes.
 
-## 11.15. Резервное копирование
+<a id="p3-ui_v2_analytics_reconciliation-86-home-and-capital"></a>
+#### Home and Capital
 
-Функции:
+- `/v2` and `/v2/capital` show latest closed data. A newer draft is workflow context, not confirmed financial truth.
+- Their current `month`/`step` handling contributes to a legacy return path; it does not select a historical main-data view. Do not pretend otherwise by changing only a link label. [Home](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
+- Historical closed capital facts live in `/v2/reports/:monthId`; current latest closed is deliberately handled by Home/Capital rather than duplicated in the archive. [Reports](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ReportPage.tsx)
+- Accepted #575, #569 and Performance #531 routes coexist on the frozen common tree. Shared App/entry union retains all three detail routes; Capital retains allocation/monthly-result links and the Performance summary/detail entry. Empty Home/Capital/Income actions lead to native `/v2/close`; Home's payouts/forecast action leads to native `/v2/income`. Explicitly labelled previous-interface links remain.
 
-- создать backup базы;
-- скачать/скопировать backup;
-- показать дату последнего backup;
-- восстановить из backup только после явного подтверждения;
-- перед восстановлением автоматически сохранить текущую базу.
 
----
+<a id="p3-ui_v2_analytics_reconciliation-86-income"></a>
+#### Income
 
-## 12. UX/UI требования
+- `/v2/income` plans from latest closed. Its `month` selects factual passive-income breakdown, not historical/draft planning, goals or ladder. [Income](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2IncomePage.tsx)
+- D2 does not overload this parameter or remove legitimate local month/as-of selection in #552 Goals, #553 Tax/IIS, #556 Scenario Lab or #569 risk detail. Those task contracts remain unchanged.
 
-### 12.1. Визуальный стиль
+
+<a id="p3-ui_v2_analytics_reconciliation-86-monetary-result-detail-delivered-by-575"></a>
+#### Monetary-result detail delivered by #575
+
+- `/v2/capital/monthly-result?month=<id>` is a local read-only closed-report selector, latest or older closed, not a global Home/Capital mode.
+- No `month`: explicitly identify latest closed. Invalid/deleted/draft/reopened explicit target: explain, do not silently substitute latest closed.
+- Bounded `view=accounts|classes`, correct back/refresh and native return. Exact-month links from historical Reports.
+- [Registered route](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/app/App.tsx) and [page](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx) use the existing Dashboard DTO only. No new financial formulas or class-return scope. This is accepted source on accepted implementation, not aggregate UAT.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-allocation-detail-and-iis-writes-delivered"></a>
+#### Allocation detail and IIS writes delivered
+
+- [Allocation detail](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx) at `/v2/capital/allocation` has a local month selector (closed or draft) and canonical class/account allocation, top positions, payout/redemption concentration, support and exclusions. The [Capital link](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx) carries the latest closed month; this does not create a global Home/Capital historical mode. Explicit invalid/duplicate month and mismatched response fail closed in this detail.
+- [IIS forms](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2IisAccountForms.tsx) are reached through [account catalogs](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2DataCatalogsPage.tsx) with an account identifier. They write the existing profile, contribution and type-A benefit records for the account/tax year, then confirm through fresh reads. The contextual link returns to the Tax/IIS planner. They are not a second tax planner or a reporting-month write model.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-performance"></a>
+#### Performance
+
+- Accepted #529 owns exact period/scope/action contracts; accepted #531 supplies portfolio/account detail at `/v2/capital/performance` on this common tree.
+- Accepted #532/#533 supply evidence preparation/capture on the same tree. Canonical CI retains `performance-real-backend.spec.ts`: unavailable -> XIRR-only -> explicitly observed synthetic PRE/POST -> TWRR, correction invalidation and stale-token rejection.
+- Historical Performance periods remain required under the accepted Performance scope. D2 does not waive them.
+- Bounded class-return API/UI is delivered under C7 C1–C5/no-crossing rules. It does not replace the separate monthly monetary result. Current acceptance/UAT evidence belongs in S2.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-legacy-compatibility"></a>
+#### Legacy compatibility
+
+All existing routes remain during this work. D2 is an approved future scope reduction, not permission to redirect/delete now. At retirement, explicitly explain a de-scoped context or provide supported destinations; never silently render latest closed as the requested historical/draft result. [App routes](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/app/App.tsx)
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-monthly-close-wiring-accepted-and-integrated-571"></a>
+#### Monthly Close wiring accepted and integrated: #571
+
+Current [Close action map](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/components/month-close/navigation.ts) defines native paths for every guided action with `monthly-close-v2` origin: editor/general/positions under `/v2/data/months/:monthId`, native Alfa/payout/reconciliation/freshness tools, final review/close at `/v2/close`, and next-month management under `/v2/data/months`. The legacy-origin map remains for retained v1. [Final-review Edit links](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/components/month-close/FinalMonthReview.tsx) use the exact native month/section and return to the same Close step; CLOSED v2 review hides mutation links. [Editor](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthEditorPage.tsx) and [month management](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthsPage.tsx) retain return context, and [v2 Close](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ClosePage.tsx) validates workflow/final-review/outlook month identity while reusing the backend-owned lifecycle/readiness reads.
+
+[PR #639's independent ACCEPT](https://github.com/LTstripes/hermes-finance/pull/639#issuecomment-5899002497) covers candidate `f69d2603709a06ac483875415bef6fc247c347cc`, integrated as `fb0c3b29cbf8e54df00cf7ee849a202b060de105`. Its [real-backend acceptance harness](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/e2e/monthly-close.acceptance.ts) is now retained in required canonical CI via `playwright.monthly-close.config.ts`, with actual historical archive readback added on the common tree. `playwright.statement.config.ts` retains native statement import/apply/readback. Exact execution results belong to #572 PR/job evidence; registration/source presence alone is not a pass or Owner PASS.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-6-owner-decisions--recorded-2026-09-26"></a>
+#### 6. Owner decisions — recorded 2026-09-26
+
+Authority: [Integrator record of the actual Owner chat decision](https://github.com/LTstripes/hermes-finance/issues/570#issuecomment-5847307129). After the proposal to keep the monetary result and not reproduce the global historical/draft analytics mode, Owner replied: **«Да давай так и сделаем и идём дальше»**.
+
+The linked note is an Integrator transcription of that instruction. Publishing through the Owner's GitHub connection does not itself constitute an independent Owner decision, review or UAT.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-d1--keep-approved-575-delivered"></a>
+#### D1 — KEEP approved; #575 delivered
+
+- Preserve monetary result by account and instrument class in a compact Capital detail, using existing Dashboard API.
+- Keep closed historical factual context and separate cash-income/month versus unrealized/snapshot meanings.
+- No second XIRR/TWRR implementation, no new financial calculations, no artificial portfolio/class totals.
+- Keep this accepted scope; old staging/retirement checkpoints remain historical.
+
+
+<a id="p3-ui_v2_analytics_reconciliation-86-d2--bounded-global-mode-reduction-approved"></a>
+#### D2 — bounded global-mode reduction approved
+
+Do not reproduce the old global arbitrary-month selector that moves the entire Dashboard/Analytics/planning picture to an historical period or draft. Consequently there is no requirement to recreate the historical/draft forecast/coverage/ladder as that global dashboard mode.
+
+Preserve:
+
+- latest-closed confirmed Home/Capital/planning;
+- closed historical facts in Reports, factual Income history and #575;
+- draft editing/readiness/validation in native editor/close;
+- existing local month/as-of contracts in Goals, Tax/IIS, Scenario and risk detail;
+- historical Performance periods/scopes assigned to its own stream.
+
+This does not authorize deleting stored history, APIs, financial logic, existing routes, or any unrelated capability. No speculative new draft-preview feature is introduced. If an implementation uncovers another missing local fact/action, retain it as a bounded gap rather than treating D2 as permission to drop it.
+
+The bounded UX decisions do not authorize deleting `/v1` or bypassing D5 acceptance/integration/release gates.
+
+<a id="p3-performance_ui_v2_contract-34"></a>
+### Performance detail, periods, diagnostics and preparation UX
+
+<a id="p3-performance_ui_v2_contract-34-3-информационная-архитектура"></a>
+#### 3. Информационная архитектура
+
+
+<a id="p3-performance_ui_v2_contract-34-31-обзор-capital"></a>
+#### 3.1. Обзор Capital
+
+Существующий PerformanceBlock заменяется компактным summary, не дублируется:
+
+- «Доходность за период · TWRR»;
+- «Доходность ваших вложений · XIRR, годовых»;
+- даты интервала, валюта и вход «Состав расчёта»;
+- один основной переход «Подробнее» либо «Проверить данные» по состоянию.
+
+На первом экране максимум две приоритетные причины. Доступная метрика остаётся видимой независимо от другой. Нулевое значение показывается как 0%, убыток со знаком; unavailable не получает зелёный ноль. Денежный bridge убран из ряда процентных KPI и доступен только в деталях с названием «Изменение стоимости после внешних потоков» и оговоркой «Не прибыль и не доходность».
+
+
+<a id="p3-performance_ui_v2_contract-34-32-delivered-detail-and-preparation-routes"></a>
+#### 3.2. Delivered detail and preparation routes
+
+- `/v2/capital/performance`: интервал, scope, две метрики, одна таблица по счетам, раскрываемые основания/методика.
+- `/v2/capital/performance/data`: контекстная проверка данных и только реально реализованные действия. Действия доступны только в принятом объёме C6; отсутствие нужной authority сохраняет read-only/UNKNOWN.
+- «По счетам / По классам» используют принятые ограниченные class C1–C5/no-crossing правила, без обещания доходности всех классов.
+
+URL-параметры: `start`, `end` (ISO dates), `scope=portfolio|account`, `account_id` только для account, `view=accounts|classes` для detail. Это локальный контекст, не глобальные настройки приложения. Открытие account row сохраняет даты. Возврат из проверки восстанавливает тот же контекст.
+
+Отсутствующие start/end допускают документированный дефолт. Частично заданные, повторённые, malformed, одинаковые или перевёрнутые даты — ошибка контекста, не тихая замена. Неизвестный/удалённый счёт и недопустимые scope/account сочетания не заменяются портфелем. Explicit dates, ставшие недоступными после reopen/delete/restore, остаются выбранными с объяснением, а не перескакивают на другой интервал.
+
+`view=classes` использует поддержанный class scope; неподдержанный разрез объясняется как ограничение продукта, а не нехватка данных Owner. Разрешённые переходы задаются enum/параметрами; произвольный redirect URL из данных не выполняется.
+
+Общие `frontend/src/app/App.tsx`, UiV2Entry, Capital/Reports links и навигация интегрируются одним последовательным Integrator slot совместно с #554/#555/#569/#575. Leaf UI не перетягивает соседнюю ветку. Существующие PortfolioCoverageNote и смысл partial subtotal сохраняются.
+
+
+<a id="p3-performance_ui_v2_contract-34-4-период-и-состав"></a>
+#### 4. Период и состав
+
+Дефолт: последний и предыдущий закрытые отчёты с различными однозначными snapshot dates, по порядку отчётных периодов; подпись «Между отчётами» с фактическими датами. При неоднозначности/нехронологичности нет поиска другой удобной пары: предложить ручной выбор. Меньше двух границ — объяснение, без запроса несуществующего интервала.
+
+Ручной выбор двух подтверждённых дат обязателен. Не путать reporting month с snapshot date: снимок за июль может быть датирован августом.
+
+Пресеты 1/3/12 месяцев отсчитываются от показанной конечной snapshot date календарным сдвигом назад: сохраняется номер дня, а для последнего дня месяца сохраняется конец целевого месяца; иначе день ограничивается длиной целевого месяца. «С начала года» требует снимок 31 декабря предыдущего года. «Вся история» выбирает самую раннюю закрытую границу, не первый успешный для solver интервал. Пресет доступен только при однозначном существовании обеих требуемых дат. Нельзя подменять отсутствующую дату соседней, интерполировать или сокращать период для получения available. Пропуск промежуточного месяца не заполняется: достаточность конкретного интервала определяет backend.
+
+Все выбранные даты передаются в canonical API без клиентского пересчёта доходности. Каждая показанная метрика обязана соответствовать запрошенным scope/account/date/currency/units. XIRR annualized, TWRR не annualized. При интервале короче 365 дней рядом с XIRR: «Приведено к году по короткому периоду; это не прогноз». Это presentation warning, не изменение значения/availability.
+
+Состав Performance — исторический, не список текущих active accounts и не весь капитал Home. В текущем availability **нет одного готового поля «вот эти счета исторически включены в расчёт»**. На portfolio scope `scope_membership.account_ids` — это все каталожные счета, для которых проверяется история участия; туда попадает и счёт с цельной историей `include_in_returns=false`. Поэтому этот список, в том числе после вычитания `missing_or_ambiguous_account_ids`, нельзя показывать как состав доходности. `missing_or_ambiguous_account_ids` означает только пробел/неоднозначность истории участия.
+
+Для выбранного интервала текущий авторитетный список счетов, которым нужна **денежная** проверка Performance, — `cash_boundary_coverage.account_ids`: это счета, чья effective-dated history содержит `include_in_returns=true` на пересечении с интервалом. Отдельный `in_kind_boundary_coverage.account_ids` уже и означает только счета, для которых требуется **неденежная** проверка (brokerage/IIS либо счета с position history по принятому сервису). Эти списки нельзя взаимозаменять.
+
+«Состав расчёта» поэтому показывает три разные вещи: (1) счета денежной проверки из `cash_boundary_coverage.account_ids`; (2) отдельный, при наличии, список счетов неденежной проверки из `in_kind_boundary_coverage.account_ids`; (3) состояние проверки истории участия, где `scope_membership.account_ids` — именно проверяемый каталог, а `missing_or_ambiguous_account_ids` — проблемные identity. До появления отдельного canonical included-set нельзя переименовывать membership `account_ids` в «включённые счета». Для названий допустим lookup всех accounts, но не реконструкция membership из имён/текущих флагов. Исчезнувшее название не разрешает подменить identity.
+
+В таблице счетов rates не суммируются и не усредняются. У каждой строки свои final availability/quality при одинаковом запрошенном интервале; доступные отдельные счета не делают итог портфеля доступным. Отсутствие одного ответа не прячется за сообщением «все счета проверены».
+
+
+<a id="p3-performance_ui_v2_contract-34-5-диагностика-и-приоритеты"></a>
+#### 5. Диагностика и приоритеты
+
+Источник причин — точные canonical reason codes плюс подтверждающие вложенные evidence fields. `code.includes("flow")` запрещён для нового mapping. Одному code могут соответствовать несколько подтверждённых причин; без нужных деталей выводится общее честное объяснение, не выдуманные счёт/дата/число операций.
+
+Приоритет summary: (1) некорректный контекст/транспортный сбой, (2) исходные границы и membership, (3) cash/in-kind history/legacy/transfer, (4) наблюдения и валюта, (5) solver/unsupported. Приоритет не удаляет остальных причин из details и не блокирует независимо доступную метрику. Одинаковый blocker группируется между метриками с пометками XIRR/TWRR.
+
+В следующей таблице `NC_` обозначает точный префикс `not_computable_`, а не поиск подстроки. Коды полностью определены в canonical domain/API; будущий неизвестный code получает нейтральный fallback.
+
+| Code + подтверждающее evidence | Человеческий смысл / место проверки | Action и проверка результата |
+| --- | --- | --- |
+| `NC_opening_valuation_missing`, `NC_closing_valuation_missing`; соответствующая boundary | Нет однозначной подтверждённой оценки на выбранную дату. Не сообщать «месяц отсутствует», если причина может быть неоднозначностью. | Выбрать даты или открыть существующий month ID из boundary. Только после исправления/закрытия перечитать boundary и final metrics. |
+| `NC_reporting_month_not_closed`, `NC_snapshot_date_missing`, `NC_unsupported_position_valuation`; component IDs, если есть | Отчёт ещё не закрыт, дата/оценка не подтверждена. | Проверить конкретный отчёт через поддержанный month editor/close. Не закрывать автоматически и не обещать, что одного close достаточно. |
+| `NC_scope_membership_history_missing`; missing/ambiguous account IDs | Не подтверждён исторический состав за интервал. | Details показывают scope и счета. Использовать принятый finite membership writer C6; текущий include flag не является исправлением исторической записи. |
+| `NC_scope_membership_changed` | Состав менялся; текущий контракт не подтверждает расчёт этого интервала. | Показать имеющееся evidence; допустим явный ручной выбор другого интервала. Не переписывать историю ради расчёта. |
+| `NC_scope_cash_unclassified`, `NC_scope_coverage_incomplete`; boundary components | Не подтверждены принадлежность денег или компоненты выбранного scope. | Открыть нужный month/component только при подтверждённом ID; иначе section-level проверка. Не использовать capital-source coverage как замену Performance gate. |
+| `NC_external_flows_incomplete` + cash coverage missing IDs | Нет подтверждения полноты истории денежных пересечений у указанных счетов. | #532: известные canonical операции → проверка Owner → явный POST/PATCH cash coverage → новые reads. Отсутствие строк не доказывает нулевую активность. |
+| Тот же code + `legacy_unclassified_flow_ids` | Есть legacy операции, которые нельзя автоматически использовать в расчёте. | Показать именно эти записи и canonical crossings. Не удалять legacy evidence и не конвертировать gross/net эвристикой. Отсутствующий safe reconciliation path обозначить отдельно. |
+| Тот же code без достаточной детализации | Полнота/классификация внешних потоков не подтверждена; точная причина не локализована. | Read-only details и общая проверка ledger. Не утверждать, что нужно добавить определённое пополнение или просто поставить complete. |
+| `NC_transfer_identity_unresolved`, `NC_transfer_reconciliation_incomplete`; flow/link IDs | Перевод не связан/не сверён по существующим правилам. | Canonical accepted transfer-link/evidence path in C6. Broker reconciliation page не является его заменой; никаких residual fees. |
+| `NC_transfer_in_transit_unvalued` | Нет принятой оценки денег в пути. | Показать ограничение и имеющиеся факты; не обещать «связать перевод» как гарантированное исправление стоимости в пути. |
+| `NC_in_kind_boundary_coverage_unknown`; missing account IDs | Не проверена история неденежных перемещений. | #532: отдельная проверка/явное attestation через существующий in-kind coverage API; не выводить его из cash coverage. |
+| `NC_in_kind_movement_unvalued`; known movements | Известно неденежное перемещение, но его стоимость для Performance не подтверждена. | Показать факт и ограничение. Ни complete, ни ввод cash-flow вместо бумаг не снимают его. Новая оценочная семантика вне #532. |
+| `NC_valuation_boundary_missing`; flow/group/дата/PRE/POST из evidence | Нет полного подтверждённого наблюдения до/после операции; старое evidence также могло утратить пригодность. | #533 accepted capture: фактическое observation + provenance и current signature. Не утверждать «устарело», если API не отличает это от отсутствия. |
+| `NC_valuation_boundary_order_unknown` | Порядок относительно потока/группы не подтверждён. | Только явная принятая relation/group; не сортировка по ID или условное начало дня. Для endpoint flows это может блокировать не только TWRR: следовать final metric reasons. |
+| `NC_currency_conversion_incomplete` | Нет принятого перевода в валюту расчёта на нужную дату. | Сообщить неподдержанный historical FX path. Текущий курс/переименование валюты не исправление. |
+| `NC_xirr_no_valid_root`, `NC_xirr_root_ambiguity`, `NC_xirr_convergence_failed` | Final XIRR не получен однозначно/надёжно даже при пройденных prerequisites. | Показать ограничение и данные расчёта. Не повторять запись/attestation; не подставлять 0 и не скрывать TWRR. |
+| Любой иной final code, включая числовую проблему TWRR | Подтверждённый результат не получен; приложение не умеет подробнее объяснить эту причину. | Безопасные read-only details, raw code только в техническом раскрытии. Не угадывать новую формулу или mutation action. |
+| Network/HTTP/DTO mismatch | Проверка не завершилась, это не доказательство неполноты финансов. | Retry чтения; никакой рекомендации править данные или менять scope автоматически. |
+
+Для action различаются: `available` (действие реально реализовано), `requires_reopen`, `not_implemented`, `source_required`, `unsupported`. `source_required` означает, что нужен фактический источник; приложение не может доказать его отсутствие по пустой таблице. «Исторических наблюдений нет» допустимо как подтверждение Owner, а не автоматический диагноз.
+
+
+<a id="p3-performance_ui_v2_contract-34-6-read-projection--граница-530"></a>
+#### 6. Read projection — граница #530
+
+Delivered read-only endpoint: GET `/api/performance/readiness` с теми же `start_date/end_date/scope/account_id`. Он возвращает `schema_version=1`, identity запроса, финальные XIRR/TWRR DTO, существующее evidence и список diagnostics/actions. Это композиция существующих services в одном coherent SQLite read, не второй calculator/availability engine. Сохранить старые endpoints совместимыми. Если Worker доказывает более узкую композицию с теми же guarantees, решение фиксируется Integrator до реализации.
+
+Diagnostic item: стабильный UI diagnostic key, исходные canonical reason codes, affected metrics, только доказанные refs/даты, action kind/params/capability. UI diagnostics keys не становятся новыми финансовыми reason codes. Не включать private paths, raw provider payload, credentials или произвольный executable URL. Capability включается сервером только вместе с поддержанной операцией; frontend не выводит её из слов причины.
+
+Successful prerequisites не заменяют final solver result. Top-level union availability не применяется как общий hide-switch. Финальный процент показывается только при available/exact, непустом value, правильных units/annualized и совпадающей identity. Несогласованный DTO — технический сбой, не вычисленный UI fallback.
+
+Для запроса отдельного счёта не нужны все остальные account solver calls. Таблица допускает отдельные ленивые запросы, но не должна называться атомарной сверкой всего портфеля. Readiness DTO обязан сохранять различие между `membership_checked_account_ids` (источник: `scope_membership.account_ids`), `cash_required_account_ids` (источник: `cash_boundary_coverage.account_ids`) и `in_kind_required_account_ids` (источник: `in_kind_boundary_coverage.account_ids`) либо передавать исходные evidence blocks без переименования. Нельзя создавать `included_account_ids` простым `scope_membership.account_ids - missing_or_ambiguous`: это ошибочно включает исторически исключённые счета. Если #530 захочет добавить отдельный canonical included-set, его семантика должна переиспользовать effective-dated membership selection и получить отдельную contract/test фиксацию, а не выводиться во frontend.
+
+После финансового изменения все затронутые results/diagnostics инвалидируются; новый ответ другой генерации не склеивается со старым. Не требуется новая persisted revision/schema только ради UI.
+
+
+<a id="p3-performance_ui_v2_contract-34-7-поддержанный-путь-записи--532533"></a>
+#### 7. Поддержанный путь записи — #532/#533
+
+#532 сначала использует существующие canonical external flows, cash coverage, in-kind coverage и cash-account linkage, с явным Owner action и действующими guards. Ledger review и attestation раздельны; оба вида coverage нельзя подтвердить одним неявным действием. Кнопка подтверждения не выбрана по умолчанию. Указывать, что остаётся проверить после сохранения.
+
+**Historical membership:** accepted finite interval editor/lifecycle and membership-aware identity are fully specified in C6/C4. Use those supported services and exact stale-state/overlap/CLOSED/atomic invalidation guards; never direct ORM insertion or historical backfill from the current include flag. Saving membership does not confirm cash/in-kind/PRE/POST evidence.
+
+#533 расширяет только принятый capture service: сначала получить реальный target и его current material signature, затем сохранять observation с подписью, прочитанной при начале capture. Нельзя вычислить подпись на сервере только в момент POST и тем самым принять старую форму как новую. Согласовать узкий capture/read-target DTO до кодирования. PRE/POST должны относиться к одной актуальной версии. Частично сохранённая пара остаётся неполной; UI честно показывает, какая сторона сохранена, и не повторяет запись вслепую.
+
+Никаких PRE+flow, интерполяций, копирования month totals как intra-day evidence, вывода completeness из quote refresh. Изменение amount/date/group требует свежих допустимых свидетельств. Старые unbound observations не становятся exact миграцией. #494 уже в базе; не портировать его повторно.
+
+Reopen — отдельное явное действие в существующем owner lifecycle; исторический источник затем проверяется/исправляется и месяц закрывается владельцем заново. По одному клику «Проверить данные» нет reopen/close, provider calls или записи. После ambiguous write outcome — read-back и объяснение, не автоматический retry POST.
+
+
+<a id="p3-performance_ui_v2_contract-34-8-проверяемые-acceptance-vectors"></a>
+#### 8. Проверяемые acceptance vectors
+
+Это specification vectors, **не выполненные runtime-тесты**. Конкретные synthetic fixtures строят Workers в существующих suites. Во всех сравнениях UI получает числа из backend, а не рассчитывает их.
+
+| ID | Вход/действие | Ожидаемый результат |
+| --- | --- | --- |
+| V01 | Обе final metrics available/exact | Две цифры, XIRR годовых/TWRR за период, одинаковые identity и валюта. |
+| V02 | XIRR available, TWRR missing PRE/POST | XIRR виден; одна конкретная TWRR причина и action согласно capability. |
+| V03 | XIRR prerequisite available, final root ambiguous | XIRR недоступен с solver explanation; available TWRR сохранён. |
+| V04 | Missing cash coverage + legacy IDs | Две доказанные причины, а не сообщение «добавьте одно пополнение». |
+| V05 | Пустой ledger, cash coverage unknown | Не 0 flows complete; требуется отдельное явное attestation. |
+| V06 | Cash coverage complete, in-kind coverage unknown | XIRR/TWRR не объявляются готовыми; показана независимая причина. |
+| V07 | Known in-kind movement unvalued | Complete coverage не превращает движение в оценённое. |
+| V08 | Portfolio содержит счёт с цельной историей `include_in_returns=false` и отдельный historical gap; текущий include flag меняется | Исторически исключённый счёт может присутствовать в `scope_membership.account_ids`, но не показывается участником расчёта; денежный состав берётся из `cash_boundary_coverage.account_ids`, gap остаётся отдельным blocker, текущий flag прошлое не лечит. |
+| V09 | Нет snapshot на точную дату пресета / duplicate date | Пресет недоступен с объяснением, без соседней даты или shorter window. |
+| V10 | Scope/период изменены, поздний старый ответ | Старая цифра не показана как текущая; back/refresh восстанавливает валидный URL. |
+| V11 | Reopen/delete/restore затронули выбранную границу | Старый успех скрыт; explicit выбор не заменён последним периодом. |
+| V12 | Нулевой/отрицательный backend result | Корректный 0%/знак убытка, не unavailable и не отсутствие текста. |
+| V13 | Неизвестный reason / техошибка | Generic limitation либо retry чтения; никаких угаданных writes. |
+| V14 | Linked transfer внутри портфеля, account drill-in | Классификация берётся для каждого scope, не переносится из portfolio в account. |
+| V15 | PRE capture начат, flow изменён перед POST | Expected signature rejected; form не переподписывается автоматически. |
+| V16 | Поддержанные данные проверены и явно сохранены | Read-back показывает оставшиеся blockers либо реальные final metrics; success save не равен success calculation. |
+| V17 | Desktop/laptop, keyboard, 200% zoom, длинные названия/причины | Нет горизонтального page overflow; видны даты/units/основной action, раскрытие и возврат с управляемым focus. |
+| V18 | Переход между #575 и Performance | Денежный месяц и интервал доходности не смешаны; один экран не подменяет другой. |
+
+<a id="p4"></a>
+## 4. Supported source families
+
+Manual persisted facts remain explicit Owner inputs. MyBroker supports the bounded accepted XML family, frozen filename/range/account authority and versioned S1 receipts. H0 is discovery; H1 supplies exact accepted source endpoints; H2 records independently reviewed dated crossings/coverage. None automatically reconstructs a complete ledger.
+
+Alfa PDF supports bounded historical realised payout events. It is not a generic portfolio/price/future-payout importer. Alfa PRO supplies a current compare/reconcile snapshot through the accepted transport and mapping contract; provider numbers are observations, not historical performance truth. T-Invest is the accepted market quote/future payout provider. MOEX identity/reference proof is bounded and explicit; official bond FACEUNIT proof is not a universal FX engine. C9 owns field-by-field authority, exact units, dates, revision and omission behavior.
+
+<a id="p5"></a>
+## 5. Goals, scenarios and exports
+
+Keep actual, forecast and hypothetical values visibly separate. Passive-income goal progress uses actual C03 eligible CLOSED-month rolling average; forecast shocks do not rewrite it. Goal target dates are deadlines, not evidence of a future trajectory; unchanged current value cannot justify an invented future achievement date. C8 owns formulas, eligibility, support states and scenario matrices.
+
+Scenario Lab freezes its base and supports only the accepted single-shock families and explicit applicability evidence. Currency tags alone do not authorize FX translation; issuer exposure cannot be guessed from names. Account WHAT-IF uses finite named assumptions under C7. Instrument WHAT-IF is the supported fixed-holding stock scenario; editing prose does not enable bonds or changing-quantity total return.
+
+Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
+
+<a id="p6"></a>
+## 6. Desktop UX
+
+The primary interface is `/` (UI v2); `/v1` remains the supported legacy compatibility route. Preserve period/scope context, browser Back, selected account identity, visible keyboard focus and Russian number/date formatting. Use desktop widths appropriate to the acceptance contract (normally about 1280–1440 px), practical zoom and keyboard coverage; phone widths are not an Owner UAT requirement.
+
+Every read has explicit loading/error/empty/partial states. Failed or stale refresh hides the previous success/export. A mutation cannot erase input typed while the request was in flight. ACK is not saved-state proof; independent GET must agree with the intended create/update/delete, exact entity/month and current dependency identity. Dirty form navigation warns; CLOSED is clearly read-only until explicit Reopen. Restore invalidates stale pre-restore selection and pending confirmations. D3 owns implementation mechanics and C1 the native editor protocol.
+
+<a id="p6-master_spec-1152"></a>
+### Desktop formatting and states
+
+<a id="p6-master_spec-1152-12-uxui-требования"></a>
+#### 12. UX/UI требования
+
+
+<a id="p6-master_spec-1152-121-визуальный-стиль"></a>
+#### 12.1. Визуальный стиль
 
 - чистый современный дашборд;
 - светлая тема по умолчанию;
@@ -1163,7 +527,9 @@ JSON содержит точные данные, единицы измерени
 - графики в меру;
 - без визуального стиля торгового терминала.
 
-### 12.2. Форматирование
+
+<a id="p6-master_spec-1152-122-форматирование"></a>
+#### 12.2. Форматирование
 
 - рубли: `1 234 567 ₽`;
 - проценты: максимум 1–2 знака после запятой;
@@ -1172,7 +538,9 @@ JSON содержит точные данные, единицы измерени
 - отрицательные значения — заметно, но без кричащего интерфейса;
 - нулевые значения можно показывать как `—` в таблицах, где это улучшает читаемость.
 
-### 12.3. Состояния интерфейса
+
+<a id="p6-master_spec-1152-123-состояния-интерфейса"></a>
+#### 12.3. Состояния интерфейса
 
 Обязательны:
 
@@ -1184,7 +552,9 @@ JSON содержит точные данные, единицы измерени
 - предупреждение о неполных данных;
 - предупреждение, что точная доходность пока недоступна.
 
-### 12.4. Навигация
+
+<a id="p6-master_spec-1152-124-навигация"></a>
+#### 12.4. Навигация
 
 Рекомендуемые разделы:
 
@@ -1197,312 +567,129 @@ JSON содержит точные данные, единицы измерени
 
 ---
 
-## 13. API — минимальный контракт
+<a id="p6-030-55"></a>
+### Action hierarchy, progressive disclosure and fact/forecast states
 
-Точные пути могут быть уточнены, но API должен быть ресурсным и предсказуемым.
+<a id="p6-030-55-1-ux-contract-03"></a>
+#### 1. UX contract 0.3
 
-Пример:
 
-```text
-GET    /api/health
-GET    /api/settings
-PUT    /api/settings
+<a id="p6-030-55-11-основной-принцип"></a>
+#### 1.1 Основной принцип
 
-GET    /api/months
-POST   /api/months
-GET    /api/months/{id}
-PATCH  /api/months/{id}
-DELETE /api/months/{id}
-POST   /api/months/{id}/clone
-POST   /api/months/{id}/close
-POST   /api/months/{id}/reopen
+По умолчанию интерфейс показывает:
 
-GET    /api/months/{id}/summary
-GET    /api/months/{id}/dashboard
+1. результат;
+2. контекст, необходимый для правильной интерпретации результата;
+3. одно главное следующее действие.
 
-GET    /api/accounts
-POST   /api/accounts
-PATCH  /api/accounts/{id}
+Методология, API/backend terminology, диагностические поля и редкие действия не должны постоянно занимать первый уровень интерфейса.
 
-GET    /api/instruments
-POST   /api/instruments
-PATCH  /api/instruments/{id}
 
-GET    /api/months/{id}/positions
-POST   /api/months/{id}/positions
-PATCH  /api/positions/{id}
-DELETE /api/positions/{id}
+<a id="p6-030-55-12-action-hierarchy"></a>
+#### 1.2 Action hierarchy
 
-GET    /api/months/{id}/income
-GET    /api/months/{id}/expenses
-GET    /api/months/{id}/cash-flows
-GET    /api/months/{id}/property
-GET    /api/months/{id}/comments
+- В одной визуальной области должна быть не более одной явной primary action.
+- Secondary actions остаются видимыми только когда используются регулярно.
+- Редкие действия уходят в `…` / overflow menu.
+- Destructive actions по умолчанию не конкурируют с primary; они живут в overflow/menu/dialog и требуют confirm там, где действие необратимо.
+- `Обновить` не является визуальной primary action, если данные обычно загружаются автоматически.
+- Calculated/read-only value не маскируется под editable input без необходимости.
 
-POST   /api/months/{id}/export/markdown
-POST   /api/months/{id}/export/json
 
-POST   /api/backups
-GET    /api/backups
-POST   /api/backups/{id}/restore
-```
+<a id="p6-030-55-13-progressive-disclosure"></a>
+#### 1.3 Progressive disclosure
 
-Все изменяющие запросы валидируют отчётный месяц и возвращают понятные ошибки.
+Три уровня пояснений:
 
----
+- **всегда видно** — только информация, без которой пользователь может неверно понять цифру или выполнить опасное действие;
+- **`ⓘ` tooltip/popover** — короткое объяснение метрики, неполного окна, причины недоступного прогноза, lock-state;
+- **`Подробнее` / `<details>`** — длинная методология, composition rules, технические подробности.
 
-## 14. Нефункциональные требования
+User-facing основной поток не должен содержать ссылки вида `MASTER_SPEC §...`, endpoint names (`/api/...`), storage names (`income_type=...`) и слова `backend` как объяснение поведения. Такие детали допустимы только в Diagnostics/technical details.
 
-### 14.1. Точность
 
-- никаких денежных расчётов через двоичный `float`;
-- округление определяется явно;
-- значения в копейках либо `Decimal`;
-- формулы покрыты тестами;
-- API возвращает единицы измерения или однозначно документирует их.
+<a id="p6-030-55-14-fact--forecast--goal"></a>
+#### 1.4 Fact / Forecast / Goal
 
-### 14.2. Производительность
+Единый визуальный язык по всему приложению:
 
-Для личного объёма данных интерфейс должен отвечать практически мгновенно. Оптимизация под миллионы записей не нужна.
+- **Fact / Факт** — solid и самый контрастный data series/state;
+- **Forecast / Прогноз** — визуально вторичный, dashed/amber или эквивалентный стиль, никогда не выглядит как уже полученный результат;
+- **Goal / Цель** — reference/target marker, не data series факта;
+- **incomplete history** — muted indicator + help, а не большой warning, если действие пользователя не требуется.
 
-### 14.3. Надёжность
+Цель passive income показывает current value только по принятому контракту 0.2: rolling average фактического net passive income по CLOSED месяцам. Forecast остаётся отдельной метрикой.
 
-- транзакции при копировании месяца и массовом импорте;
-- внешние ключи включены;
-- миграции базы версионируются;
-- восстановление базы проверяется тестом;
-- экспорт не изменяет данные.
 
-### 14.4. Безопасность и приватность
+<a id="p6-030-55-15-state-model"></a>
+#### 1.5 State model
 
-- приложение слушает только `127.0.0.1` по умолчанию;
-- не отправляет телеметрию без явного согласия;
-- приватные файлы не попадают в Git;
-- PDF, Excel и backup хранятся локально;
-- в логах не печатаются полные финансовые данные;
-- никаких торговых операций.
+| State | Presentation |
+|---|---|
+| Error, операция невозможна | persistent red alert + recovery action, если есть |
+| Warning, требуется решение пользователя | persistent amber alert |
+| Неполные данные, но интерфейс корректен | muted badge / `ⓘ` / concise note |
+| Empty | короткое объяснение + максимум один основной CTA |
+| Closed / locked | статус в sticky header + read-only presentation; длинное постоянное объяснение не требуется |
+| Success | короткий transient feedback/toast там, где это возможно |
+| Technical diagnostics | Settings → Diagnostics / раскрываемые technical details |
 
-### 14.5. Поддерживаемость
+<a id="p6-030-owner-review-2026-08-12-24"></a>
+### Accepted numeric formatting and desktop density
 
-- расчёты отделены от API и UI;
-- доменная логика покрыта тестами;
-- frontend не дублирует формулы;
-- код форматируется и проверяется линтерами;
-- у каждой миграции есть понятное имя;
-- README содержит запуск с чистого Windows-окружения.
+<a id="p6-030-owner-review-2026-08-12-24-r03-14a--единое-форматирование-чисел"></a>
+#### R03-14A — единое форматирование чисел
 
----
+Провести cross-app audit денежных и количественных значений.
 
-## 15. Разовая миграция Excel
+- денежные суммы в display mode должны использовать shared formatter и группировку разрядов неразрывными пробелами;
+- не должно оставаться user-facing денежных строк вида `123456` там, где ожидается `123 456`;
+- проверить Dashboard, Analytics, Months, Month workspace, Goals, Accounts, Settings, badges, totals, table cells, tooltips и chart labels;
+- editable inputs не форматировать так, чтобы ломать ввод/парсинг;
+- не добавлять frontend financial math: задача только про presentation.
 
-### 15.1. Цель
+**Acceptance:** одинаковые display conventions для RUB на основных экранах; regression tests для formatter/ключевых presentation paths; visual smoke на 1366/1024/760.
 
-Перенести существующую историю с мая 2026 года без создания универсального вечного импортёра старого формата.
 
-### 15.2. Подход
+<a id="p6-030-owner-review-2026-08-12-24-r03-14b--month--positions-densityaction-hierarchy"></a>
+#### R03-14B — Month → Positions density/action hierarchy
 
-Создать одноразовый скрипт:
+Текущая таблица перегружена колонками и actions.
 
-```text
-scripts/migrate_legacy_excel.py
-```
+- `price_date` **сохранить в data contract**: это дата котировки, она может отличаться от `ReportingMonth.snapshot_date`;
+- в create/edit flow по умолчанию использовать month snapshot date, как сейчас;
+- на первом уровне таблицы не показывать дату цены постоянно, если она совпадает со snapshot date; отличающаяся дата должна оставаться доступной/заметной через secondary detail;
+- источник цены также сделать secondary detail, кроме случаев, когда источник/отклонение действительно важно для интерпретации;
+- `Средняя стоимость` переименовать/пояснить как **средняя цена приобретения за единицу**: это сохранённый input snapshot, а не автоматически восстановленная средняя из истории сделок;
+- рыночная стоимость, себестоимость и нереализованный результат остаются calculated backend values;
+- row actions: одна видимая primary/secondary action `Изменить`; destructive `Удалить` → `…` overflow с confirm;
+- при edit не превращать строку в чрезмерно широкую форму; допускается dialog/drawer или compact edit presentation, если это проще и читаемее;
+- НКД и price metadata остаются доступны, но не должны постоянно расширять каждую строку.
 
-и отдельный локальный mapping-файл:
+**Acceptance:** таблица читаема без налезаний на 1366 и 1024; 760 имеет аккуратный fallback; дата/источник не потеряны семантически; Edit/Delete behavior и position calculations не изменены.
 
-```text
-data/legacy_month_mapping.json
-```
 
-Пример структуры:
+<a id="p6-030-owner-review-2026-08-12-24-r03-14c--month--debtsproperty-density"></a>
+#### R03-14C — Month → Debts/Property density
 
-```json
-{
-  "Май_2026": {
-    "reporting_month": "2026-05",
-    "snapshot_date": "2026-06-01",
-    "import": true
-  },
-  "Август_2026": {
-    "reporting_month": "2026-07",
-    "snapshot_date": "2026-08-02",
-    "import": true
-  }
-}
-```
+- сократить первичный набор колонок до данных, необходимых для быстрого чтения;
+- `В ликвидном капитале` не должен занимать широкую постоянную колонку: показать compact state/detail, особенно когда значение стандартное;
+- destructive `Удалить` убрать из постоянной визуальной конкуренции и перенести в overflow/compact action pattern;
+- аналогично проверить таблицу недвижимости: стоимость, ипотека, платёж должны читаться без столкновения с actions;
+- никаких изменений debt/property formulas и include semantics.
 
-Точные даты для старых листов подтверждаются перед запуском. Скрипт не должен угадывать их по названию листа.
+**Acceptance:** debts/property не тесные на 1366/1024; длинные суммы не сталкиваются; actions не доминируют над данными; keyboard/focus/menu behavior preserved.
 
-### 15.3. Что переносится
 
-- месячные KPI только как контрольные значения;
-- зарплата;
-- депозиты;
-- акции;
-- облигации;
-- золото;
-- обязательные расходы;
-- откладывание;
-- кэшбэк как отдельный прочий доход;
-- долг по кредитке;
-- цели;
-- комментарии.
+<a id="p6-030-owner-review-2026-08-12-24-r03-14d--goals-card-width"></a>
+#### R03-14D — Goals card width
 
-### 15.4. Проверка миграции
+- активные secondary goal cards не должны искусственно оставаться узкими при наличии большого свободного пространства;
+- для небольшого числа активных целей предпочесть full-width/адаптивно широкие cards либо grid с разумным minimum width;
+- блок `Сейчас / Цель / Осталось` должен сохранять денежные значения на одной читаемой строке там, где viewport это позволяет, без агрессивного переноса цифр;
+- main/secondary visual hierarchy сохранить.
 
-Скрипт формирует отчёт сравнения:
-
-```text
-legacy_migration_report.md
-```
-
-В нём по каждому месяцу:
-
-- исходный итог;
-- рассчитанный новый итог;
-- разница;
-- список строк, которые не удалось сопоставить;
-- предупреждения о пустых ISIN;
-- предупреждения о дубликатах инструментов.
-
-Миграция запускается только после создания backup пустой базы.
+**Acceptance:** длинные monetary values в Goals читаются естественно на 1366/1024; нет огромной пустой половины layout при единственной secondary goal card; 760 остаётся одноколоночным.
 
 ---
-
-## 16. Будущие версии
-
-## 16.1. Версия 0.2 — котировки по кнопке
-
-- таблица сопоставления ISIN ↔ MOEX SECID;
-- обновление только по явному нажатию;
-- предпросмотр старой и новой цены;
-- дата и источник;
-- возможность исключить инструмент;
-- ручная цена для замороженных и недоступных активов;
-- никаких фоновых запросов в MVP.
-
-## 16.2. Версия 0.3 — импорт PDF Альфы
-
-В текущем принятом контракте это не generic импорт брокерского портфеля, а
-узкий owner-triggered импорт стандартизированного Alfa depository
-income-payment PDF. Его граница — фактические statement events и связанная с
-ними проверка; generic holdings, prices и future payouts сюда не входят.
-
-Этапы:
-
-1. явная загрузка PDF и вычисление hash;
-2. проверка поддерживаемого семейства отчёта и text layer без OCR;
-3. разбор фактических строк выплат;
-4. экран предпросмотра и явное сопоставление счета/инструмента;
-5. явный выбор строк и решение по существующему денежному потоку;
-6. транзакционное применение, deduplication и correction/retract provenance.
-
-Поля PDF, относящиеся к provider valuation (включая цены, NKD, P&L и
-синтезированную оценку позиции), являются только evidence для сравнения и не
-становятся Hermes financial truth. Количество и денежные события меняются
-только в пределах выбранного owner action; ручные значения не заменяются
-молчаливо. Общий импорт holdings/prices/future payouts потребовал бы отдельного
-принятого контракта и этой задачей не возобновляется.
-
-## 16.3. Версия 0.4 — доходность
-
-- доходность месяца по модифицированному Дитцу;
-- накопленная доходность;
-- результат по счетам;
-- результат по классам активов;
-- результат по инструментам;
-- ИИС без вычетов;
-- ИИС с полученными вычетами;
-- отдельное отображение влияния пополнений.
-
-## 16.4. Версия 0.5 — расширение планирования
-
-- комфортный бюджет;
-- дополнительные цели;
-- прогноз достижения цели;
-- категории доходов с флагами включения;
-- сценарии изменения взносов;
-- VPS;
-- авторизация;
-- возможный read-only доступ к Альфа PRO API.
-
----
-
-## 17. Критерии готовности MVP
-
-MVP считается готовым, когда выполнены все условия:
-
-1. Приложение запускается на Windows одной понятной командой или скриптом.
-2. Создаётся локальная база.
-3. Можно создать месяц и скопировать предыдущий.
-4. При копировании постоянные данные переносятся, фактические выплаты и комментарии обнуляются.
-5. Можно вводить и редактировать все основные блоки.
-6. Ликвидный капитал рассчитывается без недвижимости и с вычетом кредитки.
-7. Кэшбэк не входит в пассивный доход.
-8. Погашение облигации не входит в пассивный доход.
-9. Фактический и прогнозный пассивный доход показаны отдельно.
-10. До 12 месяцев показывается предупреждение о неполной истории.
-11. Дашборд содержит согласованные KPI и графики.
-12. Недвижимость показана справочно.
-13. Показывается покрытие ипотеки ликвидными активами.
-14. Налоговые правила редактируются в настройках.
-15. ИИС показывает контрольную дату и налоговые выгоды.
-16. Можно выгрузить Markdown и JSON.
-17. Можно создать и восстановить backup.
-18. История из Excel перенесена и сверена.
-19. Ключевые формулы покрыты unit-тестами.
-20. Приватные данные отсутствуют в Git.
-21. README описывает установку, запуск, backup и обновление.
-
----
-
-## 18. Решения, которые нельзя менять молча
-
-При реализации нельзя без согласования:
-
-- включать кэшбэк в пассивный доход;
-- включать недвижимость в ликвидный капитал;
-- считать погашение облигации доходом;
-- называть изменение портфеля доходностью без учёта потоков;
-- хранить деньги во `float`;
-- коммитить реальные номера счетов и финансовую базу;
-- добавлять авторизацию в MVP;
-- добавлять фоновые автоматические обновления котировок;
-- заменять локальное приложение облачным сервисом;
-- использовать Excel как основную базу приложения;
-- выполнять торговые операции;
-- реализовывать произвольный конструктор блоков раньше базового MVP.
-
----
-
-## 19. Порядок работы
-
-Процесс назначения, изоляции, проверки и сдачи задач задаёт `AGENTS.md`. Кратко:
-
-1. Прочитать этот документ в части, относящейся к назначенной задаче.
-2. Выполнять только назначенную задачу.
-3. Перед изменениями коротко описывать план.
-4. После изменений запускать проверки по `docs/VERIFICATION_POLICY.md`.
-5. Не переходить к следующей задаче автоматически.
-6. В отчёте указывать изменённые файлы, сделанное, фактические проверки, ограничения и следующий ID как не начатый.
-7. Делать небольшой логичный commit на task-ветке после принятия работы этой задачи.
-
----
-
-## 20. Контрольный пользовательский сценарий MVP
-
-1. Пользователь запускает приложение.
-2. Открывает последний закрытый месяц.
-3. Нажимает «Создать следующий месяц».
-4. Приложение копирует постоянные данные и создаёт черновик.
-5. Пользователь меняет зарплату, депозиты, количество и цены активов.
-6. Добавляет фактические купоны, дивиденды и проценты.
-7. Добавляет кэшбэк отдельно.
-8. Обновляет кредитку, ипотеку и обязательные расходы.
-9. Пишет комментарии.
-10. Проверяет предварительные KPI.
-11. Закрывает месяц.
-12. Смотрит дашборд и сравнение с предыдущим месяцем.
-13. Экспортирует Markdown и JSON.
-14. Перед крупным обновлением создаёт backup.
-
-Этот сценарий должен быть полностью рабочим до начала автоматизации котировок и PDF.

@@ -1,0 +1,46 @@
+# Hermes Finance — current status
+
+**Checkpoint: 2026-10-16, after published v1.3.0 and HONOR Stable LIVE GO.** Last verified canonical code `main@a9c88266fffe26e83688c52fc8f425b04fa14812` after [docs-only PR #843](https://github.com/LTstripes/hermes-finance/pull/843); exact [post-main CI #38933101012](https://github.com/LTstripes/hermes-finance/actions/runs/38933101012) **SUCCESS**, including synthetic visual audit. Subsequent documentation merges may advance `main` without moving the immutable release. Always recheck live GitHub, not this dated checkpoint.
+
+Current coordination: [#554](https://github.com/LTstripes/hermes-finance/issues/554); product direction [#711](https://github.com/LTstripes/hermes-finance/issues/711); release closeout [#836](https://github.com/LTstripes/hermes-finance/issues/836); remaining recovery/security [#838](https://github.com/LTstripes/hermes-finance/issues/838). [16 October pre-release/relocation history](../../../history/POST_MOVE_RETURNS_CHECKPOINT_2026-10-16.md) and [earlier dated closeouts](SESSION_CLOSEOUT_2026-10-12.md) remain historical evidence, **not tasks to replay**.
+
+## Release and runtime — separate proven identities
+
+| Scope | Verified evidence | Remaining limitation |
+| --- | --- | --- |
+| Published release | [`v1.3.0`](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), annotated tag object `13e727903c18484b8ff817f0b16f71664060c1d3` → commit `a9c88266fffe26e83688c52fc8f425b04fa14812`; [Guarded Release #38937979090](https://github.com/LTstripes/hermes-finance/actions/runs/38937979090) SUCCESS | Publication is not itself evidence of Owner financial UAT |
+| HONOR Stable | [#836 Operator-final technical receipt](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6222421447): one backup-first OPS02 + one normal Start, v1.3.0 loopback health/API/UI/reload PASS, actual existing SQLite migrated `0044 → 0058_broker_money_ownership` | **Owner-local operator-attested**, not independently inspected live localhost by GitHub; full financial/semantic Owner UAT remains limited |
+| Data continuity | Nine CLOSED retained; original 43 non-Alembic user-table projections preserve counts/digests, revision table advanced, 26 new tables initially empty; integrity OK/FK0, no new cash/financial events | No permission to Apply/Close/Reopen old accepted months; user exploration is separate |
+| Local rollback | Stock OPS02 produced a separately verified 0044 backup, with prior managed 0044 point and matched v1.2.0 code retained | **Rollback pairs v1.2.0 with its 0044 database**; never old code on migrated 0058 |
+| Remaining operations | [#838](https://github.com/LTstripes/hermes-finance/issues/838) OPEN for independent off-device/TECNO recoverability and inherited agent Modify ACL | Synced filesystem readback is not proof of off-device restoration or encrypted-at-rest protection |
+
+Do not restart the completed relocation, recovery preflight, release, migration or the stopped historical diagnostics merely because this checkpoint changed. Live Stable is the Owner's weekend interface, not a development test environment.
+
+## Product priority — minimize Owner manual work
+
+**Owner-confirmed priority order:** (1) broker-source monthly bookkeeping and lowering repeated manual mappings; (2) useful, honestly qualified investment returns; (3) bank/current/deposit/gold/credit statement ingestion as later expansion. Alfa PRO integration is **deferred**, because a report-period ending balance is sufficient for the Owner's current workflow; a live intramonth quote/snapshot is not an immediate product requirement. General currency-reference development [#777](https://github.com/LTstripes/hermes-finance/issues/777) stays low priority for the present RUB-dominant scope, without weakening `instrument_currency_unproven` for a genuinely new security or guessing denomination from settlement RUB.
+
+Target monthly experience: **one local upload/review session for complete source originals → exact reuse of existing account/security mappings → only genuine exceptions → single batch confirmation**; explicit separate Close and investment-return readiness remain guarded. Statement-based facts may be displayed honestly even when exact XIRR/TWRR cannot be computed. No mandatory cloud AI/token for routine source ingestion. Product-source coordination is [#711](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6222769955).
+
+**Analyses in progress (Owner-reported dispatch, results not yet accepted):** [#844](https://github.com/LTstripes/hermes-finance/issues/844) retail bank-source discovery and [#845](https://github.com/LTstripes/hermes-finance/issues/845) bounded source/financial-consumer audit. Product-flow analysis belongs to **open #711**, not already **CLOSED #771** (S1 auto identity foundation); confirm which issue was given to an external reviewer before interpreting any result. [#646 Alfa PRO value analysis](https://github.com/LTstripes/hermes-finance/issues/646#issuecomment-6222777698) is **deferred** by Owner for later, not launched by this checkpoint. These are READ-ONLY analyses, not an automatic implementation queue.
+
+## Financial and source acceptance boundaries
+
+**Broker month [#768](https://github.com/LTstripes/hermes-finance/issues/768)/[#773](https://github.com/LTstripes/hermes-finance/issues/773):** source-first MyBroker XML/Preview → bounded incomplete DRAFT → GET/replay is code-complete with earlier separate real original-bound scratch UAT. Source account EOD/native values, distinct RUB cash and reviewed Money receipts are usable as facts. Unsupported transfers, REPO/custody, economic Money meaning, mapping and account completeness may still block Apply/Close; historical CLOSED and manual nonbroker records stay protected.
+
+**Actual account statement return [#774](https://github.com/LTstripes/hermes-finance/issues/774):** real September `rate_fraction=null` / unavailable-path UAT accepted. Endpoint observations do not establish dated account crossings, historical membership, full source exposure or numeric return. Never silently mark UNKNOWN as zero. [#814](https://github.com/LTstripes/hermes-finance/issues/814) official settlement/NKD/source-definition inquiry is **Owner-reported SENT; WAITING WRITTEN BROKER REPLY**, with independent broker-authored proof still missing.
+
+**Conditional WHAT-IF [#839](https://github.com/LTstripes/hermes-finance/issues/839) / [Draft PR #841](https://github.com/LTstripes/hermes-finance/pull/841):** implemented and independently source/visual reviewed on a separate branch with successful exact-head CI, **not merged or in v1.3.0**. Its explicit hypothetical RUB/period % result is not actual S3 or exact portfolio/account XIRR/TWRR; further integration and real-data acceptance remain separate.
+
+**History [#769](https://github.com/LTstripes/hermes-finance/issues/769)/[#709](https://github.com/LTstripes/hermes-finance/issues/709)/[#752](https://github.com/LTstripes/hermes-finance/issues/752):** earlier four-original scratch diagnostic and accepted independent source reports remain. July/August month-end seams, incompatible fund/Skip scope, exact bond valuation/NKD, and economic completeness have finite unresolved evidence; do not replay the batch or replace missing July positions with invented zeros. First exact numeric XIRR still needs full source-supported endpoints and dated true external flows.
+
+**Deferred/not part of the current broker-and-return path:** [#714](https://github.com/LTstripes/hermes-finance/issues/714) accepted deposit semantics awaiting a concrete bank export; #844 explores one first future source family. [#646](https://github.com/LTstripes/hermes-finance/issues/646) / [Draft PR #829](https://github.com/LTstripes/hermes-finance/pull/829) implements proposed v2.2 Bearer handshake but has no verified Owner live PRO acceptance, and its marginal product benefit is unassessed. [#743](https://github.com/LTstripes/hermes-finance/issues/743)/[#748](https://github.com/LTstripes/hermes-finance/issues/748) desktop readiness UX, [#760](https://github.com/LTstripes/hermes-finance/issues/760) CI optimization and [#389](https://github.com/LTstripes/hermes-finance/issues/389) customization are lower current priority.
+
+## Next decisions
+
+- Integrator can review the three independent analyses against the existing contracts, choose the **smallest action-removing implementation**, and integrate only with applicable independent review and exact PR/main CI.
+- Owner explores the running v1.3.0 UI separately and can report confusion/UX suggestions without asserting financial Close/return acceptance.
+- When actual October brokerage originals or the official #814 answer exist, use them in one focused private source review. No need to ask again for the accepted September four-document packet.
+- Backups, live data, original broker and bank documents, credentials and private financial identities remain **off public GitHub**.
+
+Durable rules stay in [PROJECT_WIKI](PROJECT_WIKI.md), [AGENTS](../../../../AGENTS.md), [Owner-data workflow](OWNER_DATA_WORKFLOW.md), [runtime operations](OWNER_RUNTIME_OPERATIONS.md), [release automation](RELEASE_AUTOMATION.md) and [verification](VERIFICATION_POLICY.md).
