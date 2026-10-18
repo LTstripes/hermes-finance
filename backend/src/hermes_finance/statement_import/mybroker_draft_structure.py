@@ -145,7 +145,7 @@ def _summary(labels):
     )
 
 
-# Three complete observed trees, not a grammar of optional economic groups.
+# Four complete observed trees, not a grammar of optional economic groups.
 # Totals remain opaque bookkeeping exceptions with no financial authority.
 SUMMARIES = tuple(
     _summary(labels)
@@ -153,6 +153,7 @@ SUMMARIES = tuple(
         ("Внесено по распоряжению Клиента", "Купоны", "Списано по тарифам Банка"),
         ("Внесено по распоряжению Клиента", "Дивиденды", "Купоны", "Списано по тарифам Банка"),
         ("Дивиденды", "Купоны", "Списано по тарифам Банка"),
+        ("Купоны", "Списано по тарифам Банка"),
     )
 )
 DAILY = _branch(
