@@ -73,7 +73,7 @@ semantic marker.
 | --- | --- | --- |
 | `ci_core` | Backend core (two deterministic weighted shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by a committed duration-weighted test-file assignment |
 | `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
-| `ci_integrations` | Backend integrations | Provider, reconciliation, and import/export boundaries |
+| `ci_integrations` | Backend integrations (two deterministic weighted shards) | Provider, reconciliation, and import/export boundaries; `ci_integrations_a` and `ci_integrations_b` split the same ownership by a committed duration-weighted test-file assignment |
 | `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
 | `ci_benchmark` | Backend benchmark | Explicit benchmark/performance tests only |
 
@@ -84,10 +84,26 @@ raises a collection error for an unclassified or conflicting node. The
 test file. A new flat test module therefore requires an explicit owner before
 any lane can pass; benchmark tests cannot silently join a correctness lane.
 
-CI runs the five ownership surfaces as independent matrix jobs with the core
-surface split into two deterministic duration-weighted shards (`ci_core_a` and `ci_core_b`),
-`--durations=40`, and a 10-minute job timeout. The shard markers are additive
-to `ci_core`; both shards together are the complete Backend core lane.
+CI runs the five ownership surfaces as independent matrix jobs. The core
+surface is split into `ci_core_a` and `ci_core_b`. The integrations surface is
+split the same way into `ci_integrations_a` and `ci_integrations_b`. Shard
+markers are additive to the single parent lane. Both shards of a surface
+together are that surface: their pytest collections are disjoint and their
+union is the parent collection, so each collected node runs once.
+
+Core, persistence, runtime/release, and benchmark keep a 10-minute job
+timeout. Both integrations shards keep the temporary 40-minute timeout. The
+pytest command stays `uv run --locked python -I -m pytest -q --durations=40`
+with only the shard marker expression changing. There is no within-runner
+pytest parallelism.
+
+Integration weights come from Actions run 39104674667 (`--durations=40` on
+the 2530-test suite, 1511.72s). Nodes that run did not list, including the
+90 nodes added later in `test_statement_import_mybroker_endpoints.py`, use
+that run's residual per-node rate. A new integration module missing from the
+weight table has no shard and collection fails closed. On those weights the
+two shards are 774.74s and 775.07s. That split is an estimate, not a measured
+speedup.
 
 The dedicated Windows timezone job protects runtime `tzdata` availability,
 `Europe/Moscow` calendar behavior, and real Windows runtime exports. A Linux
@@ -155,6 +171,8 @@ command below is available when a local full gate is needed under
 uv run --locked python -I -m pytest -q -m domain
 uv run --locked python -I -m pytest -q -m "ci_core and ci_core_a"
 uv run --locked python -I -m pytest -q -m "ci_core and ci_core_b"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b"
 uv run --locked python -I -m pytest -q -m "migration or persistence"
 uv run --locked python -I -m pytest -q -m "integration and network_free"
 uv run --locked python -I -m pytest -q -m benchmark

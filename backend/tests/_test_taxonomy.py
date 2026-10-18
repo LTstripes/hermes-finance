@@ -35,6 +35,11 @@ CI_CORE_SHARD_MARKERS = (
     "ci_core_b",
 )
 
+CI_INTEGRATIONS_SHARD_MARKERS = (
+    "ci_integrations_a",
+    "ci_integrations_b",
+)
+
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
 # main candidate. Values are summed test/setup/teardown seconds per file; the
 # assignment below is recomputed deterministically by weighted bin-packing.
@@ -128,6 +133,80 @@ CI_CORE_SHARD_WEIGHTS = {
     "test_scenario_lab_inflation_real_value.py": 12.23,
     "test_tax_brackets_api.py": 1.47,
     "test_tax_iis_planner.py": 11.58,
+}
+
+# Duration-weighted module seconds for the two ci_integrations shards.
+# Source: Actions run 39104674667 on 59c37875 (2530 passed in 1511.72s,
+# --durations=40 call time 456.62s). Unlisted nodes use the residual rate
+# (1511.72 - 456.62) / 2490. That same rate covers the 90 nodes added in
+# test_statement_import_mybroker_endpoints.py by d0f5e7e. A module absent
+# from this table has no shard, so collection fails closed.
+CI_INTEGRATIONS_SHARD_WEIGHTS = {
+    "test_ai_analysis_bundle_contract.py": 3.81,
+    "test_ai_analysis_bundle_export.py": 11.44,
+    "test_ai_analysis_bundle_financial_review_contract.py": 6.78,
+    "test_ai_financial_review_linked_pairs.py": 2.54,
+    "test_alfa_pro_probe.py": 16.10,
+    "test_alfa_pro_snapshot.py": 21.61,
+    "test_broker_baseline_apply.py": 6.78,
+    "test_broker_identity_mappings.py": 5.93,
+    "test_broker_snapshot_apply.py": 11.44,
+    "test_forecast_dashboard_integration.py": 4.66,
+    "test_freshness_provenance.py": 5.08,
+    "test_instrument_mappings.py": 9.32,
+    "test_instrument_mappings_api.py": 9.75,
+    "test_instrument_type_compatibility.py": 6.36,
+    "test_linked_pair_read_model.py": 3.39,
+    "test_markdown_export.py": 0.85,
+    "test_markdown_export_api.py": 4.24,
+    "test_market_data_provider.py": 10.59,
+    "test_market_identity.py": 3.81,
+    "test_normalized_reconciliation.py": 3.81,
+    "test_payout_api.py": 9.32,
+    "test_payout_api_hardening.py": 1.27,
+    "test_payout_apply.py": 12.71,
+    "test_payout_apply_hardening.py": 0.85,
+    "test_payout_apply_reread.py": 1.69,
+    "test_payout_apply_scope_guard.py": 0.42,
+    "test_payout_calendar.py": 7.20,
+    "test_payout_domain.py": 13.98,
+    "test_payout_preview.py": 9.32,
+    "test_payout_preview_hardening.py": 1.27,
+    "test_private_seed.py": 2.12,
+    "test_provider_capabilities.py": 1.27,
+    "test_quote_apply.py": 4.66,
+    "test_quote_apply_api.py": 19.92,
+    "test_quote_failure_ux.py": 4.66,
+    "test_quote_preview.py": 4.66,
+    "test_quote_preview_api.py": 2.54,
+    "test_reconciliation_preview.py": 13.56,
+    "test_risk_allocation.py": 2.97,
+    "test_statement_import.py": 23.73,
+    "test_statement_import_apply.py": 17.80,
+    "test_statement_import_broker_statement_return.py": 129.71,
+    "test_statement_import_broker_statement_what_if.py": 130.43,
+    "test_statement_import_executed_trades.py": 14.83,
+    "test_statement_import_historical_endpoints.py": 36.44,
+    "test_statement_import_historical_owner_flows.py": 52.97,
+    "test_statement_import_historical_portfolio_flows.py": 25.42,
+    "test_statement_import_historical_reconstruction.py": 13.14,
+    "test_statement_import_mybroker.py": 46.19,
+    "test_statement_import_mybroker_dispositions.py": 29.11,
+    "test_statement_import_mybroker_empty_money.py": 59.75,
+    "test_statement_import_mybroker_endpoints.py": 289.65,
+    "test_statement_import_mybroker_identity.py": 11.02,
+    "test_statement_import_mybroker_metadata.py": 58.90,
+    "test_statement_import_mybroker_money_candidates.py": 18.64,
+    "test_statement_import_mybroker_preflight.py": 21.61,
+    "test_statement_import_retract.py": 6.78,
+    "test_statement_import_source_cash_coverage.py": 270.51,
+    "test_t_invest_matured_bond.py": 2.12,
+    "test_t_invest_payout_adapter.py": 5.93,
+    "test_t_invest_payout_coverage_guard.py": 0.42,
+    "test_t_invest_payout_probe.py": 4.66,
+    "test_t_invest_probe.py": 3.81,
+    "test_t_invest_provider.py": 11.02,
+    "test_t_invest_quotation.py": 2.54,
 }
 
 _CI_LANE_OVERRIDES = {
@@ -387,6 +466,25 @@ def ci_lane_for_test_path(test_path: Path) -> str | None:
     return None
 
 
+def _weighted_shard(
+    key: str,
+    weights: dict[str, float],
+    markers: tuple[str, ...],
+) -> str | None:
+    """Assign one exclusive shard by duration-weighted list scheduling."""
+
+    if key not in weights:
+        return None
+
+    assignments = {marker: set() for marker in markers}
+    totals = {marker: 0.0 for marker in markers}
+    for path, weight in sorted(weights.items(), key=lambda item: (-item[1], item[0])):
+        marker = min(markers, key=lambda candidate: (totals[candidate], candidate))
+        assignments[marker].add(path)
+        totals[marker] += weight
+    return next(marker for marker, paths in assignments.items() if key in paths)
+
+
 def ci_core_shard_for_test_path(test_path: Path) -> str | None:
     """Return a deterministic duration-weighted shard for a core test file."""
 
@@ -396,22 +494,27 @@ def ci_core_shard_for_test_path(test_path: Path) -> str | None:
     relative_path = _relative_test_path(test_path)
     if relative_path is None:
         return None
+    return _weighted_shard(
+        relative_path.as_posix(),
+        CI_CORE_SHARD_WEIGHTS,
+        CI_CORE_SHARD_MARKERS,
+    )
 
-    key = relative_path.as_posix()
-    if key not in CI_CORE_SHARD_WEIGHTS:
+
+def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
+    """Return one exclusive duration-weighted shard for an integration file."""
+
+    if ci_lane_for_test_path(test_path) != "ci_integrations":
         return None
 
-    assignments = {marker: set() for marker in CI_CORE_SHARD_MARKERS}
-    totals = {marker: 0.0 for marker in CI_CORE_SHARD_MARKERS}
-    for path, weight in sorted(CI_CORE_SHARD_WEIGHTS.items(), key=lambda item: (-item[1], item[0])):
-        marker = min(
-            CI_CORE_SHARD_MARKERS,
-            key=lambda candidate: (totals[candidate], candidate),
-        )
-        assignments[marker].add(path)
-        totals[marker] += weight
-
-    return next(marker for marker, paths in assignments.items() if key in paths)
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+    return _weighted_shard(
+        relative_path.as_posix(),
+        CI_INTEGRATIONS_SHARD_WEIGHTS,
+        CI_INTEGRATIONS_SHARD_MARKERS,
+    )
 
 
 def iter_backend_test_files() -> tuple[Path, ...]:

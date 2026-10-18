@@ -66,6 +66,8 @@ markers = [
     "ci_core_b: deterministic second shard of the exclusive backend core lane",
     "ci_persistence: exclusive normal CI lane for SQLite, persistence, and migration tests",
     "ci_integrations: exclusive normal CI lane for provider, reconciliation, and import/export tests",
+    "ci_integrations_a: deterministic first shard of the exclusive backend integrations lane",
+    "ci_integrations_b: deterministic second shard of the exclusive backend integrations lane",
     "ci_runtime_release: exclusive normal CI lane for runtime, release, legacy, and CI contract tests",
     "ci_benchmark: exclusive explicit performance/benchmark CI lane",
 ]
