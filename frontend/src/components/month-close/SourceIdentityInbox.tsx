@@ -185,11 +185,15 @@ export function SourceIdentityInbox({
                                 official.reasons.length > 0 ||
                                 c.reasons.length > 0 ||
                                 c.instrument_type !== item.instrument_type ||
+                                c.currency !== "RUB" ||
                                 new Date(official.expires_at).getTime() <= Date.now()
                               }
                             >
                               Создать: {c.name} · {c.secid} · {c.currency ?? "UNKNOWN"}{" "}
-                              {c.reasons.join(", ")}
+                              {c.reasons.join(", ")}{" "}
+                              {c.currency && c.currency !== "RUB"
+                                ? "instrument_currency_unsupported"
+                                : ""}
                             </option>
                           ))}
                         </select>

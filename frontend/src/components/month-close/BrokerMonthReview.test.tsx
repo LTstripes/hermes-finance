@@ -1277,3 +1277,19 @@ it("source inbox refresh recovers failed public lookup and preserves original wi
   ).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
+
+it("official USD denomination stays in pending with a disabled creation option", async () => {
+  vi.mocked(previewBrokerMonth).mockResolvedValue(inboxPreview());
+  vi.mocked(lookupPublicIdentities).mockResolvedValue([
+    { ...publicBond, candidates: publicBond.candidates.map((c) => ({ ...c, currency: "USD" })) },
+  ]);
+  const user = show();
+  await inspect(user);
+  await user.click(screen.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ }));
+  expect(
+    await screen.findByRole("option", { name: /Создать:.*USD.*instrument_currency_unsupported/ }),
+  ).toBeDisabled();
+  expect(screen.getByText(/MATCHED — 12; PENDING REVIEW — 1/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Подтвердить решения и заново/ })).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});

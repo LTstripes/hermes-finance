@@ -4874,6 +4874,7 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
     [
         {"currency": None},
         {"currency": "SUR"},
+        {"currency": "USD"},
         {"multiple": True},
         {"missing": True},
         {"group": "stock_etf"},
@@ -4898,6 +4899,8 @@ def test_source_inbox_unproven_public_candidates_never_enable_writer(database, m
     selected = {**intent, "instrument_decisions": [{"isin": "RU000A000001", "proof_id": proof}]}
     pending = _broker_month_preview(client, selected, xml)
     assert not pending["can_apply"] and not pending["identity"]["can_stage"]
+    unknown = next(i for i in pending["identity"]["instruments"] if i["isin"] == "RU000A000001")
+    assert unknown["intake_status"] == "pending_review"
     assert _broker_month_apply(client, selected, pending, xml).status_code == 409
     assert _all_month_tables(database) == before
 

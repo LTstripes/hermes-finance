@@ -200,6 +200,8 @@ def _prepare(
                     row_conflicts.add("instrument_official_proof_required")
             else:
                 row_conflicts.add("instrument_decision_invalid")
+        if source_intake and proof and proof["currency"] != "RUB":
+            row_conflicts.add("instrument_currency_unsupported")
         gaps = list(observed["evidence_gaps"])
         if target is None and observed["currency"] is None and proof is None:
             gaps.append("instrument_currency_unproven")
