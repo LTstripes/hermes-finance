@@ -815,6 +815,7 @@ def test_excluded_debt_does_not_make_missing_portfolio_snapshot_available(
         "status": "unavailable",
         "reason_codes": ["portfolio_snapshot_missing"],
         "missing_account_ids": [account["id"]],
+        "source_account_financial_coverage": None,
     }
     assert owner_point["portfolio_source_coverage"] == expected_coverage
 
