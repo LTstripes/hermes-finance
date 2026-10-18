@@ -5434,17 +5434,17 @@ For either `portfolio` or an explicit `account`, exact TWRR may be calculated on
 3. External-flow coverage is complete: explicit boundary amounts are valid, relevant flow membership is authoritative, transfers are resolved when applicable, and conversion is complete.
 4. There are no selected-scope external contribution/withdrawal boundaries requiring an unobserved or unordered split. At portfolio scope, a fully linked transfer between two in-scope accounts is internal and does not violate this condition.
 
-With no selected-scope external boundary flow, the future calculator may use the single exact factor:
+With no selected-scope external boundary flow, the calculator uses the single exact factor:
 
 ```text
 TWRR = closing_value / opening_value - 1
 ```
 
-The factor can be `0` for a flat period or negative for a loss period. Those outcomes are not `not_computable` by themselves. This phase does not expose the resulting percentage.
+The factor can be `0` for a flat period or negative for a loss period. Those outcomes are not `not_computable` by themselves. The delivered read-only TWRR API exposes the period percentage only when the metric-specific evidence and numerical guards pass.
 
 When external flows are supported by the prerequisite, the calculator must order explicit flow groups and use an observed valuation immediately before and immediately after each group. Contributions use positive boundary amount from the portfolio perspective; withdrawals use the same non-negative amount with withdrawal direction. The chained subperiod factors must use those observed boundaries and must not interpolate, assume start/end-of-day order, or turn a capital delta into return.
 
-The following independent reference vector fixes the intended segmentation, without implementing it in production:
+The following independent reference vector fixes the accepted segmentation:
 
 | Boundary | Observed value (RUB) | Signed boundary flow (RUB) | Factor |
 | --- | ---: | ---: | ---: |
@@ -8189,7 +8189,7 @@ The response is a list of goal records plus a nested backend-derived `achievemen
 
 Because the existing router already has `GET /api/goals/{goal_id}`, the static `/summary` route must be registered before the dynamic `/{goal_id}` route (or otherwise be structured so `summary` cannot be shadowed and parsed as a goal id).
 
-The endpoint must compute shared source metrics once per request where practical (for example one passive-income forecast and one liquid-capital result), not once per goal via an N+1 calculator loop.
+The endpoint must compute shared source metrics once per request where practical (for example one canonical C03 actual passive-income average and one liquid-capital result), not once per goal via an N+1 calculator loop.
 
 Existing `GET /api/goals`, `GET /api/goals/{id}`, `POST`, `PATCH`, and `DELETE` remain source-of-truth CRUD endpoints and do not require a reporting month.
 
@@ -8212,22 +8212,14 @@ The API must distinguish:
 - a supported goal that is below target but lacks a trajectory (`no_trajectory_model`);
 - an unsupported goal type/mode;
 - an inactive goal;
-- a supported passive-income result that is approximate or carries upstream forecast warnings.
+- a supported actual passive-income result carrying its canonical C03 history/availability warnings (for example insufficient eligible history).
 
 A missing reporting month or missing goal follows existing API not-found/error conventions; it is not represented as a successful forecast with `null` fields.
 
 <a id="c8-336-financial-context-contract-1"></a>
 ### Financial context, nullable bps and clone
 
-Status: **contract for review**. Contract-only stage — no implementation,
-no migration, no code changes in this commit.
-
-Parent: #331 (unified AI financial review). Roadmap: #127.
-
-This document is normative for the #336 implementation slice. Where it
-conflicts with `MASTER_SPEC.md` MVP statements (§11.10–§11.11), this contract
-wins for the #336 scope after acceptance; `MASTER_SPEC.md` §§9.14–9.17 and
-§§11.9–11.11 are updated at implementation time, not in this commit.
+Accepted and implemented structured financial-context rules (#336/#342). Nullable rates, dates, month-local budget/plan-vs-actual, UI and clone behavior are delivered; no guessed historical backfill. This section owns the current rules formerly spread across MVP text and contract closeout. [Acceptance reconciliation](https://github.com/LTstripes/hermes-finance/issues/336#issuecomment-5669277048).
 
 
 <a id="c8-336-financial-context-contract-1-0-scope-boundary"></a>
@@ -8397,34 +8389,24 @@ misread as plan and vice versa:
   visually and semantically distinct from `0` (§4).
 
 
-<a id="c8-336-financial-context-contract-1-9-tests-at-implementation-not-in-this-contract-commit"></a>
-#### 9. Tests at implementation (not in this contract commit)
+<a id="c8-336-financial-context-contract-1-9-required-regression-coverage"></a>
+#### 9. Required regression coverage
 
-Implementation must add: contract/repository/API tests for 0-vs-null
+Regression coverage preserves: contract/repository/API tests for 0-vs-null
 rates, due/end date separation and nullability, migration no-guess
 (pre-existing rows read back `NULL`), clone semantics (rate copied, due
 date cleared, plan copied), and closed-month immutability of the new
 paths; plus frontend tests for editing and unknown-vs-0 display.
 
 
-<a id="c8-336-financial-context-contract-1-10-open-decisions-for-review"></a>
-#### 10. Open decisions for review
+<a id="c8-336-financial-context-contract-1-10-accepted-clone-and-budget-decisions"></a>
+#### 10. Accepted clone and budget decisions
 
-1. `next_due_date` cleared on clone (chosen, §2) vs copied as-is.
-   Clearing follows the salary `received_at` precedent but asks the
-   owner to re-confirm monthly. Copying is less friction but risks
-   stale past dates posing as current obligations.
-2. Planned budget copied on clone as draft (chosen, §3) vs starting
-   empty each month. Copying matches the mandatory-expenses precedent;
-   starting empty forces conscious planning but adds monthly friction.
-3. Plan-vs-actual key is exact `(category, expense_type)` (chosen, §3)
-   vs category-only vs an explicit plan-line link id. Exact pair is
-   minimal (no new FK); a link id is more precise but a bigger model.
-4. Mortgage rate is month-local (chosen, §1) vs a global mortgage
-   profile. Month-local keeps one truth source and free history; a
-   profile would need sync rules between profile and snapshots.
-5. Rate checks are `>= 0` only (chosen, mirroring deposits) — no upper
-   sanity cap. Flag if review wants one; symmetry with deposits says no.
+1. Clear next_due_date on clone and require monthly reconfirmation; never copy a stale due date as current obligation.
+2. Copy planned budget into the new month as DRAFT, preserving the supported mandatory-expenses precedent.
+3. Plan-vs-actual key is exactly `(category, expense_type)`, not category-only or a new inferred link.
+4. Mortgage annual rate is month-local, without a competing global profile/synchronization source.
+5. Rate validation is `>= 0`, matching deposits, with no newly inferred upper sanity cap.
 
 <a id="c8-deterministic_insights-1"></a>
 ### Deterministic predicates and implications
