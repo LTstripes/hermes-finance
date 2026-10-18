@@ -147,9 +147,10 @@ inspectable, including when the whole identity batch blocks DRAFT. Identity
 proposals expose `intake_status=matched|pending_review`, raw source names/native
 kind/ISIN, observation scopes, local catalogue candidates and typed reasons.
 `matched` means a compatible proposal, never an accepted financial posting.
-Source-month intake additionally refuses inactive cards and unsupported native
-currency; the older standalone identity contract's inactive catalogue reuse is
-unchanged. Unsupported financial evidence remains separate from identity review.
+Source-month intake reuses exact compatible existing inactive cards automatically,
+with alias/revocation/type guards and RUB scope preserved. Explicit manual selection
+still refuses inactive cards. Unsupported financial evidence remains separate from
+identity review.
 
 One unchecked session opt-in enables deduplicated batches of at most 32 public
 ISINs against MOEX ISS. The request DTO rejects all extra properties. The fixed
@@ -159,7 +160,9 @@ the app. Redirects and ambient proxy/auth settings are disabled. Search pages mu
 be exhausted within bounds, with exact ISIN/SECID/type/currentness checks against
 security specifications. Settlement `CURRENCYID` is never denomination authority.
 The bounded new-card path accepts bonds only when official `FACEUNIT` proves a
-supported denomination; stock/fund/absent/conflicting/stale metadata stays UNKNOWN.
+supported denomination, including the exact official nominal-code alias `SUR` →
+`RUB`, with raw `SUR` retained in the proof description. No other alias or settlement
+currency fallback is accepted; stock/fund/absent/conflicting/stale metadata stays UNKNOWN.
 Official metadata is not a quote, financial observation or broker holding proof.
 
 Public interpretations, official URLs, description/search records and retrieval

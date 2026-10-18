@@ -99,6 +99,9 @@ def _lookup(client, isin):
             reasons.append("official_current_status_unproven")
         # FACEUNIT proves bond denomination. Settlement CURRENCYID never does.
         currency = description.get("FACEUNIT") if kind == "bond" else None
+        # Exact official nominal-code alias; retain raw FACEUNIT in description.
+        if currency == "SUR":
+            currency = "RUB"
         if currency not in {"RUB", "USD", "EUR", "CNY", "GBP", "CHF", "JPY", "HKD"}:
             currency = None
             reasons.append("instrument_currency_unproven")

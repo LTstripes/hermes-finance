@@ -182,8 +182,6 @@ def _prepare(
             for m in registry
         ):
             row_conflicts.add("revoked_instrument_binding_conflict")
-        if source_intake and target and not target.is_active:
-            row_conflicts.add("inactive_instrument_binding")
         if source_intake and target and target.currency != "RUB":
             row_conflicts.add("instrument_currency_unsupported")
         proof = None

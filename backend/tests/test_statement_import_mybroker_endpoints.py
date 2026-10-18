@@ -4795,14 +4795,15 @@ def _public_inbox_fixture(
     return seen
 
 
-def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch):
+@pytest.mark.parametrize("currency", ["RUB", "SUR"])
+def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch, currency):
     import hashlib
 
     from hermes_finance.services import public_security_registry as registry
 
     intent = _broker_month_setup(database)
     xml = _source_inbox_xml(database)
-    seen = _public_inbox_fixture(monkeypatch)
+    seen = _public_inbox_fixture(monkeypatch, currency=currency)
     client = TestClient(create_app(database=database))
     before = _all_month_tables(database)
     pending = _broker_month_preview(client, intent, xml)
@@ -4830,6 +4831,11 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
     )
     assert result.status_code == 200, result.text
     public = result.json()[0]
+    assert len(public["candidates"]) == 1
+    candidate = public["candidates"][0]
+    assert candidate["currency"] == "RUB" and candidate["currency_field"] == "FACEUNIT"
+    assert candidate["description"]["FACEUNIT"] == currency
+    assert candidate["reasons"] == []
     assert len(seen) == 3  # all search pages + exact security specification
     assert _all_month_tables(database) == before
     # Owner intent cannot turn the legacy NULL-ISIN card into authority.
@@ -4849,6 +4855,9 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
     ready = _broker_month_preview(client, resolved_intent, xml)
     assert ready["can_apply"], ready["conflicts"]
     assert ready["identity"]["can_stage"]
+    proposal = next(i for i in ready["identity"]["instruments"] if i["isin"] == "RU000A000001")
+    assert proposal["currency"] == "RUB"
+    assert proposal["official_proof"]["description"]["FACEUNIT"] == currency
     assert ready["confirmation_digest"] != pending["confirmation_digest"]
     assert ready["document"] == pending["document"]
     assert _broker_month_apply(client, resolved_intent, pending, xml).status_code == 409
@@ -4865,6 +4874,10 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
     replay = _broker_month_apply(client, resolved_intent, ready, xml)
     assert replay.status_code == 200 and replay.json()["duplicate"]
     with database.session_factory() as session:
+        receipt = session.get(BrokerMonthApply, "synthetic-batch")
+        saved_proof = json.loads(receipt.projection_json)["identity_proofs"][0]
+        assert saved_proof["currency"] == "RUB"
+        assert saved_proof["description"]["FACEUNIT"] == currency
         assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
 
@@ -4873,8 +4886,11 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
     "kwargs",
     [
         {"currency": None},
-        {"currency": "SUR"},
+        {"currency": "RUR"},
+        {"currency": "sur"},
+        {"currency": " SUR "},
         {"currency": "USD"},
+        {"currency": "CNY"},
         {"multiple": True},
         {"missing": True},
         {"group": "stock_etf"},
@@ -4882,6 +4898,7 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch)
         {"security_type": "unknown_fund"},
         {"spec_isin": "RU000A000999"},
         {"group": "stock_shares", "security_type": "common_share"},
+        {"group": "stock_shares", "security_type": "common_share", "currency": "SUR"},
     ],
 )
 def test_source_inbox_unproven_public_candidates_never_enable_writer(database, monkeypatch, kwargs):
@@ -4954,10 +4971,9 @@ def test_source_inbox_dependency_aba_retires_review(database, monkeypatch, chang
     )
 
 
-def test_source_inbox_inactive_and_expired_proofs_remain_pending(database, monkeypatch):
+def test_source_inbox_expired_proofs_remain_pending(database, monkeypatch):
     from datetime import timedelta
 
-    from hermes_finance.persistence import Instrument
     from hermes_finance.services import public_security_registry as registry
 
     intent = _broker_month_setup(database)
@@ -4974,19 +4990,7 @@ def test_source_inbox_inactive_and_expired_proofs_remain_pending(database, monke
     }
     ready = _broker_month_preview(client, intent, xml)
     assert ready["can_apply"]
-    with database.session_factory() as session:
-        target = session.scalar(select(Instrument).where(Instrument.isin == ISIN))
-        target.is_active = False
-        session.commit()
-    blocked = _broker_month_preview(client, intent, xml)
-    row = next(i for i in blocked["identity"]["instruments"] if i["isin"] == ISIN)
-    assert (
-        row["intake_status"] == "pending_review"
-        and "inactive_instrument_binding" in row["review_reasons"]
-    )
     before = _all_month_tables(database)
-    assert _broker_month_apply(client, intent, blocked, xml).status_code == 409
-    assert _all_month_tables(database) == before
     now = registry._now()
     monkeypatch.setattr(registry, "_now", lambda: now + timedelta(hours=2))
     expired = _broker_month_preview(client, intent, xml)
@@ -4994,6 +4998,113 @@ def test_source_inbox_inactive_and_expired_proofs_remain_pending(database, monke
     assert pending["intake_status"] == "pending_review"
     assert "instrument_official_proof_required" in pending["review_reasons"]
     assert _broker_month_apply(client, intent, ready, xml).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("isin", [ISIN, "RU000A000001"])
+def test_source_inbox_exact_inactive_card_reused_in_atomic_draft_and_get(database, isin):
+    from hermes_finance.persistence import Instrument
+
+    intent = _broker_month_setup(database, bond=True)
+    xml = broker_month_xml(bond=True, unsupported=True)
+    with database.session_factory() as session:
+        target = session.scalar(select(Instrument).where(Instrument.isin == isin))
+        target.is_active = False
+        session.commit()
+        target_id = target.id
+        metadata = tuple(getattr(target, c.name) for c in Instrument.__table__.columns)
+        count = session.scalar(select(func.count()).select_from(Instrument))
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    ready = _broker_month_preview(client, intent, xml)
+    row = next(i for i in ready["identity"]["instruments"] if i["isin"] == isin)
+    assert ready["can_apply"] and ready["identity"]["can_stage"]
+    assert row["intake_status"] == "matched" and row["review_reasons"] == []
+    assert row["action"] == "reuse" and row["hermes_id"] == target_id
+    assert row["currency_basis"] == "existing_catalogue" and row["currency"] == "RUB"
+    assert _all_month_tables(database) == before
+    accepted = _broker_month_apply(client, intent, ready, xml)
+    assert accepted.status_code == 200, accepted.text
+    read = client.get("/api/broker-months/synthetic-batch")
+    assert read.status_code == 200
+    assert read.json()["accepted"] == accepted.json()["accepted"]
+    assert read.json()["accepted"]["document"] == ready["document"]
+    assert len(read.json()["accepted"]["position_ids"]) == 2
+    assert not read.json()["bookkeeping_ready"]
+    after = _all_month_tables(database)
+    replay = _broker_month_apply(client, intent, ready, xml)
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    assert _all_month_tables(database) == after
+    with database.session_factory() as session:
+        target = session.get(Instrument, target_id)
+        assert tuple(getattr(target, c.name) for c in Instrument.__table__.columns) == metadata
+        assert session.scalar(select(func.count()).select_from(Instrument)) == count
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+
+
+@pytest.mark.parametrize(
+    "change,reason",
+    [
+        ("manual", "instrument_owner_selection_incompatible"),
+        ("kind", "instrument_metadata_conflict"),
+        ("currency", "instrument_currency_unsupported"),
+        ("isin", "instrument_metadata_conflict"),
+        ("revoked", "revoked_instrument_binding_conflict"),
+        ("alias", "instrument_reverse_alias_conflict"),
+        ("ambiguous", "instrument_alias_conflict"),
+    ],
+)
+def test_source_inbox_inactive_reuse_preserves_identity_guards(database, change, reason):
+    from hermes_finance.persistence import BrokerIdentityMapping, Instrument
+    from hermes_finance.services.broker_identity_mappings import revoke_mapping
+
+    intent = _broker_month_setup(database, bond=True)
+    xml = broker_month_xml(bond=True)
+    with database.session_factory() as session:
+        target = session.scalar(select(Instrument).where(Instrument.isin == ISIN))
+        target.is_active = False
+        if change == "manual":
+            intent["instrument_decisions"] = [{"isin": ISIN, "hermes_id": target.id}]
+        elif change == "kind":
+            target.instrument_type = "bond"
+        elif change == "currency":
+            target.currency = "USD"
+        elif change == "isin":
+            target.isin = ISIN.lower()
+        elif change in {"revoked", "alias"}:
+            mapping = session.scalar(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.subject_kind == "instrument",
+                    BrokerIdentityMapping.provider_identity == ISIN,
+                )
+            )
+            if change == "revoked":
+                revoke_mapping(session, mapping.id)
+                other = session.scalar(select(Instrument).where(Instrument.isin == "RU000A000001"))
+                mapping.hermes_instrument_id = other.id
+            else:
+                mapping.provider_identity = "RU000A000999"
+        else:
+            # A legacy casing variant is distinct in SQLite but ambiguous to exact lookup.
+            session.add(
+                Instrument(
+                    name="Synthetic legacy duplicate",
+                    instrument_type="stock",
+                    isin=ISIN.lower(),
+                    currency="RUB",
+                )
+            )
+        session.commit()
+    before = _all_month_tables(database)
+    client = TestClient(create_app(database=database))
+    pending = _broker_month_preview(client, intent, xml)
+    row = next(i for i in pending["identity"]["instruments"] if i["isin"] == ISIN)
+    assert reason in row["review_reasons"]
+    assert row["intake_status"] == "pending_review"
+    assert not pending["can_apply"] and not pending["identity"]["can_stage"]
+    assert _broker_month_apply(client, intent, pending, xml).status_code == 409
     assert _all_month_tables(database) == before
 
 
