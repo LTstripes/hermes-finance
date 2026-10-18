@@ -29,6 +29,7 @@ export type SourceIntake = {
   document_sha256: string;
   generation: number;
   head_seq: number;
+  manifest_digest: string;
   original_required: boolean;
   covered_from: string;
   covered_to: string;

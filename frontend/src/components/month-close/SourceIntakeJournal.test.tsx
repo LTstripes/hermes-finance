@@ -28,6 +28,7 @@ const stored: SourceIntake = {
   document_sha256: "a".repeat(64),
   generation: 1,
   head_seq: 2,
+  manifest_digest: "c".repeat(64),
   original_required: true,
   covered_from: "2030-01-01",
   covered_to: "2030-01-31",
@@ -179,4 +180,9 @@ it("currency override is only a reviewed journal proposal and context ABA retire
     expect(screen.queryByRole("button", { name: "Подтвердить сохранение разбора" })).toBeNull(),
   );
   expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
+
+it("mounts the provisional estimate for the selected saved intake", async () => {
+  setup();
+  expect(await screen.findByText("Предварительная доходность по source-intake")).toBeVisible();
 });
