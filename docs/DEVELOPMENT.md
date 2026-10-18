@@ -613,9 +613,7 @@ removed by #629; `test_r04_08_windows_launcher_path.py` remains because it
 covers the direct PowerShell runtime and spaced/Cyrillic paths, not the
 retired shell.
 
-The G04 browser gate is intentionally not path-filtered: it runs on every pull
-request and canonical `main` push because either frontend routing/editor
-changes or backend/API changes can break the same critical monthly workflow.
+Outside the accepted fail-closed documentation-only PR fast path, the G04 browser gate is not product-path-filtered: frontend routing/editor or backend/API changes can break the same monthly workflow. Canonical main push and release gates remain full. A successful docs-only fast path claims only its actual classification/privacy/diff checks, not omitted product suites.
 G04 remains its original deterministic journey. The #572 aggregate also retains
 the accepted Performance preparation/PRE-POST journey, native statement
 import/apply/readback (`playwright.statement.config.ts`) and native Monthly Close
@@ -624,7 +622,7 @@ serially on temporary synthetic databases in the same required browser job;
 the two acceptance configs serve the production frontend build. This is the
 bounded aggregate gate, not a general browser harness redesign.
 
-Use `docs/VERIFICATION_POLICY.md` for the proportional implementation and
+Use D4 for the proportional implementation and
 final-gate rules. When a task changes only docs or test organization, review
 the diff and run the policy-relevant checks; do not rerun unrelated full
 product suites merely because a release-ID file still exists.
@@ -978,7 +976,7 @@ Explicit previous-interface links remain in Shell's labelled legacy group, lazy 
 
 Integrator/Owner must first identify the exact candidate SHA, trusted control checkout, independent Preview checkout, Preview data directory/database, Stable checkout/data/database and representative-history source. These private local assignments remain Owner-controlled and absent from repository evidence. A missing required assignment is a concrete gate; do not invent paths or use a developer workspace.
 
-Stop the relevant Owner runtime through its supported operation. Create and verify a backup with the existing Owner backup/recovery procedure **before copying or changing any history**. Use a consistent verified physical database copy, with confirmed isolation from Stable and its SQLite sidecars. The copy must contain representative existing history: older and latest closed reports, a draft, meaningful account/class/cash/instrument contexts and relevant return boundaries. An empty/synthetic stand cannot demonstrate real-history UAT. Development agents never receive the source, DB, backup, statements, screenshots containing values or raw diagnostics.
+Stop the relevant Owner runtime through its supported operation. Create and verify a backup with the existing Owner backup/recovery procedure **before copying or changing any history**. Use a consistent verified physical database copy, with confirmed isolation from Stable and its SQLite sidecars. The copy must contain representative existing history: older and latest closed reports, a draft, meaningful account/class/cash/instrument contexts and relevant return boundaries. An empty/synthetic stand cannot demonstrate real-history UAT. The explicitly assigned Owner-local operator/reviewer may read relevant source/DB/statement/screenshot evidence under D1 authorization. Credentials remain excluded, private payloads stay outside tracked code/CI, and reads do not authorize writes, runtime changes or publication. A normal development assignment supplies no private-data authority by itself.
 
 Use the accepted OPS03 command from a trusted control checkout. Variables below are the explicit Owner assignment, not suggested paths:
 
@@ -1021,7 +1019,7 @@ Use loopback UI in the approved Preview. Select exact targets locally; do not pu
 | 4. Final review and close | Final step, `Закрыть месяц`, confirmation `Закрыть` | Review actual refreshed state and blockers. Escape/cancel leaves a draft. Confirm only in Preview; `Месяц зафиксирован` follows persisted CLOSED and fresh workflow. Mutation/Edit actions disappear. |
 | 5. Return/reopen | `Создать следующий месяц`, `Вернуться к закрытию исходного месяца`, `Открыть месяц заново`, `Открыть заново` | Return keeps the original month/step. Reopen requires explicit confirmation; cancel keeps CLOSED, confirmed reopen becomes the same draft after reread. Check desktop, keyboard focus and Back/refresh. |
 | 6. Monetary result and allocation | `Капитал` -> `Денежный результат`; `Распределение и концентрация` | Older/latest closed result has separate cash-income and unrealized-snapshot meaning; cash-only rows keep nulls, zero/loss stay truthful. Account and class cuts need not total alike. Allocation preserves local month, canonical denominator/support and future-event exclusions. |
-| 7. Performance Phase A | `Капитал` -> `Доходность`, exact period and account/portfolio selection; `Проверить данные` | Snapshot dates/scope/currency remain exact. Unavailable reasons are visible. XIRR-only is valid when TWRR evidence is missing. Save only actual supported evidence already possessed by Owner; never manufacture PRE/POST amounts, infer membership from current flags or mark empty histories complete. TWRR becomes available only when canonical evidence supports it. Back/refresh retains period/scope. Classes remain deferred. |
+| 7. Performance Phase A | `Капитал` -> `Доходность`, exact period and account/portfolio selection; `Проверить данные` | Snapshot dates/scope/currency remain exact. Unavailable reasons are visible. XIRR-only is valid when TWRR evidence is missing. Save only actual supported evidence already possessed by Owner; never manufacture PRE/POST amounts, infer membership from current flags or mark empty histories complete. TWRR becomes available only when canonical evidence supports it. Back/refresh retains period/scope. The delivered bounded no-crossing class capability follows C7; unsupported evidence stays unavailable, and current real UAT scope belongs in S2. |
 | 8. Income / local tools | `Доход и планы`, Goals, Tax/IIS planner/account catalogs; Scenario `Рассчитать сценарий` and local export | Actual income, forecast and principal remain distinct. Local month/as-of/account/year context survives actions. Goals main/active behavior and IIS confirmation/readback remain correct; Scenario export represents the chosen calculation. Global historical/draft Dashboard planning is intentionally de-scoped by D2. |
 | 9. Recovery on the isolated copy, if applicable | `Экспорт и копии`; create a local backup and confirm its exact restore target | Test only against the assigned Preview copy. Cancel/failed/ambiguous restore does not claim success or silently retry. Confirmed success retains pre-restore backup evidence and reloads current reads; a removed month must show missing, not silently select another. Afterward verify the same assigned database/identity. |
 | 10. Reconcile and report | Latest/older report, monetary result, Performance, settings/diagnostics; explicit previous-interface escape if needed | Report only labelled PASS/FAIL/NOT TESTED and sanitized UI observations. Separate intentional v1 fallback from missing ordinary action. Keep private values/files/backup IDs locally. No production transition, release or v1 retirement is implied. |
@@ -1196,7 +1194,7 @@ Use the existing issue/PR and review/acceptance notes, not another process ledge
   branch/workspace identity, changed files/stat, actual checks and limitations, final Git read-back.
   Link existing CI/check evidence rather than copying logs or acceptance criteria into every handoff.
 - **Reviewer:** link that candidate and inspected diff/check evidence; report findings or the bounded verdict,
-  with unresolved source-access/check limits. A failed setup remains UNVERIFIED. Independent review follows MODEL_ROUTING.
+  with unresolved source-access/check limits. A failed setup remains UNVERIFIED. Independent review follows D1.
 - **Integrator:** link the Worker/review receipts and any required Owner UAT; state acceptance or remaining gates.
   Integration, when authorized, adds the actual merge SHA and exact-main CI. Delivery/review alone is not acceptance or merge authority.
 
@@ -1249,6 +1247,12 @@ Normal completion does not require model/provider identity, usage telemetry or a
 #### Single
 
 <a id="d6"></a>
+
+
+Honor an explicitly selected execution client; direct GitHub access does not justify replacing it. ChatGPT Integrator reads actual refs/diffs/checks and reports GitHub-native evidence rather than local commands it did not run; authorized repository mechanics are performed directly, with release control only for an explicitly authorized prepared release. Codex defaults to the receiving Worker session unless assigned another role; no coordinator is compulsory. Give an independent Reviewer pinned base/candidate, relevant literal issue/source excerpts, previous findings and existing check evidence. A network-disabled Reviewer needs literal sources, not inaccessible URLs; cheap packet checks are sufficient. A child inheriting writable rights does not prove enforced read-only isolation.
+
+Hermes is a first-class Worker: receiving session owns one final candidate, optional helpers remain bounded and gain no acceptance/merge authority, and no ordinary delegate/fallback ledger is required. Hermes does not require Codex-local skills. OpenCode uses its configured isolated root and inspects sibling delivery via GitHub/remote refs or an assigned independent review path. Gemini/Grok add no project-wide orchestration/provider scheme. Machine-specific launch settings and concrete model choices stay local. Do not modify global/client skills, model defaults or installed config without explicit request.
+
 ## 6. Optional orchestration and client mechanics
 
 Default execution is one accountable Worker and only required independent review. A request for autonomous/careful work does not activate an unattended queue. Optional delivery-loop mode requires explicit opt-in and a concrete coordination reason; it does not grant canonical integration authority.

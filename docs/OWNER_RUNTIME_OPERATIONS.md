@@ -1364,7 +1364,7 @@ Create/Bind is for new checkouts only. No enrollment, adoption, backdating, stat
 reset or override exists for legacy or ambiguous folders. Claims are local authority:
 never commit or publish them. Existing unregistered workspaces remain PRESERVE.
 Without an accepted configured helper, follow the existing fresh uniquely named
-checkout fallback from OWNER_DATA_WORKFLOW; that fallback does not enroll it.
+checkout fallback in D2; that fallback does not enroll it.
 
 
 <a id="o5-workspace_retirement-8-deployment-and-scheduler"></a>

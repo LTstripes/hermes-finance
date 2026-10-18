@@ -28,6 +28,8 @@ July source-only UAT is separately accepted by [#885 July acceptance](https://gi
 
 Instrument known payouts/EOD/trades and stock fixed-holding WHAT-IF are delivered bounded readers (#858/#860/#862/#865), not full changing-quantity stock/bond economic returns. [#867 UAT](https://github.com/LTstripes/hermes-finance/issues/867) remains PARTIAL. Source journal alone cannot satisfy the current accepted-receipt reader for #839. Exact XIRR/TWRR, Close and AI numerical exports still need their own supported evidence.
 
+Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) with independent C1–C5 evidence prerequisites. Delivered capability is separate from current numerical readiness and Owner UAT scope; the attributed #836 receipt above is limited, not a claim every class/history is finance-ready.
+
 <a id="s3"></a>
 ## 3. Current priorities, blockers and Owner actions
 

@@ -1667,10 +1667,12 @@ DRAFT Apply → independent GET → existing global Close. The receipt joins exi
 immutable S1, stage-only identities, canonical S2 trades and native finance rows;
 it does not introduce another trade, cash or payout ledger.
 
-The supported slice requires an existing exact-compatible RUB stock/bond catalogue,
+The strict financial slice requires exact-compatible RUB stock/bond identity,
 one explicitly bound active broker/IIS account and the exact existing DRAFT month
-with its final-day snapshot. New currency remains `instrument_currency_unproven`
-under #777. Unsupported instruments cannot be skipped to make the account complete.
+with its final-day snapshot. Identity may reuse the compatible catalogue or use
+the separately reviewed bounded official bond FACEUNIT creation proof in C4.
+Without accepted denomination evidence new identity retains `instrument_currency_unproven`;
+Owner-default RUB does not clear it. Unsupported instruments cannot be skipped to make the account complete.
 Position quantity and native total, beginning and ending values, separate RUB cash
 and the full Money inventory remain distinct. Source cash is not incremented again
 by settlement or payouts. Missing tax, cost and bond NKD stay null.
@@ -1748,8 +1750,10 @@ Manual or conflicting facts require explicit reconciliation rather than overwrit
 GET reads the accepted immutable S1 source and current authority/projection under
 one snapshot. Readiness and reserved server Close share the same source checks:
 all positions and cash must still match, mappings/source authority must remain
-valid, intersecting evidence must have no material unresolved conflicts. Hard
-guards apply only to accounts explicitly covered by source-owned receipts.
+valid, intersecting evidence must have no material unresolved conflicts. Receipt-derived hard
+guards apply to accounts explicitly covered by source-owned receipts. Independent
+bound-intake guards also apply before any financial receipt, under the C3 journal contract;
+unrelated account/manual behavior remains outside those scoped obligations.
 Supplied optional evidence remains attached to its receipt. Source/control and
 authority failures are recomputed rather than frozen: successful compatible
 canonical enrichment clears its temporary projection blocker. Preview and GET
@@ -3941,6 +3945,70 @@ Source-aware CashBoundaryCoverage is an independent compatible gate. Its project
 and revisions do not confer or retire portfolio authority; H2-B1 cash_coverage
 remains UNKNOWN. Source-free COMPLETE coverage remains a blocking dependency.
 
+
+<a id="c6-h2-base"></a>
+### H2-A1: accepted account-boundary Owner cash events
+
+H2-A1 separates immutable source occurrence, stable economic `flow_id`, revision/effectiveness and request receipt. It stores one attested historical account-boundary cash event, not a ReportingMonth, ExternalFlow, CashBalance, position or payout. Accepted event does not establish complete history: coverage remains unknown until separately accepted H2-A2. Native operation text/sign alone never classifies Owner cash.
+
+An admissible seed is one accepted frozen S1 v2 Money occurrence: `import_id > 0`, `section=money`, `ordinal >= 0`, kind unsupported and no settlement/commission linkage, on one explicitly mapped brokerage account. Filename and row-account aliases must both bind that exact account; freeze mapping IDs/targets/lifecycle. The immutable source supplies its cash-group posted date within confirmed range, exact RUB, finite nonzero signed Decimal and exactly integral kopecks within signed int64. No client replacement, rounding, float, FX, date inferred from upload/last_update/report end or pending settlement. Positive source credit means contribution, negative debit withdrawal; store positive magnitude while preserving source sign and reject contradictory direction.
+
+`OwnerCashClaims` has ten affirmative claims, all default false:
+
+| Exact claim | Required meaning |
+|---|---|
+| `original_row_identifiable` | Owner can identify the exact original row privately. |
+| `posted_cash_date_confirmed` | Source cash-group date is the actual posted cash date. |
+| `signed_cash_convention_confirmed` | Source sign/direction convention is independently confirmed. |
+| `owner_capital_crossing` | This is Owner capital crossing the selected account boundary. |
+| `not_income_tax_promotion_or_internal_cash` | It is not coupon/dividend/redemption income, tax, promotion/bonus or other internal cash. |
+| `not_settlement_or_commission` | It is not an execution settlement or commission leg. |
+| `cash_not_in_kind` | It is cash, not a noncash movement. |
+| `not_tracked_account_transfer` | No known/suspected tracked-account transfer is being disguised as capital. |
+| `counterparty_outside_account_boundary` | The counterparty is outside this account boundary. |
+| `complete_occurrence_set_is_one_event` | The entire disclosed corroborating occurrence set is one economic event. |
+
+Claims bind the exact facts, occurrences, mappings, dated scope and review context. The envelope uses `provenance_kind=owner_attested_source_row`, a bounded non-narrative reference, `source_set_fingerprint`, `review_context_digest` and direction `contribution|withdrawal`. Missing claims permit inspection, not acceptance. Claims never override linked/incomplete/ambiguous trades, pending-only evidence, opaque Transfers/UFSR or source integrity/conflict blockers. An unidentifiable row stays unsupported.
+
+The server discovers the complete relevant source union, full ranges and conflict/legacy/coverage context; caller-selected supportive rows cannot narrow it. Account/date/signed amount/currency is a comparison signature, never a unique economic key. Hash, timestamp, ordinal and upload order are not cross-report IDs. One occurrence permanently belongs to one economic owner, including after revoke. Same occurrence retry adds no money. Across reports exact core equality is necessary but insufficient: bounded corroboration permits at most one matching candidate per report plus explicit entire-set same-event attestation. Indistinguishable repeated rows within one report, distinct equal movements, competing ownership and ambiguous equivalence block; never choose first, collapse or sum them. New relevant reports require fresh source-set review; disputed/disappearing evidence is reconciliation, not cancellation or a compensating opposite flow.
+
+Operations are `accept`, same-core `corroborate`, `reaffirm`, and `revoke`; dependency loss appends retirement. Changed date/amount/direction/account core replacement is outside the bounded correction contract even under a fresh ID. Revoke names exact target/revision and bounded `attestation_withdrawn|evidence_disputed`, requires neither positive claims nor a valid source selection, and remains possible when support is broken. Immutable occurrence ownership remains. New support, mapping/membership loss or source dispute removes effective authority transactionally; coherent GET independently fails closed without repair. ABA, old replay and reclose cannot revive it: explicit reviewed same-core reaffirmation is required.
+
+Account truth comes first. Authoritative `account_scope` never becomes portfolio externality merely because the event is external to one brokerage account. `portfolio_scope` stays unknown unless frozen reviewed evidence binds the dated complete tracked-investment universe/membership and proves the counterparty lies outside it, without transfer ambiguity. Current include flags or amount/date matching cannot supply this. Resolved transfers between historically included accounts remain portfolio-internal; unresolved identity, difference/fee/transit and in-kind/currency cases retain their own gates. H2-B1 separately owns whole-portfolio proof.
+
+An independent source event needs no ReportingMonth and is not prohibited merely by calendar overlap with a CLOSED month. It does not change CLOSED financial facts, membership or coverage. Actual protected dependency corrections require the applicable explicit Reopen; fail-closed dependency retirement may remove authority without rewriting CLOSED facts. No automatic reopen/reclose or legacy monthly materialization.
+
+The implemented routes are `POST /api/historical-owner-flows/preview`, `POST /api/historical-owner-flows/apply`, and `GET /api/historical-owner-flows/{flow_id}`. Preview is read-only and returns complete source/legacy/dependency evidence, observations, blockers, fingerprints and confirmation digest. Existing-target operations name `flow_id + expected_revision`. Apply uses the same reviewed intent/digest and unique request ID, reserves SQLite before authoritative reread of all dependencies/ownership/revisions/CLOSED state, and commits revision/ownership/receipt atomically; failure rolls them all back. No client economic replacements/month fields are accepted. Same key/different intent conflicts. Exact replay preserves the original committed revision plus current readback, including later retirement/revoke; fresh identical effective intent creates no extra event/amount/revision. Apply returns post-commit readback; independent GET must confirm before success.
+
+Frozen `h2-a1-owner-rub-v1` remains the default original evidence contract. Explicit `h2-a1-owner-rub-v2` supplies the reviewed directed dependency compatibility needed by A2; v3 adds the later section-aware support described below. Preserve literal old evidence/signatures/receipts and use reviewed same-core cross-version reaffirmation, never grandfathering or silently rehashing. Source-aware coverage alone cannot retire/revive its own compatible underlying event. Legacy COMPLETE/flow/transfer conflicts remain independently binding.
+
+### H2-A2: source-aware account cash-boundary coverage
+
+H2-A2 reuses one existing `CashBoundaryCoverage` ID and unique `(account_id, covered_from, covered_to)` plus append-only source-bound revisions/receipts. It stores no amount and owns no source occurrence. For EOD `a < b`, consume exactly `a < event_date <= b`, persisting inclusive day coverage `[a+1 day,b]`; a one-day interval is valid. Opening-day cash is already in opening EOD, closing-day cash is included. Membership context also covers both EOD boundaries `[a,b]`.
+
+`SourceCashClaims` has four affirmative claims, all default false: `all_report_channels_disclosed`, `full_interval_no_omitted_crossing`, `every_owner_crossing_enumerated`, `source_and_legacy_conflicts_resolved`. They bind a bounded reference and `review_context_digest`: every relevant alias/report channel is disclosed; the exact day interval has no known omitted crossing; every crossing is enumerated by effective accepted events; and source/legacy conflicts are resolved within the supported slice. An empty effective event set additionally requires explicit `zero_owner_cash_crossings=true` against an empty unresolved-candidate set. Quiet reports, no blocking rows, endpoint agreement and an interval checkbox alone never prove zero or completeness; claims cannot waive machine gaps/blockers.
+
+The server-discovered deterministic versioned envelope binds all of the following, including relevant absence sets:
+
+- Every accepted relevant report, including quiet/overlapping sources, original/current mapped aliases, provider/parser/hash/normalized fingerprints and mapping lifecycle. Disclose full confirmed ranges, clipped contributions, exact disjoint range union and each gap; a min/max hull cannot fill missing days. Wider support needed for an in-window flow remains bound in full. Remap/withdrawal cannot hide formerly relevant support.
+- Every account/window flow, including ineffective/revoked/retired history: flow ID, current revision/acceptance/effectiveness/material signature, immutable core and every permanently owned import/Money/ordinal/fingerprint. Count effective economic flow once; corroboration adds provenance only. A revoked unresolved crossing still prevents COMPLETE.
+- Every relevant Money occurrence, not merely Owner rows. Each must have effective reviewed H2-A1 ownership or the supported exact unambiguous non-Owner linkage/disposition for that frozen version. Preserve multiplicity, trade identity/lifecycle and all incomplete/pending/missing-link blockers. V1's clean slice does not classify unsupported payout/tax/promo by text/sign. Later v3/v4 exceptions below are narrow versioned additions.
+- Opaque/unparsed/unknown/Transfers/UFSR inventories and justified account/date exposure, transfer legs/links/reconciliation/transit, in-kind and currency facts. Opaque evidence lacking finer scope potentially affects its full report range. No blanket Owner dismissal, guessed net-zero, FX or rounding; endpoint blockers remain independent unless inventory/scope is uninterpretable.
+- Exact account identity/type and effective-dated membership rows/IDs/ranges/flags across both endpoints and day interval. First positive source-aware slice requires continuous unambiguous inclusion. Gaps/overlaps/exclusion stay nonauthoritative for that positive claim; today's flags cannot repair history. Relevant counterparty/alias evidence exposes transfers without imposing unrelated whole-portfolio membership as an account gate.
+- All relevant legacy ExternalFlow/deposit/withdrawal/direct-payout representations, linked transfer legs outside the window, legacy/competing COMPLETE and overlapping UNKNOWN assertions. Equality is only a clue. The bounded clean slice refuses unresolved legacy crossing/COMPLETE competition; do not ignore overlapping UNKNOWN coverage, synthesize a bridge or duplicate an exact existing key.
+
+Source-aware `owner_attested_source_cash_history` is distinct from legacy/source-free `owner_attestation`. A provenance label/notes/digest alone cannot forge COMPLETE or authorize an assessor that reads only another ledger. Accepted source cash coverage is separate from in-kind/valuation/inception/portfolio authority and numerical returns.
+
+Dependency direction is source facts/semantic ownership → effective A1 flow revision → A2 coverage revision. A2 must not use its own COMPLETE projection to establish A1 effectiveness, accept/reaffirm/revive A1 during coverage Apply, or blanket-exempt all legacy coverage from A1 invalidation. Old incompatible A1 envelopes remain frozen; explicit reviewed same-core compatible reaffirmation precedes coverage. A2 v1 is `h2-a2-source-cash-rub-v1`; its v2–v4 frozen section/coupon/paid-NKD amendments follow below.
+
+Identity is immutable. Operations are accept, reviewed same-identity reaffirm, revoke and automatic dependency retirement. An account/date-window change requires withdrawing the old assertion and separately accepting the new exact key with both affected intervals checked; no changed-key PATCH, split or audit deletion. New relevant sources, changed flow/owner/support/mapping/membership/legacy/transfer/in-kind/currency/competing coverage retire the affected assertion to UNKNOWN in the same transaction; unrelated scopes do not. ABA, replay, reclose or independent Money/A1 reaffirmation cannot restore A2; separate fresh reviewed A2 reaffirmation is required.
+
+Positive edits and explicit revoke intersecting CLOSED reporting periods require explicit Reopen. Dependency-loss retirement may project UNKNOWN even in CLOSED, without rewriting its facts; GET rechecks currentness without repair writes. Revocation needs exact target/revision/reason and current conflict binding, not valid positive support. No ReportingMonth creation or automatic reopen/reclose.
+
+Implemented routes: `POST /api/cash-boundary-coverages/preview`, `POST /api/cash-boundary-coverages/apply`, `GET /api/cash-boundary-coverages/{coverage_id}`. Intent names account and exact `opening_date < closing_date`; existing target requires `coverage_id + expected_revision` together, reaffirm requires that target, revoke only target/revision/bounded reason. Preview returns full union/gaps/occurrence dispositions/membership/legacy/blockers and review/confirmation digests. Apply uses the exact reviewed intent/digests/request ID, reserves the writer before full authoritative reread and atomically commits projection/revision/receipt. Stale/conflicting/failed work rolls back all three. Legacy create/PATCH cannot forge source provenance or promote bound evidence. Same-key different intent/digest conflicts; exact receipt replay reports original committed revision plus current effectiveness/UNKNOWN, and fresh identical effective intent adds no revision. Independently GET after Apply; a failed GET is GET-only recovery.
+
+Provenance: accepted [H2-A1 #725](https://github.com/LTstripes/hermes-finance/issues/725#issuecomment-6032376369), mandatory [account-first amendment](https://github.com/LTstripes/hermes-finance/issues/725#issuecomment-6033577843), accepted [H2-A2 #728](https://github.com/LTstripes/hermes-finance/issues/728#issuecomment-6039160610) and [acceptance](https://github.com/LTstripes/hermes-finance/issues/728#issuecomment-6041619786). Their historical pre-implementation statuses are not current restrictions; the literal accepted evidence versions and their boundaries remain authoritative.
+
 <a id="c6-broker_statement_return-23"></a>
 ### Frozen H2-A1/A2 evidence versions and retirement
 
@@ -4686,33 +4754,20 @@ provenance, selector invalidation, keyboard submission, 1440px desktop and
 1280px at 125% zoom. Its accounts, documents and screenshots are synthetic;
 it performs no Owner/Stable operations and does not replace Owner UAT.
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62"></a>
 ### PERF-H1 A–F and all sixteen normative vectors
 
-|---|---|---|
-| PERF-01 — dated external investment cash flows / valuation boundaries | #145/#179/#190/#197/#213/#214 | DONE for existing R08 scope |
-| PERF-02 — XIRR / money-weighted return | #146 | DONE for whole portfolio |
-| PERF-03 — exact TWRR | #147/#215 | DONE for whole portfolio |
-| PERF-04 — attribution | no accepted implementation | NOT STARTED |
-
-
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-accepted-perf-h1-hardening-contract"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-accepted-perf-h1-hardening-contract"></a>
 #### Accepted PERF-H1 hardening contract
 
-Independent review of PERF-H1 v2 returned `ACCEPT`. A subsequent independent
-Astra audit found two additional completeness gaps in canonical R08. Direct
-baseline inspection confirmed both gaps: interval membership coverage currently
-permits known `false -> true` / `true -> false` changes, while external-flow
-coverage currently becomes `COMPLETE` from the absence of known blockers rather
-than from affirmative boundary-history coverage. PERF-H1 is therefore finalized
-as v3 with six additive sections A-F below.
+PERF-H1 A–F define the accepted implemented completeness guards below. Known membership transitions cannot substitute for constant-scope evidence, and the absence of known bad cash rows cannot establish affirmative cash-boundary coverage.
 
 The contract does not redesign R08. Its policy remains:
 
 **false unavailable > false exact**.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-a--asynchronous-owned-account-transfer-transit"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-a--asynchronous-owned-account-transfer-transit"></a>
 #### H1-A — asynchronous owned-account transfer transit
 
 A linked A -> B transfer between two historically proven in-scope accounts
@@ -4775,7 +4830,7 @@ own event dates fall inside the requested interval: a transit interval may span
 a required valuation even when both leg dates lie outside that request window.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-b--in-kind-securities-crossing-a-performance-boundary"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-b--in-kind-securities-crossing-a-performance-boundary"></a>
 #### H1-B — in-kind securities crossing a performance boundary
 
 Hermes must never synthesize cash for a security or other non-cash asset merely
@@ -4828,7 +4883,7 @@ portfolio performance across that known movement remains unavailable rather
 than assuming continuity. Full non-cash flow support is deferred.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-c--taxfee-treatment-and-performance-basis"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-c--taxfee-treatment-and-performance-basis"></a>
 #### H1-C — tax/fee treatment and performance basis
 
 R08 performance is explicitly frozen as after-tax / after-internal-cost
@@ -4860,7 +4915,7 @@ withdrawal remains an internal cost. It creates no `ExternalFlow` and does not
 make external-flow coverage incomplete merely because no withdrawal exists.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-d--direct-realised-coupondividend-payout-outside-brokerage-cash"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-d--direct-realised-coupondividend-payout-outside-brokerage-cash"></a>
 #### H1-D — direct realised coupon/dividend payout outside brokerage cash
 
 If a realised coupon/dividend is paid directly from issuer/broker/source to the
@@ -4902,14 +4957,11 @@ by exact TWRR. Internal tax/commission is not added a second time on top of a
 valuation that already reflects that cost.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-e--stable-whole-portfolio-scope-membership"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-e--stable-whole-portfolio-scope-membership"></a>
 #### H1-E — stable whole-portfolio scope membership
 
 Gap-free effective-dated membership history is necessary but not sufficient for
-exact whole-portfolio return. Current R08 can know that an account changed from
-out-of-scope to in-scope (or the reverse) while opening and closing valuations
-select different portfolio compositions. Without an accepted scope-transition
-value, that composition change can be misreported as investment return.
+exact whole-portfolio return. A known account transition from out-of-scope to in-scope (or the reverse) can select different endpoint portfolio compositions. Without an accepted scope-transition value it must not be reported as investment return.
 
 Until a future accepted scope-transition valuation contract exists, exact
 whole-portfolio XIRR/TWRR is available only when every historically relevant
@@ -4941,7 +4993,7 @@ This restriction applies to whole-portfolio performance. Existing explicit
 account-scope fail-closed membership rules remain authoritative.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-h1-f--explicit-cash-boundary-history-coverage"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-f--explicit-cash-boundary-history-coverage"></a>
 #### H1-F — explicit cash-boundary history coverage
 
 The absence of known bad `ExternalFlow` or legacy deposit/withdrawal rows is not
@@ -4985,7 +5037,7 @@ explicit reopen semantics; closing a month alone never attests cash-boundary
 completeness.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-new-stable-reason-codes-from-h1"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-new-stable-reason-codes-from-h1"></a>
 #### New stable reason codes from H1
 
 - `not_computable_transfer_in_transit_unvalued`
@@ -4999,7 +5051,7 @@ Cash-boundary coverage intentionally reuses
 authoritative where applicable.
 
 
-<a id="c6-performance_v1_reconciliation_2026-09-06-56-normative-regression-vectors"></a>
+<a id="c6-performance_v1_reconciliation_2026-09-06-62-normative-regression-vectors"></a>
 #### Normative regression vectors
 
 1. Async transfer 10 -> 15 Feb, requested closing valuation 12 Feb: portfolio
@@ -5040,45 +5092,6 @@ authoritative where applicable.
     than inferring +100% return.
 16. The same interval with explicit COMPLETE cash-boundary coverage and zero
     actual owner crossings may proceed if every other prerequisite is complete.
-
-<a id="c6-performance_h1_astra_blockers_2026-09-06-1"></a>
-### Affirmative scope and cash coverage
-
-This reviewer-only note records the two Astra blockers that materially changed
-PERF-H1 after Spark had accepted H1 v2.
-
-Canonical baseline inspected by the integrator:
-`49b290df5d407fafff05a8aac6e3c081fdd8ea45`.
-
-
-<a id="c6-performance_h1_astra_blockers_2026-09-06-1-confirmed-blocker-1--changing-portfolio-membership"></a>
-#### Confirmed blocker 1 — changing portfolio membership
-
-Current interval coverage checks gap-free effective-dated history, but does not
-require the membership value to stay constant. Opening and closing valuations
-select included accounts independently by date. A known `false -> true` or
-`true -> false` transition can therefore change the valuation composition
-without an external/scope-transition value and be mistaken for return.
-
-Accepted decision: until a separate scope-transition valuation contract exists,
-whole-portfolio exact performance requires one constant membership state for
-each historically relevant account throughout the requested closed interval.
-
-
-<a id="c6-performance_h1_astra_blockers_2026-09-06-1-confirmed-blocker-2--unaffirmed-cash-boundary-completeness"></a>
-#### Confirmed blocker 2 — unaffirmed cash-boundary completeness
-
-Current external-flow coverage returns `COMPLETE` when no blocking explicit or
-legacy rows are found. There is no independent proof that all owner cash
-contributions/withdrawals were actually captured.
-
-Accepted decision: exact performance requires affirmative cash-boundary history
-coverage per relevant account/interval, established by explicit owner
-attestation or a future accepted authoritative import/source contract. Closing a
-month and absence of rows never constitute that attestation.
-
-The normative contract is H1-E/H1-F in
-`docs/PERFORMANCE_V1_RECONCILIATION_2026-09-06.md`.
 
 <a id="c7"></a>
 ## 7. Returns, hypothetical results and monetary attribution
@@ -5890,7 +5903,7 @@ Do not add individual instrument XIRR/TWRR in this milestone. It needs at least 
 <a id="c7-class_returns_api-1"></a>
 ### Exact no-crossing class return DTO and construction
 
-**Status: accepted and integrated** via #700; read-only UI consumer #540/#701 is also integrated. This is post-v1.2.0 development. Canonical milestone and pending Owner UAT: [session closeout](DEVELOPMENT.md#d5).
+The bounded class API and read-only UI are integrated capabilities. Current acceptance/UAT scope is recorded only in [CURRENT_STATUS](CURRENT_STATUS.md#s2).
 
 `GET /api/performance/class-returns?asset_class=stock&start_date=2030-01-31&end_date=2031-01-31`
 
@@ -5979,8 +5992,7 @@ support. `deposit` remains a truthful unsupported row. This UI reads the API;
 it does not create class attestations or repair legacy C1 evidence.
 
 Statement-backed crossings, FX, deposits/savings and instrument-level returns
-remain outside this slice. #702 researches the next proposed statement-backed
-contract without changing this API. Owner UAT and any new release/local update
+remain outside this slice. Any statement-backed continuation requires its own accepted contract without changing this API implicitly. Owner UAT and any new release/local update
 remain separate from technical integration.
 
 <a id="c7-performance_readiness_api-1"></a>
@@ -6076,12 +6088,12 @@ The contract is read together with:
 - [the R08 XIRR contract](#c7-r08-02-portfolio-xirr-8);
 - [the R08 TWRR contract](#c7-r08-03-twrr-contract-recon-32);
 - [the observed-boundary contract](#c6-r08-03a-valuation-boundaries-8); and
-- [the reconciled Performance v1 roadmap](#c6-performance_v1_reconciliation_2026-09-06-56).
+- [the reconciled Performance v1 roadmap](#c6-performance_v1_reconciliation_2026-09-06-62).
 
 The three discovery documents retain their historical `858d64c...` baseline
 labels. Issue #346 states that they were accepted and integrated at the
 `d572974...` synthesis baseline; their discovery status remains non-normative.
-This document is the normative PERF-04A synthesis candidate.
+These are the accepted PERF-04A monetary-bridge rules.
 
 The governing safety rule is:
 
@@ -6521,8 +6533,7 @@ GET /api/performance/attribution
     [&account_id=<id>]
 ```
 
-This endpoint is a future implementation seam, not part of the current task's
-production change.
+This is the delivered read-only monetary-bridge endpoint; deliberately excluded attribution families remain unsupported.
 
 
 <a id="c7-perf04_attribution_contract-9-61-response-shape"></a>
@@ -6590,7 +6601,7 @@ An available response satisfies:
 ```
 
 The example is synthetic and illustrates the shape only. It is not owner data
-or a fixture. The future DTO must use strict fields (`extra="forbid"` in the
+or a fixture. The DTO uses strict fields (`extra="forbid"` in the
 existing backend convention) and exact money strings; a frontend must render
 backend values and must not group, sum, allocate, interpolate or infer them.
 
@@ -8020,7 +8031,7 @@ The forecast is determined by the pair `(goal_type, calculation_mode)`, not by a
 
 | Goal type | Calculation mode | Current metric | v1 achievement-date behavior |
 |---|---|---|---|
-| `passive_income` | `monthly_net_passive_income` | canonical `forecast_passive_income(...).monthly_total` | supported current-state check; future date is `null` when below target |
+| `passive_income` | `monthly_net_passive_income` | canonical actual C03 `passive_income_average` | supported current-state check; future date is `null` when below target |
 | `capital` | `liquid_capital_net` | canonical `liquid_capital_for_month(...).liquid_capital_net` | supported current-state check; future date is `null` when below target |
 | `expense_coverage` | any | — | unsupported in v1 |
 | `mortgage_coverage` | any | — | unsupported in v1 |
@@ -8157,7 +8168,7 @@ For supported active goals:
 - `reason_code=null` when achieved;
 - `reason_code="no_trajectory_model"` when below target.
 
-`source_forecast_version` is populated only for the passive-income mode; capital has `null` because it does not consume the expected-cash-flow forecast.
+`source_forecast_version` is `null` for the supported actual C03/capital summaries. The request forecast-version parameter remains a compatibility input; it does not select actual Goal progress or supply a future trajectory.
 
 
 <a id="c8-0005-goal-achievement-forecast-22-11-api-contract"></a>
@@ -8513,7 +8524,7 @@ already-built normalized result into a pure evaluator or add an additive
 preview-response integration, without introducing persistence or background
 provider work.
 
-The AI Analysis Bundle is now schema `1.1.0` with strict allowlists and version
+The optional deterministic-insights section is preserved in current AI Analysis Bundle schema `1.4.0` with strict allowlists and version
 invariants. This task's additive data-quality fields do not add deterministic
 insights to the bundle; the insight DTO remains a separate endpoint and future
 integration still requires its own reviewed contract decision.
@@ -10391,9 +10402,9 @@ informational vs warning only. This endpoint never promotes a warning to a close
 <a id="c9-t-invest-market-data-1"></a>
 ### T-Invest authority, quote units and payout support
 
-Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS stays in the repository as a reference adapter and is not called in production.
+Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS is not a production quote fallback. The separate explicit bounded official identity/denomination lookup in C4 is supported and is not quote authority.
 
-Alfa PRO current snapshot and the accepted Alfa depository income-payment PDF import are 0.6 product paths; they are documented in `docs/releases/0.6.0.md` and `docs/release-notes-0.6.0.md`. This file remains the T-Invest quote/payout guide.
+Alfa PRO current snapshot and the accepted Alfa depository income-payment PDF import are 0.6 product paths; their complete current authority is specified in C3/C4/C9. This file remains the T-Invest quote/payout guide.
 
 
 <a id="c9-t-invest-market-data-1-what-this-does"></a>
@@ -12549,7 +12560,7 @@ Verification must prove read-only generation, stable ordering, no technical
 secret fields, and unchanged behavior of the three existing export families.
 
 <a id="c10-portfolio_review_package-1"></a>
-### Portfolio review profiles and coverage
+### Portfolio review identity and scope
 
 **Status:** first bounded slice for [issue #237](https://github.com/LTstripes/hermes-finance/issues/237).
 
@@ -12585,33 +12596,10 @@ the existing bundle's money, availability, provenance, payout-counting, and
 closed-month semantics. A later assembler maps existing DTOs/read models into this
 contract without recalculating them.
 
+<a id="c10-portfolio_review_package-58"></a>
+### Portfolio review profiles and coverage
 
-<a id="c10-portfolio_review_package-1-gap-audit-against-the-current-ai-analysis-bundle"></a>
-#### Gap audit against the current AI Analysis Bundle
-
-| Review need | Current `ai_analysis_bundle` v1.1.0 | R08 package decision |
-| --- | --- | --- |
-| Owner-selected concise/full output | One required, full-shaped export; no profile or requested scope | Require `profile` and a scope with requested sections |
-| Direct capital answer | Liquid capital is available inside each history point, but a consumer must locate the selected period | Add a selected-period `capital` section; keep total net worth unavailable until an accepted aggregate exists |
-| Positions usable without opening Hermes | Rich current positions exist, with local refs and valuation metrics | Reuse the same refs, account/instrument allowlist, exact metrics, and valuation provenance in `positions` |
-| Dynamics | `reporting_history` is authoritative and already preserves gaps/draft status | Expose it as an explicit `dynamics` section; do not invent period deltas or investment returns |
-| Allocation/concentration | Accepted read models exist in the separate Risk & Allocation surface, but are absent from the bundle | Add a full-profile `allocation` section with export-local refs and sanitized support states |
-| Passive income | Actual history, rolling average, and forecast semantics are strong and already separated | Reuse the existing actual/forecast DTO meanings and payout double-counting rules |
-| Future payments | Merged calendar and principal/tax semantics are already explicit | Reuse the existing calendar item shape and totals; provider-announced tax-unknown amounts remain approximate, not net |
-| Freshness | Point provenance and warning codes exist, but the family status/evaluation clock is only in the Freshness & Provenance endpoint | Add a `freshness` family summary using the accepted six family statuses; never emit a universal score |
-| Unavailable evidence | Metric-level unavailable values are supported; absent whole sections have no contract state | Every section has `included`, `partial`, `unavailable`, or `omitted` state; unavailable metrics remain `null` with `precision=unknown` |
-| Omitted evidence | No profile-driven omission ledger | `omitted` sections carry `data=null`, a reason code, and a stable field-state path |
-| Deterministic insights | A separate endpoint exists and its `evidence` object is intentionally open | Reserve a typed, sanitized optional section; no arbitrary evidence map, raw diagnostics, IDs, or provider payloads |
-| Privacy boundary | Existing export has strict allowlists and excludes technical/private fields | Keep export-local refs only; prohibit IDs, paths, tokens, raw payloads, credentials, and free-form diagnostics |
-
-The current bundle is therefore a good financial source, but not yet a stable
-review handoff: a reviewer would otherwise have to know which history point is
-current, call a second endpoint for freshness/allocation, infer which empty or
-missing values are unavailable, and guess what a concise profile intentionally
-left out.
-
-
-<a id="c10-portfolio_review_package-1-profile-semantics"></a>
+<a id="c10-portfolio_review_package-58-profile-semantics"></a>
 #### Profile semantics
 
 Both profiles have the same top-level shape. Section state is never inferred from
@@ -12635,7 +12623,7 @@ request the field. These states are different and must not be collapsed into an
 empty array or zero.
 
 
-<a id="c10-portfolio_review_package-1-state-and-privacy-rules"></a>
+<a id="c10-portfolio_review_package-58-state-and-privacy-rules"></a>
 #### State and privacy rules
 
 - A section envelope always contains `status`, sorted unique `reason_codes`, and
@@ -12662,7 +12650,7 @@ empty array or zero.
   diagnostics.
 
 
-<a id="c10-portfolio_review_package-1-authoritative-source-map"></a>
+<a id="c10-portfolio_review_package-58-authoritative-source-map"></a>
 #### Authoritative source map
 
 | Package section | Existing source/read model | Boundary |
@@ -12690,7 +12678,7 @@ cash-boundary coverage stay separate. See
 [`financial-completeness-contract.md`](#c2-financial-completeness-contract-8).
 
 
-<a id="c10-portfolio_review_package-1-versioning-and-follow-ups"></a>
+<a id="c10-portfolio_review_package-58-versioning-and-follow-ups"></a>
 #### Versioning and follow-ups
 
 `schema_version` follows SemVer. A minor version may add optional sections or
