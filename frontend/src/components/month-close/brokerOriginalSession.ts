@@ -7,6 +7,8 @@ import {
   readBrokerMonth,
   type BrokerMonthPreview,
   type BrokerMonthReadback,
+  type InstrumentDecision,
+  type PublicIdentityResult,
 } from "../../api/brokerMonths";
 
 // JSON object key order is not evidence. Preserve array order, exact strings,
@@ -32,6 +34,9 @@ type Pending = {
   replayAllowed: boolean;
 };
 type Snapshot = {
+  lookupConsent: boolean;
+  publicResults: PublicIdentityResult[];
+  decisions: InstrumentDecision[];
   epoch: number;
   monthId: number | null;
   accountId: string;
@@ -68,6 +73,9 @@ export function useBrokerOriginalContext(monthId: number | null, closed: boolean
 
 export class BrokerOriginalSession {
   private state: Snapshot = {
+    lookupConsent: false,
+    publicResults: [],
+    decisions: [],
     epoch: 0,
     monthId: null,
     accountId: "",
@@ -136,6 +144,9 @@ export class BrokerOriginalSession {
   clear() {
     this.update({
       epoch: this.state.epoch + 1,
+      lookupConsent: false,
+      publicResults: [],
+      decisions: [],
       file: null,
       accountId: "",
       pending: null,
@@ -154,6 +165,21 @@ export class BrokerOriginalSession {
     this.clear();
     this.update({ file, monthId, accountId });
   }
+  consent(enabled: boolean) {
+    this.update({ lookupConsent: enabled });
+  }
+  refreshPublic() {
+    this.invalidate();
+    this.update({ publicResults: [] });
+  }
+  publicMetadata(results: PublicIdentityResult[]) {
+    const merged = new Map(this.state.publicResults.map((r) => [r.isin, r]));
+    for (const result of results) merged.set(result.isin, result);
+    this.update({ publicResults: [...merged.values()] });
+  }
+  decide(decisions: InstrumentDecision[]) {
+    this.update({ decisions });
+  }
   identify(accountId: string) {
     this.update({ accountId });
   }
@@ -161,6 +187,7 @@ export class BrokerOriginalSession {
     if (!this.state.file && !this.state.pending && !this.state.confirmed) return;
     this.update({
       epoch: this.state.epoch + 1,
+      decisions: [],
       pending: null,
       confirmed: null,
       busy: false,
@@ -295,7 +322,13 @@ export class BrokerOriginalSession {
         const plan = pending.preview;
         const committed = await applyBrokerMonth(
           file,
-          { reporting_month_id: plan.reporting_month_id, account_id: plan.account_id },
+          {
+            reporting_month_id: plan.reporting_month_id,
+            account_id: plan.account_id,
+            ...(plan.instrument_decisions?.length
+              ? { instrument_decisions: plan.instrument_decisions }
+              : {}),
+          },
           plan.confirmation_digest,
           pending.id,
           plan.account_bindings,

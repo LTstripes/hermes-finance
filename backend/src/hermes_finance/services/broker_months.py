@@ -247,7 +247,16 @@ def _intersecting_sources(session, document, account_id):
             yield source
 
 
-def _prepare(session, *, document, filename, reporting_month_id, account_id, optional_hashes):
+def _prepare(
+    session,
+    *,
+    document,
+    filename,
+    reporting_month_id,
+    account_id,
+    optional_hashes,
+    instrument_decisions=None,
+):
     parsed = mybroker_import.parse_import_original(session, document, filename)
     evidence = parse_identity(document, filename, incomplete_draft=True)
     # Effective aliases are authority already; only unbound aliases are proposed.
@@ -258,7 +267,9 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         for p in existing["accounts"]
         if p["mapping_id"] is None
     ]
-    identity = mybroker_identity._prepare(session, evidence, account_bindings)
+    identity = mybroker_identity._prepare(
+        session, evidence, account_bindings, instrument_decisions, source_intake=True
+    )
     account_aliases = []
     for proposal in identity["accounts"]:
         alias = proposal["identity"]
@@ -459,6 +470,7 @@ def _prepare(session, *, document, filename, reporting_month_id, account_id, opt
         "account_id": account_id,
         "document": parsed,
         "identity": identity,
+        **({"instrument_decisions": instrument_decisions} if instrument_decisions else {}),
         "account_bindings": account_bindings,
         "account_aliases": account_aliases,
         "positions": position_plan,
@@ -859,6 +871,8 @@ def apply_broker_month(
     # Preserve existing all-mapped receipt retries, which had no new decisions.
     if reviewed:
         fingerprint_material.append(reviewed)
+    if kwargs.get("instrument_decisions"):
+        fingerprint_material.append(kwargs["instrument_decisions"])
     fingerprint = digest(fingerprint_material)
     session.rollback()
     try:
@@ -882,14 +896,25 @@ def apply_broker_month(
                 raise MyBrokerError("broker_month_reconciliation_required")
             if reviewed != sorted(plan["account_bindings"], key=lambda b: b["identity"]):
                 raise MyBrokerError("broker_month_account_bindings_unconfirmed")
-            mybroker_identity.stage_identity(
+            staged_identity = mybroker_identity.stage_identity(
                 session,
                 document=kwargs["document"],
                 filename=kwargs["filename"],
                 account_bindings=plan["account_bindings"],
                 confirmation_digest=plan["identity"]["confirmation_digest"],
                 incomplete_draft=True,
+                instrument_decisions=kwargs.get("instrument_decisions"),
             )
+            # New public-proof proposals receive IDs only inside this transaction.
+            staged_ids = {
+                b["identity"]: b["hermes_id"]
+                for b in staged_identity["mappings"]
+                if b["kind"] == "instrument"
+            }
+            for proposal in plan["identity"]["instruments"]:
+                proposal["hermes_id"] = staged_ids[proposal["isin"]]
+            for position in plan["positions"]:
+                position["instrument_id"] = staged_ids[position["isin"]]
             source = mybroker_import.stage_mybroker(
                 session,
                 mybroker_import.parse_import_original(
@@ -973,6 +998,17 @@ def apply_broker_month(
                     str(i["hermes_id"]): [i["isin"], i["instrument_type"], i["currency"]]
                     for i in plan["identity"]["instruments"]
                 },
+                **(
+                    {
+                        "identity_proofs": [
+                            i["official_proof"]
+                            for i in plan["identity"]["instruments"]
+                            if "official_proof" in i
+                        ]
+                    }
+                    if kwargs.get("instrument_decisions")
+                    else {}
+                ),
                 "optional_hashes": kwargs["optional_hashes"],
                 "cash_control_difference_kopecks": plan["cash_control_difference_kopecks"],
                 "quantity_controls": plan["quantity_controls"],

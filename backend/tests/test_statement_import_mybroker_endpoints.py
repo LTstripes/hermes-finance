@@ -4707,3 +4707,323 @@ def test_broker_month_draft_retained_attributes_block_preview_apply_without_writ
         assert "identity_batch_conflict" in reviewed["conflicts"]
         assert _broker_month_apply(client, intent, reviewed, raw).status_code == 409
         assert inventory() == before
+
+
+# Source-first inbox: every identifier and row below is fabricated.
+def _source_inbox_xml(database):
+    from copy import deepcopy
+
+    from hermes_finance.services.instruments import create_instrument
+
+    root = ET.fromstring(broker_month_xml(bond=True, unsupported=True))
+    base = root.find(".//{MyBroker}Details[@ISIN1]")
+    collection = root.find(".//{MyBroker}Details_Collection")
+    with database.session_factory() as session:
+        for index in range(2, 13):
+            isin = f"RU000A{index:06d}"
+            row = deepcopy(base)
+            row.set("ISIN1", isin)
+            row.set("active_name", f"Synthetic ready {index}")
+            collection.append(row)
+            create_instrument(
+                session,
+                name=f"Synthetic ready {index}",
+                isin=isin,
+                instrument_type="stock",
+                currency="RUB",
+            )
+        create_instrument(
+            session, name="Synthetic bond", instrument_type="bond", isin=None, currency="RUB"
+        )
+    return ET.tostring(root, encoding="utf-8")
+
+
+def _public_inbox_fixture(
+    monkeypatch,
+    *,
+    currency="RUB",
+    group="stock_bonds",
+    multiple=False,
+    missing=False,
+    is_traded=1,
+    security_type="corporate_bond",
+    spec_isin="RU000A000001",
+):
+    import httpx2
+
+    from hermes_finance.services import public_security_registry as registry
+
+    seen = []
+
+    def request(req):
+        seen.append(str(req.url))
+        assert req.url.host == "iss.moex.com"
+        assert not req.content
+        assert set(req.url.params) <= {"iss.meta", "q", "start", "limit"}
+        if req.url.path.endswith("/securities.json"):
+            columns = ["secid", "isin", "group", "type", "is_traded"]
+            data = (
+                []
+                if req.url.params["start"] != "0" or missing
+                else [["SYNTHBOND", "RU000A000001", group, security_type, is_traded]]
+            )
+            if multiple and data:
+                data.append(["SYNTHOTHER", "RU000A000001", group, security_type, is_traded])
+            return httpx2.Response(200, json={"securities": {"columns": columns, "data": data}})
+        fields = {
+            "SECID": req.url.path.split("/")[-1].replace(".json", ""),
+            "ISIN": spec_isin,
+            "NAME": "Synthetic official bond",
+            "GROUP": group,
+            "TYPE": security_type,
+            "CURRENCYID": "RUB",
+        }
+        if currency is not None:
+            fields["FACEUNIT"] = currency
+        return httpx2.Response(
+            200, json={"description": {"columns": ["name", "value"], "data": list(fields.items())}}
+        )
+
+    transport = httpx2.MockTransport(request)
+    real_lookup = registry.lookup_public
+
+    def lookup(isins, *, consent):
+        with httpx2.Client(transport=transport) as client:
+            return real_lookup(isins, consent=consent, client=client)
+
+    monkeypatch.setattr(registry, "lookup_public", lookup)
+    return seen
+
+
+def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch):
+    import hashlib
+
+    from hermes_finance.services import public_security_registry as registry
+
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    seen = _public_inbox_fixture(monkeypatch)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    pending = _broker_month_preview(client, intent, xml)
+    assert not seen  # offline Preview has no registry side effects
+    identities = pending["identity"]["instruments"]
+    assert sum(i["intake_status"] == "matched" for i in identities) == 12
+    assert sum(i["intake_status"] == "pending_review" for i in identities) == 1
+    unknown = next(i for i in identities if i["isin"] == "RU000A000001")
+    assert unknown["source_name"] == "Synthetic bond"
+    assert unknown["candidates"][0]["isin"] is None
+    assert unknown["candidates"][0]["reasons"] == ["exact_isin_required"]
+    assert not pending["identity"]["can_stage"] and not pending["can_apply"]
+    assert len(pending["document"]["positions"]) == 13
+    assert pending["document"]["document_sha256"] == hashlib.sha256(xml).hexdigest()
+    assert _broker_month_apply(client, intent, pending, xml).status_code == 409
+    assert _all_month_tables(database) == before
+    denied = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": False, "isins": ["RU000A000001"]},
+    )
+    assert denied.status_code == 422 and not seen
+    result = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001", "RU000A000001"]},
+    )
+    assert result.status_code == 200, result.text
+    public = result.json()[0]
+    assert len(seen) == 3  # all search pages + exact security specification
+    assert _all_month_tables(database) == before
+    # Owner intent cannot turn the legacy NULL-ISIN card into authority.
+    forged = {
+        **intent,
+        "instrument_decisions": [
+            {"isin": "RU000A000001", "hermes_id": unknown["candidates"][0]["hermes_id"]}
+        ],
+    }
+    rejected = _broker_month_preview(client, forged, xml)
+    assert not rejected["can_apply"]
+    assert _all_month_tables(database) == before
+    resolved_intent = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": public["proof_id"]}],
+    }
+    ready = _broker_month_preview(client, resolved_intent, xml)
+    assert ready["can_apply"], ready["conflicts"]
+    assert ready["identity"]["can_stage"]
+    assert ready["confirmation_digest"] != pending["confirmation_digest"]
+    assert ready["document"] == pending["document"]
+    assert _broker_month_apply(client, resolved_intent, pending, xml).status_code == 409
+    accepted = _broker_month_apply(client, resolved_intent, ready, xml)
+    assert accepted.status_code == 200, accepted.text
+    read = client.get("/api/broker-months/synthetic-batch")
+    assert read.status_code == 200
+    assert read.json()["accepted"] == accepted.json()["accepted"]
+    assert read.json()["accepted"]["document"] == pending["document"]
+    assert len(read.json()["accepted"]["position_ids"]) == 13
+    assert not read.json()["bookkeeping_ready"]  # no invented Money/Close evidence
+    # Committed replay does not need the transient public cache or another POST decision.
+    registry._cache.clear()
+    replay = _broker_month_apply(client, resolved_intent, ready, xml)
+    assert replay.status_code == 200 and replay.json()["duplicate"]
+    with database.session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
+        assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"currency": None},
+        {"currency": "SUR"},
+        {"multiple": True},
+        {"missing": True},
+        {"group": "stock_etf"},
+        {"is_traded": 0},
+        {"security_type": "unknown_fund"},
+        {"spec_isin": "RU000A000999"},
+        {"group": "stock_shares", "security_type": "common_share"},
+    ],
+)
+def test_source_inbox_unproven_public_candidates_never_enable_writer(database, monkeypatch, kwargs):
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    _public_inbox_fixture(monkeypatch, **kwargs)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    response = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001"]},
+    )
+    assert response.status_code == 200
+    proof = response.json()[0]["proof_id"]
+    selected = {**intent, "instrument_decisions": [{"isin": "RU000A000001", "proof_id": proof}]}
+    pending = _broker_month_preview(client, selected, xml)
+    assert not pending["can_apply"] and not pending["identity"]["can_stage"]
+    assert _broker_month_apply(client, selected, pending, xml).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("change", ["currency", "is_active", "name", "mapping"])
+def test_source_inbox_dependency_aba_retires_review(database, monkeypatch, change):
+    from hermes_finance.persistence import BrokerIdentityMapping, Instrument
+
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    _public_inbox_fixture(monkeypatch)
+    client = TestClient(create_app(database=database))
+    public = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001"]},
+    ).json()[0]
+    intent = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": public["proof_id"]}],
+    }
+    ready = _broker_month_preview(client, intent, xml)
+    assert ready["can_apply"]
+    with database.session_factory() as session:
+        row = (
+            session.scalar(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.subject_kind == "instrument"
+                )
+            )
+            if change == "mapping"
+            else session.scalar(select(Instrument).where(Instrument.isin == ISIN))
+        )
+        field = "observed_isin" if change == "mapping" else change
+        original = getattr(row, field)
+        alternate = {
+            "currency": "USD",
+            "is_active": False,
+            "name": "Synthetic renamed",
+            "mapping": "RU000A000999",
+        }[change]
+        setattr(row, field, alternate)
+        session.commit()
+        setattr(row, field, original)
+        session.commit()
+    before = _all_month_tables(database)
+    assert _broker_month_apply(client, intent, ready, xml).status_code == 409
+    assert _all_month_tables(database) == before
+    assert (
+        _broker_month_preview(client, intent, xml)["confirmation_digest"]
+        != ready["confirmation_digest"]
+    )
+
+
+def test_source_inbox_inactive_and_expired_proofs_remain_pending(database, monkeypatch):
+    from datetime import timedelta
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import public_security_registry as registry
+
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    _public_inbox_fixture(monkeypatch)
+    client = TestClient(create_app(database=database))
+    public = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001"]},
+    ).json()[0]
+    intent = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": public["proof_id"]}],
+    }
+    ready = _broker_month_preview(client, intent, xml)
+    assert ready["can_apply"]
+    with database.session_factory() as session:
+        target = session.scalar(select(Instrument).where(Instrument.isin == ISIN))
+        target.is_active = False
+        session.commit()
+    blocked = _broker_month_preview(client, intent, xml)
+    row = next(i for i in blocked["identity"]["instruments"] if i["isin"] == ISIN)
+    assert (
+        row["intake_status"] == "pending_review"
+        and "inactive_instrument_binding" in row["review_reasons"]
+    )
+    before = _all_month_tables(database)
+    assert _broker_month_apply(client, intent, blocked, xml).status_code == 409
+    assert _all_month_tables(database) == before
+    now = registry._now()
+    monkeypatch.setattr(registry, "_now", lambda: now + timedelta(hours=2))
+    expired = _broker_month_preview(client, intent, xml)
+    pending = next(i for i in expired["identity"]["instruments"] if i["isin"] == "RU000A000001")
+    assert pending["intake_status"] == "pending_review"
+    assert "instrument_official_proof_required" in pending["review_reasons"]
+    assert _broker_month_apply(client, intent, ready, xml).status_code == 409
+    assert _all_month_tables(database) == before
+
+
+def test_source_inbox_public_candidate_refresh_aba_retires_old_proof(database, monkeypatch):
+    from copy import deepcopy
+
+    from hermes_finance.services import public_security_registry as registry
+
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    _public_inbox_fixture(monkeypatch)
+    client = TestClient(create_app(database=database))
+    payload = {"consent": True, "isins": ["RU000A000001"]}
+    original = client.post("/api/broker-months/public-identity-lookup", json=payload).json()[0]
+    intent = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": original["proof_id"]}],
+    }
+    ready = _broker_month_preview(client, intent, xml)
+    assert ready["can_apply"]
+    alternate = deepcopy(original["candidates"])
+    alternate[0]["currency"] = "USD"
+    monkeypatch.setattr(registry, "_lookup", lambda *_: alternate)
+    client.post("/api/broker-months/public-identity-lookup", json=payload)
+    monkeypatch.setattr(registry, "_lookup", lambda *_: deepcopy(original["candidates"]))
+    restored = client.post("/api/broker-months/public-identity-lookup", json=payload).json()[0]
+    assert restored["proof_id"] != original["proof_id"]
+    before = _all_month_tables(database)
+    assert _broker_month_apply(client, intent, ready, xml).status_code == 409
+    assert _all_month_tables(database) == before
+    fresh_intent = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": restored["proof_id"]}],
+    }
+    fresh = _broker_month_preview(client, fresh_intent, xml)
+    assert fresh["can_apply"] and fresh["confirmation_digest"] != ready["confirmation_digest"]

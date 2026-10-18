@@ -8,6 +8,7 @@ import {
   previewBrokerMonth,
   type BrokerMonthPreview,
   type BrokerMonthReadback,
+  type InstrumentDecision,
 } from "../../api/brokerMonths";
 import type { MyBrokerDocument } from "../../api/mybrokerImport";
 import { getMonth } from "../../api/months";
@@ -17,6 +18,7 @@ import { queryKeys } from "../../queryClient";
 import { Button, Panel, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
 import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
+import { SourceIdentityInbox } from "./SourceIdentityInbox";
 import { BrokerMoneyReview } from "./BrokerMoneyReview";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
 
@@ -65,6 +67,37 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
         Сделки: {document.trades.length}. Денежные строки: {document.money.length}. Себестоимость,
         налоги и НКД облигаций остаются неизвестными; точная доходность не подтверждена.
       </p>
+      <details>
+        <summary>Все исходные сделки ({document.trades.length})</summary>
+        <Table aria-label="Все сделки источника">
+          <thead>
+            <tr>
+              <Th>Строка</Th>
+              <Th>ISIN</Th>
+              <Th>Дата</Th>
+              <Th>Количество</Th>
+              <Th>Сумма источника</Th>
+              <Th>Причины</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {document.trades.map((trade) => (
+              <tr key={`${trade.section}:${trade.ordinal}`}>
+                <Td>
+                  {trade.section} #{trade.ordinal + 1}
+                </Td>
+                <Td>{trade.core.isin}</Td>
+                <Td>{trade.core.trade_time}</Td>
+                <Td>{trade.core.quantity}</Td>
+                <Td>
+                  {trade.core.trade_amount} {trade.core.currency}
+                </Td>
+                <Td>{trade.blockers.join(", ")}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </details>
       <details>
         <summary>Все денежные строки и секции источника</summary>
         <Table>
@@ -238,7 +271,11 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
     [queryClient, invalidateReview],
   );
 
-  async function inspect(original = file, selected = accountId) {
+  async function inspect(
+    original = file,
+    selected = accountId,
+    decisions: InstrumentDecision[] = session.snapshot().decisions,
+  ) {
     if (!original || closed || session.snapshot().pending) return;
     invalidateReview();
     const version = generation.current;
@@ -298,6 +335,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         {
           reporting_month_id: monthId,
           account_id: Number(target),
+          ...(decisions.length ? { instrument_decisions: decisions } : {}),
         },
         abort.signal,
       );
@@ -424,7 +462,12 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
             {formatApiError(accounts.error ?? batches.error)}
           </p>
         ) : null}
-        {file ? <p>Оригинал в текущем сеансе: {file.name}</p> : null}
+        {file ? (
+          <p>
+            Оригинал в текущем сеансе: {file.name}. После перезагрузки приложения или страницы
+            pending-источник нужно выбрать заново.
+          </p>
+        ) : null}
         {error || original.error ? <p role="alert">{error ?? original.error}</p> : null}
         {original.pending && !closed ? (
           <div className={styles.stack}>
@@ -446,6 +489,15 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         {notice ? <p role="status">{notice}</p> : null}
         {preview && previewEpoch === original.epoch && !closed && !original.pending ? (
           <>
+            <SourceIdentityInbox
+              key={`${preview.confirmation_digest}:${original.epoch}`}
+              preview={preview}
+              disabled={busy}
+              onReview={(decisions) => {
+                session.decide(decisions);
+                void inspect(file, accountId, decisions);
+              }}
+            />
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
               <>

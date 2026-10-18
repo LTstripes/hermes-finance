@@ -52,7 +52,14 @@ def _revision(session: Session) -> str:
     return digest(state)
 
 
-def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> dict:
+def _prepare(
+    session: Session,
+    evidence: dict,
+    account_bindings: list[dict],
+    instrument_decisions=None,
+    *,
+    source_intake=False,
+) -> dict:
     conflicts = set(evidence["conflicts"])
     registry = list(
         session.scalars(
@@ -112,9 +119,18 @@ def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> 
             conflicts.add("duplicate_position_alias")
         position_aliases.add(key)
 
+    from hermes_finance.services.public_security_registry import denomination_proof
+
+    decisions = instrument_decisions or []
+    selected = {d["isin"]: d for d in decisions}
+    if len(selected) != len(decisions) or set(selected) - {
+        i["isin"] for i in evidence["instruments"]
+    }:
+        conflicts.add("instrument_decision_invalid")
     instruments = []
     evidence_gaps = []
     for observed in evidence["instruments"]:
+        row_conflicts = set()
         isin = observed["isin"]
         matches = list(
             session.scalars(
@@ -127,19 +143,19 @@ def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> 
         effective = [m for m in history if m.status == "effective"]
         target = matches[0] if len(matches) == 1 else None
         if len(matches) > 1 or len(effective) > 1:
-            conflicts.add("instrument_alias_conflict")
+            row_conflicts.add("instrument_alias_conflict")
         if effective and (
             target is None
             or effective[0].hermes_target_id != target.id
             or effective[0].observed_isin not in (None, isin)
         ):
-            conflicts.add("instrument_mapping_conflict")
+            row_conflicts.add("instrument_mapping_conflict")
         if target and (
             target.isin != isin
             or target.instrument_type != observed["instrument_type"]
             or (observed["currency"] is not None and target.currency != observed["currency"])
         ):
-            conflicts.add("instrument_metadata_conflict")
+            row_conflicts.add("instrument_metadata_conflict")
         if any(
             m.status == "revoked"
             and (
@@ -149,7 +165,7 @@ def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> 
             )
             for m in history
         ):
-            conflicts.add("revoked_instrument_binding_conflict")
+            row_conflicts.add("revoked_instrument_binding_conflict")
         if target and any(
             m.subject_kind == "instrument"
             and m.status == "effective"
@@ -157,7 +173,7 @@ def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> 
             and m.provider_identity != isin
             for m in registry
         ):
-            conflicts.add("instrument_reverse_alias_conflict")
+            row_conflicts.add("instrument_reverse_alias_conflict")
         if target and any(
             m.subject_kind == "instrument"
             and m.status == "revoked"
@@ -165,18 +181,80 @@ def _prepare(session: Session, evidence: dict, account_bindings: list[dict]) -> 
             and m.provider_identity != isin
             for m in registry
         ):
-            conflicts.add("revoked_instrument_binding_conflict")
+            row_conflicts.add("revoked_instrument_binding_conflict")
+        if source_intake and target and not target.is_active:
+            row_conflicts.add("inactive_instrument_binding")
+        if source_intake and target and target.currency != "RUB":
+            row_conflicts.add("instrument_currency_unsupported")
+        proof = None
+        decision = selected.get(isin)
+        if decision:
+            if decision.get("hermes_id") is not None:
+                if target is None or target.id != decision["hermes_id"] or not target.is_active:
+                    row_conflicts.add("instrument_owner_selection_incompatible")
+            elif target is None:
+                proof = denomination_proof(
+                    decision.get("proof_id"), isin, observed["instrument_type"]
+                )
+                if proof is None:
+                    row_conflicts.add("instrument_official_proof_required")
+            else:
+                row_conflicts.add("instrument_decision_invalid")
         gaps = list(observed["evidence_gaps"])
-        if target is None and observed["currency"] is None:
+        if target is None and observed["currency"] is None and proof is None:
             gaps.append("instrument_currency_unproven")
         if target and (not target.currency or not re.fullmatch(r"[A-Z]{3}", target.currency)):
             gaps.append("instrument_currency_unproven")
         evidence_gaps.extend({"isin": isin, "code": gap} for gap in gaps)
+        local_reasons = sorted(set(gaps) | row_conflicts)
+        # Name-only legacy cards are suggestions, never identity or currency authority.
+        candidates = [
+            {
+                "hermes_id": card.id,
+                "name": card.name,
+                "isin": card.isin,
+                "instrument_type": card.instrument_type,
+                "currency": card.currency,
+                "reasons": (["exact_isin_required"] if card.isin != isin else [])
+                + (
+                    ["instrument_type_conflict"]
+                    if card.instrument_type != observed["instrument_type"]
+                    else []
+                )
+                + (["inactive_candidate"] if not card.is_active else [])
+                + (
+                    ["instrument_currency_unsupported"]
+                    if source_intake and card.currency != "RUB"
+                    else []
+                ),
+            }
+            for card in session.scalars(
+                select(Instrument)
+                .where(
+                    (func.upper(func.trim(Instrument.isin)) == isin)
+                    | (Instrument.name == observed["source_name"])
+                )
+                .order_by(Instrument.id)
+            )
+        ]
+        conflicts.update(row_conflicts)
         instruments.append(
             {
                 **observed,
-                "currency": target.currency if target else observed["currency"],
-                "currency_basis": "existing_catalogue" if target else observed["currency_basis"],
+                "intake_status": "pending_review" if local_reasons else "matched",
+                "review_reasons": local_reasons,
+                "candidates": candidates,
+                "currency": target.currency
+                if target
+                else proof["currency"]
+                if proof
+                else observed["currency"],
+                "currency_basis": "existing_catalogue"
+                if target
+                else "official_FACEUNIT"
+                if proof
+                else observed["currency_basis"],
+                **({"official_proof": proof} if proof else {}),
                 "evidence_gaps": sorted(set(gaps)),
                 "hermes_id": target.id if target else None,
                 "action": "reuse" if target else "stage_create",
@@ -263,6 +341,7 @@ def stage_identity(
     account_bindings: list[dict],
     confirmation_digest: str,
     incomplete_draft: bool = False,
+    instrument_decisions: list[dict] | None = None,
 ) -> dict:
     """Stage one batch inside the caller's SQLite transaction, never commit it.
 
@@ -282,7 +361,9 @@ def stage_identity(
         update(MyBrokerImport).where(MyBrokerImport.id == -1).values(id=MyBrokerImport.id)
     )
     session.expire_all()
-    plan = _prepare(session, evidence, account_bindings)
+    plan = _prepare(
+        session, evidence, account_bindings, instrument_decisions, source_intake=incomplete_draft
+    )
     if confirmation_digest != plan["confirmation_digest"]:
         raise MyBrokerError("identity_preview_stale")
     if not plan["can_stage"]:

@@ -6,6 +6,7 @@ import { listAccounts } from "../../api/accounts";
 import {
   applyBrokerMonth,
   listBrokerMonths,
+  lookupPublicIdentities,
   previewBrokerMonth,
   readBrokerMonth,
   type BrokerMonthPreview,
@@ -23,6 +24,7 @@ vi.mock("../../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../../api/brokerMonths", () => ({
   applyBrokerMonth: vi.fn(),
   listBrokerMonths: vi.fn(),
+  lookupPublicIdentities: vi.fn(),
   previewBrokerMonth: vi.fn(),
   readBrokerMonth: vi.fn(),
 }));
@@ -1106,4 +1108,172 @@ it("explicit Preview after a confirmed source Save displays the fresh summary in
   await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
+});
+
+function inboxPreview(): BrokerMonthPreview {
+  const known = Array.from({ length: 12 }, (_, i) => ({
+    isin: `RU000A${String(i + 2).padStart(6, "0")}`,
+    source_name: `Synthetic ready ${i + 1}`,
+    intake_status: "matched" as const,
+    hermes_id: i + 1,
+    instrument_type: "stock",
+    currency: "RUB",
+    action: "reuse" as const,
+    mapping_id: i + 1,
+    mapping_action: "reuse" as const,
+    evidence_gaps: [],
+    review_reasons: [],
+  }));
+  return {
+    ...preview,
+    can_apply: false,
+    conflicts: ["identity_batch_conflict"],
+    identity: {
+      instruments: [
+        ...known,
+        {
+          isin: "RU000A000001",
+          source_name: "Synthetic pending bond",
+          intake_status: "pending_review",
+          hermes_id: null,
+          instrument_type: "bond",
+          currency: null,
+          action: "stage_create",
+          mapping_id: null,
+          mapping_action: "stage_create",
+          evidence_gaps: ["instrument_currency_unproven"],
+          review_reasons: ["instrument_currency_unproven"],
+          observations: [{ section: "positions", ordinal: 12, source_account: "synthetic" }],
+          candidates: [
+            {
+              hermes_id: 99,
+              name: "Synthetic pending bond",
+              isin: null,
+              currency: "RUB",
+              instrument_type: "bond",
+              reasons: ["exact_isin_required"],
+            },
+          ],
+        },
+      ],
+      evidence_gaps: [{ isin: "RU000A000001", code: "instrument_currency_unproven" }],
+    },
+  };
+}
+const publicBond = {
+  isin: "RU000A000001",
+  proof_id: "d".repeat(64),
+  retrieved_at: "2030-01-01T00:00:00Z",
+  expires_at: "2099-01-01T00:00:00Z",
+  reasons: [],
+  candidates: [
+    {
+      isin: "RU000A000001",
+      secid: "SYNTHBOND",
+      name: "Synthetic official bond",
+      instrument_type: "bond",
+      currency: "RUB",
+      url: "https://iss.moex.com/iss/securities/SYNTHBOND.json",
+      reasons: [],
+    },
+  ],
+};
+it("source inbox shows 12 matched and one pending; one consent, explicit decision, fresh Preview then existing DRAFT/GET", async () => {
+  const pending = inboxPreview();
+  vi.mocked(previewBrokerMonth).mockImplementation(async (_file, intent) =>
+    intent.instrument_decisions?.length
+      ? {
+          ...pending,
+          confirmation_digest: "e".repeat(64),
+          instrument_decisions: intent.instrument_decisions,
+          can_apply: true,
+          conflicts: [],
+          identity: {
+            evidence_gaps: [],
+            instruments: (pending.identity?.instruments ?? []).map((i) => ({
+              ...i,
+              intake_status: "matched",
+              evidence_gaps: [],
+              review_reasons: [],
+            })),
+          },
+        }
+      : pending,
+  );
+  vi.mocked(lookupPublicIdentities).mockResolvedValue([publicBond]);
+  vi.mocked(applyBrokerMonth).mockImplementation(async (_file, _intent, _digest, id) => ({
+    ...persisted(id),
+    confirmation_digest: "e".repeat(64),
+  }));
+  vi.mocked(readBrokerMonth).mockImplementation(async (id) => {
+    const value = { ...persisted(id), confirmation_digest: "e".repeat(64) };
+    vi.mocked(listBrokerMonths).mockResolvedValue([value]);
+    return value;
+  });
+  const user = show();
+  await inspect(user);
+  expect(screen.getByText(/MATCHED — 12; PENDING REVIEW — 1/)).toBeInTheDocument();
+  const save = screen.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+  });
+  expect(save).toBeDisabled();
+  expect(lookupPublicIdentities).not.toHaveBeenCalled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  expect(screen.getByRole("option", { name: /NULL-ISIN/ })).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ }));
+  await screen.findByRole("option", { name: /Создать: Synthetic official bond/ });
+  expect(lookupPublicIdentities).toHaveBeenCalledExactlyOnceWith(
+    ["RU000A000001"],
+    expect.any(AbortSignal),
+  );
+  await user.selectOptions(
+    screen.getByLabelText("Решение для RU000A000001"),
+    `official:${publicBond.proof_id}`,
+  );
+  await user.click(screen.getByRole("button", { name: /Подтвердить решения и заново/ }));
+  await waitFor(() =>
+    expect(previewBrokerMonth).toHaveBeenLastCalledWith(
+      expect.any(File),
+      {
+        reporting_month_id: 1,
+        account_id: 7,
+        instrument_decisions: [{ isin: publicBond.isin, proof_id: publicBond.proof_id }],
+      },
+      expect.any(AbortSignal),
+    ),
+  );
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  expect(lookupPublicIdentities).toHaveBeenCalledTimes(1);
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    }),
+  );
+  await waitFor(() => expect(applyBrokerMonth).toHaveBeenCalled());
+  expect(vi.mocked(applyBrokerMonth).mock.calls[0][1].instrument_decisions).toEqual([
+    { isin: publicBond.isin, proof_id: publicBond.proof_id },
+  ]);
+  await screen.findByText(/Сохранённый результат подтверждён независимым чтением/);
+  expect(readBrokerMonth).toHaveBeenCalledTimes(1);
+});
+
+it("source inbox refresh recovers failed public lookup and preserves original without a per-ISIN consent loop", async () => {
+  vi.mocked(previewBrokerMonth).mockResolvedValue(inboxPreview());
+  vi.mocked(lookupPublicIdentities)
+    .mockResolvedValueOnce([
+      { ...publicBond, candidates: [], reasons: ["official_lookup_unavailable"] },
+    ])
+    .mockResolvedValueOnce([publicBond]);
+  const user = show();
+  await inspect(user);
+  await user.click(screen.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ }));
+  await screen.findByText("official_lookup_unavailable");
+  await user.click(screen.getByRole("button", { name: "Обновить публичные варианты и Preview" }));
+  await screen.findByRole("option", { name: /Создать: Synthetic official bond/ });
+  expect(lookupPublicIdentities).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ })).toBeChecked();
+  expect(
+    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  ).toBeDisabled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
 });

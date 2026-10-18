@@ -138,3 +138,52 @@ sharing one global instrument, replay/overlap, aliases, revoked mappings, legacy
 Skip, original/range/catalogue/mapping/source staleness, savepoint failure and
 independent-session visibility/outer rollback. Real new-instrument Owner UAT and
 source-month financial acceptance remain later gates.
+
+## Source-first session inbox (#886)
+
+The existing original-first BrokerMonthReview retains one unedited File in the
+existing in-memory original session. All parsed Positions, Trades and Money stay
+inspectable, including when the whole identity batch blocks DRAFT. Identity
+proposals expose `intake_status=matched|pending_review`, raw source names/native
+kind/ISIN, observation scopes, local catalogue candidates and typed reasons.
+`matched` means a compatible proposal, never an accepted financial posting.
+Source-month intake additionally refuses inactive cards and unsupported native
+currency; the older standalone identity contract's inactive catalogue reuse is
+unchanged. Unsupported financial evidence remains separate from identity review.
+
+One unchecked session opt-in enables deduplicated batches of at most 32 public
+ISINs against MOEX ISS. The request DTO rejects all extra properties. The fixed
+HTTPS adapter sends only exact ISIN/validated public SECID plus pagination controls;
+no XML, filename, source hash, account, holdings, amount, path or credentials leave
+the app. Redirects and ambient proxy/auth settings are disabled. Search pages must
+be exhausted within bounds, with exact ISIN/SECID/type/currentness checks against
+security specifications. Settlement `CURRENCYID` is never denomination authority.
+The bounded new-card path accepts bonds only when official `FACEUNIT` proves a
+supported denomination; stock/fund/absent/conflicting/stale metadata stays UNKNOWN.
+Official metadata is not a quote, financial observation or broker holding proof.
+
+Public interpretations, official URLs, description/search records and retrieval
+time live in a bounded process-local cache for one hour. The latest lookup for an
+ISIN retires all older proof IDs, including public-candidate A→B→A. An explicit refresh clears
+session selections/public results and obtains a new full-original Preview before
+new decisions. Backend restart evicts proofs and safely makes outstanding proposals
+stale. Preview and Apply never fetch network metadata. Owner selection references
+only a server-held proof ID, or an exact compatible current catalogue ID; it cannot
+assert currency, assign legacy NULL-ISIN by name, or waive existing alias/revocation
+conflicts. The single exceptions queue supports explicit deferral with no Skip.
+
+After grouped decisions, the UI reparses the retained original with a fresh
+source/dependency digest. The existing writer rechecks the entire identity batch
+under its single writer reservation. New card/mapping IDs feed that same atomic
+source-DRAFT transaction; official provenance is retained in its receipt. No
+metadata-only commit or partial financial posting is added. Independent GET and
+acknowledged-commit GET-only recovery remain the existing session flow; committed
+same-key replay does not require the transient public cache. Unknown Money still
+blocks Close/returns under the existing contracts.
+
+Scope: one original per existing review session; the existing <=8-document batch
+preflight stays advisory and unchanged. Navigation retains the original under the
+supported session lifecycle. Reload/restart pending retention is **unsupported**;
+the UI explicitly asks to select the original again. No raw XML persistence,
+localStorage/IndexedDB, separate financial ledger, Owner data operation or runtime
+activation is introduced. Synthetic network fixtures are used for verification.
