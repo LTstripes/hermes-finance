@@ -27,10 +27,34 @@ from hermes_finance.statement_import.mybroker import MyBrokerError
 router = APIRouter(prefix="/api/broker-months", tags=["broker-months"])
 
 
+class InstrumentDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    isin: str = Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+    hermes_id: int | None = Field(default=None, gt=0, strict=True)
+    proof_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class PublicLookup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consent: bool = Field(strict=True)
+    isins: list[str] = Field(min_length=1, max_length=32)
+
+
+@router.post("/public-identity-lookup")
+def public_identity_lookup(request: PublicLookup):
+    from hermes_finance.services.public_security_registry import lookup_public
+
+    try:
+        return lookup_public(request.isins, consent=request.consent)
+    except MyBrokerError as error:
+        raise HTTPException(422, str(error)) from None
+
+
 class Intent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reporting_month_id: int = Field(gt=0, strict=True)
     account_id: int = Field(gt=0, strict=True)
+    instrument_decisions: list[InstrumentDecision] = Field(default_factory=list, max_length=1000)
 
 
 class AccountBindingDecision(BaseModel):

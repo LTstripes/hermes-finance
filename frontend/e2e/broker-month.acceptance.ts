@@ -1050,3 +1050,88 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   await page.getByText("Принять Money в этот черновик", { exact: true }).click();
   await expect(page.getByRole("list", { name: "Выбранные оригиналы Money" })).toBeEmpty();
 });
+
+test("source identity inbox keeps 12 ready and 1 pending until one opt-in, grouped decision and fresh atomic DRAFT/GET", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const months = await (await request.get("/api/months")).json();
+  const month = months.find(
+    (m: { year: number; month: number }) => m.year === 2031 && m.month === 1,
+  );
+  const xml = await (await request.get("/api/synthetic-broker-source/source-inbox")).body();
+  const before = await (await request.get("/api/synthetic-broker-inventory")).json();
+  let lookups = 0;
+  let posts = 0;
+  page.on("request", (req) => {
+    if (req.url().endsWith("/public-identity-lookup")) {
+      lookups++;
+      expect(req.postDataJSON()).toEqual({ consent: true, isins: ["RU000A008813"] });
+    }
+    if (req.url().endsWith("/api/broker-months/apply")) posts++;
+  });
+  await page.goto(`/v2/close?month=${month.id}&step=final_review_close`);
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles({
+    name: "Брокерский 8860000 (01.01.31-31.01.31).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  });
+  await expect(page.getByText(/MATCHED — 12; PENDING REVIEW — 1/)).toBeVisible();
+  const save = page.getByRole("button", {
+    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    exact: true,
+  });
+  await expect(save).toBeDisabled();
+  expect(lookups).toBe(0);
+  expect(await (await request.get("/api/synthetic-broker-inventory")).json()).toEqual(before);
+  await page.getByText("Все сопоставленные бумаги (12)").click();
+  await expect(page.getByText(/Synthetic inbox stock 11/).first()).toBeVisible();
+  const choice = page.getByLabel("Решение для RU000A008813");
+  await choice.focus();
+  await expect(choice).toBeFocused();
+  await expect(choice.locator("option").filter({ hasText: "NULL-ISIN" })).toHaveAttribute(
+    "disabled",
+    "",
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("source-inbox-pending-1440-125.png"),
+    fullPage: true,
+  });
+  await page.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ }).check();
+  await expect(choice.locator("option").filter({ hasText: "Создать:" })).toHaveCount(1);
+  const selected = await choice
+    .locator("option")
+    .filter({ hasText: "Создать:" })
+    .getAttribute("value");
+  if (!selected) throw new Error("Synthetic public option missing");
+  await choice.selectOption(selected);
+  const fresh = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/preview"));
+  await page.getByRole("button", { name: /Подтвердить решения и заново/ }).click();
+  const ready = await (await fresh).json();
+  expect(ready.can_apply).toBe(true);
+  expect(ready.document.positions).toHaveLength(13);
+  expect(ready.document.document_sha256).toBe(createHash("sha256").update(xml).digest("hex"));
+  expect(posts).toBe(0);
+  expect(lookups).toBe(1);
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(
+    page.getByText(/Сохранённый результат подтверждён независимым чтением/),
+  ).toBeVisible();
+  const after = await (await request.get("/api/synthetic-broker-inventory")).json();
+  expect(after.counts.position_snapshots - before.counts.position_snapshots).toBe(13);
+  expect(after.counts.cash_balances - before.counts.cash_balances).toBe(1);
+  expect(after.counts.investment_cash_flows).toBe(before.counts.investment_cash_flows);
+  expect(posts).toBe(1);
+  await page.screenshot({
+    path: info.outputPath("source-inbox-draft-get-1440-125.png"),
+    fullPage: true,
+  });
+});
