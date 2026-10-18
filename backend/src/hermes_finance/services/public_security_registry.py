@@ -42,10 +42,17 @@ def _get(client, path, **params):
 
 def _discover(client, isin):
     matches = {}
+    seen_secids = set()
     # Empty final page proves exhaustion. Truncation/any failed page is UNKNOWN.
     start = 0
     for _ in range(20):
         rows = _rows(_get(client, "/securities.json", q=isin, start=start, limit=100), "securities")
+        # Any cross-page overlap makes exhaustion untrustworthy, even for
+        # nonmatching rows or reordered/partly repeated pages.
+        page_secids = {row["secid"] for row in rows}
+        if seen_secids & page_secids:
+            raise ValueError("registry_search_nonprogressing")
+        seen_secids.update(page_secids)
         for row in rows:
             if row.get("isin") == isin:
                 secid = row.get("secid")

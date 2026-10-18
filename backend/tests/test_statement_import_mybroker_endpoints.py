@@ -4748,6 +4748,7 @@ def _public_inbox_fixture(
     is_traded=1,
     security_type="corporate_bond",
     spec_isin="RU000A000001",
+    search_pages=None,
 ):
     import httpx2
 
@@ -4769,6 +4770,14 @@ def _public_inbox_fixture(
             )
             if multiple and data:
                 data.append(["SYNTHOTHER", "RU000A000001", group, security_type, is_traded])
+            if search_pages is not None:
+                start = 0
+                data = []
+                for page in search_pages:
+                    if int(req.url.params["start"]) == start:
+                        data = page
+                        break
+                    start += len(page)
             return httpx2.Response(200, json={"securities": {"columns": columns, "data": data}})
         fields = {
             "SECID": req.url.path.split("/")[-1].replace(".json", ""),
@@ -4796,14 +4805,25 @@ def _public_inbox_fixture(
 
 
 @pytest.mark.parametrize("currency", ["RUB", "SUR"])
-def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch, currency):
+@pytest.mark.parametrize("paginated", [False, True])
+def test_source_inbox_full_original_atomic_review_and_get(
+    database, monkeypatch, currency, paginated
+):
     import hashlib
 
     from hermes_finance.services import public_security_registry as registry
 
     intent = _broker_month_setup(database)
     xml = _source_inbox_xml(database)
-    seen = _public_inbox_fixture(monkeypatch, currency=currency)
+    search_pages = (
+        [
+            [["SYNTHNEAR", "RU000A000999", "stock_bonds", "corporate_bond", 1]],
+            [["SYNTHBOND", "RU000A000001", "stock_bonds", "corporate_bond", 1]],
+        ]
+        if paginated
+        else None
+    )
+    seen = _public_inbox_fixture(monkeypatch, currency=currency, search_pages=search_pages)
     client = TestClient(create_app(database=database))
     before = _all_month_tables(database)
     pending = _broker_month_preview(client, intent, xml)
@@ -4836,7 +4856,7 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch,
     assert candidate["currency"] == "RUB" and candidate["currency_field"] == "FACEUNIT"
     assert candidate["description"]["FACEUNIT"] == currency
     assert candidate["reasons"] == []
-    assert len(seen) == 3  # all search pages + exact security specification
+    assert len(seen) == (4 if paginated else 3)  # all pages + exact specification
     assert _all_month_tables(database) == before
     # Owner intent cannot turn the legacy NULL-ISIN card into authority.
     forged = {
@@ -4880,6 +4900,49 @@ def test_source_inbox_full_original_atomic_review_and_get(database, monkeypatch,
         assert saved_proof["description"]["FACEUNIT"] == currency
         assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
+
+
+@pytest.mark.parametrize("pagination", ["repeated", "reordered", "nonmatching", "overlapping"])
+def test_source_inbox_nonprogressing_public_search_never_enables_writer(
+    database, monkeypatch, pagination
+):
+    exact = ["SYNTHBOND", "RU000A000001", "stock_bonds", "corporate_bond", 1]
+    near = ["SYNTHNEAR", "RU000A000999", "stock_bonds", "corporate_bond", 1]
+    other = ["SYNTHOTHER", "RU000A000998", "stock_bonds", "corporate_bond", 1]
+    pages = {
+        "repeated": [[exact], [exact]],
+        "reordered": [[exact, near], [near, exact]],
+        "nonmatching": [[exact], [near], [near]],
+        "overlapping": [[exact], [exact, other]],
+    }[pagination]
+    intent = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    seen = _public_inbox_fixture(monkeypatch, search_pages=pages)
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    response = client.post(
+        "/api/broker-months/public-identity-lookup",
+        json={"consent": True, "isins": ["RU000A000001"]},
+    )
+    assert response.status_code == 200
+    public = response.json()[0]
+    assert public["reasons"] == ["official_lookup_unavailable"]
+    assert public["candidates"] == []
+    assert len(seen) == len(pages)
+    assert all("/securities.json?" in url for url in seen)  # no specification proof lookup
+    selected = {
+        **intent,
+        "instrument_decisions": [{"isin": "RU000A000001", "proof_id": public["proof_id"]}],
+    }
+    pending = _broker_month_preview(client, selected, xml)
+    unknown = next(i for i in pending["identity"]["instruments"] if i["isin"] == "RU000A000001")
+    assert unknown["intake_status"] == "pending_review"
+    assert "instrument_official_proof_required" in unknown["review_reasons"]
+    assert not pending["can_apply"] and not pending["identity"]["can_stage"]
+    assert _all_month_tables(database) == before
+    assert _broker_month_apply(client, selected, pending, xml).status_code == 409
+    assert _all_month_tables(database) == before
+    assert len(seen) == len(pages)  # Preview and Apply remain offline
 
 
 @pytest.mark.parametrize(
