@@ -162,8 +162,7 @@ export function matchesSourceIntakeResult(
         assumptionKeys.every((key) => request.chosen[key]) &&
         data.observed.availability === "available" &&
         data.instrument.instrument_type === "stock" &&
-        data.known.net_distributions !== null &&
-        !data.intake.exceptions.includes("source_intake_identity_deferred")
+        data.known.net_distributions !== null
       );
     }
     return true;

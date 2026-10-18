@@ -36,6 +36,8 @@ export function sourceResultGap(code: string): string {
     return "Количество бумаги изменилось: V1−V0+P неприменим. Нужен отдельный датированный расчёт денежных потоков (MWR); в этой версии итог не рассчитывается.";
   if (code === "source_intake_not_bound")
     return "Сохранённый оригинал не привязан к счёту и месяцу: экономические читатели недоступны.";
+  if (code === "source_intake_pending")
+    return "Строгое финансовое принятие (DRAFT) ещё не подтверждено; число остаётся условным.";
   if (code === "source_intake_identity_deferred")
     return "Решение по идентичности этой бумаги отложено: число не рассчитывается до явного решения.";
   if (code === "source_intake_account_missing") return "Счёт из разбора не найден.";

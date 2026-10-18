@@ -257,7 +257,7 @@ it("rejects a response that does not match the requested evaluation", async () =
   expect(screen.queryByTestId("source-intake-result")).toBeNull();
 });
 
-it("rejects a numeric response while the identity decision is deferred", async () => {
+it("accepts a valid per-ISIN number while another ISIN of the original is deferred", async () => {
   const user = userEvent.setup();
   vi.mocked(readSourceIntakeResult).mockImplementation(async (request) => ({
     ...fixture(request),
@@ -270,10 +270,10 @@ it("rejects a numeric response while the identity decision is deferred", async (
   await chooseAll(user);
   await user.click(screen.getByRole("button", { name: "Рассчитать условный результат" }));
   await waitFor(() => expect(readSourceIntakeResult).toHaveBeenCalledOnce());
-  expect(
-    await screen.findByText("Ответ не соответствует выбранному сценарию. Повторите расчёт."),
-  ).toBeVisible();
-  expect(screen.queryByTestId("source-intake-result")).toBeNull();
+  // The journal view exception is not per-ISIN; the backend already blocks the
+  // requested ISIN itself with source_intake_identity_deferred in hard_blockers.
+  expect(await screen.findByText("+50,00 ₽ / +5% за период")).toBeVisible();
+  expect(screen.getByTestId("source-intake-result")).toBeVisible();
 });
 
 it("surfaces a failed read and uses a new nonce on retry", async () => {
