@@ -39,7 +39,7 @@ export function sourceResultGap(code: string): string {
   if (code === "source_intake_pending")
     return "Строгое финансовое принятие (DRAFT) ещё не подтверждено; число остаётся условным.";
   if (code === "source_intake_identity_deferred")
-    return "Решение по идентичности этой бумаги отложено: число не рассчитывается до явного решения.";
+    return "Решение по идентичности отложено для одной из бумаг оригинала; у затронутой бумаги число не рассчитывается.";
   if (code === "source_intake_account_missing") return "Счёт из разбора не найден.";
   if (code === "source_intake_instrument_absent") return "В оригинале нет позиции с таким ISIN.";
   if (code === "source_intake_instrument_ambiguous")
