@@ -418,12 +418,14 @@ def test_known_capital_subtotal_carries_account_coverage_through_all_read_models
         "status": "complete",
         "reason_codes": [],
         "missing_account_ids": [],
+        "source_account_financial_coverage": None,
     }
     partial = history[1]["portfolio_source_coverage"]
     assert partial == {
         "status": "partial",
         "reason_codes": ["active_account_snapshot_missing"],
         "missing_account_ids": [account_b],
+        "source_account_financial_coverage": None,
     }
 
     comparison = _comparison(client)

@@ -194,6 +194,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_statement_import_mybroker_dispositions.py": 29.11,
     "test_statement_import_mybroker_empty_money.py": 59.75,
     "test_statement_import_mybroker_endpoints.py": 289.65,
+    "test_statement_import_source_intake.py": 12.0,
     "test_statement_import_mybroker_identity.py": 11.02,
     "test_statement_import_mybroker_metadata.py": 58.90,
     "test_statement_import_mybroker_money_candidates.py": 18.64,

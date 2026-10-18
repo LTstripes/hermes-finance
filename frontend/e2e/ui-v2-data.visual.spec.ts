@@ -72,8 +72,9 @@ async function installDataApi(page: Page) {
       json = makeUiV2Workflow();
     } else if (
       request.method() === "GET" &&
-      url.pathname === "/api/broker-months" &&
-      url.search === "?reporting_month_id=12"
+      ((url.pathname === "/api/broker-months" && url.search === "?reporting_month_id=12") ||
+        (url.pathname === "/api/broker-months/intakes" &&
+          url.search === "?reporting_month_id=12&include_unbound=true"))
     ) {
       json = [];
     } else if (/^\/api\/instruments\/\d+\/market-mapping$/.test(url.pathname)) {

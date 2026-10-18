@@ -81,6 +81,11 @@ def session_for_request(request: Request) -> Generator[Session, None, None]:
     database = _database_for_request(request)
     with database.maintenance.operation():
         with database.session_factory() as session:
+            from hermes_finance.services.source_intake import PROCESS_EPOCH
+
+            session.info["source_intake_epoch"] = (
+                f"{PROCESS_EPOCH}:{database.maintenance.form_incarnation}:{database.maintenance.form_epoch}"
+            )
             yield session
 
 

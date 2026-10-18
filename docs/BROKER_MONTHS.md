@@ -1,5 +1,13 @@
 # Source-first MyBroker month (S2b supported slice)
 
+The [durable source-intake journal](SOURCE_INTAKE.md) (#889 first slice) saves
+recognized observations, opaque inventories, Owner RUB assumptions and grouped
+decisions without relaxing this financial writer. Bound pending intake participates
+in scoped readiness/Close/returns even before a financial receipt exists. A
+verified journal-only finance link can satisfy supported obligations after the
+existing strict Apply/GET; it neither posts money nor removes incomplete-source
+blockers. Reload requires exact-original reattachment for review mutations.
+
 Issue #773 adds original XML → zero-write whole-account Preview → reviewed atomic
 DRAFT Apply → independent GET → existing global Close. The receipt joins existing
 immutable S1, stage-only identities, canonical S2 trades and native finance rows;

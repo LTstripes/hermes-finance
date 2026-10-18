@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  lookupPublicIdentities,
   type BrokerMonthPreview,
   type InstrumentDecision,
+  lookupPublicIdentities,
 } from "../../api/brokerMonths";
 import { formatApiError } from "../../api/client";
+import type { SourceIntake } from "../../api/sourceIntake";
+import { brokerSourceTitle, currencyProvenanceTitle } from "../../lib/ownerCopy";
 import { Button, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
@@ -13,13 +15,26 @@ export function SourceIdentityInbox({
   preview,
   disabled,
   onReview,
+  assessments,
+  overrides,
+  onCurrency,
 }: {
-  preview: BrokerMonthPreview;
+  preview: Pick<BrokerMonthPreview, "identity" | "exceptions" | "instrument_decisions">;
   disabled: boolean;
   onReview: (decisions: InstrumentDecision[]) => void;
+  assessments?: SourceIntake["proposals"];
+  overrides?: Record<string, string>;
+  onCurrency?: (isin: string, currency: string) => void;
 }) {
   const { session, original } = useBrokerOriginalSession();
-  const [choices, setChoices] = useState<Record<string, string>>({});
+  const [choices, setChoices] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (preview.instrument_decisions ?? []).map((d) => [
+        d.isin,
+        d.hermes_id ? `card:${d.hermes_id}` : `official:${d.proof_id}`,
+      ]),
+    ),
+  );
   const [error, setError] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
   const request = useRef(0);
@@ -112,7 +127,7 @@ export function SourceIdentityInbox({
           Обновить публичные варианты и Preview
         </Button>
       ) : null}
-      <details>
+      <details className={styles.sourceName}>
         <summary>Все сопоставленные бумаги ({matched.length})</summary>
         <ul>
           {matched.map((i) => (
@@ -121,6 +136,10 @@ export function SourceIdentityInbox({
               {i.hermes_id == null
                 ? " — подтверждённое предложение создания"
                 : ` · #${i.hermes_id}`}
+              {assessments?.find((a) => a.isin === i.isin)?.currency_assessment.basis ===
+              "existing_catalogue"
+                ? " · Валюта из каталога; это не новое подтверждение источника"
+                : ""}
             </li>
           ))}
         </ul>
@@ -136,6 +155,7 @@ export function SourceIdentityInbox({
               <tr>
                 <Th>Бумага источника</Th>
                 <Th>Причины</Th>
+                {onCurrency && <Th>Валюта предложения</Th>}
                 <Th>Варианты с доказательствами</Th>
               </tr>
             </thead>
@@ -153,9 +173,36 @@ export function SourceIdentityInbox({
                       {item.observations?.map((r) => `${r.section} #${r.ordinal + 1}`).join(", ")}
                     </Td>
                     <Td>
-                      {item.review_reasons?.join(", ")}
+                      <span className={styles.sourceName}>
+                        {item.review_reasons?.map((c) => brokerSourceTitle(c) ?? c).join(", ")}
+                      </span>
                       {official?.reasons.length ? <p>{official.reasons.join(", ")}</p> : null}
                     </Td>
+                    {onCurrency && (
+                      <Td>
+                        <label className={styles.field}>
+                          Явная валюта для {item.isin}
+                          <input
+                            aria-label={`Валюта предложения ${item.isin}`}
+                            maxLength={3}
+                            pattern="[A-Z]{3}"
+                            disabled={disabled}
+                            value={overrides?.[item.isin] ?? ""}
+                            onChange={(e) => onCurrency(item.isin, e.target.value.toUpperCase())}
+                          />
+                        </label>
+                        <p>
+                          {assessments?.find((a) => a.isin === item.isin)?.currency_assessment
+                            .effective_currency ?? "UNKNOWN"}
+                          {" · "}
+                          {currencyProvenanceTitle(
+                            assessments?.find((a) => a.isin === item.isin)?.currency_assessment
+                              .basis ?? "unknown",
+                          )}
+                        </p>
+                        <p>Изменение сохраняется в разборе; финансовую проверку оно не отменяет.</p>
+                      </Td>
+                    )}
                     <Td>
                       <label className={styles.field}>
                         Решение для {item.isin}

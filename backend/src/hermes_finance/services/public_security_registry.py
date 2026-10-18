@@ -180,3 +180,27 @@ def denomination_proof(proof_id, isin, kind):
     if candidate["reasons"] or candidate["instrument_type"] != kind:
         return None
     return {**candidate, "retrieved_at": item["retrieved_at"], "proof_id": proof_id}
+
+
+def current_denomination_observation(isin, kind):
+    """Offline bounded provenance for the durable journal, including explicit FX.
+
+    This does not refresh the cache, authorize a card, or reinterpret settlement.
+    """
+    with _lock:
+        proof_id = _current.get(isin)
+        item = deepcopy(_cache.get(proof_id))
+    proof = denomination_proof(proof_id, isin, kind)
+    if proof is None or item is None:
+        return None
+    return {
+        "isin": isin,
+        "instrument_type": kind,
+        "currency": proof["currency"],
+        "currency_field": "FACEUNIT",
+        "raw_currency": proof["description"].get("FACEUNIT"),
+        "proof_id": proof_id,
+        "url": proof["url"],
+        "retrieved_at": item["retrieved_at"],
+        "expires_at": item["expires_at"],
+    }

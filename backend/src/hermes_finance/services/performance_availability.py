@@ -1421,6 +1421,9 @@ def performance_availability_for_interval(
     )
 
     xirr_reasons = set(currency_reasons)
+    from hermes_finance.services.source_intake import interval_blockers
+
+    xirr_reasons.update(interval_blockers(session, start_date, end_date, rows_by_account.keys()))
     xirr_reasons.update(
         _excluded_source_reason_codes(
             session,

@@ -194,7 +194,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0058_broker_money_ownership",
+        "revision": "0059_source_intake",
         "months_status": 200,
     }
 
@@ -224,7 +224,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0058_broker_money_ownership"}
+    assert observed == {"revision": "0059_source_intake"}
     assert starts == 2
 
 

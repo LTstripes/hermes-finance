@@ -1,26 +1,26 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { listAccounts } from "../../api/accounts";
-import { formatApiError } from "../../api/client";
 import {
-  listBrokerMonths,
-  previewBrokerMonth,
   type BrokerMonthPreview,
   type BrokerMonthReadback,
   type InstrumentDecision,
+  listBrokerMonths,
+  previewBrokerMonth,
 } from "../../api/brokerMonths";
-import type { MyBrokerDocument } from "../../api/mybrokerImport";
+import { formatApiError } from "../../api/client";
 import { getMonth } from "../../api/months";
+import type { MyBrokerDocument } from "../../api/mybrokerImport";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
 import { formatDate, formatMoney } from "../../lib/format";
 import { queryKeys } from "../../queryClient";
 import { Button, Panel, Table, Td, Th } from "../ui";
+import { BrokerMoneyReview } from "./BrokerMoneyReview";
 import styles from "./BrokerMonthReview.module.css";
 import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
-import { SourceIdentityInbox } from "./SourceIdentityInbox";
-import { BrokerMoneyReview } from "./BrokerMoneyReview";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
+import { SourceIntakeJournal } from "./SourceIntakeJournal";
 
 function SourceInventory({ document }: { document: MyBrokerDocument }) {
   return (
@@ -487,17 +487,23 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
           </div>
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
+        <SourceIntakeJournal
+          monthId={monthId}
+          closed={closed}
+          disabled={busy || Boolean(original.pending)}
+          preview={previewEpoch === original.epoch ? preview : null}
+          receipts={saved}
+          onChanged={() => {
+            invalidateReview();
+            session.invalidate();
+          }}
+          onReview={(decisions) => {
+            session.decide(decisions);
+            void inspect(file, accountId, decisions);
+          }}
+        />
         {preview && previewEpoch === original.epoch && !closed && !original.pending ? (
           <>
-            <SourceIdentityInbox
-              key={`${preview.confirmation_digest}:${original.epoch}`}
-              preview={preview}
-              disabled={busy}
-              onReview={(decisions) => {
-                session.decide(decisions);
-                void inspect(file, accountId, decisions);
-              }}
-            />
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
               <>

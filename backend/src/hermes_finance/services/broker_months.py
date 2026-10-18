@@ -81,6 +81,13 @@ def _dependencies(session):
     # Identity's revision binds source/correction/disposition/mapping journals.
     # All current financial consumers of this batch bind the same confirmation.
     state = {"identity_revision": mybroker_identity._revision(session)}
+    from hermes_finance.persistence import SourceIntakeRevision
+
+    intake_revision = session.scalar(
+        select(SourceIntakeRevision.seq).order_by(SourceIntakeRevision.seq.desc()).limit(1)
+    )
+    if intake_revision is not None:
+        state["source_intake_revision"] = intake_revision
     for model in (
         ReportingMonth,
         CashBalance,
@@ -759,12 +766,21 @@ def _account_readiness(session, month_id, account_id):
         )
         .execution_options(populate_existing=True)
     )
-    return sorted({code for receipt in receipts for code in _readiness(session, receipt)})
+    from hermes_finance.services.source_intake import scoped_status
+
+    return sorted(
+        {code for receipt in receipts for code in _readiness(session, receipt)}
+        | set(scoped_status(session, month_id, account_id)["reason_codes"])
+    )
 
 
 def broker_month_close_blockers(session, month_id):
     """One shared pure read for readiness and reserved authoritative Close."""
     result = []
+    from hermes_finance.services.source_intake import scoped_status
+
+    for code in scoped_status(session, month_id)["reason_codes"]:
+        result.append((code, "Сохранённый разбор MyBroker требует сверки с принятым DRAFT."))
     for receipt in session.scalars(
         select(BrokerMonthApply)
         .where(BrokerMonthApply.reporting_month_id == month_id)

@@ -63,6 +63,9 @@ def historical_xirr_evidence(
         return None
 
     currency, reasons = _performance_currency(session)
+    from hermes_finance.services.source_intake import interval_blockers
+
+    reasons.update(interval_blockers(session, start_date, end_date, membership.account_ids))
     reasons.update(
         _excluded_source_reason_codes(
             session,

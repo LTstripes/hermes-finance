@@ -29,6 +29,7 @@ from hermes_finance.services import (
     broker_sections,
     mybroker_import,
     source_cash_coverage,
+    source_intake,
 )
 from hermes_finance.services.historical_owner_flows import read_historical_owner_flow
 from hermes_finance.services.mybroker_dispositions import effective_bindings
@@ -351,6 +352,7 @@ def read_statement_return(
     closing = _endpoint(document, accepted["instruments"], account_id, t1, False, reasons)
     material = digest(
         [
+            source_intake.scoped_status(session, receipt.reporting_month_id, account_id),
             [str(getattr(source, c.name)) for c in source.__table__.columns],
             receipt.projection_json,
             receipt.confirmation_digest,

@@ -168,7 +168,31 @@ function fallbackCopy(item: CloseReadinessItem): ReadinessCopy {
 }
 
 export function brokerSourceTitle(code: string): string | null {
+  const intake: Record<string, string> = {
+    instrument_currency_unproven: "Валюта бумаги не подтверждена источником",
+    instrument_type_unproven: "Тип бумаги не подтверждён",
+    repo_identity_unsupported: "Финансовый смысл REPO не установлен",
+    source_intake_pending: "Разбор ещё не сверён с принятым финансовым DRAFT",
+    source_intake_identity_deferred: "В разборе остались отложенные решения по бумагам",
+    source_intake_currency_conflict: "Валюта предложения противоречит подтверждённым данным",
+    source_intake_currency_unsupported: "Финансовое принятие этой валюты не поддерживается",
+    source_intake_public_proof_stale: "Публичное подтверждение устарело; требуется обновление",
+  };
+  if (Object.hasOwn(intake, code)) return intake[code];
   return BROKER_SOURCE_TITLES.get(code) ?? null;
+}
+
+export function currencyProvenanceTitle(basis: string) {
+  const titles: Record<string, string> = {
+    owner_default_rub: "RUB — допущение Owner",
+    owner_selected: "Выбрано Owner",
+    source_proven: "Подтверждено источником",
+    official_proven: "Официальное подтверждение",
+    existing_catalogue: "Из принятого каталога",
+    conflict: "Противоречие",
+    unknown: "Не подтверждено",
+  };
+  return titles[basis] ?? "Не подтверждено";
 }
 
 export function readinessCopy(item: CloseReadinessItem): ReadinessCopy {

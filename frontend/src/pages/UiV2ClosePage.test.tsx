@@ -97,7 +97,10 @@ function setup(path = "/v2/close") {
         },
       );
     }
-    if (method === "GET" && ["/api/accounts", "/api/broker-months"].includes(url.pathname))
+    if (
+      method === "GET" &&
+      ["/api/accounts", "/api/broker-months", "/api/broker-months/intakes"].includes(url.pathname)
+    )
       return jsonResponse([]);
     throw new Error(`Unexpected API: ${method} ${url.pathname}`);
   });

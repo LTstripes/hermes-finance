@@ -592,6 +592,12 @@ export type PortfolioSourceCoverage = {
   status: "complete" | "partial" | "unavailable";
   reason_codes: string[];
   missing_account_ids: number[];
+  source_account_financial_coverage?: {
+    status: "complete" | "partial";
+    reason_codes: string[];
+    account_ids: number[];
+    intake_count: number;
+  } | null;
 };
 
 /** One closed-month point from the read-only Analytics capital-composition API. */

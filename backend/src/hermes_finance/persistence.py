@@ -34,6 +34,86 @@ class Base(DeclarativeBase):
     pass
 
 
+class SourceIntakeOriginal(Base):
+    """Immutable, private source descriptor; never an accepted S1 or raw-file cache."""
+
+    __tablename__ = "source_intake_originals"
+    __table_args__ = (
+        UniqueConstraint("document_sha256", name="uq_source_intake_original"),
+        CheckConstraint(
+            "length(document_sha256) = 64 AND byte_length > 0", name="ck_intake_original"
+        ),
+        CheckConstraint("covered_to >= covered_from", name="ck_intake_period"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    byte_length: Mapped[int] = mapped_column(Integer, nullable=False)
+    filename_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    covered_from: Mapped[date] = mapped_column(Date, nullable=False)
+    covered_to: Mapped[date] = mapped_column(Date, nullable=False)
+    native_accounts_json: Mapped[str] = mapped_column(Text, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SourceIntakeObservation(Base):
+    """Document-local lineage, including opaque inventory; no financial authority."""
+
+    __tablename__ = "source_intake_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "original_id", "generation", "section", "ordinal", name="uq_intake_occurrence"
+        ),
+        CheckConstraint("generation > 0 AND ordinal >= 0", name="ck_intake_ordinal"),
+        CheckConstraint("length(row_fingerprint) = 64", name="ck_intake_fingerprint"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    original_id: Mapped[int] = mapped_column(
+        ForeignKey("source_intake_originals.id", ondelete="RESTRICT")
+    )
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str] = mapped_column(String(32), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    locator: Mapped[str] = mapped_column(Text, nullable=False)
+    row_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    facts_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SourceIntakeRevision(Base):
+    """Append-only review/policy/link commands, never an economic receipt."""
+
+    __tablename__ = "source_intake_revisions"
+    __table_args__ = (
+        CheckConstraint("contract_version = 'source_intake_v1'", name="ck_intake_contract"),
+        CheckConstraint(
+            "operation IN ('manifest','decision','policy','finance_link','dependency')",
+            name="ck_intake_operation",
+        ),
+        CheckConstraint("length(confirmation_digest) = 64", name="ck_intake_confirmation"),
+        {"sqlite_autoincrement": True},
+    )
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    original_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_intake_originals.id", ondelete="RESTRICT")
+    )
+    reporting_month_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reporting_months.id", ondelete="RESTRICT")
+    )
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
+    expected_predecessor_seq: Mapped[int | None] = mapped_column(
+        ForeignKey("source_intake_revisions.seq", ondelete="RESTRICT")
+    )
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewer: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MyBrokerImport(Base):
     """Append-only normalized S1 evidence, separate from financial facts.
 

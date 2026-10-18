@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
-
-import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 import type { BrokerMonthReadback } from "../src/api/brokerMonths";
+import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 import { makeCapitalDraft } from "../src/test/capitalDraftFixtures";
 
 import {
@@ -441,6 +440,11 @@ async function installCloseApi(page: Page) {
     } else if (url.pathname === "/api/positions" && url.search === "?month_id=12") {
       json = [];
     } else if (url.pathname === "/api/broker-months" && url.search === "?reporting_month_id=12") {
+      json = [];
+    } else if (
+      url.pathname === "/api/broker-months/intakes" &&
+      url.search === "?reporting_month_id=12&include_unbound=true"
+    ) {
       json = [];
     } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
       json = [];

@@ -708,6 +708,9 @@ def read_source_cash_coverage(session, coverage_id):
         raise MyBrokerError("coverage_not_found")
     current = latest(session, coverage_id)
     blockers, evidence, state = [], None, "unbound"
+    from hermes_finance.services.source_intake import interval_blockers
+
+    blockers.extend(interval_blockers(session, row.covered_from, row.covered_to, [row.account_id]))
     if current:
         state = current.acceptance_state
         try:
