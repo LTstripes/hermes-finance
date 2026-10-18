@@ -98,7 +98,15 @@ def downgrade():
     ):
         if connection.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar():
             raise RuntimeError("cannot downgrade populated source intake journal")
-    for table in ("accounts", "instruments", "broker_identity_mappings"):
+    for table in (
+        "accounts",
+        "instruments",
+        "broker_identity_mappings",
+        "position_snapshots",
+        "cash_balances",
+        "investment_cash_flows",
+        "external_flows",
+    ):
         for operation in ("insert", "update", "delete"):
             connection.exec_driver_sql(
                 f"DROP TRIGGER IF EXISTS intake_dependency_{table}_{operation}"

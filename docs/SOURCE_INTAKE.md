@@ -85,7 +85,10 @@ Markdown exports retain the corresponding partial defects. Presence is not
 complete financial coverage, and unknown values are never zero.
 
 All three tables are append-only at SQLite level. Dependency tokens contain only
-table/row identity and are recorded once an intake exists; ordinary installations
+table/row identity and old/new account, month and event-date scope, and are recorded
+once an intake exists. Financial row edits, moves and delete/recreate cannot revive
+a previous link after A→B→A; fresh explicit linking is required. Unrelated financial
+scopes do not retire the link. Ordinary installations
 without an intake acquire no journal history from unrelated catalogue edits.
 Downgrade refuses any populated intake journal. Upgrade/downgrade does no financial
 backfill and is not automatically deployed to Owner/Test/Stable by this code task.

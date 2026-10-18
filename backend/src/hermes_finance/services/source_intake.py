@@ -378,8 +378,9 @@ def save_intake(
         raise
 
 
-def _scope_revision(session, account_id, instrument_ids, mapping_ids):
+def _scope_revision(session, account_id, month_id, instrument_ids, mapping_ids):
     result = []
+    month = session.get(ReportingMonth, month_id)
     for row in session.scalars(
         select(SourceIntakeRevision).where(SourceIntakeRevision.operation == "dependency")
     ):
@@ -388,6 +389,17 @@ def _scope_revision(session, account_id, instrument_ids, mapping_ids):
             (p["table"] == "accounts" and p["id"] == account_id)
             or (p["table"] == "instruments" and p["id"] in instrument_ids)
             or (p["table"] == "broker_identity_mappings" and p["id"] in mapping_ids)
+            or any(
+                scope["account_id"] == account_id
+                and (
+                    scope["month_id"] == month_id
+                    or (
+                        scope["event_date"] is not None
+                        and str(month.period_start) <= scope["event_date"] <= str(month.period_end)
+                    )
+                )
+                for scope in p.get("financial_scopes", [])
+            )
         ):
             result.append(row.seq)
     return result
@@ -450,6 +462,7 @@ def _link_authority(session, original, state, request_id):
             _scope_revision(
                 session,
                 receipt.account_id,
+                receipt.reporting_month_id,
                 {int(k) for k in accepted["instruments"]},
                 {b["mapping_id"] for b in json.loads(source.mappings_json)},
             ),
@@ -875,19 +888,41 @@ def install_sql_guards(connection):
                 f"CREATE TRIGGER IF NOT EXISTS {model.__tablename__}_{operation.lower()} "
                 f"BEFORE {operation} ON {model.__tablename__} BEGIN SELECT RAISE(ABORT, 'source intake is append-only'); END"
             )
-    for table in ("accounts", "instruments", "broker_identity_mappings"):
+    for table in (
+        "accounts",
+        "instruments",
+        "broker_identity_mappings",
+        "position_snapshots",
+        "cash_balances",
+        "investment_cash_flows",
+        "external_flows",
+    ):
         columns = [row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")]
         changed = " OR ".join(f"OLD.{c} IS NOT NEW.{c}" for c in columns)
         for operation in ("INSERT", "UPDATE", "DELETE"):
             alias = "OLD" if operation == "DELETE" else "NEW"
             present = "EXISTS (SELECT 1 FROM source_intake_originals)"
             when = f"WHEN {present} AND ({changed})" if operation == "UPDATE" else f"WHEN {present}"
+            scopes = []
+            if "reporting_month_id" in columns and "account_id" in columns:
+                # Retain BOTH endpoints of a move/delete/recreate. These tokens
+                # never revive when financial values return to their old state.
+                for scope_alias in ["OLD", "NEW"] if operation == "UPDATE" else [alias]:
+                    day = f"{scope_alias}.event_date" if "event_date" in columns else "NULL"
+                    scopes.append(
+                        f"json_object('account_id',{scope_alias}.account_id,"
+                        f"'month_id',{scope_alias}.reporting_month_id,'event_date',{day})"
+                    )
+            payload = f"json_object('table','{table}','id',{alias}.id"
+            if scopes:
+                payload += f",'financial_scopes',json_array({','.join(scopes)})"
+            payload += ")"
             connection.exec_driver_sql(
                 f"CREATE TRIGGER IF NOT EXISTS intake_dependency_{table}_{operation.lower()} "
                 f"AFTER {operation} ON {table} {when} BEGIN INSERT INTO source_intake_revisions "
                 "(request_id,request_fingerprint,contract_version,operation,confirmation_digest,payload_json,reviewer,accepted_at) "
                 f"VALUES(lower(hex(randomblob(32))),'{64 * '0'}','{CONTRACT}','dependency','{64 * '0'}',"
-                f"json_object('table','{table}','id',{alias}.id),'system',CURRENT_TIMESTAMP); END"
+                f"{payload},'system',CURRENT_TIMESTAMP); END"
             )
 
 

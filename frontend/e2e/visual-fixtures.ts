@@ -664,6 +664,7 @@ export function syntheticApiResponse(
     return { json: state === "empty" ? [] : syntheticMonths };
   }
   if (path === "/api/broker-months" && method === "GET") return { json: [] };
+  if (path === "/api/broker-months/intakes" && method === "GET") return { json: [] };
   if (/^\/api\/months\/\d+$/.test(path) && method === "GET") return { json: syntheticMonths[0] };
   if (/^\/api\/months\/\d+\/dashboard$/.test(path)) return { json: dashboard };
   if (/^\/api\/months\/\d+\/summary$/.test(path)) return { json: monthSummary };

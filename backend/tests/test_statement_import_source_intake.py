@@ -357,16 +357,80 @@ def test_link_replay_aba_and_unrelated_account_isolation(database):
     assert first.status_code == duplicate.status_code == 200 and duplicate.json()["duplicate"]
     assert _all_month_tables(database) == before
     from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.cash import create_cash_balance, update_cash_balance
     from hermes_finance.services.instruments import update_instrument
 
     with database.session_factory() as session:
-        create_account(session, name="Unrelated synthetic", account_type="brokerage")
+        other = create_account(session, name="Unrelated synthetic", account_type="brokerage")
+        cash = create_cash_balance(
+            session,
+            reporting_month_id=scope["reporting_month_id"],
+            account_id=other.id,
+            name="Unrelated cash",
+            amount="1.00",
+        )
+        update_cash_balance(session, cash.id, amount="2.00")
+        update_cash_balance(session, cash.id, amount="1.00")
     assert client.get(f"{BASE}/{view['id']}").json()["finance_link"] is not None
     with database.session_factory() as session:
         update_instrument(session, 1, currency="USD")
         update_instrument(session, 1, currency="RUB")
     stale = client.get(f"{BASE}/{view['id']}").json()
     assert stale["finance_link"] is None and source_intake.PENDING in stale["exceptions"]
+
+
+@pytest.mark.parametrize(
+    ("table", "writer"),
+    [("cash_balances", "service"), ("cash_balances", "sql"), ("position_snapshots", "sql")],
+)
+def test_financial_projection_aba_requires_fresh_explicit_link(database, table, writer):
+    from sqlalchemy import text
+
+    from hermes_finance.services.reporting_months import close_reporting_month
+
+    scope = _broker_month_setup(database)
+    xml = broker_month_xml()
+    client = TestClient(create_app(database=database))
+    view = save(client, xml, scope)
+    plan = _broker_month_preview(client, scope, xml)
+    assert _broker_month_apply(client, scope, plan, xml).status_code == 200
+    requested = intent(view, finance_request_id="synthetic-batch")
+    assert review(client, view, xml, requested, "initial-link", link=True).status_code == 200
+    assert client.get(f"{BASE}/{view['id']}").json()["finance_link"] is not None
+    field = "amount_kopecks" if table == "cash_balances" else "market_value_kopecks"
+    with database.session_factory() as session:
+        row_id, original = session.execute(text(f"SELECT id, {field} FROM {table} LIMIT 1")).one()
+
+    def edit(value):
+        with database.session_factory() as session:
+            if writer == "service":
+                from hermes_finance.services.cash import update_cash_balance
+
+                update_cash_balance(session, row_id, amount=f"{value // 100}.{value % 100:02}")
+            else:
+                # SQL-level guards also cover writes outside ORM listeners.
+                session.execute(text(f"UPDATE {table} SET {field} = :value"), {"value": value})
+                session.commit()
+
+    edit(original + 1)
+    assert client.get(f"{BASE}/{view['id']}").json()["finance_link"] is None
+    edit(original)
+    stale = client.get(f"{BASE}/{view['id']}").json()
+    assert stale["finance_link"] is None and source_intake.PENDING in stale["exceptions"]
+    with database.session_factory() as session:
+        with pytest.raises(ValueError, match="MyBroker"):
+            close_reporting_month(session, scope["reporting_month_id"])
+    # Equal economic values restore own receipt authority, never old review authority.
+    response = review(
+        client,
+        stale,
+        xml,
+        intent(stale, finance_request_id="synthetic-batch"),
+        "fresh-link",
+        link=True,
+    )
+    assert response.status_code == 200, response.text
+    assert client.get(f"{BASE}/{view['id']}").json()["finance_link"] is not None
 
 
 def test_unbound_bind_once_and_concurrent_decisions_are_atomic(database):
