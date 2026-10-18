@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -55,6 +57,14 @@ def portfolio_source_coverage_for_months(
             )
         else:
             result[month_id] = PortfolioSourceCoverage("complete")
+    from hermes_finance.services.source_intake import scoped_status
+
+    for month_id in month_ids:
+        source_coverage = scoped_status(session, month_id)
+        if source_coverage["intake_count"]:
+            result[month_id] = replace(
+                result[month_id], source_account_financial_coverage=source_coverage
+            )
     return result
 
 
@@ -75,4 +85,22 @@ def combined_portfolio_source_coverage(
         if "partial" in statuses
         else "complete"
     )
-    return PortfolioSourceCoverage(status, reasons)
+    source = [
+        v
+        for v in (
+            current.source_account_financial_coverage,
+            previous.source_account_financial_coverage,
+        )
+        if v
+    ]
+    source_coverage = None
+    if source:
+        source_coverage = {
+            "status": "partial" if any(v["status"] == "partial" for v in source) else "complete",
+            "reason_codes": sorted({c for v in source for c in v["reason_codes"]}),
+            "account_ids": sorted({a for v in source for a in v["account_ids"]}),
+            "intake_count": sum(v["intake_count"] for v in source),
+        }
+    return PortfolioSourceCoverage(
+        status, reasons, source_account_financial_coverage=source_coverage
+    )

@@ -5,6 +5,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Condition
 from typing import Callable, Concatenate, Iterator, ParamSpec, TypeVar
+from uuid import uuid4
 
 from sqlalchemy import URL, Engine, create_engine, event
 from sqlalchemy.engine import Connection
@@ -44,6 +45,7 @@ class DatabaseMaintenance:
         self._is_restoring = False
         # Transient form incarnation only; never financial evidence or a DB revision.
         self._form_epoch = 0
+        self.form_incarnation = uuid4().hex
 
     @property
     def form_epoch(self) -> int:
@@ -287,7 +289,9 @@ def create_database(database_path: Path) -> Database:
     )
     from hermes_finance.services.mybroker_dispositions import install_hooks as skip_hooks
     from hermes_finance.services.source_cash_coverage_lifecycle import install_hooks as cash_hooks
+    from hermes_finance.services.source_intake import install_hooks as intake_hooks
 
+    intake_hooks()
     skip_hooks()
     install_hooks()
     owner_hooks()

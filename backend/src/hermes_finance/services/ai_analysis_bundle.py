@@ -669,6 +669,10 @@ def assemble_ai_analysis_bundle(
         month_positions = positions_by_month.get(month.id, [])
         future_dated_positions = future_included_valuations_by_month.get(month.id, [])
         portfolio_coverage = portfolio_coverage_by_month[month.id]
+        source_financial = portfolio_coverage.source_account_financial_coverage
+        if source_financial:
+            coverage_reasons.extend(source_financial["reason_codes"])
+            capital_quality_codes.update(source_financial["reason_codes"])
         has_capital_evidence = portfolio_coverage.status != "unavailable"
         missing_required_snapshot = portfolio_coverage.status == "partial"
         if PORTFOLIO_SNAPSHOT_MISSING in portfolio_coverage.reason_codes:
@@ -1195,6 +1199,11 @@ def assemble_ai_analysis_bundle(
     cash_out.sort(key=lambda item: (item["account_ref"], item["name"]))
 
     portfolio_coverage_reasons = [ACTIVE_ACCOUNT_SNAPSHOT_MISSING] if missing_snapshot_refs else []
+    selected_source_financial = portfolio_coverage_by_month[
+        current.id
+    ].source_account_financial_coverage
+    if selected_source_financial:
+        portfolio_coverage_reasons.extend(selected_source_financial["reason_codes"])
     if future_dated_selected_positions:
         portfolio_coverage_reasons.append(FUTURE_DATED_VALUATION)
     if selection_reason == "latest_available" and current.status == "draft":

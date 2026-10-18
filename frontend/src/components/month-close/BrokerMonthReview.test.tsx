@@ -5,18 +5,21 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { listAccounts } from "../../api/accounts";
 import {
   applyBrokerMonth,
+  type BrokerMonthPreview,
+  type BrokerMonthReadback,
   listBrokerMonths,
   lookupPublicIdentities,
   previewBrokerMonth,
   readBrokerMonth,
-  type BrokerMonthPreview,
-  type BrokerMonthReadback,
 } from "../../api/brokerMonths";
+import { ApiClientError } from "../../api/client";
 import { getMonth } from "../../api/months";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
-import { ApiClientError } from "../../api/client";
-import { brokerOriginalSession } from "./brokerOriginalSession";
+import { listSourceIntakes } from "../../api/sourceIntake";
 import { BrokerMonthReview } from "./BrokerMonthReview";
+import { brokerOriginalSession } from "./brokerOriginalSession";
+
+vi.mock("../../api/sourceIntake", () => ({ listSourceIntakes: vi.fn() }));
 
 vi.mock("../../api/months", () => ({ getMonth: vi.fn() }));
 vi.mock("../../api/mybrokerPreflight", () => ({ previewOriginalContext: vi.fn() }));
@@ -119,6 +122,7 @@ function persisted(requestId: string, accountId = 7): BrokerMonthReadback {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(listSourceIntakes).mockResolvedValue([]);
   vi.mocked(getMonth).mockResolvedValue({
     id: 1,
     year: 2030,

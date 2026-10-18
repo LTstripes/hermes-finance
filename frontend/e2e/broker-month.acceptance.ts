@@ -1135,3 +1135,100 @@ test("source identity inbox keeps 12 ready and 1 pending until one opt-in, group
     fullPage: true,
   });
 });
+
+test("durable full source observations survive reload and reviewed currency override without economic Apply", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const months = await (await request.get("/api/months")).json();
+  const month = months.find(
+    (m: { year: number; month: number }) => m.year === 2031 && m.month === 1,
+  );
+  const xml = (await (await request.get("/api/synthetic-broker-source/source-inbox")).body())
+    .toString("utf8")
+    .replaceAll("RU000A008813", "RU000A008815");
+  const file = {
+    name: "Брокерский 8860000 (01.01.31-31.01.31).xml",
+    mimeType: "application/xml",
+    buffer: Buffer.from(xml),
+  };
+  const before = await (await request.get("/api/synthetic-broker-inventory")).json();
+  let economicPosts = 0;
+  let savePosts = 0;
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().endsWith("/api/broker-months/apply")) economicPosts++;
+    if (req.method() === "POST" && req.url().endsWith("/api/broker-months/intakes")) savePosts++;
+  });
+  await page.goto(`/v2/close?month=${month.id}&step=final_review_close`);
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
+  await expect(page.getByText(/MATCHED — 12; PENDING REVIEW — 1/)).toBeVisible();
+  // Lose the independent GET once after a successful server ACK.
+  let failRead = true;
+  await page.route(/\/api\/broker-months\/intakes\/\d+$/, async (route) => {
+    if (route.request().method() === "GET" && failRead) {
+      failRead = false;
+      await route.abort();
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Сохранить разбор", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Повторить чтение журнала" })).toBeVisible();
+  await page.getByRole("button", { name: "Повторить чтение журнала" }).click();
+  await expect(page.getByText(/Сохранено наблюдений:/)).toBeVisible();
+  expect(savePosts).toBe(1);
+  const list = await (
+    await request.get(`/api/broker-months/intakes?reporting_month_id=${month.id}`)
+  ).json();
+  const intake = list.find(
+    (v: { document_sha256: string }) =>
+      v.document_sha256 === createHash("sha256").update(xml).digest("hex"),
+  );
+  expect(intake.document.positions).toHaveLength(13);
+  expect(
+    intake.proposals.find((p: { isin: string }) => p.isin === "RU000A008815").currency_assessment
+      .basis,
+  ).toBe("owner_default_rub");
+  expect(intake.financial_authority).toBe("none");
+  await page.reload();
+  await page.getByLabel("Сохранённый разбор", { exact: true }).selectOption(String(intake.id));
+  await expect(page.getByText(/Сохранено наблюдений:/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
+  await expect(page.getByText(/RUB — допущение Owner/)).toBeVisible();
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(file);
+  const currency = page.getByLabel("Валюта предложения RU000A008815", { exact: true });
+  await expect(currency).toBeEnabled();
+  await currency.fill("USD");
+  await currency.focus();
+  await expect(currency).toBeFocused();
+  await page.getByRole("button", { name: "Проверить изменения разбора" }).click();
+  const workflow = page.waitForResponse((r) =>
+    r.url().includes(`/api/months/${month.id}/close-workflow`),
+  );
+  await page.getByRole("button", { name: "Подтвердить сохранение разбора" }).click();
+  await workflow;
+  await page.getByLabel("Сохранённый разбор", { exact: true }).selectOption(String(intake.id));
+  await expect(page.getByText(/Выбрано Owner/)).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("durable-source-intake-1440-125.png"),
+    fullPage: true,
+  });
+  await page.getByRole("region", { name: "Долговечный разбор источника" }).screenshot({
+    path: info.outputPath("durable-source-queue-1440-125.png"),
+  });
+  const after = await (await request.get("/api/synthetic-broker-inventory")).json();
+  for (const [name, value] of Object.entries(before.counts)) {
+    if (!name.startsWith("source_intake_")) expect(after.counts[name], name).toBe(value);
+  }
+  expect(economicPosts).toBe(0);
+  const close = await request.post(`/api/months/${month.id}/close`);
+  expect(close.ok()).toBe(false);
+  expect(
+    (await (await request.get(`/api/broker-months/intakes/${intake.id}`)).json()).state.overrides,
+  ).toEqual({ RU000A008815: "USD" });
+});

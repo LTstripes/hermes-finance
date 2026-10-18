@@ -161,6 +161,10 @@ def update_reporting_month(
         # Recheck DRAFT while holding the same SQLite writer reservation as
         # month-scoped child edits. The earlier read may predate a Close.
         reporting_month = require_editable_reporting_month(session, month_id)
+        from hermes_finance.services.source_intake import require_unbound_month
+
+        if snapshot_date is not None and snapshot_date != reporting_month.snapshot_date:
+            require_unbound_month(session, month_id)
         if snapshot_date is not None:
             if snapshot_date < reporting_month.period_start:
                 raise ValueError("snapshot_date cannot be before the reporting period")
@@ -197,6 +201,9 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
 
         # The evidence check and bulk leg deletion must share one writer reservation.
         require_editable_reporting_month(session, month_id)
+        from hermes_finance.services.source_intake import require_unbound_month
+
+        require_unbound_month(session, month_id)
         from hermes_finance.services.historical_endpoints import retire_dependencies
 
         retire_dependencies(session, month_id=month_id, reason="month_deleted")

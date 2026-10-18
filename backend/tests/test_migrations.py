@@ -13,6 +13,40 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_source_intake_migration_empty_cycle_and_populated_refusal(tmp_path):
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.source_intake import save_intake
+
+    path = tmp_path / "synthetic-intake.db"
+    for _ in range(2):
+        upgraded = run_alembic(path, "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        assert revision_rows(path) == ["0059_source_intake"]
+        downgraded = run_alembic(path, "downgrade", "0058_broker_money_ownership")
+        assert downgraded.returncode == 0, downgraded.stderr
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    db = create_database(path)
+    with db.session_factory() as session:
+        saved = save_intake(
+            session, document=fixture(), filename=FILENAME, request_id="migration-save"
+        )
+    db.engine.dispose()
+    blocked = run_alembic(path, "downgrade", "0058_broker_money_ownership")
+    assert (
+        blocked.returncode != 0
+        and "cannot downgrade populated source intake journal" in blocked.stderr
+    )
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        assert (
+            connection.execute("SELECT id FROM source_intake_originals").fetchone()[0]
+            == saved["intake_id"]
+        )
+
+
 def test_broker_month_receipt_migration_preserves_source_and_refuses_owned_downgrade(tmp_path):
     from fastapi.testclient import TestClient
     from test_statement_import_mybroker import FILENAME, ISIN

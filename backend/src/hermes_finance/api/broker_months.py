@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.source_intake import router as intake_router
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.broker_money import MoneyConfirmation, MoneyIntent
 from hermes_finance.domain.broker_sections import SectionConfirmation, SectionIntent
@@ -25,6 +26,8 @@ from hermes_finance.services.broker_months import (
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 router = APIRouter(prefix="/api/broker-months", tags=["broker-months"])
+
+router.include_router(intake_router)
 
 
 class InstrumentDecision(BaseModel):

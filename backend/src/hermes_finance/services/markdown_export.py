@@ -213,6 +213,15 @@ def _render_metadata(lines: list[str], dashboard: DashboardResult) -> None:
 def _render_kpis(lines: list[str], dashboard: DashboardResult) -> None:
     summary = dashboard.summary
     lines.extend(("## 2. Итоговые KPI",))
+    coverage = summary.portfolio_source_coverage
+    if (
+        coverage
+        and coverage.source_account_financial_coverage
+        and coverage.source_account_financial_coverage["status"] != "complete"
+    ):
+        lines.append(
+            "Частичный известный итог: разбор источника требует сверки; полный капитал и доходность не подтверждены."
+        )
     _append_table(
         lines,
         ("Показатель", "Значение"),

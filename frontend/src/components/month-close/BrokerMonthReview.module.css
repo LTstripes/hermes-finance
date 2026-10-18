@@ -84,3 +84,8 @@
 .summary li {
   overflow-wrap: anywhere;
 }
+
+.stack td {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
