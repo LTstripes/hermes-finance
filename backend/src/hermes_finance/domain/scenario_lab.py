@@ -1,7 +1,7 @@
 """Pure domain for Scenario Lab v1 (r07-09).
 
 Deterministic, no I/O, no DB. Implements equity_drawdown semantics
-exactly as per docs/r07-09-scenario-lab-contract.md, the
+exactly as per docs/ARCHITECTURE_AND_CONTRACTS.md#c8, the
 deposit_rate_assumption rate-normalization helpers used by 141-B, the
 inflation_real_value helpers (annual-inflation parse + real-value
 discount at a whole-kopeck money boundary) used by 141-C, and the
@@ -423,7 +423,7 @@ def normalized_rate_string(basis_points: int) -> str:
 # ---- inflation_real_value helpers (141-C) ----
 #
 # V1 uses the explicit monthly convention from the contract
-# (docs/r07-09-scenario-lab-contract.md section 9):
+# (docs/ARCHITECTURE_AND_CONTRACTS.md#c8 section 9):
 #
 #     monthly_rate = annual_inflation_pct / 12
 #     real_value = nominal_future_value / (1 + monthly_rate) ^ months_ahead

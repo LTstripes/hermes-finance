@@ -6,7 +6,7 @@
 - **Source task:** R07-D05 / issue #201
 - **Parent roadmap:** issue #127
 - **Implementation follow-up:** two bounded slices after integrator acceptance (see §12). No implementation issue is opened by this ADR.
-- **Related:** [ADR 0009](0009-moex-market-identity-and-quote-semantics.md), [ADR 0010](0010-market-and-broker-provider-strategy.md), [ADR 0013](0013-broker-snapshot-and-alfa-pro-security.md), [ADR 0015](0015-alfa-pro-compatibility-diagnostics.md), [R06-03 field mapping](../reviews/2026-08-20-r06-03-alfa-pro-field-mapping.md), [R07-08A normalized reconciliation](../reconciliation-normalized-contract.md), [R07-07 freshness/provenance](../FRESHNESS_PROVENANCE.md)
+- **Related:** [ADR 0009](0009-moex-market-identity-and-quote-semantics.md), [ADR 0010](0010-market-and-broker-provider-strategy.md), [ADR 0013](0013-broker-snapshot-and-alfa-pro-security.md), [ADR 0015](0015-alfa-pro-compatibility-diagnostics.md), [R06-03 field mapping](../archive/2026-10-18/docs/reviews/2026-08-20-r06-03-alfa-pro-field-mapping.md), [R07-08A normalized reconciliation](../archive/2026-10-18/docs/reconciliation-normalized-contract.md), [R07-07 freshness/provenance](../archive/2026-10-18/docs/FRESHNESS_PROVENANCE.md)
 
 ## Problem
 

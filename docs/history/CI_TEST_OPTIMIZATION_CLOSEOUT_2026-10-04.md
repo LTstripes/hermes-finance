@@ -1,6 +1,6 @@
 # CI/test optimization closeout — 2026-10-04
 
-This is the closeout for the later Hermes Finance CI/test simplification wave. The earlier [2026-09-16 optimization closeout](../CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md) remains historical evidence for the first pass; this document records the later concurrency, visual-evidence, docs-only and Launcher-retirement work.
+This is the closeout for the later Hermes Finance CI/test simplification wave. The earlier [2026-09-16 optimization closeout](../archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md) remains historical evidence for the first pass; this document records the later concurrency, visual-evidence, docs-only and Launcher-retirement work.
 
 ## Final checkpoint
 

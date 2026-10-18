@@ -2,7 +2,7 @@
 
 - **Статус:** принято
 - **Дата:** 2026-08-10
-- **Связанные документы:** [MASTER_SPEC](../MASTER_SPEC.md), [Release 0.2](../RELEASE_0_2.md), [Model routing](../MODEL_ROUTING.md)
+- **Связанные документы:** [MASTER_SPEC](../archive/2026-10-18/docs/MASTER_SPEC.md), [Release 0.2](../archive/2026-10-18/docs/releases/0.2.0.md), [Model routing](../archive/2026-10-18/docs/MODEL_ROUTING.md)
 - **Связанная задача:** `R02-02`
 
 ## Контекст
