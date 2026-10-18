@@ -64,11 +64,11 @@ ENDPOINT_CODES = frozenset(
         "provisional_endpoint_basis_unsupported",
         "provisional_endpoint_value_unavailable",
         "provisional_endpoint_value_invalid",
+        "provisional_endpoint_diagnostic_unmapped",
         "provisional_rub_cash_unavailable",
         "provisional_rub_cash_incomplete",
         "provisional_rub_cash_ambiguous",
         "provisional_rub_cash_negative",
-        "provisional_position_row_unclassified",
         "provisional_no_observed_totals",
         "provisional_quantity_invalid",
         "provisional_quantity_value_conflict",
@@ -322,7 +322,13 @@ def read_context(
     if not positions and cash is None:
         hard.add("provisional_no_observed_totals")
 
-    endpoint_broken = bool(hard & ENDPOINT_CODES)
+    endpoint_broken = (
+        bool(hard & ENDPOINT_CODES)
+        or bool(set(stored.get("endpoint_conflicts", [])))
+        or bool(
+            set(stored.get("endpoint_blockers", [])) - {"endpoint_beginning_quantity_unavailable"}
+        )
+    )
     account_broken = bool(hard & ACCOUNT_CODES)
     total_opening = total_closing = reported_change = None
     if not endpoint_broken and not account_broken and cash is not None:

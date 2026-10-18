@@ -6,6 +6,7 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from test_statement_import_mybroker import ACCOUNT, node, repo_fixture
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import _all_month_tables, broker_month_xml
@@ -112,6 +113,7 @@ def _add_money(root, operation, narrative, amount, *, day="2030-04-15"):
 def provisional_xml(
     *,
     beginning="9000.00",
+    beginning_quantity="10",
     closing="10211.00",
     rub=("1000.00", "1000.00"),
     cash_in=CASH_IN_AMOUNT,
@@ -134,7 +136,7 @@ def provisional_xml(
         root = ET.fromstring(_replace_dates(broker_month_xml(unsupported=opaque, bond=False)))
     ns = NS
     security = root.find(".//m:Details[@ISIN1]", ns)
-    security.set("income_rest", "10")
+    security.set("income_rest", beginning_quantity)
     security.set("income_volume", beginning)
     if not missing_closing:
         security.set("real_volume", "0.001" if bad_closing else closing)
@@ -636,10 +638,9 @@ def test_endpoint_gaps_block_percentage_but_keep_defined_observed_values(databas
             or "provisional_endpoint_value_invalid" in context["hard_blockers"]
             or "position_row_unclassified" in context["hard_blockers"]
         )
-        if index == 0:
-            assert context["observed"]["total_opening_kopecks"] is None
-            assert context["observed"]["total_closing_kopecks"] is None
-            assert context["observed"]["reported_value_change_kopecks"] is None
+        assert context["observed"]["reported_value_change_kopecks"] is None
+        assert context["observed"]["total_opening_kopecks"] is None
+        assert context["observed"]["total_closing_kopecks"] is None
         result = evaluate(client, context, choices(context), xml)
         assert result.status_code == 200, result.text
         assert result.json()["status"] == "blocked"
@@ -710,6 +711,52 @@ def test_capacity_invalid_candidate_and_zero_writes(database):
     assert result.status_code == 200, result.text
     assert result.json()["status"] == "blocked"
     assert _all_month_tables(database) == before
+
+
+def test_zero_quantity_with_value_and_alias_remap_block_totals(database):
+    scope = april_scope(database)
+    xml = provisional_xml(beginning_quantity="0")
+    client = TestClient(create_app(database=database))
+    view = save(client, xml, scope, request_id="save-quantity")
+    context = context_for(client, xml, view)
+    assert "provisional_quantity_value_conflict" in context["hard_blockers"]
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), xml).json()["status"] == "blocked"
+
+    from hermes_finance.persistence import BrokerIdentityMapping
+    from hermes_finance.services.accounts import create_account
+    from hermes_finance.services.broker_identity_mappings import (
+        confirm_mapping,
+        revoke_mapping,
+    )
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    alias_xml = provisional_xml()
+    alias_view = save(client, alias_xml, scope, request_id="save-alias")
+    with database.session_factory() as session:
+        other = create_account(session, name="Synthetic other account", account_type="brokerage")
+        mapping = session.scalar(
+            select(BrokerIdentityMapping).where(
+                BrokerIdentityMapping.provider == PROVIDER,
+                BrokerIdentityMapping.subject_kind == "account",
+                BrokerIdentityMapping.provider_identity == ACCOUNT,
+                BrokerIdentityMapping.status == "effective",
+            )
+        )
+        mapping_id = mapping.id
+    with database.session_factory() as session:
+        revoke_mapping(session, mapping_id)
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="account",
+            provider_identity=ACCOUNT,
+            hermes_target_id=other.id,
+        )
+    context = context_for(client, alias_xml, alias_view)
+    assert "provisional_multiple_source_accounts" in context["hard_blockers"]
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), alias_xml).json()["status"] == "blocked"
 
 
 def test_non_rub_and_ambiguous_cash_are_blocked(database):

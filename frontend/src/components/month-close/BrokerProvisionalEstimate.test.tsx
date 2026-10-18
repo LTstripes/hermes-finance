@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -246,7 +246,11 @@ it("separates observed broker values from an explicit nonannualized scenario", a
     screen.getByText(/Сценарный результат после выбранных внешних движений: 211,00/),
   ).toBeVisible();
   expect(screen.getByText(/за фактический период, не аннулизировано/)).toBeVisible();
-  expect(screen.getAllByText(/не факт: не S3/)[0]).toBeVisible();
+  expect(
+    within(screen.getByRole("region", { name: "Результат предварительного расчёта" })).getByText(
+      /не факт: не S3/,
+    ),
+  ).toBeVisible();
   expect(screen.getByText(/Альтернатива: кандидат исключён/)).toBeVisible();
 });
 

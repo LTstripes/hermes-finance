@@ -223,6 +223,14 @@ export function BrokerProvisionalEstimate({
               </p>
             )}
           </div>
+          <details>
+            <summary>Ограничения наблюдаемых величин ({context.limitations.length})</summary>
+            <ul>
+              {context.limitations.map((limitation) => (
+                <li key={limitation}>{limitation}</li>
+              ))}
+            </ul>
+          </details>
           {context.observed.positions.length > 0 && (
             <details open>
               <summary>Исходные стоимости бумаг</summary>
