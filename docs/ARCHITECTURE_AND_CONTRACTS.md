@@ -5475,7 +5475,7 @@ The following are `not_computable` for TWRR. Existing R08-01C reasons propagate 
 | A date-only valuation exists on the flow date but no explicit pre/post-flow relation proves order | `not_computable_valuation_boundary_order_unknown` | XIRR may remain available; this is TWRR-specific. |
 | More than one external flow | Every flow/group must satisfy the boundary rule; one missing or unordered boundary blocks the whole TWRR interval. | XIRR still needs only complete dated flow evidence. |
 | Fully linked in-scope transfer at portfolio scope | No TWRR boundary reason from that transfer. | It is internal at portfolio scope, but external at each affected account scope. |
-| Flat or negative return with otherwise valid evidence | No availability failure solely for a zero or negative return. | The future numerical implementation must preserve the value rather than downgrade it. |
+| Flat or negative return with otherwise valid evidence | No availability failure solely for a zero or negative return. | The numerical implementation preserves the value rather than downgrade it. |
 
 `not_computable` means unavailable, never zero and never a silently downgraded approximate result.
 
