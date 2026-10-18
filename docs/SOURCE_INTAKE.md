@@ -47,6 +47,11 @@ All routes are under `/api/broker-months/intakes`:
 | `POST /{id}/decisions` | Original + exact reviewed digest/request ID; append decisions/policy/overrides only. |
 | `POST /{id}/finance-link` | Same reviewed command protocol, referencing an existing strict SOURCE receipt; append a link only. |
 
+The read-only [`instrument-result`](SOURCE_INTAKE_RESULT.md) slice computes one
+visibly hypothetical per-instrument RUB/percent result from a saved original and
+reuses the accepted #858/#862 readers; it writes nothing and grants no financial
+authority.
+
 Save/decision/link commands reserve SQLite's writer before revalidation and commit
 one transaction. Stale heads, changed original/dependencies, unsupported flags or
 forked journal refuse. Same request/intent is read-only replay; another intent with
