@@ -119,23 +119,32 @@ jobs:
       !cancelled() &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.lane == 'integrations' && 40 || 10 }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - lane: core-a
             marker: "ci_core and ci_core_a"
+            timeout_minutes: 10
           - lane: core-b
             marker: "ci_core and ci_core_b"
+            timeout_minutes: 10
           - lane: persistence
             marker: ci_persistence
-          - lane: integrations
-            marker: ci_integrations
+            timeout_minutes: 10
+          - lane: integrations-a
+            marker: "ci_integrations and ci_integrations_a"
+            timeout_minutes: 40
+          - lane: integrations-b
+            marker: "ci_integrations and ci_integrations_b"
+            timeout_minutes: 40
           - lane: runtime-release
             marker: ci_runtime_release
+            timeout_minutes: 10
           - lane: benchmark
             marker: ci_benchmark
+            timeout_minutes: 10
     defaults:
       run:
         working-directory: backend
