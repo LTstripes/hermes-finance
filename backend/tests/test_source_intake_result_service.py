@@ -1,5 +1,6 @@
 """Synthetic source-intake-bound conditional result; never actual economics."""
 
+import copy
 import json
 from xml.etree import ElementTree as ET
 
@@ -11,7 +12,7 @@ from test_statement_import_apply import sqlite_blob
 from test_statement_import_mybroker import ISIN
 from test_statement_import_mybroker import database as database
 
-from hermes_finance.persistence import Account, InvestmentCashFlow, ReportingMonth
+from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow, ReportingMonth
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_intake_result import (
     ASSUMPTIONS,
@@ -259,6 +260,7 @@ def test_scoped_money_rows_block_without_double_counting(database):
         result = read(session, view)
         assert_null(result)
         assert "money_economic_effect_unproven" in result["hard_blockers"]
+        assert "cash_control_mismatch" in result["hard_blockers"]
         # The supported dividend stays visible once; it is never added to a total
         # that an unattributed Money row could double.
         assert result["known"]["net_distributions"] == "150.00"
@@ -410,3 +412,129 @@ def test_api_contract_errors_and_input_validation(database):
         params={"isin": ISIN, "request_nonce": "spaces not allowed"},
     )
     assert bad_nonce.status_code == 422
+
+
+def defer_identity(client, view, xml, isin, request_id="result-defer"):
+    requested = {
+        "expected_head_seq": view["head_seq"],
+        "account_id": view["state"]["account_id"],
+        "reporting_month_id": view["state"]["reporting_month_id"],
+        "default_enabled": view["state"]["default_enabled"],
+        "account_currency": view["state"]["account_currency"],
+        "overrides": [],
+        "instrument_decisions": view["state"]["instrument_decisions"],
+        "deferred_isins": [isin],
+    }
+    files = {"file": (FEB_FILE, xml, "application/xml")}
+    plan = client.post(
+        f"{BASE}/{view['id']}/review-preview", files=files, data={"intent": json.dumps(requested)}
+    )
+    assert plan.status_code == 200, plan.text
+    decided = client.post(
+        f"{BASE}/{view['id']}/decisions",
+        files=files,
+        data={
+            "confirmation": json.dumps(
+                {
+                    **requested,
+                    "request_id": request_id,
+                    "confirmation_digest": plan.json()["confirmation_digest"],
+                }
+            )
+        },
+    )
+    assert decided.status_code == 200, decided.text
+    return client.get(f"{BASE}/{view['id']}").json()
+
+
+def test_deferred_identity_is_not_a_number(database):
+    client, _, _, view = setup(database)
+    deferred = defer_identity(client, view, stock_xml(closing=True), ISIN)
+    assert "source_intake_identity_deferred" in deferred["exceptions"]
+    with database.session_factory() as session:
+        result = read(session, deferred)
+        assert_null(result)
+        assert "source_intake_identity_deferred" in result["hard_blockers"]
+
+
+def duplicate_position(root):
+    for row in root.findall(".//{MyBroker}Details[@ISIN1]"):
+        if row.get("ISIN1") == ISIN:
+            duplicate = copy.deepcopy(row)
+            del duplicate.attrib["income_volume"]
+            parent = next(p for p in root.iter() if row in list(p))
+            parent.append(duplicate)
+
+
+def test_duplicate_position_row_is_null_not_an_error(database):
+    client, _, _, _ = setup(database, save=False)
+    view = save_intake(
+        client,
+        stock_xml(closing=True, mutation=duplicate_position),
+        month_id=closing_month_id(database),
+        request_id="result-duplicate",
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert_null(result)
+        assert "source_fixed_holding_unproven" in result["hard_blockers"]
+        assert "source_reader_unavailable" not in result["hard_blockers"]
+
+
+def test_overlapping_malformed_original_does_not_break_the_clean_one(database):
+    client, _, _, view = setup(database)
+    save_intake(
+        client,
+        stock_xml(closing=True, mutation=duplicate_position),
+        month_id=closing_month_id(database),
+        request_id="result-malformed",
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert_null(result)
+        assert "ambiguous_overlapping_originals" in result["hard_blockers"]
+        assert "source_reader_unavailable" not in result["hard_blockers"]
+
+
+def add_trade(root):
+    from test_statement_import_mybroker import fixture
+
+    original = ET.fromstring(fixture(pending=False))
+    trade = original.find(".//{MyBroker}Details[@trade_no]")
+    trade.set("db_time", "15.02.2030 10:00:00")
+    trade.set("save_settlement_date", "01.03.2030")
+    trade.set("save_depo_settlement_date", "01.03.2030")
+    report = root.find("{MyBroker}Trades/{MyBroker}Report")
+    table = report.find("{MyBroker}Tablix2")
+    if table is None:
+        table = ET.SubElement(report, "{MyBroker}Tablix2")
+    ET.SubElement(table, "{MyBroker}Details_Collection").append(trade)
+
+
+def test_observed_trade_blocks_with_specific_reasons_not_a_reader_failure(database):
+    client, _, _, _ = setup(database, save=False)
+    view = save_intake(
+        client,
+        stock_xml(closing=True, mutation=add_trade),
+        month_id=closing_month_id(database),
+        request_id="result-trade",
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert_null(result)
+        assert "observed_native_movement_or_crossing" in result["hard_blockers"]
+        assert "changing_quantity_result_unavailable" in result["hard_blockers"]
+        assert "source_reader_unavailable" not in result["hard_blockers"]
+
+
+def test_non_rub_catalogue_card_blocks(database):
+    client, stock, _, view = setup(database)
+    with database.session_factory() as session:
+        session.get(Instrument, stock).currency = "USD"
+        session.commit()
+        result = read(session, view)
+        assert_null(result)
+        assert result["hard_blockers"]
+    response = api(client, view)
+    assert response.status_code == 200, response.text
+    assert response.json()["hypothetical_result"]["conditional_result"] is None

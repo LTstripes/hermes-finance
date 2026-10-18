@@ -52,12 +52,15 @@ fraction `0.05`, percent `5`.
   a zero. `net_distributions` stays NULL unless every observed row is fully
   supported.
 - **Journal/identity**: unbound intake, missing/ambiguous ISIN proposal,
-  unproven or conflicting currency, unmapped or mismatched instrument card,
-  inactive account.
-- **Source controls**: syntax/endpoint blockers, the accepted month controls
-  (cash, quantity movement, trade readiness), unparsed sections, REPO,
-  principal or in-kind flows, and overlapping same-account originals whose
-  instrument economics disagree (`ambiguous_overlapping_originals`).
+  unproven or conflicting currency, an unresolved identity deferral or review
+  reason for the ISIN, a non-RUB catalogue card, unmapped or mismatched
+  instrument card, inactive account.
+- **Source controls**: syntax/endpoint blockers, the accepted cash and
+  quantity-movement controls recomputed for the raw retained original (trade
+  readiness is deliberately not claimed: any observed trade already blocks
+  with its own reason), unparsed sections, REPO, principal or in-kind flows,
+  and overlapping same-account originals whose instrument economics disagree
+  (`ambiguous_overlapping_originals`).
 
 ## Provenance and freshness
 

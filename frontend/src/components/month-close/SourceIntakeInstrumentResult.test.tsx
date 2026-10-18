@@ -257,6 +257,25 @@ it("rejects a response that does not match the requested evaluation", async () =
   expect(screen.queryByTestId("source-intake-result")).toBeNull();
 });
 
+it("rejects a numeric response while the identity decision is deferred", async () => {
+  const user = userEvent.setup();
+  vi.mocked(readSourceIntakeResult).mockImplementation(async (request) => ({
+    ...fixture(request),
+    intake: {
+      ...fixture(request).intake,
+      exceptions: ["source_intake_identity_deferred", "source_intake_pending"],
+    },
+  }));
+  mount();
+  await chooseAll(user);
+  await user.click(screen.getByRole("button", { name: "Рассчитать условный результат" }));
+  await waitFor(() => expect(readSourceIntakeResult).toHaveBeenCalledOnce());
+  expect(
+    await screen.findByText("Ответ не соответствует выбранному сценарию. Повторите расчёт."),
+  ).toBeVisible();
+  expect(screen.queryByTestId("source-intake-result")).toBeNull();
+});
+
 it("surfaces a failed read and uses a new nonce on retry", async () => {
   const user = userEvent.setup();
   vi.mocked(readSourceIntakeResult).mockRejectedValueOnce(new Error("unavailable"));

@@ -36,10 +36,19 @@ export function sourceResultGap(code: string): string {
     return "Количество бумаги изменилось: V1−V0+P неприменим. Нужен отдельный датированный расчёт денежных потоков (MWR); в этой версии итог не рассчитывается.";
   if (code === "source_intake_not_bound")
     return "Сохранённый оригинал не привязан к счёту и месяцу: экономические читатели недоступны.";
+  if (code === "source_intake_identity_deferred")
+    return "Решение по идентичности этой бумаги отложено: число не рассчитывается до явного решения.";
+  if (code === "source_intake_account_missing") return "Счёт из разбора не найден.";
+  if (code === "source_intake_instrument_absent") return "В оригинале нет позиции с таким ISIN.";
+  if (code === "source_intake_instrument_ambiguous")
+    return "В оригинале несколько неоднозначных записей по этому ISIN.";
+  if (code === "source_reader_unavailable")
+    return "Чтение источника не удалось; число не рассчитывается.";
   if (code === "source_intake_currency_unproven") return "Валюта бумаги не подтверждена.";
   if (code === "source_intake_currency_conflict")
     return "Валюта бумаги противоречива; RUB не подставляется.";
-  if (code === "source_intake_currency_unsupported") return "Поддерживается только RUB.";
+  if (code === "source_intake_currency_unsupported" || code === "instrument_currency_unsupported")
+    return "Поддерживается только RUB; валюта карточки или источника не RUB.";
   if (code === "instrument_identity_unmapped")
     return "Бумага не сопоставлена с карточкой инструмента: подтверждённые выплаты и сделки недоступны.";
   if (code === "instrument_identity_mismatch")
@@ -312,6 +321,18 @@ export function SourceIntakeInstrumentResult({ intake }: { intake: SourceIntake 
               {data.currency_assessment.basis ?? "неизвестен"}
               {data.currency_assessment.provisional ? ", предварительно" : ""}).
             </p>
+            {data.intake.exceptions.length ? (
+              <div>
+                <p>Текущие исключения разбора:</p>
+                <ul>
+                  {data.intake.exceptions.map((code) => (
+                    <li key={code} className={styles.sourceName}>
+                      {sourceResultGap(code)} <small>({code})</small>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <p>
               Проверено только при этом чтении. Повторное использование подтверждения полноты
               недоступно.

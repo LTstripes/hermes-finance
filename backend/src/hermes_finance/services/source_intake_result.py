@@ -108,6 +108,84 @@ def _observation_ref(view, section: str, index: int | None):
     return None
 
 
+def _position_economics(position) -> list[str]:
+    """Type-safe comparison key; a missing source value is never a numeric zero."""
+    return [
+        "" if position.get(field) is None else str(position[field])
+        for field in ("actual_quantity", "beginning_value", "ending_value")
+    ]
+
+
+def _source_controls(document) -> set[str]:
+    """Accepted cash and quantity-movement controls for the raw retained original.
+
+    Trade readiness is not claimed here: the stored manifest source is raw
+    parser output without enriched trade blockers, and any observed trade
+    already blocks the fixed-holding total with its own finite reason. The
+    quantity movement and cash formulas follow `broker_months._controls`.
+    """
+    reasons: set[str] = set()
+    positions = document.get("positions", [])
+    if not positions:
+        reasons.add("security_inventory_unproven")
+    cash = document.get("rub_money", [])
+    if len(cash) == 1 and all(
+        cash[0].get(field) is not None for field in ("beginning_amount", "ending_amount")
+    ):
+        try:
+            posted = sum(
+                (
+                    broker_months._minor(row.get("amount"), signed=True)
+                    for row in document.get("money", [])
+                ),
+                0,
+            )
+            delta = (
+                broker_months._minor(cash[0]["ending_amount"])
+                - broker_months._minor(cash[0]["beginning_amount"])
+                - posted
+            )
+        except (MyBrokerError, ValueError, TypeError, DecimalException):
+            reasons.add("source_decimal_invalid")
+        else:
+            if delta != 0:
+                reasons.add("cash_control_mismatch")
+    else:
+        reasons.add("rub_money_incomplete")
+    for position in positions:
+        if position.get("beginning_actual_quantity") is None:
+            reasons.add("quantity_control_unavailable")
+            continue
+        try:
+            with localcontext() as context:
+                context.prec = 100
+                movement = sum(
+                    (
+                        Decimal(trade["core"]["quantity"])
+                        for trade in document.get("trades", [])
+                        if trade["core"]["source_account"] == position["source_account"]
+                        and trade["core"]["isin"] == position["isin"]
+                        and trade["state"] == "settled"
+                        and trade.get("depo_settlement_date") is not None
+                        and document["covered_from"]
+                        <= trade["depo_settlement_date"]
+                        <= document["covered_to"]
+                    ),
+                    Decimal(0),
+                )
+                delta = (
+                    Decimal(position["actual_quantity"])
+                    - Decimal(position["beginning_actual_quantity"])
+                    - movement
+                )
+        except (MyBrokerError, ValueError, TypeError, KeyError, DecimalException):
+            reasons.add("source_decimal_invalid")
+        else:
+            if delta != 0:
+                reasons.add("quantity_control_mismatch")
+    return reasons
+
+
 def _journal_state(session, original_id: int):
     row = session.scalar(
         select(SourceIntakeRevision)
@@ -160,9 +238,7 @@ def _overlap_blockers(session, original, account_id, isin, economics) -> set[str
             reasons.add("source_intake_journal_invalid")
             continue
         rows = [p for p in document.get("positions", []) if p["isin"] == isin]
-        other = sorted(
-            [p["actual_quantity"], p.get("beginning_value"), p.get("ending_value")] for p in rows
-        )
+        other = sorted(_position_economics(p) for p in rows)
         same_range = (row.covered_from, row.covered_to) == (
             original.covered_from,
             original.covered_to,
@@ -270,6 +346,9 @@ def source_intake_instrument_result(
             blockers.add("bond_dirty_basis_source_unproven")
         elif instrument_type != "stock":
             blockers.add("stock_required")
+        if isin in state.get("deferred_isins", []):
+            blockers.add("source_intake_identity_deferred")
+        blockers.update(proposal.get("review_reasons", []))
         if proposal["hermes_id"] is not None:
             instrument = session.get(Instrument, proposal["hermes_id"])
             if (
@@ -279,33 +358,29 @@ def source_intake_instrument_result(
             ):
                 instrument = None
                 blockers.add("instrument_identity_mismatch")
+            elif instrument.currency != "RUB":
+                blockers.add("instrument_currency_unsupported")
         else:
             blockers.add("instrument_identity_unmapped")
 
     blockers.update(document.get("syntax_blockers", []))
     blockers.update(document.get("endpoint_conflicts", []))
     blockers.update(document.get("endpoint_blockers", []))
-    # The accepted month controls (cash, quantity movement, trade readiness and
-    # unparsed sections) are recomputed for this retained original.
+    # The accepted cash and quantity-movement controls are recomputed for the
+    # retained original; trade readiness is not claimed (see _source_controls).
     try:
-        blockers.update(broker_months._controls(document, session)[0])
+        blockers.update(_source_controls(document))
+        blockers.update(
+            _overlap_blockers(
+                session,
+                original,
+                account_id,
+                isin,
+                sorted(_position_economics(p) for p in document["positions"] if p["isin"] == isin),
+            )
+        )
     except READ_ERRORS:
         blockers.add("source_reader_unavailable")
-    blockers.update(
-        _overlap_blockers(
-            session,
-            original,
-            account_id,
-            isin,
-            sorted(
-                [
-                    [p["actual_quantity"], p.get("beginning_value"), p.get("ending_value")]
-                    for p in document["positions"]
-                    if p["isin"] == isin
-                ]
-            ),
-        )
-    )
 
     rows = [(index, p) for index, p in enumerate(document["positions"]) if p["isin"] == isin]
     position = rows[0][1] if len(rows) == 1 else None
