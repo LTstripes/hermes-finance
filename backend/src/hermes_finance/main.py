@@ -91,6 +91,7 @@ from hermes_finance.api.salary_tax import router as salary_tax_router
 from hermes_finance.api.savings import router as savings_router
 from hermes_finance.api.scenario_lab import router as scenario_lab_router
 from hermes_finance.api.settings import router as settings_router
+from hermes_finance.api.source_intake_result import router as source_intake_result_router
 from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
@@ -179,6 +180,7 @@ def create_app(
     application.include_router(mybroker_import_router)
     application.include_router(mybroker_preflight_router)
     application.include_router(broker_months_router)
+    application.include_router(source_intake_result_router)
     application.include_router(broker_statement_return_router)
     application.include_router(broker_statement_what_if_router)
     application.include_router(broker_statement_provisional_router)

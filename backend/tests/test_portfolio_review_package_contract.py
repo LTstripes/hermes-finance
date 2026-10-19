@@ -14,8 +14,8 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 pytestmark = pytest.mark.import_export
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "portfolio_review_package.schema.json"
-FIXTURE_PATH = REPO_ROOT / "docs" / "portfolio_review_package.synthetic.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json"
+FIXTURE_PATH = REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.synthetic.json"
 
 CORE_SECTIONS = (
     "capital",

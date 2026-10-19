@@ -22,6 +22,7 @@ import styles from "./BrokerMonthReview.module.css";
 import { BrokerProvisionalEstimate } from "./BrokerProvisionalEstimate";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
 import { SourceIdentityInbox } from "./SourceIdentityInbox";
+import { SourceIntakeInstrumentResult } from "./SourceIntakeInstrumentResult";
 
 /** Extends the existing identity queue; File and outbound consent remain memory-only. */
 export function SourceIntakeJournal({
@@ -342,6 +343,7 @@ export function SourceIntakeJournal({
           </details>
         </>
       )}
+      {data && <SourceIntakeInstrumentResult key={`${data.id}:${data.head_seq}`} intake={data} />}
       {ack && (
         <div role="status">
           <p>

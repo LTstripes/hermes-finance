@@ -13,8 +13,8 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 pytestmark = [pytest.mark.import_export, pytest.mark.ci_integrations]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "ai_financial_review.schema.json"
-FIXTURE_PATH = REPO_ROOT / "docs" / "ai_financial_review.synthetic.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
+FIXTURE_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.synthetic.json"
 
 
 def _load(path: Path) -> dict[str, Any]:

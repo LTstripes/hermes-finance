@@ -154,7 +154,7 @@ class PortfolioReviewPackageValidationError(RuntimeError):
 
 def _schema_path() -> Path:
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "docs" / "portfolio_review_package.schema.json"
+        candidate = parent / "docs" / "schemas" / "portfolio_review_package.schema.json"
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(

@@ -13,9 +13,9 @@ later staged UAT work does not change this contract.
 
 **Schema version:** `1.3.0`
 
-**Normative schema:** [`ai_financial_review.schema.json`](../../../ai_financial_review.schema.json)
+**Normative schema:** [`ai_financial_review.schema.json`](../../../schemas/ai_financial_review.schema.json)
 
-**Synthetic fixture:** [`ai_financial_review.synthetic.json`](../../../ai_financial_review.synthetic.json)
+**Synthetic fixture:** [`ai_financial_review.synthetic.json`](../../../schemas/ai_financial_review.synthetic.json)
 
 ## 1. Purpose and product role
 

@@ -33,7 +33,7 @@ Direct Start is the normal Owner route. Shared backup-first update,
 prepared-runtime, recovery rehearsal and `RuntimeConfig` identity/exclusion
 helpers were preserved, even where a helper or schema name still mentions
 `launcher`. Recovery and cleanup exclusion inputs use the direct-operations
-runtime inventory defined in section 13 ([example](../../../runtime-inventory.example.json));
+runtime inventory defined in section 13 ([example](../../../schemas/runtime-inventory.example.json));
 no Launcher shell, config UI or installation is involved.
 
 The old compact-shell/self-updater installation instructions are historical. [R09 closeout](R09_RUNTIME_RELEASE_CLOSEOUT_2026-09-17.md) retains why operations were separated; no new UI wrapper is authorized here.
@@ -200,7 +200,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ProtectionMode external_encrypted_destination_v1
 ```
 
-All variables are explicitly verified Owner-local values. For plaintext use the matching accepted pair. Target profile/data/database must not already exist. The `-RuntimeConfig` argument takes an Owner-local JSON file following [runtime-inventory.example.json](../../../runtime-inventory.example.json): `version` 1, `canonical_production` plus `profiles` entries each carrying absolute local `checkout`/`data_dir`/`database` paths, exactly one `stable` profile whose three paths equal `canonical_production`. The Owner creates and keeps that file outside Git at an Owner-local path, passes its explicit path on every rehearsal invocation, and never commits it with real paths. A missing, unreadable, non-version-1, incomplete or non-canonical inventory fails closed before any target is touched. Do not reinstall the GUI just to satisfy an unexplained missing reference.
+All variables are explicitly verified Owner-local values. For plaintext use the matching accepted pair. Target profile/data/database must not already exist. The `-RuntimeConfig` argument takes an Owner-local JSON file following [runtime-inventory.example.json](../../../schemas/runtime-inventory.example.json): `version` 1, `canonical_production` plus `profiles` entries each carrying absolute local `checkout`/`data_dir`/`database` paths, exactly one `stable` profile whose three paths equal `canonical_production`. The Owner creates and keeps that file outside Git at an Owner-local path, passes its explicit path on every rehearsal invocation, and never commits it with real paths. A missing, unreadable, non-version-1, incomplete or non-canonical inventory fails closed before any target is touched. Do not reinstall the GUI just to satisfy an unexplained missing reference.
 
 The repository wrapper proves Git/boundaries before its first uv run, establishes its checkout-local environment, pins mutable preparation outputs and owns descendants under a deadline. Do not bypass it with an inherited-environment uv command. Source/target descriptors and snapshot identity are rechecked through preparation/start. A failed or ambiguous mutated target is not reused. Synthetic rehearsal is not Owner UAT or proof of cloud delivery.
 

@@ -1975,6 +1975,11 @@ All routes are under `/api/broker-months/intakes`:
 | `POST /{id}/decisions` | Original + exact reviewed digest/request ID; append decisions/policy/overrides only. |
 | `POST /{id}/finance-link` | Same reviewed command protocol, referencing an existing strict SOURCE receipt; append a link only. |
 
+The read-only [source-intake-bound instrument result](#c7-source_intake_result-1)
+slice computes one visibly hypothetical per-instrument RUB/percent result from a
+saved original and reuses the accepted #858/#862 readers; it writes nothing and
+grants no financial authority.
+
 Save/decision/link commands reserve SQLite's writer before revalidation and commit
 one transaction. Stale heads, changed original/dependencies, unsupported flags or
 forked journal refuse. Same request/intent is read-only replay; another intent with
@@ -5887,6 +5892,100 @@ on loopback port 18865 (overridable), validates API parity, keyboard, 1440 width
 1280 width at 125% zoom, delayed A→B→A, failed reads and the blocked bond.
 Installed Stable and Owner data are outside this verification path.
 
+<a id="c7-source_intake_result-1"></a>
+### Source-intake-bound conditional instrument result
+
+Bounded first slice for [#891](https://github.com/LTstripes/hermes-finance/issues/891):
+one visibly hypothetical per-instrument RUB/percent result from a durable saved
+original (the journal itself is [chapter 3](#c3-source_intake-8)), with the
+accepted #858 payouts and #862 executions reused read-only. This contract does
+not authorize actual instrument performance, bonds or changing-quantity return
+math.
+
+`GET /api/broker-months/intakes/{intake_id}/instrument-result` recomputes one
+saved `source_intake_v1` original and one ISIN inside it. Query parameters:
+`isin`, `request_nonce`, and the three Boolean choices `no_unobserved_movements`,
+`no_unobserved_payouts`, `no_other_costs_or_taxes` (default false). Responses use
+`Cache-Control: no-store`. The endpoint is a GET: no journal revision, no
+financial Apply and no second money ledger are required or written.
+
+The observed block is the original's own native EOD facts for the ISIN position:
+`beginning_value` (`previous_day_eod` basis at `covered_from - 1`) and
+`ending_value` (`covered_to_eod` basis at `covered_to`), exact kopecks through
+the shared Decimal discipline. The value change and its percent are reported
+separately from the conditional total and are never labelled profit when the
+quantity changed.
+
+`P` is the exact supported net dividend sum once, from the unchanged #858 reader
+inside the same coherent snapshot: every observed payout row must be
+`included_in_known_net`, current and a dividend, and at least one event is
+required. Embedded taxes and fees are shown as evidence and are never subtracted
+a second time; an unknown tax breakdown stays NULL. `V1 - V0 + P` is computed
+only when all three assumptions are explicitly selected and no hard blocker is
+present. `actual_instrument_return` is always null and
+`whole_period_completeness` always `unknown`.
+
+The conditional total is unannualized (`percent_unit=percentage_points`,
+`annualized=false`), uses Decimal precision 100 and no display rounding. For a
+fixed holding 1000→900 with a proven 150 net dividend the result is `50.00` RUB,
+fraction `0.05`, percent `5`.
+
+What stays NULL with a finite reason:
+
+- **Bonds**: `bond_dirty_basis_source_unproven`, `bond_nkd_basis=unknown`; no
+  coupon or apparent value difference produces a number and no clean/dirty
+  basis is invented. A separate accepted provenance contract is required.
+- **Changed quantity / observed trades**: `quantity_changed_not_profit` and
+  `changing_quantity_result_unavailable`. `V1 - V0 + P` does not apply; a dated
+  cash-flow MWR needs its own reviewed contract. Observed source facts remain
+  visible; the total is NULL.
+- **Unattributed Money rows**: `money_economic_effect_unproven`. A stock
+  dividend could hide in an unclassified posting; the slice has no authority to
+  attribute or waive it, and no second payout is ever added.
+- **Unproven payouts**: `proven_net_dividend_required`; absence of rows is never
+  a zero. `net_distributions` stays NULL unless every observed row is fully
+  supported.
+- **Journal/identity**: unbound intake, missing/ambiguous ISIN proposal,
+  unproven or conflicting currency, an unresolved identity deferral or review
+  reason for the ISIN, a non-RUB catalogue card, unmapped or mismatched
+  instrument card, inactive account.
+- **Source controls**: syntax/endpoint blockers, the accepted cash and
+  quantity-movement controls recomputed for the raw retained original (trade
+  readiness is deliberately not claimed: any observed trade already blocks
+  with its own reason), unparsed sections, REPO, principal or in-kind flows,
+  and overlapping originals of the same native source account whose instrument
+  economics disagree (`ambiguous_overlapping_originals`). Native-account
+  membership uses the retained `native_accounts_json`, filename and row
+  accounts plus the effective mapping registry, so an overlapping **unbound**
+  original of the same native account is compared too; an overlap that cannot
+  be attributed to a different account stays
+  `overlapping_native_account_unproven` instead of being assumed irrelevant.
+
+The response binds `intake.id`, `head_seq`, `manifest_digest`,
+`document_sha256`, the covered period, the current finance-link state and the
+journal exceptions, plus the exact position observation row reference. Repeated
+GETs are recomputed against the current committed journal; a new revision
+changes `head_seq` and the client suppresses the old result. `request_nonce`
+binds a response to the caller's evaluation; `dependency_fingerprint` remains
+null and is never a reusable completeness token.
+
+The panel lives in the month-close source journal under the selected saved
+original ("Условный результат бумаги из сохранённого оригинала"). No checkbox
+is preselected; selection, assumption or original changes suppress the old
+result. Actual performance is explicitly unavailable.
+
+A source-only unbound corpus (no account binding and no booked payouts) yields
+observed source facts and NULL totals only. On the current #769 corpus of
+unbound originals this slice does **not** enable a numeric June/July instrument
+result; a separate reviewed contract is required for unbound-native-scope
+hypotheticals. Focused verification:
+
+```text
+backend: pytest tests/test_source_intake_result_service.py
+frontend: npm test -- src/components/month-close/SourceIntakeInstrumentResult.test.tsx src/components/month-close/SourceIntakeJournal.test.tsx
+frontend: npm run build
+```
+
 <a id="c7-asset_class_returns_contract-52"></a>
 ### Class metric distinction and C1–C5 evidence
 
@@ -7540,7 +7639,7 @@ Private seed расширяется необязательным массиво�
 
 Добавление необязательного поля не должно ломать существующие seed-файлы без этого поля; отсутствие opening context не трактуется автоматически как известный ноль.
 
-Текущая публичная schema использует `additionalProperties: false`, поэтому R02-03 обязана явно расширить `docs/private_seed.schema.json`. Нужно ли повышать `schema_version` при обратно совместимом optional-поле — техническое решение R02-03, а не изменение финансовой семантики.
+Текущая публичная schema использует `additionalProperties: false`, поэтому R02-03 обязана явно расширить `docs/schemas/private_seed.schema.json`. Нужно ли повышать `schema_version` при обратно совместимом optional-поле — техническое решение R02-03, а не изменение финансовой семантики.
 
 
 <a id="c8-0002-opening-ytd-gross-21-8-missing-context-не-равен-нулю"></a>
@@ -12049,7 +12148,7 @@ Hermes must not compute a silent `TorgPos * Price` stand-in for provider market 
 <a id="c10"></a>
 ## 10. Export formats, schema versions and compatibility
 
-Machine paths remain stable: `docs/ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
+Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
 
 Legacy mapping imports require their declared schema and explicit field mappings; unsupported columns/identity never silently become financial facts. Private seed is an explicit local bootstrap input outside Git with real payloads excluded from CI; the retained public example is synthetic. Preserve historical receipt formats and reject unsupported versions rather than reinterpreting them. The detailed consumer contracts follow.
 
@@ -12060,9 +12159,9 @@ Legacy mapping imports require their declared schema and explicit field mappings
 
 **Current schema version:** `1.4.0`
 
-**Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
+**Normative schema:** [`ai_analysis_bundle.schema.json`](schemas/ai_analysis_bundle.schema.json)
 
-**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](ai_analysis_bundle.synthetic.json)
+**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](schemas/ai_analysis_bundle.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](#c10-ai_financial_review-1)
 
@@ -12329,9 +12428,9 @@ later staged UAT work does not change this contract.
 
 **Schema version:** `1.3.0`
 
-**Normative schema:** [`ai_financial_review.schema.json`](ai_financial_review.schema.json)
+**Normative schema:** [`ai_financial_review.schema.json`](schemas/ai_financial_review.schema.json)
 
-**Synthetic fixture:** [`ai_financial_review.synthetic.json`](ai_financial_review.synthetic.json)
+**Synthetic fixture:** [`ai_financial_review.synthetic.json`](schemas/ai_financial_review.synthetic.json)
 
 
 <a id="c10-ai_financial_review-1-1-purpose-and-product-role"></a>
@@ -12676,9 +12775,9 @@ secret fields, and unchanged behavior of the three existing export families.
 
 **Contract:** `hermes.finance.portfolio_review_package` version `1.1.0`.
 
-**Normative schema:** [`portfolio_review_package.schema.json`](portfolio_review_package.schema.json)
+**Normative schema:** [`portfolio_review_package.schema.json`](schemas/portfolio_review_package.schema.json)
 
-**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](portfolio_review_package.synthetic.json)
+**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](schemas/portfolio_review_package.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](#c10-ai_financial_review-1)
 

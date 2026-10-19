@@ -43,9 +43,11 @@ from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
-FINANCIAL_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "ai_financial_review.schema.json"
-PORTFOLIO_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "portfolio_review_package.schema.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
+FINANCIAL_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
+PORTFOLIO_REVIEW_SCHEMA_PATH = (
+    REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json"
+)
 FORBIDDEN_KEYS = {
     "api_key",
     "api_token",
