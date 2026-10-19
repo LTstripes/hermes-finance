@@ -125,6 +125,7 @@ def provisional_xml(
     missing_closing=False,
     unclassified=False,
     opaque=False,
+    opaque_section=False,
     pending=False,
     repo=False,
     candidate_currency="RUB",
@@ -224,7 +225,12 @@ def provisional_xml(
         row.set("save_depo_settlement_date3", "17.04.2030")
         row.set("settlement_time2", "17.04.2030 10:00:00")
         row.set("bank_tax2", "0")
+        row.tag = "{MyBroker}Details2"
         pending_collection.append(row)
+    if opaque_section:
+        report = root.find("m:Trades3/m:Report", ns)
+        assert report is not None
+        node(report, "Tablix1")
     return ET.tostring(root, encoding="utf-8")
 
 
@@ -654,7 +660,7 @@ def test_endpoint_gaps_block_percentage_but_keep_defined_observed_values(databas
 
 def test_repo_opaque_and_pending_are_named_assumptions(database):
     scope = april_scope(database)
-    xml = provisional_xml(repo=True, opaque=True, pending=True)
+    xml = provisional_xml(repo=True, opaque_section=True, pending=True)
     client = TestClient(create_app(database=database))
     view = save(client, xml, scope, request_id="save-repo")
     context = context_for(client, xml, view)
@@ -970,6 +976,46 @@ def test_bound_trade_core_account_mismatch_blocks(database):
     assert evaluate(client, context, choices(context), xml).json()["status"] == "blocked"
 
 
+def test_pending_trade_core_account_mismatch_blocks_and_same_account_control_passes(tmp_path):
+    database = _free_database(tmp_path)
+    client = TestClient(create_app(database=database))
+
+    control = provisional_xml(pending=True)
+    control_view = save(
+        client,
+        control,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-pending-control",
+    )
+    control_context = context_for(client, control, control_view)
+    assert control_context["hard_blockers"] == []
+    assert any("Pending-сделки (1)" in line for line in control_context["limitations"])
+    assert (
+        evaluate(client, control_context, choices(control_context), control).json()[
+            "scenario_result_kopecks"
+        ]
+        == "21100"
+    )
+
+    mixed = provisional_xml(pending=True)
+    root = ET.fromstring(mixed)
+    pending = root.find(".//m:Details2", NS)
+    pending.set("acc_code2", "second-synthetic-account")
+    mixed = ET.tostring(root, encoding="utf-8")
+    view = save(
+        client,
+        mixed,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-pending-mixed",
+    )
+    context = context_for(client, mixed, view)
+    assert "provisional_source_scope_ambiguous" in context["hard_blockers"]
+    assert context["observed"]["total_opening_kopecks"] is None
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), mixed).json()["status"] == "blocked"
+    database.engine.dispose()
+
+
 def test_unbound_ambiguous_second_alias_missing_side_and_repo_are_fail_closed(tmp_path):
     database = _free_database(tmp_path)
     client = TestClient(create_app(database=database))
@@ -1008,7 +1054,7 @@ def test_unbound_ambiguous_second_alias_missing_side_and_repo_are_fail_closed(tm
         == "blocked"
     )
 
-    repo = provisional_xml(repo=True, opaque=True, pending=True)
+    repo = provisional_xml(repo=True, opaque_section=True, pending=True)
     repo_view = save(
         client,
         repo,
