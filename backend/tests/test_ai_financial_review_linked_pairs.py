@@ -26,7 +26,7 @@ from hermes_finance.services.reporting_months import close_reporting_month, crea
 pytestmark = [pytest.mark.import_export, pytest.mark.ci_integrations]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "ai_financial_review.schema.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
 GENERATED_AT = "2038-06-01T12:00:00+03:00"
 LINKED_PAIR_ERROR_CODE = "linked_pair_read_model_unavailable"
 

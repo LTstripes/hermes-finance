@@ -31,7 +31,7 @@
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
         -Version 0.7.0 `
         -ExpectedMainSha 0123456789abcdef0123456789abcdef01234567 `
-        -ReleaseNotes .\docs\release-notes-0.7.0.md
+        -ReleaseNotes .\docs\release-notes\release-notes-0.7.0.md
 #>
 
 [CmdletBinding()]

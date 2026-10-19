@@ -146,7 +146,7 @@ class AiFinancialReviewValidationError(RuntimeError):
 
 def _schema_path() -> Path:
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "docs" / "ai_financial_review.schema.json"
+        candidate = parent / "docs" / "schemas" / "ai_financial_review.schema.json"
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("ai_financial_review.schema.json was not found next to the repository")

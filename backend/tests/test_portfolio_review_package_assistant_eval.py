@@ -11,8 +11,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 pytestmark = [pytest.mark.import_export, pytest.mark.network_free]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGE_PATH = REPO_ROOT / "docs" / "portfolio_review_package.synthetic.json"
-EVALUATION_PATH = REPO_ROOT / "docs" / "portfolio_review_package.assistant-evaluation.json"
+PACKAGE_PATH = REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.synthetic.json"
+EVALUATION_PATH = (
+    REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.assistant-evaluation.json"
+)
 
 
 def _load(path: Path) -> dict[str, object]:
@@ -64,7 +66,7 @@ def test_synthetic_assistant_questions_have_expected_ground_truth() -> None:
 def test_evaluation_fixture_is_safe_and_package_contract_remains_valid() -> None:
     package = _load(PACKAGE_PATH)
     evaluation = _load(EVALUATION_PATH)
-    schema = _load(REPO_ROOT / "docs" / "portfolio_review_package.schema.json")
+    schema = _load(REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json")
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(package)
 
     serialized = json.dumps(evaluation, ensure_ascii=False).lower()

@@ -7412,7 +7412,7 @@ Private seed расширяется необязательным массиво�
 
 Добавление необязательного поля не должно ломать существующие seed-файлы без этого поля; отсутствие opening context не трактуется автоматически как известный ноль.
 
-Текущая публичная schema использует `additionalProperties: false`, поэтому R02-03 обязана явно расширить `docs/private_seed.schema.json`. Нужно ли повышать `schema_version` при обратно совместимом optional-поле — техническое решение R02-03, а не изменение финансовой семантики.
+Текущая публичная schema использует `additionalProperties: false`, поэтому R02-03 обязана явно расширить `docs/schemas/private_seed.schema.json`. Нужно ли повышать `schema_version` при обратно совместимом optional-поле — техническое решение R02-03, а не изменение финансовой семантики.
 
 
 <a id="c8-0002-opening-ytd-gross-21-8-missing-context-не-равен-нулю"></a>
@@ -11921,7 +11921,7 @@ Hermes must not compute a silent `TorgPos * Price` stand-in for provider market 
 <a id="c10"></a>
 ## 10. Export formats, schema versions and compatibility
 
-Machine paths remain stable: `docs/ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
+Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
 
 Legacy mapping imports require their declared schema and explicit field mappings; unsupported columns/identity never silently become financial facts. Private seed is an explicit local bootstrap input outside Git with real payloads excluded from CI; the retained public example is synthetic. Preserve historical receipt formats and reject unsupported versions rather than reinterpreting them. The detailed consumer contracts follow.
 
@@ -11932,9 +11932,9 @@ Legacy mapping imports require their declared schema and explicit field mappings
 
 **Current schema version:** `1.4.0`
 
-**Normative schema:** [`ai_analysis_bundle.schema.json`](ai_analysis_bundle.schema.json)
+**Normative schema:** [`ai_analysis_bundle.schema.json`](schemas/ai_analysis_bundle.schema.json)
 
-**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](ai_analysis_bundle.synthetic.json)
+**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](schemas/ai_analysis_bundle.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](#c10-ai_financial_review-1)
 
@@ -12201,9 +12201,9 @@ later staged UAT work does not change this contract.
 
 **Schema version:** `1.3.0`
 
-**Normative schema:** [`ai_financial_review.schema.json`](ai_financial_review.schema.json)
+**Normative schema:** [`ai_financial_review.schema.json`](schemas/ai_financial_review.schema.json)
 
-**Synthetic fixture:** [`ai_financial_review.synthetic.json`](ai_financial_review.synthetic.json)
+**Synthetic fixture:** [`ai_financial_review.synthetic.json`](schemas/ai_financial_review.synthetic.json)
 
 
 <a id="c10-ai_financial_review-1-1-purpose-and-product-role"></a>
@@ -12548,9 +12548,9 @@ secret fields, and unchanged behavior of the three existing export families.
 
 **Contract:** `hermes.finance.portfolio_review_package` version `1.1.0`.
 
-**Normative schema:** [`portfolio_review_package.schema.json`](portfolio_review_package.schema.json)
+**Normative schema:** [`portfolio_review_package.schema.json`](schemas/portfolio_review_package.schema.json)
 
-**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](portfolio_review_package.synthetic.json)
+**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](schemas/portfolio_review_package.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](#c10-ai_financial_review-1)
 
