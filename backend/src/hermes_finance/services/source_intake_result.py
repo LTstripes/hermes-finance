@@ -22,6 +22,7 @@ from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import RubleAmount
 from hermes_finance.persistence import (
     Account,
+    BrokerIdentityMapping,
     InKindMovement,
     Instrument,
     InvestmentCashFlow,
@@ -186,21 +187,6 @@ def _source_controls(document) -> set[str]:
     return reasons
 
 
-def _journal_state(session, original_id: int):
-    row = session.scalar(
-        select(SourceIntakeRevision)
-        .where(SourceIntakeRevision.original_id == original_id)
-        .order_by(SourceIntakeRevision.seq.desc())
-        .limit(1)
-    )
-    if row is None:
-        return None
-    try:
-        return json.loads(row.payload_json).get("state")
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
 def _manifest_source(session, original_id: int):
     row = session.scalar(
         select(SourceIntakeRevision)
@@ -219,25 +205,90 @@ def _manifest_source(session, original_id: int):
         return None
 
 
-def _overlap_blockers(session, original, account_id, isin, economics) -> set[str]:
-    """An overlapping same-account original must agree or the interval is ambiguous."""
+def _native_accounts(original, document) -> set[str] | None:
+    """Exact native source-account membership, including unbound originals.
+
+    Unreadable membership is ambiguous, never an empty set.
+    """
+    aliases: set[str] = set()
+    try:
+        stored = json.loads(original.native_accounts_json)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if not isinstance(stored, list):
+        return None
+    aliases.update(str(value) for value in stored if isinstance(value, str) and value)
+    if isinstance(document, dict):
+        filename = document.get("filename_account")
+        if isinstance(filename, str) and filename:
+            aliases.add(filename)
+        for section in ("positions", "rub_money", "money"):
+            for row in document.get(section, []):
+                account = row.get("source_account")
+                if isinstance(account, str) and account:
+                    aliases.add(account)
+        for trade in document.get("trades", []):
+            account = trade.get("core", {}).get("source_account")
+            if isinstance(account, str) and account:
+                aliases.add(account)
+    return aliases or None
+
+
+def _account_membership(session, provider, aliases: set[str], account_id) -> str:
+    """Return 'same', 'other' or 'unproven' for one native alias set.
+
+    'other' requires every alias to resolve effectively to some other account;
+    any unresolved alias stays ambiguous and must not be assumed irrelevant.
+    """
+    mappings = [
+        mapping
+        for mapping in session.scalars(
+            select(BrokerIdentityMapping).where(
+                BrokerIdentityMapping.provider == provider,
+                BrokerIdentityMapping.subject_kind == "account",
+                BrokerIdentityMapping.provider_identity.in_(sorted(aliases)),
+            )
+        )
+        if mapping.status == "effective"
+    ]
+    if account_id is not None and any(
+        mapping.hermes_target_id == account_id for mapping in mappings
+    ):
+        return "same"
+    if {mapping.provider_identity for mapping in mappings} == aliases:
+        return "other"
+    return "unproven"
+
+
+def _overlap_blockers(session, original, document, account_id, isin, economics) -> set[str]:
+    """An overlapping same-native-account original must agree or the interval is ambiguous."""
     reasons = set()
+    current_aliases = _native_accounts(original, document)
     for row in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
         if row.id == original.id:
             continue
         if row.covered_to < original.covered_from or row.covered_from > original.covered_to:
             continue
-        state = _journal_state(session, row.id)
-        if state is None:
+        other_document = _manifest_source(session, row.id)
+        if other_document is None:
             reasons.add("source_intake_journal_invalid")
             continue
-        if state.get("account_id") != account_id:
+        other_aliases = _native_accounts(row, other_document)
+        if other_aliases is None:
+            reasons.add("overlapping_native_account_unproven")
             continue
-        document = _manifest_source(session, row.id)
-        if document is None:
-            reasons.add("source_intake_journal_invalid")
+        if account_id is not None:
+            membership = _account_membership(session, row.provider, other_aliases, account_id)
+        elif current_aliases is None:
+            membership = "unproven"
+        else:
+            membership = "same" if other_aliases & current_aliases else "other"
+        if membership == "other":
             continue
-        rows = [p for p in document.get("positions", []) if p["isin"] == isin]
+        if membership == "unproven":
+            reasons.add("overlapping_native_account_unproven")
+            continue
+        rows = [p for p in other_document.get("positions", []) if p["isin"] == isin]
         other = sorted(_position_economics(p) for p in rows)
         same_range = (row.covered_from, row.covered_to) == (
             original.covered_from,
@@ -374,6 +425,7 @@ def source_intake_instrument_result(
             _overlap_blockers(
                 session,
                 original,
+                document,
                 account_id,
                 isin,
                 sorted(_position_economics(p) for p in document["positions"] if p["isin"] == isin),

@@ -9,15 +9,18 @@ from sqlalchemy import event, select, text
 from test_instrument_eod_observations_service import FEB_FILE, eod_xml
 from test_instrument_what_if_service import CHOSEN, assert_null, setup_stock, stock_xml
 from test_statement_import_apply import sqlite_blob
-from test_statement_import_mybroker import ISIN
+from test_statement_import_mybroker import ACCOUNT, ISIN
 from test_statement_import_mybroker import database as database
 
 from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow, ReportingMonth
 from hermes_finance.services import source_intake
+from hermes_finance.services.accounts import create_account
+from hermes_finance.services.broker_identity_mappings import confirm_mapping
 from hermes_finance.services.source_intake_result import (
     ASSUMPTIONS,
     source_intake_instrument_result,
 )
+from hermes_finance.statement_import.mybroker import PROVIDER
 
 BASE = "/api/broker-months/intakes"
 BOND = "RU000A000001"
@@ -28,7 +31,15 @@ def closing_month_id(database):
         return session.scalar(select(ReportingMonth.id).where(ReportingMonth.month == 2))
 
 
-def save_intake(client, xml, *, account_id=1, month_id=None, request_id="result-save"):
+def save_intake(
+    client,
+    xml,
+    *,
+    account_id=1,
+    month_id=None,
+    request_id="result-save",
+    filename=FEB_FILE,
+):
     intent = {
         "account_id": account_id,
         "reporting_month_id": month_id,
@@ -36,7 +47,7 @@ def save_intake(client, xml, *, account_id=1, month_id=None, request_id="result-
     }
     response = client.post(
         BASE,
-        files={"file": (FEB_FILE, xml, "application/xml")},
+        files={"file": (filename, xml, "application/xml")},
         data={"intent": json.dumps(intent)},
     )
     assert response.status_code == 200, response.text
@@ -538,3 +549,101 @@ def test_non_rub_catalogue_card_blocks(database):
     response = api(client, view)
     assert response.status_code == 200, response.text
     assert response.json()["hypothetical_result"]["conditional_result"] is None
+
+
+def rename_native_account(root, alias):
+    for node in root.iter():
+        if node.get("acc_code") == ACCOUNT:
+            node.set("acc_code", alias)
+
+
+def test_unbound_overlapping_same_account_original_blocks_number(database):
+    """RED on the parent: an unbound same-native-account overlap was skipped."""
+    client, _, _, view = setup(database)
+    save_intake(
+        client,
+        stock_xml(closing=True, closing_value="950.00"),
+        account_id=None,
+        month_id=None,
+        request_id="result-unbound-overlap",
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert_null(result)
+        assert "ambiguous_overlapping_originals" in result["hard_blockers"]
+        assert result["hypothetical_result"]["conditional_result"] is None
+        assert result["hypothetical_result"]["conditional_period_fraction"] is None
+        assert result["hypothetical_result"]["conditional_period_percent"] is None
+
+
+def test_unrelated_unbound_original_does_not_block(database):
+    client, _, _, view = setup(database)
+    with database.session_factory() as session:
+        other = create_account(session, name="Other synthetic account", account_type="brokerage")
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="account",
+            provider_identity="7654321",
+            hermes_target_id=other.id,
+        )
+    save_intake(
+        client,
+        stock_xml(
+            closing=True,
+            closing_value="950.00",
+            mutation=lambda root: rename_native_account(root, "7654321"),
+        ),
+        account_id=None,
+        month_id=None,
+        request_id="result-unrelated",
+        filename=FEB_FILE.replace("1234567", "7654321"),
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert "ambiguous_overlapping_originals" not in result["hard_blockers"]
+        assert "overlapping_native_account_unproven" not in result["hard_blockers"]
+        assert result["hypothetical_result"]["conditional_result"] == "50.00"
+
+
+def test_unmapped_unbound_original_stays_unproven_not_irrelevant(database):
+    client, _, _, view = setup(database)
+    save_intake(
+        client,
+        stock_xml(
+            closing=True,
+            closing_value="950.00",
+            mutation=lambda root: rename_native_account(root, "9999999"),
+        ),
+        account_id=None,
+        month_id=None,
+        request_id="result-unmapped",
+        filename=FEB_FILE.replace("1234567", "9999999"),
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert_null(result)
+        assert "overlapping_native_account_unproven" in result["hard_blockers"]
+
+
+def test_unbound_identical_same_account_re_report_corroborates_once(database):
+    client, _, _, view = setup(database)
+
+    def move_cash(root):
+        row = root.find(".//{MyBroker}Details[@active_name='RUB']")
+        row.set("income_rest", "1234.00")
+        row.set("real_rest", "1234.00")
+
+    save_intake(
+        client,
+        stock_xml(closing=True, mutation=move_cash),
+        account_id=None,
+        month_id=None,
+        request_id="result-unbound-identical",
+    )
+    with database.session_factory() as session:
+        result = read(session, view)
+        assert result["hard_blockers"] == []
+        assert result["hypothetical_result"]["conditional_result"] == "50.00"
+        assert result["known"]["payouts"]["event_count"] == 1
+        assert result["known"]["net_distributions"] == "150.00"

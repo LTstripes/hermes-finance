@@ -59,8 +59,13 @@ fraction `0.05`, percent `5`.
   quantity-movement controls recomputed for the raw retained original (trade
   readiness is deliberately not claimed: any observed trade already blocks
   with its own reason), unparsed sections, REPO, principal or in-kind flows,
-  and overlapping same-account originals whose instrument economics disagree
-  (`ambiguous_overlapping_originals`).
+  and overlapping originals of the same native source account whose instrument
+  economics disagree (`ambiguous_overlapping_originals`). Native-account
+  membership uses the retained `native_accounts_json`, filename and row
+  accounts plus the effective mapping registry, so an overlapping **unbound**
+  original of the same native account is compared too; an overlap that cannot
+  be attributed to a different account stays
+  `overlapping_native_account_unproven` instead of being assumed irrelevant.
 
 ## Provenance and freshness
 
@@ -77,7 +82,13 @@ null and is never a reusable completeness token.
 The panel lives in the month-close source journal under the selected saved
 original ("Условный результат бумаги из сохранённого оригинала"). No checkbox
 is preselected; selection, assumption or original changes suppress the old
-result. Actual performance is explicitly unavailable. Focused verification:
+result. Actual performance is explicitly unavailable.
+
+A source-only unbound corpus (no account binding and no booked payouts) yields
+observed source facts and NULL totals only. On the current #769 corpus of
+unbound originals this slice does **not** enable a numeric June/July instrument
+result; a separate reviewed contract is required for unbound-native-scope
+hypotheticals. Focused verification:
 
 ```text
 backend: pytest tests/test_source_intake_result_service.py

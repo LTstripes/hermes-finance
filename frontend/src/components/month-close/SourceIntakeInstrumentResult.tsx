@@ -66,6 +66,8 @@ export function sourceResultGap(code: string): string {
     return "В оригинале нет ровно одной позиции по этой бумаге.";
   if (code === "ambiguous_overlapping_originals")
     return "Перекрывающиеся сохранённые оригиналы не согласованы по этой бумаге.";
+  if (code === "overlapping_native_account_unproven")
+    return "Перекрывающийся оригинал нельзя однозначно отнести к другому счёту: число не рассчитывается до уточнения.";
   if (code.includes("quantity") || code.includes("cash"))
     return "Не сходятся собственные контроли оригинала (деньги или количество).";
   if (code.includes("unparsed") || code.includes("syntax") || code === "unknown_section")
