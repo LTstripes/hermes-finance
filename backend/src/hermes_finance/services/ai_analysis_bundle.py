@@ -133,7 +133,7 @@ class AiAnalysisBundleValidationError(RuntimeError):
 
 def _schema_path() -> Path:
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "docs" / "ai_analysis_bundle.schema.json"
+        candidate = parent / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("ai_analysis_bundle.schema.json was not found next to the repository")

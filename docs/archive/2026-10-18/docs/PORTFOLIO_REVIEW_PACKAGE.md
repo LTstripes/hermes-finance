@@ -4,9 +4,9 @@
 
 **Contract:** `hermes.finance.portfolio_review_package` version `1.1.0`.
 
-**Normative schema:** [`portfolio_review_package.schema.json`](../../../portfolio_review_package.schema.json)
+**Normative schema:** [`portfolio_review_package.schema.json`](../../../schemas/portfolio_review_package.schema.json)
 
-**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](../../../portfolio_review_package.synthetic.json)
+**Synthetic fixture:** [`portfolio_review_package.synthetic.json`](../../../schemas/portfolio_review_package.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](AI_FINANCIAL_REVIEW.md)
 

@@ -36,7 +36,7 @@ pytestmark = [
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "portfolio_review_package.schema.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json"
 FORBIDDEN_KEYS = {
     "api_key",
     "api_token",

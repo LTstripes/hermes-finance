@@ -48,7 +48,7 @@ The implementation PR itself classified full and ran the full product lanes. Ind
 
 #629 removes the now-unused Windows Launcher maintenance surface. Final PR #689 changed **41 files, +112/−7000**, deleting the GUI/C# safety harness, package/install assets, launcher-only path/safety jobs and their helpers. Shared runtime/recovery code with launcher-era names was retained when still consumed.
 
-Review also found that recovery still needed a v1 runtime inventory after the Launcher config disappeared. The accepted remediation adds [a non-Launcher example](../runtime-inventory.example.json) and requires an explicit Owner-local inventory path for recovery/cleanup exclusions; missing or invalid inventory remains fail-closed.
+Review also found that recovery still needed a v1 runtime inventory after the Launcher config disappeared. The accepted remediation adds [a non-Launcher example](../schemas/runtime-inventory.example.json) and requires an explicit Owner-local inventory path for recovery/cleanup exclusions; missing or invalid inventory remains fail-closed.
 
 ## Final supported CI shape
 

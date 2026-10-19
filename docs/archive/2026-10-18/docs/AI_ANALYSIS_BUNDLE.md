@@ -4,9 +4,9 @@
 
 **Current schema version:** `1.4.0`
 
-**Normative schema:** [`ai_analysis_bundle.schema.json`](../../../ai_analysis_bundle.schema.json)
+**Normative schema:** [`ai_analysis_bundle.schema.json`](../../../schemas/ai_analysis_bundle.schema.json)
 
-**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](../../../ai_analysis_bundle.synthetic.json)
+**Synthetic example:** [`ai_analysis_bundle.synthetic.json`](../../../schemas/ai_analysis_bundle.synthetic.json)
 
 **Recommended #331 handoff:** [`AI_FINANCIAL_REVIEW.md`](AI_FINANCIAL_REVIEW.md)
 

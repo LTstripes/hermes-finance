@@ -8,8 +8,8 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.schema.json"
-FIXTURE_PATH = REPO_ROOT / "docs" / "ai_analysis_bundle.synthetic.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
+FIXTURE_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.synthetic.json"
 
 FORBIDDEN_KEYS = {
     "api_key",
