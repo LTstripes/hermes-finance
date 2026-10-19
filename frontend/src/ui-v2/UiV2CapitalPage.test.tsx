@@ -23,7 +23,7 @@ import {
   uiV2Instruments,
   uiV2Months,
 } from "../test/uiV2Fixtures";
-import UiV2CapitalPage from "../ui-v2/UiV2CapitalPage";
+import UiV2CapitalPage from "./UiV2CapitalPage";
 
 function LocationProbe() {
   const location = useLocation();

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupMetadata } from "../api/types";
 import { createQueryClient, queryKeys } from "../queryClient";
 import { uiV2Months } from "../test/uiV2Fixtures";
-import UiV2DataFilesPage from "../ui-v2/UiV2DataFilesPage";
+import UiV2DataFilesPage from "./UiV2DataFilesPage";
 
 const NativeURL = URL;
 

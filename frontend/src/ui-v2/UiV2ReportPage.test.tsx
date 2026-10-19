@@ -18,7 +18,7 @@ import {
   uiV2LongHistoryFirstMonthId,
   uiV2Months,
 } from "../test/uiV2Fixtures";
-import UiV2ReportPage from "../ui-v2/UiV2ReportPage";
+import UiV2ReportPage from "./UiV2ReportPage";
 
 const historicalId = uiV2CapitalPreviousMonthId;
 

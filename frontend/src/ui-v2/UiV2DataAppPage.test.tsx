@@ -6,7 +6,7 @@ import { ApiClientError } from "../api/client";
 import { getHealth } from "../api/health";
 import { getSettings, updateSettings } from "../api/settings";
 import { getTaxBrackets, type TaxBracketYearConfig, updateTaxBrackets } from "../api/taxBrackets";
-import UiV2DataAppPage from "../ui-v2/UiV2DataAppPage";
+import UiV2DataAppPage from "./UiV2DataAppPage";
 
 vi.mock("../api/health", () => ({ getHealth: vi.fn() }));
 vi.mock("../api/settings", () => ({ getSettings: vi.fn(), updateSettings: vi.fn() }));
