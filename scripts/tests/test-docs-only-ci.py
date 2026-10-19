@@ -473,7 +473,7 @@ class WorkflowContractTests(unittest.TestCase):
         cls.ui = UI_PATH.read_text(encoding="utf-8")
         cls.release = RELEASE_PATH.read_text(encoding="utf-8")
 
-    def test_product_jobs_skip_only_after_a_successful_docs_only_classification(self) -> None:
+    def test_docs_only_guard_remains_on_product_jobs(self) -> None:
         trigger = self.ci.split("jobs:", 1)[0]
         self.assertNotIn("paths-ignore", trigger)
         self.assertNotIn("\n    paths:", trigger)
@@ -486,16 +486,13 @@ class WorkflowContractTests(unittest.TestCase):
         for job_id in (
             "backend-quality",
             "backend-tests",
-            "backend-timezone-windows",
             "frontend",
             "g04-browser",
-            "release-safety",
-            "windows-production-smoke",
         ):
             body = _job(self.ci, job_id)
             with self.subTest(job=job_id):
                 self.assertIn("needs: docs-only-classify", body)
-                self.assertIn(PRODUCT_IF, body)
+                self.assertIn(PRODUCT_IF.splitlines()[-1].strip(), body)
         privacy = _job(self.ci, "privacy")
         self.assertNotIn("docs-only-classify", privacy)
         self.assertIn("python3 scripts/tests/test-docs-only-ci.py", privacy)

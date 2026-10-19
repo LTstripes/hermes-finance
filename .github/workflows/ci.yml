@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -37,6 +38,9 @@ jobs:
       - name: Check UI evidence identity regressions
         run: python3 scripts/tests/test-ui-evidence-identity.py
 
+      - name: Check CI area path-filter regressions
+        run: python3 scripts/tests/test-ci-paths.py
+
       - name: Check docs-only classification regressions
         run: python3 scripts/tests/test-docs-only-ci.py
 
@@ -50,6 +54,11 @@ jobs:
     timeout-minutes: 5
     outputs:
       mode: ${{ steps.classify.outputs.mode }}
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      browser: ${{ steps.classify.outputs.browser }}
+      release: ${{ steps.classify.outputs.release }}
+      windows: ${{ steps.classify.outputs.windows }}
 
     steps:
       - name: Check out repository history
@@ -65,14 +74,10 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          mode="full"
-          if classified="$(python3 scripts/docs_only_ci.py classify --base "$BASE_SHA" --head "$HEAD_SHA")"; then
-            if [ "$classified" = "docs-only" ]; then
-              mode="docs-only"
-            fi
-          fi
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "Classification mode=$mode base=$BASE_SHA head=$HEAD_SHA"
+          # One decision owns both docs-only mode and per-area outputs.
+          # A failed step or missing output keeps product jobs enabled.
+          python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Classified base=$BASE_SHA head=$HEAD_SHA"
 
   backend-quality:
     name: Backend quality
@@ -80,7 +85,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.backend != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -117,7 +124,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.backend != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
@@ -173,7 +182,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
     runs-on: windows-latest
     timeout-minutes: 10
     defaults:
@@ -213,7 +224,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.frontend != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -252,7 +265,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
+      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.browser != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -390,7 +405,8 @@ jobs:
     needs: visual-audit-paths
     if: >-
       always() &&
-      (github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true')
+      (github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:full'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -462,7 +478,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
     runs-on: windows-latest
     timeout-minutes: 10
 
@@ -548,7 +566,9 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
-      (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only')
+      (github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -639,7 +659,9 @@ jobs:
       !cancelled() &&
       github.event_name == 'pull_request' &&
       needs.docs-only-classify.result == 'success' &&
-      needs.docs-only-classify.outputs.mode == 'docs-only'
+      needs.docs-only-classify.outputs.mode == 'docs-only' &&
+      !contains(github.event.pull_request.labels.*.name, 'ci:full') &&
+      !contains(github.event.pull_request.labels.*.name, 'ci:windows')
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -674,3 +696,40 @@ jobs:
             echo "This candidate was classified as safe docs-only and the retained documentation/privacy/diff checks succeeded."
             echo "Backend, frontend, browser and Windows product suites were intentionally omitted."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  ci-ok:
+    name: ci-ok
+    needs:
+      - privacy
+      - docs-only-classify
+      - backend-quality
+      - backend-tests
+      - backend-timezone-windows
+      - frontend
+      - g04-browser
+      - visual-audit-paths
+      - visual-audit
+      - release-safety
+      - windows-production-smoke
+      - docs-fast-path
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check all job results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["NEEDS_JSON"])
+          bad = {name: job["result"] for name, job in results.items()
+                 if job["result"] not in {"success", "skipped"}}
+          if bad:
+              print(f"CI jobs did not succeed: {bad}", file=sys.stderr)
+              sys.exit(1)
+          PY

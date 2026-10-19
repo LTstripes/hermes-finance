@@ -67,23 +67,20 @@ Invoke-Case "workflow trigger is not path-filtered" {
 Invoke-Case "classification is recomputed from the current pull request commits" {
     $classify = Get-Job "docs-only-classify"
     Assert-True -Condition ($classify -match "if: github\.event_name == 'pull_request'") -Message "Classification is pull-request-only; main stays full."
-    Assert-True -Condition ($classify -match 'scripts/docs_only_ci\.py classify') -Message "The classifier must read the diff itself."
+    Assert-True -Condition ($classify -match 'scripts/ci_paths\.py --base') -Message "The classifier must read the diff itself."
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.base\.sha') -Message "The base SHA must come from the current event."
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.head\.sha') -Message "The head SHA must come from the current event."
     Assert-True -Condition ($classify -notmatch 'actions/cache@') -Message "A cached mode would be stale after synchronize."
     Assert-True -Condition ($workflow -match 'python3 scripts/tests/test-docs-only-ci\.py') -Message "Privacy must run the docs-only regressions."
 }
 
-Invoke-Case "product suites run unless classification succeeded as docs-only" {
+Invoke-Case "docs-only guard remains on product suites" {
     $condition = "github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only'"
     foreach ($jobId in @(
         "backend-quality",
         "backend-tests",
-        "backend-timezone-windows",
         "frontend",
-        "g04-browser",
-        "release-safety",
-        "windows-production-smoke"
+        "g04-browser"
     )) {
         $job = Get-Job $jobId
         Assert-True -Condition ($job -match 'needs: docs-only-classify') -Message "$jobId must observe the classifier."
