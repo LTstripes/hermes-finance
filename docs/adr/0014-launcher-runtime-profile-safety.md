@@ -90,7 +90,7 @@ Exactly one profile may have `type=stable`. Preview and experiment profiles may 
 | Git | Launcher inspects identity; it does not change it |
 
 Stable is the only application runtime profile allowed to open production data.
-Assigned read-only Owner analysis is separately governed by the [Owner data workflow](../OWNER_DATA_WORKFLOW.md);
+Assigned read-only Owner analysis is separately governed by the [Owner data workflow](../archive/2026-10-18/docs/OWNER_DATA_WORKFLOW.md);
 it does not authorize startup/migrations from an experimental checkout.
 
 ### 1.2 Preview

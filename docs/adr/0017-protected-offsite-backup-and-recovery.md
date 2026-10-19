@@ -4,7 +4,7 @@
 - **Date:** 2026-09-18
 - **Source task:** #417-A / #458
 - **Parent contract:** #417 execution-contract freeze, `issuecomment-5731304512`
-- **Related:** [ADR 0004](0004-localhost-request-security.md), [ADR 0012](0012-runtime-and-agent-workspace-isolation.md), [ADR 0014](0014-launcher-runtime-profile-safety.md), [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
+- **Related:** [ADR 0004](0004-localhost-request-security.md), [ADR 0012](0012-runtime-and-agent-workspace-isolation.md), [ADR 0014](0014-launcher-runtime-profile-safety.md), [`OWNER_RUNTIME_OPERATIONS.md`](../archive/2026-10-18/docs/OWNER_RUNTIME_OPERATIONS.md)
 
 ## 1. Decision summary
 
@@ -335,9 +335,9 @@ off-device visibility confirmation and clean Owner DR rehearsal all passed on
 - #459, #460, #461, #462 — dependency-ordered implementation children
 - #527 — Owner-accepted plaintext synced-filesystem destination mode
 - #543 — non-blocking post-closeout recovery hardening
-- [`OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](../OWNER_DURABILITY_CLOSEOUT_2026-09-25.md)
-- [`MASTER_SPEC.md`](../MASTER_SPEC.md)
-- [`OWNER_RUNTIME_OPERATIONS.md`](../OWNER_RUNTIME_OPERATIONS.md)
+- [`OWNER_DURABILITY_CLOSEOUT_2026-09-25.md`](../archive/2026-10-18/docs/OWNER_DURABILITY_CLOSEOUT_2026-09-25.md)
+- [`MASTER_SPEC.md`](../archive/2026-10-18/docs/MASTER_SPEC.md)
+- [`OWNER_RUNTIME_OPERATIONS.md`](../archive/2026-10-18/docs/OWNER_RUNTIME_OPERATIONS.md)
 - [ADR 0004](0004-localhost-request-security.md)
 - [ADR 0012](0012-runtime-and-agent-workspace-isolation.md)
 - [ADR 0014](0014-launcher-runtime-profile-safety.md)

@@ -31,7 +31,7 @@ All agent clones have independent Git directories. They are not worktrees of the
 
 Runtime secrets and data live only in runtime storage.
 
-Owner clarification (2026-10-10): [Owner data workflow](../OWNER_DATA_WORKFLOW.md)
+Owner clarification (2026-10-10): [Owner data workflow](../archive/2026-10-18/docs/OWNER_DATA_WORKFLOW.md)
 permits assigned read-only analysis/UAT of real data and presentation to the Owner
 in the authorized assistant conversation. This supersedes blanket bans on the
 assistant seeing personal values; it preserves separate runtime storage, synthetic

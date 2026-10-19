@@ -1,7 +1,7 @@
 """Shared guard for editing month-scoped child entities.
 
 A closed reporting month is immutable until an explicit ``reopen``
-(AGENTS.md financial invariants, PROJECT_WIKI section 7 item 7). Every
+(docs/ARCHITECTURE_AND_CONTRACTS.md#c1). Every
 month-scoped CRUD service routes its create/update/delete through these
 helpers so the invariant lives in exactly one place. Entities without a
 ``reporting_month_id`` foreign key (accounts, instruments, goals,
