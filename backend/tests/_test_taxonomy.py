@@ -185,6 +185,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_statement_import.py": 23.73,
     "test_statement_import_apply.py": 17.80,
     "test_statement_import_broker_statement_return.py": 129.71,
+    "test_statement_import_broker_statement_provisional.py": 45.0,
     "test_statement_import_broker_statement_what_if.py": 130.43,
     "test_statement_import_executed_trades.py": 14.83,
     "test_statement_import_historical_endpoints.py": 36.44,

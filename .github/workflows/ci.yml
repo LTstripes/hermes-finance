@@ -315,6 +315,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --config=playwright.broker-month.config.ts
 
+      - name: Run zero-metadata source-intake provisional desktop journey
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --config=playwright.provisional.config.ts
+
       - name: Run isolated read-only instrument UAT desktop journey
         env:
           TMPDIR: ${{ runner.temp }}
@@ -331,6 +337,7 @@ jobs:
             ${{ runner.temp }}/hermes-statement-playwright-results
             ${{ runner.temp }}/hermes-571-playwright
             ${{ runner.temp }}/hermes-broker-month-playwright
+            ${{ runner.temp }}/hermes-provisional-playwright
             ${{ runner.temp }}/hermes-instrument-uat-playwright
           if-no-files-found: warn
 

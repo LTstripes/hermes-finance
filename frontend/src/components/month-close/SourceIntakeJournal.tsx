@@ -19,6 +19,7 @@ import {
 import { brokerSourceTitle } from "../../lib/ownerCopy";
 import { Button } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
+import { BrokerProvisionalEstimate } from "./BrokerProvisionalEstimate";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
 import { SourceIdentityInbox } from "./SourceIdentityInbox";
 import { SourceIntakeInstrumentResult } from "./SourceIntakeInstrumentResult";
@@ -362,6 +363,14 @@ export function SourceIntakeJournal({
             Повторить чтение журнала
           </Button>
         </div>
+      )}
+      {data && (
+        <BrokerProvisionalEstimate
+          key={`provisional:${data.id}:${data.head_seq}:${data.manifest_digest}:${original.epoch}:${ack?.head_seq ?? 0}`}
+          intake={data}
+          file={file}
+          disabled={busy || Boolean(ack)}
+        />
       )}
       {error && (
         <p role="alert" className={styles.sourceName}>

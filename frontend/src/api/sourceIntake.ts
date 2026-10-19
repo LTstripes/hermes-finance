@@ -29,6 +29,7 @@ export type SourceIntake = {
   document_sha256: string;
   generation: number;
   head_seq: number;
+  manifest_digest: string;
   original_required: boolean;
   covered_from: string;
   covered_to: string;
@@ -58,6 +59,8 @@ export const listSourceIntakes = (monthId: number, signal?: AbortSignal) =>
   apiRequest<SourceIntake[]>(`${base}?reporting_month_id=${monthId}&include_unbound=true`, {
     signal,
   });
+export const listAllSourceIntakes = (signal?: AbortSignal) =>
+  apiRequest<SourceIntake[]>(`${base}?include_unbound=true`, { signal });
 export const readSourceIntake = (id: number, signal?: AbortSignal) =>
   apiRequest<SourceIntake>(`${base}/${id}`, { signal });
 
