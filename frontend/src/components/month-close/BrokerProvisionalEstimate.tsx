@@ -86,7 +86,7 @@ export function BrokerProvisionalEstimate({
   );
 
   const assumptions: ProvisionalAssumptions = {
-    version: "source_intake_provisional_v1",
+    version: "source_intake_provisional_v2",
     schedule_mode: mode,
     selections: (context?.required_assumptions ?? [])
       .filter((requirement) => selected[requirement.requirement_id])
@@ -168,7 +168,7 @@ export function BrokerProvisionalEstimate({
     }
   }
 
-  const blocked = disabled || busy || intake.state.account_id === null;
+  const blocked = disabled || busy;
   return (
     <section className={styles.panel} aria-label="Предварительная доходность по source-intake">
       <h3>Предварительная доходность по source-intake</h3>
@@ -179,7 +179,9 @@ export function BrokerProvisionalEstimate({
       </p>
       {intake.state.account_id === null && (
         <p role="status">
-          Разбор не привязан к счёту. Сначала выбери счёт в журнале source-intake.
+          Разбор не привязан к Hermes-счёту. Расчёт идёт в source-native гипотетической области
+          одного выбранного оригинала: без финансового Apply, принятия счёта или утверждения полноты
+          портфеля. Сопоставление с Hermes-счётом не выполняется.
         </p>
       )}
       {!file && (
@@ -222,6 +224,12 @@ export function BrokerProvisionalEstimate({
                 {context.observed.cash.ending_amount ?? "—"} RUB
               </p>
             )}
+            <p className={styles.note}>
+              Область сценария:{" "}
+              {context.scope === "native_source"
+                ? `нативный счёт строк ${context.native_source_account ?? "—"}; Hermes-счёт не задан`
+                : `Hermes-счёт #${context.account_id ?? "—"}`}
+            </p>
           </div>
           <details>
             <summary>Ограничения наблюдаемых величин ({context.limitations.length})</summary>

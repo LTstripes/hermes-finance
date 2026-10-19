@@ -61,10 +61,12 @@ const context: ProvisionalContext = {
   method: "broker_source_provisional_mwr_period_v1",
   scope: "account",
   authority: "provisional",
+  financial_authority: "none",
   currency: "RUB",
   annualized: false,
   intake_id: 1,
   account_id: 7,
+  native_source_account: "synthetic-native",
   t0: "2030-03-31",
   t1: "2030-04-30",
   journal: {
@@ -73,6 +75,7 @@ const context: ProvisionalContext = {
     manifest_digest: "c".repeat(64),
     document_sha256: "a".repeat(64),
     parser: "mybroker-s1-v2",
+    binding: "hermes_account",
     finance_link_present: false,
     exceptions: [],
   },
@@ -165,13 +168,15 @@ function result(assumptions: ProvisionalAssumptions): ProvisionalResult {
   return {
     kind: "broker_source_provisional_result_v1",
     method: context.method,
-    scope: "account",
+    scope: context.scope,
     authority: "provisional",
+    financial_authority: "none",
     currency: "RUB",
     annualized: false,
     status: ready ? "provisional" : "needs_assumptions",
     intake_id: 1,
-    account_id: 7,
+    account_id: context.account_id,
+    native_source_account: context.native_source_account,
     t0: context.t0,
     t1: context.t1,
     reported_value_change_kopecks: context.observed.reported_value_change_kopecks,
@@ -308,4 +313,50 @@ it("requires the exact original and never calculates without it", async () => {
   render(<BrokerProvisionalEstimate intake={intake} file={null} />);
   expect(screen.getByRole("button", { name: "Рассчитать наблюдаемые величины" })).toBeDisabled();
   expect(screen.getByText(/Оригинал XML не выбран/)).toBeVisible();
+});
+
+it("calculates the source-native scope without any Hermes account binding", async () => {
+  const unboundIntake: SourceIntake = {
+    ...structuredClone(intake),
+    state: { ...intake.state, account_id: null },
+  };
+  const unboundContext: ProvisionalContext = {
+    ...structuredClone(context),
+    scope: "native_source",
+    account_id: null,
+    native_source_account: "synthetic-native",
+    journal: { ...context.journal, binding: "unbound" },
+  };
+  vi.mocked(provisionalRequest).mockImplementation(
+    async (operation, _i, _f, _s, _c, assumptions) =>
+      operation === "context"
+        ? unboundContext
+        : ({
+            ...result(required(assumptions)),
+            scope: "native_source",
+            account_id: null,
+            native_source_account: "synthetic-native",
+            context: unboundContext,
+          } as ProvisionalResult),
+  );
+  const user = userEvent.setup();
+  render(
+    <BrokerProvisionalEstimate
+      intake={unboundIntake}
+      file={new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" })}
+    />,
+  );
+  expect(screen.getByText(/source-native гипотетической области/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Рассчитать наблюдаемые величины" }));
+  await screen.findByText("Наблюдаемые величины брокера");
+  for (const requirement of unboundContext.required_assumptions) {
+    await user.selectOptions(
+      screen.getByLabelText(requirement.requirement_id),
+      requirement.choices[0],
+    );
+  }
+  await user.selectOptions(screen.getByLabelText("Режим графика"), "dated");
+  await user.click(screen.getByRole("button", { name: "Рассчитать предварительный сценарий" }));
+  expect(await screen.findByText(/2,01%/)).toBeVisible();
+  expect(screen.getByText(/нативный счёт строк synthetic-native/)).toBeVisible();
 });

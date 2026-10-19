@@ -5686,6 +5686,134 @@ account/source, assumptions, refreshing, errors or response mismatch hides the
 old result and disables export. Generation/abort guards reject late responses,
 including A→B→A source changes. Download requires fresh bound server validation.
 
+<a id="c7-broker_statement_provisional-12"></a>
+### Source-intake provisional account estimate
+
+Read-only artifact for the bounded [2026-10-18 Owner decision](https://github.com/LTstripes/hermes-finance/issues/839#issuecomment-6253883555):
+one deliberately provisional RUB period estimate from a saved durable source-intake
+journal and its exact unchanged original, without a financial `SOURCE` receipt,
+`Apply`, accepted H2 evidence, Close or a stored scenario. It is `authority=provisional`
+and `financial_authority=none`; it never replaces actual S3, exact XIRR/TWRR or Close.
+
+<a id="c7-broker_statement_provisional-12-scope"></a>
+#### Scope and provenance
+
+The route verifies the journal's exact original SHA-256, byte length, filename digest
+and manifest, then reproduces the recorded MyBroker grammar (native linkage or the
+frozen legacy grammar) from the uploaded bytes. A parser or original mismatch refuses
+rather than reinterpreting saved observations. Two scopes exist:
+
+- **`scope=account`** — the previously accepted bound path: the journal has one bound
+  Hermes account, all source aliases resolve to it under the existing effective
+  mapping/currentness rules, and `account_id` is that Hermes account.
+- **`scope=native_source`** — the journal is intentionally unbound (`account_id` and
+  `reporting_month_id` are `null`, as in the accepted #769 source-only history) and no
+  accepted financial binding exists. The scope identity comes from the statement rows:
+  exactly one distinct native `acc_code` across every recognized position, RUB cash row,
+  Money row and trade is required; the filename account is only a source label and is
+  never treated as a signed identity. Multiple row aliases, an unproven alias, an
+  ambiguous scope or invalid endpoints produce a typed blocked context with the safely
+  observed per-row facts; they never mix accounts or relabel the filename. The response
+  carries `account_id=null`, `native_source_account`, `financial_authority=none` and a
+  visible provenance limitation. No Account, Instrument, ReportingMonth, mapping,
+  H2/Money acceptance or S1 receipt is created or changed by the estimate.
+
+<a id="c7-broker_statement_provisional-12-observed"></a>
+#### Observed layer and endpoint eligibility
+
+The observed operands are the broker-reported native EOD values of every recognized
+security plus the single separate RUB currency row: `V0 = sum(position.beginning_value)
++ rub_money.beginning_amount`, `V1 = sum(position.ending_value)
++ rub_money.ending_amount`, `t0 = covered_from - 1 day`, `t1 = covered_to`.
+`V1 - V0` is shown as the broker-reported value change, never as return, P&L or taxable
+income. Values must convert exactly to integer kopecks and be non-negative; exactly one
+RUB row with both amounts is required; unclassified Positions rows, endpoint conflicts,
+quantity/value conflicts and every other unproven endpoint diagnostic withhold the
+totals and the return. A missing beginning quantity is disclosed as a limitation but
+does not invalidate a present beginning value. Cash is counted exactly once; the
+per-security values and the separate RUB row are never double-counted.
+
+<a id="c7-broker_statement_provisional-12-assumptions"></a>
+#### Finite assumptions
+
+No choice is selected automatically; missing valid choices produce
+`needs_assumptions` with both numeric fields null. The server derives the complete
+requirement set and exact source-reference membership:
+
+1. **Native basis** — model this same account continuously with both native EOD totals,
+   without valuation/cost adjustments or a portfolio-membership assertion.
+2. **Recognized incoming candidates** — each bounded `account_cash_in_candidate`
+   (`из АО …`) is explicitly included as an external inflow at its native posting date
+   or excluded from the external schedule; excluding does not delete the observed row.
+   There is no generic withdrawal classifier, so unrecognized/negative Money rows stay
+   unknown and are named in the limitations.
+3. **Schedule** — explicit `dated` or `explicit_empty`; omitted/null is not empty.
+4. **Remaining crossings** — within the scenario this selected native account has no
+   other boundary crossings beyond the displayed schedule. This is a hypothetical
+   statement, not completeness proof.
+5. **Trades/Money/pending** — recognized settlements, commissions, coupons, accrued
+   interest and pending trades add no extra investor flow or endpoint adjustment in
+   this native-total model; their amounts are never zeroed and coupons/NKD are not
+   added twice. Recognized coupon/NKD observations are displayed separately.
+6. **REPO** — when REPO is observed in recognized trades or structural native
+   references, `native_totals_include_REPO_as_reported` is required and the result is
+   strongly conditional: REPO amount, custody basis and economic effect stay unknown.
+7. **Unparsed/opaque rows** — when material unparsed rows/sections are reported, the
+   scenario explicitly assumes they are already reflected in the broker-reported native
+   totals and add no separate modeled effect; their meaning stays unknown.
+
+Unknown future diagnostics and invalid assumption membership block. Candidate capacity
+is bounded (16) without truncation; extra candidates are retained and blocked.
+
+<a id="c7-broker_statement_provisional-12-mathematics"></a>
+#### Units and mathematics
+
+The unchanged Decimal XIRR kernel and S3 period conversion are reused at precision 60.
+For a selected external inflow `Ei > 0` the investor vector is `-V0@t0, -Ei@ti, +V1@t1`
+with `t0 < ti <= t1`; the returned fraction is `(1+r)^((t1-t0).days/365)-1`,
+`annualized=false`, and the scenario amount is `V1 - V0 - sum(Ei)`. No-root, ambiguity,
+convergence and non-finite guards stay fail-closed. Synthetic 30-day reference:
+`10,000 + 1,000 on day 15 -> 11,211 RUB`; including the candidate gives 211 RUB /
+2.01%, excluding it gives 1,211 RUB / 12.11% — labelled scenarios, not bounds. When
+exactly one candidate exists, the opposite interpretation is returned as a clearly
+labelled alternative; with zero or multiple candidates no automatic alternative is
+invented.
+
+<a id="c7-broker_statement_provisional-12-http"></a>
+#### HTTP and desktop
+
+All routes are POST multipart under `/api/broker-statement-provisional` with the
+unchanged `file`, `intake_id` and `expected_manifest_digest`:
+
+| Route | Required fields beyond the common ones |
+| --- | --- |
+| `/context` | None |
+| `/evaluate` | JSON `assumptions`, `expected_context_fingerprint` |
+| `/export` | Same plus `expected_result_fingerprint` |
+
+Unexpected/duplicate fields and query parameters are 422; missing intake is 404;
+original/manifest/context/result staleness is a typed 409 without a number. Responses
+are no-store and never log XML or financial values; export re-reads and recomputes the
+same full DTO. The panel lives in the durable source-intake journal, uses the
+page-memory original, shows observed RUB components and source lexemes, candidates,
+payouts, every required choice, the nonannualized period %, the scenario RUB and all
+limitations, and hides the old result on any edit. Unbinding or choosing a different
+account/original invalidates it; A→B→A and late-response races are rejected.
+
+<a id="c7-broker_statement_provisional-12-boundary"></a>
+#### Boundary and verification
+
+This slice does not change strict S3, `can_apply`, Close, financial tables or the
+journal writer, and does not assign unknown postings as Owner funding. Synthetic
+backend tests cover the reference equation, loss/funding/withdrawal signs,
+explicit-empty vs missing schedule, unbound single-native scope with zero
+metadata/finance DML, ambiguous second alias, missing endpoint side, REPO/unparsed/
+pending assumptions, quantity/value conflict, alias remap, capacity, stale original/
+manifest/context and zero writes; desktop tests cover no-default choices, observed vs
+scenario separation, source-native scope without an account binding, edit
+invalidation, late responses and full JSON export. Real numeric availability is not
+promised; the provisional figure is never promoted to actual performance.
+
 <a id="c7-instrument_what_if-1"></a>
 ### Supported stock-only fixed-holding WHAT-IF
 

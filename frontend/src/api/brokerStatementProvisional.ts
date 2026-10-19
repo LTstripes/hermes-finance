@@ -68,24 +68,28 @@ export type ProvisionalObserved = {
   positions: ProvisionalPosition[];
   cash: ProvisionalCash | null;
 };
+export type ProvisionalScope = "account" | "native_source";
 export type ProvisionalJournal = {
   intake_id: number;
   head_seq: number;
   manifest_digest: string;
   document_sha256: string;
   parser: string;
+  binding: "hermes_account" | "unbound";
   finance_link_present: boolean;
   exceptions: string[];
 };
 export type ProvisionalContext = {
   kind: "broker_source_provisional_context_v1";
   method: "broker_source_provisional_mwr_period_v1";
-  scope: "account";
+  scope: ProvisionalScope;
   authority: "provisional";
+  financial_authority: "none";
   currency: "RUB";
   annualized: false;
   intake_id: number;
-  account_id: number;
+  account_id: number | null;
+  native_source_account: string | null;
   t0: string;
   t1: string;
   journal: ProvisionalJournal;
@@ -98,7 +102,7 @@ export type ProvisionalContext = {
   context_fingerprint: string;
 };
 export type ProvisionalAssumptions = {
-  version: "source_intake_provisional_v1";
+  version: "source_intake_provisional_v2";
   schedule_mode: "explicit_empty" | "dated" | null;
   selections: {
     requirement_id: string;
@@ -115,13 +119,15 @@ export type ProvisionalAlternative = {
 export type ProvisionalResult = {
   kind: "broker_source_provisional_result_v1";
   method: "broker_source_provisional_mwr_period_v1";
-  scope: "account";
+  scope: ProvisionalScope;
   authority: "provisional";
+  financial_authority: "none";
   currency: "RUB";
   annualized: false;
   status: "provisional" | "needs_assumptions" | "blocked";
   intake_id: number;
-  account_id: number;
+  account_id: number | null;
+  native_source_account: string | null;
   t0: string;
   t1: string;
   reported_value_change_kopecks: string | null;
@@ -160,16 +166,26 @@ export function provisionalRequest<T extends ProvisionalContext | ProvisionalRes
 const fingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value);
 
 export function contextMatches(context: ProvisionalContext, intake: SourceIntake) {
+  const scopeOk =
+    (context.scope === "account" &&
+      context.journal.binding === "hermes_account" &&
+      intake.state.account_id !== null &&
+      context.account_id === intake.state.account_id) ||
+    (context.scope === "native_source" &&
+      context.journal.binding === "unbound" &&
+      intake.state.account_id === null &&
+      context.account_id === null &&
+      typeof context.native_source_account === "string" &&
+      context.native_source_account.length > 0);
   return (
     context.kind === "broker_source_provisional_context_v1" &&
     context.method === "broker_source_provisional_mwr_period_v1" &&
-    context.scope === "account" &&
+    scopeOk &&
     context.authority === "provisional" &&
+    context.financial_authority === "none" &&
     context.currency === "RUB" &&
     context.annualized === false &&
     context.intake_id === intake.id &&
-    intake.state.account_id !== null &&
-    context.account_id === intake.state.account_id &&
     context.t1 === intake.covered_to &&
     context.journal.intake_id === intake.id &&
     context.journal.head_seq === intake.head_seq &&
@@ -187,12 +203,14 @@ export function resultMatches(
   return (
     result.kind === "broker_source_provisional_result_v1" &&
     result.method === context.method &&
-    result.scope === "account" &&
+    result.scope === context.scope &&
     result.authority === "provisional" &&
+    result.financial_authority === "none" &&
     result.currency === "RUB" &&
     result.annualized === false &&
     result.intake_id === context.intake_id &&
     result.account_id === context.account_id &&
+    result.native_source_account === context.native_source_account &&
     result.t0 === context.t0 &&
     result.t1 === context.t1 &&
     result.context_fingerprint === context.context_fingerprint &&

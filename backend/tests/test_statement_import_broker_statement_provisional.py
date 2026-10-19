@@ -6,7 +6,7 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from test_statement_import_mybroker import ACCOUNT, node, repo_fixture
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import _all_month_tables, broker_month_xml
@@ -258,7 +258,7 @@ def choices(context, *, include=True, schedule_mode=None):
     if schedule_mode is None:
         schedule_mode = "dated" if include and context["candidates"] else "explicit_empty"
     return {
-        "version": "source_intake_provisional_v1",
+        "version": "source_intake_provisional_v2",
         "schedule_mode": schedule_mode,
         "selections": selections,
     }
@@ -284,6 +284,7 @@ def test_domain_reference_math_and_no_annualized_override():
         manifest_digest="a" * 64,
         document_sha256="b" * 64,
         parser="mybroker-s1-v2",
+        binding="hermes_account",
         finance_link_present=False,
         exceptions=(),
     )
@@ -346,6 +347,7 @@ def test_domain_reference_math_and_no_annualized_override():
     context = ProvisionalContext(
         intake_id=1,
         account_id=1,
+        native_source_account=None,
         t0=date(2030, 3, 31),
         t1=date(2030, 4, 30),
         journal=j,
@@ -411,6 +413,7 @@ def test_domain_loss_funding_and_withdrawal_are_period_only():
             manifest_digest="a" * 64,
             document_sha256="b" * 64,
             parser="mybroker-s1-v2",
+            binding="hermes_account",
             finance_link_present=False,
             exceptions=(),
         )
@@ -470,6 +473,7 @@ def test_domain_loss_funding_and_withdrawal_are_period_only():
         return ProvisionalContext(
             intake_id=1,
             account_id=1,
+            native_source_account=None,
             t0=date(2030, 3, 31),
             t1=date(2030, 4, 30),
             journal=j,
@@ -805,3 +809,175 @@ def test_api_fields_and_missing_intake(database):
     assert bad.status_code == 200, bad.text
     assert bad.json()["status"] == "blocked"
     assert "provisional_assumption_membership_invalid" in bad.json()["reason_codes"]
+
+
+def _free_database(tmp_path):
+    from hermes_finance.database import create_database
+    from hermes_finance.persistence import Base
+
+    database = create_database(tmp_path / "unbound-provisional.db")
+    Base.metadata.create_all(database.engine)
+    return database
+
+
+def _finite_tables(database):
+    from hermes_finance.persistence import (
+        Account,
+        BrokerIdentityMapping,
+        BrokerMonthApply,
+        CashBalance,
+        Instrument,
+        MyBrokerImport,
+        PositionSnapshot,
+        ReportingMonth,
+    )
+
+    models = (
+        Account,
+        Instrument,
+        ReportingMonth,
+        BrokerIdentityMapping,
+        MyBrokerImport,
+        BrokerMonthApply,
+        PositionSnapshot,
+        CashBalance,
+    )
+    with database.session_factory() as session:
+        return {
+            model.__name__: session.scalar(select(func.count()).select_from(model))
+            for model in models
+        }
+
+
+def test_unbound_single_native_scope_yields_hypothetical_return_without_metadata(tmp_path):
+    database = _free_database(tmp_path)
+    xml = provisional_xml()
+    client = TestClient(create_app(database=database))
+    view = save(
+        client,
+        xml,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-unbound",
+    )
+    assert view["state"]["account_id"] is None
+    assert view["state"]["reporting_month_id"] is None
+    assert all(count == 0 for count in _finite_tables(database).values())
+
+    context = context_for(client, xml, view)
+    assert context["scope"] == "native_source"
+    assert context["account_id"] is None
+    assert context["native_source_account"] == ACCOUNT
+    assert context["financial_authority"] == "none"
+    assert context["journal"]["binding"] == "unbound"
+    assert context["hard_blockers"] == []
+    assert context["observed"]["total_opening_kopecks"] == "1000000"
+    assert context["observed"]["total_closing_kopecks"] == "1121100"
+    assert context["observed"]["reported_value_change_kopecks"] == "121100"
+    assert any("source-native" in line for line in context["limitations"])
+
+    result = evaluate(client, context, choices(context), xml)
+    assert result.status_code == 200, result.text
+    body = result.json()
+    assert body["status"] == "provisional"
+    assert body["scope"] == "native_source"
+    assert body["account_id"] is None
+    assert body["native_source_account"] == ACCOUNT
+    assert body["scenario_result_kopecks"] == "21100"
+    assert abs(Decimal(body["scenario_rate_fraction"]) - Decimal("0.0201")) <= Decimal("1e-8")
+    exported = client.post(
+        f"{PREFIX}/export",
+        files={"file": (FILENAME_APRIL, xml, "application/xml")},
+        data={
+            "intake_id": str(view["id"]),
+            "expected_manifest_digest": view["manifest_digest"],
+            "expected_context_fingerprint": context["context_fingerprint"],
+            "assumptions": json.dumps(choices(context)),
+            "expected_result_fingerprint": body["result_fingerprint"],
+        },
+    )
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["account_id"] is None
+    assert all(count == 0 for count in _finite_tables(database).values())
+
+    # ABA: a journal command changes the head, so the old context cannot be reused.
+    proposal = view["proposals"][0]["isin"]
+    assert (
+        review(
+            client,
+            view,
+            xml,
+            intent(view, overrides=[{"isin": proposal, "currency": "USD"}]),
+            "unbound-decision",
+        ).status_code
+        == 200
+    )
+    stale = evaluate(client, context, choices(context), xml)
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "provisional_context_stale"
+    database.engine.dispose()
+
+
+def test_unbound_ambiguous_second_alias_missing_side_and_repo_are_fail_closed(tmp_path):
+    database = _free_database(tmp_path)
+    client = TestClient(create_app(database=database))
+
+    ambiguous = provisional_xml()
+    root = ET.fromstring(ambiguous)
+    cash_rows = root.findall(".//m:rn", NS)
+    assert cash_rows
+    cash_rows[0].find("m:oper_type/m:comment/m:Textbox11", NS).set(
+        "acc_code", "second-synthetic-account"
+    )
+    ambiguous = ET.tostring(root, encoding="utf-8")
+    view = save(
+        client,
+        ambiguous,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-ambiguous",
+    )
+    context = context_for(client, ambiguous, view)
+    assert "provisional_source_scope_ambiguous" in context["hard_blockers"]
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), ambiguous).json()["status"] == "blocked"
+
+    missing = provisional_xml(missing_closing=True)
+    missing_view = save(
+        client,
+        missing,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-missing-side",
+    )
+    missing_context = context_for(client, missing, missing_view)
+    assert "provisional_endpoint_value_unavailable" in missing_context["hard_blockers"]
+    assert missing_context["observed"]["reported_value_change_kopecks"] is None
+    assert (
+        evaluate(client, missing_context, choices(missing_context), missing).json()["status"]
+        == "blocked"
+    )
+
+    repo = provisional_xml(repo=True, opaque=True, pending=True)
+    repo_view = save(
+        client,
+        repo,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-unbound-repo",
+    )
+    repo_context = context_for(client, repo, repo_view)
+    slots = {requirement["slot"] for requirement in repo_context["required_assumptions"]}
+    assert repo_context["scope"] == "native_source"
+    assert {"repo_basis", "unparsed_basis"} <= slots
+    unset = evaluate(
+        client,
+        repo_context,
+        {**choices(repo_context), "schedule_mode": None, "selections": []},
+        repo,
+    )
+    assert unset.json()["status"] == "needs_assumptions"
+    assert unset.json()["scenario_rate_fraction"] is None
+    chosen = evaluate(client, repo_context, choices(repo_context), repo)
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["status"] == "provisional"
+    assert "native_totals_include_REPO_as_reported" in [
+        selection["choice"] for selection in chosen.json()["assumptions"]["selections"]
+    ]
+    database.engine.dispose()

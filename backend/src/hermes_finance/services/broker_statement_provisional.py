@@ -78,6 +78,7 @@ ACCOUNT_CODES = frozenset(
     {
         "provisional_filename_account_unproven",
         "provisional_source_account_unproven",
+        "provisional_source_scope_ambiguous",
         "provisional_multiple_source_accounts",
     }
 )
@@ -192,16 +193,6 @@ def read_context(
         raise ProvisionalStaleError("provisional_source_parser_changed")
 
     account_id = view["state"]["account_id"]
-    if account_id is None:
-        raise MyBrokerError("provisional_account_binding_required")
-    account = session.get(Account, account_id, populate_existing=True)
-    if (
-        account is None
-        or account.status != "active"
-        or account.account_type not in {"brokerage", "iis"}
-    ):
-        raise MyBrokerError("provisional_account_unavailable")
-
     t0 = original_row.covered_from - timedelta(days=1)
     t1 = original_row.covered_to
     hard: set[str] = set()
@@ -214,14 +205,48 @@ def read_context(
     filename_account = stored.get("filename_account")
     if filename_account not in native_accounts:
         hard.add("provisional_filename_account_unproven")
-    hard.update(
-        _account_alias_reasons(
-            session,
-            native_accounts,
-            {**stored, "filename_account": filename_account},
-            account_id,
+    row_aliases = {
+        row.get("source_account")
+        for row in (*positions_raw, *rub_raw, *money_raw, *trades_raw)
+        if row.get("source_account")
+    }
+    single_alias = next(iter(row_aliases)) if len(row_aliases) == 1 else None
+    if account_id is None:
+        # Read-only source-native hypothetical scope: no Hermes Account/mapping
+        # exists for this journal.  The scope identity must come from the
+        # statement rows themselves, never from an arbitrary filename label.
+        scope = "native_source"
+        if single_alias is None:
+            hard.add("provisional_source_scope_ambiguous")
+        elif single_alias not in native_accounts:
+            hard.add("provisional_source_account_unproven")
+        if single_alias is not None and filename_account != single_alias:
+            limitations.append(
+                "Имя файла указывает нативный счёт, отличный от единого счёта строк; "
+                "расчёт использует счёт строк и не подтверждает эквивалентность имён."
+            )
+        limitations.append(
+            "Расчёт идёт в source-native гипотетической области одного выбранного "
+            "оригинала без Hermes-привязки счёта; это не принятие счёта, не финансовый "
+            "Apply и не подтверждение полноты портфеля."
         )
-    )
+    else:
+        scope = "account"
+        account = session.get(Account, account_id, populate_existing=True)
+        if (
+            account is None
+            or account.status != "active"
+            or account.account_type not in {"brokerage", "iis"}
+        ):
+            raise MyBrokerError("provisional_account_unavailable")
+        hard.update(
+            _account_alias_reasons(
+                session,
+                native_accounts,
+                {**stored, "filename_account": filename_account},
+                account_id,
+            )
+        )
 
     if stored.get("endpoint_basis") != {
         "beginning_value": "previous_day_eod",
@@ -565,12 +590,15 @@ def read_context(
         manifest_digest=view["manifest_digest"],
         document_sha256=view["document_sha256"],
         parser=stored.get("parser", ""),
+        binding="hermes_account" if account_id is not None else "unbound",
         finance_link_present=bool(view["finance_link"]),
         exceptions=tuple(view["exceptions"]),
     )
     payload = dict(
+        scope=scope,
         intake_id=intake_id,
         account_id=account_id,
+        native_source_account=single_alias,
         t0=t0,
         t1=t1,
         journal=journal,

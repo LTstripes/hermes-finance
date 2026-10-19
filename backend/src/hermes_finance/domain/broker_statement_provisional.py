@@ -17,7 +17,7 @@ from hermes_finance.domain.xirr import XirrCashFlow, calculate_xirr
 from hermes_finance.statement_import.mybroker import digest
 
 METHOD = "broker_source_provisional_mwr_period_v1"
-VERSION = "source_intake_provisional_v1"
+VERSION = "source_intake_provisional_v2"
 CONTEXT_KIND = "broker_source_provisional_context_v1"
 RESULT_KIND = "broker_source_provisional_result_v1"
 MAX_CANDIDATES = 16
@@ -116,7 +116,7 @@ class ProvisionalChoice(ProvisionalModel):
 
 
 class ProvisionalAssumptions(ProvisionalModel):
-    version: Literal["source_intake_provisional_v1"] = VERSION
+    version: Literal["source_intake_provisional_v2"] = VERSION
     schedule_mode: Literal["explicit_empty", "dated"] | None = None
     selections: tuple[ProvisionalChoice, ...] = ()
 
@@ -127,6 +127,7 @@ class ProvisionalJournal(ProvisionalModel):
     manifest_digest: Fingerprint
     document_sha256: Fingerprint
     parser: str
+    binding: Literal["hermes_account", "unbound"]
     finance_link_present: bool
     exceptions: tuple[str, ...]
 
@@ -134,12 +135,14 @@ class ProvisionalJournal(ProvisionalModel):
 class ProvisionalContext(ProvisionalModel):
     kind: Literal["broker_source_provisional_context_v1"] = CONTEXT_KIND
     method: Literal["broker_source_provisional_mwr_period_v1"] = METHOD
-    scope: Literal["account"] = "account"
+    scope: Literal["account", "native_source"] = "account"
     authority: Literal["provisional"] = "provisional"
+    financial_authority: Literal["none"] = "none"
     currency: Literal["RUB"] = "RUB"
     annualized: Literal[False] = False
     intake_id: int
-    account_id: int
+    account_id: int | None
+    native_source_account: str | None
     t0: date
     t1: date
     journal: ProvisionalJournal
@@ -162,13 +165,15 @@ class ProvisionalAlternative(ProvisionalModel):
 class ProvisionalResult(ProvisionalModel):
     kind: Literal["broker_source_provisional_result_v1"] = RESULT_KIND
     method: Literal["broker_source_provisional_mwr_period_v1"] = METHOD
-    scope: Literal["account"] = "account"
+    scope: Literal["account", "native_source"] = "account"
     authority: Literal["provisional"] = "provisional"
+    financial_authority: Literal["none"] = "none"
     currency: Literal["RUB"] = "RUB"
     annualized: Literal[False] = False
     status: Literal["provisional", "needs_assumptions", "blocked"]
     intake_id: int
-    account_id: int
+    account_id: int | None
+    native_source_account: str | None
     t0: date
     t1: date
     reported_value_change_kopecks: Kopecks | None
@@ -343,8 +348,10 @@ def evaluate_context(
             alternatives = (alternate,)
     payload = dict(
         status=status,
+        scope=context.scope,
         intake_id=context.intake_id,
         account_id=context.account_id,
+        native_source_account=context.native_source_account,
         t0=context.t0,
         t1=context.t1,
         reported_value_change_kopecks=context.observed.reported_value_change_kopecks,
