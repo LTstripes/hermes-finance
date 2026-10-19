@@ -59,6 +59,8 @@ export const listSourceIntakes = (monthId: number, signal?: AbortSignal) =>
   apiRequest<SourceIntake[]>(`${base}?reporting_month_id=${monthId}&include_unbound=true`, {
     signal,
   });
+export const listAllSourceIntakes = (signal?: AbortSignal) =>
+  apiRequest<SourceIntake[]>(`${base}?include_unbound=true`, { signal });
 export const readSourceIntake = (id: number, signal?: AbortSignal) =>
   apiRequest<SourceIntake>(`${base}/${id}`, { signal });
 

@@ -134,6 +134,17 @@ def _matching_source(stored: dict, document: bytes, filename: str) -> dict:
     raise ProvisionalStaleError("provisional_source_parser_changed")
 
 
+def _trade_accounts(trade: dict) -> set[str]:
+    """Frozen S1 stores the trade account under ``core.source_account``."""
+    accounts: set[str] = set()
+    core = trade.get("core")
+    if isinstance(core, dict) and core.get("source_account"):
+        accounts.add(core["source_account"])
+    if trade.get("source_account"):
+        accounts.add(trade["source_account"])
+    return accounts
+
+
 def _account_alias_reasons(session, native_accounts, rows, account_id) -> set[str]:
     reasons: set[str] = set()
     aliases = set(native_accounts)
@@ -141,7 +152,8 @@ def _account_alias_reasons(session, native_accounts, rows, account_id) -> set[st
     aliases.update(row.get("source_account") for row in rows.get("positions", []))
     aliases.update(row.get("source_account") for row in rows.get("rub_money", []))
     aliases.update(row.get("source_account") for row in rows.get("money", []))
-    aliases.update(row.get("source_account") for row in rows.get("trades", []))
+    for trade in rows.get("trades", []):
+        aliases.update(_trade_accounts(trade))
     aliases.discard(None)
     for alias in sorted(aliases):
         mappings = list(
@@ -207,9 +219,11 @@ def read_context(
         hard.add("provisional_filename_account_unproven")
     row_aliases = {
         row.get("source_account")
-        for row in (*positions_raw, *rub_raw, *money_raw, *trades_raw)
+        for row in (*positions_raw, *rub_raw, *money_raw)
         if row.get("source_account")
     }
+    for trade in trades_raw:
+        row_aliases.update(_trade_accounts(trade))
     single_alias = next(iter(row_aliases)) if len(row_aliases) == 1 else None
     if account_id is None:
         # Read-only source-native hypothetical scope: no Hermes Account/mapping

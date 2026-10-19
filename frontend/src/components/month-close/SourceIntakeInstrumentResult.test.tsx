@@ -22,6 +22,7 @@ const stored: SourceIntake = {
   document_sha256: "a".repeat(64),
   generation: 1,
   head_seq: 2,
+  manifest_digest: "c".repeat(64),
   original_required: true,
   covered_from: "2030-02-01",
   covered_to: "2030-02-28",

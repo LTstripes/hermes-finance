@@ -5715,7 +5715,8 @@ rather than reinterpreting saved observations. Two scopes exist:
   `reporting_month_id` are `null`, as in the accepted #769 source-only history) and no
   accepted financial binding exists. The scope identity comes from the statement rows:
   exactly one distinct native `acc_code` across every recognized position, RUB cash row,
-  Money row and trade is required; the filename account is only a source label and is
+  Money row and every completed/pending/REPO trade (`trade.core.source_account` in the
+  frozen S1 shape) is required; the filename account is only a source label and is
   never treated as a signed identity. Multiple row aliases, an unproven alias, an
   ambiguous scope or invalid endpoints produce a typed blocked context with the safely
   observed per-row facts; they never mix accounts or relabel the filename. The response
@@ -5804,6 +5805,14 @@ page-memory original, shows observed RUB components and source lexemes, candidat
 payouts, every required choice, the nonannualized period %, the scenario RUB and all
 limitations, and hides the old result on any edit. Unbinding or choosing a different
 account/original invalidates it; A→B→A and late-response races are rejected.
+
+A zero-metadata desktop entry at `/v2/data/source-intake` lists existing journals
+without requiring a ReportingMonth or Account and reattaches the exact original from
+page memory. It only reads the journal and calls the provisional routes; it creates no
+financial metadata and cannot save, rebind or apply an intake. The existing bound month
+journal keeps its panel. The synthetic real-backend acceptance journey covers this
+empty-metadata path and asserts zero metadata tables, unchanged journal history and the
+same 211 RUB / 2.01% reference.
 
 <a id="c7-broker_statement_provisional-12-boundary"></a>
 #### Boundary and verification

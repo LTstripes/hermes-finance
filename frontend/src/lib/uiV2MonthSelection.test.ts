@@ -5,8 +5,8 @@ import {
   dataAppPath,
   monthWorkspacePath,
   resolveMonthSelection,
-  selectNewestDraftAfterLatestClosed,
   selectDiagnosticMonth,
+  selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "../ui-v2/monthSelection";
 
@@ -61,6 +61,7 @@ describe("Data/App diagnostic month", () => {
 
   it("builds Data/App paths with optional month identity", () => {
     expect(dataAppPath("sources")).toBe("/v2/data");
+    expect(dataAppPath("source-intake")).toBe("/v2/data/source-intake");
     expect(dataAppPath("reconciliation", 12)).toBe("/v2/data/reconciliation?month=12");
     expect(dataAppPath("catalogs")).toBe("/v2/data/catalogs");
     expect(dataAppPath("files")).toBe("/v2/data/files");

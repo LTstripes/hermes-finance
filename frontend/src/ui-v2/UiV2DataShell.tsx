@@ -15,6 +15,7 @@ import { UiV2Shell } from "./UiV2Shell";
 
 const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
   { id: "sources", label: "Источники и актуальность" },
+  { id: "source-intake", label: "Разбор источника" },
   { id: "reconciliation", label: "Сверка портфеля" },
 ];
 

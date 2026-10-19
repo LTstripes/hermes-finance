@@ -917,6 +917,59 @@ def test_unbound_single_native_scope_yields_hypothetical_return_without_metadata
     database.engine.dispose()
 
 
+def test_unbound_trade_core_account_mismatch_blocks_and_same_account_control_passes(tmp_path):
+    database = _free_database(tmp_path)
+    client = TestClient(create_app(database=database))
+
+    control = provisional_xml()
+    control_view = save(
+        client,
+        control,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-core-control",
+    )
+    control_context = context_for(client, control, control_view)
+    assert control_context["hard_blockers"] == []
+    control_result = evaluate(client, control_context, choices(control_context), control)
+    assert control_result.json()["scenario_result_kopecks"] == "21100"
+
+    mixed = provisional_xml()
+    root = ET.fromstring(mixed)
+    trade = root.find(".//m:Details[@trade_no]", NS)
+    trade.set("acc_code", "second-synthetic-account")
+    mixed = ET.tostring(root, encoding="utf-8")
+    view = save(
+        client,
+        mixed,
+        {"account_id": None, "reporting_month_id": None},
+        request_id="save-core-mixed",
+    )
+    context = context_for(client, mixed, view)
+    assert "provisional_source_scope_ambiguous" in context["hard_blockers"]
+    assert context["observed"]["total_opening_kopecks"] is None
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), mixed).json()["status"] == "blocked"
+    database.engine.dispose()
+
+
+def test_bound_trade_core_account_mismatch_blocks(database):
+    scope = april_scope(database)
+    xml = provisional_xml()
+    root = ET.fromstring(xml)
+    trade = root.find(".//m:Details[@trade_no]", NS)
+    trade.set("acc_code", "second-synthetic-account")
+    xml = ET.tostring(root, encoding="utf-8")
+    client = TestClient(create_app(database=database))
+    view = save(client, xml, scope, request_id="save-bound-core")
+    context = context_for(client, xml, view)
+    assert {
+        "provisional_source_account_unproven",
+        "provisional_multiple_source_accounts",
+    } & set(context["hard_blockers"])
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    assert evaluate(client, context, choices(context), xml).json()["status"] == "blocked"
+
+
 def test_unbound_ambiguous_second_alias_missing_side_and_repo_are_fail_closed(tmp_path):
     database = _free_database(tmp_path)
     client = TestClient(create_app(database=database))

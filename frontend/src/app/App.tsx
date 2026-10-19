@@ -10,9 +10,9 @@ import { ExportPage } from "../pages/ExportPage";
 import { FreshnessProvenancePage } from "../pages/FreshnessProvenancePage";
 import { GoalsPage } from "../pages/GoalsPage";
 import { MonthDetailPage } from "../pages/MonthDetailPage";
-import { MonthsPage } from "../pages/MonthsPage";
 import { MonthlyCloseLandingPage } from "../pages/MonthlyCloseLandingPage";
 import { MonthlyCloseWorkflowPage } from "../pages/MonthlyCloseWorkflowPage";
+import { MonthsPage } from "../pages/MonthsPage";
 import { PayoutsPage } from "../pages/PayoutsPage";
 import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
 import { RiskAllocationPage } from "../pages/RiskAllocationPage";
@@ -22,27 +22,28 @@ import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
 import BrokerStatementReturnPage from "../ui-v2/BrokerStatementReturnPage";
 import {
+  UiV2AlfaBaselineEntry,
   UiV2CapitalAllocationEntry,
   UiV2CapitalEntry,
   UiV2CapitalPerformanceEntry,
   UiV2CloseEntry,
-  UiV2AlfaBaselineEntry,
-  UiV2PayoutForecastEntry,
   UiV2DataAppEntry,
   UiV2DataCatalogsEntry,
   UiV2DataFilesEntry,
   UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
-  UiV2MonthsEntry,
+  UiV2Entry,
+  UiV2GoalsEntry,
+  UiV2IncomeEntry,
   UiV2MonthEditorEntry,
   UiV2MonthlyResultEntry,
-  UiV2Entry,
-  UiV2IncomeEntry,
-  UiV2GoalsEntry,
-  UiV2TaxIisEntry,
+  UiV2MonthsEntry,
+  UiV2PayoutForecastEntry,
   UiV2ReportEntry,
   UiV2ReportsEntry,
   UiV2ScenarioLabEntry,
+  UiV2SourceIntakeEntry,
+  UiV2TaxIisEntry,
 } from "../ui-v2/UiV2Entry";
 
 type AppProps = {
@@ -67,6 +68,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
           <Route path="v2/data" element={<UiV2DataSourcesEntry />} />
+          <Route path="v2/data/source-intake" element={<UiV2SourceIntakeEntry />} />
           <Route path="v2/data/months" element={<UiV2MonthsEntry />} />
           <Route path="v2/data/months/:monthId" element={<UiV2MonthEditorEntry />} />
           <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationEntry />} />
