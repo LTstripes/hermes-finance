@@ -175,8 +175,9 @@ export function contextMatches(context: ProvisionalContext, intake: SourceIntake
       context.journal.binding === "unbound" &&
       intake.state.account_id === null &&
       context.account_id === null &&
-      typeof context.native_source_account === "string" &&
-      context.native_source_account.length > 0);
+      (context.native_source_account === null ||
+        (typeof context.native_source_account === "string" &&
+          context.native_source_account.length > 0)));
   return (
     context.kind === "broker_source_provisional_context_v1" &&
     context.method === "broker_source_provisional_mwr_period_v1" &&

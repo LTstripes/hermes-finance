@@ -315,6 +315,45 @@ it("requires the exact original and never calculates without it", async () => {
   expect(screen.getByText(/Оригинал XML не выбран/)).toBeVisible();
 });
 
+it("renders a typed blocked unbound context without a false mismatch", async () => {
+  const unboundIntake: SourceIntake = {
+    ...structuredClone(intake),
+    state: { ...intake.state, account_id: null },
+  };
+  const blockedContext: ProvisionalContext = {
+    ...structuredClone(context),
+    scope: "native_source",
+    account_id: null,
+    native_source_account: null,
+    journal: { ...context.journal, binding: "unbound" },
+    hard_blockers: ["provisional_source_scope_ambiguous"],
+    observed: {
+      ...context.observed,
+      total_opening_kopecks: null,
+      total_closing_kopecks: null,
+      reported_value_change_kopecks: null,
+    },
+  };
+  vi.mocked(provisionalRequest).mockResolvedValueOnce(blockedContext as never);
+  const user = userEvent.setup();
+  render(
+    <BrokerProvisionalEstimate
+      intake={unboundIntake}
+      file={new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" })}
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: "Рассчитать наблюдаемые величины" }));
+  expect(await screen.findByText("provisional_source_scope_ambiguous")).toBeVisible();
+  expect(screen.getByText(/нативный счёт строк —/)).toBeVisible();
+  expect(screen.queryByText(/2,01%/)).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Рассчитать предварительный сценарий" }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Экспорт предварительного расчёта JSON" }),
+  ).toBeDisabled();
+});
+
 it("calculates the source-native scope without any Hermes account binding", async () => {
   const unboundIntake: SourceIntake = {
     ...structuredClone(intake),
