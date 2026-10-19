@@ -158,7 +158,7 @@ export function MappingPanel({
         <Link to={`/v2/data/catalogs?${catalogParams.toString()}`}>
           Сохранить сопоставление в справочниках →
         </Link>
-        <Link to="/settings">В предыдущем интерфейсе · настройки ↗</Link>
+        <Link to="/v2/data/app">Настройки →</Link>
       </p>
     </section>
   );

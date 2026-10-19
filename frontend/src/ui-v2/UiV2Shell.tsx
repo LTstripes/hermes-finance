@@ -20,16 +20,16 @@ const NATIVE_DATA_LINKS = [
   { label: "Настройки", to: "/v2/data/app" },
 ];
 
-const LEGACY_LINKS: Array<{ label: string; to: string }> = [
-  { label: "Закрыть месяц", to: "/monthly-close" },
-  { label: "Счета и справочники", to: "/accounts" },
-  { label: "История и результаты", to: "/analytics" },
-  { label: "Доход и цели", to: "/goals" },
+const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [
+  { label: "Закрыть месяц", to: "/v2/close" },
+  { label: "Счета и справочники", to: "/v2/data/catalogs" },
+  { label: "История и результаты", to: "/v2/capital/performance" },
+  { label: "Доход и цели", to: "/v2/income/goals" },
 ];
 
 /**
  * Shared UI v2 shell: dark sidebar, one native section marked as the current
- * page, labelled legacy escapes, and durable v1 rollback links.
+ * page and direct links to native workspaces.
  */
 export function UiV2Shell({
   active,
@@ -37,7 +37,6 @@ export function UiV2Shell({
   children,
   header,
   sidebarExtra,
-  v1ReturnPath,
 }: {
   /** No native section is marked current on the contextual history routes. */
   active?: UiV2Section;
@@ -45,7 +44,8 @@ export function UiV2Shell({
   children: ReactNode;
   header: ReactNode;
   sidebarExtra?: ReactNode;
-  v1ReturnPath: string;
+  /** Compatibility with retained callers; the shell renders only native navigation. */
+  v1ReturnPath?: string;
 }) {
   return (
     <div className={styles.shell}>
@@ -85,8 +85,8 @@ export function UiV2Shell({
           <p>Капитал, изменения, доход и цели по подтверждённым отчётам.</p>
         </div>
         <div className={styles.legacyLinks}>
-          <p className={styles.eyebrow}>В предыдущем интерфейсе</p>
-          {LEGACY_LINKS.map((link) => (
+          <p className={styles.eyebrow}>Рабочие разделы</p>
+          {WORKSPACE_LINKS.map((link) => (
             <Link key={link.to} to={link.to}>
               {link.label} <span aria-hidden="true">↗</span>
             </Link>
@@ -97,16 +97,6 @@ export function UiV2Shell({
       <div className={styles.workspace}>
         <div className={styles.topbar}>
           <span>Основной интерфейс</span>
-          <div className={styles.topbarActions}>
-            <Link className={styles.v1Link} to="/v1">
-              UI v1: предыдущий интерфейс →
-            </Link>
-            {v1ReturnPath !== "/v1" ? (
-              <Link className={styles.contextualV1Link} to={v1ReturnPath}>
-                Открыть этот раздел в предыдущем интерфейсе →
-              </Link>
-            ) : null}
-          </div>
         </div>
         <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
           <header className={styles.header}>{header}</header>

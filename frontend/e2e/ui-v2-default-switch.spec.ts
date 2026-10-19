@@ -41,18 +41,15 @@ async function expectPathAndSearch(page: Page, expectedPathAndSearch: string) {
     .toBe(expectedPathAndSearch);
 }
 
-test("ui-v2: switches between default and explicit v1 without passive writes", async ({ page }) => {
+test("ui-v2: keeps explicit v1 available without passive writes", async ({ page }) => {
   const requests = await installReadOnlyApiFixtures(page);
 
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible({
     timeout: 20_000,
   });
-  const permanentRollback = page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });
-  await expect(permanentRollback).toBeVisible();
-  await expect(permanentRollback).toHaveAttribute("href", "/v1");
-
-  await permanentRollback.click();
+  await expect(page.getByRole("link", { name: /предыдущий интерфейс/ })).toHaveCount(0);
+  await page.goto("/v1");
   await expect(page).toHaveURL(/\/v1$/);
   await page.reload();
   await expect(page).toHaveURL(/\/v1$/);
@@ -82,37 +79,34 @@ test("ui-v2: retains deep-link query and fragment on hard reload", async ({ page
 
   await page.goto(deepLink);
   await expectPathAndSearch(page, deepLink);
-  await expect(page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
   await page.reload();
   await expectPathAndSearch(page, deepLink);
 });
 
-test("ui-v2: failed lazy load still exposes a working v1 escape", async ({ page }) => {
+test("ui-v2: failed lazy load can retry without a legacy escape", async ({ page }) => {
   await installReadOnlyApiFixtures(page);
-  await page.route("**/src/ui-v2/UiV2Page.tsx*", (route) => route.abort());
+  const chunk = "**/src/ui-v2/UiV2Page.tsx*";
+  await page.route(chunk, (route) => route.abort());
   await page.goto("/v2");
-
   await expect(page.getByRole("alert")).toContainText("Основной интерфейс не загрузился");
-  await expect(
-    page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-  ).toHaveAttribute("href", "/v1");
-  await page.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }).click();
-  await expect(page).toHaveURL(/\/v1$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /UI v1/ })).toHaveCount(0);
+  await page.unroute(chunk);
+  await page.getByRole("button", { name: "Повторить загрузку" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
 });
 
-test("ui-v2: keeps the UI v1 rollback visible and keyboard-operable on desktop", {
+test("ui-v2: keeps native Close visible and keyboard-operable on desktop", {
   tag: "@viewport-owned",
 }, async ({ page }) => {
   await installReadOnlyApiFixtures(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-
-  const rollback = page.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });
-  await expect(rollback).toBeVisible();
-  await expect(rollback).toHaveAttribute("href", "/v1");
-  await rollback.focus();
-  await expect(rollback).toBeFocused();
-  await rollback.press("Enter");
-  await expect(page).toHaveURL(/\/v1$/);
+  const close = page.getByRole("link", { name: "Закрыть месяц", exact: true });
+  await expect(close).toBeVisible();
+  await expect(close).toHaveAttribute("href", "/v2/close");
+  await close.focus();
+  await expect(close).toBeFocused();
+  await close.press("Enter");
+  await expectPathAndSearch(page, "/v2/close");
 });

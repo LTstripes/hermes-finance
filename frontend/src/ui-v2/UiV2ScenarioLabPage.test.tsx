@@ -16,8 +16,8 @@ vi.mock("../api/scenarioLab", async (importOriginal) => {
     downloadScenarioLabExport: vi.fn(),
   };
 });
-vi.mock("../pages/ScenarioLabPage", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../pages/ScenarioLabPage")>();
+vi.mock("./ScenarioLabResult", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./ScenarioLabResult")>();
   return {
     ...original,
     ScenarioLabResult: ({ evaluation }: { evaluation: unknown }) => (

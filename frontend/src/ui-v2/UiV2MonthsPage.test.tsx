@@ -85,9 +85,7 @@ describe("native month management", () => {
     expect(screen.getByText("Закрыт")).toBeInTheDocument();
     expect(screen.getByText("Черновик")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("month=999");
-    expect(screen.getAllByRole("link", { name: /Редактор в предыдущем интерфейсе/ })).toHaveLength(
-      2,
-    );
+    expect(screen.getAllByRole("link", { name: /Открыть редактор/ })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Удалить черновик" })).toHaveLength(1);
   });
 

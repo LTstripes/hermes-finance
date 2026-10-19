@@ -165,9 +165,9 @@ describe("UI v2 reports archive", () => {
       "/api/months",
       "/api/analytics/capital-composition",
     ]);
-    expect(screen.getByRole("link", { name: "Месяцы в предыдущем интерфейсе →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Отчётные месяцы →" })).toHaveAttribute(
       "href",
-      "/months",
+      "/v2/data/months",
     );
     expect(
       screen.getByText(/Поздние цены и остатки в прошлые отчёты не подставляются/i),
@@ -280,7 +280,7 @@ describe("UI v2 reports archive", () => {
     expect(screen.getByRole("link", { name: "Мои финансы" })).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("link", { name: "Капитал" })).not.toHaveAttribute("aria-current");
     expect(
-      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", "/months/91");
+      screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+    ).not.toBeInTheDocument();
   });
 });

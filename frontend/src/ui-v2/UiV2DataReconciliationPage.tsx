@@ -77,7 +77,9 @@ export default function UiV2DataReconciliationPage() {
       ? requestedStepValues[0]
       : null;
   const closeStep =
-    params.getAll("from").length === 1 && params.get("from") === "monthly-close-v2" && requestedStep
+    params.getAll("from").length === 1 &&
+    (params.get("from") === "monthly-close-v2" || params.get("from") === "monthly-close") &&
+    requestedStep
       ? requestedStep
       : "broker_reconciliation";
   const v1ReturnPath =
@@ -152,7 +154,7 @@ export default function UiV2DataReconciliationPage() {
     content = (
       <UiV2Notice title="Нет отчётных месяцев">
         Нечего сверять, пока не создан хотя бы один месяц.{" "}
-        <Link to="/months">Открыть месяцы в предыдущем интерфейсе ↗</Link>
+        <Link to="/v2/data/months">Открыть месяцы →</Link>
       </UiV2Notice>
     );
   } else {
@@ -163,7 +165,7 @@ export default function UiV2DataReconciliationPage() {
     content = (
       <>
         <DataMonthContext automatic={resolution.automatic} month={month}>
-          <Link to="/reconciliation">В предыдущем интерфейсе ↗</Link>
+          <Link to={`/v2/data/months/${month.id}`}>Данные отчётного месяца →</Link>
         </DataMonthContext>
         <p className={dataStyles.noticeInline} data-testid="reconciliation-safety-note">
           Сверка только показывает различия и ничего не сохраняет. Данные брокера запрашиваются

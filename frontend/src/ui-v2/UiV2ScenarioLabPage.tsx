@@ -19,9 +19,9 @@ import {
   isWithinRange,
   normalizeDecimalInput,
   SCENARIO_OPTIONS,
-  ScenarioLabResult,
   triggerDownload,
-} from "../pages/ScenarioLabPage";
+} from "./scenarioLab";
+import { ScenarioLabResult } from "./ScenarioLabResult";
 import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
 import sharedStyles from "./UiV2Page.module.css";
 import styles from "./UiV2ScenarioLab.module.css";

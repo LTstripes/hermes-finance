@@ -582,7 +582,7 @@ function HoldingsBlock({
       })}
       <p className={styles.panelFootnote}>
         Строки показаны как есть в закрытом отчёте. Итоги берутся из подтверждённой сводки, а не из
-        суммы строк. <Link to={`/months/${monthId}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
+        суммы строк. <Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>
       </p>
     </Panel>
   );
@@ -718,8 +718,8 @@ function PerformanceBlock({
       )}
       <p className={styles.panelFootnote}>
         Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
-        <Link className={styles.contextLink} to="/analytics">
-          Все расчёты в предыдущем интерфейсе →
+        <Link className={styles.contextLink} to={detailHref}>
+          Доходность →
         </Link>
       </p>
     </Panel>
@@ -1027,7 +1027,7 @@ export default function UiV2CapitalPage() {
               Денежный результат месяца →
             </Link>
             <Link to="/v2/reports">Все отчёты →</Link>
-            <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
+            <Link to={`/v2/data/months/${latestClosed.id}`}>Данные отчётного месяца →</Link>
           </span>
         </UiV2ReportContext>
         {newerDraft ? (

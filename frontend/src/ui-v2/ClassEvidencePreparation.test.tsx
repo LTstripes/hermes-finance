@@ -205,7 +205,7 @@ describe("class Owner preparation", () => {
     expect(screen.getByRole("button", { name: "Сохранить подтверждение класса" })).toBeDisabled();
     expect(screen.getAllByRole("link", { name: /2030-01/ })[0]).toHaveAttribute(
       "href",
-      "/months/1",
+      "/v2/data/months/1",
     );
     expect(saveClassCoverage).not.toHaveBeenCalled();
   });

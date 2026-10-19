@@ -197,8 +197,8 @@ function MonthExportState({
         Сначала создай хотя бы один отчётный месяц. Экспорт полной истории и локальные копии базы
         остаются отдельными операциями.
         <div className={styles.buttonRow}>
-          <Link className={styles.secondaryButton} to="/months">
-            Открыть месяцы в предыдущем интерфейсе ↗
+          <Link className={styles.secondaryButton} to="/v2/data/months">
+            Открыть месяцы →
           </Link>
         </div>
       </div>

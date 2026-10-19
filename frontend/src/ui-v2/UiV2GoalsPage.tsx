@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useSearchParams } from "react-router";
 
-import { GoalsPage } from "../pages/GoalsPage";
+import { GoalsWorkspace } from "./GoalsWorkspace";
 
 function parseMonthId(value: string): number | null {
   if (!/^\d+$/.test(value)) return null;
@@ -33,7 +33,7 @@ export default function UiV2GoalsPage() {
   );
 
   return (
-    <GoalsPage
+    <GoalsWorkspace
       incomeReturnTo={incomeReturnTo}
       monthContext={monthContext}
       monthContextError={monthContextError}

@@ -61,15 +61,13 @@ describe("App", () => {
     window.history.replaceState({}, "", "/");
   });
 
-  it("uses the UI v2 entry at / and exposes a v1 escape while loading", () => {
+  it("uses the UI v2 entry at / and a native home link while loading", () => {
     window.history.pushState({}, "", "/");
 
     render(<App />);
 
     expect(screen.getByText("Загружаем основной интерфейс…")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   });
 
   it("registers the native Capital allocation deep-link route with its selected report month", async () => {
@@ -215,13 +213,10 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
 });

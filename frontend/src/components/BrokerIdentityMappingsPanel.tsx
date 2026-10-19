@@ -283,8 +283,8 @@ export function BrokerIdentityMappingsPanel() {
               </div>
               {sortedAccounts.length === 0 ? (
                 <p className="muted tiny">
-                  Сначала добавь счёт в <Link to="/accounts">разделе «Счета»</Link>. Этот экран не
-                  создаёт счета автоматически.
+                  Сначала добавь счёт в <Link to="/v2/data/catalogs">разделе «Счета»</Link>. Этот
+                  экран не создаёт счета автоматически.
                 </p>
               ) : null}
               <div className="toolbar">

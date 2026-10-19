@@ -248,7 +248,7 @@ function SettingsPanel() {
             </span>
             <div className={styles.goalActions}>
               <Link to="/v2/income">Открыть «Доход и планы» →</Link>
-              <Link to="/goals">Цели в предыдущем интерфейсе ↗</Link>
+              <Link to="/v2/income/goals">Открыть цели →</Link>
             </div>
           </div>
 

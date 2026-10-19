@@ -679,27 +679,27 @@ export default function UiV2ReportPage() {
             risk={riskReady ? riskQuery.data : undefined}
           />
           <Panel
-            eyebrow="Ниже в предыдущем интерфейсе"
+            eyebrow="Данные и расчёты"
             id="report-handoff-title"
-            title="Дальше в предыдущем интерфейсе"
+            title="Открыть связанные разделы"
             wide
           >
-            <ul className={reportStyles.handoffList} data-testid="report-v1-handoff">
+            <ul className={reportStyles.handoffList} data-testid="report-workspace-links">
               <li>
-                <Link to={`/months/${position.point.reporting_month_id}`}>
-                  Отчёт месяца в предыдущем интерфейсе →
+                <Link to={`/v2/data/months/${position.point.reporting_month_id}`}>
+                  Данные отчётного месяца →
                 </Link>
               </li>
               <li>
-                <Link to="/analytics">Все расчёты в предыдущем интерфейсе →</Link>
+                <Link to="/v2/capital/performance">Доходность →</Link>
               </li>
               <li>
-                <Link to="/months">Месяцы в предыдущем интерфейсе →</Link>
+                <Link to="/v2/data/months">Отчётные месяцы →</Link>
               </li>
             </ul>
             <p className={styles.panelFootnote}>
-              Предыдущий интерфейс сохраняет свои правила выбора месяца и свой месяц-базис. Это
-              отдельный переход, а не встроенная возможность v2.
+              Данные месяца открываются для этого отчёта. В разделе доходности можно выбрать
+              отдельный интервал расчёта.
             </p>
           </Panel>
         </div>
