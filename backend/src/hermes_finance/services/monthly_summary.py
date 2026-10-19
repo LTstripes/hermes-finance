@@ -9,7 +9,7 @@ computes deltas against the previous reporting month (liquid capital and
 passive income actual only), and assembles the pure
 :class:`~hermes_finance.domain.monthly_summary.MonthlySummaryResult`.
 
-Key invariants (AGENTS.md / wiki §7):
+Key invariants (docs/ARCHITECTURE_AND_CONTRACTS.md#c2):
 - Money is integer kopecks via :class:`RubleAmount`; no binary ``float``.
 - No formula duplication — each KPI is delegated to its existing service.
 - Deltas are ``None`` when no previous reporting month exists.

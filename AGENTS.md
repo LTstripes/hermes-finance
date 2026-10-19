@@ -1,100 +1,42 @@
 # AGENTS.md — Hermes Finance
 
-Shared project rules. Read once at task start; reuse unchanged context.
+Read the current issue and latest applicable accepted Integrator notes, then only the five-book sections needed for this task.
 
-## Read by task type
+- Product/user journey: [P](docs/MASTER_SPEC.md).
+- Financial/data/API/source authority: [C](docs/ARCHITECTURE_AND_CONTRACTS.md).
+- Roles/risk/scope: [D1](docs/DEVELOPMENT.md#d1); workspace/bootstrap: [D2](docs/DEVELOPMENT.md#d2); implementation: [D3](docs/DEVELOPMENT.md#d3); checks/review: [D4](docs/DEVELOPMENT.md#d4); delivery/document maintenance: [D5](docs/DEVELOPMENT.md#d5); optional client mechanics: [D6](docs/DEVELOPMENT.md#d6).
+- Runtime/release/backup/recovery: [O](docs/OWNER_RUNTIME_OPERATIONS.md).
+- Current code/release/installed/UAT/next decisions: [S](docs/CURRENT_STATUS.md), the only changing status document.
 
-Start with the current issue and applicable Integrator notes, then only the sources needed for the task:
-- Docs/process: affected text and the policies it actually changes.
-- Implementation: relevant contract, source/tests and the matching [verification policy](docs/VERIFICATION_POLICY.md) section.
-- Financial/data/runtime/privacy changes: governing spec/ADRs and applicable review/UAT gates.
-- Task routing: [MODEL_ROUTING](docs/MODEL_ROUTING.md). Integration or an explicitly requested queue: [AGENT_ORCHESTRATION](docs/AGENT_ORCHESTRATION.md).
-Client adapters in `docs/agents/` contain client mechanics only; they do not add another mandatory reading tour or override these rules.
+<a id="roles"></a>
+## Roles and critical boundaries
 
-## Sources of truth
+Owner decides product direction/private UAT; Integrator owns acceptance and authorized integration; Worker owns one candidate without self-acceptance; Reviewer independently assesses it without implementation ownership. Tool access is not authority.
 
-Product precedence: `docs/MASTER_SPEC.md` → accepted `docs/adr/` contracts → active release/task contract.
-The current GitHub issue and accepted Integrator notes specify the assignment under those boundaries.
-A launch prompt locates that assignment; it is not a second specification. Record changed requirements in the authoritative issue/note.
-Verification, risk/review and integration procedures have the respective owners linked above; task-specific stricter gates still apply.
-`docs/PROJECT_WIKI.md` is durable context. Historical task catalogs, experiments and old release notes are not standing orders.
+Hermes is a local single-user Windows app, loopback by default. Financial logic uses Decimal, integer minor units and ROUND_HALF_UP, never binary float. CLOSED months require explicit Reopen. Frontend is not financial authority. Preserve UNKNOWN/NULL/zero distinctions, source/receipt/currentness/writer/Close boundaries in C.
 
-## Roles
-
-- **Owner**: product direction and private/live UAT decisions.
-- **Integrator**: task routing, authoritative notes, project acceptance, authorized integration and affected durable docs/history.
-- **Worker**: one accountable writer for one candidate; no self-acceptance or automatic next task.
-- **Reviewer**: independent candidate assessment without implementation ownership; does not silently edit the candidate.
-A role is not a GitHub account. Worker self-review is not independent review; optional coordinator/helper roles are defined only in the orchestration procedure.
+Owner-requested relevant data reads and ordinary presentation follow D1; secrets never enter output, real payloads never enter tracked code/CI. Reads do not authorize data writes, runtime operations or publication. Task-specific restrictions take precedence.
 
 <a id="default-execution-mode"></a><a id="task-prompt-authority"></a>
-## Scope discipline
+## Scope
 
-Default: one Worker takes the assigned result through investigation, implementation, verification and authorized delivery.
-Choose implementation details, add necessary regressions and fix task-caused defects without repeated approval for routine reversible steps.
-Do not add unrelated cleanup or invent backlog work. Queues/orchestration require explicit opt-in.
-Stop for a conflicting/undefined contract, new financial meaning, architecture/invariant expansion, data/runtime operations outside the Owner-authorized scope or materially larger scope.
-Ordinary engineering choices inside the accepted contract are not scope expansion; do not turn them into approval gates.
-
-## Product and privacy invariants
-
-- Local single-user Windows app, normal endpoint `127.0.0.1:8000`; loopback by default. No cloud, auth, telemetry or trading without an explicit scope decision.
-- Money and rates are exact: no binary `float` in financial logic; `Decimal` calculations, integer minor-unit money storage, `ROUND_HALF_UP`.
-- CLOSED reporting months are immutable until explicit reopen. The frontend is not the financial source of truth.
-
-## Owner data and runtime isolation
-
-Follow [Owner data and efficient task execution](docs/OWNER_DATA_WORKFLOW.md).
-Owner-requested analysis, diagnosis and UAT permit relevant real-data reads and
-ordinary presentation in the authorized assistant conversation, without masking
-personal values or asking again for each query/image. Keep credentials out of
-outputs, real datasets out of tracked code/CI, and synthetic data in automated tests.
-Reading data is distinct from permission to change data, runtime or publication.
-Preserve Stable and the applicable migration/recovery/financial/health contracts.
+Default one accountable Worker completes the assigned result. Routine reversible implementation choices proceed; stop only at a concrete contract/authority failure or material scope expansion (D1). No implicit queue or model accounting.
 
 <a id="sync-before-a-new-task"></a><a id="one-writer-isolated-task-branch"></a>
 <a id="parallel-task-isolation--physical-workspace-invariant"></a>
-## Workspace root discipline
+## Workspace
 
-Fetch canonical refs and pin the authorized baseline: current `main` unless explicitly assigned otherwise; keep it unless compatibility requires refresh.
-One active writing or local-verification task owns one physical worktree/clone, not merely a different branch. Never switch/reset/pull another task's tree.
-GitHub-only review needs no local clone; local review/tests need their own isolated workspace when the original tree is active.
-Write only in the assigned task workspace. Do not move, clean, delete or repurpose sibling directories, Owner runtime or other active workspaces.
-
-Each execution client uses one Owner-configured machine-local workspace root. Create each task below that root as `<issue>-<slug>`; concrete absolute roots stay local and are never tracked. Do not inspect or edit another client's physical workspace by default: inspect sibling work through GitHub PRs/remote refs, or use an explicitly assigned independent review clone/path.
-
-### Standing self-create authorization
-
-With a known configured root and pinned task/branch/baseline/target, create one fresh `workspaces/<agent>/<task>/` worktree/clone yourself.
-Do not ask for an absolute path just because the launch omitted it. Ask only for a genuine unknown/inaccessible root, path collision or boundary crossing.
-An explicitly assigned independent clone/path takes precedence. Out-of-root work needs authorization; high-risk isolation may require an independent clone.
-Use assigned scratch roots for temporary checks/caches. Workspace deletion remains Owner/Integrator-controlled after final Git-state verification.
+Fetch/pin authorized baseline. One active writer/local verification task owns one physical checkout under its configured client root. Self-create one fresh unique task checkout under known standing authority; never switch/reset/clean siblings or runtime roots. Use installed lifecycle Create/Bind/CheckActive and local claim; unavailable-helper fallback is in D2. Check ownership before writing/testing and delivery.
 
 <a id="canonical-main-and-integration-workstreams"></a><a id="preferred-ownerintegrator-execution-route"></a>
-## Delivery
-
-A Worker may commit/push its own assigned task branch; no direct writes to `main`/integration branches or merging sibling/main changes independently.
-`main` alone is canonical and releasable; `integration/*` is staging. Merge, force-push, destructive reset/rebase, branch/tag deletion, release and repo settings
-remain Owner/Integrator-controlled unless explicitly delegated. A Worker cannot adopt Integrator authority from tool access.
-An authorized Integrator performs permitted repository mechanics directly; existing standing integration authorization is not revoked by this document.
 <a id="staged-integration-for-parallel-slices"></a><a id="documentation-synchronization"></a>
 <a id="accepted-and-integrated-task"></a><a id="published-release"></a>
-Staged integration and affected-document closeout belong to the integration procedure; release-specific closeout belongs to `docs/RELEASE_AUTOMATION.md`.
+## Delivery
 
-## Verification
+Worker may commit/push its assigned branch. Main alone is canonical/releasable; staging is not release. Merge, force-push, destructive Git/ref operations, release and settings remain Owner/Integrator-controlled unless explicitly delegated. D5 owns exact-head guarded integration, PR CI, exact-main push CI and affected-document maintenance.
 
-Claim the physical checkout before writing/testing and check ownership before delivery, as described in the Owner-data workflow. Every STOP cites a concrete boundary or failure; do not invent privacy gates for authorized Owner reads.
+## Verification and completion
 
-Use the matching policy section, focused evidence and the existing CI; do not automatically repeat full suites for every handoff or role change.
-Review final scope/diff/privacy and report actual checks, not inferred passes. Required independent review and Owner UAT are not replaced by green tests.
-Integration requires successful exact-candidate PR CI and canonical exact-main push CI; never describe pending checks as completed.
+Use D4's proportional checks and actual exact-candidate evidence; required independent review/UAT remains independent. Never report pending checks as passed. Return exact baseline/target/candidate, branch/workspace, changed files/stat, actual checks/limits and final HEAD/remote/working-tree readback. Use existing issue/PR receipts, no new ledger. CBM is optional; no used/skipped report, compulsory index or model telemetry.
 
-## Completion reporting
-
-Return one concise report: issue/status; baseline/target, branch/workspace and exact candidate SHA; changed files/diff stat;
-actual checks and results; material limitations/blockers; final local HEAD/remote/working-tree read-back, or the truthful GitHub-native equivalent.
-
-CBM use is optional. Do not require CBM availability, a used/skipped report or index maintenance for task completion or acceptance. Check any index result against the assigned checkout; existing source-search and verification requirements remain unchanged.
-
-Normal handoffs do not request or record model/provider identity, benchmark grades or usage telemetry.
-Keep new operational detail in its existing procedure, not as another copy here. Change this file for shared boundaries, authority or the minimum task entrypoint.
+Historical AGENTS provenance: [pre-consolidation rules](https://github.com/LTstripes/hermes-finance/blob/ae302939d8f6fea4c0b15d854d62a8289c007502/AGENTS.md). Archived client adapters are history; D6 is the current routing home.

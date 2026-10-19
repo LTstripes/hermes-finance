@@ -1,0 +1,210 @@
+# Guarded release automation
+
+HYG-04 adds a repository-owned GitHub Actions path for publishing an already prepared Hermes Finance release without requiring a local development/Codex session only to run `scripts/release.ps1`.
+
+The release remains explicit and owner-controlled. There is no release-on-merge, release-on-tag, scheduled release, or background publication.
+
+## Control endpoint
+
+Permanent control issue: **#124 — Release Control — guarded owner trigger**.
+
+Keep that issue open and unlocked. A release is requested only by a newly created owner-authored comment on #124 with exactly three lines:
+
+```text
+/release
+version=X.Y.Z
+expected_main_sha=<full 40-character main SHA>
+```
+
+The version has no `v` prefix. The SHA must be the complete 40-character commit ID.
+
+Edited comments, extra fields, short SHAs, other issues, another actor, or another comment author are rejected. A normal comment that does not begin with `/release` does not enter the release job.
+
+The issue-comment trigger is intentional: the ChatGPT GitHub integration can create an auditable issue comment directly, while it does not require the owner to open GitHub Actions and press a manual workflow-dispatch button.
+
+## Chat-first integrator flow
+
+This is the **normal release route** when the active integrator has direct GitHub access and can create/read issue comments and Actions runs. The owner should not be asked to open GitHub, PowerShell or Codex merely to relay the release trigger.
+
+For the normal chat-driven path the owner can ask the integrator to release a prepared version. The integrator should:
+
+1. read current GitHub `main` and capture its exact 40-character SHA;
+2. confirm canonical `ci.yml` has a completed successful `push` run for that exact `main` SHA;
+3. verify repository release identity and `docs/release-notes-X.Y.Z.md` are present;
+4. create the exact `/release` request comment on control issue #124 itself;
+5. read the Guarded Release run and its job summary;
+6. independently read back the tag object, peeled commit and published GitHub Release before reporting success.
+
+The workflow repeats the critical checks itself. Pre-checking in chat is convenience and defense in depth, not authorization to skip workflow guards.
+
+If the direct integration cannot perform a materially required step, use the narrowest safe fallback. Do not hand the owner routine repository busywork merely because another execution surface also exists. See [`AGENTS.md`](../../../../AGENTS.md) and [`docs/agents/chatgpt.md`](agents/chatgpt.md).
+
+## Guard chain
+
+`.github/workflows/release.yml` invokes `scripts/release-automation.ps1`, which performs the narrow trigger/identity preflight and then delegates publication to the existing `Invoke-HermesRelease` implementation in `scripts/release-lib.ps1`.
+
+The combined path requires all of the following before publication:
+
+- repository is exactly `LTstripes/hermes-finance`;
+- event is a newly created issue comment;
+- issue is exactly #124;
+- GitHub actor and comment author are both the repository owner;
+- request body follows the exact three-line grammar;
+- requested version is a stable `X.Y.Z` identity;
+- expected main is a full commit SHA;
+- `backend/pyproject.toml` `[project].version` equals the requested version;
+- `backend/src/hermes_finance/__init__.py` `__version__` equals the requested version;
+- canonical `docs/release-notes-X.Y.Z.md` exists and is non-empty;
+- release notes contain no candidate-only lifecycle wording such as
+  `UAT-PENDING`, a candidate status/title, or a declaration that the release is
+  not published;
+- fetched `origin/main` still equals the expected SHA;
+- canonical `ci.yml` has a completed successful exact-main `push` run for that SHA;
+- that exact-main `ci.yml` run includes the required synthetic visual-audit job;
+- existing local/remote tag state is compatible with the same annotated tag at the same commit;
+- existing GitHub Release state is compatible with a published stable release.
+
+Unexpected tag/release state fails closed. The helper never force-updates or deletes a release tag to make a request succeed.
+
+## Release-note lifecycle
+
+`docs/release-notes-X.Y.Z.md` is the publication payload, not the durable place
+for a pending candidate gate. Before the release-control request is created,
+owner UAT must be complete and candidate-only status wording must be replaced
+with publication-ready facts. Candidate preparation state remains in the
+release record and execution history until that gate passes.
+
+The shared publication helper checks the notes before resolving tools, fetching
+refs, creating a tag or calling GitHub. Both the guarded workflow and the manual
+fallback therefore fail closed on stale `UAT-PENDING` or equivalent explicit
+candidate-status wording. After publication, the normal documentation closeout
+records the published identity without rewriting the historical preparation
+record.
+
+## Documentation closeout
+
+After publication, the Integrator synchronizes `README.md`, `CHANGELOG.md`,
+`docs/PROJECT_WIKI.md` and `docs/EXECUTION_HISTORY.md` with the published reality.
+Active status must not still call a published release RC/candidate/unreleased;
+dated historical preparation records remain historical, not rewritten as a fabricated PASS.
+Version equality alone is not evidence that documented capabilities, limitations and release status are correct.
+This is a release closeout, not a four-document checklist for every Worker task.
+
+## Publication boundary
+
+The publication path is deliberately narrow:
+
+- create an annotated `vX.Y.Z` tag at the guarded exact main SHA when it does not already exist;
+- push only `refs/tags/vX.Y.Z:refs/tags/vX.Y.Z` with no follow-tags behavior;
+- create a published, non-prerelease GitHub Release from that existing tag and canonical release notes;
+- never push, reset, update, delete or force-update a branch ref;
+- never use `--tags`, `--all`, `--mirror`, force push or tag deletion.
+
+If tag publication succeeds but GitHub Release creation fails, the tag is intentionally retained. Repeating the exact same guarded request may safely reuse the same compatible annotated tag; it is not moved or recreated.
+
+## Permissions and credentials
+
+The workflow uses only the repository-provided `GITHUB_TOKEN`; there is no PAT or custom release token.
+
+Workflow-level default permission:
+
+- `contents: read`.
+
+The single release job narrows its elevated permissions to:
+
+- `actions: read` — read canonical exact-main Actions runs;
+- `contents: write` — push the one release tag and create/read the GitHub Release.
+
+No `issues: write`, `pull-requests: write`, `packages: write`, deployment permission, id-token, or repository-administration permission is granted to the release job.
+
+## Privacy and runtime isolation
+
+The workflow checks out only the public repository on a GitHub-hosted Windows runner. It has no path or connector to the production runtime and must not read or receive:
+
+- a real `.env`;
+- the real finance database or SQLite sidecars;
+- backups;
+- `private/` owner data;
+- provider credentials or owner exports.
+
+No production smoke or live provider operation is part of release publication.
+
+## Verification and job summary
+
+After the shared release helper returns, the automation performs a final remote read-back and fails if any invariant changed. The job summary exposes:
+
+- requested version and tag;
+- annotated tag object SHA;
+- peeled commit SHA;
+- final `main` SHA;
+- GitHub Release title;
+- published state;
+- GitHub Release URL;
+- control issue and request actor.
+
+A valid successful result requires the peeled tag commit and final `main` to equal the original expected SHA, and the tag object SHA to differ from the peeled commit SHA (annotated tag evidence).
+
+An integrator can independently verify the same state through GitHub by reading `main`, `refs/tags/vX.Y.Z`, the peeled tag target, the canonical exact-main CI run and the GitHub Release. The job summary is evidence, not a substitute for independent read-back when release correctness matters.
+
+## Synthetic safety verification
+
+Canonical PR/main CI includes a conditional `Synthetic visual audit` job and a
+Windows `Release safety` job. The visual audit runs for UI-relevant pull
+requests and for every push to `main`; the `main` run is therefore part of the
+exact-main CI gate checked before release publication. The path filter is
+covered by deterministic regression tests, and the release-safety job checks
+the tracked workflow contract. The release safety job runs:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-request.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-release-workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-visual-audit-workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\test-stable-update-real-git.ps1
+```
+
+`test-release.ps1` exercises the publication contract through an injected fake command runner, including successful publication semantics and fail-closed cases such as missing/failed/wrong-kind CI and conflicting tags/releases. It does not create a real tag or GitHub Release.
+
+`test-release-request.ps1` exercises the owner-control request grammar, provenance checks, version identity and release-note requirements using temporary synthetic files only.
+
+`test-release-workflow.ps1` parses the real automation entrypoint with the Windows PowerShell parser and verifies the tracked workflow contract: narrow trigger, control issue binding, owner gates, built-in token use and minimal permissions. It performs no network or publication calls.
+
+`test-stable-update.ps1` exercises the explicit Stable-update operation with
+temporary synthetic paths, a fake remote/GitHub layer, the accepted SQLite
+backup helper and a synthetic target Prepare/Validate script. It proves the
+backup-before-mutation order and records the target-pinned-but-unprepared
+partial state when Prepare or Validate fails. It does not touch a real Stable
+or Preview checkout, owner database, backup, environment file, tag or release.
+
+`test-stable-update-real-git.ps1` adds a focused temporary real-Git smoke with a
+local bare remote. It proves annotated current/target tags, exact tag-only
+fetch, detached target pinning, `--no-overwrite-ignore` collision protection,
+and that target Prepare/Validate run only after a successful switch. GitHub
+Release lookup and the canonical repository-identity proof are injected; the
+SQLite database, backup and all repositories remain synthetic and temporary.
+
+No HYG-04 acceptance test publishes a throwaway real Hermes Finance tag or release.
+
+The visual audit itself remains synthetic-only: its Playwright fixtures are
+local deterministic data, and CI does not start the backend or use Preview,
+production runtime, `.env`, an owner database, or live provider data.
+
+## Owner runtime updates
+
+Launcher Stable self-update is not a proven canonical release/update path until the #313 redesign is accepted.
+Use documented small Owner operations and recovery. Launcher retirement (#629) did not retire shared backup/recovery/runtime protection.
+The retired shell selected prepared checkout/code/data runtime profiles, not arbitrary branches against one database; ADR 0014 governs this boundary as historical contract plus still-active isolation/recovery rules.
+
+## Manual fallback
+
+`scripts/release.ps1` remains the supported manual fallback. It uses the same guarded `scripts/release-lib.ps1` publication implementation:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
+  -Version X.Y.Z `
+  -ExpectedMainSha <full-40-character-main-sha> `
+  -ReleaseNotes .\docs\release-notes-X.Y.Z.md
+```
+
+The automated path does not weaken or replace those release guards; it adds a repository-owned, chat-triggerable entrypoint around them.

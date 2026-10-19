@@ -4,16 +4,20 @@
 
 ## [Unreleased]
 
-### 1.3.0 candidate — UAT-PENDING, не опубликован
+Current integration, runtime and next-action evidence is maintained only in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
-- Упаковка принятого main: source-first MyBroker Import/Preview → incomplete DRAFT → GET/reload, immutable receipts, zero-write multi-original preflight и отдельная DRAFT source valuation.
-- Ограниченные reviewed Money/H2 proofs, исторические endpoints/crossings/coverage и их retirement; отсутствующие tax/cost/NKD не заменяются нулём, cash/payout не дублируются.
-- Отдельный indicative account-period S3 и bounded RUB class-return Phase 1; реальный сентябрь `rate_fraction=null`, exact XIRR/TWRR остаются evidence-gated. WHAT-IF — отдельная недобавленная возможность.
-- Source/account Close guards сохранены: incomplete DRAFT не означает bookkeeping completeness; нет auto-close, универсального импорта или автоматического historical mapping.
-- Version/lock identity 1.3.0; synthetic compatibility для общей v1.1.0/v1.2.0 schema 0044 через 0045–0058, failure rollback, consistent backup/recovery и сохранность CLOSED/provenance.
-- PR #744/#829, #814 finance authority и #769 financial Apply/Close исключены. Подготовка не меняет Owner DB/Stable/Test, не выполняет OPS02, merge, публикацию или миграцию реальных данных.
+## [1.3.0] — 2026-10-16
 
-Ограничения и будущие gates: [candidate notes](docs/release-notes-1.3.0.md), [release preparation / post-move plan](docs/release-preparation-1.3.0.md). Published baseline остаётся v1.2.0 до отдельного принятого release closeout.
+Published [Hermes Finance v1.3.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), exact release commit `a9c88266fffe26e83688c52fc8f425b04fa14812`, annotated tag object `13e727903c18484b8ff817f0b16f71664060c1d3`, schema `0058_broker_money_ownership`. [Release #38937979090](https://github.com/LTstripes/hermes-finance/actions/runs/38937979090) and exact source push CI #38933101012 succeeded.
+
+- Source-first MyBroker Preview → explicitly incomplete DRAFT → independent GET/reload, immutable receipts and zero-write multi-original preflight.
+- Bounded reviewed Money/H2 evidence, historical endpoints/crossings/coverage and retirement; absent tax/cost/NKD remains unknown, cash/payout effects are not duplicated.
+- Indicative account-period S3 and bounded RUB class-return Phase 1; real source authority and exact XIRR/TWRR remain evidence-gated. Later account WHAT-IF and durable intake are outside this published cut.
+- Source/account Close guards remain: incomplete DRAFT is not bookkeeping completeness, auto-close or universal import.
+- Supported synthetic compatibility from v1.1.0/v1.2.0 schema 0044 through 0045–0058, rollback and consistent backup/recovery with CLOSED/provenance preservation.
+- #744/#829, broad historical financial Apply/Close and unproved #814 economics were excluded.
+
+[Owner-local #836 release receipt](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6222421447) records the separate backup-first Stable update, separate Start and limited continuity/API/UI/reload checks, with guarded `0044 → 0058`. This historical installation receipt is not general financial UAT acceptance. The publication-specific scope remains in [version notes](docs/release-notes-1.3.0.md); current runtime evidence belongs in CURRENT_STATUS.
 
 ## [1.2.0] — 2026-10-04
 
