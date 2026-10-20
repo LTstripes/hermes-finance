@@ -465,6 +465,9 @@ _INCOME_GAPS = {
     "overlap_flow_choice_conflict",
 }
 _SOURCE_GAPS = {
+    # Structure gaps affect both trades and income; currency/REPO gaps do not.
+    "4_Transfers_unsupported",
+    "5_UFSR_unsupported",
     "source_reader_unavailable",
     "native_source_scope_ambiguous",
     "unparsed_source_rows",
@@ -475,7 +478,7 @@ _DISCLOSURES = {"bond_valuation_basis_unknown", "income_assumed", "income_confir
 
 
 def _source_gap(code):
-    return code in _SOURCE_GAPS or code.endswith("_unsupported")
+    return code in _SOURCE_GAPS
 
 
 def _month(session, views, isin, instrument_type, month, income, gaps, previous):

@@ -975,3 +975,62 @@ def test_arithmetic_bond_inference_requires_known_bond_type(db):
     row = by_isin(read(db))[BOND].months[0]
     assert {"instrument_type_unknown", "trade_nkd_basis_unknown"} <= set(row.flags)
     assert row.buys_cost_kopecks is None and row.total_kopecks is None
+
+
+@pytest.mark.parametrize("observed_income", [False, True])
+def test_non_rub_money_preserves_known_price_components(db, accepted_basis, observed_income):
+    def mutate(root):
+        root.findall(".//m:p_code[@volume]", NS)[-1].set("p_code", "USD")
+
+    known = (("Дивиденды", ISIN, "25"), ("Купон", BOND, "30")) if observed_income else ()
+    save(db, extra=(*known, ("Дивиденды", ISIN, "17")), mutate=mutate)
+    before = snapshot(db)
+    result = read(db)
+    instruments = by_isin(result)
+    stock, bond = instruments[ISIN].months[0], instruments[BOND].months[0]
+    assert (stock.buys_cost_kopecks, stock.sells_proceeds_kopecks) == (0, 0)
+    assert stock.price_effect_kopecks == 10_000
+    assert (bond.buys_cost_kopecks, bond.sells_proceeds_kopecks) == (102_500, 0)
+    assert bond.price_effect_kopecks == 12_500
+    assert "currency_unsupported" in {gap.code for gap in result.gaps}
+    for instrument, amount in ((instruments[ISIN], 2_500), (instruments[BOND], 3_000)):
+        row = instrument.months[0]
+        assert "currency_unsupported" in row.flags
+        assert not row.income_complete and not instrument.all_time.income_complete
+        assert row.total_kopecks is None and row.return_percent is None
+        assert row.income_kopecks == (amount if observed_income else None)
+        assert instrument.all_time.price_effect_kopecks == row.price_effect_kopecks
+        assert instrument.all_time.total_kopecks is None and instrument.all_time.partial
+        if not observed_income:
+            assert all(getattr(row, field) is None for field in INCOME_FIELDS)
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "attribute,value,code",
+    [
+        ("curr_calc", "USD", "trade_currency_unsupported"),
+        ("repo_no", "99999999999", "repo_trade_unsupported"),
+    ],
+)
+@pytest.mark.parametrize("observed_income", [False, True])
+def test_unsupported_trade_preserves_covered_income(db, attribute, value, code, observed_income):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set(attribute, value)
+
+    extra = (("Дивиденды", ISIN, "25"), ("Купон", BOND, "30")) if observed_income else ()
+    save(db, extra=extra, mutate=mutate)
+    before = snapshot(db)
+    result = by_isin(read(db))
+    stock, bond = result[ISIN].months[0], result[BOND].months[0]
+    assert code in bond.flags and code not in stock.flags
+    assert bond.buys_cost_kopecks is None and bond.sells_proceeds_kopecks is None
+    assert bond.price_effect_kopecks is None and bond.total_kopecks is None
+    assert bond.return_percent is None
+    assert bond.income_complete and result[BOND].all_time.income_complete
+    assert bond.coupons_kopecks == bond.income_kopecks == (3_000 if observed_income else 0)
+    assert stock.income_complete
+    assert stock.dividends_kopecks == (2_500 if observed_income else 0)
+    assert stock.price_effect_kopecks == 10_000
+    assert stock.total_kopecks == (12_500 if observed_income else 10_000)
+    assert snapshot(db) == before

@@ -5804,9 +5804,11 @@ buys/sells/total, including across overlapping reports; never deduplicate by int
 Let T be native `summ_trade`, N the native NKD and F commission. With an
 `includes_paid_nkd` basis, buys cost = T + F and sells proceeds = T - F;
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
-These are the C5 native-total basis meanings. A current accepted cash proof matching
-the native identity, IDs and exact trade components takes precedence, revalidated
-through the existing proof reader and cash checks. For MyBroker bond buys and sells,
+These are the C5 native-total basis meanings. For buys, a current accepted cash proof
+matching the native identity, IDs and exact trade components takes precedence,
+revalidated through the existing proof reader and cash checks. These cash checks
+validate buys only; sells rely on per-row inference or remain withheld.
+For MyBroker bond buys and sells,
 the provisional reader also infers a basis per row from parsed `Price` (percent
 of face) and signed `qty`: let P = Price / 100 * 1000 * |qty|. With Decimal
 arithmetic and a per-row 0.01 tolerance, |T - P - N| <= 0.01 implies
@@ -5853,10 +5855,14 @@ Unattributed, unknown, invalid,
 legacy-unclassified or non-RUB Money withholds affected monthly totals and rates,
 while retaining known price components. Unknown source structure, scope ambiguity
 or an unreadable overlapping intake withholds affected costs/income completeness.
-All `*_unsupported` syntax blockers (including `4_Transfers_unsupported` and
-`5_UFSR_unsupported`) and position-universe blockers/conflicts such as
-`position_row_unclassified` are month-local source gaps: preserve their flags,
-withhold costs and total, and set `income_complete=false`. Instrument-specific
+The explicit structure-gap codes `source_reader_unavailable`,
+`native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,
+`4_Transfers_unsupported`, `5_UFSR_unsupported` and `position_row_unclassified`
+are month-local source gaps: preserve their flags, withhold costs and total,
+and set `income_complete=false`. Money `currency_unsupported` affects income
+completeness and totals, preserving known price components. Trade
+`trade_currency_unsupported` and `repo_trade_unsupported` withhold affected costs
+and price effects without making covered income incomplete. Instrument-specific
 missing endpoint components remain local to that instrument/operand.
 Independent instruments and months remain available where evidence permits.
 
