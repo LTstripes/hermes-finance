@@ -3,7 +3,7 @@
 Uses the existing canonical statement-import test builders and two synthetic
 income-report PDFs (each deliberately spanning two reporting months); never
 configures a live provider and never touches Owner data. Run through
-playwright.statement.config.ts after the frontend production build.
+playwright.config.ts --project=statement after the frontend production build.
 """
 
 import sys

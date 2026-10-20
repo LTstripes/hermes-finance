@@ -3568,7 +3568,7 @@ different response scope. NULL fingerprint is explained in provenance details.
 Focused verification lives in `test_instrument_cash_income_service.py`,
 `InstrumentCashIncome.test.tsx`, and the disposable real-backend desktop journey:
 `npm run build` then
-`npm run test:e2e -- --config=playwright.instrument-income.config.ts`.
+`npm run test:e2e -- --project=instrument-income`.
 All test source documents, accounts and screenshots are synthetic. This evidence
 does not replace separately authorized Owner UAT.
 
@@ -3652,7 +3652,7 @@ source-backed desktop journey, production dist at 1440 and 1280 with 125% zoom:
 
 ```text
 npm run build
-npm run test:e2e -- --config=playwright.instrument-trades.config.ts
+npm run test:e2e -- --project=instrument-trades
 ```
 
 The fixtures/DB/screenshots are synthetic. They do not replace Owner-real UAT.
@@ -4751,7 +4751,7 @@ production-dist desktop journey is:
 
 ```text
 npm run build
-npm run test:e2e -- --config=playwright.instrument-eod.config.ts
+npm run test:e2e -- --project=instrument-eod
 ```
 
 It covers bond 1000/950/coupon 120, stock 1000/900/dividend 120, exact-date gaps,
@@ -5893,7 +5893,7 @@ Focused verification:
 backend: pytest tests/test_instrument_what_if_service.py
 frontend: npm test -- src/ui-v2/InstrumentWhatIf.test.tsx src/ui-v2/InstrumentCashIncome.test.tsx
 frontend: npm run build
-frontend: npx playwright test --config playwright.instrument-what-if.config.ts
+frontend: npx playwright test --project=instrument-what-if
 ```
 
 The desktop journey starts only its own disposable fabricated database/backend

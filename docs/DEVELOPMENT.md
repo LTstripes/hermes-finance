@@ -638,11 +638,22 @@ retired shell.
 Outside the accepted fail-closed documentation-only PR fast path, the G04 browser gate is not product-path-filtered: frontend routing/editor or backend/API changes can break the same monthly workflow. Canonical main push and release gates remain full. A successful docs-only fast path claims only its actual classification/privacy/diff checks, not omitted product suites.
 G04 remains its original deterministic journey. The #572 aggregate also retains
 the accepted Performance preparation/PRE-POST journey, native statement
-import/apply/readback (`playwright.statement.config.ts`) and native Monthly Close
-edit/return/close/report/reopen (`playwright.monthly-close.config.ts`). They run
+import/apply/readback (`playwright.config.ts --project=statement`) and native Monthly Close
+edit/return/close/report/reopen (`playwright.config.ts --project=monthly-close`). They run
 serially on temporary synthetic databases in the same required browser job;
-the two acceptance configs serve the production frontend build. This is the
+the two acceptance projects serve the production frontend build. This is the
 bounded aggregate gate, not a general browser harness redesign.
+
+Playwright suites share `frontend/playwright.config.ts`. From `frontend`, run
+`npm run test:e2e:<name>` or `npx playwright test --project=<name>`.
+Select one project per execution: each suite retains its own server command,
+port, environment and output directory, and some fixture servers share ports.
+An unqualified execution retains the original `chromium` suite.
+`npx playwright test --list` lists all projects; add `--project=<name>` to
+inspect one suite. The separate `playwright.visual.config.ts` retains the
+`1366x768`/`1440x900`/`1920x1080` matrix, viewport ownership and exact-head
+UI evidence identity/duplicate omission. Continue using `npm run audit:visual`
+for that matrix and its evidence producer.
 
 Use D4 for the proportional implementation and
 final-gate rules. When a task changes only docs or test organization, review
@@ -966,10 +977,10 @@ Paths below are under `frontend/` unless another root is shown. A listed spec is
 | Tax/IIS planning and account write tools | `/v2/income/tax-iis`, `/v2/data/catalogs?tab=accounts&account=<id>` | `src/ui-v2/UiV2TaxIisPage.test.tsx`, `src/ui-v2/UiV2IisAccountForms.test.tsx`, `e2e/ui-v2-iis-forms.spec.ts`; account/year identity, readback, ambiguous lock, keyboard/desktop |
 | Months create/clone/delete/local selection | `/v2/data/months` | `src/ui-v2/UiV2MonthsPage.test.tsx`, `e2e/ui-v2-months.spec.ts`; frontend / visual; clone source lifecycle also in backend full |
 | Six editor slices and dirty navigation | `/v2/data/months/:id?section=...` | `src/ui-v2/UiV2MonthEditorPage.test.tsx`, `UiV2MonthPositionsSection.test.tsx`, `UiV2MonthAssetsSection.test.tsx`, `UiV2MonthPayoutsSection.test.tsx`, `UiV2MonthBudgetSection.test.tsx`, `UiV2MonthLiabilities.test.tsx`; `e2e/ui-v2-month-editor.visual.spec.ts` (mocked API) |
-| Native import/apply/authoritative persistence | `/v2/data/payouts?month=<id>#statement-import` | `e2e/statement-import.acceptance.ts` via `playwright.statement.config.ts`; **real backend**, temp SQLite/synthetic PDF, cancel, foreign-month row disabled, one keyboard write, reread/reload/duplicate, desktop; `g04-browser` |
+| Native import/apply/authoritative persistence | `/v2/data/payouts?month=<id>#statement-import` | `e2e/statement-import.acceptance.ts` via `playwright.config.ts --project=statement`; **real backend**, temp SQLite/synthetic PDF, cancel, foreign-month row disabled, one keyboard write, reread/reload/duplicate, desktop; `g04-browser` |
 | Import failed/ambiguous/stale/CLOSED state | Native statement/Alfa tools | `src/ui-v2/UiV2StatementImportSection.test.tsx`, `src/ui-v2/UiV2AlfaBaselinePage.test.tsx`, `e2e/ui-v2-statement-import.spec.ts`; backend import/atomicity tests; frontend / visual / backend lanes |
 | Forecast payouts and calendar | `/v2/data/payouts?month=<id>` | `src/ui-v2/UiV2PayoutForecastPage.test.tsx`, `e2e/ui-v2-payout-forecast.spec.ts`; frontend / visual; dated principal and passive income remain distinct |
-| Monthly Close native edit/return/fresh final review | `/v2/close?month=<id>&step=final_review_close` | `e2e/monthly-close.acceptance.ts` via `playwright.monthly-close.config.ts`; **real backend**, persisted expense, fresh workflow read on return, dirty cancel/discard, failed write and mismatched read guards; `g04-browser` |
+| Monthly Close native edit/return/fresh final review | `/v2/close?month=<id>&step=final_review_close` | `e2e/monthly-close.acceptance.ts` via `playwright.config.ts --project=monthly-close`; **real backend**, persisted expense, fresh workflow read on return, dirty cancel/discard, failed write and mismatched read guards; `g04-browser` |
 | Close/report/reopen; historical archive | Same close context, `/v2/reports/:id` | Same retained **real-backend** scenario: confirmation cancel, persisted CLOSED, hidden mutations, actual older archive after a later closed report, refresh, next-month return, explicit reopen; desktop/keyboard |
 | Repeat/stale/concurrent CLOSED/deleted/invalid target | Close and editor exact month | `src/pages/UiV2ClosePage.test.tsx`, `src/pages/MonthlyCloseWorkflowPage.test.tsx`, editor tests and real-backend deleted/duplicate query checks; backend close/write atomicity in full lanes |
 | Reports/archive latest/draft/missing/coverage | `/v2/reports`, `/v2/reports/:id` | `src/pages/UiV2ReportsPage.test.tsx`, `src/pages/UiV2ReportPage.test.tsx`, `e2e/ui-v2.visual.spec.ts` and actual archive above |

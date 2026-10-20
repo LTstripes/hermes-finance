@@ -1,7 +1,7 @@
 """Synthetic-only real API runtime for the Alfa native UI acceptance probe.
 
 Uses existing canonical test builders; never configures a live provider.
-Run through playwright.alfa.config.ts after the frontend production build.
+Run through playwright.config.ts --project=alfa after the frontend production build.
 """
 
 import sys
