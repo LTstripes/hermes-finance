@@ -80,6 +80,47 @@ class SourceIntakeObservation(Base):
     facts_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class SourceMoneyClassification(Base):
+    """Upload-time money interpretation; provisional and separate from financial facts."""
+
+    __tablename__ = "source_intake_money_classifications"
+    __table_args__ = (
+        UniqueConstraint("intake_id", "source_reference", name="uq_source_money_reference"),
+        UniqueConstraint("observation_id", name="uq_source_money_observation"),
+        CheckConstraint(
+            "classification IN ('external_deposit','external_withdrawal','coupon','dividend',"
+            "'fee','tax','trade_settlement','internal_transfer','unknown')",
+            name="ck_source_money_classification",
+        ),
+        CheckConstraint("origin IN ('default_rule','user_choice')", name="ck_source_money_origin"),
+        CheckConstraint("status IN ('assumed','confirmed')", name="ck_source_money_status"),
+        CheckConstraint(
+            "(origin = 'default_rule' AND status = 'assumed') OR "
+            "(origin = 'user_choice' AND status = 'confirmed')",
+            name="ck_source_money_choice_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    intake_id: Mapped[int] = mapped_column(
+        ForeignKey("source_intake_originals.id", ondelete="RESTRICT"), nullable=False
+    )
+    observation_id: Mapped[int] = mapped_column(
+        ForeignKey("source_intake_observations.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    # NULL preserves nonrepresentable source amounts; never convert them to zero.
+    amount_kopecks: Mapped[int | None] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(16), nullable=False)
+    operation: Mapped[str] = mapped_column(Text, nullable=False)
+    narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SourceIntakeRevision(Base):
     """Append-only review/policy/link commands, never an economic receipt."""
 

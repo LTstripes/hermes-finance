@@ -28,6 +28,10 @@ from hermes_finance.persistence import (
     SourceIntakeRevision,
 )
 from hermes_finance.services import mybroker_identity, mybroker_import
+from hermes_finance.services.source_money_classifications import (
+    list_classifications,
+    persist_money_classifications,
+)
 from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, digest
 from hermes_finance.statement_import.mybroker_identity import parse_identity
 
@@ -347,6 +351,7 @@ def save_intake(
                 }
                 operation, predecessor = "manifest", None
                 payload = {"state": state, "manifest": material}
+            persist_money_classifications(session, original.id, document)
             row = _append(
                 session,
                 request_id=request_id,
@@ -605,7 +610,7 @@ def _assessment(proposal, state, head_seq, override_revision):
     }
 
 
-def _view(session, original):
+def _view(session, original, *, include_money_classifications=True):
     _policy(session)
     events = _events(session, original.id)
     manifest = json.loads(events[0].payload_json)["manifest"]
@@ -691,6 +696,11 @@ def _view(session, original):
         "original_required": True,
         "document": manifest["source"],
         "proposals": proposals,
+        **(
+            {"money_classifications": list_classifications(session, original.id)}
+            if include_money_classifications
+            else {}
+        ),
         "observations": [
             {
                 "id": o.id,
@@ -730,7 +740,10 @@ def read_intake(session, intake_id):
 
 def list_intakes(session, month_id=None, include_unbound=False):
     with coherent_read_snapshot(session):
-        views = [_view(session, row) for row in _rows(session, SourceIntakeOriginal)]
+        views = [
+            _view(session, row, include_money_classifications=False)
+            for row in _rows(session, SourceIntakeOriginal)
+        ]
         return [
             v
             for v in views
