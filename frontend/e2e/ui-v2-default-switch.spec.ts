@@ -41,7 +41,9 @@ async function expectPathAndSearch(page: Page, expectedPathAndSearch: string) {
     .toBe(expectedPathAndSearch);
 }
 
-test("ui-v2: keeps explicit v1 available without passive writes", async ({ page }) => {
+test("ui-v2: retired v1 entry redirects to the native UI without passive writes", async ({
+  page,
+}) => {
   const requests = await installReadOnlyApiFixtures(page);
 
   await page.goto("/");
@@ -50,20 +52,16 @@ test("ui-v2: keeps explicit v1 available without passive writes", async ({ page 
   });
   await expect(page.getByRole("link", { name: /предыдущий интерфейс/ })).toHaveCount(0);
   await page.goto("/v1");
-  await expect(page).toHaveURL(/\/v1$/);
+  await expect(page).toHaveURL(/\/v2$/);
   await page.reload();
-  await expect(page).toHaveURL(/\/v1$/);
-  await expect(page.getByRole("heading", { level: 1, name: "Дашборд" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Дашборд", exact: true })).toHaveAttribute(
-    "href",
-    "/v1",
-  );
+  await expect(page).toHaveURL(/\/v2$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
   await page.goForward();
-  await expect(page).toHaveURL(/\/v1$/);
+  await expect(page).toHaveURL(/\/v2$/);
 
   expect(requests.filter((request) => request.method !== "GET")).toEqual([]);
   expect(

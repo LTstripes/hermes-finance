@@ -94,53 +94,18 @@
 }
 
 @media (max-width: 1180px) and (min-width: 961px) {
-  .app-shell {
-    grid-template-columns: 216px minmax(0, 1fr);
-  }
-
-  .sidebar {
-    padding-inline: 14px;
-  }
-
-  .brand {
-    gap: 9px;
-    padding-inline: 5px;
-  }
-
-  .brand__text small {
-    display: none;
-  }
-
-  .nav-item {
-    gap: 9px;
-    padding-inline: 10px;
-  }
-
-  .content,
   .runtime-alert__inner {
     padding-inline: 28px;
   }
 }
 
 @media (max-width: 960px) {
-  .sidebar__nav > div {
-    display: contents;
-  }
-
   .runtime-alert__inner {
     padding-inline: 22px;
   }
 }
 
 @media (max-width: 680px) {
-  .topbar {
-    justify-content: flex-start;
-  }
-
-  .topbar > span:first-child {
-    display: inline;
-  }
-
   .runtime-alert__inner {
     grid-template-columns: auto minmax(0, 1fr);
   }

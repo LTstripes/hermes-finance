@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { makeUiV2Workflow } from "../src/test/uiV2Fixtures";
 
 const closed = {
   id: 7,
@@ -11,7 +12,7 @@ const closed = {
   source: "manual",
 };
 
-test("broker DRAFT source warnings keep headings, evidence and keyboard details @viewport-owned", async ({
+test("ui-v2 final review keeps broker blockers, evidence and keyboard details @viewport-owned", async ({
   page,
 }, testInfo) => {
   const writes: string[] = [];
@@ -22,7 +23,9 @@ test("broker DRAFT source warnings keep headings, evidence and keyboard details 
     }
   });
   await installApi(page);
-  const month = { ...closed, status: "draft" };
+  const workflow = makeUiV2Workflow({ blocked: true });
+  const month = { ...workflow.month, ...closed, status: "draft" as const };
+  workflow.month = month;
   const reasons = [
     ["4_Transfers_unsupported", "Переводы требуют сверки"],
     ["5_UFSR_unsupported", "Данные UFSR не поддерживаются"],
@@ -34,47 +37,58 @@ test("broker DRAFT source warnings keep headings, evidence and keyboard details 
     ["new_source_reason", "Нужно исправить перед закрытием"],
     ["constructor", "Нужно исправить перед закрытием"],
   ];
-  const items = reasons.map(([code], index) => ({
-    severity: "hard_blocker",
+  const items = reasons.map(([code, title], index) => ({
+    severity: "hard_blocker" as const,
     code,
-    message: `MyBroker счёт #${index + 1}: исходные доказательства требуют сверки.`,
+    message: `${title}. MyBroker счёт #${index + 1}: исходные доказательства требуют сверки.`,
     context: { count: index + 1, coverage_state: "unknown", bookkeeping_ready: false },
   }));
+  workflow.readiness = {
+    can_close: false,
+    hard_blocker_count: items.length,
+    warning_count: 0,
+    reason_codes: items.map((item) => item.code),
+  };
+  if (!workflow.final_review.available) throw new Error("Synthetic final review is missing");
+  workflow.final_review.month_header = month;
+  workflow.final_review.close_readiness = { can_close: false, items };
+  await page.route("**/api/months", (route) => route.fulfill({ json: [month] }));
   await page.route("**/api/months/7", (route) => route.fulfill({ json: month }));
-  await page.route("**/api/months/7/close-readiness", (route) =>
-    route.fulfill({ json: { ...month, can_close: false, items } }),
+  await page.route("**/api/months/7/close-workflow", (route) => route.fulfill({ json: workflow }));
+  await page.route("**/api/broker-months?reporting_month_id=7", (route) =>
+    route.fulfill({ json: [] }),
   );
 
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/months/7?section=review");
-    const blockers = page.getByRole("region", { name: "Блокирует закрытие" });
-    const rows = blockers.getByRole("listitem");
-    await expect(rows).toHaveCount(items.length);
-    await expect(blockers.locator(".badge")).toHaveText(String(items.length));
+    await page.goto("/v2/data/months/7");
+    await page.getByRole("link", { name: "Проверить и закрыть" }).click();
+    await expect(page).toHaveURL(/\/v2\/close\?month=7&step=final_review_close$/);
+    await expect(page.getByRole("region", { name: "Готовность к закрытию" })).toContainText(
+      `Блокеров: ${items.length}`,
+    );
     await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
-    for (const [index, [, title]] of reasons.entries()) {
+    const summary = page.getByText("Показать причины и диагностику", { exact: true });
+    const details = page.locator("details").filter({ has: summary });
+    await summary.focus();
+    await expect(summary).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(details).toHaveAttribute("open", "");
+    const rows = details.locator(".final-review__diagnostic-list").first().getByRole("listitem");
+    await expect(rows).toHaveCount(items.length);
+    for (const [index, item] of items.entries()) {
       const row = rows.nth(index);
-      const heading = row.locator("strong");
-      await expect(heading).toHaveText(title);
-      await heading.scrollIntoViewIfNeeded();
-      await expect(heading).toBeVisible();
-      expect(
-        await heading.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
-      ).toBe(true);
-      const details = row.locator("details");
-      const summary = row.locator("summary");
-      await summary.focus();
-      await expect(summary).toBeFocused();
-      await page.keyboard.press("Enter");
-      await expect(details).toHaveAttribute("open", "");
-      await expect(row.locator("pre")).toBeVisible();
-      expect(await row.locator("pre").textContent()).toBe(
-        `Код: ${items[index].code}\nСерверное сообщение: ${items[index].message}\nКонтекст: ${JSON.stringify(items[index].context, null, 2)}`,
-      );
-      await page.keyboard.press("Space");
-      await expect(details).not.toHaveAttribute("open");
+      await expect(row.getByText("Блокер", { exact: true })).toBeVisible();
+      await expect(row.locator("span").last()).toHaveText(item.message);
+      await expect(row.locator("code")).toHaveText(item.code);
+      await row.scrollIntoViewIfNeeded();
+      await expect(row).toBeVisible();
     }
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(details).not.toHaveAttribute("open");
+    await page.keyboard.press("Enter");
+    await expect(details).toHaveAttribute("open", "");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -329,6 +343,7 @@ async function installApi(
       await route.fulfill({ json: overrides.properties });
     } else if (
       [
+        "/api/broker-months/intakes",
         "/api/incomes",
         "/api/accounts",
         "/api/instruments",

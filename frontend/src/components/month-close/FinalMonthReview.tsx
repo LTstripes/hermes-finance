@@ -126,10 +126,8 @@ function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
 }
 
 function editPath(monthId: number, section: string, origin: MonthlyCloseOrigin): string {
-  const editor =
-    origin === "monthly-close-v2" ? `/v2/data/months/${monthId}` : `/months/${monthId}`;
   return withMonthlyCloseReturn(
-    `${editor}?section=${section}`,
+    `/v2/data/months/${monthId}?section=${section}`,
     monthId,
     "final_review_close",
     origin,
@@ -510,7 +508,7 @@ function ManualCards({
 
 export function FinalMonthReview({
   review,
-  origin = "monthly-close",
+  origin = "monthly-close-v2",
 }: {
   review: FinalMonthReviewModel | FinalMonthReviewUnavailable;
   origin?: MonthlyCloseOrigin;
@@ -593,13 +591,13 @@ export function FinalMonthReview({
       </Panel>
 
       <Attention
-        editable={origin !== "monthly-close-v2" || review.month_header.status === "draft"}
+        editable={review.month_header.status === "draft"}
         month={review.month_header}
         origin={origin}
         review={review}
       />
       <ManualCards
-        editable={origin !== "monthly-close-v2" || review.month_header.status === "draft"}
+        editable={review.month_header.status === "draft"}
         month={review.month_header}
         origin={origin}
         review={review}

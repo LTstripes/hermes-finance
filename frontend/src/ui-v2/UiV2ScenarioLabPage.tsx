@@ -212,7 +212,6 @@ export default function UiV2ScenarioLabPage() {
 
   const returnPath =
     selectedMonth?.status === "closed" ? `/v2/income?month=${selectedMonth.id}` : "/v2/income";
-  const v1ReturnPath = "/scenario-lab";
 
   return (
     <UiV2Shell
@@ -231,7 +230,6 @@ export default function UiV2ScenarioLabPage() {
           </Link>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       <div className={styles.page}>
         <UiV2Panel

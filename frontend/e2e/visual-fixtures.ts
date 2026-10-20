@@ -1,3 +1,6 @@
+import { makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
+import { makeUiV2Comparison, makeUiV2PassiveHistory } from "../src/test/uiV2Fixtures";
+
 const rub = (amount: string) => ({ amount, currency: "RUB" });
 
 const longAccountName =
@@ -163,6 +166,31 @@ const dashboard = {
   warnings: [],
   calculation_version: "synthetic-visual-audit",
 };
+
+// Reuse the v2 DTO fixtures with identities from this audit's month catalogue.
+const closedReportComparison = makeUiV2Comparison();
+for (const [snapshot, month] of [
+  [closedReportComparison.current, syntheticMonths[1]],
+  [closedReportComparison.previous, syntheticMonths[2]],
+] as const) {
+  if (snapshot) Object.assign(snapshot, { ...month, reporting_month_id: month.id });
+}
+const passiveIncomeHistory = makeUiV2PassiveHistory();
+const passiveMonths = syntheticMonths.slice(1, 5).reverse();
+passiveIncomeHistory.points.forEach((point, index) => {
+  const month = passiveMonths[index];
+  Object.assign(point, { ...month, reporting_month_id: month.id });
+});
+passiveIncomeHistory.average.months_used = passiveMonths.map(
+  (month) => `${month.year}-${String(month.month).padStart(2, "0")}`,
+);
+passiveIncomeHistory.latest_closed_report_id = syntheticMonths[1].id;
+if (passiveIncomeHistory.selected_report) {
+  Object.assign(passiveIncomeHistory.selected_report, {
+    ...syntheticMonths[1],
+    reporting_month_id: syntheticMonths[1].id,
+  });
+}
 
 const capitalComposition = {
   asset_classes: ["cash", "deposits", "stocks", "bonds", "gold_other"],
@@ -543,7 +571,7 @@ const monthlyCloseWorkflow = {
   },
   final_review: { available: false, reason_code: "not_available" },
   outlook: null,
-  links: { month: "/months/12", close_readiness: "", freshness: "" },
+  links: { month: "/v2/data/months/12", close_readiness: "", freshness: "" },
 };
 
 const taxPlanner = {
@@ -672,11 +700,80 @@ export function syntheticApiResponse(
   if (/^\/api\/months\/\d+\/broker-reconciliation-preview$/.test(path)) {
     return { json: reconciliation };
   }
+  if (/^\/api\/months\/\d+\/close-readiness$/.test(path) && method === "GET") {
+    return {
+      json: {
+        ...syntheticMonths[0],
+        can_close: false,
+        items: [
+          {
+            severity: "hard_blocker",
+            code: "synthetic_missing_evidence",
+            message: "Добавь недостающее подтверждение данных.",
+            context: {},
+          },
+        ],
+      },
+    };
+  }
+  if (path === "/api/market-data/providers/capabilities" && method === "GET") {
+    return { json: makeUiV2ProviderCapabilities() };
+  }
   if (/^\/api\/months\/\d+\/close-workflow$/.test(path)) {
     return { json: monthlyCloseWorkflow };
   }
+  if (path === "/api/analytics/closed-report-comparison" && method === "GET") {
+    return { json: closedReportComparison };
+  }
+  if (path === "/api/analytics/passive-income" && method === "GET") {
+    return { json: passiveIncomeHistory };
+  }
   if (path === "/api/analytics/capital-composition") return { json: capitalComposition };
   if (path === "/api/analytics/risk-allocation") return { json: riskAllocation };
+  if (path === "/api/performance/readiness" && method === "GET") {
+    const period = {
+      start_date: url.searchParams.get("start_date"),
+      end_date: url.searchParams.get("end_date"),
+    };
+    const context = {
+      scope: "portfolio",
+      account_id: null,
+      ...period,
+      performance_currency: "RUB",
+    };
+    return {
+      json: {
+        schema_version: 1,
+        ...context,
+        xirr: { ...portfolioXirr, account_id: null, period },
+        twrr: { ...portfolioTwrr, account_id: null, period },
+        evidence: {
+          ...context,
+          availability: "not_computable",
+          reason_codes: ["not_computable_valuation_boundary_missing"],
+          scope_membership: {
+            status: "unknown",
+            account_ids: [],
+            missing_or_ambiguous_account_ids: [],
+            reason_codes: [],
+          },
+          cash_boundary_coverage: {
+            status: "unknown",
+            account_ids: [],
+            missing_or_incomplete_account_ids: [],
+            reason_codes: [],
+          },
+          in_kind_boundary_coverage: {
+            status: "unknown",
+            account_ids: [],
+            missing_or_incomplete_account_ids: [],
+            reason_codes: [],
+          },
+        },
+        diagnostics: [],
+      },
+    };
+  }
   if (path === "/api/performance/xirr" && method === "GET") return { json: portfolioXirr };
   if (path === "/api/performance/twrr" && method === "GET") return { json: portfolioTwrr };
   if (path === "/api/performance/attribution" && method === "GET") {

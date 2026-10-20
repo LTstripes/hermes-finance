@@ -852,7 +852,6 @@ export default function UiV2DataCatalogsPage() {
       monthId={monthId}
       subtitle="Счета, инструменты и постоянные сопоставления — с явными изменениями и защитными проверками."
       title="Справочники и сопоставления"
-      v1ReturnPath="/accounts"
     >
       <div className={styles.catalogs} data-testid="catalogs-page">
         {monthContent}

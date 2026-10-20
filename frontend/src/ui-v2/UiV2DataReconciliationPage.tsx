@@ -77,21 +77,9 @@ export default function UiV2DataReconciliationPage() {
       ? requestedStepValues[0]
       : null;
   const closeStep =
-    params.getAll("from").length === 1 &&
-    (params.get("from") === "monthly-close-v2" || params.get("from") === "monthly-close") &&
-    requestedStep
+    params.getAll("from").length === 1 && params.get("from") === "monthly-close-v2" && requestedStep
       ? requestedStep
       : "broker_reconciliation";
-  const v1ReturnPath =
-    resolution.kind === "ready"
-      ? requestedStep
-        ? monthlyCloseReturnPath({
-            monthId: resolution.month.id,
-            origin: "monthly-close",
-            step: requestedStep,
-          })
-        : "/reconciliation"
-      : "/reconciliation";
 
   function selectMonth(id: number) {
     setParams(withSelectedReturnMonth(params, id), { replace: true });
@@ -274,7 +262,6 @@ export default function UiV2DataReconciliationPage() {
       monthId={monthId ?? undefined}
       subtitle="Сравнение позиций Hermes с данными брокера за выбранный месяц."
       title="Сверка портфеля"
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2DataFrame>

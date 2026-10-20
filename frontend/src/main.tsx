@@ -3,21 +3,14 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./app/App";
 import "./styles/global.css";
-import "./styles/sticky-sidebar.css";
 import "./styles/ui-primitives.css";
 import "./styles/app-shell-v03.css";
-import "./styles/dashboard-v03.css";
 import "./styles/broker-snapshot.css";
-import "./styles/fact-forecast-goal-v03.css";
 import "./styles/goals-v03.css";
-import "./styles/month-workspace-v03.css";
+import "./styles/month-edit-support.css";
 import "./styles/analytics-v03.css";
-import "./styles/risk-allocation.css";
-import "./styles/tax-iis-planner.css";
 import "./styles/scenario-lab.css";
-import "./styles/reconciliation-center.css";
 import "./styles/portfolio-review-package.css";
-import "./styles/export-page.css";
 
 const root = document.getElementById("root");
 

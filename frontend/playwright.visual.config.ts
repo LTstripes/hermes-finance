@@ -11,7 +11,7 @@ const repeatedViewportSpecs =
 
 // Same title filter as the exact-head UI evidence command. CI sets the env
 // below only after proving that command will run on this same git tree.
-const duplicateEvidenceGrep = /(?:dashboard:|monthly-close:|ui-v2)/;
+const duplicateEvidenceGrep = /ui-v2/;
 
 function visualProject(name: string, width: number, height: number) {
   const referenceDesktop = name === "1440x900";

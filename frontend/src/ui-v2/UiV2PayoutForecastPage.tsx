@@ -1372,7 +1372,6 @@ export default function UiV2PayoutForecastPage() {
       title="Выплаты"
       subtitle="Календарь ожидаемых выплат и явное применение прогнозных событий T-Invest."
       monthId={month?.id}
-      v1ReturnPath="/payouts"
     >
       <div className={styles.context}>
         <label htmlFor="payout-forecast-month">Отчётный месяц</label>

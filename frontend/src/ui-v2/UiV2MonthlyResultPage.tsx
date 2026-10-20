@@ -328,7 +328,6 @@ export default function UiV2MonthlyResultPage() {
           </p>
         </>
       }
-      v1ReturnPath="/analytics"
     >
       {content}
     </UiV2Shell>

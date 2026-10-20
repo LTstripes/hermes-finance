@@ -556,12 +556,6 @@ export default function UiV2ReportPage() {
     document.getElementById("report-title")?.focus();
   }, [target?.kind]);
 
-  const v1ReturnPath = targetMonth
-    ? `/months/${targetMonth.id}`
-    : latestClosed
-      ? `/months/${latestClosed.id}`
-      : "/v1";
-
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
@@ -725,7 +719,6 @@ export default function UiV2ReportPage() {
           </p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2Shell>

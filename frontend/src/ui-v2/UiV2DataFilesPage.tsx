@@ -444,7 +444,6 @@ export default function UiV2DataFilesPage() {
       monthId={selectedMonth?.id}
       subtitle="Локальные выгрузки для ручной передачи и отдельный контур резервных копий базы."
       title="Файлы"
-      v1ReturnPath="/export"
     >
       <div className={styles.surfaceStack} data-testid="data-files-page">
         <MyBrokerImportPanel />

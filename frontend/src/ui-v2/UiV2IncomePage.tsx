@@ -22,7 +22,6 @@ import type {
   ReportingMonth,
   SavingAllocation,
 } from "../api/types";
-import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { uiV2GoalsPath } from "./goalRoute";
@@ -922,21 +921,6 @@ export default function UiV2IncomePage() {
     setParams(next, { replace: true });
   };
 
-  const requestedStepValues = params.getAll("step");
-  const requestedStep =
-    requestedStepValues.length === 1 && isGuidedCloseStepId(requestedStepValues[0])
-      ? requestedStepValues[0]
-      : null;
-  const v1ReturnPath = latestClosed
-    ? requestedStep
-      ? monthlyCloseReturnPath({
-          monthId: latestClosed.id,
-          origin: "monthly-close",
-          step: requestedStep,
-        })
-      : `/months/${latestClosed.id}`
-    : "/v1";
-
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
@@ -1036,7 +1020,6 @@ export default function UiV2IncomePage() {
           </p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2Shell>

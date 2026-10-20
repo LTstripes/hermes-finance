@@ -298,25 +298,23 @@ describe("UI v2 Data sources", () => {
     );
   });
 
-  it.each(["monthly-close-v2", "monthly-close"])(
-    "keeps the exact Close month and step from %s on native return",
-    async (origin) => {
-      const { mount, reads } = setup(
-        `/v2/data?month=12&from=${origin}&step=market_quotes&monthId=12`,
-      );
-      mount();
-      expect(await screen.findByTestId("data-month-context")).toHaveTextContent("Август 2031");
-      expect(screen.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
-        "href",
-        "/v2/close?month=12&step=market_quotes",
-      );
-      expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
-        "href",
-        `/v2/data/reconciliation?month=12&from=${origin}&step=market_quotes&monthId=12`,
-      );
-      expect(reads.filter((item) => item.includes("freshness-provenance"))).toEqual([
-        "GET /api/months/12/freshness-provenance",
-      ]);
-    },
-  );
+  it("keeps the exact Close month and step from monthly-close-v2 on native return", async () => {
+    const origin = "monthly-close-v2";
+    const { mount, reads } = setup(
+      `/v2/data?month=12&from=${origin}&step=market_quotes&monthId=12`,
+    );
+    mount();
+    expect(await screen.findByTestId("data-month-context")).toHaveTextContent("Август 2031");
+    expect(screen.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&step=market_quotes",
+    );
+    expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
+      "href",
+      `/v2/data/reconciliation?month=12&from=${origin}&step=market_quotes&monthId=12`,
+    );
+    expect(reads.filter((item) => item.includes("freshness-provenance"))).toEqual([
+      "GET /api/months/12/freshness-provenance",
+    ]);
+  });
 });

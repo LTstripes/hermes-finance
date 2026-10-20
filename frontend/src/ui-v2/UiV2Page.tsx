@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 
 import {
   getCapitalComposition,
@@ -31,7 +31,7 @@ import type {
   PassiveIncomeHistory,
   ReportingMonth,
 } from "../api/types";
-import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
+import { isGuidedCloseStepId } from "../components/month-close/navigation";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
@@ -40,7 +40,6 @@ import { uiV2GoalsPath } from "./goalRoute";
 import {
   reportIndex,
   monthWorkspacePath,
-  resolveMonthSelection,
   selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
@@ -664,7 +663,6 @@ function GoalsBlock({
 }
 
 export default function UiV2Page() {
-  const [params] = useSearchParams();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
@@ -723,25 +721,6 @@ export default function UiV2Page() {
     ) ?? false;
   const goalsReady = isQueryReady(goalsQuery) && goalsIdentityMatches;
   const loading = !monthsReady;
-
-  const requestedMonth = resolveMonthSelection(params.getAll("month"), months);
-  const requestedStepValues = params.getAll("step");
-  const requestedStep =
-    requestedStepValues.length === 1 && isGuidedCloseStepId(requestedStepValues[0])
-      ? requestedStepValues[0]
-      : null;
-  const v1ReturnPath =
-    requestedMonth.kind === "selected"
-      ? requestedStep
-        ? monthlyCloseReturnPath({
-            monthId: requestedMonth.month.id,
-            origin: "monthly-close",
-            step: requestedStep,
-          })
-        : `/months/${requestedMonth.month.id}`
-      : latestClosed
-        ? `/months/${latestClosed.id}`
-        : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {
@@ -824,7 +803,6 @@ export default function UiV2Page() {
           <p className={styles.subtitle}>Спокойная картина капитала, дохода и целей.</p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2Shell>

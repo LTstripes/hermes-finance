@@ -8,62 +8,24 @@ import { syntheticApiResponse, syntheticXirrReasonCode, type AuditState } from "
 type AuditRoute = {
   slug: string;
   path: string;
-  prepare?: (page: Page) => Promise<void>;
 };
 
 const routes: AuditRoute[] = [
-  { slug: "dashboard", path: "/v1" },
-  { slug: "analytics", path: "/analytics" },
-  { slug: "risk-allocation", path: "/analytics/risk-allocation" },
-  { slug: "freshness", path: "/freshness" },
-  {
-    slug: "reconciliation",
-    path: "/reconciliation",
-    prepare: async (page) => {
-      await page.getByLabel("Отчётный месяц").selectOption("12");
-      await page.getByRole("button", { name: "Проверить снимок" }).click();
-      await expect(
-        page.getByRole("heading", { name: "Сверка без изменений данных" }),
-      ).toBeVisible();
-    },
-  },
-  { slug: "monthly-close", path: "/months/12/close" },
-  { slug: "months", path: "/months" },
-  { slug: "month-assets", path: "/months/12?section=assets" },
-  {
-    slug: "month-liabilities",
-    path: "/months/12?section=liabilities",
-    prepare: async (page) => {
-      await page.getByRole("button", { name: "Изменить связь" }).click();
-      const picker = page.getByLabel("Счёт для связи с долгом");
-      await expect(picker).toBeVisible();
-      await expect(picker.locator("option")).toHaveCount(2);
-      await expect(
-        picker.locator("option", { hasText: "Синтетический депозит для связанной пары" }),
-      ).toBeEnabled();
-      await expect(
-        picker.locator("option", { hasText: "Синтетический брокерский счёт" }),
-      ).toHaveCount(0);
-      await expect(picker.locator("option", { hasText: "Синтетический счёт 02" })).toHaveCount(0);
-      await expect(picker.locator("option", { hasText: "Синтетический счёт 10" })).toHaveCount(0);
-    },
-  },
-  { slug: "month-positions", path: "/months/12?section=positions" },
-  { slug: "payouts", path: "/payouts" },
-  {
-    slug: "accounts-instruments",
-    path: "/accounts",
-    prepare: async (page) => {
-      await page.getByRole("button", { name: "Инструменты" }).click();
-      await expect(
-        page.getByText("Синтетическая облигация", { exact: false }).first(),
-      ).toBeVisible();
-    },
-  },
-  { slug: "goals", path: "/goals" },
-  { slug: "tax-iis-planner", path: "/tax-iis-planner" },
-  { slug: "export", path: "/export" },
-  { slug: "settings", path: "/settings" },
+  { slug: "ui-v2-home", path: "/v2" },
+  { slug: "ui-v2-close", path: "/v2/close?month=12" },
+  { slug: "ui-v2-capital", path: "/v2/capital" },
+  { slug: "ui-v2-capital-allocation", path: "/v2/capital/allocation?month=12" },
+  { slug: "ui-v2-data", path: "/v2/data?month=12" },
+  { slug: "ui-v2-months", path: "/v2/data/months" },
+  { slug: "ui-v2-month-editor", path: "/v2/data/months/12" },
+  { slug: "ui-v2-reconciliation", path: "/v2/data/reconciliation?month=12" },
+  { slug: "ui-v2-payouts", path: "/v2/data/payouts?month=12" },
+  { slug: "ui-v2-catalogs", path: "/v2/data/catalogs" },
+  { slug: "ui-v2-goals", path: "/v2/income/goals?month=12" },
+  { slug: "ui-v2-tax-iis", path: "/v2/income/tax-iis?month=12" },
+  { slug: "ui-v2-scenario-lab", path: "/v2/income/scenario-lab?month=12" },
+  { slug: "ui-v2-files", path: "/v2/data/files" },
+  { slug: "ui-v2-app", path: "/v2/data/app" },
 ];
 
 const forbiddenVisibleCopy = [
@@ -95,12 +57,7 @@ const forbiddenVisibleCopy = [
   /\bmissing_provider\b/i,
 ];
 
-async function installSyntheticApi(
-  page: Page,
-  state: AuditState = "content",
-  delayMonths = false,
-  capitalCoverage = false,
-) {
+async function installSyntheticApi(page: Page, state: AuditState = "content", delayMonths = false) {
   const unhandled: string[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -128,42 +85,14 @@ async function installSyntheticApi(
       });
       return;
     }
-    let json = response.json;
-    if (capitalCoverage && /^\/api\/months\/\d+\/dashboard$/.test(url.pathname)) {
-      const dashboard = structuredClone(response.json) as { kpis: Record<string, unknown> };
-      dashboard.kpis.portfolio_source_coverage = {
-        status: "partial",
-        reason_codes: ["active_account_snapshot_missing"],
-        missing_account_ids: [2],
-      };
-      json = dashboard;
-    }
     await route.fulfill({
       status: response.status ?? 200,
       contentType: "application/json",
-      json,
+      json: response.json,
     });
   });
   return unhandled;
 }
-
-test("v1 dashboard and month detail show partial source coverage beside known capital", async ({
-  page,
-}, testInfo) => {
-  const unhandled = await installSyntheticApi(page, "content", false, true);
-  const dir = path.resolve(".visual-audit", testInfo.project.name);
-  fs.mkdirSync(dir, { recursive: true });
-  await page.goto("/v1");
-  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
-  await page.screenshot({
-    path: path.join(dir, "issue-538-v1-dashboard-partial.png"),
-    fullPage: true,
-  });
-  await page.goto("/months/12?section=income");
-  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
-  await page.screenshot({ path: path.join(dir, "issue-538-v1-month-partial.png"), fullPage: true });
-  expect(unhandled).toEqual([]);
-});
 
 async function collectLayoutIssues(page: Page) {
   return page.evaluate(() => {
@@ -250,27 +179,7 @@ for (const route of routes) {
     const unhandled = await installSyntheticApi(page);
     await page.goto(route.path);
     await expect(page.locator("h1").first()).toBeVisible();
-    if (route.prepare) await route.prepare(page);
     await page.waitForTimeout(150);
-    if (route.slug === "analytics") {
-      await expect(page.getByText("XIRR недоступен")).toBeVisible();
-      await expect(
-        page.getByRole("heading", { name: "Изменение стоимости после внешних потоков" }),
-      ).toBeVisible();
-      await expect(page.getByText("РЕЗУЛЬТАТ", { exact: true })).toBeVisible();
-      await expect(page.getByText("PERF04A", { exact: true })).toHaveCount(0);
-      await expect(page.getByText("Это изменение стоимости, а не доходность.")).toBeVisible();
-      await expect(page.getByText(syntheticXirrReasonCode, { exact: true })).toHaveCount(0);
-      expect(await page.locator(".capital-composition-chart path").count()).toBeGreaterThan(0);
-      expect(await page.locator(".capital-composition-chart path[fill='#5f7e9e']").count()).toBe(0);
-    }
-    if (route.slug === "month-assets" || route.slug === "month-liabilities") {
-      const pair = page.getByTestId("linked-pair-901");
-      await expect(pair).toBeVisible();
-      await expect(pair).toContainText("Актив A · брутто");
-      await expect(pair).toContainText("Связанный долг D");
-      await expect(pair).toContainText("Чистый вклад A − D");
-    }
     await assertAuditState(page, unhandled, pageErrors);
 
     const screenshotDir = path.resolve(".visual-audit", testInfo.project.name);
@@ -289,8 +198,8 @@ test("loading, empty and error states stay bounded", async ({ page }, testInfo) 
   fs.mkdirSync(screenshotDir, { recursive: true });
 
   let unhandled = await installSyntheticApi(page, "content", true);
-  await page.goto("/months");
-  await expect(page.getByText("Загружаем отчётные месяцы…")).toBeVisible();
+  await page.goto("/v2/data/months");
+  await expect(page.getByText("Загружаем месяцы…")).toBeVisible();
   await assertAuditState(page, unhandled, []);
   await page.screenshot({
     path: path.join(screenshotDir, "state-loading.png"),
@@ -300,8 +209,8 @@ test("loading, empty and error states stay bounded", async ({ page }, testInfo) 
 
   const emptyPage = await page.context().newPage();
   unhandled = await installSyntheticApi(emptyPage, "empty");
-  await emptyPage.goto("/months");
-  await expect(emptyPage.getByText(/Пока нет периодов/)).toBeVisible();
+  await emptyPage.goto("/v2/data/months");
+  await expect(emptyPage.getByText(/Периодов пока нет/)).toBeVisible();
   await assertAuditState(emptyPage, unhandled, []);
   await emptyPage.screenshot({
     path: path.join(screenshotDir, "state-empty.png"),
@@ -312,8 +221,8 @@ test("loading, empty and error states stay bounded", async ({ page }, testInfo) 
 
   const errorPage = await page.context().newPage();
   unhandled = await installSyntheticApi(errorPage, "error");
-  await errorPage.goto("/months");
-  await expect(errorPage.getByText("Не удалось загрузить", { exact: true })).toBeVisible();
+  await errorPage.goto("/v2/data/months");
+  await expect(errorPage.getByText("Список месяцев недоступен", { exact: false })).toBeVisible();
   await assertAuditState(errorPage, unhandled, []);
   await errorPage.screenshot({
     path: path.join(screenshotDir, "state-error.png"),

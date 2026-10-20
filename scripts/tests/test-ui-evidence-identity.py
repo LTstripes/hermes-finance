@@ -247,7 +247,7 @@ class GitPackageTests(unittest.TestCase):
         package = root / "ui-v2-evidence"
         (package / "screenshots").mkdir(parents=True)
         (package / "frontend-dist").mkdir()
-        for name in ("dashboard.png", "monthly-close.png", "ui-v2-home.png"):
+        for name in ("ui-v2-home.png", "ui-v2-close.png", "ui-v2-capital.png"):
             (package / "screenshots" / name).write_bytes(b"png")
         (package / "frontend-dist" / "index.html").write_text("<html></html>\n", encoding="utf-8")
         return package
@@ -294,7 +294,7 @@ class GitPackageTests(unittest.TestCase):
             self.assertFalse((package / "provenance.json").exists())
 
             missing = self._package(root / "missing")
-            (missing / "screenshots" / "dashboard.png").unlink()
+            (missing / "screenshots" / "ui-v2-home.png").unlink()
             errors = publish_package(
                 missing,
                 repo,
@@ -305,7 +305,7 @@ class GitPackageTests(unittest.TestCase):
                 run_id="371001",
                 run_attempt="1",
             )
-            self.assertTrue(any("dashboard.png" in error for error in errors))
+            self.assertTrue(any("ui-v2-home.png" in error for error in errors))
             self.assertFalse((missing / "provenance.json").exists())
 
             bad_run = self._package(root / "run")
@@ -377,7 +377,7 @@ class WorkflowContractTests(unittest.TestCase):
     def test_viewport_ownership_stays_and_the_omit_is_1440_only(self) -> None:
         self.assertIn("grepInvert: /@viewport-owned/", self.config)
         self.assertIn(OMIT_ENV, self.config)
-        self.assertIn("dashboard:|monthly-close:|ui-v2", self.config)
+        self.assertIn("const duplicateEvidenceGrep = /ui-v2/;", self.config)
         self.assertIn('process.env.HERMES_VISUAL_AUDIT_OMIT_DUPLICATE_EVIDENCE === "true"', self.config)
         self.assertIn("testIgnore: repeatedViewportSpecs", self.config)
         other_projects = re.search(
@@ -390,7 +390,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn(OMIT_ENV, other_projects.group("body"))
         self.assertIn("grepInvert: /@viewport-owned/", other_projects.group("body"))
         workflow_grep = re.compile(EVIDENCE_GREP)
-        config_grep = re.compile(r"(?:dashboard:|monthly-close:|ui-v2)")
+        config_grep = re.compile(r"ui-v2")
         samples = (
             "dashboard: synthetic layout and owner copy",
             "monthly-close: synthetic layout and owner copy",
@@ -400,7 +400,7 @@ class WorkflowContractTests(unittest.TestCase):
             "native months 1440x900: clone, refresh, delete and keyboard",
             "Owner preparation keyboard and layout 1440px",
         )
-        expected = (True, True, True, False, False, False, False)
+        expected = (False, False, True, False, False, False, False)
         for sample, matches in zip(samples, expected, strict=True):
             self.assertEqual(bool(workflow_grep.search(sample)), matches)
             self.assertEqual(bool(config_grep.search(sample)), matches)

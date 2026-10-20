@@ -12,10 +12,10 @@ function LocationProbe() {
   );
 }
 
-function renderShell(v1ReturnPath: string) {
+function renderShell() {
   return render(
     <MemoryRouter initialEntries={["/v2"]}>
-      <UiV2Shell active="home" header={<h1>Мои финансы</h1>} v1ReturnPath={v1ReturnPath}>
+      <UiV2Shell active="home" header={<h1>Мои финансы</h1>}>
         <p>Контент</p>
       </UiV2Shell>
       <LocationProbe />
@@ -26,7 +26,7 @@ function renderShell(v1ReturnPath: string) {
 describe("UiV2Shell native navigation", () => {
   it("keeps Close keyboard-operable and every shell link in v2", async () => {
     const user = userEvent.setup();
-    renderShell("/months/12/close#actual_payouts");
+    renderShell();
     expect(screen.getByText("Основной интерфейс")).toBeVisible();
     const close = screen.getByRole("link", { name: "Закрыть месяц" });
     expect(close).toHaveAttribute("href", "/v2/close");
@@ -48,7 +48,7 @@ describe("UiV2Shell native navigation", () => {
     ["История и результаты", "/v2/capital/performance"],
     ["Доход и цели", "/v2/income/goals"],
   ])("links %s to its native workspace", (label, href) => {
-    renderShell("/v1");
+    renderShell();
     expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiClientError } from "../api/client";
 import { listMonths } from "../api/months";
 import { downloadScenarioLabExport, evaluateScenarioLab } from "../api/scenarioLab";
 import UiV2ScenarioLabPage from "./UiV2ScenarioLabPage";
@@ -178,6 +179,64 @@ describe("native Scenario Lab", () => {
     await user.click(screen.getByRole("button", { name: "Назад в истории" }));
     expect(await ready()).toHaveValue("");
     expect(evaluateScenarioLab).not.toHaveBeenCalled();
+  });
+
+  it("shows deterministic machine-readable validation errors", async () => {
+    const user = userEvent.setup();
+    vi.mocked(evaluateScenarioLab).mockRejectedValue(
+      new ApiClientError(422, {
+        code: "invalid_drawdown_pct",
+        message: "drawdown_pct must be between 0 and 100",
+        details: [],
+      }),
+    );
+    renderPage("/v2/income/scenario-lab?month=1");
+    await ready();
+    await user.type(screen.getByRole("textbox", { name: "Размер просадки акций, %" }), "10");
+    await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Не удалось выполнить запрос");
+    expect(alert).toHaveTextContent("drawdown_pct must be between 0 and 100");
+    expect(alert).toHaveTextContent("код: invalid_drawdown_pct");
+  });
+
+  it("accepts signed FX shocks and unbounded deposit/inflation inputs", async () => {
+    const user = userEvent.setup();
+    renderPage("/v2/income/scenario-lab?month=1");
+    await ready();
+    const calculate = screen.getByRole("button", { name: "Рассчитать сценарий" });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Сценарий" }),
+      "fx_translation_shock",
+    );
+    const fxPct = screen.getByRole("textbox", { name: "Изменение стоимости в отчёте, %" });
+    await user.type(fxPct, "-10");
+    expect(calculate).toBeEnabled();
+    await user.clear(fxPct);
+    await user.type(fxPct, "150");
+    expect(calculate).toBeEnabled();
+    await user.clear(fxPct);
+    await user.type(fxPct, "-101");
+    expect(calculate).toBeDisabled();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Сценарий" }),
+      "deposit_rate_assumption",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Гипотетическая годовая ставка по вкладам, %" }),
+      "250",
+    );
+    expect(calculate).toBeEnabled();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Сценарий" }),
+      "inflation_real_value",
+    );
+    await user.type(screen.getByRole("textbox", { name: "Годовая инфляция, %" }), "250");
+    expect(calculate).toBeEnabled();
   });
 
   it("preserves server zero, null, support and partial coverage without recalculation", async () => {

@@ -527,7 +527,6 @@ export function GoalsWorkspace({
             </Link>
           </div>
         }
-        v1ReturnPath="/goals"
       >
         <div className={v2Styles.content}>
           {toolbar}

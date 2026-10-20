@@ -191,7 +191,6 @@ export default function UiV2AlfaBaselinePage() {
       title="Alfa baseline"
       subtitle="Предпросмотр и явное применение текущего базового среза Alfa PRO."
       monthId={month?.id}
-      v1ReturnPath="/accounts"
     >
       <div className={styles.context}>
         <label htmlFor="alfa-month">Месяц базового среза</label>
