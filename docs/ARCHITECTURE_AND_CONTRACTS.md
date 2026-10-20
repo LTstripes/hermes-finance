@@ -5691,6 +5691,42 @@ account/source, assumptions, refreshing, errors or response mismatch hides the
 old result and disables export. Generation/abort guards reject late responses,
 including A→B→A source changes. Download requires fresh bound server validation.
 
+<a id="c7-source_monthly_returns-1"></a>
+### Monthly native-source estimates
+
+The read-only `source_monthly_returns` service and
+`GET /api/source-returns/monthly?source_account=...` assemble one native source
+account from verified saved source-intake journals. Each calendar month retains
+its own opening and closing native EOD position-plus-separate-RUB-cash totals.
+A different previous closing total is disclosed as `seam_mismatch`; neither
+operand is replaced. Missing endpoints remain NULL with `missing_endpoint`,
+and an invalid month does not suppress independent valid months. Long reports
+supply only their actual outer EOD boundaries, never intermediate month ends.
+
+The separate approximate monthly Modified Dietz/period kernel is
+`calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints
+and one dated schedule; the approximate chained return uses each month’s own
+monthly estimate. A missing monthly endpoint withholds the chain while independently
+known outer-period growth/XIRR may remain available. Rates are Decimal fraction
+strings and money is integer kopecks in this endpoint. Results are
+`authority=provisional`, `financial_authority=none`, `approximate=true` and grant
+no financial Apply, Close, source completeness or exact TWRR authority.
+
+V1 journal reads cannot recover discarded money narratives or transient provisional
+choices. The GET route therefore reports `money_classification_unavailable` for
+unsupported Money occurrences, preserving endpoints but withholding affected
+flow-dependent metrics with `unknown_flow`. Python callers may reattach exact
+originals through the existing provisional context verifier and supply its
+source-reference-bound include/exclude choices. Recognized client/bank deposits
+and withdrawals then enter the modeled schedule as `assumed`; valid explicit
+choices override defaults as `confirmed`. Coupons/dividends and trade money are
+internal, not additional investor flows. Unrecognized Money rows remain gaps,
+not guessed flows. Overlap deduplication keeps every source reference and preserves
+same-report multiplicity. This read path stores no originals or choices and adds
+no migration or financial writes. Persisted classification/choice capture, or an
+HTTP reattachment protocol, remains a required decision before the GET route can
+supply these defaults for V1 Money rows.
+
 <a id="c7-broker_statement_provisional-12"></a>
 ### Source-intake provisional account estimate
 

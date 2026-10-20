@@ -54,6 +54,11 @@ CI_INTEGRATIONS_B_SHARD_MARKERS = (
     "ci_integrations_b4",
 )
 
+# Local targeted-run weight; appended without moving accepted shard anchors.
+CI_CORE_ADDITIONAL_SHARD_WEIGHTS = {
+    "test_source_monthly_returns_service.py": 5.38,
+}
+
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
 # main candidate. Values are summed test/setup/teardown seconds per file; the
 # assignment below is recomputed deterministically by weighted bin-packing.
@@ -775,8 +780,11 @@ def ci_core_shard_for_test_path(test_path: Path) -> str | None:
     relative_path = _relative_test_path(test_path)
     if relative_path is None:
         return None
-    # Append this subsecond suite without rebalancing the accepted core anchors.
-    if relative_path.as_posix() == "test_monthly_return_chain.py":
+    # Append new suites without rebalancing the accepted core anchors.
+    if (
+        relative_path.as_posix() == "test_monthly_return_chain.py"
+        or relative_path.as_posix() in CI_CORE_ADDITIONAL_SHARD_WEIGHTS
+    ):
         return "ci_core_a"
     return _weighted_shard(
         relative_path.as_posix(),
