@@ -142,9 +142,18 @@ jobs:
           - lane: persistence
             marker: ci_persistence
             timeout_minutes: 10
-          - lane: integrations-a
-            marker: "ci_integrations and ci_integrations_a"
-            timeout_minutes: 40
+          - lane: integrations-a1
+            marker: "ci_integrations and ci_integrations_a and ci_integrations_a1"
+            timeout_minutes: 10
+          - lane: integrations-a2
+            marker: "ci_integrations and ci_integrations_a and ci_integrations_a2"
+            timeout_minutes: 10
+          - lane: integrations-a3
+            marker: "ci_integrations and ci_integrations_a and ci_integrations_a3"
+            timeout_minutes: 10
+          - lane: integrations-a4
+            marker: "ci_integrations and ci_integrations_a and ci_integrations_a4"
+            timeout_minutes: 10
           - lane: integrations-b1
             marker: "ci_integrations and ci_integrations_b and ci_integrations_b1"
             timeout_minutes: 10
