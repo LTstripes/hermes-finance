@@ -598,7 +598,7 @@ changes; the displayed evidence applies to the bound offline snapshot only.
 ```text
 backend: pytest tests/test_instrument_uat_runtime.py tests/test_scratch_preflight_runtime.py
 frontend: npm run build
-frontend: npx playwright test --config=playwright.instrument-uat.config.ts
+frontend: npx playwright test --project=instrument-uat
 ```
 
 The browser harness fabricates current-schema source-backed stock/bond data,

@@ -374,6 +374,22 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("continue-on-error", visual_job)
         self.assertNotIn("--grep", visual_job)
 
+    def test_native_ci_projects_keep_their_required_invocations(self) -> None:
+        package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
+        self.assertIn(
+            "npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts "
+            "--project=chromium --retries=0",
+            self.ci,
+        )
+        for project in ("statement", "monthly-close", "broker-month", "provisional", "instrument-uat"):
+            with self.subTest(project=project):
+                self.assertIn(f"run: npm run test:e2e -- --project={project}\n", self.ci)
+                self.assertEqual(
+                    package["scripts"][f"test:e2e:{project}"],
+                    f"playwright test --project={project}",
+                )
+        self.assertNotIn("--config=playwright.", self.ci)
+
     def test_viewport_ownership_stays_and_the_omit_is_1440_only(self) -> None:
         self.assertIn("grepInvert: /@viewport-owned/", self.config)
         self.assertIn(OMIT_ENV, self.config)

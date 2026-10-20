@@ -337,31 +337,31 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- --config=playwright.statement.config.ts
+        run: npm run test:e2e -- --project=statement
 
       - name: Run native Monthly Close edit return report and reopen
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- --config=playwright.monthly-close.config.ts
+        run: npm run test:e2e -- --project=monthly-close
 
       - name: Run source-first broker-month Preview DRAFT readback and Close
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- --config=playwright.broker-month.config.ts
+        run: npm run test:e2e -- --project=broker-month
 
       - name: Run zero-metadata source-intake provisional desktop journey
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- --config=playwright.provisional.config.ts
+        run: npm run test:e2e -- --project=provisional
 
       - name: Run isolated read-only instrument UAT desktop journey
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- --config=playwright.instrument-uat.config.ts
+        run: npm run test:e2e -- --project=instrument-uat
 
       - name: Upload synthetic real-backend journey evidence
         if: always()
