@@ -543,7 +543,7 @@ const monthlyCloseWorkflow = {
   },
   final_review: { available: false, reason_code: "not_available" },
   outlook: null,
-  links: { month: "/months/12", close_readiness: "", freshness: "" },
+  links: { month: "/v2/data/months/12", close_readiness: "", freshness: "" },
 };
 
 const taxPlanner = {

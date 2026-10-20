@@ -85,7 +85,6 @@ export default function BrokerStatementReturnPage() {
   return (
     <UiV2Shell
       active="capital"
-      v1ReturnPath="/analytics"
       header={
         <>
           <Link to="/v2/capital/performance">← Доходность</Link>

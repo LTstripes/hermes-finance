@@ -193,7 +193,6 @@ export default function UiV2MonthsPage() {
       monthId={selected?.id}
       subtitle="Выбери любой период: исправь черновик, проверь и закрой его или открой сохранённый отчёт."
       title="Отчётные месяцы"
-      v1ReturnPath="/months"
     >
       <div className={styles.toolbar}>
         {returnToClose ? (

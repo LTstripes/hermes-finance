@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 
 import { listAccounts } from "../api/accounts";
 import { getCapitalComposition, getClosedReportComparison } from "../api/analytics";
@@ -32,7 +32,6 @@ import {
 } from "../components/charts/CapitalCompositionChart";
 import { buildLinkedPairFacts, pairFactNote } from "../components/LinkedPairContext";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
-import { isGuidedCloseStepId, monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { buildCapitalCompositionSeries } from "../lib/capitalComposition";
 import { formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
@@ -49,11 +48,7 @@ import {
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
 import { CLASS_COLORS, classMeta } from "./assetClasses";
-import {
-  resolveMonthSelection,
-  selectNewestDraftAfterLatestClosed,
-  sortReportingMonths,
-} from "./monthSelection";
+import { selectNewestDraftAfterLatestClosed, sortReportingMonths } from "./monthSelection";
 import capitalStyles from "./UiV2Capital.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import {
@@ -799,7 +794,6 @@ function PropertyBlock({
 }
 
 export default function UiV2CapitalPage() {
-  const [params] = useSearchParams();
   const [filter, setFilter] = useState<HoldingFilter>(null);
 
   const monthsQuery = useQuery({
@@ -965,25 +959,6 @@ export default function UiV2CapitalPage() {
     ],
   );
 
-  const requestedMonth = resolveMonthSelection(params.getAll("month"), months);
-  const requestedStepValues = params.getAll("step");
-  const requestedStep =
-    requestedStepValues.length === 1 && isGuidedCloseStepId(requestedStepValues[0])
-      ? requestedStepValues[0]
-      : null;
-  const v1ReturnPath =
-    requestedMonth.kind === "selected"
-      ? requestedStep
-        ? monthlyCloseReturnPath({
-            monthId: requestedMonth.month.id,
-            origin: "monthly-close",
-            step: requestedStep,
-          })
-        : `/months/${requestedMonth.month.id}`
-      : latestClosed
-        ? `/months/${latestClosed.id}`
-        : "/v1";
-
   const pickClass = (assetClass: string) =>
     setFilter({ kind: "class", label: classMeta(assetClass).label, value: assetClass });
   const pickAccount = (key: string, label: string) =>
@@ -1136,7 +1111,6 @@ export default function UiV2CapitalPage() {
           </p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
       {monthsReady && accountsReady && !latestClosed ? (

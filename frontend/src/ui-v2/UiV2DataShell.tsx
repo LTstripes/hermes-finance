@@ -107,7 +107,6 @@ export function UiV2DataFrame({
   monthId,
   subtitle,
   title,
-  v1ReturnPath,
 }: {
   active: DataAppSection;
   busy?: boolean;
@@ -115,7 +114,6 @@ export function UiV2DataFrame({
   monthId?: number;
   subtitle: string;
   title: string;
-  v1ReturnPath: string;
 }) {
   return (
     <UiV2Shell
@@ -128,7 +126,6 @@ export function UiV2DataFrame({
           <p className={styles.subtitle}>{subtitle}</p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       <UiV2DataSubnav active={active} monthId={monthId} />
       {children}

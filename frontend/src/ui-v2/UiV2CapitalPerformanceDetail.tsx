@@ -590,7 +590,6 @@ export default function UiV2CapitalPerformanceDetail() {
           </p>
         </>
       }
-      v1ReturnPath="/analytics"
     >
       <section aria-label="Период и охват">
         <fieldset className={styles.viewControl}>

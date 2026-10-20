@@ -55,21 +55,9 @@ export default function UiV2DataSourcesPage() {
       ? requestedStepValues[0]
       : null;
   const closeStep =
-    params.getAll("from").length === 1 &&
-    (params.get("from") === "monthly-close-v2" || params.get("from") === "monthly-close") &&
-    requestedStep
+    params.getAll("from").length === 1 && params.get("from") === "monthly-close-v2" && requestedStep
       ? requestedStep
       : "readiness";
-  const v1ReturnPath =
-    resolution.kind === "ready"
-      ? requestedStep
-        ? monthlyCloseReturnPath({
-            monthId: resolution.month.id,
-            origin: "monthly-close",
-            step: requestedStep,
-          })
-        : "/freshness"
-      : "/freshness";
 
   function selectMonth(id: number) {
     setParams(withSelectedReturnMonth(params, id), { replace: true });
@@ -170,7 +158,6 @@ export default function UiV2DataSourcesPage() {
       monthId={monthId ?? undefined}
       subtitle="Откуда числа, чем подтверждены и насколько актуальны сохранённые данные."
       title="Источники и актуальность"
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2DataFrame>

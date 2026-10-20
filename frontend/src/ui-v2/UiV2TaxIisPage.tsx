@@ -507,7 +507,6 @@ export default function UiV2TaxIisPage() {
           </p>
         </>
       }
-      v1ReturnPath="/tax-iis-planner"
     >
       <section className={styles.page}>
         <div className={styles.toolbar}>

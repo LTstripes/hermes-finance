@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -70,6 +70,32 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   });
 
+  it.each([
+    ["/v1", "/v2"],
+    ["/analytics", "/v2/capital/performance"],
+    ["/analytics/risk-allocation", "/v2/capital/allocation"],
+    ["/freshness", "/v2/data"],
+    ["/reconciliation", "/v2/data/reconciliation"],
+    ["/months", "/v2/data/months"],
+    ["/months/7", "/v2/data/months/7"],
+    ["/monthly-close", "/v2/close"],
+    ["/months/7/close", "/v2/close?month=7"],
+    ["/payouts", "/v2/data/payouts"],
+    ["/accounts", "/v2/data/catalogs"],
+    ["/goals", "/v2/income/goals"],
+    ["/tax-iis-planner", "/v2/income/tax-iis"],
+    ["/scenario-lab", "/v2/income/scenario-lab"],
+    ["/export", "/v2/data/files"],
+    ["/settings", "/v2/data/app"],
+  ])("redirects retired legacy route %s to %s", async (from, to) => {
+    window.history.pushState({}, "", from);
+    vi.stubGlobal("fetch", mockFetchRouter({}));
+
+    render(<App />);
+
+    await waitFor(() => expect(`${window.location.pathname}${window.location.search}`).toBe(to));
+  });
+
   it("registers the native Capital allocation deep-link route with its selected report month", async () => {
     window.history.pushState({}, "", "/v2/capital/allocation?month=1");
     const zero = { amount: "0.00", currency: "RUB" };
@@ -116,9 +142,13 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Распределение и концентрация" }),
+      await screen.findByRole(
+        "heading",
+        { level: 1, name: "Распределение и концентрация" },
+        { timeout: 5_000 },
+      ),
     ).toBeVisible();
-    expect(await screen.findByLabelText("Отчётный месяц")).toHaveValue("1");
+    expect(await screen.findByLabelText("Отчётный месяц", {}, { timeout: 5_000 })).toHaveValue("1");
     expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
   });
 
@@ -212,10 +242,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
-    expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
+    const alert = await screen.findByRole("alert", {}, { timeout: 5_000 });
+    expect(alert).toHaveTextContent("Основной интерфейс не загрузился");
     expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });

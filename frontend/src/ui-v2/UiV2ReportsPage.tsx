@@ -95,7 +95,6 @@ export default function UiV2ReportsPage() {
       }),
     [compositionQuery.data, moneyConfirmed, monthsQuery.data],
   );
-  const v1ReturnPath = latestClosed ? `/months/${latestClosed.id}` : "/v1";
 
   let content: ReactNode;
   if (monthsQuery.isError) {
@@ -225,7 +224,6 @@ export default function UiV2ReportsPage() {
           </p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       {content}
     </UiV2Shell>

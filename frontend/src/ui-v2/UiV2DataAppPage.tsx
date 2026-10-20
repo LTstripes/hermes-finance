@@ -291,7 +291,6 @@ export default function UiV2DataAppPage() {
       active="app"
       subtitle="Локальные настройки, налоговые правила и сведения о текущей среде исполнения."
       title="Настройки"
-      v1ReturnPath="/settings"
     >
       <nav aria-label="Настройки и диагностика" className={dataStyles.chips}>
         <Link

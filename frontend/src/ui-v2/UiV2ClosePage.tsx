@@ -211,10 +211,6 @@ export default function UiV2ClosePage() {
     return () => window.cancelAnimationFrame(frame);
   }, [monthId, viewedStep]);
 
-  const v1ReturnPath =
-    monthId === null || !selectionIdentityMatches
-      ? "/monthly-close"
-      : `/months/${monthId}/close${viewedStep ? `#${viewedStep.id}` : ""}`;
   const monthsReady = isQueryReady(monthsQuery);
   const workflowReady = isQueryReady(workflowQuery);
   const closed = workflowIdentityMatches && workflow.month.status === "closed";
@@ -541,7 +537,6 @@ export default function UiV2ClosePage() {
           </p>
         </>
       }
-      v1ReturnPath={v1ReturnPath}
     >
       <Link to="/v2/data/months">Отчётные месяцы →</Link>
       {content}

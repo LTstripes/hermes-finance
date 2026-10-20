@@ -1,0 +1,31 @@
+.month-workspace__save-ok {
+  width: fit-content;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  color: var(--green);
+  background: var(--green-soft);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.mapping-identity {
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.quote-preview-row--stale td {
+  background: var(--amber-soft);
+}
+
+.quote-preview-stale-note {
+  color: #7a5214;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

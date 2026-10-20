@@ -47,7 +47,7 @@ test("broker DRAFT source warnings keep headings, evidence and keyboard details 
 
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/months/7?section=review");
+    await page.goto("/v2/data/months/7?section=review");
     const blockers = page.getByRole("region", { name: "Блокирует закрытие" });
     const rows = blockers.getByRole("listitem");
     await expect(rows).toHaveCount(items.length);

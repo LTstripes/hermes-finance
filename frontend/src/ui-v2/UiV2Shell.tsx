@@ -44,8 +44,6 @@ export function UiV2Shell({
   children: ReactNode;
   header: ReactNode;
   sidebarExtra?: ReactNode;
-  /** Compatibility with retained callers; the shell renders only native navigation. */
-  v1ReturnPath?: string;
 }) {
   return (
     <div className={styles.shell}>

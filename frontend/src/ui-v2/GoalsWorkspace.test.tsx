@@ -14,7 +14,7 @@ import {
 } from "../api/goals";
 import { listMonths } from "../api/months";
 import UiV2GoalsPage from "./UiV2GoalsPage";
-import { GoalsPage } from "../pages/GoalsPage";
+import { GoalsWorkspace } from "./GoalsWorkspace";
 
 vi.mock("../api/goals", () => ({
   createGoal: vi.fn(),
@@ -156,7 +156,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("puts the main active goal first and keeps inactive goals collapsed", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     expect(screen.queryByRole("table")).toBeNull();
@@ -210,7 +210,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("creates a goal with exact normalized money and the canonical calculation mode", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     await user.click(screen.getByRole("button", { name: "Создать цель" }));
@@ -234,7 +234,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("moves make-main and lifecycle actions into the overflow menu", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     await screen.findByRole("heading", { level: 3, name: "Запасная цель" });
     const card = cardFor("Запасная цель");
@@ -250,7 +250,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("returns focus to the create trigger after Escape closes the goal dialog", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     const create = await screen.findByRole("button", { name: "Создать цель" });
     await user.click(create);
@@ -263,7 +263,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("keeps edit visible and destructive actions unavailable for the main goal", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     const mainCard = cardFor("Пассивный доход");
@@ -302,7 +302,7 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("can reactivate an archived goal from its overflow menu", async () => {
     const user = userEvent.setup();
-    render(<GoalsPage />);
+    render(<GoalsWorkspace />);
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
     await user.click(archiveSummary());

@@ -501,13 +501,13 @@ test("native spanning document: only the explicit month can be submitted", {
   expect(api.errors).toEqual([]);
 });
 
-test("legacy panel stays unconstrained across a spanning document", {
+test("native payout panel stays unconstrained across a spanning document", {
   tag: "@viewport-owned",
 }, async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
-  await page.goto("/payouts");
-  await expect(page.getByRole("heading", { level: 1, name: "Автовыплаты" })).toBeVisible();
+  await page.goto("/v2/data/payouts");
+  await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
   await expect(page.locator("#statement-import")).toBeVisible();
   await prepareStatement(page);
 

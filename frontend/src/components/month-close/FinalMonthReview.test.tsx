@@ -256,7 +256,7 @@ describe("FinalMonthReview", () => {
 
     expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
       "href",
-      "/months/17?section=assets&from=monthly-close&step=final_review_close&monthId=17",
+      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
     );
     expect(screen.queryByRole("button", { name: /Закрыть/ })).toBeNull();
   });
@@ -318,7 +318,7 @@ describe("FinalMonthReview", () => {
     expect(screen.queryByText(/MV\s/)).toBeNull();
     expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
       "href",
-      "/months/17?section=assets&from=monthly-close&step=final_review_close&monthId=17",
+      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
     );
   });
 });

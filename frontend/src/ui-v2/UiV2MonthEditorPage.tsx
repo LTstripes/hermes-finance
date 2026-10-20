@@ -237,7 +237,6 @@ export default function UiV2MonthEditorPage() {
       monthId={monthId ?? undefined}
       subtitle="Данные выбранного месяца сохраняются по разделам. Автоматического общего сохранения нет."
       title="Редактор месяца"
-      v1ReturnPath={monthId ? `/months/${monthId}` : "/months"}
     >
       <div className={styles.toolbar}>
         <Link

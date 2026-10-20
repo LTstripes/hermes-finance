@@ -1,24 +1,7 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router";
 
-import { AppLayout } from "../components/AppLayout";
-import { AccountsPage } from "../pages/AccountsPage";
-import { AnalyticsPage } from "../pages/AnalyticsPage";
-import { DashboardPage } from "../pages/DashboardPage";
-import { ExportPage } from "../pages/ExportPage";
-import { FreshnessProvenancePage } from "../pages/FreshnessProvenancePage";
-import { GoalsPage } from "../pages/GoalsPage";
-import { MonthDetailPage } from "../pages/MonthDetailPage";
-import { MonthlyCloseLandingPage } from "../pages/MonthlyCloseLandingPage";
-import { MonthlyCloseWorkflowPage } from "../pages/MonthlyCloseWorkflowPage";
-import { MonthsPage } from "../pages/MonthsPage";
-import { PayoutsPage } from "../pages/PayoutsPage";
-import { ReconciliationCenterPage } from "../pages/ReconciliationCenterPage";
-import { RiskAllocationPage } from "../pages/RiskAllocationPage";
-import { ScenarioLabPage } from "../pages/ScenarioLabPage";
-import { SettingsPage } from "../pages/SettingsPage";
-import { TaxIisPlannerPage } from "../pages/TaxIisPlannerPage";
 import { createQueryClient } from "../queryClient";
 import BrokerStatementReturnPage from "../ui-v2/BrokerStatementReturnPage";
 import {
@@ -49,6 +32,16 @@ import {
 type AppProps = {
   queryClient?: QueryClient;
 };
+
+function MonthRedirect() {
+  const { monthId } = useParams();
+  return <Navigate replace to={`/v2/data/months/${monthId}`} />;
+}
+
+function MonthCloseRedirect() {
+  const { monthId } = useParams();
+  return <Navigate replace to={`/v2/close?month=${monthId}`} />;
+}
 
 export function App({ queryClient: providedQueryClient }: AppProps = {}) {
   const [queryClient] = useState(() => providedQueryClient ?? createQueryClient());
@@ -81,24 +74,28 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/income/tax-iis" element={<UiV2TaxIisEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabEntry />} />
-          <Route element={<AppLayout />}>
-            <Route path="v1" element={<DashboardPage />} />
-            <Route path="analytics" element={<AnalyticsPage />} />
-            <Route path="analytics/risk-allocation" element={<RiskAllocationPage />} />
-            <Route path="freshness" element={<FreshnessProvenancePage />} />
-            <Route path="reconciliation" element={<ReconciliationCenterPage />} />
-            <Route path="months" element={<MonthsPage />} />
-            <Route path="monthly-close" element={<MonthlyCloseLandingPage />} />
-            <Route path="months/:monthId/close" element={<MonthlyCloseWorkflowPage />} />
-            <Route path="months/:monthId" element={<MonthDetailPage />} />
-            <Route path="payouts" element={<PayoutsPage />} />
-            <Route path="accounts" element={<AccountsPage />} />
-            <Route path="goals" element={<GoalsPage />} />
-            <Route path="tax-iis-planner" element={<TaxIisPlannerPage />} />
-            <Route path="scenario-lab" element={<ScenarioLabPage />} />
-            <Route path="export" element={<ExportPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-          </Route>
+          <Route path="v1" element={<Navigate replace to="/v2" />} />
+          <Route path="analytics" element={<Navigate replace to="/v2/capital/performance" />} />
+          <Route
+            path="analytics/risk-allocation"
+            element={<Navigate replace to="/v2/capital/allocation" />}
+          />
+          <Route path="freshness" element={<Navigate replace to="/v2/data" />} />
+          <Route
+            path="reconciliation"
+            element={<Navigate replace to="/v2/data/reconciliation" />}
+          />
+          <Route path="months" element={<Navigate replace to="/v2/data/months" />} />
+          <Route path="months/:monthId/close" element={<MonthCloseRedirect />} />
+          <Route path="months/:monthId" element={<MonthRedirect />} />
+          <Route path="monthly-close" element={<Navigate replace to="/v2/close" />} />
+          <Route path="payouts" element={<Navigate replace to="/v2/data/payouts" />} />
+          <Route path="accounts" element={<Navigate replace to="/v2/data/catalogs" />} />
+          <Route path="goals" element={<Navigate replace to="/v2/income/goals" />} />
+          <Route path="tax-iis-planner" element={<Navigate replace to="/v2/income/tax-iis" />} />
+          <Route path="scenario-lab" element={<Navigate replace to="/v2/income/scenario-lab" />} />
+          <Route path="export" element={<Navigate replace to="/v2/data/files" />} />
+          <Route path="settings" element={<Navigate replace to="/v2/data/app" />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

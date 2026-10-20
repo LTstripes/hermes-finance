@@ -121,7 +121,6 @@ export default function UiV2SourceIntakePage() {
       active="source-intake"
       subtitle="Сохранённый источник, его точный оригинал и read-only предварительная оценка без финансового Apply."
       title="Разбор источника"
-      v1ReturnPath="/freshness"
     >
       {content}
     </UiV2DataFrame>

@@ -127,11 +127,11 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
   ).toBe(true);
   await page.screenshot({ path: info.outputPath("desktop-statement.png"), fullPage: true });
 
-  // Legacy panel: no target period at all, so a second spanning document may
-  // write both reporting months even though legacy shows the newest month.
+  // Native payout panel: no target period at all, so a second spanning document may
+  // write both reporting months even though the panel shows the newest month.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/payouts");
-  await expect(page.getByRole("heading", { level: 1, name: "Автовыплаты" })).toBeVisible();
+  await page.goto("/v2/data/payouts");
+  await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
   await expect(page.getByLabel("Отчётный месяц")).toHaveValue(String(february.id));
   await expect(page.locator("#statement-import")).toBeVisible();
   await page.setInputFiles("#statement-file", SYNTHETIC_LEGACY_PDF);

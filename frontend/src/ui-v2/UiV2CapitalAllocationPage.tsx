@@ -515,7 +515,6 @@ export default function UiV2CapitalAllocationPage() {
           </p>
         </>
       }
-      v1ReturnPath="/analytics/risk-allocation"
     >
       {content}
     </UiV2Shell>
