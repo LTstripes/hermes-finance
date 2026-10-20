@@ -705,7 +705,7 @@ For the normal chat-driven path the owner can ask the integrator to release a pr
 
 The workflow repeats the critical checks itself. Pre-checking in chat is convenience and defense in depth, not authorization to skip workflow guards.
 
-If the direct integration cannot perform a materially required step, use the narrowest safe fallback. Do not hand the owner routine repository busywork merely because another execution surface also exists. See [`AGENTS.md`](../AGENTS.md) and [`docs/agents/chatgpt.md`](DEVELOPMENT.md#d5).
+If the direct integration cannot perform a materially required step, use the narrowest safe fallback. Do not hand the owner routine repository busywork merely because another execution surface also exists. See [`AGENTS.md`](../AGENTS.md) and the [integration procedure](DEVELOPMENT.md#d5).
 
 
 <a id="o3-release_automation-7-guard-chain"></a>

@@ -4,7 +4,7 @@
 - **Date:** 2026-08-18
 - **Release line:** post-0.5.0 process / workspace hygiene
 - **Source task:** HYG-01
-- **Related:** [`AGENTS.md`](../../AGENTS.md), [`docs/agents/`](../agents/)
+- **Related:** [`AGENTS.md`](../../AGENTS.md), [`archived client adapters`](../archive/2026-10-18/docs/agents/)
 
 ## Problem
 

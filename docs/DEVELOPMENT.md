@@ -182,7 +182,7 @@ remain Owner/Integrator-controlled unless explicitly delegated. A Worker cannot 
 An authorized Integrator performs permitted repository mechanics directly; existing standing integration authorization is not revoked by this document.
 <a id="staged-integration-for-parallel-slices"></a><a id="documentation-synchronization"></a>
 <a id="accepted-and-integrated-task"></a><a id="published-release"></a>
-Staged integration and affected-document closeout belong to the integration procedure; release-specific closeout belongs to `docs/RELEASE_AUTOMATION.md`.
+Staged integration and affected-document closeout belong to the integration procedure; release-specific closeout belongs to O4.
 
 
 <a id="d2-agents-67-verification"></a>
@@ -414,7 +414,7 @@ renaming, moving, merging, or deleting test files.
 The optimization wave is complete; this is the supported topology, not a queue for further speed work.
 
 - **Ordinary PR concurrency (#671):** only a newer run of the same repository/workflow/PR cancels its predecessor. Canonical main, release and protected integration/UAT work use independent groups.
-- **Desktop-only cleanup (#747):** obsolete phone/390px duplicates are removed; unique financial, actual-backend, lifecycle and keyboard coverage remains at established desktop sizes. No phone UAT or mobile matrix is required. See [removed/retained coverage map](#d4-mobile_retirement_coverage-5). Existing desktop projects and all safety lanes remain.
+- **Desktop-only cleanup (#747):** obsolete phone/390px duplicates are removed; unique financial, actual-backend, lifecycle and keyboard coverage remains at established desktop sizes. No phone UAT or mobile matrix is required. See [desktop coverage policy](#d4-mobile_retirement_coverage-5). Existing desktop projects and all safety lanes remain.
 - **Visual ownership (#668):** tests that replace the project viewport execute once on the 1440 reference project; tests that genuinely use project viewport still retain the required 1366/1440/1920 coverage.
 - **Exact-head UI evidence (#669):** the UI-evidence workflow still checks out the PR head and owns its screenshots, production dist build and provenance. Normal PR CI may omit the overlapping 1440 grep only when head, merge and checkout tree identity is proven; uncertainty falls back to full execution.
 - **Docs-only PRs (#670):** the workflow always runs. A narrow fail-closed classifier permits the fast path only for explicitly allowlisted non-executable prose. Unknown/mixed/executable/build/test/release inputs, mode changes, rename/delete and classifier/workflow changes stay full. backend/README.md is deliberately full because Hatchling consumes it as package metadata. Canonical main pushes are always full.
@@ -493,6 +493,7 @@ raises a collection error for an unclassified or conflicting node. The
 `test_ci_lane_ownership.py` guard also inventories every pytest-style backend
 test file. A new flat test module therefore requires an explicit owner before
 any lane can pass; benchmark tests cannot silently join a correctness lane.
+New backend test modules must get a weight in `backend/tests/_test_taxonomy.py` so they land in a CI shard (#904).
 
 CI runs the five ownership surfaces as independent matrix jobs. The core
 surface is split into `ci_core_a` and `ci_core_b`. The integrations surface
@@ -580,7 +581,7 @@ ownership map:
 | `frontend/src/api/` | API client and DTO behavior |
 | `frontend/src/lib/` | Pure formatting, period, chart, and display helpers |
 | `frontend/src/components/` | Component and month-editor interactions |
-| `frontend/src/pages/` and `frontend/src/app/` | Page and routing flows |
+| `frontend/src/ui-v2/` and `frontend/src/app/` | Page, workspace and routing flows |
 | `frontend/e2e/` | Synthetic smoke and visual behavior |
 | `scripts/tests/` | Release, workflow, and changed-path contracts |
 
@@ -681,7 +682,7 @@ No issue is queued for the items below. Reopen one only when a product/risk need
 
 A reusable method for reducing CI wall time **without weakening regression coverage or domain guarantees**.
 
-This playbook was distilled from the Hermes Finance optimization pass closed on 2026-09-16. Project-specific results are recorded in [`docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md`](#d5).
+This playbook was distilled from the Hermes Finance optimization pass closed on 2026-09-16. Project-specific results are recorded in the [2026-09-16 closeout](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md).
 
 The method is intentionally portable to other repositories, including Health-Check. Copy the process, not the Hermes-specific numbers or test selections.
 
@@ -955,7 +956,7 @@ For Health-Check or another repository:
 - Mechanical App/entry conflicts were resolved additively: allocation, monthly-result and Performance detail each keep their own route/lazy entry. No sibling was selected wholesale.
 - Capital combines accepted allocation and monetary-result links with accepted Performance summary/detail. Monetary result is cash income for a reporting month plus separately labelled unrealized snapshot evidence; Performance uses exact snapshot dates, historical scope and backend-owned interval returns. Neither replaces the other.
 - Main/#538 and #621–#624 source/coverage and lifecycle protections remain in ancestry. The union uses canonical readiness, preserves null/unknown/partial, and retains existing query keys. Mutation invalidation and restore invalidation retain Performance and Monthly Close reads; no financial calculation was added in React.
-- Empty Home/Capital/Income close actions now go to `/v2/close`; Home's payouts/forecast action goes to `/v2/income`. Native Monthly Close origin/step/month query and editor return mapping are retained. Explicit legacy-origin routes still work.
+- Empty Home/Capital/Income close actions now go to `/v2/close`; Home's payouts/forecast action goes to `/v2/income`. Native Monthly Close origin/step/month query and editor return mapping are retained. Retired legacy routes redirect to their native `/v2` workspaces.
 - Required `g04-browser` CI job runs G04 and Performance, builds the production frontend, then runs the accepted statement and Monthly Close configs serially, with zero retries. Synthetic screenshots/traces are retained as `native-v2-real-backend-evidence`. Full Vitest uses `--maxWorkers=1` locally and in CI.
 - Visual discovery adds existing month/editor/import/payout/IIS/allocation/Scenario specs. Allocation uses `/v2/capital/allocation` on the actual App route rather than the standalone leaf fixture. API-mocked visual evidence remains distinct from real-backend evidence.
 
@@ -967,13 +968,13 @@ Paths below are under `frontend/` unless another root is shown. A listed spec is
 
 | Capability / boundary | Native route or action | Executable evidence / canonical job |
 | --- | --- | --- |
-| Default entry, Shell, route union, lazy failure | `/`, `/v2`, three Capital details; explicit v1 escape | `src/app/App.test.tsx`, `src/ui-v2/UiV2Shell.test.tsx`, `e2e/ui-v2-default-switch.spec.ts`; frontend / visual / UI evidence |
-| Home confirmed picture; empty/first/zero/partial/error | `/v2` latest CLOSED; native close action | `src/pages/UiV2Page.test.tsx`, `e2e/ui-v2.visual.spec.ts`; frontend / visual |
-| Capital state/history/holdings/coverage and returns | `/v2/capital`; no capital delta as return | `src/pages/UiV2CapitalPage.test.tsx`, `e2e/ui-v2.visual.spec.ts`; frontend / visual |
-| Closed historical monetary result by account/class | `/v2/capital/monthly-result?month=<closed-id>&view=accounts|classes` | `src/pages/UiV2MonthlyResultPage.test.tsx`, `e2e/ui-v2.visual.spec.ts`; latest/older, zero/loss, cash-only nulls, account-only events, stale/reopened/restore identity |
+| Default entry, Shell, route union, lazy failure | `/`, `/v2`, three Capital details; retired routes redirect | `src/app/App.test.tsx`, `src/ui-v2/UiV2Shell.test.tsx`, `e2e/ui-v2-default-switch.spec.ts`; frontend / visual / UI evidence |
+| Home confirmed picture; empty/first/zero/partial/error | `/v2` latest CLOSED; native close action | `src/ui-v2/UiV2Page.test.tsx`, `e2e/ui-v2.visual.spec.ts`; frontend / visual |
+| Capital state/history/holdings/coverage and returns | `/v2/capital`; no capital delta as return | `src/ui-v2/UiV2CapitalPage.test.tsx`, `e2e/ui-v2.visual.spec.ts`; frontend / visual |
+| Closed historical monetary result by account/class | `/v2/capital/monthly-result?month=<closed-id>&view=accounts|classes` | `src/ui-v2/UiV2MonthlyResultPage.test.tsx`, `e2e/ui-v2.visual.spec.ts`; latest/older, zero/loss, cash-only nulls, account-only events, stale/reopened/restore identity |
 | Allocation/concentration/support | `/v2/capital/allocation?month=<id>` | `src/ui-v2/UiV2CapitalAllocationPage.test.tsx`, `e2e/ui-v2-capital-allocation.spec.ts`; selected draft/closed, unsupported denominator, desktop/keyboard; frontend / visual |
-| Income facts/planning/forecast/ladder | `/v2/income`; historical facts remain local | `src/pages/UiV2IncomePage.test.tsx`, `e2e/ui-v2-income.visual.spec.ts`; frontend / visual; principal is not passive income |
-| Goals CRUD/main/active/local as-of | `/v2/income/goals?month=<id>` | `src/pages/GoalsPage.test.tsx`, `src/app/App.test.tsx`, `e2e/ui-v2-income.visual.spec.ts`; frontend / visual |
+| Income facts/planning/forecast/ladder | `/v2/income`; historical facts remain local | `src/ui-v2/UiV2IncomePage.test.tsx`, `e2e/ui-v2-income.visual.spec.ts`; frontend / visual; principal is not passive income |
+| Goals CRUD/main/active/local as-of | `/v2/income/goals?month=<id>` | `src/ui-v2/GoalsWorkspace.test.tsx`, `src/app/App.test.tsx`, `e2e/ui-v2-income.visual.spec.ts`; frontend / visual |
 | Tax/IIS planning and account write tools | `/v2/income/tax-iis`, `/v2/data/catalogs?tab=accounts&account=<id>` | `src/ui-v2/UiV2TaxIisPage.test.tsx`, `src/ui-v2/UiV2IisAccountForms.test.tsx`, `e2e/ui-v2-iis-forms.spec.ts`; account/year identity, readback, ambiguous lock, keyboard/desktop |
 | Months create/clone/delete/local selection | `/v2/data/months` | `src/ui-v2/UiV2MonthsPage.test.tsx`, `e2e/ui-v2-months.spec.ts`; frontend / visual; clone source lifecycle also in backend full |
 | Six editor slices and dirty navigation | `/v2/data/months/:id?section=...` | `src/ui-v2/UiV2MonthEditorPage.test.tsx`, `UiV2MonthPositionsSection.test.tsx`, `UiV2MonthAssetsSection.test.tsx`, `UiV2MonthPayoutsSection.test.tsx`, `UiV2MonthBudgetSection.test.tsx`, `UiV2MonthLiabilities.test.tsx`; `e2e/ui-v2-month-editor.visual.spec.ts` (mocked API) |
@@ -982,24 +983,24 @@ Paths below are under `frontend/` unless another root is shown. A listed spec is
 | Forecast payouts and calendar | `/v2/data/payouts?month=<id>` | `src/ui-v2/UiV2PayoutForecastPage.test.tsx`, `e2e/ui-v2-payout-forecast.spec.ts`; frontend / visual; dated principal and passive income remain distinct |
 | Monthly Close native edit/return/fresh final review | `/v2/close?month=<id>&step=final_review_close` | `e2e/monthly-close.acceptance.ts` via `playwright.config.ts --project=monthly-close`; **real backend**, persisted expense, fresh workflow read on return, dirty cancel/discard, failed write and mismatched read guards; `g04-browser` |
 | Close/report/reopen; historical archive | Same close context, `/v2/reports/:id` | Same retained **real-backend** scenario: confirmation cancel, persisted CLOSED, hidden mutations, actual older archive after a later closed report, refresh, next-month return, explicit reopen; desktop/keyboard |
-| Repeat/stale/concurrent CLOSED/deleted/invalid target | Close and editor exact month | `src/pages/UiV2ClosePage.test.tsx`, `src/pages/MonthlyCloseWorkflowPage.test.tsx`, editor tests and real-backend deleted/duplicate query checks; backend close/write atomicity in full lanes |
-| Reports/archive latest/draft/missing/coverage | `/v2/reports`, `/v2/reports/:id` | `src/pages/UiV2ReportsPage.test.tsx`, `src/pages/UiV2ReportPage.test.tsx`, `e2e/ui-v2.visual.spec.ts` and actual archive above |
+| Repeat/stale/concurrent CLOSED/deleted/invalid target | Close and editor exact month | `src/ui-v2/UiV2ClosePage.test.tsx`, editor tests and real-backend deleted/duplicate query checks; backend close/write atomicity in full lanes |
+| Reports/archive latest/draft/missing/coverage | `/v2/reports`, `/v2/reports/:id` | `src/ui-v2/UiV2ReportsPage.test.tsx`, `src/ui-v2/UiV2ReportPage.test.tsx`, `e2e/ui-v2.visual.spec.ts` and actual archive above |
 | Performance unavailable -> XIRR-only -> observed PRE/POST -> TWRR | `/v2/capital/performance?start=...&end=...&scope=account&account_id=...` | `e2e/performance-real-backend.spec.ts`; **real backend**, public supported writes, temporary SQLite, no provider calls; correction invalidates coverage/captures, stale form gets 409, CLOSED write rejected, Back/refresh/desktop/keyboard; `g04-browser` |
 | Performance period/scope/error/null/zero/unsupported | Same detail; preparation hash/context | `src/ui-v2/UiV2CapitalPerformanceDetail.test.tsx`, `capitalPerformanceContext.test.ts`, existing preparation/capture component tests, `e2e/performance-preparation.visual.spec.ts`; frontend / visual; historical membership is explicit |
-| Freshness/reconciliation/accounts/catalogs/mappings/settings/diagnostics | `/v2/data`, `/v2/data/reconciliation`, `/v2/data/catalogs`, `/v2/data/app` | `src/pages/UiV2DataSourcesPage.test.tsx`, `UiV2DataReconciliationPage.test.tsx`, `UiV2DataCatalogsPage.test.tsx`, `UiV2DataAppPage.test.tsx`, `e2e/ui-v2-data.visual.spec.ts`; frontend / visual; provider calls remain mocked/offline |
-| Export/download/backup/restore | `/v2/data/files` | `src/pages/UiV2DataFilesPage.test.tsx`: exact restore confirmation/focus, failed/ambiguous results, no repeat, financial reads invalidated; monthly-result stale restore identity tests; real-backend Close scenario deletes/restores synthetic month then reloads |
+| Freshness/reconciliation/accounts/catalogs/mappings/settings/diagnostics | `/v2/data`, `/v2/data/reconciliation`, `/v2/data/catalogs`, `/v2/data/app` | `src/ui-v2/UiV2DataSourcesPage.test.tsx`, `UiV2DataReconciliationPage.test.tsx`, `UiV2DataCatalogsPage.test.tsx`, `UiV2DataAppPage.test.tsx`, `e2e/ui-v2-data.visual.spec.ts`; frontend / visual; provider calls remain mocked/offline |
+| Export/download/backup/restore | `/v2/data/files` | `src/ui-v2/UiV2DataFilesPage.test.tsx`: exact restore confirmation/focus, failed/ambiguous results, no repeat, financial reads invalidated; monthly-result stale restore identity tests; real-backend Close scenario deletes/restores synthetic month then reloads |
 | Scenario input/result/local month/export | `/v2/income/scenario-lab?month=<id>` | `src/ui-v2/UiV2ScenarioLabPage.test.tsx`, `e2e/ui-v2-scenario.spec.ts`; calculate, backend DTO/download, desktop/keyboard/Back/refresh; frontend / visual; canonical financial service in backend full |
-| Retained v1 and safety gates | Legacy routes remain | `e2e/g04-smoke.spec.ts` unchanged in required browser job; privacy, backend quality/full lanes, Windows timezone/production smoke, release safety and applicable launcher harness in canonical CI |
+| Retired-route redirects and safety gates | `/v1` and legacy paths redirect to native `/v2` workspaces | `src/app/App.test.tsx`, `e2e/ui-v2-default-switch.spec.ts`; privacy, backend quality/full lanes, Windows timezone/production smoke and release safety in canonical CI |
 
 Full local backend and frontend gates cover all retained tests, including failure cases above. They do not turn an API-mocked component/visual test into real persisted financial evidence. The synthetic Close restore probe explicitly reloads after a confirmed backend restore; UI transport/ambiguous/failed restore behavior has component and backend coverage, not a claim of a real-history Owner restore.
 
 
 <a id="d4-ui_v2_aggregate_verification-19-ordinary-links-and-deliberate-legacy-fallback"></a>
-#### Ordinary links and deliberate legacy fallback
+#### Ordinary links and retired-route redirects
 
-Ordinary close actions from empty Home/Capital/Income now stay native; Home's income/forecast action stays native. Native Close action maps and Final Review Edit links preserve exact month/step/section; current CLOSED review hides mutations.
+Ordinary close actions from empty Home/Capital/Income stay native; Home's income/forecast action stays native. Native Close action maps and Final Review Edit links preserve exact month/step/section; current CLOSED review hides mutations.
 
-Explicit previous-interface links remain in Shell's labelled legacy group, lazy load/error fallback, contextual v1 return, Capital's previous-interface calculations link, report/archive handoff, data freshness/reconciliation/catalog/settings handoff and no-month export/catalog help. Catalog's `Открыть месяцы` empty-state link is introduced by text explicitly saying `в предыдущем интерфейсе`. These are retained escape/help actions, not proof of retirement readiness. Legacy-origin `/months/:id/close#step` and `/accounts` imports remain intentional; native-origin Close uses only the accepted native map. D1 KEEP and D2's bounded global-selector reduction are unchanged; local facts/editor/Goals/Tax/Scenario/risk/Performance context remains.
+Retired `/v1` and legacy routes redirect to their native `/v2` workspaces; there is no previous-interface link, fallback or second editor. Native-origin Close uses only the accepted native map. D1 KEEP and D2's bounded global-selector reduction are unchanged; local facts/editor/Goals/Tax/Scenario/risk/Performance context remains.
 
 <a id="d4-ui_v2_owner_uat-5"></a>
 ### Real Owner UAT procedure
@@ -1055,7 +1056,7 @@ Use loopback UI in the approved Preview. Select exact targets locally; do not pu
 | 7. Performance Phase A | `Капитал` -> `Доходность`, exact period and account/portfolio selection; `Проверить данные` | Snapshot dates/scope/currency remain exact. Unavailable reasons are visible. XIRR-only is valid when TWRR evidence is missing. Save only actual supported evidence already possessed by Owner; never manufacture PRE/POST amounts, infer membership from current flags or mark empty histories complete. TWRR becomes available only when canonical evidence supports it. Back/refresh retains period/scope. The delivered bounded no-crossing class capability follows C7; unsupported evidence stays unavailable, and current real UAT scope belongs in S2. |
 | 8. Income / local tools | `Доход и планы`, Goals, Tax/IIS planner/account catalogs; Scenario `Рассчитать сценарий` and local export | Actual income, forecast and principal remain distinct. Local month/as-of/account/year context survives actions. Goals main/active behavior and IIS confirmation/readback remain correct; Scenario export represents the chosen calculation. Global historical/draft Dashboard planning is intentionally de-scoped by D2. |
 | 9. Recovery on the isolated copy, if applicable | `Экспорт и копии`; create a local backup and confirm its exact restore target | Test only against the assigned Preview copy. Cancel/failed/ambiguous restore does not claim success or silently retry. Confirmed success retains pre-restore backup evidence and reloads current reads; a removed month must show missing, not silently select another. Afterward verify the same assigned database/identity. |
-| 10. Reconcile and report | Latest/older report, monetary result, Performance, settings/diagnostics; explicit previous-interface escape if needed | Report only labelled PASS/FAIL/NOT TESTED and sanitized UI observations. Separate intentional v1 fallback from missing ordinary action. Keep private values/files/backup IDs locally. No production transition, release or v1 retirement is implied. |
+| 10. Reconcile and report | Latest/older report, monetary result, Performance, settings/diagnostics; native `/v2` route if needed | Report only labelled PASS/FAIL/NOT TESTED and sanitized UI observations. Do not attribute a missing ordinary action to a retired fallback. Keep private values/files/backup IDs locally. No production transition or release is implied. |
 
 Earlier Performance Owner PASS explicitly deferred representative real-history evidence. It does not cover this common candidate. Integrator records the actual Owner disposition on this exact tree, or explicitly proves tree equivalence; after that, main merge, exact-main push CI, release identity and supported runtime update are separate decisions.
 
@@ -1065,40 +1066,15 @@ Earlier Performance Owner PASS explicitly deferred representative real-history e
 <a id="d4-mobile_retirement_coverage-5-removed-versus-retained-scenarios"></a>
 #### Removed versus retained scenarios
 
-Paths in this table are under `frontend/e2e/`. Removal means a phone execution/layout requirement, not removal of its shared financial assertions.
-
-| Suite | Removed coverage | Retained desktop coverage |
-| --- | --- | --- |
-| `performance-preparation.visual.spec.ts` | Five 390px variants: values, evidence, XIRR-only, account preparation, class preparation | The same five bodies at 1366px: independent availability/nulls, provenance, keyboard, period/scope identity, writes/readback, stale and CLOSED lifecycle. Canonical source only; frozen #744 is not incorporated. |
-| `ui-v2-month-editor.visual.spec.ts` | Three 390px duplicates; phone-only table overflow/scroll branch | Existing 1280px keyboard/reopen, six-leaf writes/readback/navigation, long debt/link editor Save/Cancel reachability; all dirty/Back, ambiguous/expired and CLOSED tests remain. |
-| `ui-v2-capital-allocation.spec.ts` | 390px matrix member | Existing 1366px deep link, selected-month coverage, unsupported denominator and keyboard disclosure. |
-| `ui-v2-months.spec.ts` | 390px matrix member | Existing 1366px create/clone/delete, exact local selection, keyboard and navigation. |
-| `ui-v2-scenario.spec.ts` | 390px duplicate and phone-only internal table-overflow assertion | Existing 1366px explicit calculation, no calculation on mount, keyboard, result invalidation after month change, export disablement, bad identity, Back/reload. |
-| `ui-v2-payout-forecast.spec.ts` | Two 390px variants | Both existing desktop bodies: forecast/calendar identity, principal versus income, ambiguity/failure and CLOSED protection. |
-| `ui-v2-statement-import.spec.ts` | Three 390px variants | Existing 1366px inspect/prepare/cancel/apply/readback plus failure/ambiguity/duplicate cases and standalone stale/CLOSED tests. |
-| `ui-v2-iis-forms.spec.ts` | 390px matrix member | Existing 1366x768 account/year identity, explicit writes/readback, ambiguous lock and keyboard. |
-| `ui-v2-default-switch.spec.ts` | 390px viewport in rollback case | Unique v1 rollback visibility/focus/Enter scenario moved to 1440x900; passive-write, lazy failure and hard-reload/deep-link tests remain. |
-| `ui-v2.visual.spec.ts` | Phone back-to-top, archive-card and historical-report duplicates; duplicate excluded-source 390px execution; linked-pair 700px capture | Back-to-top bounding-box assertions folded into existing 1440px focus/keyboard test. Existing desktop archive/report financial values, gaps and links remain. Excluded-source provenance/disclosure remains at 1440px. Unique Home/Capital long-number fixtures and actual-payouts Close step moved to 1440x900 once; no zero/unknown/error fixture removed. Linked-pair gross/residual/missing-link assertions remain in all desktop projects. |
-| `ui-v2-data.visual.spec.ts` | Four phone duplicates and navigation phone capture | Existing freshness/catalogs/navigation tests remain. Provider-on-click copy assertion folded into reconciliation desktop case; irreversible-action warning folded into restore desktop case. No passive restore/provider write added. |
-| `ui-v2-income.visual.spec.ts` | Phone collapse duplicate | Existing desktop facts/plan/ladder/principal assertions remain. Unique plan-row/amount overlap probe folded into existing desktop scenario, checking rectangle intersections across desktop columns rather than assuming one vertical list; absent plan and explicit zero remain distinct. |
-| `performance-real-backend.spec.ts` | 390px viewport and `performance-390-*` artifact names | Entire unique actual-backend scenario at 1440x900: unavailable → XIRR-only → observed PRE/POST → TWRR; explicit attestation/write/readback, CLOSED 409, reopen, material correction invalidation, stale capture 409, Back/reload and page-error checks. Artifacts are `performance-1440-*`. |
-| `monthly-close.acceptance.ts` | Two embedded 390px loop members; phone CLOSED capture | All four actual-backend scenarios remain; edit/return/close/report/reopen, old-month identity, keyboard/diagnostics selection and no passive writes run on desktop. |
-| `statement-import.acceptance.ts` | Phone prepared-statement capture | Whole actual-backend native/legacy scenario remains at 1440px, including cancel, foreign-month disabled row, one keyboard write, persisted reread/reload and duplicate protection. |
-| `alfa-baseline.acceptance.ts`, `quote-mapping.acceptance.ts`, `payout.acceptance.ts` | Phone substeps/artifact names and payout 390px matrix member | Unique actual-backend apply/reconciliation/provider-failure/response-loss and keyboard assertions retained on desktop; existing 1366px payout journey unchanged. These supported standalone configs remain available even where they are outside current required native CI selection. |
+Desktop/laptop only (#747): phone/390px duplicates were removed; unique financial, actual-backend, lifecycle and keyboard coverage remains at 1366/1440/1920. No phone UAT or mobile matrix is required, and phone variants must not be restored when integrating old branches. Dated #747 detail remains in Git history; the current specs and D4 matrix are the coverage map.
 
 <a id="d4-mobile_retirement_coverage-44"></a>
 ### Fixture and expected-image protections
 
 <a id="d4-mobile_retirement_coverage-44-fixtures-expected-images-and-active-checks"></a>
-#### Fixtures, expected images and active checks
+#### Fixtures and expected images
 
-- No tracked phone expected images or snapshot directories existed at baseline (`git ls-files frontend` image inventory). Screenshots are generated artifacts; retired phone filenames/captures are removed or renamed on retained desktop behavior. Owner-local artifacts and dated closeouts are outside this cleanup.
-- Shared API fixtures, long names/amounts, no-closed/first-closed/zero/partial/error states and synthetic provider/PDF builders retain desktop consumers. No fixture/data file is deleted. Monetary `390` values remain unchanged.
-- Playwright configs, active visual launcher, path filters, UI-evidence identity proof and all workflows have no phone-specific project/dependency to remove. They remain unchanged: desktop 1366/1440/1920, privacy, frontend/backend, native actual-backend, Windows timezone/production smoke and release/runtime safety gates still run. No blanket exclusion, new skip or disabled evidence is introduced.
-- Current UAT and Performance V17 instructions require desktop/laptop, keyboard, focus/Back, long content and supported zoom. Dated historical reports retain their original mobile evidence.
-- #744 stays frozen. Its later reconciliation belongs to Integrator: retain all new desktop assertions and do not restore phone members. #747 does not assert real-history XIRR readiness or authorize runtime operations.
-
-Validation outcomes, independent coverage review and exact-head CI are recorded in the draft PR. CBM: used `D-Codex-index-sources-hermes-finance-main` to locate Playwright configuration surfaces; checked against current assigned-checkout source. The index timestamp preceded this baseline, so it supplied navigation only.
+Screenshots remain generated artifacts, not tracked phone baselines. Shared fixtures, desktop configs, visual evidence and safety lanes are unchanged; no blanket exclusion or disabled evidence is introduced.
 
 <a id="d4-r07-t02-long-history-3"></a>
 ### Repeatable long-history measurements
@@ -1221,18 +1197,7 @@ Force-push, destructive reset/rebase, branch/tag deletion, release publication a
 <a id="d5-agent_orchestration-20-linked-handoff-receipts"></a>
 #### Linked handoff receipts
 
-Use the existing issue/PR and review/acceptance notes, not another process ledger.
-
-- **Worker:** one concise delivery receipt with the AGENTS completion fields: exact baseline/target/candidate,
-  branch/workspace identity, changed files/stat, actual checks and limitations, final Git read-back.
-  Link existing CI/check evidence rather than copying logs or acceptance criteria into every handoff.
-- **Reviewer:** link that candidate and inspected diff/check evidence; report findings or the bounded verdict,
-  with unresolved source-access/check limits. A failed setup remains UNVERIFIED. Independent review follows D1.
-- **Integrator:** link the Worker/review receipts and any required Owner UAT; state acceptance or remaining gates.
-  Integration, when authorized, adds the actual merge SHA and exact-main CI. Delivery/review alone is not acceptance or merge authority.
-
-Reference applicable earlier evidence with its original SHA/scope and the proved intervening diff.
-Keep full logs in their existing evidence location; use links plus the conclusion in these receipts.
+Use the existing issue/PR and review/acceptance notes with the AGENTS completion fields, not a new ledger or copied logs. Link the exact candidate, changed files, actual checks/limits and verdict, with earlier evidence tied to its original SHA/scope. Worker delivery, independent review and Integrator acceptance remain separate; a receipt is not merge authority.
 
 
 <a id="d5-agent_orchestration-20-staged-integration-for-parallel-slices"></a>
@@ -1250,17 +1215,9 @@ Use temporary `integration/*` staging early when sibling tasks overlap shared ap
 
 
 <a id="d5-agent_orchestration-20-mode-b--experimental-codex-delivery-loop-explicit-opt-in"></a>
-#### Mode B — experimental Codex `$delivery-loop` (explicit opt-in)
+#### Mode B — optional delivery loop
 
-Only an explicit instruction to run the loop/orchestrated queue activates this mode. Mentioning, auditing or editing it is not activation.
-Record the opt-in and a concrete coordination reason (independent workstreams, multiple repos/PRs, dependencies/context boundaries or an explicit experiment).
-Importance, high risk and a need for review alone are not coordination reasons. An explicit experiment may still have one Worker.
-The launch identifies repo/eligible issues, exact baselines/targets, branches, physical workspaces, queue mode and review requirement.
-
-The root coordinates; after delegating implementation it does not become a second writer. Each Worker owns its frozen candidate and verification.
-The root assesses the actual candidate; required independent review uses a separate Reviewer. Remediation returns to the same Worker.
-One remediation cycle is the default; a second needs explicit authorization, with the existing absolute cap of two.
-Internal outcomes are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED` or `BLOCKED_FOR_INTEGRATION`; none equals project ACCEPT or permission to merge.
+Only an explicit instruction activates a delivery loop or queue; mention, audit or editing is not activation. Default remains one Worker. Optional queue mechanics and coordination limits are in D6; internal statuses never equal project acceptance or merge authority.
 
 
 <a id="d5-agent_orchestration-20-overhead-budget"></a>
@@ -1289,6 +1246,11 @@ Hermes is a first-class Worker: receiving session owns one final candidate, opti
 ## 6. Optional orchestration and client mechanics
 
 Default execution is one accountable Worker and only required independent review. A request for autonomous/careful work does not activate an unattended queue. Optional delivery-loop mode requires explicit opt-in and a concrete coordination reason; it does not grant canonical integration authority.
+
+The root coordinates; after delegating implementation it does not become a second writer. Each Worker owns its frozen candidate and verification.
+The root assesses the actual candidate; required independent review uses a separate Reviewer. Remediation returns to the same Worker.
+One remediation cycle is the default; a second needs explicit authorization, with the existing absolute cap of two.
+Internal outcomes are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED` or `BLOCKED_FOR_INTEGRATION`; none equals project ACCEPT or permission to merge.
 
 Codex can use its configured local skills and GitHub tools; OpenCode, Grok, Gemini, Hermes and ChatGPT use the same five-book rules and configured client roots. Launch prompts should normally be 5–10 lines with exact issue/note, role, baseline/target, branch/isolation, result and authorized delivery. Select available capability for risk; local configuration owns concrete model/effort. Do not invent tool availability, force a client switch or resurrect model identity/grades/usage accounting. CBM is optional and never requires a used/skipped report or index maintenance; verify any index result against the assigned checkout. Installed optional skills do not override project authority or enable implicit queue execution.
 

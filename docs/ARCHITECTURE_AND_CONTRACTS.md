@@ -142,7 +142,7 @@ The editor route is `/v2/data/months/:monthId`. `monthId` must be a positive saf
 
 Leaf components receive `MonthEditorContext` from `UiV2MonthEditorPage.tsx`: the exact `month`, `readOnly` derived from its current status, a confirmed `refresh()`, `setDirty(section, value)`, and `returnToClose` when the validated `from`/`monthId`/`step` query names this same month. A leaf must clear its dirty flag on unmount, key its requests and local state to `month.id`, and ignore responses after that identity changes. It must use its own canonical API and read back its write; no shared save transaction exists. `readOnly` prohibits mutations until the user explicitly confirms reopen. Reopen only changes lifecycle through `reopenMonth` and then rereads `getMonth`; it does not close the month again or reset evidence in the frontend.
 
-Internal editor links preserve the query and hash, including the validated return-to-close context. Navigation with a dirty leaf asks before discarding, including browser Back. Browser reload/close uses the platform's unsaved-changes prompt. The v1 editor route remains available as an explicit escape for sections that have not reached native parity.
+Internal editor links preserve the query and hash, including the validated return-to-close context. Navigation with a dirty leaf asks before discarding, including browser Back. Browser reload/close uses the platform's unsaved-changes prompt. Retired `/v1` and legacy month paths redirect to their native `/v2` workspaces; there is no separate editor route.
 
 <a id="c1-data_integrity_hardening_closeout_2026-09-27-28"></a>
 ### Atomicity and coherent read invariants
@@ -222,7 +222,7 @@ Implementation was completed end-to-end:
 
 - #536 — AI Analysis Bundle/history/capital-domain metadata;
 - #537 — portfolio/financial review, capital goals and allocation/concentration support;
-- #538 — canonical read-model coverage plus compact owner-facing markers on v1/v2 Home, Capital, Reports/history and month surfaces;
+- #538 — canonical read-model coverage plus compact owner-facing markers on Home, Capital, Reports/history and month surfaces;
 - #539 — close-readiness no longer lets unassigned cash satisfy a real cash account.
 
 The canonical coverage helper is shared with the AI bundle so owner-facing and AI/export surfaces cannot diverge on what counts as capital evidence.
@@ -967,7 +967,7 @@ The two-account case, same closed period.
 
 | Surface | `100.00` means | Coverage that travels with it | Canonical behavior |
 |---|---|---|---|
-| v1 Dashboard and month detail; v2 Home via closed-report comparison | known subtotal | `partial` / `active_account_snapshot_missing` | implemented in #538 |
+| Home and month detail via closed-report comparison | known subtotal | `partial` / `active_account_snapshot_missing` | implemented in #538 |
 | v2 Capital: net, composition, allocation shares | known subtotal; shares are shares of that subtotal | marker on the net; allocation support partial | implemented in #537/#538 |
 | v2 Reports / history archive | known subtotal of each closed point | per-point marker | implemented in #538 |
 | Closed-to-closed delta | exact difference of the two known subtotals | partial when either endpoint is partial | implemented in #538 |
@@ -1045,7 +1045,7 @@ Keep `portfolio_snapshot_missing` for a month with no capital evidence, value `n
 <a id="c2-financial-completeness-contract-8-f3--owner-facing-marker--completed-in-538"></a>
 #### F3 — Owner-facing marker — completed in #538
 
-Add portfolio-source coverage, computed with the section 2 rule, onto the read models that already emit the known subtotal: month dashboard liquid capital, closed-report comparison (including the delta), and capital composition. Render that marker beside the figure on v1 Dashboard, v1 month detail, v2 Home, v2 Capital, and v2 Reports/history. Do not reimplement the required-account rule in React. Do not hide or restate `100.00`. The missing account stays visible in the account list.
+Add portfolio-source coverage, computed with the section 2 rule, onto the read models that already emit the known subtotal: month dashboard liquid capital, closed-report comparison (including the delta), and capital composition. Render that marker beside the figure on Home, month detail, Capital and Reports/history. Do not reimplement the required-account rule in React. Do not hide or restate `100.00`. The missing account stays visible in the account list.
 
 
 <a id="c2-financial-completeness-contract-8-f4--close-readiness-cash-identity--completed-in-539"></a>

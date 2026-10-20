@@ -102,13 +102,13 @@ Baseline: [ae302939d8f6fea4c0b15d854d62a8289c007502](https://github.com/LTstripe
 | `docs/evidence/839/README.md` | Retained in place (history/format exception) | [P1](../../MASTER_SPEC.md#p1) |
 | `docs/experiments/ORCHESTRATION_BENCHMARK_2026-09-21.md` | [archived original](docs/experiments/ORCHESTRATION_BENCHMARK_2026-09-21.md) | [D5](../../DEVELOPMENT.md#d5) |
 | `docs/financial-completeness-contract.md` | [archived original](docs/financial-completeness-contract.md) | [C2#c2-financial-completeness-contract-8](../../ARCHITECTURE_AND_CONTRACTS.md#c2-financial-completeness-contract-8) |
-| `docs/history/CI_TEST_OPTIMIZATION_2026-09-16.md` | Retained in place (history/format exception) | [D5](../../DEVELOPMENT.md#d5) |
+| `docs/history/CI_TEST_OPTIMIZATION_2026-09-16.md` | Condensed in #906 (Git history retains full text) | [D5](../../DEVELOPMENT.md#d5) |
 | `docs/history/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md` | Retained in place (history/format exception) | [D5](../../DEVELOPMENT.md#d5) |
-| `docs/history/HERMES_START_PROMPT.md` | Retained in place (history/format exception) | [P1](../../MASTER_SPEC.md#p1) |
-| `docs/history/HERMES_TASKS.md` | Retained in place (history/format exception) | [P1](../../MASTER_SPEC.md#p1) |
+| `docs/history/HERMES_START_PROMPT.md` | Condensed in #906 (Git history retains full text) | [P1](../../MASTER_SPEC.md#p1) |
+| `docs/history/HERMES_TASKS.md` | Condensed in #906 (Git history retains full text) | [P1](../../MASTER_SPEC.md#p1) |
 | `docs/history/POST_MOVE_RETURNS_CHECKPOINT_2026-10-16.md` | Retained in place (history/format exception) | [C7](../../ARCHITECTURE_AND_CONTRACTS.md#c7) |
-| `docs/history/POST_V082_CLOSEOUT_2026-09-16.md` | Retained in place (history/format exception) | [O4](../../OWNER_RUNTIME_OPERATIONS.md#o4) |
-| `docs/history/README.md` | Retained in place (history/format exception) | [P1](../../MASTER_SPEC.md#p1) |
+| `docs/history/POST_V082_CLOSEOUT_2026-09-16.md` | Condensed in #906 (Git history retains full text) | [O4](../../OWNER_RUNTIME_OPERATIONS.md#o4) |
+| `docs/history/README.md` | Rewritten in #906 as the history index | [P1](../../MASTER_SPEC.md#p1) |
 | `docs/performance/ASSET_CLASS_RETURNS_CONTRACT.md` | [archived original](docs/performance/ASSET_CLASS_RETURNS_CONTRACT.md) | [C7#c7-asset_class_returns_contract-52](../../ARCHITECTURE_AND_CONTRACTS.md#c7-asset_class_returns_contract-52) |
 | `docs/performance/CLASS_NO_CROSSING_ENDPOINTS.md` | [archived original](docs/performance/CLASS_NO_CROSSING_ENDPOINTS.md) | [C6#c6-class_no_crossing_endpoints-7](../../ARCHITECTURE_AND_CONTRACTS.md#c6-class_no_crossing_endpoints-7) |
 | `docs/performance/CLASS_RETURNS_API.md` | [archived original](docs/performance/CLASS_RETURNS_API.md) | [C7#c7-class_returns_api-1](../../ARCHITECTURE_AND_CONTRACTS.md#c7-class_returns_api-1) |
