@@ -197,7 +197,17 @@ describe("UiV2TaxIisPage", () => {
     expect(screen.getByTestId("tax-iis-threshold-distance")).toHaveTextContent("Недоступно");
     expect(screen.getByText("Источник шкалы: Источник шкалы не указан")).toBeVisible();
     expect(screen.getByText(/История НДФЛ: Недоступна/)).toBeVisible();
-    expect(screen.getByText("future_warning_code", { exact: true })).toBeVisible();
+    for (const code of ["salary_tax_history_incomplete", "tax_brackets_unavailable"]) {
+      for (const diagnostic of screen.getAllByText(code, { exact: true })) {
+        expect(diagnostic).not.toBeVisible();
+      }
+    }
+    const diagnostic = screen.getByText("future_warning_code", { exact: true });
+    expect(diagnostic).not.toBeVisible();
+    const details = diagnostic.closest("details");
+    if (!details) throw new Error("Warning diagnostics must be expandable");
+    await userEvent.setup().click(within(details).getByText("Код предупреждения"));
+    expect(diagnostic).toBeVisible();
     expect(screen.queryAllByText(/1\s111\s111|2\s500\s000/)).toHaveLength(0);
     expect(screen.queryByText("0 ₽", { exact: true })).toBeNull();
     expect(screen.queryByText("0%", { exact: true })).toBeNull();

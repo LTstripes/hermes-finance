@@ -32,7 +32,7 @@ from pathlib import Path
 
 from visual_audit_paths import is_visual_audit_path
 
-EVIDENCE_GREP = "(dashboard:|monthly-close:|ui-v2)"
+EVIDENCE_GREP = "ui-v2"
 EVIDENCE_VISUAL_COMMAND = (
     "npm run audit:visual -- --project=1440x900 "
     f'--grep "{EVIDENCE_GREP}"'
@@ -44,7 +44,7 @@ BUILD_MEANING = "production-dist-of-checked-out-tree-only"
 DATA_MEANING = "synthetic API fixtures only"
 RUNTIME_MEANING = "no backend or provider"
 WORKFLOW_NAME = "ui-v2-evidence.yml"
-REQUIRED_SCREENSHOTS = ("dashboard.png", "monthly-close.png")
+REQUIRED_SCREENSHOTS = ("ui-v2-home.png", "ui-v2-close.png")
 PROVENANCE_KEYS = (
     "candidate_sha",
     "base_sha",

@@ -15,7 +15,7 @@ function flowsUrl(monthId: number): string {
   return `/api/investment-flows?month_id=${monthId}`;
 }
 
-test("synthetic real-backend spanning statement: native month scope, legacy stays unconstrained", async ({
+test("synthetic real-backend spanning statement: explicit month scope survives navigation", async ({
   page,
   request,
 }, info) => {
@@ -127,10 +127,10 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
   ).toBe(true);
   await page.screenshot({ path: info.outputPath("desktop-statement.png"), fullPage: true });
 
-  // Native payout panel: no target period at all, so a second spanning document may
-  // write both reporting months even though the panel shows the newest month.
+  // Open a second spanning document in February: January stays visible but cannot
+  // be selected or written through the February workspace.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/v2/data/payouts");
+  await page.goto(`/v2/data/payouts?month=${february.id}#statement-import`);
   await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
   await expect(page.getByLabel("Отчётный месяц")).toHaveValue(String(february.id));
   await expect(page.locator("#statement-import")).toBeVisible();
@@ -143,17 +143,17 @@ test("synthetic real-backend spanning statement: native month scope, legacy stay
 
   const legacyCheckboxes = page.getByRole("checkbox");
   await expect(legacyCheckboxes).toHaveCount(2);
-  await expect(legacyCheckboxes.nth(0)).toBeEnabled();
+  await expect(legacyCheckboxes.nth(0)).toBeDisabled();
   await expect(legacyCheckboxes.nth(1)).toBeEnabled();
-  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toHaveCount(0);
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toBeVisible();
   await page.getByRole("button", { name: "Выбрать все готовые" }).click();
-  await expect(legacyCheckboxes.nth(0)).toBeChecked();
+  await expect(legacyCheckboxes.nth(0)).not.toBeChecked();
   await expect(legacyCheckboxes.nth(1)).toBeChecked();
 
   await page.getByRole("button", { name: "Применить выбранные строки" }).click();
   await page.getByRole("button", { name: "Подтвердить и применить" }).click();
-  await expect(page.getByText(/Импортировано строк: 2/)).toBeVisible();
-  expect(await readFlows(january.id)).toHaveLength(2);
+  await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
+  expect(await readFlows(january.id)).toHaveLength(1);
   expect(await readFlows(february.id)).toHaveLength(1);
 
   // CLOSED stays inspectable while apply is fail-closed.

@@ -501,31 +501,37 @@ test("native spanning document: only the explicit month can be submitted", {
   expect(api.errors).toEqual([]);
 });
 
-test("native payout panel stays unconstrained across a spanning document", {
+test("native payout panel requires a month before opening a spanning document", {
   tag: "@viewport-owned",
 }, async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
   await page.goto("/v2/data/payouts");
   await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Месяц не выбран" })).toBeVisible();
+  await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
+  expect(api.posts).toEqual([]);
+  await page.getByLabel("Отчётный месяц").selectOption("12");
+  await page.getByRole("link", { name: "Фактические выплаты · PDF" }).click();
+  await expect(page).toHaveURL(/\/v2\/data\/payouts\?month=12#statement-import$/);
   await expect(page.locator("#statement-import")).toBeVisible();
   await prepareStatement(page);
 
   const checkboxes = page.getByRole("checkbox");
   await expect(checkboxes).toHaveCount(2);
   await expect(checkboxes.nth(0)).toBeEnabled();
-  await expect(checkboxes.nth(1)).toBeEnabled();
-  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toHaveCount(0);
+  await expect(checkboxes.nth(1)).toBeDisabled();
+  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toBeVisible();
 
   await page.getByRole("button", { name: "Выбрать все готовые" }).click();
   await expect(checkboxes.nth(0)).toBeChecked();
-  await expect(checkboxes.nth(1)).toBeChecked();
+  await expect(checkboxes.nth(1)).not.toBeChecked();
 
   await page.getByRole("button", { name: "Применить выбранные строки" }).click();
   await page.getByRole("button", { name: "Подтвердить и применить" }).click();
 
-  await expect(page.getByText(/Импортировано строк: 2/)).toBeVisible();
-  expect(api.applySelections).toEqual(["synthetic-row-1", "synthetic-row-2"]);
+  await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
+  expect(api.applySelections).toEqual(["synthetic-row-1"]);
   expect(api.errors).toEqual([]);
 });
 

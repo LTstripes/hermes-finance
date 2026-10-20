@@ -99,7 +99,11 @@ function WarningList({ codes }: { codes: string[] }) {
         occurrences.set(code, occurrence + 1);
         return (
           <li key={`${code}-${occurrence}`}>
-            {warningText(code)} <code>{code}</code>
+            {warningText(code)}
+            <details>
+              <summary>Код предупреждения</summary>
+              <code>{code}</code>
+            </details>
           </li>
         );
       })}
