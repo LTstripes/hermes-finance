@@ -358,3 +358,83 @@ def test_combined_native_client_operation_uses_signed_amount(db):
     assert result.months[0].result.contributions_kopecks == 50_000
     assert result.months[0].result.withdrawals_kopecks == 20_000
     assert {flow.status for flow in result.flows} == {"assumed"}
+
+
+def test_segments_split_missing_month_and_keep_own_endpoints_and_flows(db):
+    from decimal import ROUND_HALF_UP, localcontext
+
+    april, apr = save_month(db)
+    may, may_xml = save_month(db, 5, beginning="11000", closing="13000", candidate_count=0)
+    july, jul = save_month(
+        db,
+        7,
+        beginning="14000",
+        closing="15000",
+        candidate_count=0,
+        extra=(("Выведено по распоряжению Клиента", "Synthetic withdrawal", "-500"),),
+    )
+    before = snapshot(db)
+    result = read(db, {april: apr, may: may_xml, july: jul})
+    first, second = result.segments
+    assert (first.start, first.end) == (date(2030, 3, 31), date(2030, 5, 31))
+    assert (second.start, second.end) == (date(2030, 6, 30), date(2030, 7, 31))
+    assert first.partial_segment and second.partial_segment
+    assert first.contributions_kopecks == 100_000
+    assert first.withdrawals_kopecks == 0
+    assert first.growth_kopecks == 300_000
+    with localcontext() as context:
+        context.prec = 60
+        context.rounding = ROUND_HALF_UP
+        expected = (1 + result.months[0].result.modified_dietz_return) * (
+            1 + Decimal(200_000) / Decimal(1_200_000)
+        ) - 1
+    assert first.chained_return == expected
+    assert second.contributions_kopecks == 0
+    assert second.withdrawals_kopecks == 50_000
+    assert second.growth_kopecks == 150_000
+    assert abs(second.chained_return - result.months[-1].result.modified_dietz_return) < Decimal(
+        "1e-58"
+    )
+    assert all(segment.xirr_annualized_return is not None for segment in result.segments)
+    assert all(segment.xirr_period_return is not None for segment in result.segments)
+    assert result.period.chained_return is None
+    assert snapshot(db) == before
+
+
+def test_api_segments_complete_partial_endpoint_and_unknown_flows(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    save_month(db, candidate_count=0)
+    client = TestClient(create_app(database=db))
+    body = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
+    segment = body["segments"][0]
+    assert segment["start"] == "2030-03-31" and segment["end"] == "2030-04-30"
+    assert segment["partial_segment"] is False
+    assert type(segment["growth_kopecks"]) is int
+    for field in ("chained_return", "xirr_annualized_return", "xirr_period_return"):
+        assert isinstance(segment[field], str)
+        assert segment[field] == body["period"][field]
+    save_month(db, 5, candidate_count=0, missing_closing=True)
+    body = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
+    assert len(body["segments"]) == 1
+    assert body["segments"][0]["partial_segment"] is True
+    save_month(db, 6)
+    body = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
+    assert len(body["segments"]) == 2
+    segment = body["segments"][1]
+    assert segment["start"] == "2030-05-31" and segment["end"] == "2030-06-30"
+    assert segment["partial_segment"] is True
+    for field in (
+        "contributions_kopecks",
+        "withdrawals_kopecks",
+        "growth_kopecks",
+        "chained_return",
+        "xirr_annualized_return",
+        "xirr_period_return",
+    ):
+        assert segment[field] is None
+    assert "unknown_flow" in segment["chain_reason_codes"]
+    empty = client.get("/api/source-returns/monthly", params={"source_account": "other"}).json()
+    assert empty["segments"] == []

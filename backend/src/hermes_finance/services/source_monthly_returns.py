@@ -58,11 +58,19 @@ class SourceMonthlyReturnRow:
     previous_closing_kopecks: int | None
 
 
+@dataclass(frozen=True, kw_only=True)
+class SourceReturnSegment(PeriodReturnTotals):
+    start: date
+    end: date
+    partial_segment: bool
+
+
 @dataclass(frozen=True)
 class SourceMonthlyReturns:
     source_account: str
     months: tuple[SourceMonthlyReturnRow, ...]
     period: PeriodReturnTotals
+    segments: list[SourceReturnSegment]
     flows: tuple[SourceReturnFlow, ...]
     defaults_applied: tuple[SourceReturnFlow, ...]
     gaps: tuple[SourceReturnGap, ...]
@@ -354,6 +362,7 @@ def read_monthly_returns(
             source_account,
             (),
             empty.period,
+            [],
             tuple(flows),
             tuple(f for f in flows if f.status == "assumed"),
             tuple(gaps),
@@ -414,6 +423,41 @@ def read_monthly_returns(
         )
         previous_closing = closing
         month = _next_month(month)
+    period = _period_totals(rows, schedule, uncertain_months)
+    groups = []
+    current = []
+    for row in rows:
+        if row.result.missing_endpoint:
+            if current:
+                groups.append(current)
+                current = []
+        else:
+            current.append(row)
+    if current:
+        groups.append(current)
+    partial = len(groups) > 1 or period.missing_endpoint or bool(period.chain_reason_codes)
+    segments = [
+        SourceReturnSegment(
+            start=group[0].result.opening_date,
+            end=group[-1].result.closing_date,
+            partial_segment=partial,
+            **asdict(_period_totals(group, schedule, uncertain_months)),
+        )
+        for group in groups
+    ]
+    return SourceMonthlyReturns(
+        source_account,
+        tuple(rows),
+        period,
+        segments,
+        tuple(flows),
+        tuple(f for f in flows if f.status == "assumed"),
+        tuple(gaps),
+    )
+
+
+def _period_totals(rows, schedule, uncertain_months):
+    """Use native monthly endpoints/rates and retain unknown-flow blockers."""
     boundaries = [(rows[0].result.opening_date, rows[0].result.opening_kopecks)] + [
         (row.result.closing_date, row.result.closing_kopecks) for row in rows
     ]
@@ -446,11 +490,4 @@ def read_monthly_returns(
             growth_reason_codes=tuple(dict.fromkeys((*period.growth_reason_codes, "unknown_flow"))),
             xirr_reason_codes=tuple(dict.fromkeys((*period.xirr_reason_codes, "unknown_flow"))),
         )
-    return SourceMonthlyReturns(
-        source_account,
-        tuple(rows),
-        period,
-        tuple(flows),
-        tuple(f for f in flows if f.status == "assumed"),
-        tuple(gaps),
-    )
+    return period

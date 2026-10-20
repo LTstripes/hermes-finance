@@ -13,6 +13,7 @@ from hermes_finance.domain.monthly_return_chain import PeriodReturnTotals
 from hermes_finance.services.source_monthly_returns import (
     SourceReturnFlow,
     SourceReturnGap,
+    SourceReturnSegment,
     read_monthly_returns,
 )
 
@@ -45,6 +46,7 @@ class SourceMonthlyReturnsResponse(BaseModel):
     source_account: str
     months: tuple[MonthlyReturnResponse, ...]
     period: PeriodReturnTotals
+    segments: list[SourceReturnSegment]
     flows: tuple[SourceReturnFlow, ...]
     defaults_applied: tuple[SourceReturnFlow, ...]
     gaps: tuple[SourceReturnGap, ...]
