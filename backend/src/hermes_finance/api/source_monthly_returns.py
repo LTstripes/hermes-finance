@@ -38,6 +38,8 @@ class MonthlyReturnResponse(BaseModel):
     intake_ids: tuple[int, ...]
     flags: tuple[str, ...]
     previous_closing_kopecks: int | None
+    coupons_kopecks: int
+    dividends_kopecks: int
 
 
 class SourceMonthlyReturnsResponse(BaseModel):

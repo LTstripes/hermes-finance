@@ -1,15 +1,9 @@
-"""Read-only monthly native-account estimates over saved source-intake observations.
-
-Saved V1 journals do not retain XML narratives or provisional choices. Callers
-may reattach exact originals and transient choices; without them Money rows
-remain explicit classification gaps. No receipt, finance write or migration.
-"""
+"""Read-only provisional monthly estimates over persisted source money choices."""
 
 from __future__ import annotations
 
 import calendar
 import json
-import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
@@ -25,10 +19,10 @@ from hermes_finance.domain.monthly_return_chain import (
     PeriodReturnTotals,
     calculate_monthly_return_chain,
 )
-from hermes_finance.persistence import SourceIntakeOriginal
+from hermes_finance.persistence import SourceIntakeOriginal, SourceMoneyClassification
 from hermes_finance.services import broker_statement_provisional as provisional
 from hermes_finance.services import source_intake
-from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
+from hermes_finance.services.source_money_classifications import source_reference
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 
@@ -56,6 +50,8 @@ class SourceMonthlyReturnRow:
     intake_ids: tuple[int, ...]
     flags: tuple[str, ...]
     previous_closing_kopecks: int | None
+    coupons_kopecks: int
+    dividends_kopecks: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -87,6 +83,8 @@ class SourceMonthlyReturns:
                 "intake_ids": row.intake_ids,
                 "flags": row.flags,
                 "previous_closing_kopecks": row.previous_closing_kopecks,
+                "coupons_kopecks": row.coupons_kopecks,
+                "dividends_kopecks": row.dividends_kopecks,
             }
             for row in self.months
         ]
@@ -145,91 +143,64 @@ def _saved_totals(document):
     return (None, None, reasons) if reasons else (*totals, reasons)
 
 
-def _classification(operation, narrative, kind):
-    if kind in {"settlement", "commission"}:
-        return "internal_trade"
-    pattern = _pattern(operation, narrative)
-    if pattern == "account_cash_in_candidate":
-        return "external_deposit"
-    if pattern in {"coupon_paid_candidate", "trade_paid_nkd_candidate"}:
-        return "internal_income" if pattern == "coupon_paid_candidate" else "internal_trade"
-    if operation == "Перевод" and re.fullmatch(r"в АО [^\r\n]+", narrative):
-        return "external_withdrawal"
-    if operation == "Внесено/Выведено по распоряжению Клиента":
-        return "external_client"
-    if operation == "Внесено по распоряжению Клиента":
-        return "external_deposit"
-    if operation == "Выведено по распоряжению Клиента":
-        return "external_withdrawal"
-    if operation in {"Купон", "Купоны", "Дивиденды", "Выплата дивидендов"}:
-        return "internal_income"
-    return None
-
-
-def _money(view, original, choices, gaps):
-    rows = view["document"].get("money", [])
-    if original is None:
-        narratives = [(None, None, None)] * len(rows)
-    else:
-        narratives = list(_narratives(original))
+def _money(session, view, choices, gaps):
+    persisted = {
+        row.source_reference: row
+        for row in session.scalars(
+            select(SourceMoneyClassification).where(
+                SourceMoneyClassification.intake_id == view["id"]
+            )
+        )
+    }
     counts = defaultdict(int)
     result = []
-    for row, (operation, narrative, _) in zip(rows, narratives, strict=True):
+    for row in view["document"].get("money", []):
         event_date = date.fromisoformat(row["date"])
-        reference = f"money:{view['id']}:money:{row['ordinal']}:{digest(row)}"
-        classification = (
-            _classification(operation, narrative, row.get("kind"))
-            if operation
-            else ("internal_trade" if row.get("kind") in {"settlement", "commission"} else None)
-        )
-        if classification is None:
+        reference = source_reference(view["id"], row)
+        saved = persisted.get(reference)
+        if saved is None:
             gaps.append(
                 SourceReturnGap(
-                    "money_classification_unavailable"
-                    if original is None
-                    else "unrecognized_money",
+                    "classification_missing_legacy_intake",
                     view["id"],
                     month=event_date.replace(day=1),
                     source_reference=reference,
                 )
             )
             continue
-        if not classification.startswith("external_"):
-            continue
-        amount = provisional._minor(row.get("amount"))
-        if classification == "external_client" and amount is not None:
-            classification = "external_deposit" if amount > 0 else "external_withdrawal"
+        classification = saved.classification
+        amount = saved.amount_kopecks
+        external = classification in {"external_deposit", "external_withdrawal"}
         if (
-            row.get("currency") != "RUB"
+            saved.currency != "RUB"
             or amount is None
-            or amount == 0
-            or (amount > 0) != (classification == "external_deposit")
+            or amount != provisional._minor(row.get("amount"))
+            or saved.date != event_date
+            or saved.currency != row.get("currency")
+            or (
+                external and (amount == 0 or (amount > 0) != (classification == "external_deposit"))
+            )
             or not view["covered_from"] <= row["date"] <= view["covered_to"]
         ):
             gaps.append(
                 SourceReturnGap(
-                    "invalid_external_flow",
+                    "invalid_external_flow" if external else "invalid_money_row",
                     view["id"],
                     month=event_date.replace(day=1),
                     source_reference=reference,
                 )
             )
             continue
+        included, status = external, saved.status
+        # Preserve the Python provisional-choice compatibility surface for default
+        # rows only; an explicit persisted classification is always authoritative.
         requirement = f"candidate:{row['ordinal']}:{digest(row)[:12]}"
-        selected = (
-            [
-                choice
-                for choice in choices.selections
-                if choice.requirement_id == requirement and choice.source_references == (reference,)
-            ]
-            if choices
-            else []
-        )
         requested = (
             [choice for choice in choices.selections if choice.requirement_id == requirement]
-            if choices
+            if choices and external and saved.origin == "default_rule"
             else []
         )
+        selected = [choice for choice in requested if choice.source_references == (reference,)]
         if requested and (len(selected) != 1 or len(requested) != 1):
             gaps.append(
                 SourceReturnGap(
@@ -239,18 +210,14 @@ def _money(view, original, choices, gaps):
                     source_reference=reference,
                 )
             )
-        included, status = True, "assumed"
-        if len(selected) == 1:
+        elif len(selected) == 1:
             if selected[0].choice == "exclude_from_external_schedule":
                 included, status = False, "confirmed"
             elif selected[0].choice == "include_as_account_inflow" and amount > 0:
                 status = "confirmed"
         signature = digest(
             {key: value for key, value in row.items() if key not in {"ordinal", "last_update"}}
-            | {
-                "operation": operation,
-                "narrative": narrative,
-            }
+            | {"operation": saved.operation, "narrative": saved.narrative}
         )
         occurrence = counts[signature]
         counts[signature] += 1
@@ -273,12 +240,7 @@ def read_monthly_returns(
     originals: Mapping[int, tuple[bytes, str]] | None = None,
     assumptions: Mapping[int, ProvisionalAssumptions] | None = None,
 ) -> SourceMonthlyReturns:
-    """Read one native account; isolate bad originals/months and retain all gaps.
-
-    Originals/choices, when supplied by a Python caller, are transient and exact
-    original verification is delegated to the existing provisional reader.
-    V1 has no persisted provisional choices; absence never means confirmation.
-    """
+    """Read persisted classifications; isolate bad originals/months and retain gaps."""
     sources = []
     gaps = []
     money = defaultdict(list)
@@ -322,8 +284,8 @@ def read_monthly_returns(
                         SourceReturnGap(code, original.id) for code in context.hard_blockers
                     )
                 for key, flow in _money(
+                    session,
                     view,
-                    attached[0] if attached else None,
                     (assumptions or {}).get(original.id),
                     gaps,
                 ):
@@ -337,10 +299,11 @@ def read_monthly_returns(
         sources.append((original.id, start, end, opening, closing))
 
     flows = []
+    income = defaultdict(lambda: {"coupon": 0, "dividend": 0})
     for observations in money.values():
         confirmed = [flow for flow in observations if flow.status == "confirmed"]
         selected = confirmed or observations
-        if len({flow.included for flow in selected}) != 1:
+        if len({(flow.included, flow.classification) for flow in selected}) != 1:
             gaps.append(
                 SourceReturnGap(
                     "overlap_flow_choice_conflict", month=selected[0].event_date.replace(day=1)
@@ -349,7 +312,20 @@ def read_monthly_returns(
             continue
         flow = selected[0]
         refs = tuple(ref for item in observations for ref in item.source_references)
-        flows.append(replace(flow, source_references=refs))
+        if flow.classification == "unknown":
+            gaps.extend(
+                SourceReturnGap(
+                    "unrecognized_money",
+                    int(ref.split(":")[1]),
+                    flow.event_date.replace(day=1),
+                    ref,
+                )
+                for ref in refs
+            )
+        elif flow.classification in {"coupon", "dividend"}:
+            income[flow.event_date.replace(day=1)][flow.classification] += flow.amount_kopecks
+        elif flow.classification in {"external_deposit", "external_withdrawal"}:
+            flows.append(replace(flow, source_references=refs))
         if len(observations) > 1:
             gaps.append(SourceReturnGap("overlap_flow_deduplicated", source_reference=refs[0]))
     flows.sort(key=lambda flow: (flow.event_date, flow.source_references))
@@ -373,7 +349,8 @@ def read_monthly_returns(
         for gap in gaps
         if gap.code
         in {
-            "money_classification_unavailable",
+            "classification_missing_legacy_intake",
+            "invalid_money_row",
             "unrecognized_money",
             "invalid_external_flow",
             "invalid_assumption_choice",
@@ -418,7 +395,12 @@ def read_monthly_returns(
         gaps.extend(SourceReturnGap(code, month=month) for code in flags)
         rows.append(
             SourceMonthlyReturnRow(
-                calculated, tuple(s[0] for s in relevant), tuple(flags), previous_closing
+                calculated,
+                tuple(s[0] for s in relevant),
+                tuple(flags),
+                previous_closing,
+                income[month]["coupon"],
+                income[month]["dividend"],
             )
         )
         previous_closing = closing

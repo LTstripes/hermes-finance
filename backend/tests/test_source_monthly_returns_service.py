@@ -122,13 +122,15 @@ def test_saved_months_own_endpoints_seam_and_missing_month(db):
     assert all(count == 0 for count in _finite_tables(db).values())
 
 
-def test_saved_v1_money_is_gap_without_reattached_original(db):
-    save_month(db)
+def test_saved_v1_money_is_gap_without_reattached_original(db, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(source_intake, "persist_money_classifications", lambda *args: None)
+        save_month(db)
     result = read(db)
     assert result.months[0].result.opening_kopecks == 1_000_000
     assert result.flows == ()
     assert result.defaults_applied == ()
-    assert "money_classification_unavailable" in {gap.code for gap in result.gaps}
+    assert "classification_missing_legacy_intake" in {gap.code for gap in result.gaps}
     assert not result.period.assumptions_used
     assert result.months[0].result.modified_dietz_return is None
     assert result.period.growth_kopecks is None
@@ -232,9 +234,11 @@ def test_get_router_decimal_strings_integer_kopecks_and_gaps(db):
     row = body["months"][0]
     assert type(row["opening_kopecks"]) is int
     assert row["opening_kopecks"] == 1_000_000
-    assert row["modified_dietz_return"] is None
-    assert body["period"]["chained_return"] is None
-    assert "money_classification_unavailable" in {gap["code"] for gap in body["gaps"]}
+    assert isinstance(row["modified_dietz_return"], str)
+    assert isinstance(body["period"]["chained_return"], str)
+    assert body["flows"][0]["amount_kopecks"] == 100_000
+    assert body["flows"][0]["status"] == "assumed"
+    assert not body["gaps"]
     assert snapshot(db) == before
     assert client.get("/api/source-returns/monthly").status_code == 422
     assert (
@@ -420,7 +424,7 @@ def test_api_segments_complete_partial_endpoint_and_unknown_flows(db):
     body = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
     assert len(body["segments"]) == 1
     assert body["segments"][0]["partial_segment"] is True
-    save_month(db, 6)
+    save_month(db, 6, extra=(("Unknown", "Synthetic unknown", "17"),))
     body = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
     assert len(body["segments"]) == 2
     segment = body["segments"][1]

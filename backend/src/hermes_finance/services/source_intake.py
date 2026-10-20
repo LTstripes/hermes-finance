@@ -28,6 +28,10 @@ from hermes_finance.persistence import (
     SourceIntakeRevision,
 )
 from hermes_finance.services import mybroker_identity, mybroker_import
+from hermes_finance.services.source_money_classifications import (
+    list_classifications,
+    persist_money_classifications,
+)
 from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, digest
 from hermes_finance.statement_import.mybroker_identity import parse_identity
 
@@ -347,6 +351,7 @@ def save_intake(
                 }
                 operation, predecessor = "manifest", None
                 payload = {"state": state, "manifest": material}
+            persist_money_classifications(session, original.id, document)
             row = _append(
                 session,
                 request_id=request_id,
@@ -691,6 +696,7 @@ def _view(session, original):
         "original_required": True,
         "document": manifest["source"],
         "proposals": proposals,
+        "money_classifications": list_classifications(session, original.id),
         "observations": [
             {
                 "id": o.id,

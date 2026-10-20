@@ -1945,8 +1945,10 @@ bounded native account/ISIN/trade/REPO partner references. Unknown attributes,
 including numeric zero, receive no economic authority. A partner reference is not
 a second execution ID. Frozen S1 and accepted financial receipts are unchanged.
 
-Raw XML, filenames/absolute paths, browser File objects and arbitrary source
-narratives are not cached. Originals remain with the Owner. Reload retains the
+Raw XML, filenames/absolute paths and browser File objects are not cached.
+Money-row operation/narrative text is the bounded exception described in
+[monthly source estimates](#c7-source_monthly_returns-1); other arbitrary source
+narratives remain fingerprint-only. Originals remain with the Owner. Reload retains the
 queue and decisions; mutation/reparse requires reselecting the exact original.
 The server rechecks bytes, filename authority, manifest, versions and current
 dependencies. Parser/generation drift refuses rather than silently reinterpreting
@@ -5712,20 +5714,50 @@ strings and money is integer kopecks in this endpoint. Results are
 `authority=provisional`, `financial_authority=none`, `approximate=true` and grant
 no financial Apply, Close, source completeness or exact TWRR authority.
 
-V1 journal reads cannot recover discarded money narratives or transient provisional
-choices. The GET route therefore reports `money_classification_unavailable` for
-unsupported Money occurrences, preserving endpoints but withholding affected
-flow-dependent metrics with `unknown_flow`. Python callers may reattach exact
-originals through the existing provisional context verifier and supply its
-source-reference-bound include/exclude choices. Recognized client/bank deposits
-and withdrawals then enter the modeled schedule as `assumed`; valid explicit
-choices override defaults as `confirmed`. Coupons/dividends and trade money are
-internal, not additional investor flows. Unrecognized Money rows remain gaps,
-not guessed flows. Overlap deduplication keeps every source reference and preserves
-same-report multiplicity. This read path stores no originals or choices and adds
-no migration or financial writes. Persisted classification/choice capture, or an
-HTTP reattachment protocol, remains a required decision before the GET route can
-supply these defaults for V1 Money rows.
+Owner decision (2026-10-20, #912): capture provisional Money classification at
+upload. Migration `0060_source_money_classifications` adds the empty
+`source_intake_money_classifications` table, linked to the original intake and
+immutable observation, unique by intake/stable source reference and observation.
+It stores source date, signed integer kopecks, currency, native operation/narrative,
+classification, origin/status and created/updated timestamps. Fractional-kopeck or
+overflow amounts remain NULL and produce gaps. There is no legacy inference or
+backfill. Downgrade drops this table, including populated provisional choices,
+while preserving the pre-existing journal and financial tables; upgrade can be
+reapplied. Released migration bytes remain unchanged.
+
+Save captures every Money occurrence in the same reserved transaction as its
+observations. Deterministic rules reuse the existing original-bound money candidate
+patterns: client/bank deposits and withdrawals are external, coupons/dividends are
+income, commissions/tariffs are fees, НДФЛ is tax, settlements/НКД по сделке are
+trade settlement. Everything else is unknown, never a guessed flow. Defaults have
+`origin=default_rule,status=assumed`. Re-upload never duplicates occurrences or
+replaces an existing classification. Exact original re-save with a new request ID
+can capture missing legacy rows; acknowledged same-request replay stays read-only.
+
+`GET /api/broker-months/intakes/{id}` includes `money_classifications` with stable
+references. `PUT /api/source-intakes/{id}/money-classifications/{ref}` accepts only
+`{classification}` from `external_deposit, external_withdrawal, coupon, dividend,
+fee, tax, trade_settlement, internal_transfer, unknown`. It reserves the writer,
+validates intake/reference and any bound draft month, and persists
+`origin=user_choice,status=confirmed`; repeated identical PUT is idempotent.
+Invalid external-flow currency/amount/direction refuses. Bound CLOSED months
+require Reopen. These choices change only provisional interpretation, never
+financial receipts, recognized observations or Close authority.
+
+Monthly GET reads saved classifications without reattaching originals. External
+deposits/withdrawals enter the schedule with their persisted status;
+`coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
+per month, without adding it again as investor flow. Unknown money stays in
+`unrecognized_money` gaps and withholds flow-dependent metrics with `unknown_flow`.
+Missing classifications on pre-migration intakes produce
+`classification_missing_legacy_intake`; reads never backfill or interpret missing
+rows as zero. Income subtotals are partial when gaps exist. Python callers may
+still verify exact originals through the provisional context reader and supply
+source-bound transient choices for default external rows; a persisted user choice
+always takes precedence. Overlap deduplication preserves references and same-report
+multiplicity, prefers confirmed choices, and discloses conflicting choices.
+Missing monthly boundaries split `segments` into contiguous available month groups
+with each group's own endpoints, flows and partial chained return/XIRR/growth.
 
 <a id="c7-broker_statement_provisional-12"></a>
 ### Source-intake provisional account estimate

@@ -57,6 +57,7 @@ CI_INTEGRATIONS_B_SHARD_MARKERS = (
 # Local targeted-run weight; appended without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_SHARD_WEIGHTS = {
     "test_source_monthly_returns_service.py": 5.38,
+    "test_source_money_classifications_service.py": 8.0,
 }
 
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical

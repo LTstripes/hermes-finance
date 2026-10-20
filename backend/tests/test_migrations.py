@@ -23,7 +23,7 @@ def test_source_intake_migration_empty_cycle_and_populated_refusal(tmp_path):
     for _ in range(2):
         upgraded = run_alembic(path, "upgrade", "head")
         assert upgraded.returncode == 0, upgraded.stderr
-        assert revision_rows(path) == ["0059_source_intake"]
+        assert revision_rows(path) == [REVISION]
         downgraded = run_alembic(path, "downgrade", "0058_broker_money_ownership")
         assert downgraded.returncode == 0, downgraded.stderr
     assert run_alembic(path, "upgrade", "head").returncode == 0
@@ -510,6 +510,25 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "passive_income_history_start_month "
             "FROM app_settings WHERE id = 1"
         ).fetchone() == ("RUB", "ru-RU", "Europe/Moscow", 10_000_000, "v1", None)
+        assert [
+            row[1]
+            for row in connection.execute("PRAGMA table_info(source_intake_money_classifications)")
+        ] == [
+            "id",
+            "intake_id",
+            "observation_id",
+            "source_reference",
+            "date",
+            "amount_kopecks",
+            "currency",
+            "operation",
+            "narrative",
+            "classification",
+            "origin",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(reporting_months)")] == [
             "id",
             "year",
@@ -2722,3 +2741,76 @@ def test_money_ownership_migration_keeps_v1_bytes_and_refuses_populated_downgrad
             connection.execute("SELECT COUNT(*) FROM broker_money_occurrence_owners").fetchone()[0]
             == 3
         )
+
+
+def test_source_money_classification_migration_populated_downgrade_and_reupgrade(tmp_path):
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.database import create_database
+    from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClassification
+    from hermes_finance.services.source_intake import save_intake
+
+    path = tmp_path / "synthetic-classification.db"
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    database = create_database(path)
+    with database.session_factory() as session:
+        saved = save_intake(session, document=fixture(), filename=FILENAME, request_id="legacy")
+    database.engine.dispose()
+    assert run_alembic(path, "downgrade", "0059_source_intake").returncode == 0
+    with sqlite3.connect(path) as connection:
+        before = {
+            table: connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table in (
+                "source_intake_originals",
+                "source_intake_observations",
+                "source_intake_revisions",
+            )
+        }
+    for _ in range(2):
+        upgraded = run_alembic(path, "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        assert revision_rows(path) == [REVISION]
+        with sqlite3.connect(path) as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM source_intake_money_classifications"
+            ).fetchone() == (0,)
+        database = create_database(path)
+        with database.session_factory() as session:
+            observation = session.scalar(
+                select(SourceIntakeObservation).where(SourceIntakeObservation.section == "money")
+            )
+            session.add(
+                SourceMoneyClassification(
+                    intake_id=saved["intake_id"],
+                    observation_id=observation.id,
+                    source_reference="synthetic-reference",
+                    date=date(2030, 1, 17),
+                    amount_kopecks=-123,
+                    currency="RUB",
+                    operation="Synthetic operation",
+                    narrative="Synthetic narrative",
+                    classification="unknown",
+                    origin="default_rule",
+                    status="assumed",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+        database.engine.dispose()
+        downgraded = run_alembic(path, "downgrade", "0059_source_intake")
+        assert downgraded.returncode == 0, downgraded.stderr
+        with sqlite3.connect(path) as connection:
+            assert (
+                connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name='source_intake_money_classifications'"
+                ).fetchall()
+                == []
+            )
+            for table, rows in before.items():
+                assert connection.execute(f"SELECT * FROM {table}").fetchall() == rows
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+            assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
