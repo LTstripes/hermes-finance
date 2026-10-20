@@ -273,9 +273,9 @@ def test_nonrepresentable_money_is_a_gap_never_a_flow(db, amount, currency):
         assert "invalid_external_flow" in {gap.code for gap in result.gaps}
         assert result.months[0].result.contributions_kopecks is None
     else:
-        assert {gap.code for gap in result.gaps} == {"currency_unsupported"}
-        assert result.months[0].result.contributions_kopecks == 0
-        assert result.months[0].result.modified_dietz_return is not None
+        assert {"currency_unsupported", "unknown_flow"} <= {gap.code for gap in result.gaps}
+        assert result.months[0].result.contributions_kopecks is None
+        assert result.months[0].result.modified_dietz_return is None
 
 
 def test_overlapping_confirmed_choices_conflict_withholds_metrics(db):
@@ -331,7 +331,7 @@ def test_put_non_rub_external_flow_returns_409_without_mutation(db, classificati
 
 
 @pytest.mark.parametrize("operation", ["Купон", "Дивиденды", "Unknown"])
-def test_non_rub_money_is_disclosed_and_excluded_from_rub_metrics(db, operation):
+def test_non_rub_money_is_disclosed_and_blocks_flow_dependent_metrics(db, operation):
     from xml.etree import ElementTree as ET
 
     from test_statement_import_broker_statement_provisional import FILENAME_APRIL, provisional_xml
@@ -350,17 +350,20 @@ def test_non_rub_money_is_disclosed_and_excluded_from_rub_metrics(db, operation)
         )
     before = snapshot(db)
     result = read(db)
-    assert {gap.code for gap in result.gaps} == {"currency_unsupported"}
+    reasons = {"currency_unsupported", "unknown_flow"}
+    assert reasons <= {gap.code for gap in result.gaps}
+    assert reasons <= set(result.months[0].flags)
     assert len(result.flows) == 1
-    assert result.months[0].result.contributions_kopecks == 100_000
-    assert result.months[0].result.growth_kopecks == 21_100
-    assert result.months[0].result.modified_dietz_return is not None
+    assert result.flows[0].amount_kopecks == 100_000
+    assert result.months[0].result.contributions_kopecks is None
+    assert result.months[0].result.growth_kopecks is None
+    assert result.months[0].result.modified_dietz_return is None
     assert result.months[0].coupons_kopecks == 0
     assert result.months[0].dividends_kopecks == 0
-    assert result.period.growth_kopecks == 21_100
-    assert result.period.xirr_period_return is not None
-    assert not result.period.growth_reason_codes
-    assert not result.period.xirr_reason_codes
+    assert result.period.growth_kopecks is None
+    assert result.period.xirr_period_return is None
+    assert reasons <= set(result.period.growth_reason_codes)
+    assert reasons <= set(result.period.xirr_reason_codes)
     assert snapshot(db) == before
 
 

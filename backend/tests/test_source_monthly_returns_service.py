@@ -613,3 +613,62 @@ def test_api_long_report_segment_retains_outer_metrics_and_flow_blockers(db, unk
         assert segment["growth_kopecks"] == 121_100
         assert isinstance(segment["xirr_period_return"], str)
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "operation,amount",
+    [
+        ("Внесено по распоряжению Клиента", "500"),
+        ("Выведено по распоряжению Клиента", "-200"),
+        ("Unknown", "17"),
+    ],
+)
+def test_non_rub_money_blocks_month_period_and_segment_but_not_rub_neighbor(db, operation, amount):
+    xml = ET.fromstring(
+        provisional_xml(candidate_count=0, extra_money=((operation, "Synthetic USD row", amount),))
+    )
+    xml.findall(".//{MyBroker}p_code[@volume]")[-1].set("p_code", "USD")
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session,
+            document=ET.tostring(xml, encoding="utf-8"),
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="usd-money",
+        )
+    save_month(db, 5, beginning="10211", closing="11211", candidate_count=0)
+    before = snapshot(db)
+    result = read(db)
+    foreign, rub = result.months
+    reasons = {"currency_unsupported", "unknown_flow"}
+    assert reasons <= set(foreign.flags)
+    assert reasons <= set(foreign.result.reason_codes)
+    for field in (
+        "contributions_kopecks",
+        "withdrawals_kopecks",
+        "growth_kopecks",
+        "modified_dietz_return",
+    ):
+        assert getattr(foreign.result, field) is None
+    assert rub.result.contributions_kopecks == 0
+    assert rub.result.growth_kopecks == 100_000
+    assert rub.result.modified_dietz_return is not None
+    assert not reasons.intersection(rub.flags)
+    (segment,) = result.segments
+    assert (segment.start, segment.end) == (date(2030, 3, 31), date(2030, 5, 31))
+    for totals in (result.period, segment):
+        for field in (
+            "contributions_kopecks",
+            "withdrawals_kopecks",
+            "growth_kopecks",
+            "chained_return",
+            "xirr_annualized_return",
+            "xirr_period_return",
+        ):
+            assert getattr(totals, field) is None
+        for field in ("chain_reason_codes", "growth_reason_codes", "xirr_reason_codes"):
+            assert reasons <= set(getattr(totals, field))
+    assert not result.flows
+    assert any(
+        gap.code == "currency_unsupported" and gap.month == date(2030, 4, 1) for gap in result.gaps
+    )
+    assert snapshot(db) == before

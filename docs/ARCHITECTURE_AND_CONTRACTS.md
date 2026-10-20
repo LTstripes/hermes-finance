@@ -5757,8 +5757,10 @@ deposits/withdrawals enter the schedule with their persisted status;
 per month, without adding it again as investor flow. The monthly
 `income_assumptions_used` flag is true when any included coupon/dividend uses
 an assumed default; return-schedule `assumptions_used` remains separate.
-Non-RUB Money rows produce `currency_unsupported` and are excluded from RUB
-income and flows without blocking otherwise known RUB metrics. Unknown RUB money
+Non-RUB Money rows are excluded from RUB income and flows and make the month’s
+flows unknown. Affected month, period and containing segment contributions,
+withdrawals, growth and rates remain NULL with `currency_unsupported` and
+`unknown_flow`; independent RUB-only months remain available. Unknown RUB money
 stays in
 `unrecognized_money` gaps and withholds flow-dependent metrics with `unknown_flow`.
 Missing classifications on pre-migration intakes produce

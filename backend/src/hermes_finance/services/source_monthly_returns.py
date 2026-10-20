@@ -369,11 +369,13 @@ def read_monthly_returns(
             tuple(gaps),
         )
 
+    currency_months = {gap.month for gap in gaps if gap.code == "currency_unsupported"}
     uncertain_months = uncertain_source_months | {
         gap.month
         for gap in gaps
         if gap.code
         in {
+            "currency_unsupported",
             "classification_missing_legacy_intake",
             "invalid_money_row",
             "unrecognized_money",
@@ -412,7 +414,11 @@ def read_monthly_returns(
                 withdrawals_kopecks=None,
                 growth_kopecks=None,
                 modified_dietz_return=None,
-                reason_codes=(*calculated.reason_codes, "unknown_flow"),
+                reason_codes=(
+                    *calculated.reason_codes,
+                    "unknown_flow",
+                    *(("currency_unsupported",) if month in currency_months else ()),
+                ),
             )
         flags = list(calculated.reason_codes)
         if opening is not None and previous_closing is not None and opening != previous_closing:
@@ -504,6 +510,9 @@ def _period_totals(rows, schedule, uncertain_months):
         missing_endpoint=any(row.result.missing_endpoint for row in rows),
     )
     if any(row.result.closing_date.replace(day=1) in uncertain_months for row in rows):
+        flow_reasons = tuple(
+            reason for reason in chain_reasons if reason in {"unknown_flow", "currency_unsupported"}
+        )
         period = replace(
             period,
             contributions_kopecks=None,
@@ -511,7 +520,7 @@ def _period_totals(rows, schedule, uncertain_months):
             growth_kopecks=None,
             xirr_annualized_return=None,
             xirr_period_return=None,
-            growth_reason_codes=tuple(dict.fromkeys((*period.growth_reason_codes, "unknown_flow"))),
-            xirr_reason_codes=tuple(dict.fromkeys((*period.xirr_reason_codes, "unknown_flow"))),
+            growth_reason_codes=tuple(dict.fromkeys((*period.growth_reason_codes, *flow_reasons))),
+            xirr_reason_codes=tuple(dict.fromkeys((*period.xirr_reason_codes, *flow_reasons))),
         )
     return period
