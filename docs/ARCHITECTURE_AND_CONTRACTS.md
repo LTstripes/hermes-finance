@@ -5768,8 +5768,11 @@ Missing classifications on pre-migration intakes produce
 rows as zero. An unreadable or native-scope-ambiguous original marks every
 month it covers as having unknown flows: affected month, period and segment
 contributions/withdrawals, growth and rates remain NULL with `unknown_flow`.
-Independent complete months remain available. Income subtotals are partial when
-gaps exist. Python callers may
+Currency checks in these source-return readers and shared Money validation normalize
+case and surrounding whitespace; legacy `RUR` is the same ruble currency as `RUB`,
+including persisted classification comparisons and overlap signatures. Native saved
+source facts/fingerprints are not rewritten. Independent complete months remain
+available. Income subtotals are partial when gaps exist. Python callers may
 still verify exact originals through the provisional context reader and supply
 source-bound transient choices for default external rows; a persisted user choice
 always takes precedence. Overlap deduplication preserves references and same-report
@@ -5779,6 +5782,103 @@ with each group's own endpoints, flows and partial chained return/XIRR/growth.
 When a continuous long report supplies only the outer endpoints and no complete
 monthly group exists, it retains one `partial_segment` with the outer-period
 totals; its monthly chain remains unavailable.
+
+<a id="c7-source_instrument_returns-1"></a>
+### Monthly native-source instrument estimates
+
+The separate read-only service `source_instrument_returns` and
+`GET /api/source-returns/instruments?source_account=...` group verified saved
+intakes by native account and ISIN. This is a provisional source interpretation,
+with `authority=provisional` and `financial_authority=none`, including for unbound
+intakes. It needs no original reattachment, metadata creation, financial Apply,
+receipt, migration or Close change. It does not replace the accepted instrument
+payout, execution or EOD readers.
+
+Each monthly row retains the statement's own opening/closing quantity and native
+EOD valuation. A missing quantity or value stays NULL independently; an absent
+position is never affirmative zero. A long report supplies only its actual outer
+boundaries. Overlapping copies must agree on each endpoint. Native settled trades
+are counted in their settlement month, once per ordered two-part native identity.
+One-part or absent identity is `trade_identity_unresolved`: withhold the affected
+buys/sells/total, including across overlapping reports; never deduplicate by intake ID.
+Let T be native `summ_trade`, N the native NKD and F commission. With an
+`includes_paid_nkd` basis, buys cost = T + F and sells proceeds = T - F;
+with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
+These are the C5 native-total basis meanings. For buys, a current accepted cash proof
+matching the native identity, IDs and exact trade components takes precedence,
+revalidated through the existing proof reader and cash checks. These cash checks
+validate buys only; sells rely on per-row inference or remain withheld.
+For MyBroker bond buys and sells,
+the provisional reader also infers a basis per row from parsed `Price` (percent
+of face) and signed `qty`: let P = Price / 100 * 1000 * |qty|. With Decimal
+arithmetic and a per-row 0.01 tolerance, |T - P - N| <= 0.01 implies
+`includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
+Both or neither matching leaves inference unknown (including inconclusive
+non-1000-face or amortized nominal rows). An unknown inference preserves a valid
+reviewed proof; a decidable inference conflicting with that proof makes the basis
+unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
+inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
+total/rate; bond EOD approximation does not waive this. This arithmetic inference
+is limited to the provisional reader and creates no accepted proof or attestation.
+Missing commission or bond NKD is unknown; omitted stock NKD is inapplicable zero.
+Pending or missing settlement produces `trade_missing_settlement`,
+including both the execution and planned settlement months for pending trades.
+Contradictory trade observations, REPO or non-RUB trades withhold affected costs.
+Trade and income currency checks treat trimmed, case-insensitive `RUR` as `RUB`.
+
+Monthly `price_effect_kopecks` = V1 - V0 - buys_cost_kopecks + sells_proceeds_kopecks;
+`income_kopecks` is classified coupons + dividends; `total_kopecks` is price effect +
+income. `capital_base_kopecks` = V0 + buys_cost_kopecks. `return_percent` is the
+Decimal percentage string 100 * total / capital base, NULL for nonpositive base
+or unavailable operands. Money is integer kopecks; quantities are Decimal strings.
+These are simple monthly estimates, not XIRR or TWRR. Bonds use reported values
+without resolving clean/dirty or accrued-interest basis: `approximate=true` and
+`bond_valuation_basis_unknown` disclose this without blocking numbers. Stocks have
+`approximate=false` when no gaps or assumed income exist. Assumed income makes both
+the month and all-time row approximate, while confirmed income alone does not.
+This grants no financial authority.
+
+Persisted coupon/dividend classifications supply signed income amounts and their
+assumed/confirmed status. Whole ISIN or explicit saved registration aliases take
+precedence over whole saved names; a missing or ambiguous match stays in the income
+list with `isin=NULL` and an `unattributed_income` gap/reference. Registration aliases
+are usable only if actually present in saved identity evidence; the reader does
+not reconstruct metadata discarded by the existing parser or infer a registration
+crosswalk. Overlap handling reuses the monthly Money validation/deduplication rules,
+keeps same-report multiplicity and prefers confirmed choices. Known income remains
+an observed subtotal when `income_complete=false`. Every income field is nullable:
+when incomplete, a field retains only genuinely observed matching amounts and is
+NULL if none were observed; covered complete empty income is affirmative zero.
+All-time income uses the same available-component subtotal rule (NULL if no month
+supplies a value), and `income_complete=false` discloses any incomplete month.
+Unattributed, unknown, invalid,
+legacy-unclassified or non-RUB Money withholds affected monthly totals and rates,
+while retaining known price components. Unknown source structure, scope ambiguity
+or an unreadable overlapping intake withholds affected costs/income completeness.
+The explicit structure-gap codes `source_reader_unavailable`,
+`native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,
+`4_Transfers_unsupported`, `5_UFSR_unsupported` and `position_row_unclassified`
+are month-local source gaps: preserve their flags, withhold costs and total,
+and set `income_complete=false`. Money `currency_unsupported` affects income
+completeness and totals, preserving known price components. Trade
+`trade_currency_unsupported` and `repo_trade_unsupported` withhold affected costs
+and price effects without making covered income incomplete. Instrument-specific
+missing endpoint components remain local to that instrument/operand.
+Independent instruments and months remain available where evidence permits.
+
+`seam_mismatch` discloses differing consecutive native opening/closing values or
+quantities, and within-month quantity movements unexplained by the observed trades;
+it never replaces native operands. All-time monetary fields sum available component
+values, and `total_kopecks` sums only months with an available total. Thus all-time
+total need not equal its independently available price-effect plus income subtotals.
+`available_months` lists numeric monthly totals; `missing_months` lists months with
+no usable whole-month source coverage; `partial_months` lists covered months whose
+total is withheld. These lists, `partial`, `income_complete` and flags disclose
+incomplete sums; a covered income gap does not invent a `missing_month` flag.
+Missing coverage is `missing_month` and stays NULL in monthly rows, never zero.
+All-time capital base and percentage remain NULL: this scope defines monetary sums,
+not a holding-period or chained instrument rate. GET is no-store and performs no
+classification backfill, receipt or economic writes.
 
 <a id="c7-broker_statement_provisional-12"></a>
 ### Source-intake provisional account estimate

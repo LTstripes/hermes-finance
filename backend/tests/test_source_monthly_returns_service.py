@@ -40,6 +40,7 @@ def save_month(
     candidate_count=1,
     marker=None,
     missing_closing=False,
+    money_currency=None,
 ):
     xml = provisional_xml(
         beginning=beginning,
@@ -54,9 +55,13 @@ def save_month(
         .replace(".04.2030", f".{month:02d}.2030")
         .encode()
     )
-    if marker:
+    if marker or money_currency:
         root = ET.fromstring(xml)
-        root.set("synthetic_marker", marker)
+        if marker:
+            root.set("synthetic_marker", marker)
+        if money_currency:
+            for row in root.findall(".//{MyBroker}p_code[@volume]"):
+                row.set("p_code", money_currency)
         xml = ET.tostring(root, encoding="utf-8")
     end = calendar.monthrange(2030, month)[1]
     filename = f"Брокерский 1234567 (01.{month:02d}.30-{end}.{month:02d}.30).xml"
@@ -672,3 +677,67 @@ def test_non_rub_money_blocks_month_period_and_segment_but_not_rub_neighbor(db, 
         gap.code == "currency_unsupported" and gap.month == date(2030, 4, 1) for gap in result.gaps
     )
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("currency", ["RUR", " rur ", " RuB "])
+def test_ruble_currency_alias_deposit_counts_as_rub_flow(db, currency):
+    save_month(db, money_currency=currency)
+    before = snapshot(db)
+    result = read(db)
+    row = result.months[0]
+    assert row.result.contributions_kopecks == 100_000
+    assert row.result.growth_kopecks == 21_100
+    assert row.result.modified_dietz_return is not None
+    assert "currency_unsupported" not in row.flags
+    assert "currency_unsupported" not in {gap.code for gap in result.gaps}
+    assert len(result.flows) == 1 and result.flows[0].included
+    assert snapshot(db) == before
+    from hermes_finance.services.source_money_classifications import choose_classification
+
+    with db.session_factory() as session:
+        intake = result.flows[0].source_references[0].split(":")[1]
+        choose_classification(
+            session, int(intake), result.flows[0].source_references[0], "external_deposit"
+        )
+    confirmed = read(db)
+    assert confirmed.flows[0].status == "confirmed"
+    assert confirmed.months[0].result.contributions_kopecks == 100_000
+
+
+def test_currency_gap_in_one_segment_does_not_null_independent_rub_segment(db):
+    save_month(db, money_currency="USD")
+    # Missing May separates the source history into independent segments.
+    save_month(db, 6, beginning="11000", closing="12000", candidate_count=0)
+    before = snapshot(db)
+    result = read(db)
+    foreign, rub = result.segments
+    reasons = {"currency_unsupported", "unknown_flow"}
+    assert (foreign.start, foreign.end) == (date(2030, 3, 31), date(2030, 4, 30))
+    assert (rub.start, rub.end) == (date(2030, 5, 31), date(2030, 6, 30))
+    for field in (
+        "contributions_kopecks",
+        "withdrawals_kopecks",
+        "growth_kopecks",
+        "chained_return",
+        "xirr_annualized_return",
+        "xirr_period_return",
+    ):
+        assert getattr(foreign, field) is None
+        assert getattr(rub, field) is not None
+    for field in ("chain_reason_codes", "growth_reason_codes", "xirr_reason_codes"):
+        assert reasons <= set(getattr(foreign, field))
+        assert not reasons.intersection(getattr(rub, field))
+    assert rub.contributions_kopecks == 0 and rub.withdrawals_kopecks == 0
+    assert rub.growth_kopecks == 100_000
+    assert snapshot(db) == before
+
+
+def test_overlapping_rur_and_rub_deposits_are_one_flow(db):
+    save_month(db, money_currency="RUB")
+    save_month(db, money_currency=" rur ", marker="legacy-currency-copy")
+    result = read(db)
+    assert len(result.flows) == 1 and len(result.flows[0].source_references) == 2
+    assert result.months[0].result.contributions_kopecks == 100_000
+    assert not {"currency_unsupported", "invalid_money_row"}.intersection(
+        gap.code for gap in result.gaps
+    )

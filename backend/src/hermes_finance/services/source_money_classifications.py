@@ -15,6 +15,7 @@ from hermes_finance.domain.source_money_classifications import (
 )
 from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClassification
 from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
+from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 
@@ -192,7 +193,7 @@ def choose_classification(session, intake_id, reference, classification):
         if row is None:
             raise MyBrokerError("money_classification_not_found")
         if classification in {"external_deposit", "external_withdrawal"} and (
-            row.currency != "RUB"
+            normalize_currency(row.currency) != "RUB"
             or row.amount_kopecks is None
             or row.amount_kopecks == 0
             or (row.amount_kopecks > 0) != (classification == "external_deposit")
