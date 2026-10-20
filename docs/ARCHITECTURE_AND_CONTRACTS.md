@@ -5801,18 +5801,24 @@ boundaries. Overlapping copies must agree on each endpoint. Native settled trade
 are counted in their settlement month, once per ordered two-part native identity.
 One-part or absent identity is `trade_identity_unresolved`: withhold the affected
 buys/sells/total, including across overlapping reports; never deduplicate by intake ID.
-Let T be native `summ_trade`, N the native NKD and F commission. With an explicitly
-accepted `includes_paid_nkd` basis, buys cost = T + F and sells proceeds = T - F;
+Let T be native `summ_trade`, N the native NKD and F commission. With an
+`includes_paid_nkd` basis, buys cost = T + F and sells proceeds = T - F;
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
-These are the C5 native-total basis meanings; matching cash equations never discovers
-the basis. The reader uses only a current accepted cash proof matching the native
-identity, IDs and exact trade components, revalidated through the existing proof
-reader and cash checks. Source-intake V1 alone stores no reviewed NKD inclusion
-basis. An unknown bond trade basis is `trade_nkd_basis_unknown` and withholds affected
-buys/sells/price effect/total/rate; bond EOD approximation does not waive this.
-Existing accepted cash proofs cover bond BUY only; an unproved SELL basis remains
-unknown. No new proof writer or implicit attestation is introduced. Missing
-commission or bond NKD is unknown; omitted stock NKD is inapplicable zero.
+These are the C5 native-total basis meanings. A current accepted cash proof matching
+the native identity, IDs and exact trade components takes precedence, revalidated
+through the existing proof reader and cash checks. For MyBroker bond buys and sells,
+the provisional reader also infers a basis per row from parsed `Price` (percent
+of face) and signed `qty`: let P = Price / 100 * 1000 * |qty|. With Decimal
+arithmetic and a per-row 0.01 tolerance, |T - P - N| <= 0.01 implies
+`includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
+Both or neither matching leaves inference unknown (including inconclusive
+non-1000-face or amortized nominal rows). An unknown inference preserves a valid
+reviewed proof; a decidable inference conflicting with that proof makes the basis
+unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
+inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
+total/rate; bond EOD approximation does not waive this. This arithmetic inference
+is limited to the provisional reader and creates no accepted proof or attestation.
+Missing commission or bond NKD is unknown; omitted stock NKD is inapplicable zero.
 Pending or missing settlement produces `trade_missing_settlement`,
 including both the execution and planned settlement months for pending trades.
 Contradictory trade observations, REPO or non-RUB trades withhold affected costs.

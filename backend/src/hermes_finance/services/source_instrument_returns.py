@@ -256,8 +256,8 @@ def _trade_core(core):
 def _native_total_basis(session, trade):
     """Use only a current accepted proof matching this exact native trade.
 
-    Source-intake V1 alone stores no reviewed NKD inclusion basis. Matching
-    amounts never discovers one. Existing cash proofs currently cover buys.
+    Source-intake V1 alone stores no reviewed NKD inclusion basis.
+    Existing cash proofs currently cover buys.
     """
     proof = broker_trade_money.effective_proof(session, trade["identity"])
     if not proof or "proof_variant" in proof:
@@ -294,6 +294,43 @@ def _native_total_basis(session, trade):
         }
     normalized = dict(trade, core=_trade_core(trade["core"]))
     return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
+
+
+def _inferred_native_total_basis(trade):
+    """Infer this MyBroker row's NKD basis against a 1000 face, without a proof."""
+    try:
+        core = trade["core"]
+        price = Decimal(core["price"])
+        quantity = Decimal(core["quantity"])
+        amount = Decimal(core["trade_amount"])
+        nkd = Decimal(trade["accrued_interest"])
+        if (
+            any(not value.is_finite() for value in (price, quantity, amount, nkd))
+            or quantity == 0
+            or any(value < 0 for value in (price, amount, nkd))
+        ):
+            return None
+        with localcontext() as context:
+            # Parser numeric tokens are bounded to 48 characters; keep the
+            # product and residual exact, independent of the caller's context.
+            context.prec = 200
+            principal = price / 100 * 1000 * abs(quantity)
+            includes = abs(amount - principal - nkd) <= Decimal("0.01")
+            excludes = nkd != 0 and abs(amount - principal) <= Decimal("0.01")
+        if includes == excludes:
+            return None
+        return "includes_paid_nkd" if includes else "excludes_paid_nkd"
+    except (ValueError, TypeError, KeyError, ArithmeticError):
+        return None
+
+
+def _bond_total_basis(session, trade, flags):
+    reviewed = _native_total_basis(session, trade)
+    inferred = _inferred_native_total_basis(trade)
+    if reviewed is not None and inferred is not None and reviewed != inferred:
+        flags.add("trade_nkd_basis_conflict")
+        return None
+    return reviewed if reviewed is not None else inferred
 
 
 def _trade_cash_total(amount, nkd, fee, quantity, basis):
@@ -394,11 +431,12 @@ def _trades(session, views, isin, month, instrument_type, flags):
                 flags.add("trade_components_missing")
                 invalid = True
                 continue
-            basis = (
-                "excludes_paid_nkd"
-                if instrument_type == "stock"
-                else _native_total_basis(session, trade)
-            )
+            if instrument_type == "stock":
+                basis = "excludes_paid_nkd"
+            elif instrument_type == "bond":
+                basis = _bond_total_basis(session, trade, flags)
+            else:
+                basis = _native_total_basis(session, trade)
             cash_total = _trade_cash_total(amount, nkd, fee, qty, basis)
             if cash_total is None:
                 flags.add("trade_nkd_basis_unknown")

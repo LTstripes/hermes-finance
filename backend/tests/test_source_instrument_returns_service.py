@@ -39,7 +39,7 @@ def db(tmp_path):
 
 @pytest.fixture
 def accepted_basis(monkeypatch):
-    # Explicit synthetic proof boundary; saved native totals never imply a basis.
+    # Explicit synthetic reviewed proof for tests that exercise other boundaries.
     monkeypatch.setattr(service, "_native_total_basis", lambda session, trade: "excludes_paid_nkd")
 
 
@@ -591,7 +591,7 @@ def test_bond_native_total_basis_counts_nkd_once(db, monkeypatch, basis, amount,
 
 @pytest.mark.parametrize("quantity", ["1", "-1"])
 def test_unknown_native_bond_basis_withholds_costs_without_guessing(db, quantity):
-    save(db, trades=((BOND, quantity, "1020", "20", "5"),))
+    save(db, trades=((BOND, quantity, "520", "20", "5"),))
     save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
     result = by_isin(read(db))
     first, second = result[BOND].months
@@ -764,9 +764,19 @@ def test_ruble_currency_aliases_match_rub_for_instrument_income_and_trades(db, c
 
 
 @pytest.mark.parametrize("basis", ["includes_paid_nkd", "excludes_paid_nkd"])
-def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basis):
+@pytest.mark.parametrize("inference", ["agrees", "unknown", "conflicts"])
+def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basis, inference):
     amount = "1020" if basis == "includes_paid_nkd" else "1000"
-    intake = save(db, trades=((BOND, "1", amount, "20", "5"),))
+    price = {
+        "agrees": "100",
+        "unknown": "50",
+        "conflicts": "102" if basis == "includes_paid_nkd" else "98",
+    }[inference]
+
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("Price", price)
+
+    intake = save(db, trades=((BOND, "1", amount, "20", "5"),), mutate=mutate)
     with db.session_factory() as session:
         trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
         account = Account(name="Synthetic", account_type="brokerage")
@@ -820,7 +830,12 @@ def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basi
         before = snapshot(db)
         result = by_isin(read_instrument_returns(session, source_account=ACCOUNT))[BOND].months[0]
         assert snapshot(db) == before
-        assert result.buys_cost_kopecks == 102_500 and result.total_kopecks == 12_500
+        if inference == "conflicts":
+            assert result.buys_cost_kopecks is None and result.total_kopecks is None
+            assert {"trade_nkd_basis_unknown", "trade_nkd_basis_conflict"} <= set(result.flags)
+        else:
+            assert result.buys_cost_kopecks == 102_500 and result.total_kopecks == 12_500
+            assert "trade_nkd_basis_unknown" not in result.flags
         for field in ("trade_amount", "quantity", "trade_time", "isin"):
             changed = deepcopy(trade)
             changed["core"][field] = {
@@ -859,3 +874,104 @@ def test_overlapping_rur_and_rub_trades_and_income_are_counted_once(db):
     assert row.total_kopecks == 13_400 and row.income_complete
     assert "overlapping_trade_conflict" not in row.flags
     assert len(result.income) == 1 and len(result.income[0].source_references) == 2
+
+
+@pytest.mark.parametrize("quantity", ["2", "-2"])
+@pytest.mark.parametrize("amount", ["2070.00", "2030.00"])
+def test_details_bond_arithmetic_counts_nkd_once_without_proof(db, quantity, amount):
+    def mutate(root):
+        row = root.find(".//m:Details[@trade_no]", NS)
+        row.attrib.update(
+            Price="101.5",
+            place_name="Synthetic exchange",
+            p_name="Synthetic bond",
+            Textbox14="",
+            repo_no="",
+        )
+
+    bond = ("2", "4", "2000", "4200") if quantity == "2" else ("4", "2", "4000", "2100")
+    intake = save(db, bond=bond, trades=((BOND, quantity, amount, "40.00", "3"),), mutate=mutate)
+    with db.session_factory() as session:
+        trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
+        assert trade["core"]["price"] == "101.5" and trade["core"]["quantity"] == quantity
+        assert service._native_total_basis(session, trade) is None
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    if quantity == "2":
+        assert row.buys_cost_kopecks == 207_300  # T + fee, or T + NKD + fee.
+        assert row.sells_proceeds_kopecks == 0
+        assert row.total_kopecks == 12_700
+    else:
+        assert row.buys_cost_kopecks == 0
+        assert row.sells_proceeds_kopecks == 206_700
+        assert row.total_kopecks == 16_700
+    assert "trade_nkd_basis_unknown" not in row.flags
+    assert row.approximate and "bond_valuation_basis_unknown" in row.flags
+    with localcontext() as context:
+        context.prec = 6
+        assert by_isin(read(db))[BOND].months[0] == row
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "amount,nkd,expected",
+    [
+        ("2070.01", "40", 207_301),
+        ("2069.99", "40", 207_299),
+        ("2030.01", "40", 207_301),
+        ("2029.99", "40", 207_299),
+        ("2070.02", "40", None),
+        ("2069.98", "40", None),
+        ("2030.02", "40", None),
+        ("2029.98", "40", None),
+        ("1055", "40", None),  # Face 500: neither 1000-face equation matches.
+        ("2030.00", "0.01", None),  # Both equations are within tolerance.
+        ("2030.00", "0", 203_300),  # Exclusive predicate requires nonzero NKD.
+    ],
+)
+def test_details_bond_basis_uses_exact_per_row_kopeck_tolerance(db, amount, nkd, expected):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("Price", "101.5")
+
+    save(
+        db, bond=("2", "4", "2000", "4200"), trades=((BOND, "2", amount, nkd, "3"),), mutate=mutate
+    )
+    result = by_isin(read(db))
+    row = result[BOND].months[0]
+    assert row.buys_cost_kopecks == expected
+    assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
+    if expected is None:
+        assert row.sells_proceeds_kopecks is None
+        assert row.price_effect_kopecks is None and row.total_kopecks is None
+        assert row.return_percent is None
+    assert result[ISIN].months[0].total_kopecks == 10_000
+
+
+@pytest.mark.parametrize(
+    "amounts,expected", [(("2070", "2030"), 414_600), (("2070.02", "2069.98"), None)]
+)
+def test_bond_basis_is_inferred_for_each_trade_before_summing(db, amounts, expected):
+    def mutate(root):
+        for row in root.findall(".//m:Details[@trade_no]", NS):
+            row.set("Price", "101.5")
+
+    save(
+        db,
+        bond=("2", "6", "2000", "6300"),
+        trades=tuple((BOND, "2", amount, "40", "3") for amount in amounts),
+        mutate=mutate,
+    )
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == expected
+    assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
+
+
+def test_arithmetic_bond_inference_requires_known_bond_type(db):
+    def mutate(root):
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).set("active_type", "Unknown synthetic type")
+        root.find(".//m:Details[@trade_no]", NS).set("Price", "101.5")
+
+    save(db, trades=((BOND, "2", "2070", "40", "3"),), mutate=mutate)
+    row = by_isin(read(db))[BOND].months[0]
+    assert {"instrument_type_unknown", "trade_nkd_basis_unknown"} <= set(row.flags)
+    assert row.buys_cost_kopecks is None and row.total_kopecks is None
