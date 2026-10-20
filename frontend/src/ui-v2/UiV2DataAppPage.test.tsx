@@ -99,9 +99,9 @@ describe("UI v2 Data/App", () => {
       "href",
       "/v2/income",
     );
-    expect(screen.getByRole("link", { name: "Цели в предыдущем интерфейсе ↗" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Открыть цели →" })).toHaveAttribute(
       "href",
-      "/goals",
+      "/v2/income/goals",
     );
     expect(
       screen.getByText(/не редактируется в разделе «Данные и приложение»/i),

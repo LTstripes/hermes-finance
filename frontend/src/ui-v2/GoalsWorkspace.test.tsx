@@ -13,8 +13,8 @@ import {
   type GoalSummary,
 } from "../api/goals";
 import { listMonths } from "../api/months";
-import UiV2GoalsPage from "../ui-v2/UiV2GoalsPage";
-import { GoalsPage } from "./GoalsPage";
+import UiV2GoalsPage from "./UiV2GoalsPage";
+import { GoalsPage } from "../pages/GoalsPage";
 
 vi.mock("../api/goals", () => ({
   createGoal: vi.fn(),
@@ -122,7 +122,7 @@ const updateGoalMock = vi.mocked(updateGoal);
 const deleteGoalMock = vi.mocked(deleteGoal);
 const listMonthsMock = vi.mocked(listMonths);
 
-describe("GoalsPage R03-09 cards", () => {
+describe("GoalsWorkspace R03-09 cards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listGoalsMock.mockResolvedValue([secondGoal, inactiveGoal, mainGoal]);

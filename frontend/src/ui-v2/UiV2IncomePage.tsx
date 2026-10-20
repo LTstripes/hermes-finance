@@ -682,7 +682,7 @@ function CoveragePlanBlock({
   return (
     <Panel
       action={
-        <Link className={sharedStyles.contextLink} to={`/months/${monthId}`}>
+        <Link className={sharedStyles.contextLink} to={`/v2/data/months/${monthId}`}>
           Открыть месяц →
         </Link>
       }
@@ -958,7 +958,7 @@ export default function UiV2IncomePage() {
     content = (
       <>
         <UiV2ReportContext month={latestClosed}>
-          <Link to={`/months/${latestClosed.id}`}>Отчёт месяца в предыдущем интерфейсе →</Link>
+          <Link to={`/v2/data/months/${latestClosed.id}`}>Данные отчётного месяца →</Link>
         </UiV2ReportContext>
         {newerDraft ? (
           <p className={incomeStyles.draftNote} data-testid="income-draft-note">

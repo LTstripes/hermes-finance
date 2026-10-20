@@ -597,14 +597,14 @@ it("fails the property block closed on a properties read error", async () => {
   expect(within(panel).getByText("Данные временно недоступны")).toBeVisible();
 });
 
-it("preserves a valid legacy month and step only in the labelled v1 escape", async () => {
+it("keeps current capital facts without a legacy escape for month and step context", async () => {
   const { mount } = setup(`/v2/capital?month=${uiV2CapitalPreviousMonthId}&step=actual_payouts`);
   mount();
 
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(
-    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute("href", `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`);
+    screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: /← Мои финансы/ })).toHaveAttribute("href", "/v2");
   expect(screen.getByRole("link", { name: "Капитал" })).toHaveAttribute("aria-current", "page");
 });
@@ -709,7 +709,7 @@ it("refuses a non-portfolio attribution response on the portfolio panel", async 
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
 
-it("adds the contextual archive link without changing the labelled v1 handoff", async () => {
+it("links current capital to its native month data and archive", async () => {
   const { mount } = setup();
   mount();
 
@@ -717,13 +717,13 @@ it("adds the contextual archive link without changing the labelled v1 handoff", 
   expect(screen.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute("href", "/v2/reports");
   expect(
     within(screen.getByTestId("v2-report-context")).getByRole("link", {
-      name: "Отчёт месяца в предыдущем интерфейсе →",
+      name: "Данные отчётного месяца →",
     }),
-  ).toHaveAttribute("href", `/months/${uiV2CapitalMonthId}`);
+  ).toHaveAttribute("href", `/v2/data/months/${uiV2CapitalMonthId}`);
 });
 
 describe("UI v2 Capital isolation", () => {
-  it("keeps the v1 rollback path when the lazy page crashes", async () => {
+  it("offers a reload when the lazy page crashes", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { UiV2ErrorBoundary } = await import("../ui-v2/UiV2Entry");
     function Broken(): never {
@@ -737,8 +737,7 @@ describe("UI v2 Capital isolation", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
 });

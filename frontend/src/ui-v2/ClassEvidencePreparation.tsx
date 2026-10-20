@@ -285,7 +285,7 @@ function CoverageForm({
             )
             .map((m) => (
               <li key={m.id}>
-                <Link to={`/months/${m.id}`}>
+                <Link to={`/v2/data/months/${m.id}`}>
                   Месяц {m.year}-{String(m.month).padStart(2, "0")} · {m.status.toUpperCase()}
                 </Link>
               </li>
@@ -454,7 +454,7 @@ function Preparation({
               )
               .map((m) => (
                 <li key={m.id}>
-                  <Link to={`/months/${m.id}`}>
+                  <Link to={`/v2/data/months/${m.id}`}>
                     Месяц {m.year}-{String(m.month).padStart(2, "0")} · снимок {m.snapshot_date} ·{" "}
                     {m.status === "closed"
                       ? "CLOSED — явно открыть"

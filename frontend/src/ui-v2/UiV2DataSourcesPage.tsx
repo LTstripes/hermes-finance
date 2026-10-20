@@ -55,7 +55,9 @@ export default function UiV2DataSourcesPage() {
       ? requestedStepValues[0]
       : null;
   const closeStep =
-    params.getAll("from").length === 1 && params.get("from") === "monthly-close-v2" && requestedStep
+    params.getAll("from").length === 1 &&
+    (params.get("from") === "monthly-close-v2" || params.get("from") === "monthly-close") &&
+    requestedStep
       ? requestedStep
       : "readiness";
   const v1ReturnPath =
@@ -100,7 +102,7 @@ export default function UiV2DataSourcesPage() {
     content = (
       <UiV2Notice title="Нет отчётных месяцев">
         Нечего диагностировать, пока не создан хотя бы один месяц.{" "}
-        <Link to="/months">Открыть месяцы в предыдущем интерфейсе ↗</Link>
+        <Link to="/v2/data/months">Открыть месяцы →</Link>
       </UiV2Notice>
     );
   } else {
@@ -108,7 +110,7 @@ export default function UiV2DataSourcesPage() {
     content = (
       <>
         <DataMonthContext automatic={resolution.automatic} month={month}>
-          <Link to="/freshness">В предыдущем интерфейсе ↗</Link>
+          <Link to={`/v2/data?month=${month.id}`}>Проверка данных →</Link>
         </DataMonthContext>
         <div className={dataStyles.badgeRow}>
           <span className={dataStyles.readOnlyBadge}>Только чтение</span>

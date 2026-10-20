@@ -276,23 +276,25 @@ describe("UI v2 historical report", () => {
     ).toBeVisible();
   });
 
-  it("labels the v1 handoff explicitly", async () => {
+  it("links the historical report to native data and performance workspaces", async () => {
     const { mount } = setup();
     mount();
 
-    const handoff = await screen.findByTestId("report-v1-handoff");
+    const handoff = await screen.findByTestId("report-workspace-links");
     expect(
-      within(handoff).getByRole("link", { name: "Отчёт месяца в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", `/months/${historicalId}`);
+      within(handoff).getByRole("link", { name: "Данные отчётного месяца →" }),
+    ).toHaveAttribute("href", `/v2/data/months/${historicalId}`);
+    expect(within(handoff).getByRole("link", { name: "Доходность →" })).toHaveAttribute(
+      "href",
+      "/v2/capital/performance",
+    );
+    expect(within(handoff).getByRole("link", { name: "Отчётные месяцы →" })).toHaveAttribute(
+      "href",
+      "/v2/data/months",
+    );
     expect(
-      within(handoff).getByRole("link", { name: "Все расчёты в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", "/analytics");
-    expect(
-      within(handoff).getByRole("link", { name: "Месяцы в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", "/months");
-    expect(
-      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", `/months/${historicalId}`);
+      screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+    ).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("v2-report-context")).getByRole("link", { name: "Капитал" }),
     ).not.toHaveAttribute("aria-current");

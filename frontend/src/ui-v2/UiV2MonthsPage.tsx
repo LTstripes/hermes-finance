@@ -414,7 +414,7 @@ export default function UiV2MonthsPage() {
                     >
                       Копировать
                     </button>
-                    <Link to={`/months/${month.id}`}>Редактор в предыдущем интерфейсе ↗</Link>
+                    <Link to={`/v2/data/months/${month.id}`}>Открыть редактор →</Link>
                     {month.status === "draft" ? (
                       <button
                         className={styles.danger}

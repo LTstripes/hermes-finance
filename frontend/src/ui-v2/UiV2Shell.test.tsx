@@ -23,53 +23,33 @@ function renderShell(v1ReturnPath: string) {
   );
 }
 
-describe("UiV2Shell rollback", () => {
-  it("keeps permanent v1 rollback keyboard-operable beside the contextual return", async () => {
+describe("UiV2Shell native navigation", () => {
+  it("keeps Close keyboard-operable and every shell link in v2", async () => {
     const user = userEvent.setup();
     renderShell("/months/12/close#actual_payouts");
-
     expect(screen.getByText("Основной интерфейс")).toBeVisible();
-    expect(screen.queryByText("Предварительная версия")).toBeNull();
-    const rollback = screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" });
-    expect(rollback).toHaveAttribute("href", "/v1");
-    rollback.focus();
-    expect(rollback).toHaveFocus();
-
+    const close = screen.getByRole("link", { name: "Закрыть месяц" });
+    expect(close).toHaveAttribute("href", "/v2/close");
+    close.focus();
+    expect(close).toHaveFocus();
     await user.keyboard("{Enter}");
-
-    expect(screen.getByTestId("location")).toHaveTextContent("/v1");
-    expect(
-      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", "/months/12/close#actual_payouts");
+    expect(screen.getByTestId("location")).toHaveTextContent("/v2/close");
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.getAttribute("href")).toMatch(/^(\/v2(?:\/|$)|#)/);
+    }
+    expect(screen.queryByText(/предыдущем интерфейсе/i)).not.toBeInTheDocument();
   });
 
-  it("uses the durable v1 home when the caller has no contextual return", () => {
+  it.each([
+    ["Экспорт и копии", "/v2/data/files"],
+    ["Настройки", "/v2/data/app"],
+    ["Отчётные месяцы", "/v2/data/months"],
+    ["Счета и справочники", "/v2/data/catalogs"],
+    ["История и результаты", "/v2/capital/performance"],
+    ["Доход и цели", "/v2/income/goals"],
+  ])("links %s to its native workspace", (label, href) => {
     renderShell("/v1");
-
-    expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
-      "href",
-      "/v1",
-    );
-    expect(
-      screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toBeNull();
-  });
-
-  it("offers native files, settings and diagnostics while retaining explicit v1 escape", () => {
-    renderShell("/export");
-    expect(screen.getByRole("link", { name: "Экспорт и копии" })).toHaveAttribute(
-      "href",
-      "/v2/data/files",
-    );
-    expect(screen.getByRole("link", { name: "Настройки" })).toHaveAttribute("href", "/v2/data/app");
-    expect(screen.queryByRole("link", { name: "Диагностика" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Отчётные месяцы" })).toHaveAttribute(
-      "href",
-      "/v2/data/months",
-    );
-    expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
-      "href",
-      "/v1",
-    );
+    expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
 });

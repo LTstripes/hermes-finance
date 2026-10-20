@@ -279,10 +279,9 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   expect(screen.queryByTestId("v2-capital")).toBeNull();
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   expect(await screen.findByTestId("v2-draft-action")).toBeVisible();
-  expect(screen.getByRole("link", { name: "UI v1: предыдущий интерфейс →" })).toHaveAttribute(
-    "href",
-    "/v1",
-  );
+  expect(
+    screen.queryByRole("link", { name: "UI v1: предыдущий интерфейс →" }),
+  ).not.toBeInTheDocument();
 });
 
 it("distinguishes an unavailable previous CLOSED base from a genuine zero", async () => {
@@ -467,35 +466,35 @@ it("fails the goals widget closed on forecast-sourced progress provenance", asyn
   expect(within(panel).queryByText("Резервный капитал")).toBeNull();
 });
 
-it("preserves a valid legacy month/step only in the explicit v1 escape", async () => {
+it("keeps latest closed facts and the URL without rendering a legacy escape", async () => {
   const { mount } = setup("/v2?month=12&step=actual_payouts");
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
   expect(
-    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute("href", "/months/12/close#actual_payouts");
+    screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).not.toBeInTheDocument();
   expect(screen.getByTestId("test-location")).toHaveTextContent("/v2?month=12&step=actual_payouts");
 });
 
 it.each(["/v2?month=012&step=actual_payouts", "/v2?month=12&month=91&step=actual_payouts"])(
-  "rejects malformed or duplicate month context in the v1 escape: %s",
+  "renders no legacy escape for malformed or duplicate context: %s",
   async (path) => {
     const { mount } = setup(path);
     mount();
     await screen.findByTestId("v2-capital");
     expect(
-      screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).toHaveAttribute("href", "/months/91");
+      screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+    ).not.toBeInTheDocument();
   },
 );
 
-it("rejects duplicate step context without discarding the valid month", async () => {
+it("renders no legacy escape for duplicate step context", async () => {
   const { mount } = setup("/v2?month=12&step=actual_payouts&step=review");
   mount();
   await screen.findByTestId("v2-capital");
   expect(
-    screen.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute("href", "/months/12");
+    screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
+  ).not.toBeInTheDocument();
 });
 
 it("recovers the root report list without querying a guessed report", async () => {
@@ -536,12 +535,10 @@ describe("UI v2 isolation", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   });
 
-  it("keeps the v1 rollback path when the lazy Home crashes", () => {
+  it("offers a reload when the lazy Home crashes", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     function Broken(): never {
       throw new Error("synthetic component failure");
@@ -554,8 +551,7 @@ describe("UI v2 isolation", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Основной интерфейс не загрузился");
-    expect(
-      screen.getByRole("link", { name: "Перейти в предыдущий интерфейс (UI v1)" }),
-    ).toHaveAttribute("href", "/v1");
+    expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
 });

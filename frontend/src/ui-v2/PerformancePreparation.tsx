@@ -355,7 +355,7 @@ function PreparationForms({
         Отчёты периода:{" "}
         {data.months.map((m) => (
           <span key={m.id}>
-            <Link to={`/months/${m.id}`}>
+            <Link to={`/v2/data/months/${m.id}`}>
               {m.period_start} — {m.period_end} ({evidenceLabel(m.status)})
             </Link>
             {"; "}

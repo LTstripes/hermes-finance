@@ -271,7 +271,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "passive-error"] as co
   });
 }
 
-test("ui-v2 Home interactions: history windows and v1 escape preserve semantics", async ({
+test("ui-v2 Home interactions: history windows and native navigation preserve semantics", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Interaction proof once");
@@ -282,7 +282,7 @@ test("ui-v2 Home interactions: history windows and v1 escape preserve semantics"
   await expect(page.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute("href", "/months/12/close#actual_payouts");
+  ).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
   await page.keyboard.press("Tab");
@@ -1165,7 +1165,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
   });
 }
 
-test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve semantics", async ({
+test("ui-v2 Capital interactions: filters, windows and native navigation preserve semantics", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Interaction proof once");
@@ -1182,7 +1182,7 @@ test("ui-v2 Capital interactions: filters, windows and the v1 escape preserve se
   await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-  ).toHaveAttribute("href", `/months/${uiV2CapitalPreviousMonthId}/close#actual_payouts`);
+  ).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Мои финансы", exact: true })).toHaveAttribute(
     "href",
     "/v2",
@@ -1323,7 +1323,7 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
   await expect(page.getByTestId("reports-row-12")).toHaveCount(0);
   await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("reports-year-2030")).toContainText("Ноябрь 2030");
-  await expect(page.getByRole("link", { name: "Месяцы в предыдущем интерфейсе →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Отчётные месяцы →" })).toBeVisible();
   const archiveLayout = await page.getByTestId("reports-row-91").evaluate((row) => {
     const cells = Array.from(row.children).map((cell) => cell.getBoundingClientRect());
     const action = row.querySelector("td:last-child a")?.getBoundingClientRect();
