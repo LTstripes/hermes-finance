@@ -10,7 +10,7 @@ import {
   uiV2ArchiveMonths,
   uiV2Months,
 } from "../test/uiV2Fixtures";
-import UiV2ReportsPage from "../ui-v2/UiV2ReportsPage";
+import UiV2ReportsPage from "./UiV2ReportsPage";
 
 function LocationProbe() {
   const location = useLocation();

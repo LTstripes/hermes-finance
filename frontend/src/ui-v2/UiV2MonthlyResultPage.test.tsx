@@ -7,7 +7,7 @@ import type { ReportingMonth } from "../api/types";
 import { rub } from "../lib/money";
 import { createQueryClient } from "../queryClient";
 import { uiV2Months } from "../test/uiV2Fixtures";
-import UiV2MonthlyResultPage from "../ui-v2/UiV2MonthlyResultPage";
+import UiV2MonthlyResultPage from "./UiV2MonthlyResultPage";
 
 const latest = uiV2Months[0];
 const older = uiV2Months[2];

@@ -13,7 +13,7 @@ import type {
 } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { makeUiV2Goals, makeUiV2PassiveHistory, uiV2Months } from "../test/uiV2Fixtures";
-import UiV2IncomePage from "../ui-v2/UiV2IncomePage";
+import UiV2IncomePage from "./UiV2IncomePage";
 
 const money = (amount: string) => ({ amount, currency: "RUB" });
 

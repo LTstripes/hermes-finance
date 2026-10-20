@@ -16,7 +16,7 @@ import { listMonths } from "../api/months";
 import { deleteInstrument, getInstrumentCleanup, listInstruments } from "../api/instruments";
 import type { BrokerIdentityMapping } from "../api/brokerIdentityMappings";
 import type { InstrumentCleanup, InstrumentMarketMapping } from "../api/types";
-import UiV2DataCatalogsPage from "../ui-v2/UiV2DataCatalogsPage";
+import UiV2DataCatalogsPage from "./UiV2DataCatalogsPage";
 
 vi.mock("../api/accounts", () => ({
   createAccount: vi.fn(),

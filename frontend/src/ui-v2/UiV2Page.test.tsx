@@ -13,8 +13,8 @@ import {
   makeUiV2Workflow,
   uiV2Months,
 } from "../test/uiV2Fixtures";
-import { UiV2ErrorBoundary, UiV2LoadingFallback } from "../ui-v2/UiV2Entry";
-import UiV2Page from "../ui-v2/UiV2Page";
+import { UiV2ErrorBoundary, UiV2LoadingFallback } from "./UiV2Entry";
+import UiV2Page from "./UiV2Page";
 
 function LocationProbe() {
   const location = useLocation();

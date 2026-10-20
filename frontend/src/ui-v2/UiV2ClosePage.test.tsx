@@ -7,7 +7,7 @@ import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
-import UiV2ClosePage from "../ui-v2/UiV2ClosePage";
+import UiV2ClosePage from "./UiV2ClosePage";
 
 function LocationProbe() {
   const location = useLocation();

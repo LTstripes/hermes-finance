@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrokerReconciliationResponse, ReconciliationRow } from "../api/brokerReconciliation";
 import { createQueryClient } from "../queryClient";
 import { uiV2Accounts, uiV2Instruments, uiV2Months } from "../test/uiV2Fixtures";
-import UiV2DataReconciliationPage from "../ui-v2/UiV2DataReconciliationPage";
+import UiV2DataReconciliationPage from "./UiV2DataReconciliationPage";
 
 const diagnostics = {
   schema_version: "alfa-pro-diagnostics/v1",
