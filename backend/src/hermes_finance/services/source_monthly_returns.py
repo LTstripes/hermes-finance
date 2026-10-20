@@ -52,6 +52,7 @@ class SourceMonthlyReturnRow:
     previous_closing_kopecks: int | None
     coupons_kopecks: int
     dividends_kopecks: int
+    income_assumptions_used: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -85,6 +86,7 @@ class SourceMonthlyReturns:
                 "previous_closing_kopecks": row.previous_closing_kopecks,
                 "coupons_kopecks": row.coupons_kopecks,
                 "dividends_kopecks": row.dividends_kopecks,
+                "income_assumptions_used": row.income_assumptions_used,
             }
             for row in self.months
         ]
@@ -157,6 +159,16 @@ def _money(session, view, choices, gaps):
     for row in view["document"].get("money", []):
         event_date = date.fromisoformat(row["date"])
         reference = source_reference(view["id"], row)
+        if row.get("currency") != "RUB":
+            gaps.append(
+                SourceReturnGap(
+                    "currency_unsupported",
+                    view["id"],
+                    month=event_date.replace(day=1),
+                    source_reference=reference,
+                )
+            )
+            continue
         saved = persisted.get(reference)
         if saved is None:
             gaps.append(
@@ -244,6 +256,7 @@ def read_monthly_returns(
     sources = []
     gaps = []
     money = defaultdict(list)
+    uncertain_source_months = set()
     for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
         try:
             aliases = json.loads(original.native_accounts_json)
@@ -253,10 +266,12 @@ def read_monthly_returns(
         if not isinstance(aliases, list) or source_account not in aliases:
             continue
         start, end = original.covered_from, original.covered_to
+        unknown_source_flows = False
         try:
             view = source_intake.read_intake(session, original.id)
             if _native_scope(view["document"]) != {source_account}:
                 gaps.append(SourceReturnGap("native_source_scope_ambiguous", original.id))
+                unknown_source_flows = True
                 opening = closing = None
             else:
                 opening, closing, reasons = _saved_totals(view["document"])
@@ -293,6 +308,12 @@ def read_monthly_returns(
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
             opening = closing = None
             gaps.append(SourceReturnGap("source_reader_unavailable", original.id))
+            unknown_source_flows = True
+        if unknown_source_flows:
+            covered_month = start.replace(day=1)
+            while covered_month <= end:
+                uncertain_source_months.add(covered_month)
+                covered_month = _next_month(covered_month)
         if start.day != 1 or end != _month_end(end):
             gaps.append(SourceReturnGap("partial_month_source", original.id))
             continue
@@ -300,6 +321,7 @@ def read_monthly_returns(
 
     flows = []
     income = defaultdict(lambda: {"coupon": 0, "dividend": 0})
+    assumed_income_months = set()
     for observations in money.values():
         confirmed = [flow for flow in observations if flow.status == "confirmed"]
         selected = confirmed or observations
@@ -323,7 +345,10 @@ def read_monthly_returns(
                 for ref in refs
             )
         elif flow.classification in {"coupon", "dividend"}:
-            income[flow.event_date.replace(day=1)][flow.classification] += flow.amount_kopecks
+            income_month = flow.event_date.replace(day=1)
+            income[income_month][flow.classification] += flow.amount_kopecks
+            if flow.status == "assumed":
+                assumed_income_months.add(income_month)
         elif flow.classification in {"external_deposit", "external_withdrawal"}:
             flows.append(replace(flow, source_references=refs))
         if len(observations) > 1:
@@ -344,7 +369,7 @@ def read_monthly_returns(
             tuple(gaps),
         )
 
-    uncertain_months = {
+    uncertain_months = uncertain_source_months | {
         gap.month
         for gap in gaps
         if gap.code
@@ -401,6 +426,7 @@ def read_monthly_returns(
                 previous_closing,
                 income[month]["coupon"],
                 income[month]["dividend"],
+                month in assumed_income_months,
             )
         )
         previous_closing = closing
@@ -427,6 +453,22 @@ def read_monthly_returns(
         )
         for group in groups
     ]
+    # A continuous long report may supply only the outer endpoints: retain
+    # its available period estimate without inventing monthly valuations.
+    if (
+        not segments
+        and all(row.intake_ids for row in rows)
+        and rows[0].result.opening_kopecks is not None
+        and rows[-1].result.closing_kopecks is not None
+    ):
+        segments.append(
+            SourceReturnSegment(
+                start=rows[0].result.opening_date,
+                end=rows[-1].result.closing_date,
+                partial_segment=True,
+                **asdict(period),
+            )
+        )
     return SourceMonthlyReturns(
         source_account,
         tuple(rows),

@@ -9,13 +9,16 @@ from decimal import Decimal, localcontext
 
 from sqlalchemy import select
 
+from hermes_finance.domain.source_money_classifications import (
+    NARRATIVE_MAX_LENGTH,
+    OPERATION_MAX_LENGTH,
+)
 from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClassification
 from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
+from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 
 def source_reference(intake_id, row):
-    from hermes_finance.statement_import.mybroker import digest
-
     return f"money:{intake_id}:money:{row['ordinal']}:{digest(row)}"
 
 
@@ -69,6 +72,14 @@ def _amount_kopecks(amount):
         return int(value)
 
 
+def _bounded_text(value, limit):
+    if len(value) <= limit:
+        return value
+    # Keep distinct long narratives distinct for overlap deduplication.
+    suffix = f"…[{digest(value)}]"
+    return value[: limit - len(suffix)] + suffix
+
+
 def persist_money_classifications(session, intake_id, document):
     """Called inside the save transaction, after immutable observations exist.
 
@@ -94,10 +105,11 @@ def persist_money_classifications(session, intake_id, document):
             )
         )
     )
+    narratives = list(_narratives(document))
+    if len(observations) != len(narratives):
+        raise MyBrokerError("source_intake_parser_revision_changed")
     now = datetime.now(UTC)
-    for observation, (operation, narrative, _) in zip(
-        observations, _narratives(document), strict=True
-    ):
+    for observation, (operation, narrative, _) in zip(observations, narratives, strict=True):
         row = json.loads(observation.facts_json)
         reference = source_reference(intake_id, row)
         if reference in existing:
@@ -110,8 +122,8 @@ def persist_money_classifications(session, intake_id, document):
                 date=date.fromisoformat(row["date"]),
                 amount_kopecks=_amount_kopecks(row["amount"]),
                 currency=row["currency"],
-                operation=operation,
-                narrative=narrative,
+                operation=_bounded_text(operation, OPERATION_MAX_LENGTH),
+                narrative=_bounded_text(narrative, NARRATIVE_MAX_LENGTH),
                 classification=default_classification(
                     operation, narrative, row.get("kind"), row["amount"]
                 ),
@@ -130,8 +142,8 @@ def classification_dict(row):
         "date": row.date,
         "amount_kopecks": row.amount_kopecks,
         "currency": row.currency,
-        "operation": row.operation,
-        "narrative": row.narrative,
+        "operation": _bounded_text(row.operation, OPERATION_MAX_LENGTH),
+        "narrative": _bounded_text(row.narrative, NARRATIVE_MAX_LENGTH),
         "classification": row.classification,
         "origin": row.origin,
         "status": row.status,
@@ -157,7 +169,6 @@ def choose_classification(session, intake_id, reference, classification):
     from hermes_finance.domain.source_money_classifications import MoneyClassification
     from hermes_finance.persistence import ReportingMonth, SourceIntakeOriginal
     from hermes_finance.services import source_intake
-    from hermes_finance.statement_import.mybroker import MyBrokerError
 
     if classification not in get_args(MoneyClassification):
         raise MyBrokerError("money_classification_invalid")

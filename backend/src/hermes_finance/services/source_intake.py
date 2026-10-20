@@ -610,7 +610,7 @@ def _assessment(proposal, state, head_seq, override_revision):
     }
 
 
-def _view(session, original):
+def _view(session, original, *, include_money_classifications=True):
     _policy(session)
     events = _events(session, original.id)
     manifest = json.loads(events[0].payload_json)["manifest"]
@@ -696,7 +696,11 @@ def _view(session, original):
         "original_required": True,
         "document": manifest["source"],
         "proposals": proposals,
-        "money_classifications": list_classifications(session, original.id),
+        **(
+            {"money_classifications": list_classifications(session, original.id)}
+            if include_money_classifications
+            else {}
+        ),
         "observations": [
             {
                 "id": o.id,
@@ -736,7 +740,10 @@ def read_intake(session, intake_id):
 
 def list_intakes(session, month_id=None, include_unbound=False):
     with coherent_read_snapshot(session):
-        views = [_view(session, row) for row in _rows(session, SourceIntakeOriginal)]
+        views = [
+            _view(session, row, include_money_classifications=False)
+            for row in _rows(session, SourceIntakeOriginal)
+        ]
         return [
             v
             for v in views

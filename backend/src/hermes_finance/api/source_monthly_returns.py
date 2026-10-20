@@ -40,6 +40,7 @@ class MonthlyReturnResponse(BaseModel):
     previous_closing_kopecks: int | None
     coupons_kopecks: int
     dividends_kopecks: int
+    income_assumptions_used: bool
 
 
 class SourceMonthlyReturnsResponse(BaseModel):

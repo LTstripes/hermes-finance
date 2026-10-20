@@ -269,5 +269,185 @@ def test_nonrepresentable_money_is_a_gap_never_a_flow(db, amount, currency):
         assert row.amount_kopecks is None
     result = read(db)
     assert not result.flows
-    assert "invalid_external_flow" in {gap.code for gap in result.gaps}
-    assert result.months[0].result.contributions_kopecks is None
+    if currency == "RUB":
+        assert "invalid_external_flow" in {gap.code for gap in result.gaps}
+        assert result.months[0].result.contributions_kopecks is None
+    else:
+        assert {gap.code for gap in result.gaps} == {"currency_unsupported"}
+        assert result.months[0].result.contributions_kopecks == 0
+        assert result.months[0].result.modified_dietz_return is not None
+
+
+def test_overlapping_confirmed_choices_conflict_withholds_metrics(db):
+    one, _ = save_month(db)
+    two, _ = save_month(db, marker="conflicting-choice")
+    client = TestClient(create_app(database=db))
+    for intake, classification in ((one, "external_deposit"), (two, "internal_transfer")):
+        reference = saved_rows(db, intake)[0].source_reference
+        response = client.put(
+            f"/api/source-intakes/{intake}/money-classifications/{reference}",
+            json={"classification": classification},
+        )
+        assert response.status_code == 200, response.text
+    before = snapshot(db)
+    response = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "overlap_flow_choice_conflict" in {gap["code"] for gap in body["gaps"]}
+    assert body["flows"] == []
+    assert body["months"][0]["modified_dietz_return"] is None
+    assert body["months"][0]["contributions_kopecks"] is None
+    for totals in (body["period"], body["segments"][0]):
+        assert totals["growth_kopecks"] is None
+        assert totals["xirr_period_return"] is None
+        assert "unknown_flow" in totals["growth_reason_codes"]
+        assert "unknown_flow" in totals["xirr_reason_codes"]
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "classification,amount", [("external_deposit", "1"), ("external_withdrawal", "-1")]
+)
+def test_put_non_rub_external_flow_returns_409_without_mutation(db, classification, amount):
+    from test_statement_import_broker_statement_provisional import FILENAME_APRIL, provisional_xml
+
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session,
+            document=provisional_xml(cash_in=amount, candidate_currency="USD"),
+            filename=FILENAME_APRIL,
+            request_id="non-rub-choice",
+        )
+    intake = ack["intake_id"]
+    reference = saved_rows(db, intake)[0].source_reference
+    before = snapshot(db)
+    response = TestClient(create_app(database=db)).put(
+        f"/api/source-intakes/{intake}/money-classifications/{reference}",
+        json={"classification": classification},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == "invalid_external_flow"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("operation", ["Купон", "Дивиденды", "Unknown"])
+def test_non_rub_money_is_disclosed_and_excluded_from_rub_metrics(db, operation):
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_broker_statement_provisional import FILENAME_APRIL, provisional_xml
+
+    xml = ET.fromstring(
+        provisional_xml(extra_money=((operation, "Synthetic foreign-currency income", "10"),))
+    )
+    # Retain the RUB deposit and change only the last (income/unknown) Money row.
+    xml.findall(".//{MyBroker}p_code[@volume]")[-1].set("p_code", "USD")
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session,
+            document=ET.tostring(xml, encoding="utf-8"),
+            filename=FILENAME_APRIL,
+            request_id="foreign-income",
+        )
+    before = snapshot(db)
+    result = read(db)
+    assert {gap.code for gap in result.gaps} == {"currency_unsupported"}
+    assert len(result.flows) == 1
+    assert result.months[0].result.contributions_kopecks == 100_000
+    assert result.months[0].result.growth_kopecks == 21_100
+    assert result.months[0].result.modified_dietz_return is not None
+    assert result.months[0].coupons_kopecks == 0
+    assert result.months[0].dividends_kopecks == 0
+    assert result.period.growth_kopecks == 21_100
+    assert result.period.xirr_period_return is not None
+    assert not result.period.growth_reason_codes
+    assert not result.period.xirr_reason_codes
+    assert snapshot(db) == before
+
+
+def test_income_assumptions_disclosed_until_all_income_is_confirmed(db):
+    intake, _ = save_month(
+        db,
+        candidate_count=0,
+        extra=(("Купон", "Synthetic coupon", "10"), ("Дивиденды", "Synthetic dividend", "20")),
+    )
+    client = TestClient(create_app(database=db))
+
+    def month():
+        response = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT})
+        assert response.status_code == 200, response.text
+        return response.json()["months"][0]
+
+    initial = month()
+    assert initial["income_assumptions_used"]
+    assert not initial["assumptions_used"]  # Return schedule has no assumed external flows.
+    assert initial["coupons_kopecks"] == 1000
+    assert initial["dividends_kopecks"] == 2000
+    for index, row in enumerate(saved_rows(db, intake)):
+        response = client.put(
+            f"/api/source-intakes/{intake}/money-classifications/{row.source_reference}",
+            json={"classification": row.classification},
+        )
+        assert response.status_code == 200, response.text
+        assert month()["income_assumptions_used"] is (index == 0)
+    confirmed = month()
+    assert confirmed["coupons_kopecks"] == initial["coupons_kopecks"]
+    assert confirmed["dividends_kopecks"] == initial["dividends_kopecks"]
+    assert confirmed["growth_kopecks"] == initial["growth_kopecks"]
+
+
+def test_captured_text_is_bounded_listing_omits_it_and_long_rows_stay_distinct(db):
+    from hermes_finance.domain.source_money_classifications import (
+        NARRATIVE_MAX_LENGTH,
+        OPERATION_MAX_LENGTH,
+    )
+
+    operation = "Купон" + "x" * 300
+    prefix = "Synthetic private narrative " * 200
+    extra = ((operation, prefix + "A", "10"), (operation, prefix + "B", "10"))
+    intake, _ = save_month(db, candidate_count=0, extra=extra)
+    save_month(db, candidate_count=0, extra=extra, marker="bounded-overlap")
+    rows = saved_rows(db, intake)
+    assert all(len(row.operation) == OPERATION_MAX_LENGTH for row in rows)
+    assert all(len(row.narrative) == NARRATIVE_MAX_LENGTH for row in rows)
+    assert rows[0].narrative != rows[1].narrative
+    assert all(row.classification == "coupon" for row in rows)
+    client = TestClient(create_app(database=db))
+    before = snapshot(db)
+    listing = client.get("/api/broker-months/intakes")
+    assert listing.status_code == 200, listing.text
+    assert len(listing.json()) == 2
+    assert all("money_classifications" not in item for item in listing.json())
+    assert prefix not in listing.text and operation not in listing.text
+    view = client.get(f"/api/broker-months/intakes/{intake}")
+    assert view.status_code == 200, view.text
+    for row in view.json()["money_classifications"]:
+        assert len(row["operation"]) <= OPERATION_MAX_LENGTH
+        assert len(row["narrative"]) <= NARRATIVE_MAX_LENGTH
+    # Two different long narratives, repeated in overlapping reports, are two incomes.
+    assert read(db).months[0].coupons_kopecks == 2000
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("change", ["removed", "added"])
+def test_legacy_resave_parser_count_drift_is_typed_409_and_atomic(db, monkeypatch, change):
+    import json
+
+    from hermes_finance.services import source_money_classifications as classifications
+
+    with monkeypatch.context() as patch:
+        patch.setattr(source_intake, "persist_money_classifications", lambda *args: None)
+        intake, (xml, filename) = save_month(db)
+    assert not saved_rows(db, intake)
+    narratives = list(classifications._narratives(xml))
+    changed = narratives[:-1] if change == "removed" else [*narratives, narratives[0]]
+    monkeypatch.setattr(classifications, "_narratives", lambda _: iter(changed))
+    before = snapshot(db)
+    response = TestClient(create_app(database=db)).post(
+        "/api/broker-months/intakes",
+        files={"file": (filename, xml, "application/xml")},
+        data={"intent": json.dumps({"request_id": "parser-drift-resave"})},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["message"] == "source_intake_parser_revision_changed"
+    assert not saved_rows(db, intake)
+    assert snapshot(db) == before

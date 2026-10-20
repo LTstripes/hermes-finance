@@ -5719,7 +5719,11 @@ upload. Migration `0060_source_money_classifications` adds the empty
 `source_intake_money_classifications` table, linked to the original intake and
 immutable observation, unique by intake/stable source reference and observation.
 It stores source date, signed integer kopecks, currency, native operation/narrative,
-classification, origin/status and created/updated timestamps. Fractional-kopeck or
+classification, origin/status and created/updated timestamps. Captured operation
+and narrative text are capped at 256 and 4096 characters respectively; overlong
+text retains a prefix plus its full-text digest so different long rows remain
+distinct during overlap deduplication. Classification uses the original text.
+Fractional-kopeck or
 overflow amounts remain NULL and produce gaps. There is no legacy inference or
 backfill. Downgrade drops this table, including populated provisional choices,
 while preserving the pre-existing journal and financial tables; upgrade can be
@@ -5733,9 +5737,12 @@ trade settlement. Everything else is unknown, never a guessed flow. Defaults hav
 `origin=default_rule,status=assumed`. Re-upload never duplicates occurrences or
 replaces an existing classification. Exact original re-save with a new request ID
 can capture missing legacy rows; acknowledged same-request replay stays read-only.
+A changed Money extraction count refuses with
+`source_intake_parser_revision_changed` before capturing any classifications.
 
 `GET /api/broker-months/intakes/{id}` includes `money_classifications` with stable
-references. `PUT /api/source-intakes/{id}/money-classifications/{ref}` accepts only
+references and bounded text. The intake listing omits this field.
+`PUT /api/source-intakes/{id}/money-classifications/{ref}` accepts only
 `{classification}` from `external_deposit, external_withdrawal, coupon, dividend,
 fee, tax, trade_settlement, internal_transfer, unknown`. It reserves the writer,
 validates intake/reference and any bound draft month, and persists
@@ -5747,17 +5754,29 @@ financial receipts, recognized observations or Close authority.
 Monthly GET reads saved classifications without reattaching originals. External
 deposits/withdrawals enter the schedule with their persisted status;
 `coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
-per month, without adding it again as investor flow. Unknown money stays in
+per month, without adding it again as investor flow. The monthly
+`income_assumptions_used` flag is true when any included coupon/dividend uses
+an assumed default; return-schedule `assumptions_used` remains separate.
+Non-RUB Money rows produce `currency_unsupported` and are excluded from RUB
+income and flows without blocking otherwise known RUB metrics. Unknown RUB money
+stays in
 `unrecognized_money` gaps and withholds flow-dependent metrics with `unknown_flow`.
 Missing classifications on pre-migration intakes produce
 `classification_missing_legacy_intake`; reads never backfill or interpret missing
-rows as zero. Income subtotals are partial when gaps exist. Python callers may
+rows as zero. An unreadable or native-scope-ambiguous original marks every
+month it covers as having unknown flows: affected month, period and segment
+contributions/withdrawals, growth and rates remain NULL with `unknown_flow`.
+Independent complete months remain available. Income subtotals are partial when
+gaps exist. Python callers may
 still verify exact originals through the provisional context reader and supply
 source-bound transient choices for default external rows; a persisted user choice
 always takes precedence. Overlap deduplication preserves references and same-report
 multiplicity, prefers confirmed choices, and discloses conflicting choices.
 Missing monthly boundaries split `segments` into contiguous available month groups
 with each group's own endpoints, flows and partial chained return/XIRR/growth.
+When a continuous long report supplies only the outer endpoints and no complete
+monthly group exists, it retains one `partial_segment` with the outer-period
+totals; its monthly chain remains unavailable.
 
 <a id="c7-broker_statement_provisional-12"></a>
 ### Source-intake provisional account estimate

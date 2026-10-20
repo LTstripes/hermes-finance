@@ -1,6 +1,7 @@
 """Synthetic monthly source-account estimates; no Owner sources or finance writes."""
 
 import calendar
+from dataclasses import asdict
 from datetime import date
 from decimal import Decimal
 from xml.etree import ElementTree as ET
@@ -347,6 +348,14 @@ def test_long_report_does_not_invent_intermediate_month_end(db):
     assert result.months[2].result.opening_kopecks is None
     assert result.months[2].result.closing_kopecks == 1_121_100
     assert result.period.growth_kopecks == 121_100
+    assert result.period.xirr_period_return is not None
+    assert len(result.segments) == 1
+    segment = result.segments[0]
+    assert (segment.start, segment.end) == (date(2030, 3, 31), date(2030, 6, 30))
+    assert segment.partial_segment
+    assert segment.chained_return is None
+    assert segment.chain_reason_codes == ("missing_endpoint",)
+    assert {key: asdict(segment)[key] for key in asdict(result.period)} == asdict(result.period)
 
 
 def test_combined_native_client_operation_uses_signed_amount(db):
@@ -442,3 +451,165 @@ def test_api_segments_complete_partial_endpoint_and_unknown_flows(db):
     assert "unknown_flow" in segment["chain_reason_codes"]
     empty = client.get("/api/source-returns/monthly", params={"source_account": "other"}).json()
     assert empty["segments"] == []
+
+
+@pytest.mark.parametrize("failure", ["unreadable", "ambiguous"])
+@pytest.mark.parametrize("coverage", ["interior", "long"])
+def test_unknown_source_flows_block_covered_metrics_and_keep_independent_months(
+    db, monkeypatch, failure, coverage
+):
+    april, apr = save_month(db, beginning="8000", candidate_count=0)
+    may, may_xml = save_month(
+        db,
+        5,
+        beginning="9211",
+        closing="14211",
+        candidate_count=0,
+        extra=(("Внесено по распоряжению Клиента", "Synthetic funding", "5000"),),
+    )
+    june, jun = save_month(db, 6, beginning="14211", closing="16711", candidate_count=0)
+    originals = {april: apr, may: may_xml, june: jun}
+    intact = read(db, originals)
+    assert intact.period.contributions_kopecks == 500_000
+    assert intact.period.growth_kopecks == 371_100
+    assert intact.period.xirr_period_return is not None
+    if coverage == "long":
+        xml = provisional_xml(beginning="8000", closing="16711", candidate_count=0)
+        filename = "Брокерский 1234567 (01.04.30-30.06.30).xml"
+        with db.session_factory() as session:
+            ack = source_intake.save_intake(
+                session, document=xml, filename=filename, request_id="long-overlap"
+            )
+        failed = ack["intake_id"]
+        originals[failed] = (xml, filename)
+        # An independent month outside the unreadable report must remain usable.
+        save_month(db, 7, beginning="16711", closing="17711", candidate_count=0)
+        affected = (0, 1, 2)
+    else:
+        failed = may
+        affected = (1,)
+    if failure == "unreadable":
+        originals[failed] = (b"corrupt synthetic original", originals[failed][1])
+        expected_gap = "source_reader_unavailable"
+    else:
+        from copy import deepcopy
+
+        reader = source_intake.read_intake
+
+        def ambiguous(session, intake_id):
+            view = reader(session, intake_id)
+            if intake_id == failed:
+                view = deepcopy(view)
+                view["document"]["positions"][0]["source_account"] = "other-synthetic-account"
+            return view
+
+        monkeypatch.setattr(source_intake, "read_intake", ambiguous)
+        expected_gap = "native_source_scope_ambiguous"
+    before = snapshot(db)
+    result = read(db, originals)
+    assert expected_gap in {gap.code for gap in result.gaps}
+    for index, row in enumerate(result.months):
+        if index in affected:
+            assert row.result.contributions_kopecks is None
+            assert row.result.withdrawals_kopecks is None
+            assert row.result.growth_kopecks is None
+            assert row.result.modified_dietz_return is None
+            assert "unknown_flow" in row.result.reason_codes
+        else:
+            assert row.result.growth_kopecks is not None
+            assert row.result.modified_dietz_return is not None
+            assert "unknown_flow" not in row.result.reason_codes
+    assert result.period.contributions_kopecks is None
+    assert result.period.withdrawals_kopecks is None
+    assert result.period.growth_kopecks is None
+    assert result.period.chained_return is None
+    assert result.period.xirr_annualized_return is None
+    assert result.period.xirr_period_return is None
+    for reasons in (
+        result.period.chain_reason_codes,
+        result.period.growth_reason_codes,
+        result.period.xirr_reason_codes,
+    ):
+        assert "unknown_flow" in reasons
+    if coverage == "long":
+        (segment,) = result.segments
+        assert segment.partial_segment
+        for field in (
+            "contributions_kopecks",
+            "withdrawals_kopecks",
+            "growth_kopecks",
+            "chained_return",
+            "xirr_annualized_return",
+            "xirr_period_return",
+        ):
+            assert getattr(segment, field) is None
+        assert "unknown_flow" in segment.growth_reason_codes
+        assert "unknown_flow" in segment.xirr_reason_codes
+    else:
+        assert len(result.segments) == 2
+        assert all(segment.growth_kopecks is not None for segment in result.segments)
+        assert all(segment.xirr_period_return is not None for segment in result.segments)
+    assert snapshot(db) == before
+
+
+def test_unreadable_overlap_blocks_segment_even_with_available_endpoints(db):
+    one, _ = save_month(db)
+    two, second = save_month(db, marker="unreadable-overlap")
+    save_month(db, 5, candidate_count=0)
+    result = read(db, {two: (b"corrupt synthetic original", second[1])})
+    assert not result.months[0].result.missing_endpoint
+    assert result.months[0].result.growth_kopecks is None
+    assert result.months[1].result.growth_kopecks is not None
+    (segment,) = result.segments
+    assert segment.growth_kopecks is None
+    assert segment.contributions_kopecks is None
+    assert segment.xirr_period_return is None
+    assert "unknown_flow" in segment.growth_reason_codes
+    assert "unknown_flow" in segment.xirr_reason_codes
+    assert one != two
+
+
+@pytest.mark.parametrize("unknown_flow", [False, True])
+def test_api_long_report_segment_retains_outer_metrics_and_flow_blockers(db, unknown_flow):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    extra = (("Unknown", "Synthetic unknown", "17"),) if unknown_flow else ()
+    xml = provisional_xml(candidate_count=0, extra_money=extra)
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session,
+            document=xml,
+            filename="Брокерский 1234567 (01.04.30-30.06.30).xml",
+            request_id="long-api",
+        )
+    before = snapshot(db)
+    response = TestClient(create_app(database=db)).get(
+        "/api/source-returns/monthly", params={"source_account": ACCOUNT}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    (segment,) = body["segments"]
+    assert segment["partial_segment"]
+    assert segment["start"] == "2030-03-31"
+    assert segment["end"] == "2030-06-30"
+    assert all(row["missing_endpoint"] for row in body["months"])
+    assert {key: segment[key] for key in body["period"]} == body["period"]
+    assert segment["chained_return"] is None
+    if unknown_flow:
+        for field in (
+            "contributions_kopecks",
+            "withdrawals_kopecks",
+            "growth_kopecks",
+            "xirr_annualized_return",
+            "xirr_period_return",
+        ):
+            assert segment[field] is None
+        assert "unknown_flow" in segment["growth_reason_codes"]
+        assert "unknown_flow" in segment["xirr_reason_codes"]
+    else:
+        assert segment["contributions_kopecks"] == 0
+        assert segment["growth_kopecks"] == 121_100
+        assert isinstance(segment["xirr_period_return"], str)
+    assert snapshot(db) == before
