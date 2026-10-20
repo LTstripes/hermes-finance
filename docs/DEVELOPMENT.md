@@ -1247,6 +1247,11 @@ Hermes is a first-class Worker: receiving session owns one final candidate, opti
 
 Default execution is one accountable Worker and only required independent review. A request for autonomous/careful work does not activate an unattended queue. Optional delivery-loop mode requires explicit opt-in and a concrete coordination reason; it does not grant canonical integration authority.
 
+The root coordinates; after delegating implementation it does not become a second writer. Each Worker owns its frozen candidate and verification.
+The root assesses the actual candidate; required independent review uses a separate Reviewer. Remediation returns to the same Worker.
+One remediation cycle is the default; a second needs explicit authorization, with the existing absolute cap of two.
+Internal outcomes are `INTERNAL_ACCEPT`, `FIXES_REQUIRED`, `BLOCKED` or `BLOCKED_FOR_INTEGRATION`; none equals project ACCEPT or permission to merge.
+
 Codex can use its configured local skills and GitHub tools; OpenCode, Grok, Gemini, Hermes and ChatGPT use the same five-book rules and configured client roots. Launch prompts should normally be 5–10 lines with exact issue/note, role, baseline/target, branch/isolation, result and authorized delivery. Select available capability for risk; local configuration owns concrete model/effort. Do not invent tool availability, force a client switch or resurrect model identity/grades/usage accounting. CBM is optional and never requires a used/skipped report or index maintenance; verify any index result against the assigned checkout. Installed optional skills do not override project authority or enable implicit queue execution.
 
 <a id="d6-agent_orchestration-92"></a>
