@@ -12,8 +12,8 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 from sqlalchemy import select
 
 from hermes_finance.database import coherent_read_operation
-from hermes_finance.persistence import SourceIntakeOriginal
-from hermes_finance.services import source_intake
+from hermes_finance.persistence import ExecutedTrade, SourceIntakeOriginal
+from hermes_finance.services import broker_trade_money, source_intake
 from hermes_finance.services.broker_statement_provisional import _minor
 from hermes_finance.services.source_monthly_returns import (
     SourceReturnGap,
@@ -22,6 +22,7 @@ from hermes_finance.services.source_monthly_returns import (
     _native_scope,
     _next_month,
 )
+from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 
@@ -45,11 +46,11 @@ class InstrumentReturnTotals:
     buys_cost_kopecks: int | None
     sells_proceeds_kopecks: int | None
     price_effect_kopecks: int | None
-    coupons_kopecks: int
-    dividends_kopecks: int
-    assumed_income_kopecks: int
-    confirmed_income_kopecks: int
-    income_kopecks: int
+    coupons_kopecks: int | None
+    dividends_kopecks: int | None
+    assumed_income_kopecks: int | None
+    confirmed_income_kopecks: int | None
+    income_kopecks: int | None
     total_kopecks: int | None
     capital_base_kopecks: int | None
     return_percent: Decimal | None
@@ -73,6 +74,7 @@ class InstrumentReturnMonth(InstrumentReturnTotals):
 class InstrumentAllTime(InstrumentReturnTotals):
     available_months: tuple[date, ...]
     missing_months: tuple[date, ...]
+    partial_months: tuple[date, ...]
     partial: bool
 
 
@@ -247,12 +249,68 @@ def _endpoint(views, isin, month, *, closing, flags):
     return tuple(result)
 
 
-def _trades(views, isin, month, instrument_type, flags):
+def _trade_core(core):
+    return core | {"currency": normalize_currency(core["currency"])}
+
+
+def _native_total_basis(session, trade):
+    """Use only a current accepted proof matching this exact native trade.
+
+    Source-intake V1 alone stores no reviewed NKD inclusion basis. Matching
+    amounts never discovers one. Existing cash proofs currently cover buys.
+    """
+    proof = broker_trade_money.effective_proof(session, trade["identity"])
+    if not proof or "proof_variant" in proof:
+        return None
+    accepted = session.scalar(
+        select(ExecutedTrade).where(ExecutedTrade.source_identity == trade["identity"])
+    )
+    if accepted is None or _trade_core(json.loads(accepted.core_json)) != _trade_core(
+        trade["core"]
+    ):
+        return None
+    basis = proof["claims"].get("native_total_basis")
+    if (
+        basis not in {"includes_paid_nkd", "excludes_paid_nkd"}
+        or proof["source_identity"] != trade["identity"]
+        or proof["native_ids"] != trade["ids"]
+    ):
+        return None
+    with localcontext() as context:
+        context.prec = 100
+        groups = {
+            role: [
+                {
+                    "amount": str(Decimal(proof["signed_minor"][key]) / 100),
+                    "date": proof["nkd_leg"]["effective_date"],
+                    "currency": proof["nkd_leg"]["currency"],
+                }
+            ]
+            for role, key in (
+                ("settlement", "settlement"),
+                ("paid_nkd", "paid_nkd"),
+                ("commission", "commission"),
+            )
+        }
+    normalized = dict(trade, core=_trade_core(trade["core"]))
+    return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
+
+
+def _trade_cash_total(amount, nkd, fee, quantity, basis):
+    if basis not in {"includes_paid_nkd", "excludes_paid_nkd"}:
+        return None
+    total = amount + (nkd if basis == "excludes_paid_nkd" else 0)
+    return total + fee if quantity > 0 else total - fee
+
+
+def _trades(session, views, isin, month, instrument_type, flags):
     groups = defaultdict(list)
     for view in views:
         for trade in view["document"].get("trades", []):
             if trade["core"]["isin"] == isin:
-                key = trade.get("identity") or digest([view["id"], trade])
+                key = trade.get("identity") or object()
+                # Keep unresolved occurrences separate solely to flag their months;
+                # they are never eligible for counting or deduplication.
                 groups[key].append(trade)
     buys = sells = 0
     quantity = Decimal(0)
@@ -280,7 +338,11 @@ def _trades(views, isin, month, instrument_type, flags):
             ]
             if not relevant:
                 continue
-            if len({digest(t["core"]) for t in observations}) != 1:
+            if any(not t.get("identity") or len(t.get("ids", [])) != 2 for t in relevant):
+                flags.add("trade_identity_unresolved")
+                invalid = True
+                continue
+            if len({digest(_trade_core(t["core"])) for t in observations}) != 1:
                 flags.add("overlapping_trade_conflict")
                 invalid = True
                 continue
@@ -289,7 +351,6 @@ def _trades(views, isin, month, instrument_type, flags):
                     {
                         k: t.get(k)
                         for k in (
-                            "core",
                             "settlement_date",
                             "bank_commission",
                             "accrued_interest",
@@ -309,10 +370,10 @@ def _trades(views, isin, month, instrument_type, flags):
                 flags.add("trade_missing_settlement")
                 invalid = True
                 continue
-            if core["currency"] != "RUB" or trade.get("repo_observed"):
+            if normalize_currency(core["currency"]) != "RUB" or trade.get("repo_observed"):
                 flags.add(
                     "trade_currency_unsupported"
-                    if core["currency"] != "RUB"
+                    if normalize_currency(core["currency"]) != "RUB"
                     else "repo_trade_unsupported"
                 )
                 invalid = True
@@ -333,10 +394,20 @@ def _trades(views, isin, month, instrument_type, flags):
                 flags.add("trade_components_missing")
                 invalid = True
                 continue
+            basis = (
+                "excludes_paid_nkd"
+                if instrument_type == "stock"
+                else _native_total_basis(session, trade)
+            )
+            cash_total = _trade_cash_total(amount, nkd, fee, qty, basis)
+            if cash_total is None:
+                flags.add("trade_nkd_basis_unknown")
+                invalid = True
+                continue
             if qty > 0:
-                buys += amount + nkd + fee
+                buys += cash_total
             else:
-                sells += amount + nkd - fee
+                sells += cash_total
             with localcontext() as context:
                 context.prec = 100
                 quantity += qty
@@ -360,11 +431,16 @@ _SOURCE_GAPS = {
     "native_source_scope_ambiguous",
     "unparsed_source_rows",
     "unknown_section",
+    "position_row_unclassified",
 }
 _DISCLOSURES = {"bond_valuation_basis_unknown", "income_assumed", "income_confirmed"}
 
 
-def _month(views, isin, instrument_type, month, income, gaps, previous):
+def _source_gap(code):
+    return code in _SOURCE_GAPS or code.endswith("_unsupported")
+
+
+def _month(session, views, isin, instrument_type, month, income, gaps, previous):
     end = _month_end(month)
     relevant = [
         v
@@ -382,13 +458,13 @@ def _month(views, isin, instrument_type, month, income, gaps, previous):
         if (
             gap.month == month
             and gap.isin in (None, isin)
-            and gap.code in (_INCOME_GAPS | _SOURCE_GAPS)
+            and (gap.code in _INCOME_GAPS or _source_gap(gap.code))
         ):
             flags.add(gap.code)
     q0, v0 = _endpoint(relevant, isin, month, closing=False, flags=flags)
     q1, v1 = _endpoint(relevant, isin, month, closing=True, flags=flags)
-    buys, sells, traded_quantity = _trades(views, isin, month, instrument_type, flags)
-    if not relevant or _SOURCE_GAPS & flags:
+    buys, sells, traded_quantity = _trades(session, views, isin, month, instrument_type, flags)
+    if not relevant or any(_source_gap(flag) for flag in flags):
         buys = sells = None
     if previous and (
         (
@@ -413,10 +489,19 @@ def _month(views, isin, instrument_type, month, income, gaps, previous):
         ):
             flags.add("seam_mismatch")
     paid = [row for row in income if row.isin == isin and row.event_date.replace(day=1) == month]
-    coupons = sum(row.amount_kopecks for row in paid if row.classification == "coupon")
-    dividends = sum(row.amount_kopecks for row in paid if row.classification == "dividend")
-    assumed = sum(row.amount_kopecks for row in paid if row.status == "assumed")
-    confirmed = sum(row.amount_kopecks for row in paid if row.status == "confirmed")
+    income_complete = bool(relevant) and not (
+        flags & _INCOME_GAPS or any(_source_gap(flag) for flag in flags)
+    )
+
+    def observed_income(rows):
+        values = [row.amount_kopecks for row in rows]
+        return sum(values) if values or income_complete else None
+
+    coupons = observed_income(row for row in paid if row.classification == "coupon")
+    dividends = observed_income(row for row in paid if row.classification == "dividend")
+    assumed = observed_income(row for row in paid if row.status == "assumed")
+    confirmed = observed_income(row for row in paid if row.status == "confirmed")
+    income_total = observed_income(paid)
     assumptions = any(row.status == "assumed" for row in paid)
     if assumptions:
         flags.add("income_assumed")
@@ -424,7 +509,7 @@ def _month(views, isin, instrument_type, month, income, gaps, previous):
         flags.add("income_confirmed")
     price = None if None in (v0, v1, buys, sells) else v1 - v0 - buys + sells
     base = None if None in (v0, buys) else v0 + buys
-    total = None if price is None or _INCOME_GAPS & flags else price + coupons + dividends
+    total = None if price is None or not income_complete else price + income_total
     if base is not None and base <= 0:
         flags.add("nonpositive_capital_base")
     return InstrumentReturnMonth(
@@ -440,14 +525,14 @@ def _month(views, isin, instrument_type, month, income, gaps, previous):
         dividends_kopecks=dividends,
         assumed_income_kopecks=assumed,
         confirmed_income_kopecks=confirmed,
-        income_kopecks=coupons + dividends,
+        income_kopecks=income_total,
         total_kopecks=total,
         capital_base_kopecks=base,
         return_percent=_percent(total, base),
         income_assumptions_used=assumptions,
-        income_complete=not bool(flags & (_INCOME_GAPS | _SOURCE_GAPS | {"missing_month"})),
+        income_complete=income_complete,
         flags=tuple(sorted(flags)),
-        approximate=bool(flags - {"income_assumed", "income_confirmed"}),
+        approximate=bool(flags - {"income_confirmed"}),
         intake_ids=tuple(v["id"] for v in relevant),
     )
 
@@ -455,9 +540,12 @@ def _month(views, isin, instrument_type, month, income, gaps, previous):
 def _all_time(months):
     flags = set(flag for row in months for flag in row.flags)
     available = [row for row in months if row.total_kopecks is not None]
-    missing = [row.month for row in months if row.total_kopecks is None]
-    if missing:
-        flags.add("missing_month")
+    missing = [row.month for row in months if "missing_month" in row.flags]
+    partial = [
+        row.month
+        for row in months
+        if row.total_kopecks is None and "missing_month" not in row.flags
+    ]
 
     def subtotal(field):
         values = [getattr(row, field) for row in months if getattr(row, field) is not None]
@@ -471,11 +559,11 @@ def _all_time(months):
         buys_cost_kopecks=subtotal("buys_cost_kopecks"),
         sells_proceeds_kopecks=subtotal("sells_proceeds_kopecks"),
         price_effect_kopecks=subtotal("price_effect_kopecks"),
-        coupons_kopecks=sum(row.coupons_kopecks for row in months),
-        dividends_kopecks=sum(row.dividends_kopecks for row in months),
-        assumed_income_kopecks=sum(row.assumed_income_kopecks for row in months),
-        confirmed_income_kopecks=sum(row.confirmed_income_kopecks for row in months),
-        income_kopecks=sum(row.income_kopecks for row in months),
+        coupons_kopecks=subtotal("coupons_kopecks"),
+        dividends_kopecks=subtotal("dividends_kopecks"),
+        assumed_income_kopecks=subtotal("assumed_income_kopecks"),
+        confirmed_income_kopecks=subtotal("confirmed_income_kopecks"),
+        income_kopecks=subtotal("income_kopecks"),
         total_kopecks=total,
         capital_base_kopecks=base,
         return_percent=_percent(total, base),
@@ -485,7 +573,8 @@ def _all_time(months):
         approximate=any(row.approximate for row in months),
         available_months=tuple(row.month for row in available),
         missing_months=tuple(missing),
-        partial=bool(missing or flags - _DISCLOSURES),
+        partial_months=tuple(partial),
+        partial=bool(missing or partial or flags - _DISCLOSURES),
     )
 
 
@@ -509,7 +598,17 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
             while month <= original.covered_to:
                 gaps.extend(
                     InstrumentReturnGap(code, original.id, month)
-                    for code in view["document"].get("syntax_blockers", [])
+                    for code in (
+                        *view["document"].get("syntax_blockers", []),
+                        *(
+                            code
+                            for code in (
+                                *view["document"].get("endpoint_blockers", []),
+                                *view["document"].get("endpoint_conflicts", []),
+                            )
+                            if _source_gap(code)
+                        ),
+                    )
                 )
                 month = _next_month(month)
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError) as error:
@@ -534,7 +633,9 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
             rows = []
             month = start
             while month <= end:
-                row = _month(views, isin, kind, month, income, gaps, rows[-1] if rows else None)
+                row = _month(
+                    session, views, isin, kind, month, income, gaps, rows[-1] if rows else None
+                )
                 rows.append(row)
                 month = _next_month(month)
             instruments.append(

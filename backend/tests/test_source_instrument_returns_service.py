@@ -1,8 +1,9 @@
 """Fabricated native statements only; source estimates never write financial rows."""
 
 import calendar
+import json
 from copy import deepcopy
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal, localcontext
 from xml.etree import ElementTree as ET
 
@@ -12,13 +13,21 @@ from test_source_monthly_returns_service import snapshot
 from test_statement_import_broker_statement_provisional import _free_database, provisional_xml
 from test_statement_import_mybroker import ACCOUNT, ISIN
 
-from hermes_finance.persistence import SourceMoneyClassification
+from hermes_finance.persistence import Account, ExecutedTrade, Instrument, SourceMoneyClassification
+from hermes_finance.services import source_instrument_returns as service
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_instrument_returns import _attribute, read_instrument_returns
 from hermes_finance.services.source_money_classifications import choose_classification
 from hermes_finance.statement_import.mybroker import NS, MyBrokerError
 
 BOND = "RU000A000001"
+INCOME_FIELDS = (
+    "coupons_kopecks",
+    "dividends_kopecks",
+    "assumed_income_kopecks",
+    "confirmed_income_kopecks",
+    "income_kopecks",
+)
 
 
 @pytest.fixture
@@ -26,6 +35,12 @@ def db(tmp_path):
     database = _free_database(tmp_path)
     yield database
     database.engine.dispose()
+
+
+@pytest.fixture
+def accepted_basis(monkeypatch):
+    # Explicit synthetic proof boundary; saved native totals never imply a basis.
+    monkeypatch.setattr(service, "_native_total_basis", lambda session, trade: "excludes_paid_nkd")
 
 
 def save(
@@ -114,7 +129,7 @@ def by_isin(result):
     return {row.isin: row for row in result.instruments}
 
 
-def test_stock_dividend_bond_coupon_nkd_purchase_sale_and_all_time(db):
+def test_stock_dividend_bond_coupon_nkd_purchase_sale_and_all_time(db, accepted_basis):
     intake = save(
         db,
         extra=(("Дивиденды", f"Payment {ISIN}", "25"), ("Купон", "Payment Synthetic bond", "30")),
@@ -179,6 +194,11 @@ def test_missing_month_is_null_and_all_time_is_explicit_available_sum(db):
         "closing_value_kopecks",
         "buys_cost_kopecks",
         "sells_proceeds_kopecks",
+        "coupons_kopecks",
+        "dividends_kopecks",
+        "assumed_income_kopecks",
+        "confirmed_income_kopecks",
+        "income_kopecks",
         "total_kopecks",
         "return_percent",
     ):
@@ -192,7 +212,7 @@ def test_missing_month_is_null_and_all_time_is_explicit_available_sum(db):
     assert "missing_month" in result.all_time.flags
 
 
-def test_unattributed_coupon_is_retained_and_prevents_false_complete_total(db):
+def test_unattributed_coupon_is_retained_and_prevents_false_complete_total(db, accepted_basis):
     save(db, extra=(("Купон", "No saved instrument identity", "17"),))
     save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
     result = read(db)
@@ -229,7 +249,7 @@ def test_bad_trade_only_blocks_its_instrument_month(db, missing):
     assert second.total_kopecks == 3_000
 
 
-def test_bond_sale_adds_received_nkd_and_subtracts_fees(db):
+def test_bond_sale_adds_received_nkd_and_subtracts_fees(db, accepted_basis):
     save(db, bond=("2", "1", "2000", "1050"), trades=((BOND, "-1", "1000", "20", "5"),))
     row = by_isin(read(db))[BOND].months[0]
     assert row.sells_proceeds_kopecks == 101_500
@@ -247,7 +267,7 @@ def test_seams_use_own_valuations_and_quantity_without_trade_is_flagged(db):
     assert "seam_mismatch" not in result[BOND].months[1].flags
 
 
-def test_overlaps_deduplicate_trades_and_preserve_income_multiplicity(db):
+def test_overlaps_deduplicate_trades_and_preserve_income_multiplicity(db, accepted_basis):
     extra = (("Купон", BOND, "30"), ("Купон", BOND, "30"))
     save(db, extra=extra)
     save(db, extra=extra, marker="overlap")
@@ -315,6 +335,8 @@ def test_unreadable_overlap_blocks_only_its_covered_months(db, monkeypatch):
     for instrument in read(db).instruments:
         assert instrument.months[0].total_kopecks is None
         assert "source_reader_unavailable" in instrument.months[0].flags
+        for field in INCOME_FIELDS:
+            assert getattr(instrument.months[0], field) is None
         assert instrument.months[1].total_kopecks is not None
     assert snapshot(db) == before
 
@@ -363,7 +385,7 @@ def test_zero_base_leaves_percentage_null(db):
     assert "nonpositive_capital_base" in row.flags
 
 
-def test_get_api_decimal_strings_integer_money_no_store_and_no_writes(db):
+def test_get_api_decimal_strings_integer_money_no_store_and_no_writes(db, accepted_basis):
     from fastapi.testclient import TestClient
 
     from hermes_finance.main import create_app
@@ -389,6 +411,7 @@ def test_get_api_decimal_strings_integer_money_no_store_and_no_writes(db):
     bond = next(row for row in body["instruments"] if row["isin"] == BOND)
     assert bond["months"][0]["approximate"]
     assert isinstance(bond["months"][0]["return_percent"], str)
+    assert row["approximate"] and stock["all_time"]["approximate"]
     assert snapshot(db) == before
     assert client.get("/api/source-returns/instruments").status_code == 422
     for value in ("", "has whitespace", "x" * 257):
@@ -421,6 +444,8 @@ def test_api_missing_month_and_unattributed_income_remain_explicit(db):
         assert instrument["months"][0]["total_kopecks"] is None
         assert instrument["months"][1]["total_kopecks"] is None
         assert instrument["months"][1]["return_percent"] is None
+        for field in INCOME_FIELDS:
+            assert instrument["months"][1][field] is None
         assert instrument["all_time"]["partial"]
         assert "missing_month" in instrument["all_time"]["flags"]
         assert instrument["all_time"]["available_months"] == ["2030-06-01"]
@@ -533,3 +558,304 @@ def test_one_money_reader_failure_does_not_fail_response_or_other_months(db, mon
         assert instrument.months[0].total_kopecks is None
         assert instrument.months[1].total_kopecks is not None
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "basis,amount",
+    [
+        ("includes_paid_nkd", "1020"),
+        ("excludes_paid_nkd", "1000"),
+    ],
+)
+@pytest.mark.parametrize("quantity", ["1", "-1"])
+def test_bond_native_total_basis_counts_nkd_once(db, monkeypatch, basis, amount, quantity):
+    monkeypatch.setattr(service, "_native_total_basis", lambda session, trade: basis)
+    bond = ("2", "3", "2000", "3150") if quantity == "1" else ("2", "1", "2000", "1050")
+    save(db, bond=bond, trades=((BOND, quantity, amount, "20", "5"),))
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    if quantity == "1":
+        assert row.buys_cost_kopecks == 102_500
+        assert row.sells_proceeds_kopecks == 0
+        assert row.price_effect_kopecks == row.total_kopecks == 12_500
+        assert row.capital_base_kopecks == 302_500
+    else:
+        assert row.buys_cost_kopecks == 0
+        assert row.sells_proceeds_kopecks == 101_500
+        assert row.price_effect_kopecks == row.total_kopecks == 6_500
+        assert row.capital_base_kopecks == 200_000
+    assert row.return_percent == service._percent(row.total_kopecks, row.capital_base_kopecks)
+    assert "trade_nkd_basis_unknown" not in row.flags
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("quantity", ["1", "-1"])
+def test_unknown_native_bond_basis_withholds_costs_without_guessing(db, quantity):
+    save(db, trades=((BOND, quantity, "1020", "20", "5"),))
+    save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
+    result = by_isin(read(db))
+    first, second = result[BOND].months
+    assert first.buys_cost_kopecks is None and first.sells_proceeds_kopecks is None
+    assert first.price_effect_kopecks is None and first.total_kopecks is None
+    assert first.return_percent is None and "trade_nkd_basis_unknown" in first.flags
+    assert second.total_kopecks == 3_000
+    assert result[BOND].all_time.partial_months == (date(2030, 4, 1),)
+    assert result[BOND].all_time.missing_months == ()
+    assert result[ISIN].months[0].total_kopecks == 10_000
+
+
+@pytest.mark.parametrize(
+    "section,code",
+    [
+        ("Trades3", "4_Transfers_unsupported"),
+        ("Trades4", "5_UFSR_unsupported"),
+        ("Positions", "position_row_unclassified"),
+    ],
+)
+def test_opaque_source_structure_is_a_month_local_gap(db, section, code):
+    def mutate(root):
+        if section == "Positions":
+            position = deepcopy(root.find(".//m:Details[@ISIN1]", NS))
+            position.set("ISIN1", "")
+            position.set("active_type", "Unknown synthetic position")
+            root.find(".//m:Details_Collection", NS).append(position)
+        else:
+            ET.SubElement(
+                root.find("m:" + section + "/m:Report", NS), "{MyBroker}OpaqueSyntheticSection"
+            )
+
+    save(db, trades=(), stock=("10", "12", "1000", "1300"), mutate=mutate)
+    save(db, 5, trades=(), stock=("12", "12", "1300", "1400"), bond=("3", "3", "3150", "3180"))
+    result = read(db)
+    assert code in {gap.code for gap in result.gaps}
+    for instrument in result.instruments:
+        first, second = instrument.months
+        assert code in first.flags
+        assert first.buys_cost_kopecks is None and first.sells_proceeds_kopecks is None
+        assert first.price_effect_kopecks is None and first.total_kopecks is None
+        assert not first.income_complete
+        assert all(getattr(first, field) is None for field in INCOME_FIELDS)
+        assert second.total_kopecks is not None and second.income_complete
+        assert code not in second.flags
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_one_part_trade_identity_is_unresolved_even_in_overlaps(db, overlap):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("trade_no", "10000000001")
+
+    save(db, mutate=mutate)
+    if overlap:
+        save(db, mutate=mutate, marker="same-one-part-trade")
+    save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
+    result = by_isin(read(db))
+    first, second = result[BOND].months
+    assert "trade_identity_unresolved" in first.flags
+    assert first.buys_cost_kopecks is None and first.sells_proceeds_kopecks is None
+    assert first.total_kopecks is None and first.return_percent is None
+    assert second.total_kopecks == 3_000
+    assert result[ISIN].months[0].total_kopecks == 10_000
+
+
+@pytest.mark.parametrize("gap", ["unparsed", "unreadable", "unknown_money"])
+def test_unknown_income_without_observations_is_null_in_month_and_all_time(db, monkeypatch, gap):
+    def mutate(root):
+        if gap == "unparsed":
+            ET.SubElement(root.find("m:Trades/m:Report", NS), "{MyBroker}UnknownTradeShape")
+
+    failed = save(
+        db,
+        trades=(),
+        mutate=mutate,
+        extra=(("Unknown", "Synthetic unknown income", "17"),) if gap == "unknown_money" else (),
+    )
+    if gap == "unreadable":
+        # A long readable intake supplies identities but not monthly income coverage.
+        save(db, end_month=5, trades=(), marker="identity-only")
+        reader = source_intake.read_intake
+
+        def broken(session, intake_id):
+            if intake_id == failed:
+                raise MyBrokerError("synthetic unavailable intake")
+            view = deepcopy(reader(session, intake_id))
+            view["document"]["money"] = []
+            return view
+
+        monkeypatch.setattr(source_intake, "read_intake", broken)
+    result = read(db)
+    for instrument in result.instruments:
+        first = instrument.months[0]
+        assert not first.income_complete and first.total_kopecks is None
+        for field in INCOME_FIELDS:
+            assert getattr(first, field) is None
+            # For unreadable April, the covered May confirms zero; otherwise no
+            # month supplies even an observed subtotal.
+            assert getattr(instrument.all_time, field) == (0 if gap == "unreadable" else None)
+
+
+def test_all_time_separates_covered_partial_total_from_missing_coverage(db):
+    save(db, trades=(), extra=(("Купон", "Unknown security", "17"),))
+    save(db, 5, trades=(), stock=("10", "10", "1100", "1150"), extra=(("Дивиденды", ISIN, "10"),))
+    instrument = by_isin(read(db))[ISIN]
+    first, second = instrument.months
+    assert first.price_effect_kopecks == 10_000 and first.total_kopecks is None
+    assert first.income_kopecks is None
+    assert second.price_effect_kopecks == 5_000 and second.income_kopecks == 1_000
+    total = instrument.all_time
+    assert total.price_effect_kopecks == 15_000 and total.income_kopecks == 1_000
+    assert total.total_kopecks == 6_000  # Available monthly totals, not component sums.
+    assert total.available_months == (date(2030, 5, 1),)
+    assert total.partial_months == (date(2030, 4, 1),)
+    assert total.missing_months == () and "missing_month" not in total.flags
+    assert total.partial and not total.income_complete
+
+
+def test_partial_income_keeps_only_observed_subtotals(db):
+    save(db, trades=(), extra=(("Купон", "Unknown security", "17"), ("Дивиденды", ISIN, "10")))
+    instrument = by_isin(read(db))[ISIN]
+    row = instrument.months[0]
+    assert row.dividends_kopecks == row.income_kopecks == row.assumed_income_kopecks == 1_000
+    assert row.coupons_kopecks is None and row.confirmed_income_kopecks is None
+    assert instrument.all_time.income_kopecks == 1_000
+    assert not row.income_complete and row.total_kopecks is None
+
+
+def test_assumed_stock_income_is_approximate(db):
+    save(db, trades=(), extra=(("Дивиденды", ISIN, "25"),))
+    instrument = by_isin(read(db))[ISIN]
+    row = instrument.months[0]
+    assert row.approximate and instrument.all_time.approximate
+    assert row.income_assumptions_used and "income_assumed" in row.flags
+    assert row.total_kopecks == 12_500 and row.income_complete
+
+
+@pytest.mark.parametrize("kind", ["Паи", "Synthetic other instrument"])
+def test_unsupported_instrument_trade_with_omitted_nkd_is_not_assumed_zero(db, kind):
+    def mutate(root):
+        root.find(f".//m:Details[@ISIN1='{ISIN}']", NS).set("active_type", kind)
+
+    save(db, trades=((ISIN, "1", "100", None, "1"),), mutate=mutate)
+    row = by_isin(read(db))[ISIN].months[0]
+    assert "instrument_type_unknown" in row.flags and "trade_components_missing" in row.flags
+    assert row.buys_cost_kopecks is None and row.total_kopecks is None
+
+
+@pytest.mark.parametrize("currency", ["RUR", " rur ", " RuB "])
+def test_ruble_currency_aliases_match_rub_for_instrument_income_and_trades(db, currency):
+    def mutate(root):
+        for row in root.findall(".//m:p_code[@volume]", NS):
+            row.set("p_code", currency)
+        root.find(".//m:Details[@trade_no]", NS).set("curr_calc", currency)
+
+    save(
+        db,
+        stock=("10", "11", "1000", "1210"),
+        trades=((ISIN, "1", "100", None, "1"),),
+        extra=(("Дивиденды", ISIN, "25"),),
+        mutate=mutate,
+    )
+    result = read(db)
+    row = by_isin(result)[ISIN].months[0]
+    assert row.buys_cost_kopecks == 10_100
+    assert row.dividends_kopecks == 2_500 and row.total_kopecks == 13_400
+    assert row.income_complete
+    assert not {"currency_unsupported", "trade_currency_unsupported"}.intersection(row.flags)
+    assert "currency_unsupported" not in {gap.code for gap in result.gaps}
+
+
+@pytest.mark.parametrize("basis", ["includes_paid_nkd", "excludes_paid_nkd"])
+def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basis):
+    amount = "1020" if basis == "includes_paid_nkd" else "1000"
+    intake = save(db, trades=((BOND, "1", amount, "20", "5"),))
+    with db.session_factory() as session:
+        trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
+        account = Account(name="Synthetic", account_type="brokerage")
+        instrument = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add_all([account, instrument])
+        session.flush()
+        session.add(
+            ExecutedTrade(
+                provider="mybroker",
+                source_account=ACCOUNT,
+                primary_id=trade["ids"][0],
+                secondary_id=trade["ids"][1],
+                source_identity=trade["identity"],
+                account_id=account.id,
+                instrument_id=instrument.id,
+                core_json=json.dumps(trade["core"]),
+                bindings_json="[]",
+                accepted_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        proof = {
+            "source_identity": trade["identity"],
+            "native_ids": trade["ids"],
+            "claims": {
+                "native_total_basis": basis,
+                "exact_row_settled_buy_link": True,
+                "complete_occurrence_set_is_one_event": True,
+                "nkd_separately_posted": True,
+                "fee_separately_charged": True,
+                "native_total_basis_independently_proved": True,
+            },
+            "signed_minor": {
+                "settlement": "-100000",
+                "paid_nkd": "-2000",
+                "commission": "-500",
+                "native_total": str(int(amount) * 100),
+            },
+            "nkd_leg": {"effective_date": trade["settlement_date"], "currency": "RUB"},
+        }
+        monkeypatch.setattr(
+            service.broker_trade_money, "effective_proof", lambda session, identity: proof
+        )
+        assert service._native_total_basis(session, trade) == basis
+        legacy = deepcopy(trade)
+        legacy["core"]["currency"] = " rur "
+        assert service._native_total_basis(session, legacy) == basis
+        with localcontext() as context:
+            context.prec = 6
+            assert service._native_total_basis(session, trade) == basis
+        before = snapshot(db)
+        result = by_isin(read_instrument_returns(session, source_account=ACCOUNT))[BOND].months[0]
+        assert snapshot(db) == before
+        assert result.buys_cost_kopecks == 102_500 and result.total_kopecks == 12_500
+        for field in ("trade_amount", "quantity", "trade_time", "isin"):
+            changed = deepcopy(trade)
+            changed["core"][field] = {
+                "trade_amount": "999",
+                "quantity": "2",
+                "trade_time": "2030-04-01T10:00:00",
+                "isin": ISIN,
+            }[field]
+            assert service._native_total_basis(session, changed) is None
+        changed = deepcopy(trade)
+        changed["ids"] = ["999", "888"]
+        assert service._native_total_basis(session, changed) is None
+        changed = deepcopy(trade)
+        changed["settlement_date"] = "2030-04-30"
+        assert service._native_total_basis(session, changed) is None
+        proof["claims"]["native_total_basis_independently_proved"] = False
+        assert service._native_total_basis(session, trade) is None
+
+
+def test_overlapping_rur_and_rub_trades_and_income_are_counted_once(db):
+    def legacy_currency(root):
+        root.find(".//m:Details[@trade_no]", NS).set("curr_calc", " rur ")
+        for row in root.findall(".//m:p_code[@volume]", NS):
+            row.set("p_code", " rur ")
+
+    options = dict(
+        stock=("10", "11", "1000", "1210"),
+        trades=((ISIN, "1", "100", None, "1"),),
+        extra=(("Дивиденды", ISIN, "25"),),
+    )
+    save(db, **options)
+    save(db, **options, mutate=legacy_currency, marker="legacy-currency-copy")
+    result = read(db)
+    row = by_isin(result)[ISIN].months[0]
+    assert row.buys_cost_kopecks == 10_100 and row.dividends_kopecks == 2_500
+    assert row.total_kopecks == 13_400 and row.income_complete
+    assert "overlapping_trade_conflict" not in row.flags
+    assert len(result.income) == 1 and len(result.income[0].source_references) == 2

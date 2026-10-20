@@ -23,6 +23,7 @@ from hermes_finance.persistence import SourceIntakeOriginal, SourceMoneyClassifi
 from hermes_finance.services import broker_statement_provisional as provisional
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_money_classifications import source_reference
+from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 
@@ -159,7 +160,7 @@ def _money(session, view, choices, gaps):
     for row in view["document"].get("money", []):
         event_date = date.fromisoformat(row["date"])
         reference = source_reference(view["id"], row)
-        if row.get("currency") != "RUB":
+        if normalize_currency(row.get("currency")) != "RUB":
             gaps.append(
                 SourceReturnGap(
                     "currency_unsupported",
@@ -184,11 +185,11 @@ def _money(session, view, choices, gaps):
         amount = saved.amount_kopecks
         external = classification in {"external_deposit", "external_withdrawal"}
         if (
-            saved.currency != "RUB"
+            normalize_currency(saved.currency) != "RUB"
             or amount is None
             or amount != provisional._minor(row.get("amount"))
             or saved.date != event_date
-            or saved.currency != row.get("currency")
+            or normalize_currency(saved.currency) != normalize_currency(row.get("currency"))
             or (
                 external and (amount == 0 or (amount > 0) != (classification == "external_deposit"))
             )
@@ -229,7 +230,11 @@ def _money(session, view, choices, gaps):
                 status = "confirmed"
         signature = digest(
             {key: value for key, value in row.items() if key not in {"ordinal", "last_update"}}
-            | {"operation": saved.operation, "narrative": saved.narrative}
+            | {
+                "currency": normalize_currency(row.get("currency")),
+                "operation": saved.operation,
+                "narrative": saved.narrative,
+            }
         )
         occurrence = counts[signature]
         counts[signature] += 1
