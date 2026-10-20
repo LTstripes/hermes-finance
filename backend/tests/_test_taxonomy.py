@@ -666,7 +666,9 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     filename = relative_path.name
     markers: set[str] = set()
 
-    if relative_path.parts and relative_path.parts[0] == "domain":
+    if (
+        relative_path.parts and relative_path.parts[0] == "domain"
+    ) or filename == "test_monthly_return_chain.py":
         markers.add("domain")
     if filename.endswith("_api.py"):
         markers.add("api")
@@ -773,6 +775,9 @@ def ci_core_shard_for_test_path(test_path: Path) -> str | None:
     relative_path = _relative_test_path(test_path)
     if relative_path is None:
         return None
+    # Append this subsecond suite without rebalancing the accepted core anchors.
+    if relative_path.as_posix() == "test_monthly_return_chain.py":
+        return "ci_core_a"
     return _weighted_shard(
         relative_path.as_posix(),
         CI_CORE_SHARD_WEIGHTS,
