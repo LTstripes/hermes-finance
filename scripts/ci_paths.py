@@ -54,6 +54,13 @@ def selected_areas(records: list[DiffRecord] | None) -> frozenset[str]:
             or any(ord(char) < 32 or ord(char) == 127 for char in record.new_path)
         ):
             return full
+        # Executable and packaging inputs are shared even inside a product tree.
+        # Keep this before prose/product matching so safety jobs cannot be omitted.
+        parts = record.new_path.lower().split("/")
+        if parts[-1].endswith(".ps1") or {"scripts", "packaging", "release", "installer"}.intersection(
+            parts[:-1]
+        ):
+            return full
         if ordinary_doc_path(record.new_path):
             continue
         for prefix, areas in PRODUCT_PREFIXES.items():

@@ -184,7 +184,10 @@ jobs:
       !cancelled() &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
-      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      contains(github.event.pull_request.labels.*.name, 'ci:windows') ||
+      needs.docs-only-classify.result != 'success' ||
+      needs.docs-only-classify.outputs.windows != 'false')))
     runs-on: windows-latest
     timeout-minutes: 10
     defaults:
@@ -480,7 +483,10 @@ jobs:
       !cancelled() &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
-      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      contains(github.event.pull_request.labels.*.name, 'ci:windows') ||
+      needs.docs-only-classify.result != 'success' ||
+      needs.docs-only-classify.outputs.release != 'false')))
     runs-on: windows-latest
     timeout-minutes: 10
 
@@ -568,7 +574,10 @@ jobs:
       !cancelled() &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
-      (contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows'))))
+      (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
+      contains(github.event.pull_request.labels.*.name, 'ci:windows') ||
+      needs.docs-only-classify.result != 'success' ||
+      needs.docs-only-classify.outputs.windows != 'false')))
     runs-on: windows-latest
     timeout-minutes: 15
 

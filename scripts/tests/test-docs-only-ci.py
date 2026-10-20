@@ -511,6 +511,23 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(f'--job "{name}=${{{{ needs.{name}.result }}}}"', fast)
         self.assertNotIn("docs-only", self.release)
 
+    def test_docs_full_override_and_windows_safety_workflow_behavior(self) -> None:
+        # Exercise the actual job expressions, including false area outputs on
+        # docs-only PRs; merely finding a label in the condition misses precedence bugs.
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(ROOT / "scripts/tests/test-ci-paths.py"),
+                "WorkflowTests.test_full_label_bypasses_docs_area_and_visual_filters",
+                "WorkflowTests.test_windows_jobs_follow_classifier_outputs_and_fail_closed",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_ui_evidence_does_not_run_for_allowlisted_docs(self) -> None:
         patterns = evidence_patterns_from_workflow(self.ui)
         self.assertEqual(patterns, ("frontend/**", ".github/workflows/ui-v2-evidence.yml"))

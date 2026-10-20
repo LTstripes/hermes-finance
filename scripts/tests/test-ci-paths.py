@@ -31,12 +31,35 @@ FULL = frozenset(AREAS)
 OWNERS = {
     "backend-quality": "backend",
     "backend-tests": "backend",
-    "backend-timezone-windows": "backend",
+    "backend-timezone-windows": "windows",
     "frontend": "frontend",
     "g04-browser": "browser",
     "release-safety": "release",
     "windows-production-smoke": "windows",
 }
+
+# These inputs must select both Windows and release checks, even when nested
+# beneath an otherwise narrow product/prose prefix.
+SAFETY_PATHS = (
+    "scripts/prepare-runtime.ps1",
+    "scripts/ci_paths.py",
+    "scripts/nested/helper.py",
+    "start-local.ps1",
+    "frontend/src/repair.PS1",
+    "frontend/src/scripts/build.ts",
+    "packaging/package.json",
+    "release/manifest.json",
+    "installer/setup.wxs",
+    "frontend/src/packaging/package.ts",
+    "frontend/src/release/manifest.ts",
+    "frontend/src/installer/setup.ts",
+    "docs/history/installer/README.md",
+    "backend/src/hermes_finance/runtime.py",
+    "backend/src/hermes_finance/services/backups.py",
+    "backend/src/hermes_finance/services/recovery.py",
+    "backend/tests/test_startup.py",
+    "backend/tests/test_recovery_process.py",
+)
 
 
 def record(path: str, **overrides: object) -> DiffRecord:
@@ -98,6 +121,11 @@ class SelectionTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertEqual(selected_areas([record(path)]), FULL)
+
+    def test_safety_inputs_retain_release_and_windows(self) -> None:
+        for path in SAFETY_PATHS:
+            with self.subTest(path=path):
+                self.assertTrue({"release", "windows"}.issubset(selected_areas([record(path)])))
 
     def test_unsafe_records_and_empty_evidence_cannot_omit_suites(self) -> None:
         for records in (
@@ -182,6 +210,20 @@ class GitTests(unittest.TestCase):
         backend = self.commit("backend/src/app.py", b"synthetic backend\n")
         self.assertEqual(classify_repo(self.repo, self.base, backend), FULL)
         self.assertEqual(classify_repo(self.repo, self.base, frontend), FRONTEND_AREAS)
+
+    def test_safety_inputs_from_actual_git_diffs(self) -> None:
+        for path in (
+            "scripts/prepare-runtime.ps1",
+            "frontend/src/repair.ps1",
+            "frontend/src/installer/setup.ts",
+            "backend/src/hermes_finance/services/recovery.py",
+        ):
+            with self.subTest(path=path):
+                head = self.commit(path, b"synthetic safety input\n")
+                self.assertTrue(
+                    {"release", "windows"}.issubset(classify_repo(self.repo, self.base, head))
+                )
+                self.base = head
 
     def test_bad_shas_missing_git_empty_diff_and_binary_are_full(self) -> None:
         head = self.commit("frontend/src/App.tsx", b"binary\0payload")
@@ -304,22 +346,42 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(self.runs(job, cancelled=True))
             self.assertFalse(self.runs(job, mode="docs-only"))
 
-    def test_windows_jobs_require_an_explicit_label_on_every_pr(self) -> None:
+    def test_windows_jobs_follow_classifier_outputs_and_fail_closed(self) -> None:
         for job in ("backend-timezone-windows", "release-safety", "windows-production-smoke"):
+            owner = OWNERS[job]
             for mode in ("full", "docs-only", ""):
                 for result in ("success", "failure", "cancelled", "skipped", ""):
-                    for enabled in ("true", "false", ""):
-                        args = dict(
-                            mode=mode, result=result, areas={area: enabled for area in AREAS}
-                        )
+                    for enabled in ("true", "false", "", "garbage", "TRUE"):
+                        areas = {area: "false" for area in AREAS}
+                        areas[owner] = enabled
+                        args = dict(mode=mode, result=result, areas=areas)
                         with self.subTest(job=job, **args):
-                            self.assertFalse(self.runs(job, **args))
+                            self.assertEqual(
+                                self.runs(job, **args), result != "success" or enabled != "false"
+                            )
                             for label in ("ci:windows", "ci:full"):
                                 self.assertTrue(self.runs(job, labels=(label,), **args))
                             self.assertTrue(self.runs(job, event="push", **args))
-            self.assertFalse(self.runs(job, labels=("ci:windows-extra", "ci:full-extra")))
-            self.assertTrue(self.runs(job, labels=("CI:FULL",)))
-            self.assertFalse(self.runs(job, labels=("ci:windows",), cancelled=True))
+                            self.assertFalse(self.runs(job, cancelled=True, **args))
+                            self.assertFalse(
+                                self.runs(job, labels=("ci:full",), cancelled=True, **args)
+                            )
+            # The other output must not own this job.
+            areas = {area: "true" for area in AREAS}
+            areas[owner] = "false"
+            self.assertFalse(self.runs(job, areas=areas))
+            self.assertFalse(
+                self.runs(job, areas=areas, labels=("ci:windows-extra", "ci:full-extra"))
+            )
+            self.assertTrue(self.runs(job, areas=areas, labels=("CI:FULL",)))
+
+    def test_safety_paths_reach_windows_jobs_without_labels(self) -> None:
+        for path in SAFETY_PATHS:
+            selected = selected_areas([record(path)])
+            areas = {area: str(area in selected).lower() for area in AREAS}
+            for job in ("backend-timezone-windows", "release-safety", "windows-production-smoke"):
+                with self.subTest(path=path, job=job):
+                    self.assertTrue(self.runs(job, areas=areas))
 
     def test_full_label_bypasses_docs_area_and_visual_filters(self) -> None:
         for job in (*OWNERS, "visual-audit"):
