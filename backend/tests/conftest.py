@@ -16,9 +16,13 @@ def pytest_collection_modifyitems(items) -> None:
     import pytest
     from _test_taxonomy import (
         CI_CORE_SHARD_MARKERS,
+        CI_INTEGRATIONS_A_SHARD_MARKERS,
+        CI_INTEGRATIONS_B_SHARD_MARKERS,
         CI_INTEGRATIONS_SHARD_MARKERS,
         CI_LANE_MARKERS,
         ci_core_shard_for_test_path,
+        ci_integrations_a_shard_for_test_node,
+        ci_integrations_b_shard_for_test_node,
         ci_integrations_shard_for_test_path,
         ci_lane_for_test_path,
         semantic_markers_for,
@@ -60,6 +64,18 @@ def pytest_collection_modifyitems(items) -> None:
                 )
             elif kind:
                 item.add_marker(shard)
+                if shard == "ci_integrations_a":
+                    a_shard = ci_integrations_a_shard_for_test_node(test_path, item.nodeid)
+                    if a_shard not in CI_INTEGRATIONS_A_SHARD_MARKERS:
+                        ownership_errors.append(f"unsharded integrations-a test: {item.nodeid}")
+                    else:
+                        item.add_marker(a_shard)
+                elif shard == "ci_integrations_b":
+                    b_shard = ci_integrations_b_shard_for_test_node(test_path, item.nodeid)
+                    if b_shard not in CI_INTEGRATIONS_B_SHARD_MARKERS:
+                        ownership_errors.append(f"unsharded integrations-b test: {item.nodeid}")
+                    else:
+                        item.add_marker(b_shard)
 
     if ownership_errors:
         details = "\n".join(sorted(ownership_errors))
