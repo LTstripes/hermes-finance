@@ -56,6 +56,7 @@ CI_INTEGRATIONS_B_SHARD_MARKERS = (
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_source_instrument_returns_service.py",
     "test_source_monthly_returns_service.py",
     "test_source_money_classifications_service.py",
 )

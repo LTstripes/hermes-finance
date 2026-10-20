@@ -5780,6 +5780,62 @@ When a continuous long report supplies only the outer endpoints and no complete
 monthly group exists, it retains one `partial_segment` with the outer-period
 totals; its monthly chain remains unavailable.
 
+<a id="c7-source_instrument_returns-1"></a>
+### Monthly native-source instrument estimates
+
+The separate read-only service `source_instrument_returns` and
+`GET /api/source-returns/instruments?source_account=...` group verified saved
+intakes by native account and ISIN. This is a provisional source interpretation,
+with `authority=provisional` and `financial_authority=none`, including for unbound
+intakes. It needs no original reattachment, metadata creation, financial Apply,
+receipt, migration or Close change. It does not replace the accepted instrument
+payout, execution or EOD readers.
+
+Each monthly row retains the statement's own opening/closing quantity and native
+EOD valuation. A missing quantity or value stays NULL independently; an absent
+position is never affirmative zero. A long report supplies only its actual outer
+boundaries. Overlapping copies must agree on each endpoint. Native settled trades
+are counted in their settlement month, once per native identity. Buys cost is
+trade amount + paid NKD + commission; sells proceeds is trade amount + received
+NKD - commission. Missing commission or bond NKD is unknown; omitted stock NKD is
+inapplicable zero. Pending or missing settlement produces `trade_missing_settlement`,
+including both the execution and planned settlement months for pending trades.
+Contradictory trade observations, REPO or non-RUB trades withhold affected costs.
+
+Monthly `price_effect_kopecks` = V1 - V0 - buys_cost_kopecks + sells_proceeds_kopecks;
+`income_kopecks` is classified coupons + dividends; `total_kopecks` is price effect +
+income. `capital_base_kopecks` = V0 + buys_cost_kopecks. `return_percent` is the
+Decimal percentage string 100 * total / capital base, NULL for nonpositive base
+or unavailable operands. Money is integer kopecks; quantities are Decimal strings.
+These are simple monthly estimates, not XIRR or TWRR. Bonds use reported values
+without resolving clean/dirty or accrued-interest basis: `approximate=true` and
+`bond_valuation_basis_unknown` disclose this without blocking numbers. Stocks have
+`approximate=false` when no gaps exist; this grants no financial authority.
+
+Persisted coupon/dividend classifications supply signed income amounts and their
+assumed/confirmed status. Whole ISIN or explicit saved registration aliases take
+precedence over whole saved names; a missing or ambiguous match stays in the income
+list with `isin=NULL` and an `unattributed_income` gap/reference. Registration aliases
+are usable only if actually present in saved identity evidence; the reader does
+not reconstruct metadata discarded by the existing parser or infer a registration
+crosswalk. Overlap handling reuses the monthly Money validation/deduplication rules,
+keeps same-report multiplicity and prefers confirmed choices. Known income remains
+an observed subtotal when `income_complete=false`. Unattributed, unknown, invalid,
+legacy-unclassified or non-RUB Money withholds affected monthly totals and rates,
+while retaining known price components. Unknown source structure, scope ambiguity
+or an unreadable overlapping intake withholds affected costs/income completeness.
+Independent instruments and months remain available where evidence permits.
+
+`seam_mismatch` discloses differing consecutive native opening/closing values or
+quantities, and within-month quantity movements unexplained by the observed trades;
+it never replaces native operands. All-time monetary fields sum available component
+values, and `total_kopecks` sums only months with an available total. `available_months`,
+`missing_months`, `partial`, `income_complete` and flags disclose incomplete sums.
+Missing coverage is `missing_month` and stays NULL in monthly rows, never zero.
+All-time capital base and percentage remain NULL: this scope defines monetary sums,
+not a holding-period or chained instrument rate. GET is no-store and performs no
+classification backfill, receipt or economic writes.
+
 <a id="c7-broker_statement_provisional-12"></a>
 ### Source-intake provisional account estimate
 
