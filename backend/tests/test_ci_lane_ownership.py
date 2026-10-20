@@ -13,11 +13,15 @@ from pathlib import Path
 from _pytest.mark.expression import Expression
 from _test_taxonomy import (
     CI_CORE_SHARD_MARKERS,
+    CI_INTEGRATIONS_B_SHARD_MARKERS,
+    CI_INTEGRATIONS_B_SHARD_WEIGHTS,
+    CI_INTEGRATIONS_B_SPLIT_FILES,
     CI_INTEGRATIONS_SHARD_MARKERS,
     CI_INTEGRATIONS_SHARD_WEIGHTS,
     CI_LANE_MARKERS,
     TESTS_ROOT,
     ci_core_shard_for_test_path,
+    ci_integrations_b_shard_for_test_node,
     ci_integrations_shard_for_test_path,
     ci_lane_for_test_path,
     iter_backend_test_files,
@@ -144,9 +148,83 @@ def test_integration_files_have_one_exclusive_balanced_shard() -> None:
     assert largest * 2 < sum(CI_INTEGRATIONS_SHARD_WEIGHTS.values())
 
 
+def test_integrations_b_weights_cover_only_the_original_b_group() -> None:
+    files = {
+        path.relative_to(TESTS_ROOT).as_posix()
+        for path in _integration_files()
+        if ci_integrations_shard_for_test_path(path) == "ci_integrations_b"
+    }
+    assert files
+    assert {key.split("::", 1)[0] for key in CI_INTEGRATIONS_B_SHARD_WEIGHTS} == files
+    assert CI_INTEGRATIONS_B_SPLIT_FILES <= files
+    assert all(weight > 0 for weight in CI_INTEGRATIONS_B_SHARD_WEIGHTS.values())
+
+
+def test_unknown_integrations_b_weight_fails_closed(monkeypatch) -> None:
+    import _test_taxonomy as taxonomy
+
+    weights = dict(CI_INTEGRATIONS_B_SHARD_WEIGHTS)
+    removed = next(key for key in weights if "::" in key)
+    weights.pop(removed)
+    monkeypatch.setattr(taxonomy, "CI_INTEGRATIONS_B_SHARD_WEIGHTS", weights)
+
+    assert (
+        ci_integrations_b_shard_for_test_node(
+            TESTS_ROOT / removed.split("::", 1)[0], f"tests/{removed}[parameter]"
+        )
+        is None
+    )
+    assert (
+        ci_integrations_b_shard_for_test_node(
+            TESTS_ROOT / "test_statement_import_source_cash_coverage.py",
+            "tests/test_statement_import_source_cash_coverage.py::test_unweighted_function",
+        )
+        is None
+    )
+
+
+def test_integrations_b_shards_are_stable_and_within_estimated_ci_budget(monkeypatch) -> None:
+    import _test_taxonomy as taxonomy
+
+    totals = dict.fromkeys(CI_INTEGRATIONS_B_SHARD_MARKERS, 0.0)
+    assignments = {}
+    for path in iter_backend_test_files():
+        if ci_integrations_shard_for_test_path(path) != "ci_integrations_b":
+            assert ci_integrations_b_shard_for_test_node(path, "") is None
+    for key, weight in CI_INTEGRATIONS_B_SHARD_WEIGHTS.items():
+        path = TESTS_ROOT / key.split("::", 1)[0]
+        shard = ci_integrations_b_shard_for_test_node(path, f"tests/{key}")
+        assert shard in CI_INTEGRATIONS_B_SHARD_MARKERS
+        assignments[key] = shard
+        totals[shard] += weight
+        if "::" in key:
+            assert ci_integrations_b_shard_for_test_node(path, f"tests/{key}[first]") == shard
+            assert ci_integrations_b_shard_for_test_node(path, f"tests/{key}[second]") == shard
+
+    assert min(totals.values()) > 0
+    # Normalize local measured weights to the issue's approximate 17-minute
+    # old CI lane. This is a planning budget, not a measured CI speedup.
+    ci_scale = 17 * 60 / sum(totals.values())
+    assert max(totals.values()) * ci_scale <= 6 * 60
+
+    monkeypatch.setattr(
+        taxonomy,
+        "CI_INTEGRATIONS_B_SHARD_WEIGHTS",
+        dict(reversed(list(CI_INTEGRATIONS_B_SHARD_WEIGHTS.items()))),
+    )
+    assert {
+        key: ci_integrations_b_shard_for_test_node(
+            TESTS_ROOT / key.split("::", 1)[0], f"tests/{key}"
+        )
+        for key in assignments
+    } == assignments
+
+
 def test_shard_markers_are_not_parent_lanes() -> None:
     assert set(CI_CORE_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
+    assert set(CI_INTEGRATIONS_B_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
+    assert set(CI_INTEGRATIONS_B_SHARD_MARKERS).isdisjoint(CI_INTEGRATIONS_SHARD_MARKERS)
 
 
 def test_benchmark_files_do_not_enter_integration_shards() -> None:
@@ -166,7 +244,7 @@ def _workflow_entries() -> list[tuple[str, str, int]]:
     ]
 
 
-def test_backend_matrix_keeps_full_lanes_and_forty_minute_integration_shards() -> None:
+def test_backend_matrix_keeps_full_lanes_and_four_integrations_b_shards() -> None:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     entries = dict((lane, (marker, timeout)) for lane, marker, timeout in _workflow_entries())
 
@@ -175,12 +253,20 @@ def test_backend_matrix_keeps_full_lanes_and_forty_minute_integration_shards() -
         "core-b",
         "persistence",
         "integrations-a",
-        "integrations-b",
+        "integrations-b1",
+        "integrations-b2",
+        "integrations-b3",
+        "integrations-b4",
         "runtime-release",
         "benchmark",
     ]
     assert entries["integrations-a"] == ("ci_integrations and ci_integrations_a", 40)
-    assert entries["integrations-b"] == ("ci_integrations and ci_integrations_b", 40)
+    for index, shard in enumerate(CI_INTEGRATIONS_B_SHARD_MARKERS, start=1):
+        assert entries[f"integrations-b{index}"] == (
+            f"ci_integrations and ci_integrations_b and {shard}",
+            10,
+        )
+    assert len(entries) == len(_workflow_entries())
     for lane in ("core-a", "core-b", "persistence", "runtime-release", "benchmark"):
         assert entries[lane][1] == 10
     assert "\n          - lane: integrations\n" not in workflow
@@ -252,7 +338,9 @@ def test_collected_nodes_run_in_exactly_one_parent_and_integration_shard() -> No
     rows = _collected_nodes()
     entries = dict((lane, marker) for lane, marker, _timeout in _workflow_entries())
     parent_expr = "ci_integrations"
-    shard_exprs = (entries["integrations-a"], entries["integrations-b"])
+    shard_exprs = tuple(
+        expression for lane, expression in entries.items() if lane.startswith("integrations-")
+    )
 
     parent = [nodeid for nodeid, names in rows if _matches(parent_expr, names)]
     shards = [
@@ -266,10 +354,30 @@ def test_collected_nodes_run_in_exactly_one_parent_and_integration_shard() -> No
     assert parent
     assert all(shards)
     assert len(parent) == len(set(parent))
-    assert set(shards[0]).isdisjoint(shards[1])
+    assert all(count == 1 for count in combined.values())
     assert Counter(parent) == combined
 
+    original_b = [nodeid for nodeid, names in rows if "ci_integrations_b" in names]
+    split_b: Counter[str] = Counter()
+    for shard in shards[1:]:
+        split_b.update(shard)
+    assert original_b
+    assert Counter(original_b) == split_b
+    weighted_keys = set()
+    for nodeid in original_b:
+        file_key, test_key = nodeid.removeprefix("tests/").split("::", 1)
+        key = file_key
+        if file_key in CI_INTEGRATIONS_B_SPLIT_FILES:
+            key += "::" + test_key.split("[", 1)[0]
+        weighted_keys.add(key)
+    assert weighted_keys == set(CI_INTEGRATIONS_B_SHARD_WEIGHTS)
+
     for nodeid, names in rows:
+        assert sum(_matches(expression, names) for expression in entries.values()) == 1, nodeid
+        if "ci_integrations_b" in names:
+            assert len(names.intersection(CI_INTEGRATIONS_B_SHARD_MARKERS)) == 1, nodeid
+        else:
+            assert names.isdisjoint(CI_INTEGRATIONS_B_SHARD_MARKERS), nodeid
         lanes = names.intersection(CI_LANE_MARKERS)
         assert len(lanes) == 1, nodeid
         if "benchmark" in names or "ci_benchmark" in names:

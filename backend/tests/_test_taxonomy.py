@@ -40,6 +40,13 @@ CI_INTEGRATIONS_SHARD_MARKERS = (
     "ci_integrations_b",
 )
 
+CI_INTEGRATIONS_B_SHARD_MARKERS = (
+    "ci_integrations_b1",
+    "ci_integrations_b2",
+    "ci_integrations_b3",
+    "ci_integrations_b4",
+)
+
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
 # main candidate. Values are summed test/setup/teardown seconds per file; the
 # assignment below is recomputed deterministically by weighted bin-packing.
@@ -210,6 +217,111 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_t_invest_probe.py": 3.81,
     "test_t_invest_provider.py": 11.02,
     "test_t_invest_quotation.py": 2.54,
+}
+
+# Measured on Windows/Python 3.13.16 at 29cac23c for #902:
+# `pytest -m ci_integrations_b --durations=0 --junitxml=...`, 1137 passed
+# in 968.29s. JUnit times include setup/call/teardown. Keep the original
+# A/B group weights above unchanged; these weights split only group B.
+# The large source-cash module is grouped by test function (all parameter
+# variants together); all other modules stay whole. Longest-first scheduling
+# balances the four jobs without deleting or skipping any tests.
+CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
+
+CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
+    "test_ai_financial_review_linked_pairs.py": 4.00,
+    "test_alfa_pro_snapshot.py": 1.02,
+    "test_broker_identity_mappings.py": 5.39,
+    "test_instrument_mappings.py": 7.47,
+    "test_markdown_export_api.py": 5.98,
+    "test_market_identity.py": 0.70,
+    "test_payout_api_hardening.py": 1.20,
+    "test_payout_api.py": 9.11,
+    "test_payout_apply_reread.py": 1.61,
+    "test_payout_apply_scope_guard.py": 0.34,
+    "test_payout_calendar.py": 5.97,
+    "test_payout_domain.py": 0.01,
+    "test_provider_capabilities.py": 0.46,
+    "test_quote_apply.py": 4.44,
+    "test_quote_preview.py": 3.65,
+    "test_risk_allocation.py": 3.04,
+    "test_statement_import_apply.py": 24.08,
+    "test_statement_import_broker_statement_provisional.py": 8.32,
+    "test_statement_import_broker_statement_what_if.py": 168.81,
+    "test_statement_import_executed_trades.py": 14.79,
+    "test_statement_import_historical_owner_flows.py": 72.44,
+    "test_statement_import_historical_reconstruction.py": 14.53,
+    "test_statement_import_mybroker_dispositions.py": 42.65,
+    "test_statement_import_mybroker_empty_money.py": 2.80,
+    "test_statement_import_mybroker_identity.py": 15.74,
+    "test_statement_import_mybroker_preflight.py": 21.18,
+    "test_statement_import_retract.py": 10.68,
+    "test_statement_import_source_cash_coverage.py::test_api_preview_apply_get_strict_inputs_and_writer_before_authoritative_reads": 0.59,
+    "test_statement_import_source_cash_coverage.py::test_broken_source_withdrawal_binds_new_current_conflict_without_positive_support": 0.53,
+    "test_statement_import_source_cash_coverage.py::test_commission_limitation_does_not_dismiss_material_trade_linkage_blockers": 3.66,
+    "test_statement_import_source_cash_coverage.py::test_commission_limited_cash_fails_closed_on_conflicting_accepted_trade_support": 0.80,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_account_aba_stales_preview_and_never_revives_retired_coverage": 7.66,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_corrupt_current_source_owner_target_proof_fails_closed_without_read_repair": 76.12,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_dependency_retirement_late_failure_rolls_back_all_tables": 3.29,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_late_source_add_remove_aba_requires_both_reviews": 9.38,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_money_receipt_retires_closed_late_listener_replay_reaffirm": 33.13,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_only_proven_icf_partition_other_conflicts_stay_unknown": 14.05,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_pdf_first_real_money_links_existing_target_tax_unknown": 3.53,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_real_money_five_targets_overlap_no_write_no_owner_cash": 89.70,
+    "test_statement_import_source_cash_coverage.py::test_coupon_v3_typed_pdf_addition_retires_coverage_and_mutations_are_monotonic": 17.52,
+    "test_statement_import_source_cash_coverage.py::test_dependency_loss_retires_transactionally_no_a_b_a_or_receipt_revival": 5.49,
+    "test_statement_import_source_cash_coverage.py::test_direct_sql_mismatch_read_and_list_assessor_fail_closed_without_repair": 0.70,
+    "test_statement_import_source_cash_coverage.py::test_distinct_same_day_and_corroboration_bind_each_flow_once_every_occurrence": 0.70,
+    "test_statement_import_source_cash_coverage.py::test_eod_window_excludes_opening_and_after_closing_preserves_multiplicity": 0.61,
+    "test_statement_import_source_cash_coverage.py::test_exact_existing_trade_link_excludes_non_owner_cash_binds_trade_lifecycle": 0.45,
+    "test_statement_import_source_cash_coverage.py::test_exact_historical_membership_covers_both_eod_boundaries_without_current_flags": 2.07,
+    "test_statement_import_source_cash_coverage.py::test_exact_settled_trade_cash_preserves_commission_limitations_without_owner_crossing": 1.38,
+    "test_statement_import_source_cash_coverage.py::test_full_ranges_clipped_union_exact_gap_not_hull": 0.86,
+    "test_statement_import_source_cash_coverage.py::test_intent_shape_rejects_undefined_or_expanded_authority": 0.01,
+    "test_statement_import_source_cash_coverage.py::test_legacy_complete_conflict_still_retires_v2_flow": 0.44,
+    "test_statement_import_source_cash_coverage.py::test_mapping_remap_and_removed_binding_cannot_hide_previously_relevant_report": 0.60,
+    "test_statement_import_source_cash_coverage.py::test_no_account_source_authority_or_portfolio_binding_from_missing_history": 0.37,
+    "test_statement_import_source_cash_coverage.py::test_overlap_unknown_and_legacy_cash_disclosed_before_acceptance": 0.39,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_corrupt_support_fails_closed_no_read_repair": 49.33,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_dependency_transaction_aba_no_revival": 31.93,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_exact_partition_no_economic_writes": 63.43,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_late_money_retirement_closed_rollback_replay": 13.44,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_opaque_money_does_not_inherit_disposition": 2.30,
+    "test_statement_import_source_cash_coverage.py::test_paid_nkd_v4_unrelated_money_month_and_account_do_not_retire": 2.65,
+    "test_statement_import_source_cash_coverage.py::test_positive_one_day_directed_dependency_and_legacy_reader_refusal": 0.69,
+    "test_statement_import_source_cash_coverage.py::test_quiet_zero_requires_each_affirmative_claim": 2.44,
+    "test_statement_import_source_cash_coverage.py::test_reaffirm_retired_is_explicit_identity_is_immutable_and_rollback_retirement_atomic": 0.62,
+    "test_statement_import_source_cash_coverage.py::test_receipt_failure_rolls_back_projection_revision_and_receipt": 0.42,
+    "test_statement_import_source_cash_coverage.py::test_retired_unresolved_flow_is_not_zero_and_apply_never_revives_it": 0.59,
+    "test_statement_import_source_cash_coverage.py::test_same_identity_legacy_reaffirm_preserves_id_and_forbids_legacy_forgery_edits": 0.46,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_bad_receipt_scope_or_chain_real_reader_fails_closed": 5.45,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_dependency_aba_retirement_closed_replay_and_reviewed_reaffirm": 13.96,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_extra_quiet_report_retirement_keeps_overlapping_source_inventory": 1.14,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_grants_do_not_waive_money_or_material_exposure": 3.75,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_late_listener_receipt_retires_in_same_transaction_and_unrelated_does_not": 0.86,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_legacy_raw_blockers_never_inherit_grant": 0.69,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_legacy_v1_real_inventory_read_replay_and_explicit_version_reaffirm": 1.58,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_no_month_get_never_creates_scope_and_legacy_warnings_stay": 0.54,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_quiet_real_reader_shared_assessor_and_ten_gets_no_writes": 1.42,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_safe_a_never_clears_unsafe_b_both_orders": 1.61,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_signed_pair_stays_two_dated_crossings_and_a1_frozen_gate": 1.29,
+    "test_statement_import_source_cash_coverage.py::test_section_aware_stale_apply_and_retirement_rollback_are_atomic": 0.99,
+    "test_statement_import_source_cash_coverage.py::test_source_preview_stays_read_only_with_legacy_preparation_header": 0.51,
+    "test_statement_import_source_cash_coverage.py::test_stale_preview_closed_guard_and_dependency_retirement_across_closed_interval": 0.63,
+    "test_statement_import_source_cash_coverage.py::test_stale_request_conflict_noop_and_concurrent_writer_atomicity": 0.48,
+    "test_statement_import_source_cash_coverage.py::test_trade_support_report_outside_window_is_bound_and_retires_new_assertion": 0.50,
+    "test_statement_import_source_cash_coverage.py::test_unrelated_account_range_and_current_flags_preserve_authority": 0.60,
+    "test_statement_import_source_cash_coverage.py::test_unresolved_money_opaque_currency_multiplicity_or_link_cannot_be_dismissed": 2.17,
+    "test_statement_import_source_cash_coverage.py::test_v1_requires_explicit_same_core_version_reaffirmation_and_preserves_receipt": 0.57,
+    "test_statement_import_source_cash_coverage.py::test_v3_late_receipt_retires_a1_and_a2_transactionally_even_closed": 4.14,
+    "test_statement_import_source_cash_coverage.py::test_v3_real_a2_reader_shared_assessor_and_directed_reaffirmation": 2.53,
+    "test_statement_import_source_cash_coverage.py::test_v3_transaction_failure_rolls_back_dependency_and_both_retirements": 1.26,
+    "test_statement_import_source_intake.py": 22.57,
+    "test_t_invest_payout_adapter.py": 0.01,
+    "test_t_invest_payout_coverage_guard.py": 0.01,
+    "test_t_invest_probe.py": 0.81,
+    "test_t_invest_provider.py": 0.02,
+    "test_t_invest_quotation.py": 0.01,
 }
 
 _CI_LANE_OVERRIDES = {
@@ -517,6 +629,28 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         relative_path.as_posix(),
         CI_INTEGRATIONS_SHARD_WEIGHTS,
         CI_INTEGRATIONS_SHARD_MARKERS,
+    )
+
+
+def ci_integrations_b_shard_for_test_node(test_path: Path, nodeid: str) -> str | None:
+    """Assign a B node; keep each split function's parameter variants together."""
+
+    if ci_integrations_shard_for_test_path(test_path) != "ci_integrations_b":
+        return None
+
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+    key = relative_path.as_posix()
+    if key in CI_INTEGRATIONS_B_SPLIT_FILES:
+        prefix = f"tests/{key}::"
+        if not nodeid.startswith(prefix):
+            return None
+        key += "::" + nodeid[len(prefix) :].split("[", 1)[0]
+    return _weighted_shard(
+        key,
+        CI_INTEGRATIONS_B_SHARD_WEIGHTS,
+        CI_INTEGRATIONS_B_SHARD_MARKERS,
     )
 
 

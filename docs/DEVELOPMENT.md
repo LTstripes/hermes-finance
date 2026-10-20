@@ -483,7 +483,7 @@ semantic marker.
 | --- | --- | --- |
 | `ci_core` | Backend core (two deterministic weighted shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by a committed duration-weighted test-file assignment |
 | `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
-| `ci_integrations` | Backend integrations (two deterministic weighted shards) | Provider, reconciliation, and import/export boundaries; `ci_integrations_a` and `ci_integrations_b` split the same ownership by a committed duration-weighted test-file assignment |
+| `ci_integrations` | Backend integrations (five weighted jobs) | Provider, reconciliation, and import/export boundaries; the original `ci_integrations_a` group is unchanged, while `ci_integrations_b1` through `ci_integrations_b4` partition the original `ci_integrations_b` group |
 | `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
 | `ci_benchmark` | Backend benchmark | Explicit benchmark/performance tests only |
 
@@ -496,24 +496,36 @@ any lane can pass; benchmark tests cannot silently join a correctness lane.
 
 CI runs the five ownership surfaces as independent matrix jobs. The core
 surface is split into `ci_core_a` and `ci_core_b`. The integrations surface is
-split the same way into `ci_integrations_a` and `ci_integrations_b`. Shard
-markers are additive to the single parent lane. Both shards of a surface
-together are that surface: their pytest collections are disjoint and their
-union is the parent collection, so each collected node runs once.
+split into the unchanged `ci_integrations_a` group and four weighted jobs
+within the original `ci_integrations_b` group. The B jobs select both the
+`ci_integrations_b` group marker and exactly one of `ci_integrations_b1`,
+`ci_integrations_b2`, `ci_integrations_b3`, or `ci_integrations_b4`. Shard
+markers are additive to the single parent lane. The execution shards are
+disjoint and their union is the parent collection, so each collected node
+runs once. The four B collections also exactly cover the old B collection.
 
 Core, persistence, runtime/release, and benchmark keep a 10-minute job
-timeout. Both integrations shards keep the temporary 40-minute timeout. The
+timeout, as do the four integrations-b jobs. Integrations-a keeps its
+existing 40-minute timeout. All integration jobs share the unchanged backend
+path-filter condition; `ci-ok` waits for the entire backend-tests matrix. The
 pytest command stays `uv run --locked python -I -m pytest -q --durations=40`
 with only the shard marker expression changing. There is no within-runner
 pytest parallelism.
 
-Integration weights come from Actions run 39104674667 (`--durations=40` on
-the 2530-test suite, 1511.72s). Nodes that run did not list, including the
-90 nodes added later in `test_statement_import_mybroker_endpoints.py`, use
-that run's residual per-node rate. A new integration module missing from the
-weight table has no shard and collection fails closed. On those weights the
-two shards are 774.74s and 775.07s. That split is an estimate, not a measured
-speedup.
+The original A/B group weights remain fixed to preserve their membership.
+They derive from Actions run 39104674667 (`--durations=40` on the 2530-test
+suite, 1511.72s), with its residual per-node rate for unlisted nodes. The
+separate B weight table sums local test/setup/teardown durations per file
+(or per test function in `test_statement_import_source_cash_coverage.py`)
+from a full `pytest -m ci_integrations_b --durations=0` run at the #902
+baseline. Deterministic longest-first scheduling assigns those groups to
+four jobs. Only the large source-cash module is split by function, keeping
+each function's parameter variants together. Missing weights fail closed at
+collection. The ownership guard checks the four-way union, disjointness,
+and a planning budget of about six
+minutes per B job after scaling those local weights to the issue's roughly
+17-minute old CI lane. Local weights are estimates for CI, not a measured
+CI speedup.
 
 The dedicated Windows timezone job protects runtime `tzdata` availability,
 `Europe/Moscow` calendar behavior, and real Windows runtime exports. A Linux
@@ -586,7 +598,11 @@ uv run --locked python -I -m pytest -q -m domain
 uv run --locked python -I -m pytest -q -m "ci_core and ci_core_a"
 uv run --locked python -I -m pytest -q -m "ci_core and ci_core_b"
 uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b"  # Full B group
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b1"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b2"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b3"
+uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b4"
 uv run --locked python -I -m pytest -q -m "migration or persistence"
 uv run --locked python -I -m pytest -q -m "integration and network_free"
 uv run --locked python -I -m pytest -q -m benchmark
