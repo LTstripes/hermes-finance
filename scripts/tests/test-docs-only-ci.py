@@ -473,7 +473,7 @@ class WorkflowContractTests(unittest.TestCase):
         cls.ui = UI_PATH.read_text(encoding="utf-8")
         cls.release = RELEASE_PATH.read_text(encoding="utf-8")
 
-    def test_product_jobs_skip_only_after_a_successful_docs_only_classification(self) -> None:
+    def test_docs_only_guard_remains_on_product_jobs(self) -> None:
         trigger = self.ci.split("jobs:", 1)[0]
         self.assertNotIn("paths-ignore", trigger)
         self.assertNotIn("\n    paths:", trigger)
@@ -486,16 +486,13 @@ class WorkflowContractTests(unittest.TestCase):
         for job_id in (
             "backend-quality",
             "backend-tests",
-            "backend-timezone-windows",
             "frontend",
             "g04-browser",
-            "release-safety",
-            "windows-production-smoke",
         ):
             body = _job(self.ci, job_id)
             with self.subTest(job=job_id):
                 self.assertIn("needs: docs-only-classify", body)
-                self.assertIn(PRODUCT_IF, body)
+                self.assertIn(PRODUCT_IF.splitlines()[-1].strip(), body)
         privacy = _job(self.ci, "privacy")
         self.assertNotIn("docs-only-classify", privacy)
         self.assertIn("python3 scripts/tests/test-docs-only-ci.py", privacy)
@@ -513,6 +510,23 @@ class WorkflowContractTests(unittest.TestCase):
         for name in (*RETAINED_JOBS, *OMITTED_JOBS):
             self.assertIn(f'--job "{name}=${{{{ needs.{name}.result }}}}"', fast)
         self.assertNotIn("docs-only", self.release)
+
+    def test_docs_full_override_and_windows_safety_workflow_behavior(self) -> None:
+        # Exercise the actual job expressions, including false area outputs on
+        # docs-only PRs; merely finding a label in the condition misses precedence bugs.
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(ROOT / "scripts/tests/test-ci-paths.py"),
+                "WorkflowTests.test_full_label_bypasses_docs_area_and_visual_filters",
+                "WorkflowTests.test_windows_jobs_follow_classifier_outputs_and_fail_closed",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_ui_evidence_does_not_run_for_allowlisted_docs(self) -> None:
         patterns = evidence_patterns_from_workflow(self.ui)

@@ -67,23 +67,20 @@ Invoke-Case "workflow trigger is not path-filtered" {
 Invoke-Case "classification is recomputed from the current pull request commits" {
     $classify = Get-Job "docs-only-classify"
     Assert-True -Condition ($classify -match "if: github\.event_name == 'pull_request'") -Message "Classification is pull-request-only; main stays full."
-    Assert-True -Condition ($classify -match 'scripts/docs_only_ci\.py classify') -Message "The classifier must read the diff itself."
+    Assert-True -Condition ($classify -match 'scripts/ci_paths\.py --base') -Message "The classifier must read the diff itself."
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.base\.sha') -Message "The base SHA must come from the current event."
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.head\.sha') -Message "The head SHA must come from the current event."
     Assert-True -Condition ($classify -notmatch 'actions/cache@') -Message "A cached mode would be stale after synchronize."
     Assert-True -Condition ($workflow -match 'python3 scripts/tests/test-docs-only-ci\.py') -Message "Privacy must run the docs-only regressions."
 }
 
-Invoke-Case "product suites run unless classification succeeded as docs-only" {
+Invoke-Case "docs-only guard remains on product suites" {
     $condition = "github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only'"
     foreach ($jobId in @(
         "backend-quality",
         "backend-tests",
-        "backend-timezone-windows",
         "frontend",
-        "g04-browser",
-        "release-safety",
-        "windows-production-smoke"
+        "g04-browser"
     )) {
         $job = Get-Job $jobId
         Assert-True -Condition ($job -match 'needs: docs-only-classify') -Message "$jobId must observe the classifier."
@@ -97,6 +94,40 @@ Invoke-Case "product suites run unless classification succeeded as docs-only" {
     $visual = Get-Job "visual-audit"
     Assert-True -Condition ($visual -match "github\.event_name == 'push' \|\| needs\.visual-audit-paths\.outputs\.run == 'true'") -Message "The visual audit gate stays intact."
     Assert-True -Condition ($visual -match 'scripts/ui_evidence_identity\.py trees') -Message "Exact-head identity proof stays inside the visual audit."
+}
+
+Invoke-Case "Windows safety jobs observe classifier ownership and conservative fallback" {
+    foreach ($entry in @(
+        @{ Job = "backend-timezone-windows"; Area = "windows" },
+        @{ Job = "release-safety"; Area = "release" },
+        @{ Job = "windows-production-smoke"; Area = "windows" }
+    )) {
+        $job = Get-Job $entry.Job
+        $condition = [regex]::Match($job, '(?ms)^    if:.*?(?=^    runs-on:)').Value
+        Assert-True -Condition ($job.Contains("needs: docs-only-classify")) -Message "$($entry.Job) must observe classification."
+        Assert-True -Condition ($condition.Contains("needs.docs-only-classify.result != 'success' ||")) -Message "$($entry.Job) must run if classification fails."
+        Assert-True -Condition ($condition.Contains("needs.docs-only-classify.outputs.$($entry.Area) != 'false'")) -Message "$($entry.Job) must run for selected or ambiguous safety inputs."
+        foreach ($label in @("ci:full", "ci:windows")) {
+            Assert-True -Condition ($condition.Contains("contains(github.event.pull_request.labels.*.name, '$label') ||")) -Message "$($entry.Job) must honor $label."
+        }
+        Assert-True -Condition ($condition.Contains("github.event_name == 'push' ||")) -Message "Main pushes retain $($entry.Job)."
+        Assert-True -Condition ($condition.Contains("!cancelled()")) -Message "$($entry.Job) must honor cancellation."
+    }
+}
+
+Invoke-Case "ci full overrides docs-only mode and omits the docs verdict" {
+    foreach ($jobId in @("backend-quality", "backend-tests", "frontend", "g04-browser")) {
+        $job = Get-Job $jobId
+        $override = "(contains(github.event.pull_request.labels.*.name, 'ci:full') ||"
+        Assert-True -Condition ($job.Contains($override)) -Message "$jobId must put ci:full outside the docs-only guard."
+        Assert-True -Condition ($job.IndexOf($override) -lt $job.IndexOf("outputs.mode != 'docs-only'")) -Message "$jobId must allow ci:full to bypass docs-only mode."
+    }
+    $visual = Get-Job "visual-audit"
+    Assert-True -Condition ($visual.Contains("contains(github.event.pull_request.labels.*.name, 'ci:full')")) -Message "ci:full must bypass visual filtering."
+    $fast = Get-Job "docs-fast-path"
+    foreach ($label in @("ci:full", "ci:windows")) {
+        Assert-True -Condition ($fast.Contains("!contains(github.event.pull_request.labels.*.name, '$label')")) -Message "$label must omit the docs-only verdict."
+    }
 }
 
 Invoke-Case "docs-only success cannot be a skipped or failed retained check" {

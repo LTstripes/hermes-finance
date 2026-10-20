@@ -194,6 +194,25 @@ def test_backend_matrix_keeps_full_lanes_and_forty_minute_integration_shards() -
     assert "docs-only-classify.outputs.mode != 'docs-only'" in workflow
 
 
+def test_pr_safety_job_ownership_and_docs_full_override() -> None:
+    # Link lane ownership to behavioral checks of the actual workflow gates.
+    # A scripts/PowerShell change must reach release safety without an opt-in label.
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(BACKEND_ROOT.parent / "scripts/tests/test-ci-paths.py"),
+            "WorkflowTests.test_safety_paths_reach_windows_jobs_without_labels",
+            "WorkflowTests.test_windows_jobs_follow_classifier_outputs_and_fail_closed",
+            "WorkflowTests.test_full_label_bypasses_docs_area_and_visual_filters",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def _matches(expression: str, names: frozenset[str]) -> bool:
     return Expression.compile(expression).evaluate(lambda name, **_kwargs: name in names)
 
