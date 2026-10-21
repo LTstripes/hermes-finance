@@ -156,10 +156,16 @@ def _ids(value: str | None) -> list[str]:
 
 
 def _face_value_fields(row: ET.Element, *, pending: bool = False) -> dict:
-    """Retain optional source nominal facts without inventing a default.
+    """Return optional source nominal facts without inventing a default.
 
-    Omit the key for legacy rows, preserving their frozen normalized payloads.
-    An explicit unusable/contradictory nominal stays unknown, never a fallback.
+    The result is one of:
+    - ``{}``: no recognized nominal attribute is present; legacy rows keep
+      their frozen normalized payloads.
+    - ``{"face_value": ""}``: a nominal attribute is present but every value
+      is empty, i.e. the row has no usable nominal.
+    - ``{"face_value": None}``: the nominal is invalid or the aliases
+      conflict; it stays unknown and is never replaced by a fallback.
+    - ``{"face_value": <normalized string>}``: the single agreeing nominal.
     """
     names = ("face_value", "nominal", "nominal_value")
     if pending:
