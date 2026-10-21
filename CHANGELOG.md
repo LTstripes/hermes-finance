@@ -18,6 +18,8 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 - [#918](https://github.com/LTstripes/hermes-finance/pull/918), merged as `d931f5b6`: the docs-only CI classifier accepts `docs/archive/**`, and an unknown Playwright project fails with the list of valid projects instead of an opaque error.
 - [#919](https://github.com/LTstripes/hermes-finance/pull/919), merged as `889eb60a`: CI speed-up splitting release runtime safety from release safety, rebalancing backend integration/persistence lanes and caching setup without dropping coverage.
 
+- Face-value test follow-up to [#924](https://github.com/LTstripes/hermes-finance/pull/924): the overlap conflict test now covers missing, empty and blank trade nominal against explicit `1000`, and a non-overlap test pins option A (empty nominal assumes 1000 with `face_value_assumed`, explicit `1000` uses the strict rule, invalid nominal is withheld without fallback). Tests only, synthetic data.
+
 ### Known limitations
 
 - The source-return tests use synthetic data only; CI success does not establish Owner-real numerical UAT or financial authority. The #917 page is synthetic-tested UI under the same limit. Known limitation: non-dict proof claims raise `AttributeError`.
