@@ -39,9 +39,10 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
 - The monthly rate is an approximate Modified Dietz fraction. The chained return is the product
   of the monthly estimates and is displayed as approximate, not exact TWRR. Period XIRR uses
   the outer endpoints and one dated external-flow schedule.
-- A missing interior endpoint withholds the affected adjacent months and the chained return.
-  Independent period growth or XIRR may remain available when the outer endpoints and flows are
-  known. A missing value is never replaced by zero.
+- A missing interior endpoint withholds the affected adjacent months' growth and rate and the
+  chained return; known contributions and withdrawals remain available. Independent period
+  growth or XIRR may remain available when the outer endpoints and flows are known. A missing
+  value is never replaced by zero.
 - Money stays in integer kopecks and rates are Decimal fractions with `ROUND_HALF_UP`; binary
   float is not used for financial arithmetic.
 
@@ -95,10 +96,12 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
   An all-time total need not equal its independently available price-effect plus income
   subtotals when months are partial.
 - NKD is counted once. A current accepted cash proof, or a unique per-row MyBroker bond
-  inference from parsed price and quantity, resolves the native-total basis. Both or neither
-  match leaves the basis unknown and withholds affected buys/sells/price effect/total/rate with
-  `trade_nkd_basis_unknown`; a conflict adds `trade_nkd_basis_conflict`. Missing commission or
-  bond NKD is unknown; omitted stock NKD is inapplicable zero. Bond valuation does not resolve
+  inference from parsed price and quantity, resolves the native-total basis. An inconclusive
+  inference preserves a valid accepted proof. Without either a proof or a unique inference,
+  the basis is unknown and affected buys/sells/price effect/total/rate are withheld with
+  `trade_nkd_basis_unknown`; a decidable inference that conflicts with the accepted proof
+  makes the basis unknown and adds `trade_nkd_basis_conflict`. Missing commission or bond NKD
+  is unknown; omitted stock NKD is inapplicable zero. Bond valuation does not resolve
   clean/dirty or accrued-interest basis, so bonds carry `approximate=true` and
   `bond_valuation_basis_unknown` without blocking the numbers.
 - One-part or absent trade identity produces `trade_identity_unresolved` and withholds the
@@ -175,9 +178,10 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
 - **No tax claim.** Fees and taxes are classified for source interpretation, but this view is
   not a tax-adjusted result and makes no tax, НДФЛ or cost-basis conclusion.
 - **Bond and NKD limits.** Bonds use reported values without resolving clean/dirty or
-  accrued-interest basis. NKD is counted once only where an accepted proof or unique per-row
-  inference resolves the basis; ambiguous rows are withheld. Sells rely on per-row inference or
-  remain withheld; the buy cash checks do not validate sells.
+  accrued-interest basis. NKD is counted once where an accepted proof or a unique per-row
+  inference resolves the basis; rows with neither, or with a decidable inference that
+  conflicts with the proof, are withheld. Sells rely on per-row inference or remain withheld;
+  the buy cash checks do not validate sells.
 - **Null is not zero.** Missing endpoints, unknown flows, incomplete instrument income, missing
   months, partial months and unsupported structure stay `null` with reason codes. For
   per-instrument income, a covered complete empty month is affirmative zero; an uncovered or
@@ -204,12 +208,17 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
   `source_intake_money_classifications` only; the `0059` journal and financial tables are
   preserved. Re-upgrade recreates an empty table, and classification choices are not
   reconstructed. A populated `0059` journal refuses downgrade to `0058`.
-- The supported production rollback is a matched code/database recovery, **not** an Alembic
-  downgrade. The restore wrapper accepts `same_revision` or one supported unambiguous forward
-  upgrade; ahead, divergent, downgrade and unknown graphs are refused. Old v1.3.0 code must
-  never open a 0059/0060 database.
-- See the [1.4.0 rollback plan](releases/1.4.0-rollback.md) for the restore-first procedure,
-  the Test-only downgrade note and the exact v1.3.0 reversion checks.
+- A production rollback from the `0060` schema to `0058` is **BLOCKED** with the current
+  accepted procedures. The in-app restore requires an exact same-schema database, the isolated
+  recovery wrapper only restores into a fresh non-Stable target, and `update-stable.ps1` pins
+  and validates code only; none can replace the Stable database with a `0058` backup. An
+  Alembic downgrade is not a production rollback. Old v1.3.0 code must never open a
+  `0059`/`0060` database.
+- After `0060` has been created, the only executable production path is a forward fix on
+  `0060`. Returning to the `0058` pair requires a separately accepted production cross-schema
+  restore procedure.
+- See the [1.4.0 rollback plan](releases/1.4.0-rollback.md) for the blocked production-restore
+  status, the isolated rehearsal checks, the Test-only downgrade note and the forward-fix path.
 
 ## Not included
 
