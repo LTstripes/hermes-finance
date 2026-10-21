@@ -8,13 +8,13 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 
 ### Added
 
-- [#911](https://github.com/LTstripes/hermes-finance/pull/911): domain monthly return chain separating contributions from growth, with approximate Modified Dietz monthly/chained returns and XIRR; missing boundaries withhold only affected months.
+- [#911](https://github.com/LTstripes/hermes-finance/pull/911): domain monthly return chain separating contributions from growth, with approximate Modified Dietz monthly/chained returns and XIRR; a missing boundary withholds the chained return, with per-segment handling in [#913](https://github.com/LTstripes/hermes-finance/pull/913).
 - [#913](https://github.com/LTstripes/hermes-finance/pull/913), merged as `4efbd433`: read-only source monthly returns service and `GET /api/source-returns/monthly`, plus persisted provisional money classification from [#912](https://github.com/LTstripes/hermes-finance/issues/912) in migration `0060_source_money_classifications`; includes user overrides, seam/missing-endpoint flags and partial contiguous segments.
 - [#915](https://github.com/LTstripes/hermes-finance/pull/915), squashed as `a9a239d8`: read-only per-instrument monthly/all-time source returns for [#914](https://github.com/LTstripes/hermes-finance/issues/914), counting NKD once where an accepted proof or unique per-row MyBroker inference resolves the basis (ambiguous rows withheld), keeping uncovered income NULL, withholding only affected months for unsupported structure, withholding identity-less trades, distinguishing missing from partial months, flagging approximations and treating `RUR` as `RUB`.
 
 ### Known limitations
 
-- The source-return tests use synthetic data only; CI success does not establish Owner-real numerical UAT or financial authority. Open low follow-up: non-dict proof claims raise `AttributeError`.
+- The source-return tests use synthetic data only; CI success does not establish Owner-real numerical UAT or financial authority. Known limitation: non-dict proof claims raise `AttributeError`.
 
 ## [1.3.0] — 2026-10-16
 
