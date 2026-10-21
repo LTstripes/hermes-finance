@@ -113,6 +113,11 @@ PROSE_PREFIXES = (
     "docs/reviews/",
 )
 
+# Archived prose may retain its original directory structure. Unlike the
+# single-level collections above, Markdown below this prefix is safe at any
+# depth.
+RECURSIVE_PROSE_PREFIXES = ("docs/archive/",)
+
 REGULAR_FILE = "100644"
 ABSENT_MODE = "000000"
 
@@ -173,6 +178,13 @@ def ordinary_doc_path(path: str) -> bool:
         if name.startswith("release-notes-"):
             return False
         return True
+    for prefix in RECURSIVE_PROSE_PREFIXES:
+        if not path.startswith(prefix):
+            continue
+        name = path.rsplit("/", 1)[-1]
+        return _PROSE_FILE.fullmatch(name) is not None and not name.startswith(
+            "release-notes-"
+        )
     return False
 
 

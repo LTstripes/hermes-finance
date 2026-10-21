@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/test";
 
+import { selectPlaywrightProjects } from "./playwrightProjects";
+
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), "hermes-finance-g04-"));
 const databasePath = path.join(databaseDir, "finance.db");
@@ -378,17 +380,7 @@ process.env.HERMES_PLAYWRIGHT_PROJECT_FILTERS = JSON.stringify(filters);
 
 const listing = args.includes("--list");
 const names = Object.keys(suites);
-const selectedNames = filters.length
-  ? names.filter((name) =>
-      filters.some((filter) => {
-        const expression = filter
-          .split("*")
-          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-          .join(".*");
-        return new RegExp(`^${expression}$`, "i").test(name);
-      }),
-    )
-  : ["chromium"];
+const selectedNames = filters.length ? selectPlaywrightProjects(names, filters) : ["chromium"];
 if (!listing && selectedNames.length !== 1) {
   throw new Error(
     "Run one Playwright project at a time (fixture servers share ports). Use --list to inspect multiple projects.",
