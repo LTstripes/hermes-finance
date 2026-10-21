@@ -51,8 +51,7 @@ Ordinary engineering choices inside the accepted contract are not scope expansio
 <a id="d1-agents-18-owner-data-and-runtime-isolation"></a>
 #### Owner data and runtime isolation
 
-Follow [Owner data and efficient task execution](#d1-owner_data_workflow-5).
-Owner-requested analysis, diagnosis and UAT permit relevant real-data reads and
+Follow [Owner data authority and distinct operations](#d1-owner_data_workflow-5). Owner-requested analysis, diagnosis and UAT permit relevant real-data reads and presentation to the Owner in the authorized conversation; they do not authorize data writes, runtime changes or publication. Credentials and real `.env` contents remain excluded from output.
 
 <a id="d1-model_routing-8"></a>
 ### Risk, independent review and concise launch
@@ -207,7 +206,7 @@ claim acquisition must be atomic. Never steal a claim because a timer elapsed or
 adopt another chat's identity. A paused task retains ownership until handed off.
 If occupied, use a fresh authorized checkout; read-only remote review can continue.
 The helper is cooperative coordination, not an OS lock against arbitrary editors.
-If the helper is unavailable, use a freshly created uniquely named checkout and
+If the helper is unavailable, use a freshly created uniquely named checkout and record its owner once; do not turn missing tooling into repeated approval requests. See the [workspace fallback](#d2) and [recoverable retirement](OWNER_RUNTIME_OPERATIONS.md#o5).
 
 <a id="d2-0012-runtime-and-agent-workspace-isolation-21"></a>
 ### Separate runtime and agent trees
@@ -255,10 +254,9 @@ The canonical shared source is the GitHub repository. Agent clones sync from can
 - Runtime isolation is a hard invariant, not a convenience.
 
 <a id="d3"></a>
+## 3. API/UI implementation discipline
 
 Keep fonts and mandatory UI assets local: production rendering makes no required Google Fonts request. Financial sums/derived public indicators come from backend; necessary frontend aggregation uses exact integer minor units/BigInt. JS Number is allowed only at the final chart-geometry boundary after exact values have been computed, never as monetary source of truth.
-
-## 3. API/UI implementation discipline
 
 Financial/domain logic lives in backend services/domain; React renders authoritative DTOs. Keep Decimal/minor-unit precision and stable reason codes, isolate provider adapters and validate explicit DTO allowlists. No native editor route accepts invalid month identity or arbitrary section names; C1 owns its exact protocol.
 
@@ -675,277 +673,59 @@ No issue is queued for the items below. Reopen one only when a product/risk need
   regression.
 
 <a id="d4-ci_test_optimization_playbook-1"></a>
-### Optimize verification without losing coverage
+### Verification optimization without coverage loss
+
+The 2026-09-16 speed pass is closed. Treat this as guidance for a new, concrete bottleneck, not a standing queue. The full method and measurements remain in the [archived playbook](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md) and [closeout](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md); copy the method, not Hermes-specific numbers or selections.
 
 <a id="d4-ci_test_optimization_playbook-1-purpose"></a>
-#### Purpose
-
-A reusable method for reducing CI wall time **without weakening regression coverage or domain guarantees**.
-
-This playbook was distilled from the Hermes Finance optimization pass closed on 2026-09-16. Project-specific results are recorded in the [2026-09-16 closeout](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md).
-
-The method is intentionally portable to other repositories, including Health-Check. Copy the process, not the Hermes-specific numbers or test selections.
-
-
 <a id="d4-ci_test_optimization_playbook-1-core-principle"></a>
-#### Core principle
-
-Optimize **execution topology** before optimizing or deleting tests.
-
-Prefer, in this order:
-
-1. remove accidental duplicate execution;
-2. narrow platform-specific lanes to the guarantees unique to that platform;
-3. reuse already-produced artifacts safely inside one job;
-4. parallelize independent tests/setup;
-5. optimize expensive fixtures after measuring them;
-6. consolidate genuinely duplicated tests only when semantic coverage is proven equivalent.
-
-Mass test deletion is not a performance strategy.
-
+**Core principle.** Optimize execution topology before changing tests. Prefer, in order: remove duplicate execution; narrow platform-specific lanes to their unique guarantees; reuse artifacts safely inside one job; parallelize independent work; optimize measured expensive fixtures; consolidate tests only when semantic equivalence is proven. Mass deletion is not a performance strategy.
 
 <a id="d4-ci_test_optimization_playbook-1-step-1--establish-a-real-baseline"></a>
-#### Step 1 — establish a real baseline
-
-Use several recent successful CI runs from the same repository state or comparable states.
-
-For every relevant job record:
-
-- job duration;
-- expensive step duration;
-- test count / passed / skipped / retries;
-- setup/install/build time;
-- whether it is actually on the critical path;
-- runner/platform.
-
-Separate three metrics:
-
-- **test/step time** — how long the relevant command runs;
-- **job time** — setup + command + post steps;
-- **whole-CI wall time** — time until all required jobs are complete.
-
-Do not attribute whole-pipeline improvement to one change when another job finished last or runner variance dominates.
-
+- **Baseline.** Use several successful runs from comparable repository states. Record test/step time, job time, whole-CI wall time, counts, setup/build, critical path and runner. Do not attribute a pipeline gain to one change when another job or runner variance dominates.
 
 <a id="d4-ci_test_optimization_playbook-1-step-2--audit-duplicate-execution-first"></a>
-#### Step 2 — audit duplicate execution first
-
-Look for the same verification entering the pipeline through multiple paths:
-
-- workflow invokes a test directly and a packaging script invokes it again;
-- a full suite runs in multiple lanes where only a subset is platform-specific;
-- install/package scripts rebuild or republish an artifact already created earlier;
-- nested scripts silently call the same harness;
-- release smoke and normal CI run equivalent checks without a distinct contract.
-
-For every apparent duplicate ask:
-
-- Is the assertion identical?
-- Does it run against the same artifact/state?
-- Does the second execution protect a different boundary?
-- Which path is canonical?
-
-Remove duplicate **execution**, not the canonical guarantee.
-
+- **Duplicate execution.** Look for the same verification invoked by a workflow and a script, a full suite in several lanes, repeated artifact builds, nested harnesses, or release smoke duplicating normal CI. Ask whether assertion, artifact/state, protected boundary and canonical path are identical. Remove duplicate execution, not the canonical guarantee.
 
 <a id="d4-ci_test_optimization_playbook-1-step-3--map-platform-specific-lanes-to-guarantees"></a>
-#### Step 3 — map platform-specific lanes to guarantees
-
-Never narrow a Windows/macOS/Linux lane just because the same test name exists elsewhere.
-
-Classify every node:
-
-- **MUST RUN ON THIS PLATFORM** — it exercises runtime, filesystem, timezone, path, shell, packaging or dependency behavior unique to the platform;
-- **OTHER LANE SUFFICIENT** — the test's semantic guarantee is already fully owned elsewhere;
-- **UNCERTAIN** — evidence is insufficient; keep it until proven otherwise.
-
-Before removing a node from a platform lane, prove where it still runs.
-
-Document the new ownership so future tests do not silently lose platform coverage.
-
+- **Platform lanes.** Classify each node as must-run-on-this-platform, already-owned-elsewhere or uncertain. Never narrow a Windows/macOS/Linux lane merely because a test name exists elsewhere; prove where the guarantee still runs and document ownership.
 
 <a id="d4-ci_test_optimization_playbook-1-step-4--inspect-expensive-setup-separately-from-assertions"></a>
-#### Step 4 — inspect expensive setup separately from assertions
-
-Slow tests are often slow because they repeatedly construct realistic state.
-
-Profile separately where practical:
-
-- database/schema creation;
-- repository/fixture creation;
-- process startup;
-- browser/server startup;
-- dependency restore/install;
-- compilation;
-- artifact publishing;
-- test assertions themselves;
-- cleanup.
-
-Do not optimize the assertion when fixture setup is the real cost.
-
+- **Expensive setup.** Profile database/schema creation, fixtures, process and browser startup, dependency restore, compilation, artifact publishing and cleanup separately from assertions. Optimize the real cost, not the assertion by habit.
 
 <a id="d4-ci_test_optimization_playbook-1-step-5--try-bounded-parallelism-only-after-proving-independence"></a>
-#### Step 5 — try bounded parallelism only after proving independence
-
-Before increasing workers, inspect:
-
-- shared mutable globals;
-- database/filesystem writes;
-- screenshot/output filenames;
-- ports and web-server lifecycle;
-- environment variables;
-- fixture directories;
-- process cleanup;
-- test ordering assumptions;
-- retries and artifact collection.
-
-Prefer the smallest concurrency change first.
-
-Example pattern:
-
-- increase workers;
-- keep within-file/full parallelism disabled if ordering inside a group still matters;
-- do not refactor tests in the same experiment unless necessary.
-
-Concurrency acceptance requires repeated runs, not one green CI.
-
+- **Bounded parallelism.** First inspect shared globals, database/filesystem writes, output filenames, ports, environment, fixture directories, ordering and cleanup. Prefer the smallest concurrency change; keep within-file parallelism disabled where ordering still matters, and require repeated runs rather than one green CI.
 
 <a id="d4-ci_test_optimization_playbook-1-step-6--keep-experiments-isolated"></a>
-#### Step 6 — keep experiments isolated
-
-One meaningful performance hypothesis per PR whenever possible.
-
-Good examples:
-
-- remove one duplicated harness;
-- narrow one platform lane;
-- change one worker count;
-- replace one fixture setup strategy.
-
-Bad example:
-
-- worker changes + fixture rewrite + lane reshuffle + test deletion in one PR.
-
-Isolation makes regressions attributable and lets the Integrator revert one idea without losing the rest.
-
+- **Isolation.** One performance hypothesis per PR: one duplicate harness, lane, worker count or fixture strategy. Do not combine worker changes, fixture rewrites, lane reshuffles and test deletion.
 
 <a id="d4-ci_test_optimization_playbook-1-step-7--verification-contract-for-an-optimization-pr"></a>
-#### Step 7 — verification contract for an optimization PR
-
-At minimum verify:
-
-- expected test/node count before and after;
-- no unintended skips;
-- all retained tests pass;
-- removed executions still have a canonical owner where applicable;
-- artifacts/screenshots/outputs remain complete;
-- failure still blocks the pipeline where the previous contract required fail-closed behavior;
-- diff is limited to the optimization scope;
-- privacy/runtime boundaries are unchanged;
-- exact-head PR CI succeeds;
-- canonical exact-main push CI succeeds after merge.
-
-For concurrency changes, add repeated local/hosted runs and check for retries/flakes/collisions.
-
+- **Verification contract.** Compare node counts before/after; show no unintended skips; retain passing tests and a canonical owner for removed executions; keep artifacts and fail-closed behavior complete; limit the diff; preserve privacy/runtime boundaries; pass exact-head PR CI and canonical exact-main push CI. Concurrency changes need repeated runs.
 
 <a id="d4-ci_test_optimization_playbook-1-step-8--report-timing-honestly"></a>
-#### Step 8 — report timing honestly
-
-Use observed ranges rather than a single headline number when possible.
-
-Report:
-
-- baseline runs;
-- candidate runs;
-- step timing;
-- job timing;
-- whole-CI timing;
-- test counts;
-- runner/platform differences;
-- whether the target job remained the critical path.
-
-Do not promise a fixed speedup from GitHub-hosted runner samples.
-
+- **Honest timing.** Report baseline and candidate ranges, step/job/whole-CI time, counts, runner/platform differences and whether the target remained critical. Do not promise a fixed speedup from hosted-runner samples.
 
 <a id="d4-ci_test_optimization_playbook-1-go--no-go-guidance"></a>
-#### GO / NO-GO guidance
-
-
 <a id="d4-ci_test_optimization_playbook-1-strong-go"></a>
-#### Strong GO
-
-Usually worth doing when:
-
-- duplicate execution is proven;
-- coverage is unchanged;
-- implementation is small;
-- gain is material to the critical path;
-- failure semantics remain identical.
-
-
 <a id="d4-ci_test_optimization_playbook-1-conditional-go"></a>
-#### Conditional GO
-
-Requires repeated evidence when:
-
-- adding concurrency;
-- caching/reusing mutable artifacts;
-- changing fixture topology;
-- moving tests between platform lanes.
-
-
 <a id="d4-ci_test_optimization_playbook-1-usually-no-go"></a>
-#### Usually NO-GO
-
-Avoid when:
-
-- the expected gain is only a few seconds;
-- implementation adds shared mutable fixture state;
-- toolchain/reproducibility policy must change only for speed;
-- publish/install/fail-closed semantics become less direct;
-- the target job is no longer near the critical path;
-- the optimization makes tests significantly harder to understand or maintain.
-
+| Decision | Use when |
+|---|---|
+| Strong GO | Duplicate execution is proven, coverage is unchanged, the change is small, gain is material to the critical path and failure semantics stay identical. |
+| Conditional GO | Adding concurrency, caching/reusing mutable artifacts, changing fixture topology or moving tests between platform lanes; require repeated evidence. |
+| Usually NO-GO | Gain is seconds, shared mutable fixtures appear, toolchain/reproducibility changes only for speed, publish/install/fail-closed semantics weaken, the target is no longer near the critical path, or the optimization makes tests significantly harder to understand or maintain. |
 
 <a id="d4-ci_test_optimization_playbook-1-stop-rule"></a>
-#### Stop rule
-
-A CI optimization pass should have an explicit stopping point.
-
-Stop when:
-
-- obvious duplicate work is gone;
-- platform lanes have clear ownership;
-- safe parallelism is already used;
-- remaining cost represents real high-value verification;
-- the next expected gain is small relative to complexity/risk;
-- current CI latency is acceptable for normal development.
-
-A few seconds left on the table is often cheaper than a clever test harness that becomes difficult to trust.
-
+**Stop rule.** Stop when obvious duplicate work is gone, platform lanes have clear ownership, safe parallelism is used, remaining cost is real high-value verification, current CI latency is acceptable and the next gain is small relative to complexity or risk.
 
 <a id="d4-ci_test_optimization_playbook-1-suggested-audit-prompt"></a>
-#### Suggested audit prompt
+> Audit the current CI for safe performance improvements. Treat GitHub as source of truth. Identify the actual critical path, duplicate execution, platform-overbroad coverage, expensive setup and safe parallelism opportunities. Do not assume an optimization is required. Preserve regression, privacy, runtime and domain contracts. For each opportunity give expected value, risk and GO/NO-GO; recommend only the next highest-value bounded change.
 
-A useful read-only audit can be intentionally short:
-
-> Audit the current CI for safe performance improvements. Treat GitHub as source of truth. Identify the actual critical path, duplicate execution, platform-overbroad coverage, expensive setup/fixtures and safe parallelism opportunities. Do not assume an optimization is required. Preserve regression, privacy, runtime and domain contracts. For each opportunity give expected value, risk and GO/NO-GO; recommend only the next highest-value bounded change.
-
-The repository's own `AGENTS.md`, verification policy and test guide should carry durable rules. Do not duplicate the whole project constitution into every task prompt.
-
+Keep durable rules in this book; do not copy the project constitution into every task prompt.
 
 <a id="d4-ci_test_optimization_playbook-1-applying-this-to-another-project"></a>
-#### Applying this to another project
+**Other repositories.** Start from that repository's main and CI history; inventory its lanes and contracts independently; establish its own baseline; do not assume Hermes bottlenecks; change one small thing per PR; preserve its health/data/privacy semantics; write a project-specific closeout when the stop condition is reached.
 
-For Health-Check or another repository:
-
-1. start from its own current `main` and CI history;
-2. inventory that project's lanes and contracts independently;
-3. establish its own baseline counts/timings;
-4. do not assume Hermes Finance bottlenecks exist there;
-5. run the steps above in small PRs;
-6. preserve health/data/privacy semantics exactly as defined by that repository;
-7. write a project-specific closeout once the marginal-gain stop condition is reached.
 
 <a id="d4-ui_v2_aggregate_verification-19"></a>
 ### Aggregate coverage and shared-spine verification
@@ -1230,22 +1010,19 @@ Normal completion does not require model/provider identity, usage telemetry or a
 
 
 <a id="d5-agent_orchestration-20-queue-policy"></a>
+<a id="d5-agent_orchestration-20-single"></a>
 #### Queue policy
 
-
-<a id="d5-agent_orchestration-20-single"></a>
-#### Single
+Only an explicit instruction activates a delivery loop or queue; default execution remains one Worker. Queue status never equals project acceptance, merge authority or permission to skip required review.
 
 <a id="d6"></a>
+## 6. Optional orchestration and client mechanics
 
+Default execution is one accountable Worker and only required independent review. A request for autonomous/careful work does not activate an unattended queue. Optional delivery-loop mode requires explicit opt-in and a concrete coordination reason; it does not grant canonical integration authority.
 
 Honor an explicitly selected execution client; direct GitHub access does not justify replacing it. ChatGPT Integrator reads actual refs/diffs/checks and reports GitHub-native evidence rather than local commands it did not run; authorized repository mechanics are performed directly, with release control only for an explicitly authorized prepared release. Codex defaults to the receiving Worker session unless assigned another role; no coordinator is compulsory. Give an independent Reviewer pinned base/candidate, relevant literal issue/source excerpts, previous findings and existing check evidence. A network-disabled Reviewer needs literal sources, not inaccessible URLs; cheap packet checks are sufficient. A child inheriting writable rights does not prove enforced read-only isolation.
 
 Hermes is a first-class Worker: receiving session owns one final candidate, optional helpers remain bounded and gain no acceptance/merge authority, and no ordinary delegate/fallback ledger is required. Hermes does not require Codex-local skills. OpenCode uses its configured isolated root and inspects sibling delivery via GitHub/remote refs or an assigned independent review path. Gemini/Grok add no project-wide orchestration/provider scheme. Machine-specific launch settings and concrete model choices stay local. Do not modify global/client skills, model defaults or installed config without explicit request.
-
-## 6. Optional orchestration and client mechanics
-
-Default execution is one accountable Worker and only required independent review. A request for autonomous/careful work does not activate an unattended queue. Optional delivery-loop mode requires explicit opt-in and a concrete coordination reason; it does not grant canonical integration authority.
 
 The root coordinates; after delegating implementation it does not become a second writer. Each Worker owns its frozen candidate and verification.
 The root assesses the actual candidate; required independent review uses a separate Reviewer. Remediation returns to the same Worker.
@@ -1278,9 +1055,6 @@ Use D1 risk policy; requiring review does not activate a queue or expand scope.
 
 
 <a id="d6-agent_orchestration-92-reporting"></a>
-#### Reporting
-
-
 <a id="d6-agent_orchestration-92-per-task-report"></a>
 #### Per-task report
 
