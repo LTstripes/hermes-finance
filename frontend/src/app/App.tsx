@@ -20,6 +20,7 @@ import {
   UiV2IncomeEntry,
   UiV2MonthEditorEntry,
   UiV2MonthlyResultEntry,
+  UiV2MonthlyReturnsEntry,
   UiV2MonthsEntry,
   UiV2PayoutForecastEntry,
   UiV2ReportEntry,
@@ -56,6 +57,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/capital/allocation" element={<UiV2CapitalAllocationEntry />} />
           <Route path="v2/capital/monthly-result" element={<UiV2MonthlyResultEntry />} />
           <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceEntry />} />
+          <Route path="v2/capital/monthly-returns" element={<UiV2MonthlyReturnsEntry />} />
           <Route path="v2/capital/statement-return" element={<BrokerStatementReturnPage />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />

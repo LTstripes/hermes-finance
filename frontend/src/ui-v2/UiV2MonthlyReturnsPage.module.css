@@ -1,0 +1,66 @@
+.controls,
+.upload,
+.cards {
+  display: grid;
+  gap: 12px;
+}
+.controls {
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+}
+.upload {
+  padding: 14px;
+  border: 1px solid #dce3ea;
+  border-radius: 10px;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.badge {
+  padding: 3px 7px;
+  border-radius: 99px;
+  background: #fff0d6;
+  color: #704300;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ok {
+  background: #e2f5e9;
+  color: #175c31;
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th,
+.table td {
+  padding: 9px;
+  border-bottom: 1px solid #e8ecf0;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.table td:last-child {
+  white-space: normal;
+  min-width: 190px;
+}
+.fileList {
+  margin: 0;
+  padding-left: 20px;
+}
+.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 650px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}
