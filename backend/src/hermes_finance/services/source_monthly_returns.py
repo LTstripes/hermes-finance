@@ -321,7 +321,6 @@ def read_monthly_returns(
                 covered_month = _next_month(covered_month)
         if start.day != 1 or end != _month_end(end):
             gaps.append(SourceReturnGap("partial_month_source", original.id))
-            continue
         sources.append((original.id, start, end, opening, closing))
 
     flows = []
@@ -390,7 +389,7 @@ def read_monthly_returns(
         }
     }
     rows = []
-    month = min(source[1] for source in sources)
+    month = min(source[1] for source in sources).replace(day=1)
     last = max(source[2] for source in sources)
     previous_closing = None
     while month <= last:

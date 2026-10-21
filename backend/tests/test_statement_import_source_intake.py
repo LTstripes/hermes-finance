@@ -815,3 +815,325 @@ def test_close_waits_for_journal_writer_and_rechecks_new_pending(database, monke
     with database.session_factory() as session:
         assert session.get(ReportingMonth, scope["reporting_month_id"]).status == "draft"
     assert _all_month_tables(database) == before
+
+
+# Real multipart Save -> ACK -> independent GET -> source-return APIs. The UI's
+# multi-file picker sends one independent request per file, including duplicates.
+@pytest.fixture
+def history_client(tmp_path):
+    from test_statement_import_broker_statement_provisional import _free_database
+
+    db = _free_database(tmp_path)
+    with TestClient(create_app(database=db)) as client:
+        yield client, db
+    db.engine.dispose()
+
+
+def _history_batch(client, originals):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def upload_one(item):
+        index, (filename, xml) = item
+        return client.post(
+            BASE,
+            files={"file": (filename, xml, "application/xml")},
+            data={"intent": json.dumps({"request_id": f"history-upload-{index}"})},
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        return list(workers.map(upload_one, enumerate(originals)))
+
+
+def _history_returns(client, account, kind):
+    response = client.get(f"/api/source-returns/{kind}", params={"source_account": account})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["financial_authority"] == "none"
+    return result
+
+
+def test_history_native_eight_file_batch_is_saved_with_empty_account_and_filename_period(
+    history_client,
+):
+    from history_import_fixtures import ACCOUNTS, LONG_END, LONG_START, history_trade, history_xml
+    from test_source_monthly_returns_service import snapshot
+    from test_statement_import_broker_statement_provisional import _finite_tables
+
+    client, db = history_client
+    financial_before = _finite_tables(db)
+    originals = []
+    for index, account in enumerate(ACCOUNTS):
+        empty = index == 3
+        trade = history_trade(date(2026, 6, 15), index + 1, repo="90001" if index < 2 else "")
+        money = (
+            (date(2026, 6, 15), "Перевод", "Synthetic own-account transfer", "500"),
+            (date(2026, 6, 16), "Комиссия", "Synthetic fee", "-2"),
+            (date(2026, 6, 17), "НДФЛ", "Synthetic tax", "-3"),
+        )
+        for start, end in ((LONG_START, LONG_END), (date(2026, 6, 1), date(2026, 6, 30))):
+            originals.append(
+                history_xml(
+                    account=account,
+                    start=start,
+                    end=end,
+                    trades=(trade,),
+                    money=money,
+                    empty=empty,
+                    native_structure=True,
+                )
+            )
+    responses = _history_batch(client, originals)
+    assert [r.status_code for r in responses] == [200] * 8, [r.text for r in responses]
+    for index, response in enumerate(responses):
+        view = client.get(f"{BASE}/{response.json()['intake_id']}").json()
+        assert view["state"]["account_id"] is None
+        assert view["state"]["reporting_month_id"] is None
+        assert view["financial_authority"] == "none" and view["exceptions"]
+        assert view["covered_from"] == (LONG_START.isoformat() if index % 2 == 0 else "2026-06-01")
+        assert view["covered_to"] == (LONG_END.isoformat() if index % 2 == 0 else "2026-06-30")
+        if index >= 6:
+            assert view["document"]["positions"] == []
+            assert view["document"]["trades"] == []
+            assert view["document"]["money"] == []
+            assert not any(
+                o["facts"].get("native_references", {}).get("acc_code")
+                for o in view["observations"]
+            )
+    assert len(client.get(BASE, params={"include_unbound": True}).json()) == 8
+    before = snapshot(db)
+    for account in (*ACCOUNTS[:3], ACCOUNTS[3].split("-")[0]):
+        monthly = _history_returns(client, account, "monthly")
+        instruments = _history_returns(client, account, "instruments")
+        if account == ACCOUNTS[3].split("-")[0]:
+            assert instruments["instruments"] == []
+            assert all(m["growth_kopecks"] is None for m in monthly["months"])
+        else:
+            assert "unrecognized_money" in {g["code"] for g in monthly["gaps"]}
+            assert all(
+                m["total_kopecks"] is None for i in instruments["instruments"] for m in i["months"]
+            )
+    assert snapshot(db) == before
+    assert _finite_tables(db) == financial_before
+
+
+def test_history_partial_long_report_keeps_calendar_and_dated_flows(history_client):
+    from history_import_fixtures import ACCOUNTS, history_trade, history_xml
+
+    client, _ = history_client
+    day = date(2026, 6, 15)
+    report = history_xml(
+        trades=(history_trade(day, 1),),
+        money=((day, "Внесено по распоряжению Клиента", "Synthetic funding", "500"),),
+    )
+    (response,) = _history_batch(client, [report])
+    assert response.status_code == 200, response.text
+    result = _history_returns(client, ACCOUNTS[0], "monthly")
+    assert len(result["months"]) == 32
+    assert result["months"][0]["closing_date"] == "2024-03-31"
+    assert result["months"][-1]["closing_date"] == "2026-10-31"
+    assert all(
+        m["growth_kopecks"] is None and m["modified_dietz_return"] is None for m in result["months"]
+    )
+    june = next(m for m in result["months"] if m["closing_date"] == "2026-06-30")
+    assert june["contributions_kopecks"] == 50_000
+    assert result["period"]["contributions_kopecks"] == 50_000
+    assert result["period"]["chained_return"] is None
+    assert "partial_month_source" in {g["code"] for g in result["gaps"]}
+
+
+def test_history_long_monthly_overlap_deduplicates_trades_income_and_reupload(history_client):
+    from history_import_fixtures import ACCOUNTS, BOND, history_trade, history_xml
+    from test_statement_import_mybroker import ISIN
+
+    client, db = history_client
+    day = date(2026, 6, 15)
+    trades = (
+        history_trade(day, 1),
+        history_trade(day, 2, isin=BOND, price="100", amount="1020", nkd="20"),
+    )
+    money = (
+        (day, "Внесено по распоряжению Клиента", "Synthetic funding", "500"),
+        (day, "Купон", f"Payment {BOND}", "30"),
+    )
+    long = history_xml(trades=trades, money=money)
+    monthly = history_xml(start=date(2026, 6, 1), end=date(2026, 6, 30), trades=trades, money=money)
+    responses = _history_batch(client, [long, monthly, monthly])
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    assert responses[1].json()["intake_id"] == responses[2].json()["intake_id"]
+    assert len(client.get(BASE, params={"include_unbound": True}).json()) == 2
+    account = ACCOUNTS[0]
+    result = _history_returns(client, account, "monthly")
+    june = next(m for m in result["months"] if m["closing_date"] == "2026-06-30")
+    assert june["contributions_kopecks"] == 50_000 and june["coupons_kopecks"] == 3_000
+    assert len(result["flows"]) == 1 and len(result["flows"][0]["source_references"]) == 2
+    assert "overlap_flow_deduplicated" in {g["code"] for g in result["gaps"]}
+    result = _history_returns(client, account, "instruments")
+    instruments = {i["isin"]: i for i in result["instruments"]}
+    stock = next(m for m in instruments[ISIN]["months"] if m["month"] == "2026-06-01")
+    bond = next(m for m in instruments[BOND]["months"] if m["month"] == "2026-06-01")
+    assert stock["buys_cost_kopecks"] == 10_100  # Stock omits NKD.
+    assert bond["buys_cost_kopecks"] == 102_100  # Included NKD counted once.
+    assert bond["coupons_kopecks"] == 3_000
+    assert instruments[ISIN]["all_time"]["buys_cost_kopecks"] == 10_100
+    # New app/session reload, duplicate ACK and return reads do not add observations.
+    from test_source_monthly_returns_service import snapshot
+
+    before = snapshot(db)
+    with TestClient(create_app(database=db)) as restarted:
+        assert _history_returns(restarted, account, "instruments") == result
+    assert snapshot(db) == before
+
+
+def test_history_sparse_trade_months_do_not_invent_month_end_returns(history_client):
+    from history_import_fixtures import ACCOUNTS, history_trade, history_xml
+    from test_statement_import_mybroker import ISIN
+
+    client, _ = history_client
+    days = (
+        date(2024, 3, 26),
+        date(2024, 4, 15),
+        date(2025, 2, 15),
+        date(2026, 5, 15),
+        date(2026, 7, 15),
+    )
+    two_months = (date(2024, 4, 16), date(2026, 7, 16))
+    reports = [
+        history_xml(
+            account=account,
+            trades=tuple(history_trade(day, index + 1) for index, day in enumerate(dates)),
+        )
+        for account, dates in ((ACCOUNTS[0], days), (ACCOUNTS[2], two_months))
+    ]
+    assert all(r.status_code == 200 for r in _history_batch(client, reports))
+    for account in (ACCOUNTS[0], ACCOUNTS[2]):
+        monthly = _history_returns(client, account, "monthly")
+        assert len(monthly["months"]) == 32
+        for month in ("2024-05-01", "2025-01-01", "2026-06-01"):
+            row = next(m for m in monthly["months"] if m["closing_date"][:7] == month[:7])
+            assert row["opening_kopecks"] is None and row["closing_kopecks"] is None
+            assert row["growth_kopecks"] is None and "missing_endpoint" in row["flags"]
+        instrument = next(
+            i
+            for i in _history_returns(client, account, "instruments")["instruments"]
+            if i["isin"] == ISIN
+        )
+        row = next(m for m in instrument["months"] if m["month"] == "2026-06-01")
+        assert row["total_kopecks"] is None and row["return_percent"] is None
+        assert "2026-06-01" in instrument["all_time"]["partial_months"]
+        assert instrument["all_time"]["return_percent"] is None
+
+
+@pytest.mark.parametrize("account_index", [0, 1])
+def test_history_repo_withholds_affected_instrument_month(history_client, account_index):
+    from history_import_fixtures import ACCOUNTS, history_trade, history_xml
+    from test_statement_import_mybroker import ISIN
+
+    client, _ = history_client
+    day = date(2026, 6, 15)
+    report = history_xml(
+        account=ACCOUNTS[account_index],
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 30),
+        trades=(history_trade(day, 1, repo="987654"),),
+    )
+    (response,) = _history_batch(client, [report])
+    assert response.status_code == 200, response.text
+    view = client.get(f"{BASE}/{response.json()['intake_id']}").json()
+    assert view["document"]["trades"][0]["repo_observed"]
+    result = _history_returns(client, ACCOUNTS[account_index], "instruments")
+    row = next(i for i in result["instruments"] if i["isin"] == ISIN)["months"][0]
+    assert row["buys_cost_kopecks"] is None and row["total_kopecks"] is None
+    assert "repo_trade_unsupported" in row["flags"]
+
+
+def test_history_non_1000_bond_is_withheld_without_poisoning_stock(history_client):
+    from history_import_fixtures import ACCOUNTS, BOND, history_trade, history_xml
+    from test_statement_import_mybroker import ISIN
+
+    client, _ = history_client
+    day = date(2026, 6, 15)
+    report = history_xml(
+        start=date(2026, 6, 1),
+        end=date(2026, 6, 30),
+        trades=(
+            history_trade(day, 1),
+            history_trade(day, 2, isin=BOND, price="100", amount="820", nkd="20"),
+        ),
+    )
+    (response,) = _history_batch(client, [report])
+    assert response.status_code == 200, response.text
+    result = _history_returns(client, ACCOUNTS[0], "instruments")
+    instruments = {i["isin"]: i for i in result["instruments"]}
+    bond, stock = instruments[BOND]["months"][0], instruments[ISIN]["months"][0]
+    for field in (
+        "buys_cost_kopecks",
+        "sells_proceeds_kopecks",
+        "price_effect_kopecks",
+        "total_kopecks",
+        "return_percent",
+    ):
+        assert bond[field] is None
+    assert "trade_nkd_basis_unknown" in bond["flags"]
+    assert stock["buys_cost_kopecks"] == 10_100 and stock["total_kopecks"] == 9_900
+
+
+def test_history_month_boundary_own_transfer_requires_explicit_classification(history_client):
+    from history_import_fixtures import ACCOUNTS, history_xml
+
+    client, _ = history_client
+    outgoing, incoming = date(2026, 5, 31), date(2026, 6, 1)
+    reports = [
+        history_xml(
+            account=account,
+            start=date(2026, 5, 1),
+            end=date(2026, 6, 30),
+            money=((day, "Перевод", f"Synthetic own transfer {counterparty}", amount),),
+        )
+        for account, day, counterparty, amount in (
+            (ACCOUNTS[0], outgoing, ACCOUNTS[1], "-500"),
+            (ACCOUNTS[1], incoming, ACCOUNTS[0], "500"),
+        )
+    ]
+    responses = _history_batch(client, reports)
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    for account, response, day in zip(ACCOUNTS, responses, (outgoing, incoming)):
+        before = _history_returns(client, account, "monthly")
+        row = next(m for m in before["months"] if m["closing_date"][:7] == day.isoformat()[:7])
+        assert row["contributions_kopecks"] is None and row["withdrawals_kopecks"] is None
+        assert "unknown_flow" in row["flags"]
+        intake = client.get(f"{BASE}/{response.json()['intake_id']}").json()
+        choice = intake["money_classifications"][0]
+        assert choice["classification"] == "unknown" and choice["date"] == day.isoformat()
+        update = client.put(
+            f"/api/source-intakes/{intake['id']}/money-classifications/{choice['source_reference']}",
+            json={"classification": "internal_transfer"},
+        )
+        assert update.status_code == 200, update.text
+        after = _history_returns(client, account, "monthly")
+        assert not after["flows"]
+        assert after["period"]["contributions_kopecks"] == 0
+        assert after["period"]["withdrawals_kopecks"] == 0
+        assert all("unknown_flow" not in m["flags"] for m in after["months"])
+
+
+def test_history_malformed_file_does_not_rollback_other_batch_saves(history_client):
+    from history_import_fixtures import ACCOUNTS, history_xml
+
+    client, _ = history_client
+    valid = [history_xml(account=account) for account in ACCOUNTS[:3]]
+    responses = _history_batch(
+        client,
+        [
+            valid[0],
+            ("Брокерский 4567890 (01.06.26-30.06.26).xml", b"<Report><Positions>"),
+            *valid[1:],
+        ],
+    )
+    assert [r.status_code for r in responses] == [200, 409, 200, 200], [r.text for r in responses]
+    assert responses[1].json()["error"]["message"] == "xml_invalid"
+    saved = client.get(BASE, params={"include_unbound": True}).json()
+    assert len(saved) == 3
+    for response, account in zip((responses[0], *responses[2:]), ACCOUNTS):
+        readback = client.get(f"{BASE}/{response.json()['intake_id']}")
+        assert readback.status_code == 200 and readback.json()["observations"]
+        assert _history_returns(client, account, "instruments")["instruments"]
