@@ -1581,9 +1581,10 @@ are derived. The original one-part `ids` remains an observation with
 `repo_semantics_unsupported`. Reciprocal rows and duplicate occurrences never
 manufacture a second native ID or an S2 execution.
 
-The parser identity and normalized shape remain `mybroker-s1-v2`; previously
-accepted numeric-ID documents normalize identically. Malformed B IDs, ambiguous
-partners, absent/inconsistent markers and pending B rows refuse parsing.
+For the #736 REPO compatibility repair, parser identity and normalized shape
+remain `mybroker-s1-v2`; previously accepted numeric-ID documents normalize
+identically. The later optional nominal extension is described below. Malformed
+B IDs, ambiguous partners, absent/inconsistent markers and pending B rows refuse parsing.
 B-linked money comments remain unsupported and unlinked. Because S1 does not
 retain arbitrary money comments, H2 owner-cash claims cannot override an
 identity-less REPO observation in the account's scoped source set. H0/H1,
@@ -1623,8 +1624,19 @@ remain guarded there; this does not assign or backfill a trade class.
 writes. Security rows carry beginning/ending actual quantity, beginning value and
 ending value beside the unchanged ending actual/forward quantity keys. Values
 keep the source-native basis labels (beginning `previous_day_eod`, ending
-`covered_to_eod`) as document `endpoint_basis`; no price is derived, and no bond
-nominal/NKD/clean-dirty semantics are introduced.
+`covered_to_eod`) as document `endpoint_basis`; that #716 endpoint extension
+derives no price and introduces no bond nominal/NKD/clean-dirty semantics.
+
+The later optional nominal extension retains `face_value`, `nominal` and
+`nominal_value` attributes as `face_value` on trade/position rows (including
+`2`-suffixed pending attributes), without changing trade core/identity or S1
+financial authority. It keeps `mybroker-s1-v2` compatible by reproducing each
+saved row's nominal-key presence when validating an exact reattached original.
+Previously absent keys remain absent; recorded nominal values and every other
+parser fact must still agree. Saved JSON, manifests and fingerprints are never
+rewritten, and reattachment cannot promote opaque nominal attributes into frozen
+facts. New intakes may retain these facts; only an applicable trade-row nominal
+supports provisional NKD inference under the [instrument-return contract](#c7-source_instrument_returns-1).
 
 The RUB currency row is recognized only by the accepted conjunction
 `active_type=Валюта`, `active_name=RUB`, empty `ISIN1`, and is normalized
@@ -5806,21 +5818,23 @@ Let T be native `summ_trade`, N the native NKD and F commission. With an
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
 These are the C5 native-total basis meanings. For buys, a current accepted cash proof
 matching the native identity, IDs and exact trade components takes precedence,
-revalidated through the existing proof reader and cash checks. A proof with missing
-or non-dictionary `claims` is invalid and contributes no basis: use unique inference
-or withhold with `trade_nkd_basis_unknown`. These cash checks validate buys only; sells rely on per-row inference or remain withheld.
+revalidated through the existing proof reader and cash checks. A malformed proof
+envelope (including missing/invalid `claims`, `source_identity`, `native_ids`,
+`signed_minor` or `nkd_leg` fields) is invalid and contributes no basis: use unique
+inference or withhold with `trade_nkd_basis_unknown`. These cash checks validate
+buys only; sells rely on per-row inference or remain withheld.
 For MyBroker bond buys and sells,
 the provisional reader also infers a basis per row from parsed `Price` (percent
 of face), signed `qty` and an explicit positive face value D in settlement-currency
 units per security: let P = Price / 100 * D * |qty|. The optional row attributes
 `face_value`, `nominal` and `nominal_value` (also their `2`-suffixed variants
 on pending rows) are normalized as `face_value` on parsed trade/position rows.
-A trade-row value takes precedence; otherwise use the unique nominal recorded
-for the same account/ISIN in that statement's position rows. Conflicting aliases,
-conflicting position nominals, blank/invalid/nonpositive values and absent nominal
-leave inference unknown; an explicitly unusable trade-row nominal cannot fall back
-to a position value. Contradictory nominal evidence across settled overlapping
-trade copies is `overlapping_trade_conflict` and withholds affected costs. There is
+Only a trade-row value supplies a dated nominal for inference. Position-row
+nominal has no proven validity interval and may describe a post-amortization face;
+it is not applied to trades, even for the same account/ISIN and statement.
+Conflicting trade aliases, blank/invalid/nonpositive values and absent trade nominal
+leave inference unknown; position evidence cannot fill that gap. Contradictory
+nominal evidence across settled overlapping trade copies is `overlapping_trade_conflict` and withholds affected costs. There is
 no default 1000 face, no derivation of face from T, and no substitution of current
 instrument database metadata for historical source evidence. This supports explicit
 500, 100 and other faces; amortization without an applicable nominal stays unknown.
@@ -5829,9 +5843,10 @@ With Decimal arithmetic and the unchanged per-row 0.01 tolerance,
 `includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
 Both or neither matching leaves inference unknown. Optional nominal keys are omitted
 when no supported attribute exists, preserving normalized payloads for those legacy
-rows. Previously saved intakes are read as frozen facts: opaque attribute fingerprints
-are not reparsed or promoted to nominal evidence. An unknown inference preserves a valid
-reviewed proof; a decidable inference conflicting with that proof makes the basis
+rows. Previously saved intakes are read as frozen facts: exact-original reattachment
+reproduces their saved nominal-key presence under the C3 compatibility rule; opaque
+attribute fingerprints are not promoted to nominal evidence. An unknown inference
+preserves a valid reviewed proof; a decidable inference conflicting with that proof makes the basis
 unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
 inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
 total/rate; bond EOD approximation does not waive this. This arithmetic inference

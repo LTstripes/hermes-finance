@@ -29,6 +29,7 @@ from hermes_finance.statement_import.mybroker import (
     PROVIDER,
     MyBrokerError,
     digest,
+    frozen_source_shape,
     parse_mybroker,
 )
 
@@ -113,7 +114,7 @@ def _original_equal(fresh: dict, stored: dict) -> bool:
     Fingerprints below still reference the FULL stored row (including accepted
     linkage), as historical_owner_flows/source_cash_coverage do.
     """
-    for key, value in fresh.items():
+    for key, value in frozen_source_shape(fresh, stored).items():
         if key in ("money", "trades"):
             rows = stored.get(key, [])
             if len(rows) != len(value):

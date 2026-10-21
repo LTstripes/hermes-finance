@@ -58,6 +58,26 @@ def digest(value: object) -> str:
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
+def frozen_source_shape(fresh: dict, stored: dict) -> dict:
+    """Reproduce only the optional nominal keys already present in frozen v2 facts.
+
+    Exact-original checks remain the caller's responsibility. Missing saved keys
+    mean the old grammar, never permission to promote a reattached nominal.
+    All other fields, row counts and recorded nominal values still must match.
+    """
+    if fresh.get("parser") != PARSER or stored.get("parser") != PARSER:
+        return fresh
+    result = dict(fresh)
+    for section in ("positions", "trades"):
+        rows, old_rows = fresh.get(section, []), stored.get(section, [])
+        if len(rows) == len(old_rows):
+            result[section] = [
+                {key: value for key, value in row.items() if key != "face_value" or key in old}
+                for row, old in zip(rows, old_rows, strict=True)
+            ]
+    return result
+
+
 def lines(value: str | None) -> list[str]:
     return [line.strip() for line in (value or "").splitlines() if line.strip()]
 

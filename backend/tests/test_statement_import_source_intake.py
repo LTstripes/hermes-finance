@@ -815,3 +815,28 @@ def test_close_waits_for_journal_writer_and_rechecks_new_pending(database, monke
     with database.session_factory() as session:
         assert session.get(ReportingMonth, scope["reporting_month_id"]).status == "draft"
     assert _all_month_tables(database) == before
+
+
+def test_old_shape_intake_nominal_reattaches_for_review_without_manifest_upgrade(
+    database, monkeypatch
+):
+    from hermes_finance.statement_import import mybroker
+
+    scope = _broker_month_setup(database)
+    root = ET.fromstring(broker_month_xml())
+    root.find(".//{MyBroker}Details[@ISIN1]").set("nominal", "500")
+    root.find(".//{MyBroker}Details[@trade_no]").set("nominal", "1000")
+    xml = ET.tostring(root)
+    client = TestClient(create_app(database=database))
+    with monkeypatch.context() as old:
+        old.setattr(mybroker, "_face_value_fields", lambda *args, **kwargs: {})
+        view = save(client, xml, scope)
+    before = _tables(database)
+    response = upload(client, f"{BASE}/{view['id']}/review-preview", xml, "intent", intent(view))
+    assert response.status_code == 200, response.text
+    assert response.json()["manifest_digest"] == view["manifest_digest"]
+    assert response.json()["financial_effects"] == 0
+    assert _tables(database) == before
+    restored = client.get(f"{BASE}/{view['id']}").json()
+    assert restored["document"] == view["document"]
+    assert restored["manifest_digest"] == view["manifest_digest"]

@@ -266,38 +266,42 @@ def _native_total_basis(session, trade):
         or not isinstance(proof.get("claims"), dict)
     ):
         return None
-    accepted = session.scalar(
-        select(ExecutedTrade).where(ExecutedTrade.source_identity == trade["identity"])
-    )
-    if accepted is None or _trade_core(json.loads(accepted.core_json)) != _trade_core(
-        trade["core"]
-    ):
+    try:
+        accepted = session.scalar(
+            select(ExecutedTrade).where(ExecutedTrade.source_identity == trade["identity"])
+        )
+        if accepted is None or _trade_core(json.loads(accepted.core_json)) != _trade_core(
+            trade["core"]
+        ):
+            return None
+        basis = proof["claims"].get("native_total_basis")
+        if (
+            basis not in ("includes_paid_nkd", "excludes_paid_nkd")
+            or proof["source_identity"] != trade["identity"]
+            or proof["native_ids"] != trade["ids"]
+        ):
+            return None
+        with localcontext() as context:
+            context.prec = 100
+            groups = {
+                role: [
+                    {
+                        "amount": str(Decimal(proof["signed_minor"][key]) / 100),
+                        "date": proof["nkd_leg"]["effective_date"],
+                        "currency": proof["nkd_leg"]["currency"],
+                    }
+                ]
+                for role, key in (
+                    ("settlement", "settlement"),
+                    ("paid_nkd", "paid_nkd"),
+                    ("commission", "commission"),
+                )
+            }
+        normalized = dict(trade, core=_trade_core(trade["core"]))
+        return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
+    except (ValueError, TypeError, KeyError, ArithmeticError):
+        # A malformed proof is no basis; it must not suppress source inference.
         return None
-    basis = proof["claims"].get("native_total_basis")
-    if (
-        basis not in ("includes_paid_nkd", "excludes_paid_nkd")
-        or proof["source_identity"] != trade["identity"]
-        or proof["native_ids"] != trade["ids"]
-    ):
-        return None
-    with localcontext() as context:
-        context.prec = 100
-        groups = {
-            role: [
-                {
-                    "amount": str(Decimal(proof["signed_minor"][key]) / 100),
-                    "date": proof["nkd_leg"]["effective_date"],
-                    "currency": proof["nkd_leg"]["currency"],
-                }
-            ]
-            for role, key in (
-                ("settlement", "settlement"),
-                ("paid_nkd", "paid_nkd"),
-                ("commission", "commission"),
-            )
-        }
-    normalized = dict(trade, core=_trade_core(trade["core"]))
-    return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
 
 
 def _inferred_native_total_basis(trade):
@@ -346,22 +350,6 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
     return total + fee if quantity > 0 else total - fee
 
 
-def _source_face_value(trade, document):
-    # A dated trade-row nominal takes precedence over position evidence, which
-    # may describe the period boundary after an amortization. Never substitute
-    # current database metadata for historical statement facts.
-    if "face_value" in trade:
-        return trade["face_value"]
-    values = {
-        row["face_value"]
-        for row in document.get("positions", [])
-        if row["isin"] == trade["core"]["isin"]
-        and row["source_account"] == trade["core"]["source_account"]
-        and "face_value" in row
-    }
-    return next(iter(values)) if len(values) == 1 else None
-
-
 def _trades(session, views, isin, month, instrument_type, flags):
     groups = defaultdict(list)
     for view in views:
@@ -370,14 +358,11 @@ def _trades(session, views, isin, month, instrument_type, flags):
                 key = trade.get("identity") or object()
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
+                # A position nominal has no proven validity at the trade date.
                 groups[key].append(
                     dict(
                         trade,
-                        face_value=(
-                            _source_face_value(trade, view["document"])
-                            if instrument_type == "bond"
-                            else None
-                        ),
+                        face_value=(trade.get("face_value") if instrument_type == "bond" else None),
                     )
                 )
     buys = sells = 0

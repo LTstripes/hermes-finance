@@ -1193,3 +1193,33 @@ def test_optional_nominal_aliases_must_agree(other):
     row.set("face_value", other)
     parsed = parse_mybroker(ET.tostring(root), FILENAME)
     assert parsed["trades"][0]["face_value"] == ("500" if other == "500.0" else None)
+
+
+@pytest.mark.parametrize("location", ["positions", "trades"])
+def test_nominal_shape_compatibility_only_omits_previously_absent_keys(location):
+    from copy import deepcopy
+
+    from hermes_finance.services.mybroker_money_candidates import _original_equal
+    from hermes_finance.statement_import.mybroker import frozen_source_shape
+
+    root = ET.fromstring(fixture())
+    root.find(".//{MyBroker}Details[@ISIN1]").set("nominal", "500")
+    root.find(".//{MyBroker}Details[@trade_no]").set("nominal", "1000")
+    fresh = parse_mybroker(ET.tostring(root), FILENAME)
+    old = deepcopy(fresh)
+    for section in ("positions", "trades"):
+        for row in old[section]:
+            row.pop("face_value", None)
+    assert _original_equal(fresh, old)
+    assert frozen_source_shape(fresh, old) == old
+    assert "face_value" in fresh[location][0]  # Projection never mutates fresh facts.
+    changed = deepcopy(fresh)
+    changed[location][0]["face_value"] = "100"
+    assert not _original_equal(changed, fresh)
+    # Legacy omission is the only exemption: all other fields/counts still match.
+    changed = deepcopy(fresh)
+    changed[location][0]["ordinal"] += 1
+    assert not _original_equal(changed, old)
+    changed = deepcopy(fresh)
+    changed[location].append(deepcopy(changed[location][0]))
+    assert not _original_equal(changed, old)

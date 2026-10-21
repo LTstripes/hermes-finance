@@ -1080,3 +1080,30 @@ def test_unbound_ambiguous_second_alias_missing_side_and_repo_are_fail_closed(tm
         selection["choice"] for selection in chosen.json()["assumptions"]["selections"]
     ]
     database.engine.dispose()
+
+
+def test_old_shape_intake_with_nominal_reattaches_without_promoting_frozen_facts(
+    database, monkeypatch
+):
+    from hermes_finance.services.broker_statement_provisional import _matching_source
+    from hermes_finance.statement_import import mybroker
+
+    root = ET.fromstring(provisional_xml())
+    root.find(".//m:Details[@ISIN1]", NS).set("nominal", "500")
+    root.find(".//m:Details[@trade_no]", NS).set("nominal", "1000")
+    xml = ET.tostring(root)
+    client = TestClient(create_app(database=database))
+    scope = april_scope(database)
+    # Simulate a pre-extension parser at Save, with the same exact original bytes.
+    with monkeypatch.context() as old:
+        old.setattr(mybroker, "_face_value_fields", lambda *args, **kwargs: {})
+        view = save(client, xml, scope)
+    assert all(
+        "face_value" not in row for key in ("positions", "trades") for row in view["document"][key]
+    )
+    before = _all_month_tables(database)
+    context = context_for(client, xml, view)
+    assert context["hard_blockers"] == []
+    matched = _matching_source(view["document"], xml, FILENAME_APRIL)
+    assert all("face_value" not in row for key in ("positions", "trades") for row in matched[key])
+    assert _all_month_tables(database) == before

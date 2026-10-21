@@ -95,6 +95,8 @@ def save(
             summ_trade=amount,
             trade_no=f"1000000000{index + 1}\n200000000{index + 1}",
         )
+        if isin == BOND:
+            row.set("nominal", "1000")
         for key, value in (("summ_nkd", nkd), ("bank_tax", fee)):
             if value is None:
                 row.attrib.pop(key, None)
@@ -786,7 +788,7 @@ def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basi
     def mutate(root):
         root.find(".//m:Details[@trade_no]", NS).set("Price", price)
         if inference == "unknown_face":
-            root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+            root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
 
     intake = save(db, trades=((BOND, "1", amount, "20", "5"),), mutate=mutate)
     with db.session_factory() as session:
@@ -1056,7 +1058,7 @@ def test_unsupported_trade_preserves_covered_income(db, attribute, value, code, 
 def test_malformed_proof_claims_fall_back_or_withhold(db, monkeypatch, claims, known_face):
     def mutate(root):
         if not known_face:
-            root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal", None)
+            root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal", None)
 
     intake = save(db, mutate=mutate)
     with db.session_factory() as session:
@@ -1103,6 +1105,7 @@ def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclus
         position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
         position.attrib.pop("nominal", None)
         trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.pop("nominal", None)
         trade.set("Price", "101.5")
         (trade if location == "trade" else position).set("nominal", face)
 
@@ -1110,10 +1113,14 @@ def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclus
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
     expected = int((principal + 40 + (3 if quantity == "2" else -3)) * 100)
-    assert row.buys_cost_kopecks == (expected if quantity == "2" else 0)
-    assert row.sells_proceeds_kopecks == (expected if quantity == "-2" else 0)
-    assert row.total_kopecks is not None
-    assert "trade_nkd_basis_unknown" not in row.flags
+    if location == "trade":
+        assert row.buys_cost_kopecks == (expected if quantity == "2" else 0)
+        assert row.sells_proceeds_kopecks == (expected if quantity == "-2" else 0)
+        assert row.total_kopecks is not None
+        assert "trade_nkd_basis_unknown" not in row.flags
+    else:
+        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is row.total_kopecks is None
+        assert "trade_nkd_basis_unknown" in row.flags
     with localcontext() as context:
         context.prec = 6
         assert by_isin(read(db))[BOND].months[0] == row
@@ -1123,6 +1130,7 @@ def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclus
 @pytest.mark.parametrize("face", [None, "", "0", "-500", "invalid"])
 def test_unknown_or_invalid_face_never_defaults_to_1000(db, face):
     def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal", None)
         position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
         position.attrib.pop("nominal", None)
         if face is not None:
@@ -1142,8 +1150,11 @@ def test_conflicting_face_evidence_is_withheld(db, location):
     def mutate(root):
         position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
         position.attrib.pop("nominal", None)
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.pop("nominal", None)
+        if location == "overlap":
+            trade.set("nominal", "500")
         if location == "trade":
-            trade = root.find(".//m:Details[@trade_no]", NS)
             trade.set("nominal", "1000")
             trade.set("face_value", "500")
         else:
@@ -1185,3 +1196,110 @@ def test_nominal_differences_do_not_affect_stock_trade_deduplication(db):
     row = by_isin(read(db))[ISIN].months[0]
     assert row.buys_cost_kopecks == 10_100 and row.total_kopecks == 10_900
     assert "overlapping_trade_conflict" not in row.flags
+
+
+@pytest.mark.parametrize("trade_face, expected", [(None, None), ("1000", 75_300), ("500", 50_300)])
+def test_post_amortization_position_nominal_does_not_prove_trade_face(db, trade_face, expected):
+    def mutate(root):
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).set("nominal", "500")
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.pop("nominal", None)
+        trade.set("Price", "50")
+        if trade_face is not None:
+            trade.set("nominal", trade_face)
+
+    save(db, trades=((BOND, "1", "500", "250", "3"),), mutate=mutate)
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == expected
+    assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
+    if expected is None:
+        assert row.sells_proceeds_kopecks is row.price_effect_kopecks is row.total_kopecks is None
+        assert row.return_percent is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("known_face", [False, True])
+@pytest.mark.parametrize("damage", ["missing", None, [], "invalid"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("source_identity",),
+        ("native_ids",),
+        ("claims",),
+        ("claims", "native_total_basis"),
+        ("signed_minor",),
+        ("nkd_leg",),
+        ("signed_minor", "settlement"),
+        ("signed_minor", "paid_nkd"),
+        ("signed_minor", "commission"),
+        ("signed_minor", "native_total"),
+        ("nkd_leg", "effective_date"),
+        ("nkd_leg", "currency"),
+    ],
+)
+def test_malformed_proof_envelope_falls_back_or_withholds(
+    db, monkeypatch, known_face, damage, path
+):
+    def mutate(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.pop("nominal", None)
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal", None)
+        if known_face:
+            trade.set("nominal", "1000")
+
+    intake = save(db, mutate=mutate)
+    with db.session_factory() as session:
+        trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
+        account = Account(name="Synthetic", account_type="brokerage")
+        instrument = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add_all([account, instrument])
+        session.flush()
+        session.add(
+            ExecutedTrade(
+                provider="mybroker",
+                source_account=ACCOUNT,
+                primary_id=trade["ids"][0],
+                secondary_id=trade["ids"][1],
+                source_identity=trade["identity"],
+                account_id=account.id,
+                instrument_id=instrument.id,
+                core_json=json.dumps(trade["core"]),
+                bindings_json="[]",
+                accepted_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    proof = {
+        "source_identity": trade["identity"],
+        "native_ids": trade["ids"],
+        "claims": {
+            "native_total_basis": "excludes_paid_nkd",
+            "exact_row_settled_buy_link": True,
+            "complete_occurrence_set_is_one_event": True,
+            "nkd_separately_posted": True,
+            "fee_separately_charged": True,
+            "native_total_basis_independently_proved": True,
+        },
+        "signed_minor": {
+            "settlement": "-100000",
+            "paid_nkd": "-2000",
+            "commission": "-500",
+            "native_total": "100000",
+        },
+        "nkd_leg": {"effective_date": trade["settlement_date"], "currency": "RUB"},
+    }
+    parent = proof if len(path) == 1 else proof[path[0]]
+    if damage == "missing":
+        del parent[path[-1]]
+    else:
+        parent[path[-1]] = damage
+    monkeypatch.setattr(
+        service.broker_trade_money, "effective_proof", lambda session, identity: proof
+    )
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == (102_500 if known_face else None)
+    assert ("trade_nkd_basis_unknown" in row.flags) == (not known_face)
+    assert "trade_components_missing" not in row.flags
+    assert snapshot(db) == before
