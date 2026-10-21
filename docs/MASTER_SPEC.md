@@ -650,7 +650,7 @@ User-facing основной поток не должен содержать с�
 #### Month positions density
 
 - Keep `price_date` in the data contract; default new and edited positions to the month snapshot date.
-- On the first table level, hide a price date equal to the snapshot date; keep a differing date and the price source in secondary detail.
+- On the first table level, hide a price date equal to the snapshot date; keep a differing date and the price source in secondary detail, except where the source/deviation is genuinely important for interpretation and must stay prominent.
 - Label average cost as the average acquisition price per unit: a saved input snapshot, not a reconstructed trade average.
 - Market value, cost and unrealized result remain backend-calculated.
 - Keep one visible row action, `Изменить`; destructive `Удалить` belongs in overflow with confirmation.
