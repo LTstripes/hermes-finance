@@ -432,7 +432,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
 # A/B group weights above unchanged; these weights split only group B.
 # The large source-cash module is grouped by test function (all parameter
 # variants together); all other modules stay whole. Longest-first scheduling
-# balances the four jobs without deleting or skipping any tests.
+# balances the eight jobs without deleting or skipping any tests.
 CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
 
 CI_INTEGRATIONS_B_SHARD_WEIGHTS = {

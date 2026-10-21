@@ -22,7 +22,8 @@ $script:PowerShellExecutable = (Get-Command "powershell.exe" -ErrorAction Stop).
 $script:CanonicalUrl = "https://github.com/LTstripes/hermes-finance.git"
 
 $pythonCommand = Get-Command "python.exe" -ErrorAction SilentlyContinue
-$script:UvExecutable = (Get-Command "uv.exe" -ErrorAction SilentlyContinue).Source
+$uvCommand = Get-Command "uv.exe" -ErrorAction SilentlyContinue
+$script:UvExecutable = if ($null -ne $uvCommand) { $uvCommand.Source } else { $null }
 if ($null -ne $pythonCommand) {
     $script:PythonExecutable = $pythonCommand.Source
     $script:PythonUsesUv = $false

@@ -20,7 +20,8 @@ $script:CurrentSha = "1111111111111111111111111111111111111111"
 $script:TargetSha = "2222222222222222222222222222222222222222"
 $script:CanonicalUrl = "https://github.com/LTstripes/hermes-finance.git"
 $pythonCommand = Get-Command "python.exe" -ErrorAction SilentlyContinue
-$script:UvExecutable = (Get-Command "uv.exe" -ErrorAction SilentlyContinue).Source
+$uvCommand = Get-Command "uv.exe" -ErrorAction SilentlyContinue
+$script:UvExecutable = if ($null -ne $uvCommand) { $uvCommand.Source } else { $null }
 if ($null -ne $pythonCommand) {
     $script:PythonExecutable = $pythonCommand.Source
     $script:PythonUsesUv = $false
