@@ -11,7 +11,8 @@ The current handbook is five books. Start with the book that owns the question; 
 Supporting collections:
 
 - [ADRs](adr/) — durable architecture and financial decisions.
-- [Release notes](release-notes/) and the [current 1.3.0 notes](release-notes-1.3.0.md). The 1.3.0 file stays at the docs root because release identity checks read that path.
+- [Release notes](release-notes/) and the [current 1.3.0 notes](release-notes-1.3.0.md). Release-note family files stay at the docs root because release identity checks read `docs/release-notes-X.Y.Z.md`.
+- [1.4.0 draft notes](release-notes-1.4.0.md), its [Test-run checklist](releases/1.4.0-test-run.md) and [rollback plan](releases/1.4.0-rollback.md) — unpublished candidate preparation, not a release, financial result or UAT acceptance.
 - [History](history/README.md) — dated receipts and retired process notes; not current instructions.
 - [Evidence](evidence/839/README.md), [schemas](schemas/) and the [archive migration map](archive/2026-10-18/MIGRATION_MAP.md) — retained provenance.
 
