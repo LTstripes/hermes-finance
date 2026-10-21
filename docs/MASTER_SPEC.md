@@ -165,7 +165,7 @@ The monthly workflow derives progress from authoritative read models, not a seco
 <a id="p2-master_spec-931-119-расходы"></a>
 #### 11.9. Расходы
 
-В MVP ведутся обязательные расходы по категориям. Структура позволяет вести
+В текущей версии ведутся обязательные расходы по категориям. Структура позволяет вести
 «комфортный бюджет» без миграции всей модели.
 
 Плановый бюджет ведётся отдельно от фактических расходов (§9.16 `planned_budget_lines`)
@@ -636,60 +636,39 @@ User-facing основной поток не должен содержать с�
 | Technical diagnostics | Settings → Diagnostics / раскрываемые technical details |
 
 <a id="p6-030-owner-review-2026-08-12-24"></a>
-### Accepted numeric formatting and desktop density
+### Desktop density and formatting rules
 
 <a id="p6-030-owner-review-2026-08-12-24-r03-14a--единое-форматирование-чисел"></a>
-#### R03-14A — единое форматирование чисел
+#### Formatting consistency
 
-Провести cross-app audit денежных и количественных значений.
-
-- денежные суммы в display mode должны использовать shared formatter и группировку разрядов неразрывными пробелами;
-- не должно оставаться user-facing денежных строк вида `123456` там, где ожидается `123 456`;
-- проверить Dashboard, Analytics, Months, Month workspace, Goals, Accounts, Settings, badges, totals, table cells, tooltips и chart labels;
-- editable inputs не форматировать так, чтобы ломать ввод/парсинг;
-- не добавлять frontend financial math: задача только про presentation.
-
-**Acceptance:** одинаковые display conventions для RUB на основных экранах; regression tests для formatter/ключевых presentation paths; visual smoke на 1366/1024/760.
-
+- Use the shared formatter for displayed money and quantities; group digits with non-breaking spaces.
+- Do not leave user-facing raw values such as `123456` where `123 456` is expected. Editable inputs stay raw and parseable.
+- Apply the same conventions to Home, Capital, months/editor, goals, accounts, settings, badges, totals, table cells, tooltips and chart labels.
+- Presentation only: no frontend financial arithmetic.
 
 <a id="p6-030-owner-review-2026-08-12-24-r03-14b--month--positions-densityaction-hierarchy"></a>
-#### R03-14B — Month → Positions density/action hierarchy
+#### Month positions density
 
-Текущая таблица перегружена колонками и actions.
-
-- `price_date` **сохранить в data contract**: это дата котировки, она может отличаться от `ReportingMonth.snapshot_date`;
-- в create/edit flow по умолчанию использовать month snapshot date, как сейчас;
-- на первом уровне таблицы не показывать дату цены постоянно, если она совпадает со snapshot date; отличающаяся дата должна оставаться доступной/заметной через secondary detail;
-- источник цены также сделать secondary detail, кроме случаев, когда источник/отклонение действительно важно для интерпретации;
-- `Средняя стоимость` переименовать/пояснить как **средняя цена приобретения за единицу**: это сохранённый input snapshot, а не автоматически восстановленная средняя из истории сделок;
-- рыночная стоимость, себестоимость и нереализованный результат остаются calculated backend values;
-- row actions: одна видимая primary/secondary action `Изменить`; destructive `Удалить` → `…` overflow с confirm;
-- при edit не превращать строку в чрезмерно широкую форму; допускается dialog/drawer или compact edit presentation, если это проще и читаемее;
-- НКД и price metadata остаются доступны, но не должны постоянно расширять каждую строку.
-
-**Acceptance:** таблица читаема без налезаний на 1366 и 1024; 760 имеет аккуратный fallback; дата/источник не потеряны семантически; Edit/Delete behavior и position calculations не изменены.
-
+- Keep `price_date` in the data contract; default new and edited positions to the month snapshot date.
+- On the first table level, hide a price date equal to the snapshot date; keep a differing date and the price source in secondary detail.
+- Label average cost as the average acquisition price per unit: a saved input snapshot, not a reconstructed trade average.
+- Market value, cost and unrealized result remain backend-calculated.
+- Keep one visible row action, `Изменить`; destructive `Удалить` belongs in overflow with confirmation.
+- Keep NKD and price metadata available without widening every row. Use a dialog/drawer or compact edit form where that reads better.
 
 <a id="p6-030-owner-review-2026-08-12-24-r03-14c--month--debtsproperty-density"></a>
-#### R03-14C — Month → Debts/Property density
+#### Month debts and property density
 
-- сократить первичный набор колонок до данных, необходимых для быстрого чтения;
-- `В ликвидном капитале` не должен занимать широкую постоянную колонку: показать compact state/detail, особенно когда значение стандартное;
-- destructive `Удалить` убрать из постоянной визуальной конкуренции и перенести в overflow/compact action pattern;
-- аналогично проверить таблицу недвижимости: стоимость, ипотека, платёж должны читаться без столкновения с actions;
-- никаких изменений debt/property formulas и include semantics.
-
-**Acceptance:** debts/property не тесные на 1366/1024; длинные суммы не сталкиваются; actions не доминируют над данными; keyboard/focus/menu behavior preserved.
-
+- Keep only the columns needed for quick reading; show `В ликвидном капитале` as compact state/detail unless the value is non-standard.
+- Move destructive delete out of permanent visual competition into overflow/compact actions.
+- Property value, mortgage and payment must read without colliding with actions.
+- Do not change debt/property formulas or include semantics.
 
 <a id="p6-030-owner-review-2026-08-12-24-r03-14d--goals-card-width"></a>
-#### R03-14D — Goals card width
+#### Goals card width
 
-- активные secondary goal cards не должны искусственно оставаться узкими при наличии большого свободного пространства;
-- для небольшого числа активных целей предпочесть full-width/адаптивно широкие cards либо grid с разумным minimum width;
-- блок `Сейчас / Цель / Осталось` должен сохранять денежные значения на одной читаемой строке там, где viewport это позволяет, без агрессивного переноса цифр;
-- main/secondary visual hierarchy сохранить.
+- Active secondary goal cards should use available width rather than staying artificially narrow; prefer full-width/adaptive cards or a grid with a sensible minimum width.
+- Keep `Сейчас / Цель / Осталось` on one readable line where the viewport allows, without aggressive wrapping of monetary values.
+- Preserve the main/secondary visual hierarchy.
 
-**Acceptance:** длинные monetary values в Goals читаются естественно на 1366/1024; нет огромной пустой половины layout при единственной secondary goal card; 760 остаётся одноколоночным.
-
----
+Desktop acceptance for these rules: readable at 1366/1024, a clean 760 fallback, keyboard/focus/menu behavior preserved, formatter and key presentation paths keep their regression tests, 760 remains single-column, and no financial calculation changes.
