@@ -1162,3 +1162,34 @@ def test_later_no_crossing_assertion_cannot_ignore_accepted_source_or_use_curren
                 covered_to=date(2030, 1, 31),
                 coverage_state="complete",
             )
+
+
+@pytest.mark.parametrize("attribute", ["face_value", "nominal", "nominal_value"])
+@pytest.mark.parametrize("location", ["position", "completed", "pending"])
+def test_optional_source_nominal_is_retained_without_changing_trade_core(attribute, location):
+    root = ET.fromstring(fixture(pending=location == "pending"))
+    baseline = parse_mybroker(ET.tostring(root), FILENAME)
+    if location == "position":
+        row = root.find(".//{MyBroker}Details[@ISIN1]")
+    elif location == "pending":
+        row = root.find(".//{MyBroker}Details2")
+        attribute += "2"
+    else:
+        row = root.find(".//{MyBroker}Details[@trade_no]")
+    row.set(attribute, "500.00")
+    parsed = parse_mybroker(ET.tostring(root), FILENAME)
+    section = "positions" if location == "position" else "trades"
+    assert parsed[section][0]["face_value"] == "500"
+    assert "face_value" not in baseline[section][0]
+    assert parsed["trades"][0]["identity"] == baseline["trades"][0]["identity"]
+    assert parsed["trades"][0]["core"] == baseline["trades"][0]["core"]
+
+
+@pytest.mark.parametrize("other", ["500.0", "100", "", "invalid", "NaN"])
+def test_optional_nominal_aliases_must_agree(other):
+    root = ET.fromstring(fixture())
+    row = root.find(".//{MyBroker}Details[@trade_no]")
+    row.set("nominal", "500.00")
+    row.set("face_value", other)
+    parsed = parse_mybroker(ET.tostring(root), FILENAME)
+    assert parsed["trades"][0]["face_value"] == ("500" if other == "500.0" else None)

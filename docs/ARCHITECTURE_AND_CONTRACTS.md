@@ -5806,15 +5806,31 @@ Let T be native `summ_trade`, N the native NKD and F commission. With an
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
 These are the C5 native-total basis meanings. For buys, a current accepted cash proof
 matching the native identity, IDs and exact trade components takes precedence,
-revalidated through the existing proof reader and cash checks. These cash checks
-validate buys only; sells rely on per-row inference or remain withheld.
+revalidated through the existing proof reader and cash checks. A proof with missing
+or non-dictionary `claims` is invalid and contributes no basis: use unique inference
+or withhold with `trade_nkd_basis_unknown`. These cash checks validate buys only; sells rely on per-row inference or remain withheld.
 For MyBroker bond buys and sells,
 the provisional reader also infers a basis per row from parsed `Price` (percent
-of face) and signed `qty`: let P = Price / 100 * 1000 * |qty|. With Decimal
-arithmetic and a per-row 0.01 tolerance, |T - P - N| <= 0.01 implies
+of face), signed `qty` and an explicit positive face value D in settlement-currency
+units per security: let P = Price / 100 * D * |qty|. The optional row attributes
+`face_value`, `nominal` and `nominal_value` (also their `2`-suffixed variants
+on pending rows) are normalized as `face_value` on parsed trade/position rows.
+A trade-row value takes precedence; otherwise use the unique nominal recorded
+for the same account/ISIN in that statement's position rows. Conflicting aliases,
+conflicting position nominals, blank/invalid/nonpositive values and absent nominal
+leave inference unknown; an explicitly unusable trade-row nominal cannot fall back
+to a position value. Contradictory nominal evidence across settled overlapping
+trade copies is `overlapping_trade_conflict` and withholds affected costs. There is
+no default 1000 face, no derivation of face from T, and no substitution of current
+instrument database metadata for historical source evidence. This supports explicit
+500, 100 and other faces; amortization without an applicable nominal stays unknown.
+With Decimal arithmetic and the unchanged per-row 0.01 tolerance,
+|T - P - N| <= 0.01 implies
 `includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
-Both or neither matching leaves inference unknown (including inconclusive
-non-1000-face or amortized nominal rows). An unknown inference preserves a valid
+Both or neither matching leaves inference unknown. Optional nominal keys are omitted
+when no supported attribute exists, preserving normalized payloads for those legacy
+rows. Previously saved intakes are read as frozen facts: opaque attribute fingerprints
+are not reparsed or promoted to nominal evidence. An unknown inference preserves a valid
 reviewed proof; a decidable inference conflicting with that proof makes the basis
 unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
 inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
@@ -5845,15 +5861,56 @@ list with `isin=NULL` and an `unattributed_income` gap/reference. Registration a
 are usable only if actually present in saved identity evidence; the reader does
 not reconstruct metadata discarded by the existing parser or infer a registration
 crosswalk. Overlap handling reuses the monthly Money validation/deduplication rules,
-keeps same-report multiplicity and prefers confirmed choices. Known income remains
-an observed subtotal when `income_complete=false`. Every income field is nullable:
-when incomplete, a field retains only genuinely observed matching amounts and is
-NULL if none were observed; covered complete empty income is affirmative zero.
-All-time income uses the same available-component subtotal rule (NULL if no month
-supplies a value), and `income_complete=false` discloses any incomplete month.
-Unattributed, unknown, invalid,
-legacy-unclassified or non-RUB Money withholds affected monthly totals and rates,
-while retaining known price components. Unknown source structure, scope ambiguity
+keeps same-report multiplicity and prefers confirmed choices.
+
+The service's per-instrument monthly `income_complete` is true exactly when at least
+one usable intake covers the entire calendar month and that instrument/month has
+neither an income gap nor a source-structure gap. Income gaps are
+`unattributed_income`, `currency_unsupported`,
+`classification_missing_legacy_intake`, `invalid_money_row`,
+`invalid_external_flow`, `unrecognized_money` and `overlap_flow_choice_conflict`;
+the source-gap codes are listed below. Otherwise it is false, including a missing
+month or unreadable overlapping source even when another intake is readable.
+An account-level gap with no ISIN applies to every instrument in that month;
+an instrument-specific gap applies only to that instrument. This is completeness
+of the provisional saved-source income interpretation, not proof of all historical
+payouts, accepted financial coverage or readiness for Close.
+
+Assumed coupon/dividend classifications may satisfy completeness. They set
+`income_assumptions_used=true` and `income_assumed`/`approximate=true` only on
+instruments/months with an attributed assumed payout; confirmed income alone does
+not. Thus `income_complete=true` does not mean confirmed income or an exact return.
+Missing endpoints, trade NKD/nominal/currency/REPO gaps, seam mismatches and bond
+valuation approximation do not by themselves make income incomplete, although
+they can withhold price effect, total or rate.
+
+Every income field (`coupons_kopecks`, `dividends_kopecks`,
+`assumed_income_kopecks`, `confirmed_income_kopecks`, `income_kopecks`) is nullable.
+With complete coverage, no matching observations means affirmative zero. With
+incomplete coverage, retain a signed observed subtotal if at least one matching
+observation exists (including an observed zero or cancelling sum); otherwise NULL.
+A numeric income subtotal therefore does not imply completeness. Incomplete income
+always withholds monthly `total_kopecks` and `return_percent`, while known price
+components remain available unless independently blocked.
+
+For each instrument, all-time `income_complete` is the logical AND of all its
+emitted monthly values over the account's saved-source span, including missing and
+partial months. All-time `income_assumptions_used` is their logical OR. Each all-time
+income field sums every non-NULL monthly component independently and is NULL only
+if no month supplies a value. A complete empty month can therefore supply zero
+even when another month's income is NULL and all-time completeness is false.
+All-time `total_kopecks` still sums only available monthly totals; it can be numeric
+with `income_complete=false`. Conversely complete income can coexist with a partial
+all-time return because of trade/valuation gaps.
+
+The instrument API exposes the same flags as JSON booleans at
+`instruments[].months[].income_complete` and
+`instruments[].all_time.income_complete`, and preserves income NULL versus integer
+zero/subtotal exactly. Neither the response root nor individual `income[]` events
+has an aggregate `income_complete` field. An unknown account/no saved instrument
+identities returns an empty instrument list, not an invented complete zero result.
+
+Unknown source structure, scope ambiguity
 or an unreadable overlapping intake withholds affected costs/income completeness.
 The explicit structure-gap codes `source_reader_unavailable`,
 `native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,

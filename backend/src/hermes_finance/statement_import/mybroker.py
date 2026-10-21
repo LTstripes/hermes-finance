@@ -129,6 +129,25 @@ def _ids(value: str | None) -> list[str]:
     raise MyBrokerError("trade_ids_ambiguous")
 
 
+def _face_value_fields(row: ET.Element, *, pending: bool = False) -> dict:
+    """Retain optional source nominal facts without inventing a default.
+
+    Omit the key for legacy rows, preserving their frozen normalized payloads.
+    An explicit unusable/contradictory nominal stays unknown, never a fallback.
+    """
+    names = ("face_value", "nominal", "nominal_value")
+    if pending:
+        names += tuple(name + "2" for name in names)
+    tokens = [row.get(name) for name in names if name in row.attrib]
+    if not tokens:
+        return {}
+    try:
+        values = {decimal(token, optional=True) for token in tokens}
+    except MyBrokerError:
+        return {"face_value": None}
+    return {"face_value": next(iter(values)) if len(values) == 1 else None}
+
+
 def _trade(row: ET.Element, *, pending: bool, ordinal: int) -> dict:
     names = {
         "ids": "trade_no1" if pending else "trade_no",
@@ -189,6 +208,7 @@ def _trade(row: ET.Element, *, pending: bool, ordinal: int) -> dict:
         "bank_commission": decimal(get("commission"), optional=True),
         "accrued_interest": decimal(get("nkd"), optional=True),
         "repo_observed": bool(lines(get("repo"))),
+        **_face_value_fields(row, pending=pending),
     }
 
 
@@ -307,6 +327,7 @@ def parse_mybroker(
                 "beginning_actual_quantity": decimal(row.get("income_rest"), optional=True),
                 "beginning_value": decimal(row.get("income_volume"), optional=True),
                 "ending_value": decimal(row.get("real_volume"), optional=True),
+                **_face_value_fields(row),
             }
             positions.append(position)
             if position["beginning_actual_quantity"] is None:

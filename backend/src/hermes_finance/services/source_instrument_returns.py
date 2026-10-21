@@ -260,7 +260,11 @@ def _native_total_basis(session, trade):
     Existing cash proofs currently cover buys.
     """
     proof = broker_trade_money.effective_proof(session, trade["identity"])
-    if not proof or "proof_variant" in proof:
+    if (
+        not isinstance(proof, dict)
+        or "proof_variant" in proof
+        or not isinstance(proof.get("claims"), dict)
+    ):
         return None
     accepted = session.scalar(
         select(ExecutedTrade).where(ExecutedTrade.source_identity == trade["identity"])
@@ -271,7 +275,7 @@ def _native_total_basis(session, trade):
         return None
     basis = proof["claims"].get("native_total_basis")
     if (
-        basis not in {"includes_paid_nkd", "excludes_paid_nkd"}
+        basis not in ("includes_paid_nkd", "excludes_paid_nkd")
         or proof["source_identity"] != trade["identity"]
         or proof["native_ids"] != trade["ids"]
     ):
@@ -297,16 +301,18 @@ def _native_total_basis(session, trade):
 
 
 def _inferred_native_total_basis(trade):
-    """Infer this MyBroker row's NKD basis against a 1000 face, without a proof."""
+    """Infer this MyBroker row's NKD basis using explicit source nominal."""
     try:
         core = trade["core"]
         price = Decimal(core["price"])
         quantity = Decimal(core["quantity"])
         amount = Decimal(core["trade_amount"])
         nkd = Decimal(trade["accrued_interest"])
+        face = Decimal(trade["face_value"])
         if (
-            any(not value.is_finite() for value in (price, quantity, amount, nkd))
+            any(not value.is_finite() for value in (price, quantity, amount, nkd, face))
             or quantity == 0
+            or face <= 0
             or any(value < 0 for value in (price, amount, nkd))
         ):
             return None
@@ -314,7 +320,7 @@ def _inferred_native_total_basis(trade):
             # Parser numeric tokens are bounded to 48 characters; keep the
             # product and residual exact, independent of the caller's context.
             context.prec = 200
-            principal = price / 100 * 1000 * abs(quantity)
+            principal = price / 100 * face * abs(quantity)
             includes = abs(amount - principal - nkd) <= Decimal("0.01")
             excludes = nkd != 0 and abs(amount - principal) <= Decimal("0.01")
         if includes == excludes:
@@ -340,6 +346,22 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
     return total + fee if quantity > 0 else total - fee
 
 
+def _source_face_value(trade, document):
+    # A dated trade-row nominal takes precedence over position evidence, which
+    # may describe the period boundary after an amortization. Never substitute
+    # current database metadata for historical statement facts.
+    if "face_value" in trade:
+        return trade["face_value"]
+    values = {
+        row["face_value"]
+        for row in document.get("positions", [])
+        if row["isin"] == trade["core"]["isin"]
+        and row["source_account"] == trade["core"]["source_account"]
+        and "face_value" in row
+    }
+    return next(iter(values)) if len(values) == 1 else None
+
+
 def _trades(session, views, isin, month, instrument_type, flags):
     groups = defaultdict(list)
     for view in views:
@@ -348,7 +370,16 @@ def _trades(session, views, isin, month, instrument_type, flags):
                 key = trade.get("identity") or object()
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
-                groups[key].append(trade)
+                groups[key].append(
+                    dict(
+                        trade,
+                        face_value=(
+                            _source_face_value(trade, view["document"])
+                            if instrument_type == "bond"
+                            else None
+                        ),
+                    )
+                )
     buys = sells = 0
     quantity = Decimal(0)
     invalid = False
@@ -392,6 +423,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                             "bank_commission",
                             "accrued_interest",
                             "repo_observed",
+                            "face_value",
                         )
                     }
                 )

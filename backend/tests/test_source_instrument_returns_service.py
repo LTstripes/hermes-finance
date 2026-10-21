@@ -82,6 +82,7 @@ def save(
             income_volume=v0,
             real_volume=v1,
         )
+    bond_position.set("nominal", "1000")
     trade_template = root.find(".//m:Details[@trade_no]", NS)
     trade_collection = root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS)
     for row in list(trade_collection):
@@ -408,6 +409,8 @@ def test_get_api_decimal_strings_integer_money_no_store_and_no_writes(db, accept
     assert row["return_percent"] == "12.5"
     assert stock["all_time"]["return_percent"] is None
     assert stock["all_time"]["capital_base_kopecks"] is None
+    assert row["income_complete"] is True and stock["all_time"]["income_complete"] is True
+    assert "income_complete" not in body
     bond = next(row for row in body["instruments"] if row["isin"] == BOND)
     assert bond["months"][0]["approximate"]
     assert isinstance(bond["months"][0]["return_percent"], str)
@@ -447,6 +450,12 @@ def test_api_missing_month_and_unattributed_income_remain_explicit(db):
         for field in INCOME_FIELDS:
             assert instrument["months"][1][field] is None
         assert instrument["all_time"]["partial"]
+        assert instrument["months"][0]["income_complete"] is False
+        assert instrument["months"][1]["income_complete"] is False
+        assert instrument["months"][2]["income_complete"] is True
+        assert instrument["months"][2]["income_kopecks"] == 0
+        assert instrument["all_time"]["income_complete"] is False
+        assert instrument["all_time"]["income_kopecks"] == 0
         assert "missing_month" in instrument["all_time"]["flags"]
         assert instrument["all_time"]["available_months"] == ["2030-06-01"]
 
@@ -764,17 +773,20 @@ def test_ruble_currency_aliases_match_rub_for_instrument_income_and_trades(db, c
 
 
 @pytest.mark.parametrize("basis", ["includes_paid_nkd", "excludes_paid_nkd"])
-@pytest.mark.parametrize("inference", ["agrees", "unknown", "conflicts"])
+@pytest.mark.parametrize("inference", ["agrees", "unknown", "unknown_face", "conflicts"])
 def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basis, inference):
     amount = "1020" if basis == "includes_paid_nkd" else "1000"
     price = {
         "agrees": "100",
         "unknown": "50",
+        "unknown_face": "100",
         "conflicts": "102" if basis == "includes_paid_nkd" else "98",
     }[inference]
 
     def mutate(root):
         root.find(".//m:Details[@trade_no]", NS).set("Price", price)
+        if inference == "unknown_face":
+            root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
 
     intake = save(db, trades=((BOND, "1", amount, "20", "5"),), mutate=mutate)
     with db.session_factory() as session:
@@ -924,7 +936,7 @@ def test_details_bond_arithmetic_counts_nkd_once_without_proof(db, quantity, amo
         ("2069.98", "40", None),
         ("2030.02", "40", None),
         ("2029.98", "40", None),
-        ("1055", "40", None),  # Face 500: neither 1000-face equation matches.
+        ("1055", "40", None),  # Explicit face 1000: neither equation matches.
         ("2030.00", "0.01", None),  # Both equations are within tolerance.
         ("2030.00", "0", 203_300),  # Exclusive predicate requires nonzero NKD.
     ],
@@ -1034,3 +1046,142 @@ def test_unsupported_trade_preserves_covered_income(db, attribute, value, code, 
     assert stock.price_effect_kopecks == 10_000
     assert stock.total_kopecks == (12_500 if observed_income else 10_000)
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [None, [], ["native_total_basis"], "invalid", 7, False, {}, {"native_total_basis": []}],
+)
+@pytest.mark.parametrize("known_face", [False, True])
+def test_malformed_proof_claims_fall_back_or_withhold(db, monkeypatch, claims, known_face):
+    def mutate(root):
+        if not known_face:
+            root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal", None)
+
+    intake = save(db, mutate=mutate)
+    with db.session_factory() as session:
+        trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
+        account = Account(name="Synthetic", account_type="brokerage")
+        instrument = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add_all([account, instrument])
+        session.flush()
+        session.add(
+            ExecutedTrade(
+                provider="mybroker",
+                source_account=ACCOUNT,
+                primary_id=trade["ids"][0],
+                secondary_id=trade["ids"][1],
+                source_identity=trade["identity"],
+                account_id=account.id,
+                instrument_id=instrument.id,
+                core_json=json.dumps(trade["core"]),
+                bindings_json="[]",
+                accepted_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    monkeypatch.setattr(
+        service.broker_trade_money, "effective_proof", lambda session, identity: {"claims": claims}
+    )
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == (102_500 if known_face else None)
+    assert ("trade_nkd_basis_unknown" in row.flags) == (not known_face)
+    assert "trade_components_missing" not in row.flags
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("face", ["500", "100"])
+@pytest.mark.parametrize("quantity", ["2", "-2"])
+@pytest.mark.parametrize("inclusive", [False, True])
+@pytest.mark.parametrize("location", ["trade", "position"])
+def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclusive, location):
+    principal = Decimal("101.5") / 100 * Decimal(face) * abs(Decimal(quantity))
+    amount = str(principal + (40 if inclusive else 0))
+
+    def mutate(root):
+        position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
+        position.attrib.pop("nominal", None)
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.set("Price", "101.5")
+        (trade if location == "trade" else position).set("nominal", face)
+
+    save(db, trades=((BOND, quantity, amount, "40", "3"),), mutate=mutate)
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    expected = int((principal + 40 + (3 if quantity == "2" else -3)) * 100)
+    assert row.buys_cost_kopecks == (expected if quantity == "2" else 0)
+    assert row.sells_proceeds_kopecks == (expected if quantity == "-2" else 0)
+    assert row.total_kopecks is not None
+    assert "trade_nkd_basis_unknown" not in row.flags
+    with localcontext() as context:
+        context.prec = 6
+        assert by_isin(read(db))[BOND].months[0] == row
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("face", [None, "", "0", "-500", "invalid"])
+def test_unknown_or_invalid_face_never_defaults_to_1000(db, face):
+    def mutate(root):
+        position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
+        position.attrib.pop("nominal", None)
+        if face is not None:
+            position.set("nominal", face)
+
+    save(db, mutate=mutate)
+    result = by_isin(read(db))
+    row = result[BOND].months[0]
+    assert "trade_nkd_basis_unknown" in row.flags
+    assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
+    assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
+    assert row.income_complete and result[ISIN].months[0].total_kopecks == 10_000
+
+
+@pytest.mark.parametrize("location", ["trade", "position", "overlap"])
+def test_conflicting_face_evidence_is_withheld(db, location):
+    def mutate(root):
+        position = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
+        position.attrib.pop("nominal", None)
+        if location == "trade":
+            trade = root.find(".//m:Details[@trade_no]", NS)
+            trade.set("nominal", "1000")
+            trade.set("face_value", "500")
+        else:
+            position.set("nominal", "500" if location == "overlap" else "1000")
+            if location == "position":
+                other = deepcopy(position)
+                other.set("nominal", "500")
+                root.find(".//m:Details_Collection", NS).append(other)
+
+    if location == "overlap":
+        save(db)
+    save(db, mutate=mutate, marker="conflicting-face")
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks is row.total_kopecks is None
+    assert {"trade_nkd_basis_unknown", "overlapping_trade_conflict"}.intersection(row.flags)
+
+
+@pytest.mark.parametrize("face", ["500", "", "invalid"])
+def test_explicit_trade_nominal_takes_precedence_over_position(db, face):
+    def mutate(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.set("nominal", face)
+        trade.set("Price", "100")
+
+    amount = "500" if face == "500" else "1000"
+    save(db, trades=((BOND, "1", amount, "20", "5"),), mutate=mutate)
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == (52_500 if face == "500" else None)
+    assert ("trade_nkd_basis_unknown" in row.flags) == (face != "500")
+
+
+def test_nominal_differences_do_not_affect_stock_trade_deduplication(db):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", "500")
+
+    options = dict(stock=("10", "11", "1000", "1210"), trades=((ISIN, "1", "100", None, "1"),))
+    save(db, **options)
+    save(db, **options, mutate=mutate, marker="stock-nominal")
+    row = by_isin(read(db))[ISIN].months[0]
+    assert row.buys_cost_kopecks == 10_100 and row.total_kopecks == 10_900
+    assert "overlapping_trade_conflict" not in row.flags
