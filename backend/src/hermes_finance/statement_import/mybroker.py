@@ -63,7 +63,8 @@ def frozen_source_shape(fresh: dict, stored: dict) -> dict:
 
     Exact-original checks remain the caller's responsibility. Missing saved keys
     mean the old grammar, never permission to promote a reattached nominal.
-    All other fields, row counts and recorded nominal values still must match.
+    Legacy empty-as-None nominal remains frozen as unknown. All other fields,
+    row counts and recorded nominal values still must match.
     """
     if fresh.get("parser") != PARSER or stored.get("parser") != PARSER:
         return fresh
@@ -75,6 +76,11 @@ def frozen_source_shape(fresh: dict, stored: dict) -> dict:
                 {key: value for key, value in row.items() if key != "face_value" or key in old}
                 for row, old in zip(rows, old_rows, strict=True)
             ]
+            for row, old in zip(result[section], old_rows, strict=True):
+                # Older parsing collapsed empty nominal to the invalid marker.
+                # Reattachment must preserve that frozen unknown, not promote it.
+                if row.get("face_value") == "" and old.get("face_value") is None:
+                    row["face_value"] = None
     return result
 
 
@@ -165,6 +171,10 @@ def _face_value_fields(row: ET.Element, *, pending: bool = False) -> dict:
         values = {decimal(token, optional=True) for token in tokens}
     except MyBrokerError:
         return {"face_value": None}
+    # Preserve empty separately from invalid/conflicting nominal so a
+    # provisional reader may disclose an assumption without accepting bad data.
+    if values == {None}:
+        return {"face_value": ""}
     return {"face_value": next(iter(values)) if len(values) == 1 else None}
 
 

@@ -1632,11 +1632,16 @@ The later optional nominal extension retains `face_value`, `nominal` and
 `2`-suffixed pending attributes), without changing trade core/identity or S1
 financial authority. It keeps `mybroker-s1-v2` compatible by reproducing each
 saved row's nominal-key presence when validating an exact reattached original.
-Previously absent keys remain absent; recorded nominal values and every other
-parser fact must still agree. Saved JSON, manifests and fingerprints are never
+Previously absent keys remain absent. New parsing distinguishes all-empty nominal
+attributes (`face_value=""`) from invalid/conflicting values (`face_value=NULL`).
+An older saved NULL stays frozen unknown even when an exact reattachment now parses
+as empty; it never becomes assumed-face evidence. All other recorded nominal
+values and parser facts must still agree. Saved JSON, manifests and fingerprints are never
 rewritten, and reattachment cannot promote opaque nominal attributes into frozen
-facts. New intakes may retain these facts; only an applicable trade-row nominal
-supports provisional NKD inference under the [instrument-return contract](#c7-source_instrument_returns-1).
+facts. New intakes may retain these facts. Provisional NKD inference uses only
+trade-row nominal or the disclosed absent/empty-face assumption under the
+[instrument-return contract](#c7-source_instrument_returns-1); position nominal
+never supplies trade face.
 
 The RUB currency row is recognized only by the accepted conjunction
 `active_type=Валюта`, `active_name=RUB`, empty `ISIN1`, and is normalized
@@ -5829,19 +5834,23 @@ inference or withhold with `trade_nkd_basis_unknown`. These cash checks validate
 buys only; sells rely on per-row inference or remain withheld.
 For MyBroker bond buys and sells,
 the provisional reader also infers a basis per row from parsed `Price` (percent
-of face), signed `qty` and an explicit positive face value D in settlement-currency
-units per security: let P = Price / 100 * D * |qty|. The optional row attributes
+of face), signed `qty` and face value D in settlement-currency units per security:
+let P = Price / 100 * D * |qty|. Use the explicit positive trade-row face when
+present. When the trade-row face is absent or empty, provisionally assume D = 1000
+and apply the same exact-one-reading test below. The optional row attributes
 `face_value`, `nominal` and `nominal_value` (also their `2`-suffixed variants
 on pending rows) are normalized as `face_value` on parsed trade/position rows.
 Only a trade-row value supplies a dated nominal for inference. Position-row
 nominal has no proven validity interval and may describe a post-amortization face;
 it is not applied to trades, even for the same account/ISIN and statement.
-Conflicting trade aliases, blank/invalid/nonpositive values and absent trade nominal
-leave inference unknown; position evidence cannot fill that gap. Contradictory
-nominal evidence across settled overlapping trade copies is `overlapping_trade_conflict` and withholds affected costs. There is
-no default 1000 face, no derivation of face from T, and no substitution of current
-instrument database metadata for historical source evidence. This supports explicit
-500, 100 and other faces; amortization without an applicable nominal stays unknown.
+Conflicting trade aliases and explicit invalid/nonpositive values leave inference
+unknown and never fall back to 1000; position evidence cannot fill that gap.
+Contradictory nominal evidence across settled overlapping trade copies is
+`overlapping_trade_conflict` and withholds affected costs. There is no derivation
+of face from T or substitution of current instrument database metadata for
+historical source evidence. Explicit 500, 100 and other faces remain supported.
+An absent-face amortized trade whose amounts do not uniquely fit assumed 1000
+stays unknown; the reader does not search for another face.
 With Decimal arithmetic and the unchanged per-row 0.01 tolerance,
 |T - P - N| <= 0.01 implies
 `includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
@@ -5851,7 +5860,10 @@ rows. Previously saved intakes are read as frozen facts: exact-original reattach
 reproduces their saved nominal-key presence under the C3 compatibility rule; opaque
 attribute fingerprints are not promoted to nominal evidence. An unknown inference
 preserves a valid reviewed proof; a decidable inference conflicting with that proof makes the basis
-unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
+unknown and adds `trade_nkd_basis_conflict`, including when inference used assumed
+1000. Only an accepted basis supplied by assumed-face inference adds
+`face_value_assumed` to that instrument-month; a reviewed basis retains precedence
+and does not acquire the assumption flag. Without a valid proof or a unique
 inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
 total/rate; bond EOD approximation does not waive this. This arithmetic inference
 is limited to the provisional reader and creates no accepted proof or attestation.
@@ -5871,6 +5883,9 @@ without resolving clean/dirty or accrued-interest basis: `approximate=true` and
 `bond_valuation_basis_unknown` disclose this without blocking numbers. Stocks have
 `approximate=false` when no gaps or assumed income exist. Assumed income makes both
 the month and all-time row approximate, while confirmed income alone does not.
+`face_value_assumed` is also a disclosure: it makes the month and all-time row
+approximate without by itself making all-time coverage partial. In general, any
+monthly flag except `income_confirmed` sets `approximate=true`.
 This grants no financial authority.
 
 Persisted coupon/dividend classifications supply signed income amounts and their

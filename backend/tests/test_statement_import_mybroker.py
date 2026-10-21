@@ -1223,3 +1223,47 @@ def test_nominal_shape_compatibility_only_omits_previously_absent_keys(location)
     changed = deepcopy(fresh)
     changed[location].append(deepcopy(changed[location][0]))
     assert not _original_equal(changed, old)
+
+
+@pytest.mark.parametrize("attribute", ["face_value", "nominal", "nominal_value"])
+@pytest.mark.parametrize("location", ["position", "completed", "pending"])
+@pytest.mark.parametrize("token,expected", [("", ""), ("  ", ""), ("invalid", None)])
+def test_optional_nominal_preserves_empty_separately_from_invalid(
+    attribute, location, token, expected
+):
+    root = ET.fromstring(fixture(pending=location == "pending"))
+    if location == "position":
+        row = root.find(".//{MyBroker}Details[@ISIN1]")
+    elif location == "pending":
+        row = root.find(".//{MyBroker}Details2")
+        attribute += "2"
+    else:
+        row = root.find(".//{MyBroker}Details[@trade_no]")
+    row.set(attribute, token)
+    parsed = parse_mybroker(ET.tostring(root), FILENAME)
+    section = "positions" if location == "position" else "trades"
+    assert parsed[section][0]["face_value"] == expected
+
+
+@pytest.mark.parametrize("section", ["positions", "trades"])
+def test_legacy_empty_nominal_stays_frozen_unknown_on_reattachment(section):
+    from copy import deepcopy
+
+    from hermes_finance.services.mybroker_money_candidates import _original_equal
+    from hermes_finance.statement_import.mybroker import frozen_source_shape
+
+    root = ET.fromstring(fixture())
+    attribute = "ISIN1" if section == "positions" else "trade_no"
+    root.find(f".//{{MyBroker}}Details[@{attribute}]").set("nominal", "")
+    fresh = parse_mybroker(ET.tostring(root), FILENAME)
+    old = deepcopy(fresh)
+    old[section][0]["face_value"] = None
+    assert _original_equal(fresh, old)
+    assert frozen_source_shape(fresh, old) == old
+    assert fresh[section][0]["face_value"] == ""  # Never mutates fresh or saved facts.
+    changed = deepcopy(fresh)
+    changed[section][0]["face_value"] = "1000"
+    assert not _original_equal(changed, old)
+    changed = deepcopy(fresh)
+    changed[section][0]["ordinal"] += 1
+    assert not _original_equal(changed, old)

@@ -304,15 +304,20 @@ def _native_total_basis(session, trade):
         return None
 
 
+def _assumes_face_value(trade):
+    # A present None is the parser's invalid/conflicting nominal marker.
+    return "face_value" not in trade or trade["face_value"] == ""
+
+
 def _inferred_native_total_basis(trade):
-    """Infer this MyBroker row's NKD basis using explicit source nominal."""
+    """Infer this row's NKD basis with explicit nominal or a disclosed 1000 assumption."""
     try:
         core = trade["core"]
         price = Decimal(core["price"])
         quantity = Decimal(core["quantity"])
         amount = Decimal(core["trade_amount"])
         nkd = Decimal(trade["accrued_interest"])
-        face = Decimal(trade["face_value"])
+        face = Decimal("1000") if _assumes_face_value(trade) else Decimal(trade["face_value"])
         if (
             any(not value.is_finite() for value in (price, quantity, amount, nkd, face))
             or quantity == 0
@@ -340,7 +345,11 @@ def _bond_total_basis(session, trade, flags):
     if reviewed is not None and inferred is not None and reviewed != inferred:
         flags.add("trade_nkd_basis_conflict")
         return None
-    return reviewed if reviewed is not None else inferred
+    if reviewed is not None:
+        return reviewed
+    if inferred is not None and _assumes_face_value(trade):
+        flags.add("face_value_assumed")
+    return inferred
 
 
 def _trade_cash_total(amount, nkd, fee, quantity, basis):
@@ -360,10 +369,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                 # they are never eligible for counting or deduplication.
                 # A position nominal has no proven validity at the trade date.
                 groups[key].append(
-                    dict(
-                        trade,
-                        face_value=(trade.get("face_value") if instrument_type == "bond" else None),
-                    )
+                    trade if instrument_type == "bond" else dict(trade, face_value=None)
                 )
     buys = sells = 0
     quantity = Decimal(0)
@@ -491,7 +497,12 @@ _SOURCE_GAPS = {
     "unknown_section",
     "position_row_unclassified",
 }
-_DISCLOSURES = {"bond_valuation_basis_unknown", "income_assumed", "income_confirmed"}
+_DISCLOSURES = {
+    "bond_valuation_basis_unknown",
+    "face_value_assumed",
+    "income_assumed",
+    "income_confirmed",
+}
 
 
 def _source_gap(code):
