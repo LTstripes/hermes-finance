@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { formatApiError } from "../api/client";
 import { listAllSourceIntakes, readSourceIntake, saveSourceIntake } from "../api/sourceIntake";
@@ -7,6 +7,7 @@ import {
   getSourceInstrumentReturns,
   getSourceMonthlyReturns,
   type InstrumentTotals,
+  type ReturnGap,
 } from "../api/sourceReturns";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
@@ -32,9 +33,15 @@ const flagLabels: Record<string, string> = {
   seam_mismatch: "расхождение границ",
   missing_month: "месяц отсутствует",
   unattributed_income: "доход не отнесён",
+  overlap_flow_deduplicated: "повтор потока в перекрывающихся выписках учтён один раз",
+  partial_month_source: "источник покрывает месяц частично",
 };
 const flags = (values: string[]) =>
-  values.length ? values.map((value) => flagLabels[value] ?? value).join(", ") : "нет";
+  values.length
+    ? Array.from(new Set(values))
+        .map((value) => flagLabels[value] ?? value)
+        .join(", ")
+    : "нет";
 const badges = (approximate: boolean, partial: boolean, incomeComplete?: boolean) => (
   <span className={styles.badges}>
     {approximate && <span className={styles.badge}>приблизительно</span>}
@@ -45,6 +52,39 @@ const badges = (approximate: boolean, partial: boolean, incomeComplete?: boolean
     )}
   </span>
 );
+const assumptions = (flows: boolean, income: boolean) => (
+  <span className={styles.badges}>
+    {flows && <span className={styles.badge}>потоки с допущениями</span>}
+    {income && <span className={styles.badge}>купоны/дивиденды с допущениями</span>}
+  </span>
+);
+function ReturnGaps({ gaps }: { gaps: ReturnGap[] }) {
+  if (!gaps.length) return null;
+  return (
+    <div>
+      <h3>Пробелы и перекрытия источников</h3>
+      <ul>
+        {gaps.map((gap) => (
+          <li key={JSON.stringify(gap)}>
+            {flags([gap.code])}
+            {gap.month && <> · месяц: {month(gap.month)}</>}
+            {gap.intake_id !== null && <> · выписка: {gap.intake_id}</>}
+            {gap.source_reference && <> · строка: {gap.source_reference}</>}
+            {gap.isin && <> · ISIN: {gap.isin}</>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+type Upload = {
+  id: string;
+  name: string;
+  state: string;
+  detail: string;
+  intakeId?: number;
+  readbackFailed?: boolean;
+};
 const instrumentCells = (row: InstrumentTotals, partial = row.total_kopecks === null) => (
   <>
     <td>{money(row.price_effect_kopecks)}</td>
@@ -54,6 +94,7 @@ const instrumentCells = (row: InstrumentTotals, partial = row.total_kopecks === 
     <td>{rate(row.return_percent, false)}</td>
     <td>
       {badges(row.approximate, partial, row.income_complete)}
+      {assumptions(false, row.income_assumptions_used)}
       {flags(row.flags)}
     </td>
   </>
@@ -72,9 +113,8 @@ export default function UiV2MonthlyReturnsPage() {
   );
   const [selected, setSelected] = useState("");
   const account = selected || accounts[0] || "";
-  const [uploads, setUploads] = useState<Array<{ name: string; state: string; detail: string }>>(
-    [],
-  );
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const uploadBusy = useRef(false);
   const [uploading, setUploading] = useState(false);
   const monthly = useQuery({
     queryKey: ["source-returns", "monthly", account],
@@ -86,32 +126,64 @@ export default function UiV2MonthlyReturnsPage() {
     queryFn: ({ signal }) => getSourceInstrumentReturns(account, signal),
     enabled: !!account,
   });
-  async function upload(files: File[]) {
+  function updateUpload(id: string, patch: Partial<Upload>) {
+    setUploads((old) => old.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+  async function readUploadedIntake(id: string, intakeId: number) {
+    updateUpload(id, { state: "Сохранен · читаем", intakeId, readbackFailed: false });
+    try {
+      const intake = await readSourceIntake(intakeId);
+      const detail = intake.exceptions.length
+        ? `Сохранено наблюдений: ${intake.observations.length}. Флаги: ${intake.exceptions.join(", ")}`
+        : `Сохранено наблюдений: ${intake.observations.length}. Пробелов не найдено.`;
+      updateUpload(id, { state: "Сохранен", detail });
+    } catch (error) {
+      updateUpload(id, {
+        state: "Сохранен · не удалось прочитать",
+        detail: `Сохранение подтверждено. Повторите чтение без повторной загрузки. ${formatApiError(error)}`,
+        readbackFailed: true,
+      });
+    }
+  }
+  async function retryReadback(id: string, intakeId: number) {
+    if (uploadBusy.current) return;
+    uploadBusy.current = true;
     setUploading(true);
-    setUploads(files.map((file) => ({ name: file.name, state: "Сохраняем", detail: "" })));
-    await Promise.all(
-      files.map(async (file, index) => {
-        try {
-          const ack = await saveSourceIntake(file, crypto.randomUUID(), 0, null);
-          const intake = await readSourceIntake(ack.intake_id);
-          const detail = intake.exceptions.length
-            ? `Сохранено наблюдений: ${intake.observations.length}. Флаги: ${intake.exceptions.join(", ")}`
-            : `Сохранено наблюдений: ${intake.observations.length}. Пробелов не найдено.`;
-          setUploads((old) =>
-            old.map((item, i) => (i === index ? { ...item, state: "Сохранен", detail } : item)),
-          );
-        } catch (error) {
-          setUploads((old) =>
-            old.map((item, i) =>
-              i === index ? { ...item, state: "Не сохранен", detail: formatApiError(error) } : item,
-            ),
-          );
-        }
-      }),
+    try {
+      await readUploadedIntake(id, intakeId);
+    } finally {
+      uploadBusy.current = false;
+      setUploading(false);
+    }
+  }
+  async function upload(files: File[]) {
+    if (uploadBusy.current || !files.length) return;
+    uploadBusy.current = true;
+    setUploading(true);
+    const batch = files.map((file) => ({ file, id: crypto.randomUUID() }));
+    setUploads(
+      batch.map(({ file, id }) => ({ id, name: file.name, state: "Сохраняем", detail: "" })),
     );
-    await client.invalidateQueries({ queryKey: ["source-intakes"] });
-    await client.invalidateQueries({ queryKey: ["source-returns"] });
-    setUploading(false);
+    try {
+      await Promise.all(
+        batch.map(async ({ file, id }) => {
+          let intakeId: number;
+          try {
+            const ack = await saveSourceIntake(file, id, 0, null);
+            intakeId = ack.intake_id;
+          } catch (error) {
+            updateUpload(id, { state: "Не сохранен", detail: formatApiError(error) });
+            return;
+          }
+          await readUploadedIntake(id, intakeId);
+        }),
+      );
+      await client.invalidateQueries({ queryKey: ["source-intakes"] });
+      await client.invalidateQueries({ queryKey: ["source-returns"] });
+    } finally {
+      uploadBusy.current = false;
+      setUploading(false);
+    }
   }
   return (
     <UiV2Shell
@@ -143,7 +215,12 @@ export default function UiV2MonthlyReturnsPage() {
               accept=".xml"
               multiple
               type="file"
-              onChange={(event) => void upload(Array.from(event.target.files ?? []))}
+              disabled={uploading}
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                void upload(files);
+              }}
             />
           </label>
           <p className={styles.note}>
@@ -153,11 +230,22 @@ export default function UiV2MonthlyReturnsPage() {
           {uploads.length > 0 && (
             <ul className={styles.fileList}>
               {uploads.map((item) => (
-                <li key={item.name}>
+                <li key={item.id}>
                   <strong>
                     {item.name}: {item.state}
                   </strong>
                   {item.detail && <> — {item.detail}</>}
+                  {item.readbackFailed && item.intakeId !== undefined && (
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => {
+                        if (item.intakeId !== undefined) void retryReadback(item.id, item.intakeId);
+                      }}
+                    >
+                      Повторить чтение {item.name}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -210,7 +298,8 @@ export default function UiV2MonthlyReturnsPage() {
               title="За всё время"
               wide
             >
-              {badges(true, monthly.data.period.missing_endpoint)}
+              {badges(monthly.data.period.approximate, monthly.data.period.missing_endpoint)}
+              {assumptions(monthly.data.period.assumptions_used, false)}
               <p>
                 <strong>Взносы:</strong> {money(monthly.data.period.contributions_kopecks)} ·{" "}
                 <strong>Выводы:</strong> {money(monthly.data.period.withdrawals_kopecks)} ·{" "}
@@ -219,8 +308,25 @@ export default function UiV2MonthlyReturnsPage() {
               <p>
                 <strong>XIRR, годовых:</strong> {rate(monthly.data.period.xirr_annualized_return)} ·{" "}
                 <strong>XIRR за период:</strong> {rate(monthly.data.period.xirr_period_return)} ·{" "}
-                <strong>TWRR:</strong> {rate(monthly.data.period.chained_return)}
+                <strong>Цепной Modified Dietz (≈TWRR, приблизительно):</strong>{" "}
+                {rate(monthly.data.period.chained_return)}
               </p>
+              {monthly.data.defaults_applied.length > 0 && (
+                <div>
+                  <h3>Потоки по правилам по умолчанию (допущения)</h3>
+                  <ul>
+                    {monthly.data.defaults_applied.map((flow) => (
+                      <li key={JSON.stringify(flow)}>
+                        {flow.event_date} · {money(flow.amount_kopecks)} · {flow.classification}
+                        {flow.included ? " · включён" : " · исключён"}
+                        {flow.source_references.length > 0 &&
+                          ` · строки: ${flow.source_references.join(", ")}`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <ReturnGaps gaps={monthly.data.gaps} />
             </UiV2Panel>
             <UiV2Panel
               eyebrow="Помесячно"
@@ -255,6 +361,7 @@ export default function UiV2MonthlyReturnsPage() {
                         <td>{rate(row.modified_dietz_return)}</td>
                         <td>
                           {badges(row.approximate, row.missing_endpoint)}
+                          {assumptions(row.assumptions_used, row.income_assumptions_used)}
                           {flags([...row.reason_codes, ...row.flags])}
                         </td>
                       </tr>
@@ -280,6 +387,7 @@ export default function UiV2MonthlyReturnsPage() {
             title="Цена и выплаты по инструментам"
             wide
           >
+            <ReturnGaps gaps={instruments.data.gaps} />
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>

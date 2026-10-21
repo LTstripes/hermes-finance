@@ -40,9 +40,18 @@ export type MonthlyReturn = {
   dividends_kopecks: number;
   income_assumptions_used: boolean;
 };
+export type SourceReturnFlow = {
+  event_date: string;
+  amount_kopecks: number;
+  status: "assumed" | "confirmed";
+  included: boolean;
+  source_references: string[];
+  classification: string;
+};
 export type SourceMonthlyReturns = {
   source_account: string;
   months: MonthlyReturn[];
+  defaults_applied: SourceReturnFlow[];
   period: PeriodTotals;
   gaps: ReturnGap[];
   authority: "provisional";
