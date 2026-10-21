@@ -22,12 +22,15 @@ from _test_taxonomy import (
     CI_INTEGRATIONS_SHARD_MARKERS,
     CI_INTEGRATIONS_SHARD_WEIGHTS,
     CI_LANE_MARKERS,
+    CI_PERSISTENCE_SHARD_MARKERS,
+    CI_PERSISTENCE_SHARD_WEIGHTS,
     TESTS_ROOT,
     ci_core_shard_for_test_path,
     ci_integrations_a_shard_for_test_node,
     ci_integrations_b_shard_for_test_node,
     ci_integrations_shard_for_test_path,
     ci_lane_for_test_path,
+    ci_persistence_shard_for_test_path,
     iter_backend_test_files,
     semantic_markers_for,
 )
@@ -107,6 +110,24 @@ def test_accepted_core_shard_anchors_stay_put() -> None:
     assert ci_core_shard_for_test_path(TESTS_ROOT / "test_historical_source_xirr.py") == "ci_core_b"
     assert ci_core_shard_for_test_path(TESTS_ROOT / "domain" / "test_values.py") == "ci_core_b"
     assert ci_core_shard_for_test_path(TESTS_ROOT / "test_cash_api.py") == "ci_core_a"
+
+
+def test_persistence_shards_cover_the_lane_once_and_are_balanced() -> None:
+    files = {
+        path.relative_to(TESTS_ROOT).as_posix()
+        for path in iter_backend_test_files()
+        if ci_lane_for_test_path(path) == "ci_persistence"
+    }
+    assert set(CI_PERSISTENCE_SHARD_WEIGHTS) == files
+    totals = dict.fromkeys(CI_PERSISTENCE_SHARD_MARKERS, 0.0)
+    for key, weight in CI_PERSISTENCE_SHARD_WEIGHTS.items():
+        shard = ci_persistence_shard_for_test_path(TESTS_ROOT / key)
+        assert shard in CI_PERSISTENCE_SHARD_MARKERS
+        totals[shard] += weight
+    assert max(totals.values()) / min(totals.values()) <= 1.02
+    assert ci_persistence_shard_for_test_path(TESTS_ROOT / "test_migrations.py") == (
+        "ci_persistence_a"
+    )
 
 
 def _integration_files() -> tuple[Path, ...]:
@@ -298,6 +319,7 @@ def test_integrations_b_shards_are_stable_and_within_estimated_ci_budget(monkeyp
 
 def test_shard_markers_are_not_parent_lanes() -> None:
     assert set(CI_CORE_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
+    assert set(CI_PERSISTENCE_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_A_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_A_SHARD_MARKERS).isdisjoint(CI_INTEGRATIONS_SHARD_MARKERS)
@@ -323,14 +345,15 @@ def _workflow_entries() -> list[tuple[str, str, int]]:
     ]
 
 
-def test_backend_matrix_keeps_full_lanes_and_four_shards_per_integration_group() -> None:
+def test_backend_matrix_keeps_full_lanes_and_duration_weighted_shards() -> None:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     entries = dict((lane, (marker, timeout)) for lane, marker, timeout in _workflow_entries())
 
     assert list(entries) == [
         "core-a",
         "core-b",
-        "persistence",
+        "persistence-a",
+        "persistence-b",
         "integrations-a1",
         "integrations-a2",
         "integrations-a3",
@@ -339,6 +362,10 @@ def test_backend_matrix_keeps_full_lanes_and_four_shards_per_integration_group()
         "integrations-b2",
         "integrations-b3",
         "integrations-b4",
+        "integrations-b5",
+        "integrations-b6",
+        "integrations-b7",
+        "integrations-b8",
         "runtime-release",
         "benchmark",
     ]
@@ -353,7 +380,12 @@ def test_backend_matrix_keeps_full_lanes_and_four_shards_per_integration_group()
             10,
         )
     assert len(entries) == len(_workflow_entries())
-    for lane in ("core-a", "core-b", "persistence", "runtime-release", "benchmark"):
+    for index, shard in enumerate(CI_PERSISTENCE_SHARD_MARKERS, start=1):
+        assert entries[f"persistence-{'ab'[index - 1]}"] == (
+            f"ci_persistence and {shard}",
+            10,
+        )
+    for lane in ("core-a", "core-b", "runtime-release", "benchmark"):
         assert entries[lane][1] == 10
     assert "\n          - lane: integrations\n" not in workflow
     assert "timeout-minutes: ${{ matrix.timeout_minutes }}" in workflow
@@ -497,3 +529,7 @@ def test_collected_nodes_run_in_exactly_one_parent_and_integration_shard() -> No
             assert len(names.intersection(CI_CORE_SHARD_MARKERS)) == 1
         else:
             assert names.isdisjoint(CI_CORE_SHARD_MARKERS)
+        if lanes == {"ci_persistence"}:
+            assert len(names.intersection(CI_PERSISTENCE_SHARD_MARKERS)) == 1
+        else:
+            assert names.isdisjoint(CI_PERSISTENCE_SHARD_MARKERS)

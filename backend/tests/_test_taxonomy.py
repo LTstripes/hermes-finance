@@ -35,6 +35,11 @@ CI_CORE_SHARD_MARKERS = (
     "ci_core_b",
 )
 
+CI_PERSISTENCE_SHARD_MARKERS = (
+    "ci_persistence_a",
+    "ci_persistence_b",
+)
+
 CI_INTEGRATIONS_SHARD_MARKERS = (
     "ci_integrations_a",
     "ci_integrations_b",
@@ -52,7 +57,38 @@ CI_INTEGRATIONS_B_SHARD_MARKERS = (
     "ci_integrations_b2",
     "ci_integrations_b3",
     "ci_integrations_b4",
+    "ci_integrations_b5",
+    "ci_integrations_b6",
+    "ci_integrations_b7",
+    "ci_integrations_b8",
 )
+
+# Measured locally on Python 3.13 at a9a239d with
+# `pytest -m ci_persistence --junitxml=...`: 386 passed, one skipped in
+# 435.61s. The migration module is deliberately isolated because its 211.30s
+# is almost exactly half of the lane's 425.68s of recorded test time.
+CI_PERSISTENCE_SHARD_WEIGHTS = {
+    "test_applied_payouts.py": 9.937,
+    "test_backups_api.py": 0.742,
+    "test_class_endpoint_eligibility.py": 28.454,
+    "test_class_returns.py": 21.475,
+    "test_database.py": 0.005,
+    "test_instrument_cleanup.py": 3.015,
+    "test_investment_cash_flows.py": 3.595,
+    "test_linked_pair_balance_evidence_concurrency.py": 2.592,
+    "test_migrations.py": 211.296,
+    "test_month_clone.py": 8.764,
+    "test_month_guard.py": 12.808,
+    "test_payout_lifecycle_migration.py": 12.037,
+    "test_positions.py": 22.907,
+    "test_positions_deposits_api.py": 18.478,
+    "test_protected_backups.py": 13.523,
+    "test_r08_01a_external_flows.py": 31.106,
+    "test_r08_01b_valuation_points.py": 4.418,
+    "test_r08_623_boundary_close_atomicity.py": 13.870,
+    "test_reporting_months.py": 5.546,
+    "test_sqlite_locking.py": 1.108,
+}
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
@@ -792,6 +828,21 @@ def ci_core_shard_for_test_path(test_path: Path) -> str | None:
         relative_path.as_posix(),
         CI_CORE_SHARD_WEIGHTS,
         CI_CORE_SHARD_MARKERS,
+    )
+
+
+def ci_persistence_shard_for_test_path(test_path: Path) -> str | None:
+    """Return a deterministic duration-weighted persistence shard."""
+
+    if ci_lane_for_test_path(test_path) != "ci_persistence":
+        return None
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+    return _weighted_shard(
+        relative_path.as_posix(),
+        CI_PERSISTENCE_SHARD_WEIGHTS,
+        CI_PERSISTENCE_SHARD_MARKERS,
     )
 
 

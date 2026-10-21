@@ -35,6 +35,7 @@ OWNERS = {
     "frontend": "frontend",
     "g04-browser": "browser",
     "release-safety": "release",
+    "release-runtime-safety": "release",
     "windows-production-smoke": "windows",
 }
 
@@ -347,7 +348,12 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(self.runs(job, mode="docs-only"))
 
     def test_windows_jobs_follow_classifier_outputs_and_fail_closed(self) -> None:
-        for job in ("backend-timezone-windows", "release-safety", "windows-production-smoke"):
+        for job in (
+            "backend-timezone-windows",
+            "release-safety",
+            "release-runtime-safety",
+            "windows-production-smoke",
+        ):
             owner = OWNERS[job]
             for mode in ("full", "docs-only", ""):
                 for result in ("success", "failure", "cancelled", "skipped", ""):
@@ -379,7 +385,12 @@ class WorkflowTests(unittest.TestCase):
         for path in SAFETY_PATHS:
             selected = selected_areas([record(path)])
             areas = {area: str(area in selected).lower() for area in AREAS}
-            for job in ("backend-timezone-windows", "release-safety", "windows-production-smoke"):
+            for job in (
+                "backend-timezone-windows",
+                "release-safety",
+                "release-runtime-safety",
+                "windows-production-smoke",
+            ):
                 with self.subTest(path=path, job=job):
                     self.assertTrue(self.runs(job, areas=areas))
 
