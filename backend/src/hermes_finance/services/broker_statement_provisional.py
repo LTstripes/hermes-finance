@@ -39,6 +39,7 @@ from hermes_finance.statement_import.mybroker import (
     MONEY_LINKAGE,
     MyBrokerError,
     digest,
+    frozen_source_shape,
     parse_mybroker,
 )
 
@@ -126,7 +127,9 @@ def _matching_source(stored: dict, document: bytes, filename: str) -> dict:
     """Reproduce the journal grammar without trusting a later financial receipt."""
     for version in (MONEY_LINKAGE, None):
         try:
-            fresh = parse_mybroker(document, filename, money_linkage_version=version)
+            fresh = frozen_source_shape(
+                parse_mybroker(document, filename, money_linkage_version=version), stored
+            )
         except MyBrokerError:
             continue
         if all(fresh.get(key) == stored.get(key) for key in SOURCE_KEYS):

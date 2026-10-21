@@ -920,3 +920,25 @@ def test_http_preview_repeated_original_is_zero_write_and_keeps_confirmation(dat
         event.remove(database.engine, "before_cursor_execute", observe)
     with database.session_factory() as session:
         assert inventory(session) == before
+
+
+def test_old_shape_source_with_nominal_still_validates_section_original(database, monkeypatch):
+    from test_statement_import_mybroker_endpoints import _all_month_tables, broker_month_xml
+
+    from hermes_finance.statement_import import mybroker
+
+    root = ET.fromstring(metadata_xml(broker_month_xml()))
+    root.find(".//{MyBroker}Details[@ISIN1]").set("nominal", "500")
+    root.find(".//{MyBroker}Details[@trade_no]").set("nominal", "1000")
+    raw = ET.tostring(root)
+    with monkeypatch.context() as old:
+        old.setattr(mybroker, "_face_value_fields", lambda *args, **kwargs: {})
+        client, intent, raw = section_setup(database, raw=raw)
+    before = _all_month_tables(database)
+    with database.session_factory() as session:
+        parsed = parse_import_original(session, raw, FILENAME)
+    assert all("face_value" not in row for key in ("positions", "trades") for row in parsed[key])
+    response = section_preview(client, intent, raw)
+    assert response.status_code == 200, response.text
+    assert response.json()["can_apply"], response.json()
+    assert _all_month_tables(database) == before

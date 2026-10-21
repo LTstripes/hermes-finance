@@ -32,7 +32,12 @@ from hermes_finance.services.source_money_classifications import (
     list_classifications,
     persist_money_classifications,
 )
-from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, digest
+from hermes_finance.statement_import.mybroker import (
+    MyBrokerError,
+    canonical,
+    digest,
+    frozen_source_shape,
+)
 from hermes_finance.statement_import.mybroker_identity import parse_identity
 
 CONTRACT = "source_intake_v1"
@@ -182,8 +187,10 @@ def _binding(session, source, account_id, month_id):
             raise MyBrokerError("source_intake_account_binding_conflict")
 
 
-def _manifest(session, document, filename):
+def _manifest(session, document, filename, *, stored_source=None):
     source = mybroker_import.parse_import_original(session, document, filename)
+    if stored_source is not None:
+        source = frozen_source_shape(source, stored_source)
     evidence = parse_identity(document, filename, incomplete_draft=True)
     observations = []
     for section, rows in (
@@ -761,7 +768,7 @@ def _review(session, intake_id, document, filename, intent):
     view = _view(session, original)
     if intent.expected_head_seq != view["head_seq"]:
         raise MyBrokerError("source_intake_preview_stale")
-    manifest, observations = _manifest(session, document, filename)
+    manifest, observations = _manifest(session, document, filename, stored_source=view["document"])
     if digest(manifest) != view["manifest_digest"]:
         raise MyBrokerError("source_intake_parser_revision_changed")
     state = view["state"]

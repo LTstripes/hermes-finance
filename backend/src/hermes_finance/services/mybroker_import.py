@@ -48,6 +48,7 @@ from hermes_finance.statement_import.mybroker import (
     MyBrokerError,
     canonical,
     digest,
+    frozen_source_shape,
     parse_mybroker,
 )
 from hermes_finance.statement_import.mybroker_empty_money import parse_empty_money_layout
@@ -69,7 +70,12 @@ def parse_import_original(session: Session, document: bytes, filename: str) -> d
         version = MONEY_LINKAGE
         if source is not None and source.parser_version == PARSER:
             version = json.loads(source.normalized_json).get("money_linkage_version")
-        return parse_mybroker(document, filename, money_linkage_version=version)
+        fresh = parse_mybroker(document, filename, money_linkage_version=version)
+        return (
+            frozen_source_shape(fresh, json.loads(source.normalized_json))
+            if source is not None and source.parser_version == PARSER
+            else fresh
+        )
 
 
 def _imports(session: Session) -> list[MyBrokerImport]:

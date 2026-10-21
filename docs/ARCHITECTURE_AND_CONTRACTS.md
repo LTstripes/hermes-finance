@@ -1581,9 +1581,10 @@ are derived. The original one-part `ids` remains an observation with
 `repo_semantics_unsupported`. Reciprocal rows and duplicate occurrences never
 manufacture a second native ID or an S2 execution.
 
-The parser identity and normalized shape remain `mybroker-s1-v2`; previously
-accepted numeric-ID documents normalize identically. Malformed B IDs, ambiguous
-partners, absent/inconsistent markers and pending B rows refuse parsing.
+For the #736 REPO compatibility repair, parser identity and normalized shape
+remain `mybroker-s1-v2`; previously accepted numeric-ID documents normalize
+identically. The later optional nominal extension is described below. Malformed
+B IDs, ambiguous partners, absent/inconsistent markers and pending B rows refuse parsing.
 B-linked money comments remain unsupported and unlinked. Because S1 does not
 retain arbitrary money comments, H2 owner-cash claims cannot override an
 identity-less REPO observation in the account's scoped source set. H0/H1,
@@ -1623,8 +1624,24 @@ remain guarded there; this does not assign or backfill a trade class.
 writes. Security rows carry beginning/ending actual quantity, beginning value and
 ending value beside the unchanged ending actual/forward quantity keys. Values
 keep the source-native basis labels (beginning `previous_day_eod`, ending
-`covered_to_eod`) as document `endpoint_basis`; no price is derived, and no bond
-nominal/NKD/clean-dirty semantics are introduced.
+`covered_to_eod`) as document `endpoint_basis`; that #716 endpoint extension
+derives no price and introduces no bond nominal/NKD/clean-dirty semantics.
+
+The later optional nominal extension retains `face_value`, `nominal` and
+`nominal_value` attributes as `face_value` on trade/position rows (including
+`2`-suffixed pending attributes), without changing trade core/identity or S1
+financial authority. It keeps `mybroker-s1-v2` compatible by reproducing each
+saved row's nominal-key presence when validating an exact reattached original.
+Previously absent keys remain absent. New parsing distinguishes all-empty nominal
+attributes (`face_value=""`) from invalid/conflicting values (`face_value=NULL`).
+An older saved NULL stays frozen unknown even when an exact reattachment now parses
+as empty; it never becomes assumed-face evidence. All other recorded nominal
+values and parser facts must still agree. Saved JSON, manifests and fingerprints are never
+rewritten, and reattachment cannot promote opaque nominal attributes into frozen
+facts. New intakes may retain these facts. Provisional NKD inference uses only
+trade-row nominal or the disclosed absent/empty-face assumption under the
+[instrument-return contract](#c7-source_instrument_returns-1); position nominal
+never supplies trade face.
 
 The RUB currency row is recognized only by the accepted conjunction
 `active_type=Валюта`, `active_name=RUB`, empty `ISIN1`, and is normalized
@@ -5810,17 +5827,43 @@ Let T be native `summ_trade`, N the native NKD and F commission. With an
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
 These are the C5 native-total basis meanings. For buys, a current accepted cash proof
 matching the native identity, IDs and exact trade components takes precedence,
-revalidated through the existing proof reader and cash checks. These cash checks
-validate buys only; sells rely on per-row inference or remain withheld.
+revalidated through the existing proof reader and cash checks. A malformed proof
+envelope (including missing/invalid `claims`, `source_identity`, `native_ids`,
+`signed_minor` or `nkd_leg` fields) is invalid and contributes no basis: use unique
+inference or withhold with `trade_nkd_basis_unknown`. These cash checks validate
+buys only; sells rely on per-row inference or remain withheld.
 For MyBroker bond buys and sells,
 the provisional reader also infers a basis per row from parsed `Price` (percent
-of face) and signed `qty`: let P = Price / 100 * 1000 * |qty|. With Decimal
-arithmetic and a per-row 0.01 tolerance, |T - P - N| <= 0.01 implies
+of face), signed `qty` and face value D in settlement-currency units per security:
+let P = Price / 100 * D * |qty|. Use the explicit positive trade-row face when
+present. When the trade-row face is absent or empty, provisionally assume D = 1000
+and apply the same exact-one-reading test below. The optional row attributes
+`face_value`, `nominal` and `nominal_value` (also their `2`-suffixed variants
+on pending rows) are normalized as `face_value` on parsed trade/position rows.
+Only a trade-row value supplies a dated nominal for inference. Position-row
+nominal has no proven validity interval and may describe a post-amortization face;
+it is not applied to trades, even for the same account/ISIN and statement.
+Conflicting trade aliases and explicit invalid/nonpositive values leave inference
+unknown and never fall back to 1000; position evidence cannot fill that gap.
+Contradictory nominal evidence across settled overlapping trade copies is
+`overlapping_trade_conflict` and withholds affected costs. There is no derivation
+of face from T or substitution of current instrument database metadata for
+historical source evidence. Explicit 500, 100 and other faces remain supported.
+An absent-face amortized trade whose amounts do not uniquely fit assumed 1000
+stays unknown; the reader does not search for another face.
+With Decimal arithmetic and the unchanged per-row 0.01 tolerance,
+|T - P - N| <= 0.01 implies
 `includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
-Both or neither matching leaves inference unknown (including inconclusive
-non-1000-face or amortized nominal rows). An unknown inference preserves a valid
-reviewed proof; a decidable inference conflicting with that proof makes the basis
-unknown and adds `trade_nkd_basis_conflict`. Without a valid proof or a unique
+Both or neither matching leaves inference unknown. Optional nominal keys are omitted
+when no supported attribute exists, preserving normalized payloads for those legacy
+rows. Previously saved intakes are read as frozen facts: exact-original reattachment
+reproduces their saved nominal-key presence under the C3 compatibility rule; opaque
+attribute fingerprints are not promoted to nominal evidence. An unknown inference
+preserves a valid reviewed proof; a decidable inference conflicting with that proof makes the basis
+unknown and adds `trade_nkd_basis_conflict`, including when inference used assumed
+1000. Only an accepted basis supplied by assumed-face inference adds
+`face_value_assumed` to that instrument-month; a reviewed basis retains precedence
+and does not acquire the assumption flag. Without a valid proof or a unique
 inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
 total/rate; bond EOD approximation does not waive this. This arithmetic inference
 is limited to the provisional reader and creates no accepted proof or attestation.
@@ -5840,6 +5883,9 @@ without resolving clean/dirty or accrued-interest basis: `approximate=true` and
 `bond_valuation_basis_unknown` disclose this without blocking numbers. Stocks have
 `approximate=false` when no gaps or assumed income exist. Assumed income makes both
 the month and all-time row approximate, while confirmed income alone does not.
+`face_value_assumed` is also a disclosure: it makes the month and all-time row
+approximate without by itself making all-time coverage partial. In general, any
+monthly flag except `income_confirmed` sets `approximate=true`.
 This grants no financial authority.
 
 Persisted coupon/dividend classifications supply signed income amounts and their
@@ -5849,15 +5895,56 @@ list with `isin=NULL` and an `unattributed_income` gap/reference. Registration a
 are usable only if actually present in saved identity evidence; the reader does
 not reconstruct metadata discarded by the existing parser or infer a registration
 crosswalk. Overlap handling reuses the monthly Money validation/deduplication rules,
-keeps same-report multiplicity and prefers confirmed choices. Known income remains
-an observed subtotal when `income_complete=false`. Every income field is nullable:
-when incomplete, a field retains only genuinely observed matching amounts and is
-NULL if none were observed; covered complete empty income is affirmative zero.
-All-time income uses the same available-component subtotal rule (NULL if no month
-supplies a value), and `income_complete=false` discloses any incomplete month.
-Unattributed, unknown, invalid,
-legacy-unclassified or non-RUB Money withholds affected monthly totals and rates,
-while retaining known price components. Unknown source structure, scope ambiguity
+keeps same-report multiplicity and prefers confirmed choices.
+
+The service's per-instrument monthly `income_complete` is true exactly when at least
+one usable intake covers the entire calendar month and that instrument/month has
+neither an income gap nor a source-structure gap. Income gaps are
+`unattributed_income`, `currency_unsupported`,
+`classification_missing_legacy_intake`, `invalid_money_row`,
+`invalid_external_flow`, `unrecognized_money` and `overlap_flow_choice_conflict`;
+the source-gap codes are listed below. Otherwise it is false, including a missing
+month or unreadable overlapping source even when another intake is readable.
+An account-level gap with no ISIN applies to every instrument in that month;
+an instrument-specific gap applies only to that instrument. This is completeness
+of the provisional saved-source income interpretation, not proof of all historical
+payouts, accepted financial coverage or readiness for Close.
+
+Assumed coupon/dividend classifications may satisfy completeness. They set
+`income_assumptions_used=true` and `income_assumed`/`approximate=true` only on
+instruments/months with an attributed assumed payout; confirmed income alone does
+not. Thus `income_complete=true` does not mean confirmed income or an exact return.
+Missing endpoints, trade NKD/nominal/currency/REPO gaps, seam mismatches and bond
+valuation approximation do not by themselves make income incomplete, although
+they can withhold price effect, total or rate.
+
+Every income field (`coupons_kopecks`, `dividends_kopecks`,
+`assumed_income_kopecks`, `confirmed_income_kopecks`, `income_kopecks`) is nullable.
+With complete coverage, no matching observations means affirmative zero. With
+incomplete coverage, retain a signed observed subtotal if at least one matching
+observation exists (including an observed zero or cancelling sum); otherwise NULL.
+A numeric income subtotal therefore does not imply completeness. Incomplete income
+always withholds monthly `total_kopecks` and `return_percent`, while known price
+components remain available unless independently blocked.
+
+For each instrument, all-time `income_complete` is the logical AND of all its
+emitted monthly values over the account's saved-source span, including missing and
+partial months. All-time `income_assumptions_used` is their logical OR. Each all-time
+income field sums every non-NULL monthly component independently and is NULL only
+if no month supplies a value. A complete empty month can therefore supply zero
+even when another month's income is NULL and all-time completeness is false.
+All-time `total_kopecks` still sums only available monthly totals; it can be numeric
+with `income_complete=false`. Conversely complete income can coexist with a partial
+all-time return because of trade/valuation gaps.
+
+The instrument API exposes the same flags as JSON booleans at
+`instruments[].months[].income_complete` and
+`instruments[].all_time.income_complete`, and preserves income NULL versus integer
+zero/subtotal exactly. Neither the response root nor individual `income[]` events
+has an aggregate `income_complete` field. An unknown account/no saved instrument
+identities returns an empty instrument list, not an invented complete zero result.
+
+Unknown source structure, scope ambiguity
 or an unreadable overlapping intake withholds affected costs/income completeness.
 The explicit structure-gap codes `source_reader_unavailable`,
 `native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,
