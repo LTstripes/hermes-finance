@@ -5704,6 +5704,10 @@ A different previous closing total is disclosed as `seam_mismatch`; neither
 operand is replaced. Missing endpoints remain NULL with `missing_endpoint`,
 and an invalid month does not suppress independent valid months. Long reports
 supply only their actual outer EOD boundaries, never intermediate month ends.
+Reports starting or ending inside a month remain in the calendar and dated-flow
+schedule with `partial_month_source`. Their partial endpoints cannot stand in
+for calendar-month boundaries; without another source those boundaries remain
+NULL. Interior full months retain dated flows and missing EOD independently.
 
 The separate approximate monthly Modified Dietz/period kernel is
 `calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints
