@@ -131,6 +131,7 @@ OMITTED_JOBS = (
     "g04-browser",
     "visual-audit",
     "release-safety",
+    "release-runtime-safety",
     "windows-production-smoke",
 )
 

@@ -20,11 +20,13 @@ def pytest_collection_modifyitems(items) -> None:
         CI_INTEGRATIONS_B_SHARD_MARKERS,
         CI_INTEGRATIONS_SHARD_MARKERS,
         CI_LANE_MARKERS,
+        CI_PERSISTENCE_SHARD_MARKERS,
         ci_core_shard_for_test_path,
         ci_integrations_a_shard_for_test_node,
         ci_integrations_b_shard_for_test_node,
         ci_integrations_shard_for_test_path,
         ci_lane_for_test_path,
+        ci_persistence_shard_for_test_path,
         semantic_markers_for,
     )
 
@@ -50,6 +52,10 @@ def pytest_collection_modifyitems(items) -> None:
                 shard = ci_core_shard_for_test_path(test_path)
                 shard_markers = CI_CORE_SHARD_MARKERS
                 kind = "core"
+            elif lane == "ci_persistence":
+                shard = ci_persistence_shard_for_test_path(test_path)
+                shard_markers = CI_PERSISTENCE_SHARD_MARKERS
+                kind = "persistence"
             elif lane == "ci_integrations":
                 shard = ci_integrations_shard_for_test_path(test_path)
                 shard_markers = CI_INTEGRATIONS_SHARD_MARKERS

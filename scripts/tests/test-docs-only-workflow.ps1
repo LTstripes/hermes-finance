@@ -100,6 +100,7 @@ Invoke-Case "Windows safety jobs observe classifier ownership and conservative f
     foreach ($entry in @(
         @{ Job = "backend-timezone-windows"; Area = "windows" },
         @{ Job = "release-safety"; Area = "release" },
+        @{ Job = "release-runtime-safety"; Area = "release" },
         @{ Job = "windows-production-smoke"; Area = "windows" }
     )) {
         $job = Get-Job $entry.Job
@@ -144,6 +145,7 @@ Invoke-Case "docs-only success cannot be a skipped or failed retained check" {
         "g04-browser",
         "visual-audit",
         "release-safety",
+        "release-runtime-safety",
         "windows-production-smoke"
     )) {
         $needle = '--job "' + $jobId + '=${{ needs.' + $jobId + '.result }}"'

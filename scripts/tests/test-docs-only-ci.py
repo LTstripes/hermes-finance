@@ -380,6 +380,34 @@ class DecisionTests(unittest.TestCase):
             )
         )
 
+    def test_release_runtime_safety_must_be_explicitly_skipped(self) -> None:
+        retained = {name: "success" for name in RETAINED_JOBS}
+        omitted = {name: "skipped" for name in OMITTED_JOBS}
+        omitted["release-runtime-safety"] = "skipped"
+        self.assertTrue(
+            documentation_fast_path_ok(
+                classification="docs-only",
+                retained_results=retained,
+                omitted_results=omitted,
+                whitespace_ok=True,
+            )
+        )
+        for result in ("success", "failure", "cancelled", "", None):
+            broken = dict(omitted)
+            if result is None:
+                del broken["release-runtime-safety"]
+            else:
+                broken["release-runtime-safety"] = result
+            with self.subTest(result=result):
+                self.assertFalse(
+                    documentation_fast_path_ok(
+                        classification="docs-only",
+                        retained_results=retained,
+                        omitted_results=broken,
+                        whitespace_ok=True,
+                    )
+                )
+
     def test_allowlist_does_not_use_a_blanket_docs_or_markdown_rule(self) -> None:
         self.assertNotIn("docs", PROSE_PREFIXES)
         self.assertTrue(
