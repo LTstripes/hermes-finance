@@ -299,7 +299,7 @@ def _native_total_basis(session, trade):
             }
         normalized = dict(trade, core=_trade_core(trade["core"]))
         return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
-    except (ValueError, TypeError, KeyError, ArithmeticError):
+    except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
         # A malformed proof is no basis; it must not suppress source inference.
         return None
 

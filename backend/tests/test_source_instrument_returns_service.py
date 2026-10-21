@@ -1303,3 +1303,69 @@ def test_malformed_proof_envelope_falls_back_or_withholds(
     assert ("trade_nkd_basis_unknown" in row.flags) == (not known_face)
     assert "trade_components_missing" not in row.flags
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("known_face", [True, False])
+def test_proof_attribute_error_falls_back_or_withholds(db, monkeypatch, known_face):
+    def mutate(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.pop("nominal", None)
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal", None)
+        if known_face:
+            trade.set("nominal", "1000")
+
+    intake = save(db, mutate=mutate)
+    with db.session_factory() as session:
+        trade = source_intake.read_intake(session, intake)["document"]["trades"][0]
+        account = Account(name="Synthetic", account_type="brokerage")
+        instrument = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add_all([account, instrument])
+        session.flush()
+        session.add(
+            ExecutedTrade(
+                provider="mybroker",
+                source_account=ACCOUNT,
+                primary_id=trade["ids"][0],
+                secondary_id=trade["ids"][1],
+                source_identity=trade["identity"],
+                account_id=account.id,
+                instrument_id=instrument.id,
+                core_json=json.dumps(trade["core"]),
+                bindings_json="[]",
+                accepted_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    proof = {
+        "source_identity": trade["identity"],
+        "native_ids": trade["ids"],
+        "claims": {
+            "native_total_basis": "excludes_paid_nkd",
+            "exact_row_settled_buy_link": True,
+            "complete_occurrence_set_is_one_event": True,
+            "nkd_separately_posted": True,
+            "fee_separately_charged": True,
+            "native_total_basis_independently_proved": True,
+        },
+        "signed_minor": {
+            "settlement": "-100000",
+            "paid_nkd": "-2000",
+            "commission": "-500",
+            "native_total": "100000",
+        },
+        "nkd_leg": {"effective_date": trade["settlement_date"], "currency": "RUB"},
+    }
+
+    def attribute_broken(*args, **kwargs):
+        raise AttributeError("synthetic proof object without expected attribute")
+
+    monkeypatch.setattr(service.broker_trade_money, "cash_reasons", attribute_broken)
+    monkeypatch.setattr(
+        service.broker_trade_money, "effective_proof", lambda session, identity: proof
+    )
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == (102_500 if known_face else None)
+    assert ("trade_nkd_basis_unknown" in row.flags) == (not known_face)
+    assert "trade_components_missing" not in row.flags
+    assert snapshot(db) == before
