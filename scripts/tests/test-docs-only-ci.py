@@ -20,6 +20,7 @@ from docs_only_ci import (  # noqa: E402
     EXACT_DOCS,
     OMITTED_JOBS,
     PROSE_PREFIXES,
+    RECURSIVE_PROSE_PREFIXES,
     RETAINED_JOBS,
     SUCCESS_TEXT,
     DiffRecord,
@@ -106,6 +107,24 @@ class AllowlistTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(ordinary_doc_path(path))
                 self.assertEqual(classify_records([record(path)]), "docs-only")
+
+    def test_archive_prose_is_docs_only_at_any_depth(self) -> None:
+        for path in (
+            "docs/archive/README.md",
+            "docs/archive/releases/2025/decision-log.md",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(ordinary_doc_path(path))
+                self.assertEqual(classify_records([record(path)]), "docs-only")
+
+        for path in (
+            "docs/archive/releases/manifest.json",
+            "docs/archive/scripts/rebuild.py",
+            "docs/archive/releases/release-notes-1.0.0.md",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(ordinary_doc_path(path))
+                self.assertEqual(classify_records([record(path)]), "full")
 
     def test_audited_owner_workflow_and_dated_checkpoints_are_prose(self) -> None:
         for path in (
@@ -366,6 +385,7 @@ class DecisionTests(unittest.TestCase):
         self.assertTrue(
             all(prefix.startswith("docs/") and prefix.endswith("/") for prefix in PROSE_PREFIXES)
         )
+        self.assertEqual(RECURSIVE_PROSE_PREFIXES, ("docs/archive/",))
         for path in EXACT_DOCS:
             self.assertTrue(path.endswith(".md"))
             self.assertFalse(path.startswith(".github/"))
