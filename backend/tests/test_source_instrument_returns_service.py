@@ -1215,6 +1215,57 @@ def test_nominal_differences_do_not_affect_stock_trade_deduplication(db):
     assert "overlapping_trade_conflict" not in row.flags
 
 
+def test_overlap_missing_and_empty_trade_nominal_is_one_trade(db):
+    def without_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    def empty_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", "")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    save(db, mutate=without_nominal)
+    save(db, mutate=empty_nominal, marker="empty-nominal")
+    row = by_isin(read(db))[BOND].months[0]
+    assert len(row.intake_ids) == 2
+    assert row.buys_cost_kopecks == 102_500  # One counted trade, assumed face 1000.
+    assert "overlapping_trade_conflict" not in row.flags
+    assert "face_value_assumed" in row.flags
+
+
+def test_overlap_empty_and_explicit_1000_trade_nominal_remains_a_conflict(db):
+    def without_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    def explicit_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", "1000")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    save(db, mutate=without_nominal)
+    save(db, mutate=explicit_nominal, marker="explicit-nominal")
+    row = by_isin(read(db))[BOND].months[0]
+    # An explicit source fact differs from an assumption even at the same value.
+    assert "overlapping_trade_conflict" in row.flags
+    assert row.buys_cost_kopecks is None
+
+
+def test_overlap_missing_and_invalid_trade_nominal_remains_a_conflict(db):
+    def without_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    def invalid_nominal(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", "invalid")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    save(db, mutate=without_nominal)
+    save(db, mutate=invalid_nominal, marker="invalid-nominal")
+    row = by_isin(read(db))[BOND].months[0]
+    assert "overlapping_trade_conflict" in row.flags
+    assert row.buys_cost_kopecks is None
+
+
 @pytest.mark.parametrize(
     "trade_face, expected", [(None, 75_300), ("1000", 75_300), ("500", 50_300)]
 )
@@ -1462,3 +1513,49 @@ def test_invalid_explicit_trade_face_is_withheld_without_fallback(db, face):
     assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
     assert "trade_nkd_basis_unknown" in row.flags
     assert "face_value_assumed" not in row.flags
+
+
+def test_missing_nominal_true_face_500_is_accepted_as_excludes(db):
+    """Known accepted limitation of the 1000 face assumption for bond trades.
+
+    There is no nominal anywhere, the true face is 500, price 100 % and
+    quantity 10, so principal is 5000 and amount 10000 = principal + NKD 5000.
+    The true basis is includes_paid_nkd. Assuming face 1000 makes principal
+    10000 = amount, so only excludes_paid_nkd fits and that wrong reading is
+    accepted. The buy is overstated by the paid NKD; the disclosure is only
+    face_value_assumed plus approximate=true.
+    """
+
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    save(
+        db,
+        bond=("0", "10", "0", "10000"),
+        trades=((BOND, "10", "10000", "5000", "7"),),
+        mutate=mutate,
+    )
+    row = by_isin(read(db))[BOND].months[0]
+    # amount + paid NKD + fee; the true includes basis would be 10000 + fee.
+    assert row.buys_cost_kopecks == 1_500_700
+    assert "face_value_assumed" in row.flags and row.approximate
+    assert "trade_nkd_basis_unknown" not in row.flags
+
+
+def test_explicit_trade_nominal_500_on_same_counterexample_uses_includes(db):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", "500")
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+
+    save(
+        db,
+        bond=("0", "10", "0", "10000"),
+        trades=((BOND, "10", "10000", "5000", "7"),),
+        mutate=mutate,
+    )
+    row = by_isin(read(db))[BOND].months[0]
+    assert row.buys_cost_kopecks == 1_000_700  # amount + fee; NKD is included.
+    assert "face_value_assumed" not in row.flags
+    assert "trade_nkd_basis_unknown" not in row.flags
+    assert row.approximate  # Bond valuation basis remains a disclosure.

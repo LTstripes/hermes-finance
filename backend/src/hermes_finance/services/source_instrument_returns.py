@@ -309,6 +309,15 @@ def _assumes_face_value(trade):
     return "face_value" not in trade or trade["face_value"] == ""
 
 
+def _face_signature(trade):
+    """Canonicalize the two spellings of "no nominal" for overlap comparison.
+
+    A missing key and an empty string both fall back to the same assumed face
+    1000. An invalid/conflicting None and explicit values stay distinct.
+    """
+    return "" if _assumes_face_value(trade) else trade["face_value"]
+
+
 def _inferred_native_total_basis(trade):
     """Infer this row's NKD basis with explicit nominal or a disclosed 1000 assumption."""
     try:
@@ -408,7 +417,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
             signatures = {
                 digest(
                     {
-                        k: t.get(k)
+                        k: _face_signature(t) if k == "face_value" else t.get(k)
                         for k in (
                             "settlement_date",
                             "bank_commission",

@@ -101,7 +101,10 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
   the basis is unknown and affected buys/sells/price effect/total/rate are withheld with
   `trade_nkd_basis_unknown`; a decidable inference that conflicts with the accepted proof
   makes the basis unknown and adds `trade_nkd_basis_conflict`. Missing commission or bond NKD
-  is unknown; omitted stock NKD is inapplicable zero. Bond valuation does not resolve
+  is unknown; omitted stock NKD is inapplicable zero. When there is neither an accepted proof
+  nor a trade nominal, a unique arithmetic reading may assume face 1000; the affected cost
+  then carries `face_value_assumed` and is approximate, not verified. If the true face differs,
+  that assumption can select the wrong NKD basis. Bond valuation does not resolve
   clean/dirty or accrued-interest basis, so bonds carry `approximate=true` and
   `bond_valuation_basis_unknown` without blocking the numbers.
 - One-part or absent trade identity produces `trade_identity_unresolved` and withholds the
