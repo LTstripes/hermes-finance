@@ -42,6 +42,19 @@ ACCOUNT = "1234567-000"
 ISIN = "RU000A000000"
 
 
+@pytest.mark.parametrize("suffix", [" (1)", " (12)"])
+def test_duplicate_filename_suffix_preserves_filename_period_and_account(suffix):
+    raw = fixture()
+    base = parse_mybroker(raw, FILENAME)
+    assert parse_mybroker(raw, FILENAME.replace(".xml", suffix + ".xml")) == base
+
+
+@pytest.mark.parametrize("suffix", ["(1)", " (0)", " (-1)", " (1) (2)", " (x)", " (1) "])
+def test_duplicate_filename_suffix_stays_bounded(suffix):
+    with pytest.raises(MyBrokerError, match="^filename_range_invalid$"):
+        parse_mybroker(fixture(), FILENAME.replace(".xml", suffix + ".xml"))
+
+
 def native_money_xml(**kwargs):
     """Fabricated original family: native settlement/fee narrative in oper_type."""
     from copy import deepcopy

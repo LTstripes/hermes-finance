@@ -29,6 +29,7 @@ from hermes_finance.services.source_money_classifications import (
 )
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
+from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
 
 # These structural gaps can hide financial events even when parsed Money is empty.
 # Endpoint-only limitations and non-financial intake statuses are separate.
@@ -144,6 +145,30 @@ def _native_scope(document):
     for trade in document.get("trades", []):
         aliases.update(provisional._trade_accounts(trade))
     return aliases - {None}
+
+
+def _selected_sources(session, source_account):
+    """Resolve a filename alias only through its documents' single row account.
+
+    This is local source selection, not a persisted Hermes account mapping.
+    Every selected document must agree; no suffix matching or transitive aliases.
+    """
+    selected = []
+    scopes = set()
+    for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
+        try:
+            aliases = json.loads(original.native_accounts_json)
+            if not isinstance(aliases, list) or source_account not in aliases:
+                continue
+            view = source_intake.read_intake(session, original.id)
+            document = view["document"]
+            native = _native_scope(document)
+            if len(native) == 1 and source_account in native | {document["filename_account"]}:
+                scopes.update(native)
+            selected.append((original, view, None))
+        except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
+            selected.append((original, None, "source_reader_unavailable"))
+    return selected, scopes if len(scopes) == 1 else None
 
 
 def _saved_totals(document):
@@ -328,21 +353,16 @@ def read_monthly_returns(
     uncertain_source_months = set()
     conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
-    for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
-        try:
-            aliases = json.loads(original.native_accounts_json)
-        except (ValueError, TypeError):
-            gaps.append(SourceReturnGap("source_membership_unavailable", original.id))
-            continue
-        if not isinstance(aliases, list) or source_account not in aliases:
-            continue
+    selected, native_scope = _selected_sources(session, source_account)
+    for original, view, error in selected:
         start, end = original.covered_from, original.covered_to
         unknown_source_flows = False
         try:
-            view = source_intake.read_intake(session, original.id)
+            if error:
+                raise MyBrokerError(error)
             document = view["document"]
             financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
-                (*document.get("syntax_blockers", []), *document.get("endpoint_blockers", []))
+                (*source_return_blockers(view), *document.get("endpoint_blockers", []))
             )
             covered_month = start.replace(day=1)
             while covered_month <= end:
@@ -354,7 +374,11 @@ def read_monthly_returns(
                         for code in sorted(financial_blockers)
                     )
                 covered_month = _next_month(covered_month)
-            if _native_scope(view["document"]) != {source_account}:
+            if (
+                native_scope is None
+                or _native_scope(view["document"]) != native_scope
+                or source_account not in native_scope | {document["filename_account"]}
+            ):
                 gaps.append(SourceReturnGap("native_source_scope_ambiguous", original.id))
                 unknown_source_flows = True
                 opening = closing = None
@@ -535,8 +559,12 @@ def read_monthly_returns(
                 tuple(s[0] for s in relevant),
                 tuple(flags),
                 previous_closing,
-                income[month]["coupon"] if income_covered else None,
-                income[month]["dividend"] if income_covered else None,
+                income[month]["coupon"]
+                if income_covered and month not in uncertain_source_months
+                else None,
+                income[month]["dividend"]
+                if income_covered and month not in uncertain_source_months
+                else None,
                 month in assumed_income_months,
             )
         )

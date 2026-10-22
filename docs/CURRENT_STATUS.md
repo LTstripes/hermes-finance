@@ -47,6 +47,16 @@ Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) wi
 2026-10-22 security remediation for [#929](https://github.com/LTstripes/hermes-finance/pull/929) on `review/security-audit`: the original remediation (`58cbb8cd`) plus the follow-up for all five OpenCode findings (fixed sibling-validator/generic exception messages, 32-file multipart support, 1 MiB non-file fields, typed 256 MiB backup creation rejection, refreshed delivery docs) are committed and the branch is merged with main `8297a747`. The security suite passes **70 tests**; protected backups pass 61 tests / 2 platform skips. OpenCode re-review confirmed findings 1-4 fixed. See the [security review and verification](reviews/security-review-2026-10-22.md). CI and Integrator acceptance are pending. No release, runtime or financial-authority change is claimed.
 
 <a id="s3"></a>
+2026-10-22 local uncommitted source-return candidate on `fix/statement-period-from-xml`,
+pinned at `7d8c724955d93c2279c248ea2c514b63c7e5ff18`: document-evidenced filename-alias
+selection, unknown income for inapplicable scopes, provisional-only structural
+exclusions recomputed from verified intake inventory, the exact dividend transfer
+default and duplicate filename suffix support. Frozen S1/manifests and strict
+financial authority are unchanged. Saved classifications refresh only through an
+explicit new Save; GET does not update them. Worker verification is local and
+synthetic; independent review, Integrator acceptance and Owner numerical UAT remain
+pending. No commit, network, deployment or database write is included.
+
 ## 3. Current priorities, blockers and Owner actions
 
 The [2026-10-20 #839 closeout](https://github.com/LTstripes/hermes-finance/issues/839#issuecomment-6277475896) replaces per-month prompt splitting with one whole-period task and orders the remaining product work as #839 external-flow reconciliation and combined-period result, #891 full economic result, #889/#769 + #711 single user path, then launch/release, with #897 DEFERRED and not blocking offline calculations; the [accepted #769 differential result](https://github.com/LTstripes/hermes-finance/issues/769#issuecomment-6254662531) still keeps repetitive inventory PAUSED. Current priorities and limits:

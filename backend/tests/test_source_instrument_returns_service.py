@@ -132,6 +132,61 @@ def by_isin(result):
     return {row.isin: row for row in result.instruments}
 
 
+def test_filename_alias_and_service_structures_share_native_instrument_results(db):
+    from test_source_monthly_returns_service import service_structure_xml
+
+    def mutate(root):
+        root[:] = ET.fromstring(service_structure_xml(ET.tostring(root)))[:]
+        root.set("Textbox6", "Уполномоченное лицо")
+
+    save(
+        db, bond=None, trades=(), extra=(("Перевод", f"Дивиденды {ISIN}", "12.34"),), mutate=mutate
+    )
+    before = snapshot(db)
+    native = read(db)
+    alias = read(db, source_account="1234567")
+    assert alias.instruments == native.instruments
+    assert alias.income == native.income
+    row = alias.instruments[0].months[0]
+    assert row.dividends_kopecks == 1234
+    assert row.coupons_kopecks == 0
+    assert row.income_complete
+    assert row.total_kopecks is not None
+    assert not {"unparsed_source_rows", "4_Transfers_unsupported", "5_UFSR_unsupported"} & set(
+        row.flags
+    )
+    assert snapshot(db) == before
+
+
+def test_multi_account_instrument_month_income_is_unknown_and_independent_month_survives(db):
+    save(db, bond=None, trades=())
+
+    def mutate(root):
+        root.find(".//m:Textbox11", NS).set("acc_code", "7654321-000")
+
+    save(db, 5, bond=None, trades=(), extra=(("Дивиденды", ISIN, "12.34"),), mutate=mutate)
+    rows = read(db, source_account="1234567").instruments[0].months
+    assert rows[0].income_complete
+    assert not rows[1].income_complete
+    assert rows[1].coupons_kopecks is rows[1].dividends_kopecks is None
+    assert "native_source_scope_ambiguous" in rows[1].flags
+
+
+def test_conflicting_document_filename_aliases_never_merge_instrument_scopes(db):
+    save(db, bond=None, trades=())
+
+    def mutate(root):
+        for node in root.iter():
+            for key, value in list(node.attrib.items()):
+                if value == ACCOUNT:
+                    node.set(key, "7654321-000")
+
+    save(db, 5, bond=None, trades=(), mutate=mutate)
+    result = read(db, source_account="1234567")
+    assert not result.instruments and not result.income
+    assert {gap.code for gap in result.gaps} == {"native_source_scope_ambiguous"}
+
+
 def test_stock_dividend_bond_coupon_nkd_purchase_sale_and_all_time(db, accepted_basis):
     intake = save(
         db,

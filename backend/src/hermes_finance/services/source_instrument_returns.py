@@ -12,8 +12,8 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 from sqlalchemy import select
 
 from hermes_finance.database import coherent_read_operation
-from hermes_finance.persistence import ExecutedTrade, SourceIntakeOriginal
-from hermes_finance.services import broker_trade_money, source_intake
+from hermes_finance.persistence import ExecutedTrade
+from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
 from hermes_finance.services.source_monthly_returns import (
     SourceReturnGap,
@@ -21,9 +21,11 @@ from hermes_finance.services.source_monthly_returns import (
     _month_end,
     _native_scope,
     _next_month,
+    _selected_sources,
 )
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
+from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
 
 
 @dataclass(frozen=True)
@@ -666,14 +668,17 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
     views = []
     sources = []
     gaps = []
-    for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
+    selected, native_scope = _selected_sources(session, source_account)
+    for original, view, error in selected:
         try:
-            aliases = json.loads(original.native_accounts_json)
-            if not isinstance(aliases, list) or source_account not in aliases:
-                continue
             sources.append(original)
-            view = source_intake.read_intake(session, original.id)
-            if _native_scope(view["document"]) != {source_account}:
+            if error:
+                raise MyBrokerError(error)
+            if (
+                native_scope is None
+                or _native_scope(view["document"]) != native_scope
+                or source_account not in native_scope | {view["document"]["filename_account"]}
+            ):
                 raise MyBrokerError("native_source_scope_ambiguous")
             views.append(view)
             month = original.covered_from.replace(day=1)
@@ -681,7 +686,7 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
                 gaps.extend(
                     InstrumentReturnGap(code, original.id, month)
                     for code in (
-                        *view["document"].get("syntax_blockers", []),
+                        *source_return_blockers(view),
                         *(
                             code
                             for code in (

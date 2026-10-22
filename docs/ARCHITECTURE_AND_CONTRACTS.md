@@ -5742,6 +5742,32 @@ schedule with `partial_month_source`. Their partial endpoints cannot stand in
 for calendar-month boundaries; without another source those boundaries remain
 NULL. Interior full months retain dated flows and missing EOD independently.
 
+In both monthly and instrument source-return readers, a selected filename account
+alias may select the single native row account evidenced by that same document.
+This is document-local source selection, not a Hermes account mapping or suffix
+heuristic. A document with multiple row accounts remains ambiguous; conflicting
+single-account associations for the selected alias across documents withhold the
+selection. Scope-inapplicable documents cannot supply zero coupons/dividends:
+their covered months retain unknown income and flows.
+
+Only these provisional readers can exclude exactly recognized service branches
+from completeness blockers using the verified saved structural inventory: the
+Positions tax footer; Money opening/closing, daily, total and four ordered
+operation-group displays; empty Transfers; and the UFSR connection record. They
+reuse the bounded DRAFT tree grammar and metadata topology. Keys, namespaces,
+ordered service children, cardinalities, fixed label hashes and consumed row
+counts are checked. Unknown/extra attributes, children, payload text, moved rows
+or populated Transfers retain blockers. Pending trade caption keys `p_name2`,
+`Textbox16`, `place_name2` remain opaque, like their completed-row counterparts.
+Display numbers and connection dates are fingerprint-only and are not validated
+as numeric/date values by this structural exclusion; they never supply money,
+events, valuation, income classification or report periods. This exclusion does
+not grant the stronger original-byte DRAFT eligibility proof. Frozen parser
+warnings, manifests, observations, receipts and financial readiness are unchanged.
+Absent or unrecognized inventory retains the original warnings and requires
+original-byte evidence through the applicable re-upload/rebuild workflow, without
+an in-place manifest rewrite.
+
 The separate approximate monthly Modified Dietz/period kernel is
 `calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints
 and one dated schedule; the approximate chained return uses each month’s own
@@ -5795,6 +5821,12 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
+The supported dividend transfer is exactly operation `Перевод` with narrative
+`Дивиденды <nonempty single-line description>` and a nonnegative amount, mirroring
+the supported coupon transfer. A dividend word alone is insufficient. Existing
+saved defaults change only on an explicit new Save command; GET never refreshes
+them. MyBroker filenames may include a positive integer duplicate suffix such as
+` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
 Acknowledged same-request replay stays read-only.
 A changed Money extraction count refuses with
 `source_intake_parser_revision_changed` before capturing any classifications.

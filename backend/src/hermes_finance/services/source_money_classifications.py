@@ -135,7 +135,9 @@ def default_classification(
             op == "перевод" and re.fullmatch(r"погашение купона [^\r\n]+", narrative.casefold())
         ):
             return "coupon"
-        if re.fullmatch(r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op):
+        if re.fullmatch(
+            r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op
+        ) or (op == "перевод" and re.fullmatch(r"дивиденды \S[^\r\n]*", narrative.casefold())):
             return "dividend"
     return "unknown"
 
