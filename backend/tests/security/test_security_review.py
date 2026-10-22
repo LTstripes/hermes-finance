@@ -60,6 +60,7 @@ def _isolated(monkeypatch, tmp_path):
 
     monkeypatch.setattr(socket.socket, "connect", no_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", no_connect)
+
     def no_create_connection(*args, **kwargs):
         pytest.fail("Security reproductions must not open network connections")
 
@@ -110,10 +111,7 @@ def _uvicorn_request(app, target):
         transport.is_closing.return_value = False
         protocol.connection_made(transport)
         try:
-            request = (
-                f"GET {target} HTTP/1.1\r\n"
-                "Host: 127.0.0.1:8000\r\nConnection: close\r\n\r\n"
-            )
+            request = f"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:8000\r\nConnection: close\r\n\r\n"
             protocol.data_received(request.encode("ascii"))
             await asyncio.gather(*tuple(state.tasks))
         finally:
