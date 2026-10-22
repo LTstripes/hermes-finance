@@ -1058,6 +1058,8 @@ is fixed:
   completed recovery point;
 - a failed run preserves the newest previously verified recovery point.
 
+Creation rejects snapshots larger than 256 MiB with `ProtectedBackupError`, before artifact construction or final exposure. A size rejection cleans up its temporary snapshot and preserves previously verified recovery points. Verification uses the same snapshot cap.
+
 Verification checks archive budgets before reading members: exactly the ordered manifest and snapshot, no duplicate members, stored-only compression, a 64 KiB manifest and a 256 MiB snapshot, with at most 64 KiB additional container overhead. Artifact/descriptor reads are bounded independently of ZIP metadata. Oversized or compressed foreign artifacts fail closed; successful hashing alone does not waive these limits.
 
 Destination validation occurs before staging. It rejects production data,

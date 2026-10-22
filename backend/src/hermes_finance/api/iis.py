@@ -144,7 +144,7 @@ def _validate_tax_benefit_status(value: str) -> str:
     try:
         TaxBenefitStatus(value)
     except ValueError as error:
-        raise ValueError(f"unsupported tax benefit status: {value!r}") from error
+        raise ValueError("unsupported tax benefit status") from error
     return value
 
 

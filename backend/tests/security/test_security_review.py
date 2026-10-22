@@ -710,3 +710,144 @@ def test_database_exception_hides_bound_parameters(tmp_path):
         assert marker not in str(rejected.value)
     finally:
         database.engine.dispose()
+
+
+@pytest.mark.parametrize("method", ["post", "patch"])
+@pytest.mark.parametrize("endpoint", ["deposits", "instruments"])
+def test_sibling_enum_validation_omits_input(tmp_path, method, endpoint):
+    from fastapi.testclient import TestClient
+
+    marker = "SYNTHLEAK12345"
+    field = "deposit_type" if endpoint == "deposits" else "instrument_type"
+    payload = {field: marker}
+    if method == "post":
+        payload["name"] = "Synthetic asset"
+        if endpoint == "deposits":
+            payload.update(
+                reporting_month_id=1,
+                account_id=1,
+                balance={"amount": "1.00", "currency": "RUB"},
+                annual_rate="1.00",
+            )
+    path = f"/api/{endpoint}" + ("/1" if method == "patch" else "")
+    with TestClient(_app(tmp_path)) as client:
+        response = getattr(client, method)(
+            path, json=payload, headers={"If-Match": "2026-01-01T00:00:00"}
+        )
+    assert response.status_code == 422
+    assert marker not in response.text
+    assert response.json()["error"]["message"] == f"unsupported {field.replace('_', ' ')}"
+
+
+@pytest.mark.parametrize("exception", [ValueError, LookupError])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SYNTHETIC_PRIVATE_INPUT",
+        "unsupported deposit type: SYNTHETIC_PRIVATE_INPUT",
+        "reporting month already has a salary SYNTHETIC_PRIVATE_INPUT",
+    ],
+)
+def test_generic_exceptions_do_not_echo_arbitrary_text(tmp_path, exception, text):
+    from fastapi.testclient import TestClient
+
+    app = _app(tmp_path)
+
+    @app.get("/api/security-generic")
+    def fail():
+        raise exception(text)
+
+    with TestClient(app) as client:
+        response = client.get("/api/security-generic")
+    assert response.status_code == (422 if exception is ValueError else 404)
+    assert response.json()["error"] == {
+        "code": "unprocessable" if exception is ValueError else "not_found",
+        "message": "Invalid request value" if exception is ValueError else "Resource not found",
+        "details": [],
+    }
+
+
+def test_scenario_code_is_preserved_without_arbitrary_exception_text(tmp_path):
+    from fastapi.testclient import TestClient
+
+    app = _app(tmp_path)
+
+    @app.get("/api/scenario-lab/security-error")
+    def fail():
+        raise ValueError("invalid_drawdown_pct: SYNTHETIC_PRIVATE_INPUT")
+
+    with TestClient(app) as client:
+        response = client.get("/api/scenario-lab/security-error")
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "invalid_drawdown_pct",
+        "message": "Invalid request value",
+        "details": [],
+    }
+
+
+@pytest.mark.parametrize("action", ["preview", "apply"])
+@pytest.mark.parametrize("count", [32, 33])
+def test_broker_money_original_file_boundary(tmp_path, monkeypatch, action, count):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.api import broker_months
+
+    received = []
+
+    def money(session, requested, originals, **kwargs):
+        received.extend(originals)
+        return {"original_count": len(originals)}
+
+    monkeypatch.setattr(broker_months, f"{action}_money", money)
+    intent = {
+        "contract_version": "broker_money_v1",
+        "base_request_id": "synthetic-base",
+        "reporting_month_id": 1,
+        "account_id": 1,
+    }
+    if action == "apply":
+        intent.update(request_id="synthetic-apply", confirmation_digest="0" * 64)
+    files = [
+        (
+            "file" if i == 0 else "originals",
+            (f"synthetic-{i}.xml", f"<synthetic>{i}</synthetic>".encode(), "application/xml"),
+        )
+        for i in range(count)
+    ]
+    with TestClient(_app(tmp_path)) as client:
+        response = client.post(
+            f"/api/broker-months/{action}",
+            files=files,
+            data={"intent" if action == "preview" else "confirmation": json.dumps(intent)},
+        )
+    if count == 32:
+        assert response.status_code == 200
+        assert response.json() == {"original_count": 32}
+        assert received == [
+            (f"synthetic-{i}.xml", f"<synthetic>{i}</synthetic>".encode()) for i in range(count)
+        ]
+    else:
+        assert response.status_code == 413
+        assert response.json()["error"]["message"] == "upload_file_count_exceeded"
+        assert not received
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_multipart_non_file_field_one_mib_boundary(tmp_path, extra):
+    from fastapi.testclient import TestClient
+
+    app = _app(tmp_path)
+    # Valid JSON whitespace lets the actual apply route parse a full-sized field.
+    selections = "[]" + " " * (1024 * 1024 - 2 + extra)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/statement-import/apply",
+            files={"document": ("synthetic.pdf", b"%PDF-synthetic", "application/pdf")},
+            data={"selections": selections, "expected_document_sha256": "0" * 64},
+        )
+    assert response.status_code == (200 if extra == 0 else 413)
+    if extra == 0:
+        assert response.json()["selected_count"] == 0
+    else:
+        assert response.json()["error"]["message"] == "document_size_invalid"

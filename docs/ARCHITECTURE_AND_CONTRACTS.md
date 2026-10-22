@@ -119,9 +119,9 @@ For a state-changing request:
 This is not authentication. A process already running with local machine access remains inside the trusted-machine boundary of the application.
 
 
-Diagnostics use registered route templates (or a fixed unmatched identifier), never concrete request paths or queries. Unhandled server exception diagnostics contain only class and a generated ID; SQLAlchemy bound parameters are hidden. Generic validation/HTTP errors omit supplied values and raw validator/exception text, preserving explicit curated domain codes and messages.
+Diagnostics use registered route templates (or a fixed unmatched identifier), never concrete request paths or queries. Unhandled server exception diagnostics contain only class and a generated ID; SQLAlchemy bound parameters are hidden. Generic ValueError/LookupError responses use exact reviewed message literals or fixed fallbacks, preserving explicit curated domain handlers and codes. Pydantic error details omit input/context and redact embedded submitted string values.
 
-Ordinary XML/PDF multipart routes parse into bounded memory before framework UploadFile dependency resolution: 8 MiB per file, 32 MiB aggregate, 16 files, 32 fields, 64 KiB per field and 16 KiB per part's headers. Content-Length and a streamed wire counter independently enforce the container budget; failures/disconnects close buffers. The dedicated original-set preflight retains its stricter eight-file contract in C3.
+Ordinary XML/PDF multipart routes parse into bounded memory before framework UploadFile dependency resolution: 8 MiB per file, 32 MiB aggregate, 32 files, 32 fields, 1 MiB per non-file field and 16 KiB per part's headers. Content-Length and a streamed wire counter independently enforce the container budget; failures/disconnects close buffers. The dedicated original-set preflight retains its stricter eight-file contract in C3.
 
 <a id="c1-0004-localhost-request-security-12-development-flow"></a>
 #### Development flow

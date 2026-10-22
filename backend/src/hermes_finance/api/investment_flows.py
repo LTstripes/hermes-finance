@@ -91,7 +91,7 @@ def _validate_flow_type(value: str) -> str:
     try:
         InvestmentCashFlowType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported investment flow type: {value!r}") from error
+        raise ValueError("unsupported investment flow type") from error
     return value
 
 

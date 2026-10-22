@@ -58,6 +58,107 @@ _STATUS_CODE_TO_CODE: dict[int, str] = {
 }
 
 
+# Exact reviewed literals only: never accept prefixes/suffixes containing input.
+# Typed domain exceptions retain their own handlers below.
+_SAFE_GENERIC_MESSAGES = frozenset(
+    {
+        "IIS profile was not found",
+        "base_kopecks must be >=0",
+        "invalid_assumed_rate_pct: binary float not allowed",
+        "invalid_assumed_rate_pct: empty",
+        "invalid_assumed_rate_pct: must be decimal string or int",
+        "invalid_assumed_rate_pct: negative rate not allowed",
+        "invalid_assumed_rate_pct: not a decimal",
+        "invalid_assumed_rate_pct: not finite",
+        "invalid_assumed_rate_pct: unsupported type",
+        "invalid_drawdown_pct: binary float not allowed",
+        "invalid_drawdown_pct: empty",
+        "invalid_drawdown_pct: must be decimal string or number",
+        "invalid_drawdown_pct: not a decimal",
+        "invalid_drawdown_pct: not finite",
+        "invalid_drawdown_pct: out of range 0..100",
+        "invalid_drawdown_pct: unsupported type",
+        "invalid_inflation_pct: binary float not allowed",
+        "invalid_inflation_pct: empty",
+        "invalid_inflation_pct: must be decimal string or int",
+        "invalid_inflation_pct: negative inflation not allowed",
+        "invalid_inflation_pct: not a decimal",
+        "invalid_inflation_pct: not finite",
+        "invalid_inflation_pct: unsupported type",
+        "invalid_reporting_value_change_pct: below -100",
+        "invalid_reporting_value_change_pct: binary float not allowed",
+        "invalid_reporting_value_change_pct: empty",
+        "invalid_reporting_value_change_pct: must be decimal string or number",
+        "invalid_reporting_value_change_pct: not a decimal",
+        "invalid_reporting_value_change_pct: not finite",
+        "invalid_reporting_value_change_pct: unsupported type",
+        "invalid_target_currency: canonical three-letter identifier required",
+        "invalid_target_currency: must be a string",
+        "months_ahead must be >= 0",
+        "account cannot be deleted while it is linked to a debt",
+        "account name must not be empty",
+        "account type cannot change while the account is linked to a debt",
+        "amount must not be negative",
+        "annual_rate must not be negative",
+        "balance must not be negative",
+        "cannot change a T-Invest quote while keeping t_invest price_source",
+        "currency must not be empty",
+        "current_balance must not be negative",
+        "deposit and savings interest must be recorded in deposit_snapshots.actual_interest_received",
+        "eligible_close_at must not precede opened_at",
+        "expected cash flow already exists in forecast version",
+        "expected cash flow is retained by historical payout reconciliation",
+        "expected_net_amount must equal gross_amount minus expected_tax_amount",
+        "expected_net_amount must equal gross_amount when tax is unknown",
+        "external_code must be unique when provided",
+        "forecast_version must use one source_as_of_date per reporting month",
+        "instrument name must not be empty",
+        "isin must be unique when provided",
+        "linked account must already be included in capital",
+        "linked account must be cash, deposit, or savings",
+        "linked account must remain included in capital",
+        "linked debt must already be included in liquid capital",
+        "linked debt must remain a credit_card debt",
+        "linked debt must remain included in liquid capital",
+        "market_price_per_unit must not be negative",
+        "name must not be empty",
+        "net_amount must equal gross_amount minus tax_amount and commission_amount",
+        "nominal_value must not be negative",
+        "only credit_card debts can be linked to an account",
+        "only other income may be included in passive income",
+        "position snapshot already exists for month, account and instrument",
+        "quantity must be finite",
+        "quantity must be positive",
+        "quantity must have at most 6 decimal places",
+        "realized_loss net_amount must be negative",
+        "reporting month already has a salary",
+        "reporting month already has a salary income entry",
+        "source-owned payout requires a reviewed source revision",
+        "source-owned position cannot be replaced by a market quote",
+        "source-owned position requires a reviewed source revision",
+        "stock quantity must be a positive whole number",
+        "t_invest price_source can only be set by quote apply",
+        "tax year must be between 1900 and 9999",
+        "unsupported account status",
+        "unsupported account type",
+        "unsupported debt type",
+        "unsupported deposit type",
+        "unsupported expected flow type",
+        "unsupported expense type",
+        "unsupported income type",
+        "unsupported instrument type",
+        "unsupported investment flow type",
+        "unsupported price source",
+        "unsupported tax benefit status",
+    }
+)
+
+
+def _generic_message(exc: Exception, fallback: str) -> str:
+    message = str(exc)
+    return message if message in _SAFE_GENERIC_MESSAGES else fallback
+
+
 def _code_for_status(status_code: int) -> str:
     return _STATUS_CODE_TO_CODE.get(status_code, f"status_{status_code}")
 
@@ -159,7 +260,7 @@ def register_error_handlers(application: FastAPI) -> None:
             exc.__class__.__name__,
             request_route(request),
         )
-        return _error_response(404, "not_found", str(exc))
+        return _error_response(404, "not_found", _generic_message(exc, "Resource not found"))
 
     @application.exception_handler(LinkedPairReadModelError)
     async def _linked_pair_read_model_handler(
@@ -351,7 +452,7 @@ def register_error_handlers(application: FastAPI) -> None:
             request_route(request),
             code,
         )
-        return _error_response(422, code, message)
+        return _error_response(422, code, _generic_message(exc, "Invalid request value"))
 
     # Scenario handlers are registered alongside the generic ValueError and
     # LookupError handlers; Starlette resolves handlers by walking the

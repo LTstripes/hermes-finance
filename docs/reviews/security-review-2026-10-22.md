@@ -1,71 +1,34 @@
 # Repository security review — 2026-10-22
 
-## Local remediation — PR #929, 2026-10-22
+## OpenCode review follow-up — PR #929, 2026-10-22
 
-This section supersedes the earlier implementation/execution status below; the original review and probes remain historical evidence. The Owner assigned fixes in this checkout, on review/security-audit, against current HEAD/baseline 5394962c8c7e0924cf0ed4f9d8a61915dd642fb0. The candidate is the uncommitted working-tree diff. No fetch, remote-configuration/authentication read, commit, push, provider call, protected runtime/data operation or classification/XIRR change was performed. The current task and repository-local receipts were used under the repository-only restriction; no external issue/Integrator-note lookup was performed.
+The original remediation is committed at `58cbb8cd736bfc6036d956fe28a86825ab894b0e` on `review/security-audit`; it is no longer an uncommitted candidate at `5394962`. OpenCode reviewed that committed HEAD against pinned main `fd51120dd763a13d3ee98e3619d92c6bbca2db5c` and returned CHANGES (five findings). Its synthetic readback reported 53 security tests passed and 58 protected-backup tests passed / 2 skipped. That review verified the logging, remote-URL, archive-budget and CI privacy-gate protections, but identified the gaps below.
 
-| Finding | Local status | Implemented behavior |
-|---|---|---|
-| SEC-01 | FIXED; independent review pending | Ingress/API logs use registered route templates or a fixed unmatched ID. Uvicorn access targets omit concrete path/query values; unhandled server exceptions retain only class and generated ID, without original text/chains/frames. SQLAlchemy hides bound parameters. |
-| SEC-02 | FIXED; independent review pending | Rejected remote URLs produce a fixed repository-validation message; the URL and userinfo are never interpolated. |
-| SEC-03 | FIXED; independent review pending | All ordinary XML/PDF upload routes use bounded memory multipart parsing before FastAPI dependency/body parsing. Enforce 8 MiB/file, 32 MiB aggregate, 16 files, 32 fields, 64 KiB/field, 16 KiB part headers and a wire budget; check Content-Length and the stream independently. Failed/disconnected uploads close buffers, and custom no-store routes retain their error/cache contract. Dedicated preflight keeps its existing stricter 8-file policy. |
-| SEC-04 | FIXED; independent review pending | Recovery artifacts cap input and snapshot bytes (256 MiB snapshot, 64 KiB manifest, 64 KiB container overhead), exact ordered member names, count/duplicates, stored-only compression and declared sizes before member reads. Recovery descriptor reads have a running cap. XLSX caps input (32 MiB), members (2,048), each expanded member (32 MiB), aggregate expansion (128 MiB), compression methods and ratio (1,000:1) before openpyxl; both workbook views use the same bounded bytes. |
-| SEC-05 | FIXED in requested scope; independent review pending | Block credential-store paths, detect generic quoted/bare credential assignments and credentialed URLs, with exact file/literal hashes for existing synthetic fixtures. UI packages reject nested logs, unexpected file types, links and detected private text. Both uploader jobs depend on privacy success, including the always-on-failure journey uploader's explicit privacy-success condition. |
-| SEC-06 | FIXED; independent review pending | Account type/status/duplicate-code errors omit values. Generic ValueError/LookupError and HTTP errors return fixed messages or an explicit reviewed-message allowlist. Pydantic details omit input and validator text; curated domain handlers/codes remain separate. |
+The Owner assigned all five follow-up fixes in this same checkout. This follow-up candidate is the **uncommitted working-tree diff on top of `58cbb8cd`**; no staging, commit or push is authorized. The existing local ownership record matches this security-audit task. Current source/status and the assigned local OpenCode review were read under the repository-only restriction; no external issue/Integrator lookup or network fetch was performed.
 
-Verification uses the Owner-selected shared interpreter with PYTHONPATH pointing to this checkout's backend/src; import readback confirmed this checkout. No dependencies were installed. The standard shell tool failed at process setup, so local Node child_process runs the commands. Synthetic test scratch directories are freshly created in the tool's temporary area where recovery tests require destinations outside a Git boundary.
+| OpenCode finding | Follow-up behavior |
+|---|---|
+| 1 — SEC-06 sibling validators and generic exceptions | Deposits, debts, incomes, instruments, expenses, planned budget, expected flows, investment flows, IIS and positions use fixed unsupported-value guidance. Generic ValueError/LookupError messages pass only an exact reviewed literal allowlist; all other messages use fixed fallbacks. Typed domain handlers and existing machine-readable codes remain intact. Deposit/instrument POST and PATCH regressions cover sibling endpoints; arbitrary generic text and allowlist-prefix/suffix attempts are rejected without echo. |
+| 2 — supported multi-original batches | The ingress file cap is 32, supporting one primary file plus 31 originals. Both broker-month preview and apply accept 32 files and reject 33 before service invocation. The dedicated preflight retains its stricter 8-file policy. |
+| 3 — large apply selections | Non-file fields permit 1 MiB. The existing 8 MiB/file and 32 MiB aggregate caps remain enforced. Tests cover exactly 1 MiB versus one byte over, plus a real prepare→apply of 301 synthetic selected rows with a selections field larger than 64 KiB. |
+| 4 — typed backup creation cap | Snapshot hashing and bounded artifact construction raise ProtectedBackupError for an oversized snapshot; publication preserves earlier verified points and cleans its temporary snapshot. O4 now states the 256 MiB creation cap as well as verification limits. Tests exercise the boundary with a reduced synthetic cap and publication cleanup. |
+| 5 — delivery/status drift | CURRENT_STATUS and this delivery section distinguish the committed original remediation from this uncommitted follow-up and use the actual current check counts. |
 
-Final local checks on the uncommitted candidate:
+The underlying SEC-01–SEC-05 protections remain: route-template/class-only diagnostics and hidden SQL parameters; fixed rejected-remote guidance; memory-only bounded multipart parsing with independent wire/file/aggregate/count/header limits and buffer cleanup; stored-only, exact-member recovery archives and bounded XLSX reads; credential/path heuristics and privacy-gated evidence uploads. HTTP and Pydantic handlers retain their existing contracts; the new exact-message allowlist applies specifically to generic ValueError/LookupError handling. Privacy scanning is a text heuristic, not certification of binary artifacts or Git history.
 
-- Security regressions: 46 passed, no xfail markers (the original 10 plus 36 additional boundary cases). The combined malformed-WHAT-IF/security rerun passed 49 tests.
-- Accounts, CLI and localhost security: 23 passed.
-- Recovery/protected backup/legacy XLSX/process batch: 127 passed, 12 failed, 3 skipped, 2 deselected; the two deselected PowerShell checks separately passed. The failures are Windows bootstrap/process simulations, with early process/bootstrap failures and missing synthetic listener markers. Adding standard Windows process environment keys changed one early failure into a typed bootstrap failure but did not resolve it; the two-case retry still failed. AST comparison confirms _run_runtime_script is unchanged from HEAD. These failures are not represented as a green recovery suite or proven pre-existing failures.
-- Final related import/API rerun: 65 passed, 411 deselected, including the corrected malformed multipart cases. The first related API run was 62 passed/3 failed; those regressions are corrected in this rerun.
-- CI/evidence script regressions: 75 passed (20 UI evidence, 22 docs-only, 17 CI paths, 16 PR concurrency).
-- Ruff check passed on all 25 changed/new Python files; Ruff format --check --line-length 100 passed for the same files. The 100-column width matches backend/pyproject.toml while preserving per-file configuration discovery.
-- scripts/privacy_check.py passed on 1,327 tracked files; the three new source modules also passed a direct candidate content scan. git diff --check passed.
+Verification uses the Owner-selected Python interpreter, with PYTHONPATH set to this checkout's backend/src and the working directory set to backend. Import readback confirms this checkout. No dependencies were installed or updated. The standard shell failed during process setup; local Node child_process ran the commands. Test databases, uploads and backup destinations are synthetic, with fresh tool-temporary scratch roots outside the Git checkout for backup destination checks.
 
-Delivery readback: branch review/security-audit and HEAD/baseline 5394962c8c7e0924cf0ed4f9d8a61915dd642fb0 are unchanged. Cached origin/main is fd51120dd763a13d3ee98e3619d92c6bbca2db5c; no remote/network state was queried. The working tree contains 33 modified/new files, +1399/-212 lines including untracked modules. No staging, commit or push. Protected classification/XIRR paths have an empty diff.
+Current verification:
 
-Changed files:
+- Security: **70 passed**, no xfail markers (53 at the reviewed HEAD plus 17 follow-up cases).
+- Protected backups: **61 passed, 2 skipped** (Windows symlink creation unavailable; Linux-only unlinkat). This includes all three new creation-boundary/cleanup cases.
+- API, statement-import and broker-month suites: running; final result will replace this line before delivery.
+- Ruff check and formatting passed for the 16 changed Python files; final readback follows checks.
+- scripts/privacy_check.py: PASS, 1,330 tracked files. git diff --check: PASS.
 
-- .github/workflows/ci.yml
-- .github/workflows/ui-v2-evidence.yml
-- CHANGELOG.md
-- backend/src/hermes_finance/api/accounts.py
-- backend/src/hermes_finance/api/broker_months.py
-- backend/src/hermes_finance/api/broker_statement_provisional.py
-- backend/src/hermes_finance/api/broker_statement_return.py
-- backend/src/hermes_finance/api/broker_statement_what_if.py
-- backend/src/hermes_finance/api/errors.py
-- backend/src/hermes_finance/api/mybroker_import.py
-- backend/src/hermes_finance/api/source_intake.py
-- backend/src/hermes_finance/api/statement_import.py
-- backend/src/hermes_finance/api/uploads.py
-- backend/src/hermes_finance/database.py
-- backend/src/hermes_finance/diagnostics.py
-- backend/src/hermes_finance/main.py
-- backend/src/hermes_finance/security.py
-- backend/src/hermes_finance/services/archive_limits.py
-- backend/src/hermes_finance/services/legacy_excel.py
-- backend/src/hermes_finance/services/protected_backups.py
-- backend/src/hermes_finance/services/recovery_rehearsal.py
-- backend/tests/security/test_security_review.py
-- backend/tests/test_protected_backups.py
-- docs/ARCHITECTURE_AND_CONTRACTS.md
-- docs/CURRENT_STATUS.md
-- docs/OWNER_RUNTIME_OPERATIONS.md
-- docs/reviews/security-review-2026-10-22.md
-- scripts/privacy_check.py
-- scripts/release-lib.ps1
-- scripts/tests/test-ci-paths.py
-- scripts/tests/test-docs-only-ci.py
-- scripts/tests/test-pr-concurrency.py
-- scripts/ui_evidence_identity.py
+Delivery readback: baseline/HEAD `58cbb8cd736bfc6036d956fe28a86825ab894b0e`; branch `review/security-audit`; assigned workspace `sec-audit`. Cached origin/review/security-audit matches HEAD and cached origin/main is `fd51120dd763a13d3ee98e3619d92c6bbca2db5c`. Remote network state was not queried. All follow-up changes remain unstaged and uncommitted. Final diff/stat and check readback will be recorded here before delivery.
 
- The initial aggregate run did not complete and used an unsuitable in-repository temp root; it is not a passed suite. A focused immutable-byte test hook was updated from Path.read_bytes to the new bounded-reader seam, preserving its replacement-after-read assertions. Workflow tests now require the added privacy dependency and both exact-head checkouts.
-
-Limits retained: no dependency advisory query, full product suite, GitHub CI, live server/runtime/UAT or independent acceptance. Privacy checking remains a current-file text heuristic; binary/image/trace contents and history are not certified public. No broader history scanner or general journey-artifact content scrub is claimed. Earlier no-dependency/XFAIL observations below describe only the original review, not this remediation.
+No Owner/Stable/Test/auth data, classification/XIRR source, dependency lock or runtime was changed. No provider, dependency advisory, CI, release, runtime/UAT or independent acceptance result is claimed. Independent review of this follow-up and Integrator acceptance remain pending. The historical assessment below retains its original scope and execution limits.
 
 Independent SECURITY REVIEWER; repository-only assessment. **3 medium, 3 low findings; no confirmed critical/high finding or live committed secret.** Dependency advisory status and pytest execution remain **UNVERIFIED**, not clean/passed.
 

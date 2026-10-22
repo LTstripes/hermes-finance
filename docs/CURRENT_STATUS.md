@@ -40,7 +40,7 @@ Instrument known payouts/EOD/trades and stock fixed-holding WHAT-IF are delivere
 
 Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) with independent C1–C5 evidence prerequisites. Delivered capability is separate from current numerical readiness and Owner UAT scope; the attributed #836 receipt above is limited, not a claim every class/history is finance-ready.
 
-2026-10-22 local remediation candidate for [#929](https://github.com/LTstripes/hermes-finance/pull/929), baseline `5394962`: SEC-01–SEC-06 are implemented with active synthetic regressions. See the [security review and verification](reviews/security-review-2026-10-22.md). Changes remain uncommitted; independent security review, CI and Integrator acceptance remain pending. No release, runtime or financial-authority change is claimed.
+2026-10-22 security remediation for [#929](https://github.com/LTstripes/hermes-finance/pull/929) is committed at `58cbb8cd` on `review/security-audit` (pinned main `fd51120d`); the reviewed HEAD passed 53 security tests. OpenCode returned five follow-up findings. The Owner-assigned follow-up is an uncommitted diff on that HEAD: fixed sibling-validator/generic exception messages, 32-file multipart support, 1 MiB non-file fields and typed 256 MiB backup creation rejection. The current security suite passes **70 tests**, including sibling endpoints and multipart boundaries; related API/import/backup verification is in progress. See the [security review and verification](reviews/security-review-2026-10-22.md). Independent review of the follow-up, CI and Integrator acceptance remain pending. No release, runtime or financial-authority change is claimed.
 
 <a id="s3"></a>
 ## 3. Current priorities, blockers and Owner actions

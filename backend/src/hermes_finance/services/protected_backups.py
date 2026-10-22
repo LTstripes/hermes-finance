@@ -366,15 +366,21 @@ def _snapshot_identity(snapshot: Path) -> tuple[str, int]:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
             size += len(chunk)
+            if size > MAX_SNAPSHOT_BYTES:
+                raise ProtectedBackupError("snapshot exceeds creation size limit")
     return digest.hexdigest(), size
 
 
 def _zip_bytes(snapshot: Path, manifest: dict[str, Any]) -> bytes:
+    try:
+        snapshot_bytes = read_bounded(snapshot, MAX_SNAPSHOT_BYTES)
+    except ValueError as error:
+        raise ProtectedBackupError("snapshot exceeds creation size limit") from error
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, payload in (
             (_MANIFEST_NAME, _canonical_json(manifest)),
-            (_SNAPSHOT_NAME, read_bounded(snapshot, MAX_SNAPSHOT_BYTES)),
+            (_SNAPSHOT_NAME, snapshot_bytes),
         ):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED

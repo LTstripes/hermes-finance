@@ -82,7 +82,7 @@ def _validate_income_type(value: str) -> str:
     try:
         IncomeType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported income type: {value!r}") from error
+        raise ValueError("unsupported income type") from error
     return value
 
 

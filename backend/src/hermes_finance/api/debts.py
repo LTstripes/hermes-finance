@@ -77,7 +77,7 @@ def _validate_debt_type(value: str) -> str:
     try:
         DebtType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported debt type: {value!r}") from error
+        raise ValueError("unsupported debt type") from error
     return value
 
 
