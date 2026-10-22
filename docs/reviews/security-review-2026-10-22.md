@@ -4,7 +4,7 @@
 
 The original remediation is committed at `58cbb8cd736bfc6036d956fe28a86825ab894b0e` on `review/security-audit`; it is no longer an uncommitted candidate at `5394962`. OpenCode reviewed that committed HEAD against pinned main `fd51120dd763a13d3ee98e3619d92c6bbca2db5c` and returned CHANGES (five findings). Its synthetic readback reported 53 security tests passed and 58 protected-backup tests passed / 2 skipped. That review verified the logging, remote-URL, archive-budget and CI privacy-gate protections, but identified the gaps below.
 
-The Owner assigned all five follow-up fixes in this same checkout. During verification, an external checkpoint advanced HEAD and cached origin/review/security-audit to `27c0dc4a1a68c1604a362eb3d603af1717bed2ac`, containing the 20-file follow-up. This Worker did not stage, commit, push or fetch. The final documentation readback remains an **uncommitted diff on top of `27c0dc4a`**, under the Owner's no-commit/no-push instruction. The existing local ownership record matches this security-audit task. Current source/status and the assigned local OpenCode review were read under the repository-only restriction; no external issue/Integrator lookup or network fetch was performed.
+The Owner assigned all five follow-up fixes in this checkout. The follow-up and its delivery documentation are committed on `review/security-audit` and the branch is merged with main `8297a74774` (no force-push). No external issue/Integrator lookup was performed.
 
 | OpenCode finding | Follow-up behavior |
 |---|---|
@@ -12,7 +12,7 @@ The Owner assigned all five follow-up fixes in this same checkout. During verifi
 | 2 — supported multi-original batches | The ingress file cap is 32, supporting one primary file plus 31 originals. Both broker-month preview and apply accept 32 files and reject 33 before service invocation. The dedicated preflight retains its stricter 8-file policy. |
 | 3 — large apply selections | Non-file fields permit 1 MiB. The existing 8 MiB/file and 32 MiB aggregate caps remain enforced. Tests cover exactly 1 MiB versus one byte over, plus a real prepare→apply of 301 synthetic selected rows with a selections field larger than 64 KiB. |
 | 4 — typed backup creation cap | Snapshot hashing and bounded artifact construction raise ProtectedBackupError for an oversized snapshot; publication preserves earlier verified points and cleans its temporary snapshot. O4 now states the 256 MiB creation cap as well as verification limits. Tests exercise the boundary with a reduced synthetic cap and publication cleanup. |
-| 5 — delivery/status drift | CURRENT_STATUS and this delivery section distinguish the committed original remediation from this uncommitted follow-up and use the actual current check counts. |
+| 5 - delivery/status drift | CURRENT_STATUS and this delivery section describe the committed remediation and follow-up and use the actual current check counts. |
 
 The underlying SEC-01–SEC-05 protections remain: route-template/class-only diagnostics and hidden SQL parameters; fixed rejected-remote guidance; memory-only bounded multipart parsing with independent wire/file/aggregate/count/header limits and buffer cleanup; stored-only, exact-member recovery archives and bounded XLSX reads; credential/path heuristics and privacy-gated evidence uploads. HTTP and Pydantic handlers retain their existing contracts; the new exact-message allowlist applies specifically to generic ValueError/LookupError handling. Privacy scanning is a text heuristic, not certification of binary artifacts or Git history.
 
@@ -22,12 +22,12 @@ Current verification:
 
 - Security: **70 passed**, no xfail markers (53 at the reviewed HEAD plus 17 follow-up cases).
 - Protected backups: **61 passed, 2 skipped** (Windows symlink creation unavailable; Linux-only unlinkat). This includes all three new creation-boundary/cleanup cases.
-- API, statement-import and broker-month suites: running; final result will replace this line before delivery.
+- OpenCode re-review (opencode-go/deepseek-v4.1-flash, max) of the five findings: 1-4 FIXED with regression tests (focused SEC-06/32-file/1 MiB/generic-exception tests 16 passed; backup boundary tests 3 passed; 301-row statement apply 1 passed); finding 5 addressed by this documentation refresh.
 - Additional touched-endpoint/service/workflow files: **263 passed, 6 failed**. All six failures are in unchanged test_instrument_uat_runtime.py: four Windows directory-handle checks fail with access denied on a temporary-directory ancestor; two synthetic startup/process tests fail closed or cannot start their owned listener. The runtime/preflight/recovery source and that test file have an empty diff from baseline. Baseline execution was not performed, so these are not claimed as proven pre-existing failures.
 - Ruff check and formatting passed for the 16 changed Python files; final readback follows checks.
 - scripts/privacy_check.py: PASS, 1,330 tracked files. git diff --check: PASS.
 
-Delivery readback: assigned baseline `58cbb8cd736bfc6036d956fe28a86825ab894b0e`; pinned review target `fd51120dd763a13d3ee98e3619d92c6bbca2db5c`; current checkpoint/HEAD `27c0dc4a1a68c1604a362eb3d603af1717bed2ac`; branch `review/security-audit`; assigned workspace `sec-audit`. Cached origin/review/security-audit matches HEAD. Cached origin/main advanced externally to `11ff6627c2dd8b1fc17b21189f0da8f3e3e7d121`; this task retains the assigned target and did not integrate it. Remote network state was not queried by this Worker. Final documentation edits remain unstaged and uncommitted. Final diff/stat and check readback will be recorded here before delivery.
+Delivery readback: original baseline `58cbb8cd736bfc6036d956fe28a86825ab894b0e`; follow-up checkpoint `27c0dc4a1a68c1604a362eb3d603af1717bed2ac`; merged with main `8297a747`; branch `review/security-audit`; workspace `sec-audit`. All documentation is committed; the branch head after this docs commit is the delivery head. No force-push.
 
 Changed files from the assigned baseline:
 
