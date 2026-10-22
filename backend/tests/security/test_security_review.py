@@ -1,7 +1,6 @@
 """Synthetic security review regressions; no runtime, provider or real credentials.
 
-Run normally for strict XFAIL, and with --runxfail to expose the assertions.
-Only assertion failures qualify as expected: dependency/setup errors stay errors.
+All six findings are active regressions; dependency/setup failures stay errors.
 """
 
 from __future__ import annotations
@@ -77,11 +76,6 @@ def _app(tmp_path):
     return app
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-01: ingress logs raw URL paths",
-)
 def test_rejected_request_does_not_log_private_filename(tmp_path, caplog):
     from fastapi.testclient import TestClient
 
@@ -120,11 +114,6 @@ def _uvicorn_request(app, target):
     asyncio.run(exchange())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-01: default access log includes query",
-)
 def test_default_access_log_does_not_record_private_query(tmp_path, caplog):
     marker = "SYNTHETIC_PRIVATE_AMOUNT_12345"
     with caplog.at_level(logging.INFO, logger="uvicorn.access"):
@@ -133,11 +122,6 @@ def test_default_access_log_does_not_record_private_query(tmp_path, caplog):
     assert marker not in caplog.text, "Default server access log retained the query value"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-01: unhandled errors log raw exception",
-)
 def test_unhandled_error_log_drops_financial_exception_text(tmp_path, caplog):
     app = _app(tmp_path)
     marker = "SYNTHETIC_ACCOUNT_AMOUNT_12345"
@@ -152,11 +136,6 @@ def test_unhandled_error_log_drops_financial_exception_text(tmp_path, caplog):
     assert marker not in caplog.text, "Unhandled exception text entered server diagnostics"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-02: release error echoes remote userinfo",
-)
 def test_release_remote_error_redacts_credentials():
     shell = shutil.which("powershell.exe") or shutil.which("pwsh")
     if shell is None:
@@ -182,11 +161,6 @@ def test_release_remote_error_redacts_credentials():
     assert marker not in result.stdout + result.stderr, "Remote password appeared in rejection text"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-03: file limit is after multipart spooling",
-)
 def test_oversized_xml_is_rejected_before_disk_spooling(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from starlette import formparsers
@@ -211,11 +185,6 @@ def test_oversized_xml_is_rejected_before_disk_spooling(tmp_path, monkeypatch):
     assert not rolled, "Oversized original reached disk before the route's 8 MiB check"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-04: ZIP member expanded before validation",
-)
 def test_compressed_recovery_manifest_rejected_before_expansion(monkeypatch):
     from hermes_finance.services import protected_backups as backups
 
@@ -236,11 +205,6 @@ def test_compressed_recovery_manifest_rejected_before_expansion(monkeypatch):
     assert not reads, "Compressed member was expanded before enforcing the stored-only format"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-05: privacy guard misses generic passwords",
-)
 def test_tracked_content_guard_detects_generic_password(monkeypatch):
     checker = _script("privacy_check", monkeypatch)
     synthetic = hashlib.sha256(b"security-review-synthetic-only").hexdigest()
@@ -250,22 +214,12 @@ def test_tracked_content_guard_detects_generic_password(monkeypatch):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-05: credential store path is permitted",
-)
 def test_tracked_path_guard_rejects_git_credential_store(monkeypatch):
     checker = _script("privacy_check", monkeypatch)
     # Test a path string only; never create or read a credential store.
     assert checker.forbidden_path(".git-credentials") is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-05: evidence package permits nested logs",
-)
 def test_evidence_package_rejects_nested_diagnostic_log(tmp_path, monkeypatch):
     evidence = _script("ui_evidence_identity", monkeypatch)
     package = tmp_path / "package"
@@ -293,11 +247,6 @@ def test_evidence_package_rejects_nested_diagnostic_log(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="SEC-06: validation response echoes input value",
-)
 def test_invalid_account_type_not_echoed_in_error_response(tmp_path):
     from fastapi.testclient import TestClient
 
@@ -308,3 +257,343 @@ def test_invalid_account_type_not_echoed_in_error_response(tmp_path):
         )
     assert response.status_code == 422
     assert marker not in response.text, "Rejected input value was copied into the error DTO"
+
+
+@pytest.mark.parametrize("length", [None, "1"])
+def test_upload_stream_counter_rejects_absent_or_dishonest_length(monkeypatch, length):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from hermes_finance.api import uploads
+
+    monkeypatch.setattr(uploads, "MAX_FILE_BYTES", 4)
+    body = (
+        b'--bound\r\nContent-Disposition: form-data; name="file"; filename="synthetic.xml"'
+        b"\r\n\r\n12345\r\n--bound--\r\n"
+    )
+    headers = [(b"content-type", b"multipart/form-data; boundary=bound")]
+    if length is not None:
+        headers.append((b"content-length", length.encode()))
+    chunks = iter(body[i : i + 3] for i in range(0, len(body), 3))
+
+    async def receive():
+        chunk = next(chunks, b"")
+        return {"type": "http.request", "body": chunk, "more_body": bool(chunk)}
+
+    request = Request({"type": "http", "headers": headers}, receive)
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(uploads._read_form(request))
+    assert rejected.value.status_code == 413
+
+
+def test_upload_content_length_rejected_before_receiving(monkeypatch):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from hermes_finance.api import uploads
+
+    monkeypatch.setattr(uploads, "MAX_WIRE_BYTES", 10)
+
+    async def receive():
+        pytest.fail("Oversized Content-Length must be rejected before reading")
+
+    request = Request(
+        {
+            "type": "http",
+            "headers": [
+                (b"content-type", b"multipart/form-data; boundary=bound"),
+                (b"content-length", b"11"),
+            ],
+        },
+        receive,
+    )
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(uploads._read_form(request))
+    assert rejected.value.status_code == 413
+
+
+@pytest.mark.parametrize(
+    "path,field",
+    [
+        ("/api/mybroker-import/preview", "file"),
+        ("/api/statement-import/inspect", "document"),
+        ("/api/broker-months/preview", "file"),
+        ("/api/broker-months/intakes", "file"),
+        ("/api/broker-statement-returns/preview", "file"),
+        ("/api/broker-statement-what-if/context", "file"),
+        ("/api/broker-statement-provisional/context", "file"),
+    ],
+)
+def test_upload_routes_enforce_limits_before_dependency_resolution(
+    tmp_path, monkeypatch, path, field
+):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.api import uploads
+
+    monkeypatch.setattr(uploads, "MAX_FILE_BYTES", 4)
+    with TestClient(_app(tmp_path)) as client:
+        response = client.post(path, files={field: ("synthetic.xml", b"12345", "application/xml")})
+    assert response.status_code == 413
+    if "what-if" in path or "provisional" in path:
+        assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("exception", ["value", "http", "lookup", "pydantic"])
+def test_generic_errors_never_echo_values(tmp_path, exception):
+    from fastapi import HTTPException
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel, field_validator
+
+    marker = "SYNTHETIC_PRIVATE_INPUT"
+    app = _app(tmp_path)
+
+    class Payload(BaseModel):
+        value: str
+
+        @field_validator("value")
+        @classmethod
+        def validate_value(cls, value):
+            raise ValueError(value)
+
+    if exception == "pydantic":
+
+        @app.post("/api/security-validation")
+        def fail(payload: Payload):
+            return {}
+    else:
+
+        @app.post("/api/security-validation")
+        def fail():
+            if exception == "http":
+                raise HTTPException(422, marker)
+            if exception == "lookup":
+                raise LookupError(marker)
+            raise ValueError(marker)
+
+    with TestClient(app) as client:
+        response = client.post("/api/security-validation", json={"value": marker})
+    assert response.status_code in (404, 422)
+    assert marker not in response.text
+
+
+def test_access_log_uses_template_and_omits_path_parameter(tmp_path, caplog):
+    app = _app(tmp_path)
+    marker = "SYNTHETIC_PRIVATE_PATH"
+
+    @app.get("/api/security-template/{item}")
+    def show(item: str):
+        return {"ok": True}
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.access"):
+        _uvicorn_request(app, f"/api/security-template/{marker}")
+    assert marker not in caplog.text
+    assert "/api/security-template/{item}" in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["size", "count", "duplicate", "compression"])
+def test_backup_metadata_rejected_before_member_open(monkeypatch, kind):
+    from hermes_finance.services import protected_backups as backups
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(backups._MANIFEST_NAME, b"{}")
+        archive.writestr(backups._SNAPSHOT_NAME, b"synthetic")
+        if kind == "count":
+            archive.writestr("extra", b"")
+        if kind == "duplicate":
+            with pytest.warns(UserWarning):
+                archive.writestr(backups._MANIFEST_NAME, b"{}")
+    if kind == "size":
+        monkeypatch.setattr(backups, "MAX_MANIFEST_BYTES", 1)
+    if kind == "compression":
+        original = zipfile.ZipFile.infolist
+
+        def compressed(self):
+            members = original(self)
+            members[0].compress_type = zipfile.ZIP_DEFLATED
+            return members
+
+        monkeypatch.setattr(zipfile.ZipFile, "infolist", compressed)
+
+    def no_open(*args, **kwargs):
+        pytest.fail("Archive metadata must be checked before opening members")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", no_open)
+    with pytest.raises(backups.ProtectedBackupError):
+        backups._verify_payload(output.getvalue())
+
+
+def test_oversized_recovery_file_rejected_before_read(tmp_path, monkeypatch):
+    from hermes_finance.services import protected_backups as backups
+    from hermes_finance.services.archive_limits import read_bounded
+
+    path = tmp_path / "synthetic-recovery"
+    path.write_bytes(b"12345")
+    with pytest.raises(ValueError, match="size limit"):
+        read_bounded(path, 4)
+    monkeypatch.setattr(backups, "MAX_ARTIFACT_BYTES", 4)
+    with pytest.raises(backups.ProtectedBackupError):
+        backups._verify_artifact_content(path)
+
+
+@pytest.mark.parametrize("key", ["service_password", "service_secret", "service_token"])
+def test_privacy_generic_assignments_without_known_prefixes(monkeypatch, key):
+    checker = _script("privacy_check", monkeypatch)
+    value = hashlib.sha256(key.encode()).hexdigest()
+    assert "generic credential assignment" in checker.content_findings(
+        "config/service.conf", f'{key} = "{value}"'.encode()
+    )
+
+
+def test_privacy_credentialed_url_without_known_token_prefix(monkeypatch):
+    checker = _script("privacy_check", monkeypatch)
+    value = hashlib.sha256(b"synthetic-url-value").hexdigest()
+    payload = ("https://operator:" + value + "@example.com").encode()
+    assert "credentialed URL" in checker.content_findings("config/service.conf", payload)
+
+
+@pytest.mark.parametrize("key", ["password", "service_secret", "api_token"])
+def test_privacy_bare_config_assignments(monkeypatch, key):
+    checker = _script("privacy_check", monkeypatch)
+    value = hashlib.sha256(key.encode()).hexdigest()
+    assert "generic credential assignment" in checker.content_findings(
+        "config/service.conf", f"{key}={value}".encode()
+    )
+
+
+def test_xlsx_member_budget_checked_before_loading(tmp_path, monkeypatch):
+    from hermes_finance.services import legacy_excel
+
+    workbook = tmp_path / "synthetic.xlsx"
+    with zipfile.ZipFile(workbook, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", b"x" * 100)
+    monkeypatch.setattr(legacy_excel, "MAX_XLSX_MEMBER_BYTES", 10)
+    monkeypatch.setattr(legacy_excel, "read_legacy_month_mapping", lambda _: None)
+
+    def no_load(*args, **kwargs):
+        pytest.fail("XLSX budget must be enforced before openpyxl reads members")
+
+    monkeypatch.setattr(legacy_excel, "load_workbook", no_load)
+    with pytest.raises(ValueError, match="could not be opened"):
+        legacy_excel.extract_legacy_workbook(workbook, tmp_path / "unused-mapping")
+
+
+def test_recovery_source_budget_checked_before_os_read(tmp_path, monkeypatch):
+    import os
+
+    from hermes_finance.services import recovery_rehearsal as recovery
+
+    source = tmp_path / "synthetic-artifact"
+    source.write_bytes(b"12345")
+    descriptor = os.open(source, os.O_RDONLY)
+    monkeypatch.setattr(recovery.protected_backups, "MAX_ARTIFACT_BYTES", 4)
+
+    def no_read(*args, **kwargs):
+        pytest.fail("Source size must be checked before reading the artifact")
+
+    monkeypatch.setattr(recovery.os, "read", no_read)
+    try:
+        with pytest.raises(recovery.RecoveryRehearsalError, match="size limit"):
+            recovery._read_fd(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def test_upload_disconnect_closes_all_buffers(monkeypatch):
+    from starlette.requests import ClientDisconnect, Request
+
+    from hermes_finance.api import uploads
+
+    buffers = []
+    original = uploads.BytesIO
+
+    class ObservedBuffer(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            buffers.append(self)
+
+    monkeypatch.setattr(uploads, "BytesIO", ObservedBuffer)
+    messages = iter(
+        [
+            {
+                "type": "http.request",
+                "more_body": True,
+                "body": (
+                    b'--bound\r\nContent-Disposition: form-data; name="file"; filename="synthetic.xml"'
+                    b"\r\n\r\n123"
+                ),
+            },
+            {"type": "http.disconnect"},
+        ]
+    )
+
+    async def receive():
+        return next(messages)
+
+    request = Request(
+        {"type": "http", "headers": [(b"content-type", b"multipart/form-data; boundary=bound")]},
+        receive,
+    )
+    with pytest.raises(ClientDisconnect):
+        asyncio.run(uploads._read_form(request))
+    assert buffers and all(buffer.closed for buffer in buffers)
+
+
+@pytest.mark.parametrize("budget", ["headers", "files", "fields", "aggregate", "wire"])
+def test_multipart_resource_budgets(monkeypatch, budget):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from hermes_finance.api import uploads
+
+    parts = [
+        b'--bound\r\nContent-Disposition: form-data; name="file"; filename="synthetic.xml"\r\n\r\n123',
+        b'--bound\r\nContent-Disposition: form-data; name="file"; filename="synthetic2.xml"\r\n\r\n456',
+        b'--bound\r\nContent-Disposition: form-data; name="intent"\r\n\r\n{}',
+    ]
+    body = b"\r\n".join(parts) + b"\r\n--bound--\r\n"
+    setting = {
+        "headers": "MAX_HEADER_BYTES",
+        "files": "MAX_FILES",
+        "fields": "MAX_FIELDS",
+        "aggregate": "MAX_TOTAL_BYTES",
+        "wire": "MAX_WIRE_BYTES",
+    }[budget]
+    monkeypatch.setattr(uploads, setting, 0 if budget == "fields" else 1)
+    messages = iter(
+        [
+            {"type": "http.request", "body": body[i : i + 16], "more_body": True}
+            for i in range(0, len(body), 16)
+        ]
+        + [{"type": "http.request", "body": b"", "more_body": False}]
+    )
+
+    async def receive():
+        return next(messages)
+
+    request = Request(
+        {"type": "http", "headers": [(b"content-type", b"multipart/form-data; boundary=bound")]},
+        receive,
+    )
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(uploads._read_form(request))
+    assert rejected.value.status_code == 413
+
+
+def test_database_exception_hides_bound_parameters(tmp_path):
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+
+    from hermes_finance.database import create_database
+
+    marker = "SYNTHETIC_BOUND_VALUE"
+    database = create_database(tmp_path / "synthetic.sqlite3")
+    try:
+        with database.engine.connect() as connection:
+            with pytest.raises(DBAPIError) as rejected:
+                connection.execute(text("SELECT missing_function(:value)"), {"value": marker})
+        assert database.engine.hide_parameters is True
+        assert marker not in str(rejected.value)
+    finally:
+        database.engine.dispose()

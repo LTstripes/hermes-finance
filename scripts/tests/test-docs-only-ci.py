@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from docs_only_ci import (  # noqa: E402
+from docs_only_ci import (
     EXACT_DOCS,
     OMITTED_JOBS,
     PROSE_PREFIXES,
@@ -32,8 +32,11 @@ from docs_only_ci import (  # noqa: E402
     product_suites_required,
     whitespace_ok,
 )
-from ui_evidence_identity import evidence_patterns_from_workflow, path_matches_pattern  # noqa: E402
-from visual_audit_paths import is_visual_audit_path  # noqa: E402
+from ui_evidence_identity import (
+    evidence_patterns_from_workflow,
+    path_matches_pattern,
+)
+from visual_audit_paths import is_visual_audit_path
 
 ROOT = Path(__file__).resolve().parents[2]
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
@@ -250,7 +253,11 @@ class AllowlistTests(unittest.TestCase):
     def test_rename_delete_mode_symlink_and_submodule_are_full(self) -> None:
         cases = [
             record("README.md", status="D", new_mode="000000"),
-            record("docs/adr/0002-new.md", status="R100", old_path="docs/adr/0001-architecture.md"),
+            record(
+                "docs/adr/0002-new.md",
+                status="R100",
+                old_path="docs/adr/0001-architecture.md",
+            ),
             record("README.md", old_mode="100644", new_mode="100755"),
             record("README.md", status="A", old_mode="000000", new_mode="120000"),
             record("docs/link.md", status="M", old_mode="120000", new_mode="120000"),
@@ -272,7 +279,10 @@ class AllowlistTests(unittest.TestCase):
         self.assertFalse(ordinary_doc_path("docs/adr/../IDEA.md"))
         self.assertEqual(
             classify_records(
-                [record("README.md"), record("docs/secret.md", status="D", new_mode="000000")]
+                [
+                    record("README.md"),
+                    record("docs/secret.md", status="D", new_mode="000000"),
+                ]
             ),
             "full",
         )
@@ -281,7 +291,11 @@ class AllowlistTests(unittest.TestCase):
         prose = parse_raw_diff_z(raw("README.md"))
         self.assertEqual(classify_records(prose), "docs-only")
         renamed = parse_raw_diff_z(
-            raw("docs/adr/0002-new.md", status="R100", old_path="docs/adr/0001-architecture.md")
+            raw(
+                "docs/adr/0002-new.md",
+                status="R100",
+                old_path="docs/adr/0001-architecture.md",
+            )
         )
         self.assertEqual(classify_records(renamed), "full")
         self.assertIsNone(parse_raw_diff_z(raw("README.md") + b"not-a-record"))
@@ -490,7 +504,9 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(classify_repo(repo, base, code), "full")
             self.assertEqual(classify_repo(repo, base, added), "docs-only")
 
-    def test_backend_readme_change_is_full_and_history_prose_stays_docs_only(self) -> None:
+    def test_backend_readme_change_is_full_and_history_prose_stays_docs_only(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             repo = Path(tmp) / "repo"
             _git_repo(repo)
@@ -508,7 +524,7 @@ class RepositoryTests(unittest.TestCase):
             for prefix in PROSE_PREFIXES:
                 if path.startswith(prefix):
                     self.assertTrue(ordinary_doc_path(path), path)
-            if path.startswith("docs/release-notes-") or path.startswith("docs/schemas/"):
+            if path.startswith(("docs/release-notes-", "docs/schemas/")):
                 self.assertFalse(ordinary_doc_path(path), path)
             if path.startswith("docs/") and path.endswith(".json"):
                 self.assertFalse(ordinary_doc_path(path), path)
@@ -539,7 +555,12 @@ class WorkflowContractTests(unittest.TestCase):
         ):
             body = _job(self.ci, job_id)
             with self.subTest(job=job_id):
-                self.assertIn("needs: docs-only-classify", body)
+                expected_needs = (
+                    "needs: [docs-only-classify, privacy]"
+                    if job_id == "g04-browser"
+                    else "needs: docs-only-classify"
+                )
+                self.assertIn(expected_needs, body)
                 self.assertIn(PRODUCT_IF.splitlines()[-1].strip(), body)
         privacy = _job(self.ci, "privacy")
         self.assertNotIn("docs-only-classify", privacy)
@@ -579,7 +600,11 @@ class WorkflowContractTests(unittest.TestCase):
     def test_ui_evidence_does_not_run_for_allowlisted_docs(self) -> None:
         patterns = evidence_patterns_from_workflow(self.ui)
         self.assertEqual(patterns, ("frontend/**", ".github/workflows/ui-v2-evidence.yml"))
-        for path in ("README.md", "docs/VERIFICATION_POLICY.md", "docs/adr/0001-architecture.md"):
+        for path in (
+            "README.md",
+            "docs/VERIFICATION_POLICY.md",
+            "docs/adr/0001-architecture.md",
+        ):
             self.assertFalse(any(path_matches_pattern(path, pattern) for pattern in patterns))
             self.assertFalse(is_visual_audit_path(path))
 

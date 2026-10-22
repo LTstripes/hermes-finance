@@ -69,7 +69,7 @@ class Parser:
         expression = self._parse_or()
         self._skip()
         if self.index != self.length:
-            raise ExprError(f"trailing input: {self.text[self.index:]!r}")
+            raise ExprError(f"trailing input: {self.text[self.index :]!r}")
         return expression
 
     def _skip(self) -> None:
@@ -309,8 +309,7 @@ def policy(run: Run, expressions: dict[str, tuple[str, str]]) -> tuple[str, bool
     cancel = evaluate(cancel_expr, context)
     if not isinstance(group, str) or group == "":
         raise AssertionError(f"group must be a non-empty string, got {group!r}")
-    if not isinstance(cancel, bool):
-        raise AssertionError(f"cancel-in-progress must be a boolean, got {cancel!r}")
+    assert isinstance(cancel, bool), f"cancel-in-progress must be a boolean, got {cancel!r}"
     return group, cancel
 
 
@@ -337,7 +336,9 @@ def accepted_success_evidence(conclusion: str, artifact: str, candidate_sha: str
 
 
 class ExpressionSemanticsTests(unittest.TestCase):
-    def test_and_or_return_operands_and_case_selects_only_the_matching_value(self) -> None:
+    def test_and_or_return_operands_and_case_selects_only_the_matching_value(
+        self,
+    ) -> None:
         context = {"github": {"event_name": "push", "run_id": 7, "event": {}}}
         self.assertIs(evaluate("github.event_name == 'pull_request' && 'pr'", context), False)
         # The failed comparison is falsy, so the or-branch supplies the value.
@@ -391,7 +392,9 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         )
         self.assertEqual(self.expressions["ci.yml"][1], PREDICATE)
         self.assertEqual(self.expressions["ui-v2-evidence.yml"][1], PREDICATE)
-        self.assertNotEqual(self.expressions["ci.yml"][0], self.expressions["ui-v2-evidence.yml"][0])
+        self.assertNotEqual(
+            self.expressions["ci.yml"][0], self.expressions["ui-v2-evidence.yml"][0]
+        )
         self.assertEqual(len(re.findall(r"(?m)^concurrency:", self.ci)), 1)
         self.assertEqual(len(re.findall(r"(?m)^concurrency:", self.ui)), 1)
 
@@ -406,7 +409,11 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         self.assertNotIn("\n  push:\n", self.ui)
         self.assertEqual(self.ci.count("uses: actions/checkout@"), 13)
         self.assertEqual(self.ci.count(CHECKOUT_PIN), 13)
-        self.assertEqual(self.ui.count(CHECKOUT_PIN), 1)
+        self.assertEqual(self.ui.count(CHECKOUT_PIN), 2)
+        self.assertEqual(self.ui.count("ref: ${{ github.event.pull_request.head.sha }}"), 2)
+        self.assertIn("needs: privacy", self.ui)
+        self.assertIn("python3 scripts/privacy_check.py", self.ui)
+        self.assertIn("if: always() && needs.privacy.result == 'success'", self.ci)
         self.assertEqual(self.release.count(CHECKOUT_PIN), 1)
         self.assertIn("name: ui-v2-evidence-${{ github.event.pull_request.head.sha }}", self.ui)
         self.assertEqual(self.ui.count("if: success()"), 2)
@@ -436,26 +443,60 @@ class PullRequestConcurrencyTests(unittest.TestCase):
 
     def test_one_pr_two_candidates_cancel_only_the_older_candidate(self) -> None:
         older = self._policy(
-            Run("ci.yml", "CI", "pull_request", 100, head_ref="task/one", base_ref="main", pr_number=10, sha="aaa")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                100,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="aaa",
+            )
         )
         newer = self._policy(
-            Run("ci.yml", "CI", "pull_request", 101, head_ref="task/one", base_ref="main", pr_number=10, sha="bbb")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                101,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="bbb",
+            )
         )
         self.assertEqual(older, ("LTstripes/hermes-finance--CI--ci.yml--pr-10", True))
         self.assertTrue(cancels(older, newer, 100, 101))
         self.assertFalse(waits(older, newer, 100, 101))
-        self.assertFalse(
-            accepted_success_evidence("cancelled", artifact_name("aaa"), "bbb")
-        )
+        self.assertFalse(accepted_success_evidence("cancelled", artifact_name("aaa"), "bbb"))
         self.assertTrue(accepted_success_evidence("success", artifact_name("bbb"), "bbb"))
         self.assertNotEqual(artifact_name("aaa"), artifact_name("bbb"))
 
     def test_different_prs_do_not_share_a_cancel_group(self) -> None:
         first = self._policy(
-            Run("ci.yml", "CI", "pull_request", 100, head_ref="task/one", base_ref="main", pr_number=10, sha="aaa")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                100,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="aaa",
+            )
         )
         second = self._policy(
-            Run("ci.yml", "CI", "pull_request", 101, head_ref="task/two", base_ref="main", pr_number=11, sha="bbb")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                101,
+                head_ref="task/two",
+                base_ref="main",
+                pr_number=11,
+                sha="bbb",
+            )
         )
         self.assertFalse(same_group(first[0], second[0]))
         self.assertFalse(cancels(first, second, 100, 101))
@@ -463,7 +504,16 @@ class PullRequestConcurrencyTests(unittest.TestCase):
 
     def test_different_workflows_of_one_pr_do_not_cancel_each_other(self) -> None:
         ci_run = self._policy(
-            Run("ci.yml", "CI", "pull_request", 100, head_ref="task/one", base_ref="main", pr_number=10, sha="aaa")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                100,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="aaa",
+            )
         )
         ui_run = self._policy(
             Run(
@@ -485,7 +535,15 @@ class PullRequestConcurrencyTests(unittest.TestCase):
 
     def test_repository_identity_is_part_of_the_group(self) -> None:
         ours = self._policy(
-            Run("ci.yml", "CI", "pull_request", 100, head_ref="task/one", base_ref="main", pr_number=10)
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                100,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+            )
         )
         other = self._policy(
             Run(
@@ -501,11 +559,21 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         )
         self.assertFalse(same_group(ours[0], other[0]))
 
-    def test_main_push_is_not_cancelled_or_queued_by_a_pr_or_another_main_push(self) -> None:
+    def test_main_push_is_not_cancelled_or_queued_by_a_pr_or_another_main_push(
+        self,
+    ) -> None:
         main_old = self._policy(Run("ci.yml", "CI", "push", 200))
         main_new = self._policy(Run("ci.yml", "CI", "push", 201))
         pull = self._policy(
-            Run("ci.yml", "CI", "pull_request", 202, head_ref="task/one", base_ref="main", pr_number=10)
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                202,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+            )
         )
         self.assertEqual(main_old, ("LTstripes/hermes-finance--CI--ci.yml--run-200", False))
         self.assertEqual(main_new[0], "LTstripes/hermes-finance--CI--ci.yml--run-201")
@@ -516,7 +584,9 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         self.assertFalse(waits(main_old, main_new, 200, 201))
         self.assertFalse(same_group(main_old[0], RELEASE_GROUP))
 
-    def test_integration_push_expression_is_isolated_and_ci_does_not_trigger_it(self) -> None:
+    def test_integration_push_expression_is_isolated_and_ci_does_not_trigger_it(
+        self,
+    ) -> None:
         first = self._policy(Run("ci.yml", "CI", "push", 300, head_ref="integration/m10"))
         second = self._policy(Run("ci.yml", "CI", "push", 301, head_ref="integration/m10"))
         self.assertFalse(first[1])
@@ -529,8 +599,24 @@ class PullRequestConcurrencyTests(unittest.TestCase):
 
     def test_integration_and_uat_prs_are_not_cancelled_or_queued(self) -> None:
         scenarios = (
-            Run("ci.yml", "CI", "pull_request", 400, head_ref="integration/m10", base_ref="main", pr_number=20),
-            Run("ci.yml", "CI", "pull_request", 401, head_ref="task/uat", base_ref="integration/m10", pr_number=21),
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                400,
+                head_ref="integration/m10",
+                base_ref="main",
+                pr_number=20,
+            ),
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                401,
+                head_ref="task/uat",
+                base_ref="integration/m10",
+                pr_number=21,
+            ),
             Run(
                 "ci.yml",
                 "CI",
@@ -558,14 +644,27 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         groups = [item[0] for item in described]
         self.assertEqual(len(groups), len(set(groups)))
         ordinary = self._policy(
-            Run("ci.yml", "CI", "pull_request", 404, head_ref="task/uat", base_ref="main", pr_number=21)
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                404,
+                head_ref="task/uat",
+                base_ref="main",
+                pr_number=21,
+            )
         )
         self.assertFalse(same_group(described[1][0], ordinary[0]))
         self.assertFalse(cancels(described[1], ordinary, 401, 404))
         self.assertFalse(waits(described[0], described[2], 400, 402))
 
     def test_names_that_only_contain_integration_remain_ordinary(self) -> None:
-        branches = ("integration", "integration-fix", "feature/integration/child", "my-integration/topic")
+        branches = (
+            "integration",
+            "integration-fix",
+            "feature/integration/child",
+            "my-integration/topic",
+        )
         for branch in branches:
             with self.subTest(branch=branch):
                 described = self._policy(
@@ -581,12 +680,32 @@ class PullRequestConcurrencyTests(unittest.TestCase):
                 )
                 self.assertEqual(described, ("LTstripes/hermes-finance--CI--ci.yml--pr-30", True))
 
-    def test_same_sha_repeat_cancels_only_the_older_attempt_of_that_pr_workflow(self) -> None:
+    def test_same_sha_repeat_cancels_only_the_older_attempt_of_that_pr_workflow(
+        self,
+    ) -> None:
         older = self._policy(
-            Run("ci.yml", "CI", "pull_request", 600, head_ref="task/one", base_ref="main", pr_number=10, sha="abc")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                600,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="abc",
+            )
         )
         newer = self._policy(
-            Run("ci.yml", "CI", "pull_request", 601, head_ref="task/one", base_ref="main", pr_number=10, sha="abc")
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                601,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+                sha="abc",
+            )
         )
         other_workflow = self._policy(
             Run(
@@ -612,12 +731,30 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         self.assertFalse(accepted_success_evidence("failure", artifact_name("new"), "new"))
         self.assertTrue(accepted_success_evidence("success", artifact_name("new"), "new"))
 
-    def test_group_comparison_is_case_insensitive_without_collapsing_distinct_workflows(self) -> None:
+    def test_group_comparison_is_case_insensitive_without_collapsing_distinct_workflows(
+        self,
+    ) -> None:
         lower = self._policy(
-            Run("ci.yml", "ci", "pull_request", 700, head_ref="task/one", base_ref="main", pr_number=10)
+            Run(
+                "ci.yml",
+                "ci",
+                "pull_request",
+                700,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+            )
         )
         upper = self._policy(
-            Run("ci.yml", "CI", "pull_request", 701, head_ref="task/one", base_ref="main", pr_number=10)
+            Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                701,
+                head_ref="task/one",
+                base_ref="main",
+                pr_number=10,
+            )
         )
         ui = self._policy(
             Run(

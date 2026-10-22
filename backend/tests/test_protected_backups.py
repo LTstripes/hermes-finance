@@ -601,15 +601,16 @@ def test_readback_binds_one_immutable_artifact_byte_sequence(
     artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
     original_bytes = artifact.read_bytes()
     original_hash = hashlib.sha256(original_bytes).hexdigest()
-    original_read_bytes = Path.read_bytes
+    original_read = protected_backups.read_bounded
 
-    def replace_after_read(path: Path) -> bytes:
-        content = original_read_bytes(path)
+    def replace_after_read(path: Path, limit: int) -> bytes:
+        assert limit == protected_backups.MAX_ARTIFACT_BYTES
+        content = original_read(path, limit)
         if path == artifact:
             path.write_bytes(b"replacement-after-read")
         return content
 
-    monkeypatch.setattr(Path, "read_bytes", replace_after_read)
+    monkeypatch.setattr(protected_backups, "read_bounded", replace_after_read)
     _manifest, verified_hash, verified_size = protected_backups._verify_artifact(artifact)
 
     assert verified_hash == original_hash

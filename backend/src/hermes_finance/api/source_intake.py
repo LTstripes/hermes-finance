@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.domain.source_intake import ConfirmIntake, ReviewIntake, SaveIntake
 from hermes_finance.services import source_intake
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
-router = APIRouter(prefix="/intakes", tags=["source-intake"])
+router = APIRouter(route_class=BoundedUploadRoute, prefix="/intakes", tags=["source-intake"])
 
 
 @router.get("")

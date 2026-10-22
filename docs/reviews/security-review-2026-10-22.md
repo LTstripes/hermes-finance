@@ -1,5 +1,72 @@
 # Repository security review — 2026-10-22
 
+## Local remediation — PR #929, 2026-10-22
+
+This section supersedes the earlier implementation/execution status below; the original review and probes remain historical evidence. The Owner assigned fixes in this checkout, on review/security-audit, against current HEAD/baseline 5394962c8c7e0924cf0ed4f9d8a61915dd642fb0. The candidate is the uncommitted working-tree diff. No fetch, remote-configuration/authentication read, commit, push, provider call, protected runtime/data operation or classification/XIRR change was performed. The current task and repository-local receipts were used under the repository-only restriction; no external issue/Integrator-note lookup was performed.
+
+| Finding | Local status | Implemented behavior |
+|---|---|---|
+| SEC-01 | FIXED; independent review pending | Ingress/API logs use registered route templates or a fixed unmatched ID. Uvicorn access targets omit concrete path/query values; unhandled server exceptions retain only class and generated ID, without original text/chains/frames. SQLAlchemy hides bound parameters. |
+| SEC-02 | FIXED; independent review pending | Rejected remote URLs produce a fixed repository-validation message; the URL and userinfo are never interpolated. |
+| SEC-03 | FIXED; independent review pending | All ordinary XML/PDF upload routes use bounded memory multipart parsing before FastAPI dependency/body parsing. Enforce 8 MiB/file, 32 MiB aggregate, 16 files, 32 fields, 64 KiB/field, 16 KiB part headers and a wire budget; check Content-Length and the stream independently. Failed/disconnected uploads close buffers, and custom no-store routes retain their error/cache contract. Dedicated preflight keeps its existing stricter 8-file policy. |
+| SEC-04 | FIXED; independent review pending | Recovery artifacts cap input and snapshot bytes (256 MiB snapshot, 64 KiB manifest, 64 KiB container overhead), exact ordered member names, count/duplicates, stored-only compression and declared sizes before member reads. Recovery descriptor reads have a running cap. XLSX caps input (32 MiB), members (2,048), each expanded member (32 MiB), aggregate expansion (128 MiB), compression methods and ratio (1,000:1) before openpyxl; both workbook views use the same bounded bytes. |
+| SEC-05 | FIXED in requested scope; independent review pending | Block credential-store paths, detect generic quoted/bare credential assignments and credentialed URLs, with exact file/literal hashes for existing synthetic fixtures. UI packages reject nested logs, unexpected file types, links and detected private text. Both uploader jobs depend on privacy success, including the always-on-failure journey uploader's explicit privacy-success condition. |
+| SEC-06 | FIXED; independent review pending | Account type/status/duplicate-code errors omit values. Generic ValueError/LookupError and HTTP errors return fixed messages or an explicit reviewed-message allowlist. Pydantic details omit input and validator text; curated domain handlers/codes remain separate. |
+
+Verification uses the Owner-selected shared interpreter with PYTHONPATH pointing to this checkout's backend/src; import readback confirmed this checkout. No dependencies were installed. The standard shell tool failed at process setup, so local Node child_process runs the commands. Synthetic test scratch directories are freshly created in the tool's temporary area where recovery tests require destinations outside a Git boundary.
+
+Final local checks on the uncommitted candidate:
+
+- Security regressions: 46 passed, no xfail markers (the original 10 plus 36 additional boundary cases). The combined malformed-WHAT-IF/security rerun passed 49 tests.
+- Accounts, CLI and localhost security: 23 passed.
+- Recovery/protected backup/legacy XLSX/process batch: 127 passed, 12 failed, 3 skipped, 2 deselected; the two deselected PowerShell checks separately passed. The failures are Windows bootstrap/process simulations, with early process/bootstrap failures and missing synthetic listener markers. Adding standard Windows process environment keys changed one early failure into a typed bootstrap failure but did not resolve it; the two-case retry still failed. AST comparison confirms _run_runtime_script is unchanged from HEAD. These failures are not represented as a green recovery suite or proven pre-existing failures.
+- Final related import/API rerun: 65 passed, 411 deselected, including the corrected malformed multipart cases. The first related API run was 62 passed/3 failed; those regressions are corrected in this rerun.
+- CI/evidence script regressions: 75 passed (20 UI evidence, 22 docs-only, 17 CI paths, 16 PR concurrency).
+- Ruff check passed on all 25 changed/new Python files; Ruff format --check --line-length 100 passed for the same files. The 100-column width matches backend/pyproject.toml while preserving per-file configuration discovery.
+- scripts/privacy_check.py passed on 1,327 tracked files; the three new source modules also passed a direct candidate content scan. git diff --check passed.
+
+Delivery readback: branch review/security-audit and HEAD/baseline 5394962c8c7e0924cf0ed4f9d8a61915dd642fb0 are unchanged. Cached origin/main is fd51120dd763a13d3ee98e3619d92c6bbca2db5c; no remote/network state was queried. The working tree contains 33 modified/new files, +1399/-212 lines including untracked modules. No staging, commit or push. Protected classification/XIRR paths have an empty diff.
+
+Changed files:
+
+- .github/workflows/ci.yml
+- .github/workflows/ui-v2-evidence.yml
+- CHANGELOG.md
+- backend/src/hermes_finance/api/accounts.py
+- backend/src/hermes_finance/api/broker_months.py
+- backend/src/hermes_finance/api/broker_statement_provisional.py
+- backend/src/hermes_finance/api/broker_statement_return.py
+- backend/src/hermes_finance/api/broker_statement_what_if.py
+- backend/src/hermes_finance/api/errors.py
+- backend/src/hermes_finance/api/mybroker_import.py
+- backend/src/hermes_finance/api/source_intake.py
+- backend/src/hermes_finance/api/statement_import.py
+- backend/src/hermes_finance/api/uploads.py
+- backend/src/hermes_finance/database.py
+- backend/src/hermes_finance/diagnostics.py
+- backend/src/hermes_finance/main.py
+- backend/src/hermes_finance/security.py
+- backend/src/hermes_finance/services/archive_limits.py
+- backend/src/hermes_finance/services/legacy_excel.py
+- backend/src/hermes_finance/services/protected_backups.py
+- backend/src/hermes_finance/services/recovery_rehearsal.py
+- backend/tests/security/test_security_review.py
+- backend/tests/test_protected_backups.py
+- docs/ARCHITECTURE_AND_CONTRACTS.md
+- docs/CURRENT_STATUS.md
+- docs/OWNER_RUNTIME_OPERATIONS.md
+- docs/reviews/security-review-2026-10-22.md
+- scripts/privacy_check.py
+- scripts/release-lib.ps1
+- scripts/tests/test-ci-paths.py
+- scripts/tests/test-docs-only-ci.py
+- scripts/tests/test-pr-concurrency.py
+- scripts/ui_evidence_identity.py
+
+ The initial aggregate run did not complete and used an unsuitable in-repository temp root; it is not a passed suite. A focused immutable-byte test hook was updated from Path.read_bytes to the new bounded-reader seam, preserving its replacement-after-read assertions. Workflow tests now require the added privacy dependency and both exact-head checkouts.
+
+Limits retained: no dependency advisory query, full product suite, GitHub CI, live server/runtime/UAT or independent acceptance. Privacy checking remains a current-file text heuristic; binary/image/trace contents and history are not certified public. No broader history scanner or general journey-artifact content scrub is claimed. Earlier no-dependency/XFAIL observations below describe only the original review, not this remediation.
+
 Independent SECURITY REVIEWER; repository-only assessment. **3 medium, 3 low findings; no confirmed critical/high finding or live committed secret.** Dependency advisory status and pytest execution remain **UNVERIFIED**, not clean/passed.
 
 ## Continuation verification — 2026-10-22
@@ -113,3 +180,34 @@ Remaining verification outside this no-install assignment: run normal pytest and
 The resumed task changes only this report. The existing security test file and taxonomy edit from the interrupted run remain in the tree, without product-code changes. No test issue was demonstrated or fixed. No commit, staging, push, integration or release was performed. Git writes remain outside this assignment. Baseline/target recorded by the earlier run: fd51120dd763a13d3ee98e3619d92c6bbca2db5c; assigned branch review/security-audit, physical checkout sec-audit. Final local identity, scope and static validation are recorded below after readback. No remote network state is claimed.
 
 Final continuation readback: HEAD and cached origin/main are both fd51120dd763a13d3ee98e3619d92c6bbca2db5c; branch review/security-audit. Only backend/tests/_test_taxonomy.py (+1 tracked line), backend/tests/security/test_security_review.py and this report are pending. Local read-only Git queries work; Git writes were not attempted. Candidate privacy for all three files, Python compile/strict markers/line length/CI ownership and tracked git diff --check passed. No full lint/formatter result is claimed.
+
+## Dependency audit (run 2026-10-22 outside Codex sandbox, lock files of fd51120d)
+
+pip-audit (uv export --locked, --no-deps): 21 known vulnerabilities in 4 packages. Not fixed in this PR (lock upgrades = separate task).
+
+
+Name | Version | ID | Fix Versions
+--- | --- | --- | ---
+[httpcore2](https://pypi.org/project/httpcore2/) | 2.9.1 | [PYSEC-2026-3844](https://osv.dev/vulnerability/PYSEC-2026-3844) | 2.10.0
+[httpx2](https://pypi.org/project/httpx2/) | 2.9.1 | [PYSEC-2026-3849](https://osv.dev/vulnerability/PYSEC-2026-3849) | 2.11.0
+[httpx2](https://pypi.org/project/httpx2/) | 2.9.1 | [PYSEC-2026-3847](https://osv.dev/vulnerability/PYSEC-2026-3847) | 2.10.0
+[httpx2](https://pypi.org/project/httpx2/) | 2.9.1 | [PYSEC-2026-3845](https://osv.dev/vulnerability/PYSEC-2026-3845) | 2.10.0
+[httpx2](https://pypi.org/project/httpx2/) | 2.9.1 | [PYSEC-2026-3848](https://osv.dev/vulnerability/PYSEC-2026-3848) | 2.11.0
+[httpx2](https://pypi.org/project/httpx2/) | 2.9.1 | [PYSEC-2026-3846](https://osv.dev/vulnerability/PYSEC-2026-3846) | 2.12.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4153](https://osv.dev/vulnerability/PYSEC-2026-4153) | 6.18.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4154](https://osv.dev/vulnerability/PYSEC-2026-4154) | 6.18.1
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4160](https://osv.dev/vulnerability/PYSEC-2026-4160) | 6.19.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4159](https://osv.dev/vulnerability/PYSEC-2026-4159) | 6.19.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4156](https://osv.dev/vulnerability/PYSEC-2026-4156) | 6.18.1
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4155](https://osv.dev/vulnerability/PYSEC-2026-4155) | 6.18.1
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4158](https://osv.dev/vulnerability/PYSEC-2026-4158) | 6.17.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [PYSEC-2026-4157](https://osv.dev/vulnerability/PYSEC-2026-4157) | 6.19.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [CVE-2026-113792](https://osv.dev/vulnerability/CVE-2026-113792) | 6.20.1
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [CVE-2026-113795](https://osv.dev/vulnerability/CVE-2026-113795) | 6.20.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [CVE-2026-113793](https://osv.dev/vulnerability/CVE-2026-113793) | 6.20.1
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [CVE-2026-113794](https://osv.dev/vulnerability/CVE-2026-113794) | 6.20.0
+[pypdf](https://pypi.org/project/pypdf/) | 6.16.1 | [CVE-2026-113786](https://osv.dev/vulnerability/CVE-2026-113786) | 6.21.1
+[pytest](https://pypi.org/project/pytest/) | 8.4.2 | [PYSEC-2026-1845](https://osv.dev/vulnerability/PYSEC-2026-1845) | 9.0.3
+[pytest](https://pypi.org/project/pytest/) | 8.4.2 | [PYSEC-2026-1845](https://osv.dev/vulnerability/PYSEC-2026-1845) | 9.0.3
+
+npm audit --package-lock-only (frontend): 6 vulnerabilities (2 moderate, 4 high): @vitest/mocker <=4.1.11 (moderate), nanoid <3.3.18 (high), source-map-js 1.0.0-1.2.1 (high), undici 8.0.0-8.10.1 (high), vite 8.2.0-8.2.2 (high, dev server), +1 moderate. Fix available via npm audit fix (not applied).

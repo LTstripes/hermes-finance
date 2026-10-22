@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.services.mybroker_import import (
     apply_mybroker,
     preview_mybroker,
@@ -15,7 +16,9 @@ from hermes_finance.services.mybroker_import import (
 )
 from hermes_finance.statement_import.mybroker import MAX_BYTES, MyBrokerError
 
-router = APIRouter(prefix="/api/mybroker-import", tags=["mybroker-import"])
+router = APIRouter(
+    route_class=BoundedUploadRoute, prefix="/api/mybroker-import", tags=["mybroker-import"]
+)
 
 
 class Binding(BaseModel):

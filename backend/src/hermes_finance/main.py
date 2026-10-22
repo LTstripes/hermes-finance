@@ -101,6 +101,7 @@ from hermes_finance.api.statement_import import router as statement_import_route
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
 from hermes_finance.database import Database
+from hermes_finance.diagnostics import DiagnosticContextMiddleware, configure_private_logging
 from hermes_finance.security import LocalhostSecurityMiddleware
 from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceStore
 from hermes_finance.settings import Settings
@@ -138,6 +139,7 @@ def create_app(
     payout_provider: object | None = None,
     broker_snapshot_provider: object | None = None,
 ) -> FastAPI:
+    configure_private_logging()
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.state.quote_preview_evidence = QuotePreviewEvidenceStore()
     application.add_middleware(LocalhostSecurityMiddleware)
@@ -159,6 +161,7 @@ def create_app(
                 response.headers[header] = recovery_readiness[name]
         return response
 
+    application.add_middleware(DiagnosticContextMiddleware)
     register_error_handlers(application)
     application.include_router(settings_router)
     application.include_router(tax_brackets_router)

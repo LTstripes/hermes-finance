@@ -16,7 +16,21 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/') }}
 
 jobs:
+  privacy:
+    name: Privacy guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check tracked files for private data
+        run: python3 scripts/privacy_check.py
+
   ui-evidence:
+    needs: privacy
     name: Synthetic UI comparison
     runs-on: ubuntu-latest
     timeout-minutes: 15

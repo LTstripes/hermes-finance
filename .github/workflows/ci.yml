@@ -297,7 +297,7 @@ jobs:
 
   g04-browser:
     name: G04 and native v2 real-backend journeys
-    needs: docs-only-classify
+    needs: [docs-only-classify, privacy]
     if: >-
       always() &&
       !cancelled() &&
@@ -379,7 +379,7 @@ jobs:
         run: npm run test:e2e -- --project=instrument-uat
 
       - name: Upload synthetic real-backend journey evidence
-        if: always()
+        if: always() && needs.privacy.result == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-v2-real-backend-evidence

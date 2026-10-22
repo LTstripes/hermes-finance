@@ -7,13 +7,14 @@ Response shape::
 
     {"error": {"code": "...", "message": "...", "details": [...]}}
 
-Privacy invariant: handlers log the exception class, request path and status
+Privacy invariant: handlers log the exception class, route template and status
 code only — never money amounts, request payloads, or financial details.
 """
 
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
+from hermes_finance.diagnostics import request_route
 from hermes_finance.services.backups import RestoreOutcomeAmbiguousError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
@@ -44,6 +46,55 @@ from hermes_finance.services.statement_import_retract import StatementRetractErr
 from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
 
 logger = logging.getLogger("hermes_finance.api.errors")
+
+# Only reviewed, fixed messages may cross the generic HTTP exception boundary.
+_PUBLIC_HTTP_MESSAGES = frozenset(
+    {
+        "Account not found",
+        "Backup storage is not available",
+        "Capture read-back did not confirm the stored observation; reread before another action",
+        "Database restore is not available",
+        "Frontend build is not available",
+        "If-Match header is required for deposit updates",
+        "If-Match header is required for position updates",
+        "If-Match must be an ASCII integer revision",
+        "If-Match revision is required",
+        "Membership context must not be repeated",
+        "Membership/readiness read-back did not complete",
+        "Method Not Allowed",
+        "Not Found",
+        "Payout context changed; request a new preview",
+        "Preparation evidence changed; reread before saving",
+        "Valuation capture/readiness read-back did not complete",
+        "Write read-back changed; inspect current history",
+        "account not found",
+        "broker_month_confirmation_invalid",
+        "confirmation_invalid",
+        "document_size_invalid",
+        "external_code already exists",
+        "identity_intent_invalid",
+        "instrument_decisions_invalid",
+        "mapping or selection JSON is invalid",
+        "position snapshot already exists for month, account and instrument",
+        "preflight_batch_size_invalid",
+        "preflight_headers_too_large",
+        "preflight_intent_invalid",
+        "preflight_multipart_invalid",
+        "provisional_request_fields_invalid",
+        "provisional_request_invalid",
+        "source_intake_confirmation_invalid",
+        "source_intake_intent_invalid",
+        "source_intake_journal_invalid",
+        "start_date must precede end_date",
+        "statement PDF exceeds the upload limit",
+        "upload_field_count_exceeded",
+        "upload_file_count_exceeded",
+        "upload_headers_too_large",
+        "upload_multipart_invalid",
+        "what_if_request_fields_invalid",
+        "what_if_request_invalid",
+    }
+)
 
 _STATUS_CODE_TO_CODE: dict[int, str] = {
     400: "bad_request",
@@ -103,11 +154,15 @@ def register_error_handlers(application: FastAPI) -> None:
     ) -> JSONResponse:
         status_code = exc.status_code
         code = _code_for_status(status_code)
-        message = str(exc.detail) if exc.detail is not None else code
+        message = (
+            HTTPStatus(status_code).phrase if status_code in HTTPStatus._value2member_map_ else code
+        )
+        if isinstance(exc.detail, str) and exc.detail in _PUBLIC_HTTP_MESSAGES:
+            message = exc.detail
         logger.info(
-            "%s path=%s status=%d code=%s",
+            "%s route=%s status=%d code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             status_code,
             code,
         )
@@ -121,31 +176,36 @@ def register_error_handlers(application: FastAPI) -> None:
         for err in exc.errors():
             loc = err.get("loc", ())
             field = ".".join(str(part) for part in loc if part != "body")
-            details.append(ErrorDetail(field=field, message=err.get("msg", "validation error")))
+            details.append(
+                ErrorDetail(
+                    field=field,
+                    message="Field required" if err.get("type") == "missing" else "Invalid value",
+                )
+            )
         logger.info(
-            "%s path=%s status=422 code=unprocessable",
+            "%s route=%s status=422 code=unprocessable",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(422, "unprocessable", "Request validation failed", details)
 
     @application.exception_handler(LookupError)
     async def _not_found_handler(request: Request, exc: LookupError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=404 code=not_found",
+            "%s route=%s status=404 code=not_found",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
-        return _error_response(404, "not_found", str(exc))
+        return _error_response(404, "not_found", "Requested resource was not found")
 
     @application.exception_handler(LinkedPairReadModelError)
     async def _linked_pair_read_model_handler(
         request: Request, exc: LinkedPairReadModelError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -154,9 +214,9 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(QuotePreviewEvidenceError)
     async def _preview_changed_handler(request: Request, exc: PreviewChangedError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -166,9 +226,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: ClosedReportingMonthError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -177,9 +237,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: InstrumentDeletionBlockedError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -189,9 +249,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: DebtAccountLinkConflictError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -200,9 +260,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: LinkedPairBalanceEvidenceConflictError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -212,9 +272,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: TaxBracketYearLockedError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=tax_brackets_year_locked",
+            "%s route=%s status=409 code=tax_brackets_year_locked",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(
             409,
@@ -229,18 +289,18 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(IntegrityError)
     async def _integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", "Database integrity constraint violated")
 
     @application.exception_handler(ConcurrencyError)
     async def _concurrency_error_handler(request: Request, exc: ConcurrencyError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -249,9 +309,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: DatabaseMaintenanceError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -260,9 +320,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: RestoreOutcomeAmbiguousError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=500 code=restore_outcome_ambiguous",
+            "%s route=%s status=500 code=restore_outcome_ambiguous",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(500, "restore_outcome_ambiguous", str(exc))
 
@@ -271,9 +331,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: SalaryTaxHistoryIncompleteError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -283,9 +343,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: PayoutMappingRequiredError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -295,9 +355,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: StatementRetractError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=%d code=%s",
+            "%s route=%s status=%d code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.status_code,
             exc.code,
         )
@@ -314,17 +374,26 @@ def register_error_handlers(application: FastAPI) -> None:
         # generic unprocessable.
         message = str(exc)
         code = "unprocessable"
-        if "scenario-lab" in request.url.path and ":" in message:
+        if "scenario-lab" in request_route(request) and ":" in message:
             prefix = message.split(":", 1)[0].strip()
-            if prefix.startswith("invalid_"):
+            if prefix in {
+                "invalid_target_currency",
+                "invalid_reporting_value_change_pct",
+                "invalid_drawdown_pct",
+            }:
                 code = prefix
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             code,
         )
-        return _error_response(422, code, message)
+        safe_message = (
+            message
+            if message in {"unsupported account type", "unsupported account status"}
+            else "Request validation failed"
+        )
+        return _error_response(422, code, safe_message)
 
     # Scenario handlers are registered alongside the generic ValueError and
     # LookupError handlers; Starlette resolves handlers by walking the
@@ -339,9 +408,9 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(ScenarioLabError)
     async def _scenario_lab_error_handler(request: Request, exc: ScenarioLabError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -355,15 +424,15 @@ def register_error_handlers(application: FastAPI) -> None:
         # but the historical global mapping is 404/not_found. We keep
         # backward compatibility: scenario-lab paths surface
         # reporting_month_not_found while all other callers keep not_found.
-        path = request.url.path
+        path = request_route(request)
         if "scenario-lab" in path:
             code = "reporting_month_not_found"
         else:
             code = "not_found"
         logger.info(
-            "%s path=%s status=404 code=%s",
+            "%s route=%s status=404 code=%s",
             exc.__class__.__name__,
-            path,
+            request_route(request),
             code,
         )
         return _error_response(404, code, str(exc))

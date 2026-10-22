@@ -30,13 +30,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from privacy_check import content_findings, forbidden_path
 from visual_audit_paths import is_visual_audit_path
 
 EVIDENCE_GREP = "ui-v2"
-EVIDENCE_VISUAL_COMMAND = (
-    "npm run audit:visual -- --project=1440x900 "
-    f'--grep "{EVIDENCE_GREP}"'
-)
+EVIDENCE_VISUAL_COMMAND = f'npm run audit:visual -- --project=1440x900 --grep "{EVIDENCE_GREP}"'
 OMIT_ENV = "HERMES_VISUAL_AUDIT_OMIT_DUPLICATE_EVIDENCE"
 SCREENSHOT_RUNTIME = "vite-dev-server"
 SCREENSHOT_MEANING = "dev-server-browser-capture-not-production-build"
@@ -67,7 +65,24 @@ PROVENANCE_KEYS = (
 _SHA = re.compile(r"[0-9a-f]{40}")
 _ZERO_SHA = "0" * 40
 _PRIVATE_NAMES = {".env", ".env.local", ".env.production", "private"}
-_PRIVATE_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+_PRIVATE_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".log"}
+_DIST_SUFFIXES = {
+    ".html",
+    ".js",
+    ".css",
+    ".json",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".avif",
+    ".gif",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+}
 
 
 def normalize_path(path: str) -> str:
@@ -114,9 +129,7 @@ def path_matches_pattern(path: str, pattern: str) -> bool:
 
 
 def evidence_workflow_applies(paths: list[str], patterns: tuple[str, ...]) -> bool:
-    return any(
-        path_matches_pattern(path, pattern) for path in paths for pattern in patterns
-    )
+    return any(path_matches_pattern(path, pattern) for path in paths for pattern in patterns)
 
 
 def duplicate_visual_paths(paths: list[str], patterns: tuple[str, ...]) -> bool:
@@ -277,7 +290,9 @@ def package_errors(package: Path, expected: dict[str, object]) -> list[str]:
         errors.append("missing screenshots")
     else:
         stray = sorted(
-            item.name for item in screenshots.iterdir() if item.is_file() and item.suffix.lower() != ".png"
+            item.name
+            for item in screenshots.iterdir()
+            if item.is_file() and item.suffix.lower() != ".png"
         )
         if stray:
             errors.append("unexpected screenshot files: " + ", ".join(stray))
@@ -301,8 +316,25 @@ def package_errors(package: Path, expected: dict[str, object]) -> list[str]:
         else:
             errors.extend(provenance_errors(document, expected))
     for path in package.rglob("*"):
-        if path.is_file() and _private_file(path, package):
-            errors.append(f"private evidence path {path.relative_to(package).as_posix()}")
+        relative = path.relative_to(package)
+        if path.is_symlink():
+            errors.append(f"linked evidence path {relative.as_posix()}")
+        elif path.is_file():
+            if _private_file(path, package) or forbidden_path(relative.as_posix()):
+                errors.append(f"private evidence path {relative.as_posix()}")
+                continue
+            allowed_file = (
+                relative.as_posix() == "provenance.json"
+                or len(relative.parts) == 2
+                and relative.parts[0] == "screenshots"
+                and path.suffix == ".png"
+                or relative.parts[0] == "frontend-dist"
+                and path.suffix.lower() in _DIST_SUFFIXES
+            )
+            if not allowed_file:
+                errors.append(f"unexpected evidence path {relative.as_posix()}")
+            elif content_findings(relative.as_posix(), path.read_bytes()):
+                errors.append(f"private evidence content {relative.as_posix()}")
     return errors
 
 
@@ -426,12 +458,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "paths":
-            patterns = evidence_patterns_from_workflow(
-                args.workflow.read_text(encoding="utf-8")
-            )
-            return _print_flag(
-                duplicate_visual_paths(_read_paths(args.from_file), patterns)
-            )
+            patterns = evidence_patterns_from_workflow(args.workflow.read_text(encoding="utf-8"))
+            return _print_flag(duplicate_visual_paths(_read_paths(args.from_file), patterns))
         if args.command == "trees":
             return _print_flag(
                 omit_duplicate_1440(

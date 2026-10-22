@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.services.statement_import_apply import (
     StatementApplyAction,
     StatementApplySelection,
@@ -33,7 +34,9 @@ from hermes_finance.statement_import import (
     preview_income_report,
 )
 
-router = APIRouter(prefix="/api/statement-import", tags=["statement-import"])
+router = APIRouter(
+    route_class=BoundedUploadRoute, prefix="/api/statement-import", tags=["statement-import"]
+)
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 READ_CHUNK_BYTES = 256 * 1024

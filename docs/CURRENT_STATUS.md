@@ -40,6 +40,8 @@ Instrument known payouts/EOD/trades and stock fixed-holding WHAT-IF are delivere
 
 Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) with independent C1–C5 evidence prerequisites. Delivered capability is separate from current numerical readiness and Owner UAT scope; the attributed #836 receipt above is limited, not a claim every class/history is finance-ready.
 
+2026-10-22 local remediation candidate for [#929](https://github.com/LTstripes/hermes-finance/pull/929), baseline `5394962`: SEC-01–SEC-06 are implemented with active synthetic regressions. See the [security review and verification](reviews/security-review-2026-10-22.md). Changes remain uncommitted; independent security review, CI and Integrator acceptance remain pending. No release, runtime or financial-authority change is claimed.
+
 <a id="s3"></a>
 ## 3. Current priorities, blockers and Owner actions
 

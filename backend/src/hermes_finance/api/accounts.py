@@ -78,7 +78,7 @@ def _validate_account_type(value: str) -> str:
     try:
         AccountType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported account type: {value!r}") from error
+        raise ValueError("unsupported account type") from error
     return value
 
 
@@ -86,7 +86,7 @@ def _validate_account_status(value: str) -> str:
     try:
         AccountStatus(value)
     except ValueError as error:
-        raise ValueError(f"unsupported account status: {value!r}") from error
+        raise ValueError("unsupported account status") from error
     return value
 
 
@@ -145,7 +145,7 @@ def create_account_endpoint(
         if existing is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"external_code '{payload.external_code}' already exists",
+                detail="external_code already exists",
             )
     account = create_account(
         session,

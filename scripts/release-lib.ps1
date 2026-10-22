@@ -145,7 +145,7 @@ function Test-HermesExpectedGitHubRemote {
     $normalized = $normalized.TrimEnd("/")
     $normalized = $normalized -replace "\.git$", ""
     if ($normalized -notmatch "(?i)^(https://(www\.)?github\.com/|git@github\.com:|ssh://git@github\.com/)LTstripes/hermes-finance$") {
-        throw "origin does not point to LTstripes/hermes-finance. Found: $Url"
+        throw "origin does not point to LTstripes/hermes-finance."
     }
 }
 

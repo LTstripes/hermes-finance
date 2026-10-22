@@ -304,6 +304,7 @@ def create_database(database_path: Path) -> Database:
     engine = create_engine(
         URL.create("sqlite+pysqlite", database=resolved_path.as_posix()),
         connect_args={"check_same_thread": False},
+        hide_parameters=True,
     )
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

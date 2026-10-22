@@ -17,14 +17,14 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ci_paths import (  # noqa: E402
+from ci_paths import (
     AREAS,
     BACKEND_AREAS,
     FRONTEND_AREAS,
     classify_repo,
     selected_areas,
 )
-from docs_only_ci import DiffRecord  # noqa: E402
+from docs_only_ci import DiffRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 FULL = frozenset(AREAS)
@@ -64,7 +64,13 @@ SAFETY_PATHS = (
 
 
 def record(path: str, **overrides: object) -> DiffRecord:
-    fields = dict(old_mode="100644", new_mode="100644", status="M", old_path=path, new_path=path)
+    fields = {
+        "old_mode": "100644",
+        "new_mode": "100644",
+        "status": "M",
+        "old_path": path,
+        "new_path": path,
+    }
     fields.update(overrides)
     return DiffRecord(**fields)
 
@@ -78,18 +84,31 @@ class SelectionTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertEqual(selected_areas([record(path)]), BACKEND_AREAS)
-        for path in ("frontend/src/App.tsx", "frontend/public/logo.svg", "frontend/e2e/journey.ts"):
+        for path in (
+            "frontend/src/App.tsx",
+            "frontend/public/logo.svg",
+            "frontend/e2e/journey.ts",
+        ):
             with self.subTest(path=path):
                 self.assertEqual(selected_areas([record(path)]), FRONTEND_AREAS)
         self.assertEqual(
-            selected_areas([record("frontend/src/App.tsx"), record("backend/src/app.py")]), FULL
+            selected_areas([record("frontend/src/App.tsx"), record("backend/src/app.py")]),
+            FULL,
         )
         self.assertEqual(
-            selected_areas([record("README.md"), record("frontend/src/App.tsx")]), FRONTEND_AREAS
+            selected_areas([record("README.md"), record("frontend/src/App.tsx")]),
+            FRONTEND_AREAS,
         )
         self.assertEqual(
             selected_areas(
-                [record("frontend/src/New.tsx", status="A", old_mode="000000", old_path=None)]
+                [
+                    record(
+                        "frontend/src/New.tsx",
+                        status="A",
+                        old_mode="000000",
+                        old_path=None,
+                    )
+                ]
             ),
             FRONTEND_AREAS,
         )
@@ -135,7 +154,13 @@ class SelectionTests(unittest.TestCase):
             [record("frontend/src/App.tsx", binary=True)],
             [record("frontend/src/App.tsx", status="D", new_mode="000000")],
             [record("frontend/src/App.tsx", status="R100", old_path="backend/src/app.py")],
-            [record("frontend/src/App.tsx", status="C100", old_path="frontend/src/Old.tsx")],
+            [
+                record(
+                    "frontend/src/App.tsx",
+                    status="C100",
+                    old_path="frontend/src/Old.tsx",
+                )
+            ],
             [record("frontend/src/App.tsx", new_mode="100755")],
             [record("frontend/src/App.tsx", old_mode="120000")],
             [record("frontend/src/App.tsx", new_mode="120000")],
@@ -229,7 +254,11 @@ class GitTests(unittest.TestCase):
     def test_bad_shas_missing_git_empty_diff_and_binary_are_full(self) -> None:
         head = self.commit("frontend/src/App.tsx", b"binary\0payload")
         self.assertEqual(classify_repo(self.repo, self.base, head), FULL)
-        for base, candidate in ((self.base, self.base), ("not-a-sha", head), ("f" * 40, head)):
+        for base, candidate in (
+            (self.base, self.base),
+            ("not-a-sha", head),
+            ("f" * 40, head),
+        ):
             self.assertEqual(classify_repo(self.repo, base, candidate), FULL)
         with patch("ci_paths._load_records", side_effect=OSError("git unavailable")):
             self.assertEqual(classify_repo(self.repo, self.base, head), FULL)
@@ -271,7 +300,8 @@ class GitTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(
-            output.splitlines(), ["mode=docs-only"] + [f"{area}=false" for area in AREAS]
+            output.splitlines(),
+            ["mode=docs-only"] + [f"{area}=false" for area in AREAS],
         )
         binary = self.commit("README.md", b"prose\0hidden")
         self.assertEqual(classify_repo(self.repo, self.base, binary), FULL)
@@ -360,10 +390,11 @@ class WorkflowTests(unittest.TestCase):
                     for enabled in ("true", "false", "", "garbage", "TRUE"):
                         areas = {area: "false" for area in AREAS}
                         areas[owner] = enabled
-                        args = dict(mode=mode, result=result, areas=areas)
+                        args = {"mode": mode, "result": result, "areas": areas}
                         with self.subTest(job=job, **args):
                             self.assertEqual(
-                                self.runs(job, **args), result != "success" or enabled != "false"
+                                self.runs(job, **args),
+                                result != "success" or enabled != "false",
                             )
                             for label in ("ci:windows", "ci:full"):
                                 self.assertTrue(self.runs(job, labels=(label,), **args))
@@ -422,10 +453,14 @@ class WorkflowTests(unittest.TestCase):
 
     def test_ci_ok_waits_for_every_job_and_executes_the_actual_verdict(self) -> None:
         jobs = set(
-            re.findall(r"^  ([a-z][a-z0-9-]*):$", self.workflow.split("jobs:\n", 1)[1], re.M)
+            re.findall(
+                r"^  ([a-z][a-z0-9-]*):$",
+                self.workflow.split("jobs:\n", 1)[1],
+                re.MULTILINE,
+            )
         )
         final = self.job("ci-ok")
-        dependencies = re.findall(r"^      - ([a-z][a-z0-9-]*)$", final, re.M)
+        dependencies = re.findall(r"^      - ([a-z][a-z0-9-]*)$", final, re.MULTILINE)
         self.assertCountEqual(dependencies, jobs - {"ci-ok"})
         self.assertEqual(self.condition("ci-ok"), "always()")
         self.assertIn("    name: ci-ok\n", final)
@@ -449,7 +484,8 @@ class WorkflowTests(unittest.TestCase):
     def test_wiring_preserves_triggers_and_full_shared_inputs(self) -> None:
         trigger = self.workflow.split("jobs:", 1)[0]
         self.assertIn(
-            "\n  pull_request:\n    types: [opened, synchronize, reopened, labeled]", trigger
+            "\n  pull_request:\n    types: [opened, synchronize, reopened, labeled]",
+            trigger,
         )
         self.assertIn("branches: [main]", trigger)
         self.assertNotIn("paths:", trigger)
@@ -462,7 +498,12 @@ class WorkflowTests(unittest.TestCase):
         for area in AREAS:
             self.assertIn("steps.classify.outputs." + area, self.workflow)
         for job in OWNERS:
-            self.assertIn("needs: docs-only-classify", self.job(job))
+            expected_needs = (
+                "needs: [docs-only-classify, privacy]"
+                if job == "g04-browser"
+                else "needs: docs-only-classify"
+            )
+            self.assertIn(expected_needs, self.job(job))
         release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertNotIn("ci_paths.py", release)
         for action in re.findall(r"uses: ([^\s]+)", self.workflow):

@@ -22,6 +22,7 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 
 ### Fixed
 
+- [#929](https://github.com/LTstripes/hermes-finance/pull/929), SEC-01–SEC-06: redact route/exception and rejected-remote diagnostics, hide SQL parameters, bound uploads before multipart spooling, cap recovery/XLSX archives before member reads, strengthen privacy/artifact gates, and omit supplied values from generic validation errors.
 - Astra audit HIGH fixes 1-5: boundary-flow XIRR inclusion, statement flow-coverage continuity, financial parser blockers, cash/NKD classification precedence, and negative Modified Dietz chain factors; synthetic regression coverage.
 
 ### Known limitations

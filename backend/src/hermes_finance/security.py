@@ -16,6 +16,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from hermes_finance.diagnostics import request_route
+
 logger = logging.getLogger("hermes_finance.security")
 
 _LOCAL_AUTHORITY_RE = re.compile(
@@ -91,8 +93,8 @@ class LocalhostSecurityMiddleware(BaseHTTPMiddleware):
         local_host = _local_authority(host_header)
         if local_host is None and not _is_starlette_test_client(request, host_header):
             logger.info(
-                "LocalhostSecurityMiddleware path=%s status=400 code=bad_request",
-                request.url.path,
+                "LocalhostSecurityMiddleware route=%s status=400 code=bad_request",
+                request_route(request),
             )
             return _rejection(400, "bad_request", "Host is not allowed for this local application")
 
@@ -102,8 +104,8 @@ class LocalhostSecurityMiddleware(BaseHTTPMiddleware):
                 host_header is None or not _same_local_origin(origin, host_header)
             ):
                 logger.info(
-                    "LocalhostSecurityMiddleware path=%s status=403 code=forbidden",
-                    request.url.path,
+                    "LocalhostSecurityMiddleware route=%s status=403 code=forbidden",
+                    request_route(request),
                 )
                 return _rejection(
                     403,
@@ -113,8 +115,8 @@ class LocalhostSecurityMiddleware(BaseHTTPMiddleware):
 
             if origin is None and request.headers.get("sec-fetch-site", "").lower() == "cross-site":
                 logger.info(
-                    "LocalhostSecurityMiddleware path=%s status=403 code=forbidden",
-                    request.url.path,
+                    "LocalhostSecurityMiddleware route=%s status=403 code=forbidden",
+                    request_route(request),
                 )
                 return _rejection(
                     403,

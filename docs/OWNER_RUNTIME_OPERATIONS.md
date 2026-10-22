@@ -1058,6 +1058,8 @@ is fixed:
   completed recovery point;
 - a failed run preserves the newest previously verified recovery point.
 
+Verification checks archive budgets before reading members: exactly the ordered manifest and snapshot, no duplicate members, stored-only compression, a 64 KiB manifest and a 256 MiB snapshot, with at most 64 KiB additional container overhead. Artifact/descriptor reads are bounded independently of ZIP metadata. Oversized or compressed foreign artifacts fail closed; successful hashing alone does not waive these limits.
+
 Destination validation occurs before staging. It rejects production data,
 Stable/Preview/development checkouts, the normal local backup directory,
 source artifacts, non-regular or reparse-linked paths, and ambiguous roots.

@@ -7,11 +7,16 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.domain.broker_statement_return import BrokerStatementReturn
 from hermes_finance.services.broker_statement_return import read_statement_return, statement_sources
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
-router = APIRouter(prefix="/api/broker-statement-returns", tags=["broker-statement-returns"])
+router = APIRouter(
+    route_class=BoundedUploadRoute,
+    prefix="/api/broker-statement-returns",
+    tags=["broker-statement-returns"],
+)
 
 
 @router.get("/sources")
