@@ -259,6 +259,64 @@ def test_invalid_account_type_not_echoed_in_error_response(tmp_path):
     assert marker not in response.text, "Rejected input value was copied into the error DTO"
 
 
+@pytest.fixture
+def account_app(tmp_path):
+    from hermes_finance.database import create_database
+    from hermes_finance.main import create_app
+    from hermes_finance.persistence import Base
+
+    database = create_database(tmp_path / "synthetic-account.sqlite3")
+    Base.metadata.create_all(database.engine)
+    try:
+        yield create_app(database, static_dir=tmp_path / "missing-frontend")
+    finally:
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("field", ["account_type", "status"])
+def test_account_update_validation_preserves_guidance_without_input(account_app, field):
+    from fastapi.testclient import TestClient
+
+    marker = "SYNTHETIC_PII"
+    with TestClient(account_app) as client:
+        account = client.post(
+            "/api/accounts", json={"name": "Synthetic account", "account_type": "brokerage"}
+        )
+        assert account.status_code == 201
+        response = client.patch(f"/api/accounts/{account.json()['id']}", json={field: marker})
+    assert response.status_code == 422
+    assert marker not in response.text
+    assert f"unsupported account {'type' if field == 'account_type' else 'status'}" in response.text
+
+
+@pytest.mark.parametrize("method", ["post", "patch"])
+def test_duplicate_account_code_is_not_echoed(account_app, method):
+    from fastapi.testclient import TestClient
+
+    marker = "SYNTHETIC_PRIVATE_ACCOUNT_CODE"
+    payload = {"name": "Synthetic account", "account_type": "brokerage", "external_code": marker}
+    with TestClient(account_app) as client:
+        assert client.post("/api/accounts", json=payload).status_code == 201
+        if method == "post":
+            response = client.post("/api/accounts", json=payload)
+        else:
+            other = client.post(
+                "/api/accounts",
+                json={"name": "Other synthetic account", "account_type": "brokerage"},
+            )
+            assert other.status_code == 201
+            response = client.patch(
+                f"/api/accounts/{other.json()['id']}", json={"external_code": marker}
+            )
+    assert response.status_code == 409
+    assert marker not in response.text
+    assert response.json()["error"] == {
+        "code": "conflict",
+        "message": "external_code already exists",
+        "details": [],
+    }
+
+
 @pytest.mark.parametrize("length", [None, "1"])
 def test_upload_stream_counter_rejects_absent_or_dishonest_length(monkeypatch, length):
     from fastapi import HTTPException
@@ -339,9 +397,8 @@ def test_upload_routes_enforce_limits_before_dependency_resolution(
         assert response.headers["cache-control"] == "no-store"
 
 
-@pytest.mark.parametrize("exception", ["value", "http", "lookup", "pydantic"])
-def test_generic_errors_never_echo_values(tmp_path, exception):
-    from fastapi import HTTPException
+@pytest.mark.parametrize("style", ["raw", "quoted", "suffix"])
+def test_validation_errors_never_echo_submitted_values(tmp_path, style):
     from fastapi.testclient import TestClient
     from pydantic import BaseModel, field_validator
 
@@ -354,27 +411,83 @@ def test_generic_errors_never_echo_values(tmp_path, exception):
         @field_validator("value")
         @classmethod
         def validate_value(cls, value):
+            if style == "quoted":
+                raise ValueError(f"unsupported value: {value!r}")
+            if style == "suffix":
+                raise ValueError(f"unsupported value: {value}")
             raise ValueError(value)
 
-    if exception == "pydantic":
+    def fail(payload):
+        return {}
 
-        @app.post("/api/security-validation")
-        def fail(payload: Payload):
-            return {}
-    else:
-
-        @app.post("/api/security-validation")
-        def fail():
-            if exception == "http":
-                raise HTTPException(422, marker)
-            if exception == "lookup":
-                raise LookupError(marker)
-            raise ValueError(marker)
+    fail.__annotations__["payload"] = Payload
+    app.post("/api/security-validation")(fail)
 
     with TestClient(app) as client:
         response = client.post("/api/security-validation", json={"value": marker})
-    assert response.status_code in (404, 422)
+    assert response.status_code == 422
     assert marker not in response.text
+    error = response.json()["error"]
+    assert error["message"] == "Request validation failed"
+    assert error["details"][0]["field"] == "value"
+    assert "input" not in error["details"][0]
+    assert "ctx" not in error["details"][0]
+    if style != "raw":
+        assert "unsupported value:" in error["details"][0]["message"]
+
+
+@pytest.mark.parametrize("exception", ["value", "http", "lookup", "pydantic"])
+def test_curated_error_messages_are_preserved(tmp_path, exception):
+    from fastapi import HTTPException
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel, field_validator
+
+    app = _app(tmp_path)
+    message = "reporting month already has a salary"
+
+    class Payload(BaseModel):
+        value: str
+
+        @field_validator("value")
+        @classmethod
+        def validate_value(cls, value):
+            raise ValueError(message)
+
+    if exception == "pydantic":
+
+        def fail(payload):
+            return {}
+
+        fail.__annotations__["payload"] = Payload
+        app.post("/api/security-curated")(fail)
+    else:
+
+        @app.post("/api/security-curated")
+        def fail():
+            if exception == "http":
+                raise HTTPException(409, message)
+            if exception == "lookup":
+                raise LookupError(message)
+            raise ValueError(message)
+
+    with TestClient(app) as client:
+        response = client.post("/api/security-curated", json={"value": "salary"})
+    error = response.json()["error"]
+    if exception == "pydantic":
+        assert response.status_code == 422
+        assert error == {
+            "code": "unprocessable",
+            "message": "Request validation failed",
+            "details": [{"field": "value", "message": f"Value error, {message}"}],
+        }
+    else:
+        status, code = {
+            "value": (422, "unprocessable"),
+            "http": (409, "conflict"),
+            "lookup": (404, "not_found"),
+        }[exception]
+        assert response.status_code == status
+        assert error == {"code": code, "message": message, "details": []}
 
 
 def test_access_log_uses_template_and_omits_path_parameter(tmp_path, caplog):

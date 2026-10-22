@@ -14,7 +14,6 @@ code only — never money amounts, request payloads, or financial details.
 from __future__ import annotations
 
 import logging
-from http import HTTPStatus
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -46,55 +45,6 @@ from hermes_finance.services.statement_import_retract import StatementRetractErr
 from hermes_finance.services.tax_brackets import TaxBracketYearLockedError
 
 logger = logging.getLogger("hermes_finance.api.errors")
-
-# Only reviewed, fixed messages may cross the generic HTTP exception boundary.
-_PUBLIC_HTTP_MESSAGES = frozenset(
-    {
-        "Account not found",
-        "Backup storage is not available",
-        "Capture read-back did not confirm the stored observation; reread before another action",
-        "Database restore is not available",
-        "Frontend build is not available",
-        "If-Match header is required for deposit updates",
-        "If-Match header is required for position updates",
-        "If-Match must be an ASCII integer revision",
-        "If-Match revision is required",
-        "Membership context must not be repeated",
-        "Membership/readiness read-back did not complete",
-        "Method Not Allowed",
-        "Not Found",
-        "Payout context changed; request a new preview",
-        "Preparation evidence changed; reread before saving",
-        "Valuation capture/readiness read-back did not complete",
-        "Write read-back changed; inspect current history",
-        "account not found",
-        "broker_month_confirmation_invalid",
-        "confirmation_invalid",
-        "document_size_invalid",
-        "external_code already exists",
-        "identity_intent_invalid",
-        "instrument_decisions_invalid",
-        "mapping or selection JSON is invalid",
-        "position snapshot already exists for month, account and instrument",
-        "preflight_batch_size_invalid",
-        "preflight_headers_too_large",
-        "preflight_intent_invalid",
-        "preflight_multipart_invalid",
-        "provisional_request_fields_invalid",
-        "provisional_request_invalid",
-        "source_intake_confirmation_invalid",
-        "source_intake_intent_invalid",
-        "source_intake_journal_invalid",
-        "start_date must precede end_date",
-        "statement PDF exceeds the upload limit",
-        "upload_field_count_exceeded",
-        "upload_file_count_exceeded",
-        "upload_headers_too_large",
-        "upload_multipart_invalid",
-        "what_if_request_fields_invalid",
-        "what_if_request_invalid",
-    }
-)
 
 _STATUS_CODE_TO_CODE: dict[int, str] = {
     400: "bad_request",
@@ -145,6 +95,23 @@ def _error_response(
     )
 
 
+def _validation_message(error: dict) -> str:
+    """Keep validation guidance while omitting values embedded by validators.
+
+    The response deliberately projects only loc/msg, never Pydantic's input
+    or ctx. Custom validators can also interpolate input into msg itself.
+    """
+    message = error.get("msg", "validation error")
+    value = error.get("input")
+    if isinstance(value, str) and value:
+        message = message.replace(repr(value), "[redacted]")
+        if message == f"Value error, {value}":
+            message = "Value error, [redacted]"
+        elif message.endswith(f": {value}"):
+            message = message[: -len(value)] + "[redacted]"
+    return message
+
+
 def register_error_handlers(application: FastAPI) -> None:
     """Register unified exception handlers on *application*."""
 
@@ -154,11 +121,7 @@ def register_error_handlers(application: FastAPI) -> None:
     ) -> JSONResponse:
         status_code = exc.status_code
         code = _code_for_status(status_code)
-        message = (
-            HTTPStatus(status_code).phrase if status_code in HTTPStatus._value2member_map_ else code
-        )
-        if isinstance(exc.detail, str) and exc.detail in _PUBLIC_HTTP_MESSAGES:
-            message = exc.detail
+        message = str(exc.detail) if exc.detail is not None else code
         logger.info(
             "%s route=%s status=%d code=%s",
             exc.__class__.__name__,
@@ -179,7 +142,7 @@ def register_error_handlers(application: FastAPI) -> None:
             details.append(
                 ErrorDetail(
                     field=field,
-                    message="Field required" if err.get("type") == "missing" else "Invalid value",
+                    message=_validation_message(err),
                 )
             )
         logger.info(
@@ -196,7 +159,7 @@ def register_error_handlers(application: FastAPI) -> None:
             exc.__class__.__name__,
             request_route(request),
         )
-        return _error_response(404, "not_found", "Requested resource was not found")
+        return _error_response(404, "not_found", str(exc))
 
     @application.exception_handler(LinkedPairReadModelError)
     async def _linked_pair_read_model_handler(
@@ -388,12 +351,7 @@ def register_error_handlers(application: FastAPI) -> None:
             request_route(request),
             code,
         )
-        safe_message = (
-            message
-            if message in {"unsupported account type", "unsupported account status"}
-            else "Request validation failed"
-        )
-        return _error_response(422, code, safe_message)
+        return _error_response(422, code, message)
 
     # Scenario handlers are registered alongside the generic ValueError and
     # LookupError handlers; Starlette resolves handlers by walking the

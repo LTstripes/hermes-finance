@@ -54,6 +54,22 @@ function Get-Job {
     return $match.Value
 }
 
+function Test-JobDependency {
+    param([string]$Job, [string]$Dependency)
+    $match = [regex]::Match($Job, '(?m)^    needs: ([^\r\n]+)\r?$')
+    if (-not $match.Success) { return $false }
+    $items = @($match.Groups[1].Value.Trim().Trim('[', ']').Split(',') | ForEach-Object { $_.Trim() })
+    return $items -contains $Dependency
+}
+
+Invoke-Case "dependency checks accept scalar and list forms and require exact membership" {
+    Assert-True -Condition (Test-JobDependency "    needs: docs-only-classify" "docs-only-classify") -Message "Scalar classifier dependency must be recognized."
+    Assert-True -Condition (Test-JobDependency "    needs: [docs-only-classify, privacy]" "docs-only-classify") -Message "Classifier plus privacy dependencies must be recognized."
+    Assert-True -Condition (Test-JobDependency "    needs: [privacy, docs-only-classify]" "docs-only-classify") -Message "Dependency order must not matter."
+    Assert-True -Condition (-not (Test-JobDependency "    needs: privacy" "docs-only-classify")) -Message "Privacy alone cannot replace classification."
+    Assert-True -Condition (-not (Test-JobDependency "    needs: docs-only-classify-other" "docs-only-classify")) -Message "Substring matches cannot satisfy classification."
+}
+
 Invoke-Case "workflow trigger is not path-filtered" {
     $onBlock = [regex]::Match($workflow, '(?ms)^on:\s*.*?(?=^permissions:\s*$)').Value
     Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($onBlock)) -Message "Could not isolate the workflow trigger."
@@ -83,11 +99,14 @@ Invoke-Case "docs-only guard remains on product suites" {
         "g04-browser"
     )) {
         $job = Get-Job $jobId
-        Assert-True -Condition ($job -match 'needs: docs-only-classify') -Message "$jobId must observe the classifier."
+        Assert-True -Condition (Test-JobDependency $job "docs-only-classify") -Message "$jobId must observe the classifier."
         Assert-True -Condition ($job -match 'always\(\)') -Message "$jobId must still start when the classifier is skipped on main."
         Assert-True -Condition ($job -match '!cancelled\(\)') -Message "$jobId must not start after cancellation."
         Assert-True -Condition ($job -match [regex]::Escape($condition)) -Message "$jobId must fail closed to the full suite."
     }
+    $browser = Get-Job "g04-browser"
+    Assert-True -Condition (Test-JobDependency $browser "privacy") -Message "Journey evidence must depend on privacy."
+    Assert-True -Condition ($browser.Contains("if: always() && needs.privacy.result == 'success'")) -Message "Journey evidence uploads must require privacy success even after a failed journey."
     Assert-True -Condition ($workflow -notmatch 'windows-launcher-paths') -Message "Launcher path-filter job must be removed."
     Assert-True -Condition ($workflow -notmatch 'windows-launcher-safety') -Message "Launcher safety job must be removed."
     Assert-True -Condition ($workflow -notmatch 'launcher_ci_paths') -Message "Launcher path classifier must be removed."

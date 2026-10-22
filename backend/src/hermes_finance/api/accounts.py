@@ -183,7 +183,7 @@ def update_account_endpoint(
         if existing is not None and existing.id != account_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"external_code '{payload.external_code}' already exists",
+                detail="external_code already exists",
             )
     account = update_account(
         session,
