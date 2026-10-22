@@ -767,6 +767,46 @@ def test_generic_exceptions_do_not_echo_arbitrary_text(tmp_path, exception, text
     }
 
 
+@pytest.mark.parametrize("exception", [ValueError, LookupError])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Backup is not a valid SQLite database",
+        "ambiguous market-data candidates cannot be accepted automatically",
+        "t_invest mapping requires provider verification",
+        "T-Invest инструмент не совместим с типом «Акция».",
+    ],
+)
+@pytest.mark.parametrize("affix", ["", "prefix", "suffix"])
+def test_fixed_domain_messages_pass_without_allowing_input_echo(
+    tmp_path, exception, message, affix
+):
+    from fastapi.testclient import TestClient
+
+    app = _app(tmp_path)
+    marker = "SYNTHETIC_PRIVATE_INPUT"
+    text = message
+    if affix == "prefix":
+        text = f"{marker}: {message}"
+    elif affix == "suffix":
+        text = f"{message}: {marker}"
+
+    @app.get("/api/security-domain-message")
+    def fail():
+        raise exception(text)
+
+    with TestClient(app) as client:
+        response = client.get("/api/security-domain-message")
+    fallback = "Invalid request value" if exception is ValueError else "Resource not found"
+    assert response.status_code == (422 if exception is ValueError else 404)
+    assert response.json()["error"] == {
+        "code": "unprocessable" if exception is ValueError else "not_found",
+        "message": fallback if affix else message,
+        "details": [],
+    }
+    assert marker not in response.text
+
+
 def test_scenario_code_is_preserved_without_arbitrary_exception_text(tmp_path):
     from fastapi.testclient import TestClient
 
