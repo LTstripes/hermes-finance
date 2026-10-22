@@ -1233,16 +1233,23 @@ def test_overlap_missing_and_empty_trade_nominal_is_one_trade(db):
     assert "face_value_assumed" in row.flags
 
 
-def test_overlap_empty_and_explicit_1000_trade_nominal_remains_a_conflict(db):
-    def without_nominal(root):
-        root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
-        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
+@pytest.mark.parametrize("first_nominal", ["missing", "", "  "], ids=["missing", "empty", "blank"])
+def test_overlap_missing_or_empty_and_explicit_1000_trade_nominal_remains_a_conflict(
+    db, first_nominal
+):
+    def first_copy(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        if first_nominal == "missing":
+            trade.attrib.pop("nominal", None)
+        else:
+            trade.set("nominal", first_nominal)
+        root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal", None)
 
     def explicit_nominal(root):
         root.find(".//m:Details[@trade_no]", NS).set("nominal", "1000")
         root.find(f".//m:Details[@ISIN1='{BOND}']", NS).attrib.pop("nominal")
 
-    save(db, mutate=without_nominal)
+    save(db, mutate=first_copy)
     save(db, mutate=explicit_nominal, marker="explicit-nominal")
     row = by_isin(read(db))[BOND].months[0]
     # An explicit source fact differs from an assumption even at the same value.
@@ -1264,6 +1271,36 @@ def test_overlap_missing_and_invalid_trade_nominal_remains_a_conflict(db):
     row = by_isin(read(db))[BOND].months[0]
     assert "overlapping_trade_conflict" in row.flags
     assert row.buys_cost_kopecks is None
+
+
+@pytest.mark.parametrize(
+    "trade_nominal", ["", "1000", "invalid"], ids=["empty", "explicit", "invalid"]
+)
+def test_non_overlap_trade_nominal_empty_explicit_and_invalid(db, trade_nominal):
+    def mutate(root):
+        root.find(".//m:Details[@trade_no]", NS).set("nominal", trade_nominal)
+
+    save(db, mutate=mutate)
+    before = snapshot(db)
+    row = by_isin(read(db))[BOND].months[0]
+    if trade_nominal == "invalid":
+        assert (
+            row.buys_cost_kopecks
+            is row.sells_proceeds_kopecks
+            is row.price_effect_kopecks
+            is row.total_kopecks
+            is row.capital_base_kopecks
+            is row.return_percent
+            is None
+        )
+        assert "trade_nkd_basis_unknown" in row.flags
+        assert "face_value_assumed" not in row.flags
+    else:
+        assert row.buys_cost_kopecks == 102_500
+        assert row.total_kopecks == 12_500
+        assert "trade_nkd_basis_unknown" not in row.flags
+        assert ("face_value_assumed" in row.flags) == (trade_nominal == "")
+    assert snapshot(db) == before
 
 
 @pytest.mark.parametrize(
