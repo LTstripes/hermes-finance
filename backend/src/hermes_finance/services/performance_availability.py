@@ -77,7 +77,7 @@ _LEGACY_BOUNDARY_FLOW_TYPES = ("deposit", "withdrawal")
 _RECONCILIATION_COST_FLOW_TYPES = ("tax", "commission")
 _REALIZED_INCOME_FLOW_TYPES = ("coupon", "dividend")
 _CALENDAR_PAYOUT_FLOW_TYPES = ("coupon", "dividend")
-_TWRR_ONLY_REASON = AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value
+_BOUNDARY_ORDER_UNKNOWN = AvailabilityReasonCode.VALUATION_BOUNDARY_ORDER_UNKNOWN.value
 
 
 def _coerce_scope(scope: PerformanceScope | str) -> PerformanceScope:
@@ -102,6 +102,76 @@ def _validate_request(
         raise ValueError("account_id is required for account performance scope")
     if scope is PerformanceScope.PORTFOLIO and account_id is not None:
         raise ValueError("account_id must be omitted for portfolio performance scope")
+
+
+def xirr_boundary_flow_inclusions(
+    session: Session,
+    *,
+    scope: PerformanceScope,
+    account_id: int | None,
+    flows: ExternalFlowCoverage,
+    opening: ValuationBoundaryEvidence,
+    closing: ValuationBoundaryEvidence,
+    performance_currency: str,
+) -> tuple[dict[int, bool], set[str]]:
+    """Resolve only flows on the consumed endpoints, without interior TWRR gates.
+
+    A current explicit observation must identify the consumed endpoint value as
+    PRE or POST. An unrelated value, a stale capture or ambiguous same-day targets
+    cannot prove inclusion. One matching side suffices; a PRE/POST pair is optional.
+    """
+    targets = _external_flow_boundary_targets(
+        session, flows=flows, scope=scope, account_id=account_id
+    )
+    inclusions = {}
+    reasons = set()
+    for endpoint in (opening, closing):
+        boundary_targets = [t for t in targets if t.event_date == endpoint.requested_date]
+        if not boundary_targets or not endpoint.is_available:
+            continue
+        point = endpoint.point
+        assert point is not None and point.total_value is not None
+        if len(boundary_targets) != 1 or boundary_targets[0].invalid_group_state:
+            reasons.add(_BOUNDARY_ORDER_UNKNOWN)
+            continue
+        target = boundary_targets[0]
+        signature = material_signature_for_boundary(
+            session,
+            scope=scope.value,
+            account_id=account_id,
+            external_flow_id=target.flow_ids[0] if target.boundary_group_id is None else None,
+            boundary_group_id=target.boundary_group_id,
+        )
+        relations = {
+            row.relation
+            for row in _observed_points_for_target(
+                session, target=target, scope=scope, account_id=account_id
+            )
+            if signature is not None
+            and row.material_signature == signature
+            and row.observed_date == endpoint.requested_date
+            and row.performance_currency == performance_currency
+            and row.coverage_status == CoverageStatus.COMPLETE.value
+            and row.quality == ValuationQuality.EXACT.value
+            and row.total_value_kopecks == point.total_value.kopecks
+            and row.relation
+            in {
+                ValuationBoundaryRelation.PRE_EXTERNAL_FLOW.value,
+                ValuationBoundaryRelation.POST_EXTERNAL_FLOW.value,
+            }
+        }
+        if len(relations) != 1:
+            reasons.add(_BOUNDARY_ORDER_UNKNOWN)
+            continue
+        relation = next(iter(relations))
+        # Opening POST already includes the flow. Closing PRE excludes it.
+        included = relation == (
+            ValuationBoundaryRelation.PRE_EXTERNAL_FLOW.value
+            if endpoint.role == "opening"
+            else ValuationBoundaryRelation.POST_EXTERNAL_FLOW.value
+        )
+        inclusions.update((flow_id, included) for flow_id in target.flow_ids)
+    return inclusions, reasons
 
 
 def _normalise_currency(value: object) -> str:
@@ -1065,20 +1135,20 @@ def _observed_boundary_for_target(
     if len(pre_rows) == 1:
         pre = to_observed_valuation_evidence(pre_rows[0])
     elif pre_ambiguous:
-        reasons.add(_TWRR_ONLY_REASON)
+        reasons.add(_BOUNDARY_ORDER_UNKNOWN)
     if len(post_rows) == 1:
         post = to_observed_valuation_evidence(post_rows[0])
     elif post_ambiguous:
-        reasons.add(_TWRR_ONLY_REASON)
+        reasons.add(_BOUNDARY_ORDER_UNKNOWN)
 
     if target.invalid_group_state:
-        reasons.add(_TWRR_ONLY_REASON)
+        reasons.add(_BOUNDARY_ORDER_UNKNOWN)
 
     for evidence in (pre, post):
         if evidence is None:
             continue
         if evidence.observed_date != target.event_date:
-            reasons.add(_TWRR_ONLY_REASON)
+            reasons.add(_BOUNDARY_ORDER_UNKNOWN)
         if evidence.performance_currency != performance_currency:
             reasons.add(AvailabilityReasonCode.CURRENCY_CONVERSION_INCOMPLETE.value)
         if evidence.coverage is not CoverageStatus.COMPLETE:
@@ -1097,7 +1167,7 @@ def _observed_boundary_for_target(
         if derived.point is not None and derived.point.status is ValuationPointStatus.AVAILABLE:
             # A monthly/date-only observation on the flow date does not prove
             # whether it is pre- or post-flow under the accepted contract.
-            reasons.add(_TWRR_ONLY_REASON)
+            reasons.add(_BOUNDARY_ORDER_UNKNOWN)
         else:
             reasons.add(AvailabilityReasonCode.VALUATION_BOUNDARY_MISSING.value)
             reasons.update(derived.reason_codes)
@@ -1153,7 +1223,7 @@ def _twrr_boundary_reasons(
     reasons: set[str] = set()
     for target_evidence in evidence:
         if same_day_target_counts[target_evidence.event_date] > 1:
-            reasons.add(_TWRR_ONLY_REASON)
+            reasons.add(_BOUNDARY_ORDER_UNKNOWN)
         reasons.update(target_evidence.reason_codes)
     return tuple(evidence), reasons
 
@@ -1321,9 +1391,9 @@ def _portfolio_transfer_safety(
         }
         if same_day_boundary_dates:
             if same_day_boundary_dates & xirr_required_dates:
-                xirr_reasons.add(_TWRR_ONLY_REASON)
+                xirr_reasons.add(_BOUNDARY_ORDER_UNKNOWN)
             if same_day_boundary_dates & twrr_required_dates:
-                twrr_reasons.add(_TWRR_ONLY_REASON)
+                twrr_reasons.add(_BOUNDARY_ORDER_UNKNOWN)
 
         if transit_dates:
             if transit_dates & xirr_required_dates:
@@ -1440,8 +1510,19 @@ def performance_availability_for_interval(
     xirr_reasons.update(opening.reason_codes)
     xirr_reasons.update(closing.reason_codes)
     xirr_reasons.update(flows.reason_codes)
-    # Date-only boundary ordering is a TWRR-only limitation under #145 v2.
-    xirr_reasons.discard(_TWRR_ONLY_REASON)
+    # Interior date-only ordering remains TWRR-specific. Endpoint flows also
+    # need proof of inclusion in the actual opening/closing operands.
+    xirr_reasons.discard(_BOUNDARY_ORDER_UNKNOWN)
+    _, endpoint_flow_reasons = xirr_boundary_flow_inclusions(
+        session,
+        scope=normalized_scope,
+        account_id=account_id,
+        flows=flows,
+        opening=opening,
+        closing=closing,
+        performance_currency=performance_currency,
+    )
+    xirr_reasons.update(endpoint_flow_reasons)
 
     twrr_targets: tuple[_BoundaryTarget, ...] | None = None
     if normalized_scope is PerformanceScope.PORTFOLIO:

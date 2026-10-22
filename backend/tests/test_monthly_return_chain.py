@@ -234,3 +234,22 @@ def test_insufficient_boundaries_return_unavailable_metrics(boundaries):
 def test_malformed_inputs_are_rejected(boundaries, flows, error):
     with pytest.raises(error):
         calculate_monthly_return_chain(boundaries, flows)
+
+
+@pytest.mark.parametrize("negative_months", [1, 2])
+def test_negative_dietz_factor_cannot_create_a_positive_chain(negative_months):
+    flows = [(date(2026, 2, 27), 30_000, "confirmed")]
+    if negative_months == 2:
+        flows.append((date(2026, 3, 30), 30_000, "confirmed"))
+    result = calculate_monthly_return_chain(
+        [(START, 10_000), (END, 10_000), (date(2026, 3, 31), 10_000)], flows
+    )
+    for row in result.months[:negative_months]:
+        assert row.modified_dietz_return < -1
+        assert row.growth_kopecks == -30_000
+        assert row.reason_codes == ("negative_dietz_factor",)
+    assert result.period.chained_return is None
+    assert result.period.chain_reason_codes == ("negative_dietz_factor",)
+    assert result.period.growth_kopecks == -30_000 * negative_months
+    assert not result.period.growth_reason_codes
+    assert "negative_dietz_factor" not in result.period.xirr_reason_codes

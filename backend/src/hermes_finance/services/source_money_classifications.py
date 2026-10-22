@@ -24,18 +24,45 @@ def source_reference(intake_id, row):
 
 
 def default_classification(operation, narrative, kind, amount):
-    # Keep S1 trade/commission precedence and reuse the established XML patterns.
+    # Parsed trade/commission types and explicit cash directions precede income words.
     if kind == "commission":
         return "fee"
-    if kind == "settlement" or operation == "НКД по сделке":
+    if kind == "settlement":
         return "trade_settlement"
-    pattern = _pattern(operation, narrative)
-    if pattern == "coupon_paid_candidate":
-        return "coupon"
-    if pattern == "account_cash_in_candidate":
-        return "external_deposit"
     op = operation.casefold().strip()
     text = f"{operation} {narrative}".casefold()
+    if op == "внесено/выведено по распоряжению клиента":
+        return "external_deposit" if Decimal(amount) > 0 else "external_withdrawal"
+    if op == "внесено по распоряжению клиента":
+        return "external_deposit"
+    if op == "выведено по распоряжению клиента":
+        return "external_withdrawal"
+    if re.match(r"^(?:вывод|выведено|withdrawal)(?:\b|$)", op):
+        return "external_withdrawal"
+    if re.match(r"^(?:пополнение|внесено|deposit)(?:\b|$)", op):
+        return "external_deposit"
+    if op in {"внутренний перевод", "internal transfer"}:
+        return "internal_transfer"
+    if op == "перевод" and re.fullmatch(r"в АО [^\r\n]+", narrative):
+        return "external_withdrawal"
+    # Bank words must accompany a direction; arbitrary transfers stay unknown.
+    for value in (op, narrative.casefold().strip()):
+        if re.fullmatch(r"(?:перевод )?из .+банк.*", value) or value == "incoming bank transfer":
+            return "external_deposit"
+        if re.fullmatch(r"(?:перевод )?в .+банк.*", value) or value == "outgoing bank transfer":
+            return "external_withdrawal"
+    pattern = _pattern(operation, narrative)
+    if pattern == "account_cash_in_candidate":
+        return "external_deposit"
+    # Accrued interest on a trade is settlement cash, never coupon income.
+    if re.search(r"\bнкд по сделке\b", text):
+        return "trade_settlement"
+    if re.search(r"\bнкд\b", text):
+        return "unknown"
+    if "расчеты по сделке" in text or "расчёты по сделке" in text or "deal settlement" in text:
+        return "trade_settlement"
+    if pattern == "coupon_paid_candidate":
+        return "coupon"
     if "ндфл" in text:
         return "tax"
     if any(word in text for word in ("комисси", "тариф", "commission")):
@@ -44,23 +71,6 @@ def default_classification(operation, narrative, kind, amount):
         return "coupon"
     if "дивиденд" in text or "dividend" in text:
         return "dividend"
-    if op == "внесено/выведено по распоряжению клиента":
-        return "external_deposit" if Decimal(amount) > 0 else "external_withdrawal"
-    if op == "внесено по распоряжению клиента":
-        return "external_deposit"
-    if op == "выведено по распоряжению клиента":
-        return "external_withdrawal"
-    if op == "перевод":
-        if re.fullmatch(r"в АО [^\r\n]+", narrative):
-            return "external_withdrawal"
-    # Bank words must accompany a direction; arbitrary transfers stay unknown.
-    for value in (op, narrative.casefold().strip()):
-        if re.fullmatch(r"(?:перевод )?из .+банк.*", value) or value == "incoming bank transfer":
-            return "external_deposit"
-        if re.fullmatch(r"(?:перевод )?в .+банк.*", value) or value == "outgoing bank transfer":
-            return "external_withdrawal"
-    if "расчеты по сделке" in text or "расчёты по сделке" in text or "deal settlement" in text:
-        return "trade_settlement"
     return "unknown"
 
 

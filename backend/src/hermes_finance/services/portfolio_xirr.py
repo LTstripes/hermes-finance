@@ -38,6 +38,7 @@ from hermes_finance.persistence import (
 from hermes_finance.services.historical_xirr_evidence import historical_xirr_evidence
 from hermes_finance.services.performance_availability import (
     performance_availability_for_interval,
+    xirr_boundary_flow_inclusions,
 )
 
 
@@ -94,6 +95,7 @@ def _unavailable(
 
 
 def _cash_flows_from_availability(
+    session: Session,
     result: PerformanceAvailability,
 ) -> tuple[XirrCashFlow, ...] | tuple[str, ...]:
     """Translate already-classified evidence into investor-perspective flows."""
@@ -105,6 +107,17 @@ def _cash_flows_from_availability(
     if closing is None or closing.total_value is None or not result.closing_valuation.is_available:
         return (AvailabilityReasonCode.CLOSING_VALUATION_MISSING.value,)
 
+    inclusions, reasons = xirr_boundary_flow_inclusions(
+        session,
+        scope=result.scope,
+        account_id=result.account_id,
+        flows=result.external_flows,
+        opening=result.opening_valuation,
+        closing=result.closing_valuation,
+        performance_currency=result.performance_currency,
+    )
+    if reasons:
+        return tuple(sorted(reasons))
     return _cash_flows_from_evidence(
         start_date=result.start_date,
         end_date=result.end_date,
@@ -113,6 +126,7 @@ def _cash_flows_from_availability(
         flows=(
             (flow.event_date, flow.classification, flow.boundary_amount_kopecks)
             for flow in result.external_flows.flows
+            if inclusions.get(flow.id, True)
         ),
     )
 
@@ -205,7 +219,7 @@ def _xirr_for_scope_interval(
             reason_codes=("source_native_exact_basis_unproven",),
         )
     if availability.xirr.is_available:
-        cash_flows = _cash_flows_from_availability(availability)
+        cash_flows = _cash_flows_from_availability(session, availability)
     else:
         historical = historical_xirr_evidence(
             session, start_date=start_date, end_date=end_date, scope=scope, account_id=account_id

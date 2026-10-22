@@ -5263,8 +5263,13 @@ account/holding/kind/settlement date, the affected interval remains
 XIRR prerequisites require trusted opening and closing valuations, complete
 historical membership, complete dated external-flow evidence, no unresolved
 transfer identity and complete conversion into the performance currency.
-Date-only same-day ordering is not an XIRR blocker under the accepted #145 v2
-contract.
+Interior date-only ordering is not an XIRR blocker. A start/end-date external
+flow requires known inclusion in the consumed valuation; otherwise XIRR is NULL
+with `not_computable_valuation_boundary_order_unknown`. A current, exact, complete,
+same-scope/currency/date PRE or POST observation must match the consumed endpoint
+value unambiguously. One side suffices. Opening POST and closing PRE flows are
+excluded from the investor schedule; opening PRE and closing POST flows are
+included once. Interior dates do not require TWRR PRE/POST observations.
 
 Exact TWRR additionally requires an explicit observed valuation boundary around
 every external flow. R08-03A persists an observed point with an exact
@@ -5442,8 +5447,8 @@ not_computable_xirr_convergence_failed
 not_computable_xirr_root_ambiguity
 ```
 
-Same-day ordering remains a TWRR-only limitation under the accepted #145 v2
-contract; it does not block XIRR by itself.
+Interior same-day ordering remains TWRR-specific; endpoint-flow inclusion follows
+the [XIRR prerequisites](#c7-r08-01c-performance-availability-12-xirr-and-twrr-prerequisites).
 
 <a id="c7-r08-03-twrr-contract-recon-32"></a>
 ### Exact period TWRR mathematics
@@ -5496,7 +5501,7 @@ The following are `not_computable` for TWRR. Existing R08-01C reasons propagate 
 | Unresolved or incomplete transfer identity | `not_computable_transfer_identity_unresolved` | Blocks both metrics for the affected scope. |
 | Foreign flow/component without an accepted dated conversion | `not_computable_currency_conversion_incomplete` | Blocks both metrics. |
 | Interior external flow has no trusted observed valuation on its date | `not_computable_valuation_boundary_missing` | XIRR may remain available when its own evidence is complete. |
-| A date-only valuation exists on the flow date but no explicit pre/post-flow relation proves order | `not_computable_valuation_boundary_order_unknown` | XIRR may remain available; this is TWRR-specific. |
+| A date-only valuation exists on the flow date but no explicit pre/post-flow relation proves order | `not_computable_valuation_boundary_order_unknown` | Interior XIRR may remain available; start/end flow inclusion must be known. |
 | More than one external flow | Every flow/group must satisfy the boundary rule; one missing or unordered boundary blocks the whole TWRR interval. | XIRR still needs only complete dated flow evidence. |
 | Fully linked in-scope transfer at portfolio scope | No TWRR boundary reason from that transfer. | It is internal at portfolio scope, but external at each affected account scope. |
 | Flat or negative return with otherwise valid evidence | No availability failure solely for a zero or negative return. | The numerical implementation preserves the value rather than downgrade it. |
@@ -5730,7 +5735,13 @@ The separate approximate monthly Modified Dietz/period kernel is
 `calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints
 and one dated schedule; the approximate chained return uses each month’s own
 monthly estimate. A missing monthly endpoint withholds the chain while independently
-known outer-period growth/XIRR may remain available. Rates are Decimal fraction
+known outer-period growth/XIRR may remain available when statements continuously
+cover the dated flow interval. Coverage uses the union of statement date ranges,
+independently of valuation availability; a gap makes affected contributions,
+withdrawals, growth and XIRR NULL with `flow_coverage_gap` and `unknown_flow`.
+Independent covered segments remain available. Any Modified Dietz factor `1+r<0`
+withholds the geometric chain with `negative_dietz_factor`, preserving the monthly
+estimate and known growth; a factor exactly zero remains allowed. Rates are Decimal fraction
 strings and money is integer kopecks in this endpoint. Results are
 `authority=provisional`, `financial_authority=none`, `approximate=true` and grant
 no financial Apply, Close, source completeness or exact TWRR authority.
@@ -5754,7 +5765,10 @@ Save captures every Money occurrence in the same reserved transaction as its
 observations. Deterministic rules reuse the existing original-bound money candidate
 patterns: client/bank deposits and withdrawals are external, coupons/dividends are
 income, commissions/tariffs are fees, НДФЛ is tax, settlements/НКД по сделке are
-trade settlement. Everything else is unknown, never a guessed flow. Defaults have
+trade settlement. Explicit withdrawal/deposit/transfer semantics take precedence
+over generic coupon/dividend words. Refined НКД по сделке names remain settlement;
+unrecognized НКД variants are unknown rather than coupon income. Everything else
+is unknown, never a guessed flow. Defaults have
 `origin=default_rule,status=assumed`. Re-upload never duplicates occurrences or
 replaces an existing classification. Exact original re-save with a new request ID
 can capture missing legacy rows; acknowledged same-request replay stays read-only.
@@ -5789,6 +5803,11 @@ Missing classifications on pre-migration intakes produce
 rows as zero. An unreadable or native-scope-ambiguous original marks every
 month it covers as having unknown flows: affected month, period and segment
 contributions/withdrawals, growth and rates remain NULL with `unknown_flow`.
+Financial parser blockers (`unparsed_source_rows`, `unknown_section`, unsupported
+Transfers/UFSR and unclassified position rows) likewise mark the document’s covered
+months and containing totals as unknown, retaining each explicit blocker code.
+Non-financial statuses do not block returns; neighbouring complete documents stay
+independently usable.
 Currency checks in these source-return readers and shared Money validation normalize
 case and surrounding whitespace; legacy `RUR` is the same ruble currency as `RUB`,
 including persisted classification comparisons and overlap signatures. Native saved
