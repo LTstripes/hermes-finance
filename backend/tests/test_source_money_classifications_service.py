@@ -454,3 +454,34 @@ def test_legacy_resave_parser_count_drift_is_typed_409_and_atomic(db, monkeypatc
     assert response.json()["error"]["message"] == "source_intake_parser_revision_changed"
     assert not saved_rows(db, intake)
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "operation,narrative,amount,expected",
+    [
+        ("Выведено по распоряжению Клиента", "Вывод дивидендов", "-50", "external_withdrawal"),
+        ("Вывод дивидендов", "Synthetic coupon", "-50", "external_withdrawal"),
+        ("Внесено по распоряжению Клиента", "Купон", "50", "external_deposit"),
+        ("Перевод", "в АО Synthetic дивиденды банк", "-50", "external_withdrawal"),
+        ("Перевод из Synthetic Банк", "Купон", "50", "external_deposit"),
+        ("Внутренний перевод", "Дивиденды", "50", "internal_transfer"),
+        ("НКД по сделке 123 Synthetic", "Купон", "-5", "trade_settlement"),
+        (" НКД ПО СДЕЛКЕ: Synthetic ", "Купон", "-5", "trade_settlement"),
+        ("Перевод", "НКД по сделке Synthetic coupon", "-5", "trade_settlement"),
+        ("Расчёты по сделке", "Synthetic НКД купон", "-5", "trade_settlement"),
+        ("Расчеты по сделке", "Synthetic НКД", "-5", "trade_settlement"),
+        ("Deal settlement", "Synthetic НКД coupon", "-5", "trade_settlement"),
+        ("НКД Synthetic", "Купон", "5", "unknown"),
+        ("Купон", "Synthetic НКД correction", "5", "unknown"),
+        (
+            "Перевод",
+            "погашение купона Synthetic (облигации Synthetic НДФЛ) д.ф.15.04.30",
+            "5",
+            "coupon",
+        ),
+    ],
+)
+def test_explicit_cash_and_nkd_semantics_precede_generic_income(
+    operation, narrative, amount, expected
+):
+    assert default_classification(operation, narrative, "unsupported", amount) == expected

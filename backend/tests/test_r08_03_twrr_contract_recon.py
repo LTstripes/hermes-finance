@@ -223,7 +223,9 @@ def test_same_day_endpoint_flow_has_unknown_order_without_pre_post_relation(
             account_id=account_id,
         )
 
-        assert result.xirr.is_available
+        assert result.xirr.availability is PerformanceAvailabilityStatus.NOT_COMPUTABLE
+        assert not result.xirr.is_available
+        assert result.xirr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert not result.twrr.is_available
         assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert result.opening_valuation.point is not None

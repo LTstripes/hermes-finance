@@ -717,8 +717,10 @@ def test_endpoint_external_flow_is_not_computable_without_order_proof(
             scope=PerformanceScope.ACCOUNT,
             account_id=fixture.account_ids[0],
         )
-        assert r08.xirr.is_available
+        assert not r08.xirr.is_available
+        assert r08.xirr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert not r08.twrr.is_available
+        assert r08.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert not result.is_available
         assert result.quality.value == "unavailable"
         assert result.value is None

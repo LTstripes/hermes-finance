@@ -255,7 +255,7 @@ def test_dividend_then_owner_withdrawal_enters_xirr_once_at_boundary_amount(
         boundary = _external_withdrawal(session, february_id, account_id, "8700.00")
 
         result = _availability(session, january_id, february_id, account_id)
-        cash_flows = _cash_flows_from_availability(result)
+        cash_flows = _cash_flows_from_availability(session, result)
 
         assert result.xirr.is_available
         assert [flow.id for flow in result.external_flows.flows] == [boundary.id]
@@ -289,7 +289,7 @@ def test_direct_dividend_uses_owner_receipt_not_gross_or_internal_tax(
         boundary = _external_withdrawal(session, february_id, account_id, "8700.00")
 
         result = _availability(session, january_id, february_id, account_id)
-        cash_flows = _cash_flows_from_availability(result)
+        cash_flows = _cash_flows_from_availability(session, result)
         tax_rows = list(
             session.scalars(select(InvestmentCashFlow).where(InvestmentCashFlow.flow_type == "tax"))
         )

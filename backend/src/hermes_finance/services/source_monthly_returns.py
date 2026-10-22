@@ -26,6 +26,35 @@ from hermes_finance.services.source_money_classifications import source_referenc
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
+# These structural gaps can hide financial events even when parsed Money is empty.
+# Endpoint-only limitations and non-financial intake statuses are separate.
+_FINANCIAL_COMPLETENESS_BLOCKERS = {
+    "unparsed_source_rows",
+    "unknown_section",
+    "4_Transfers_unsupported",
+    "5_UFSR_unsupported",
+    "position_row_unclassified",
+}
+_FLOW_REASONS = _FINANCIAL_COMPLETENESS_BLOCKERS | {
+    "unknown_flow",
+    "currency_unsupported",
+    "flow_coverage_gap",
+}
+
+
+def _flow_coverage_complete(sources, start, end):
+    """Check the union of statement date ranges, independent of valuations."""
+    cursor = start
+    for _, covered_from, covered_to, _, _ in sorted(sources, key=lambda source: source[1]):
+        if covered_to < cursor:
+            continue
+        if covered_from > cursor:
+            return False
+        if covered_to >= end:
+            return True
+        cursor = covered_to + timedelta(days=1)
+    return False
+
 
 @dataclass(frozen=True)
 class SourceReturnGap:
@@ -262,6 +291,7 @@ def read_monthly_returns(
     gaps = []
     money = defaultdict(list)
     uncertain_source_months = set()
+    source_flow_reasons = defaultdict(set)
     for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
         try:
             aliases = json.loads(original.native_accounts_json)
@@ -274,6 +304,20 @@ def read_monthly_returns(
         unknown_source_flows = False
         try:
             view = source_intake.read_intake(session, original.id)
+            document = view["document"]
+            financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
+                (*document.get("syntax_blockers", []), *document.get("endpoint_blockers", []))
+            )
+            covered_month = start.replace(day=1)
+            while covered_month <= end:
+                if financial_blockers:
+                    uncertain_source_months.add(covered_month)
+                    source_flow_reasons[covered_month].update(financial_blockers)
+                    gaps.extend(
+                        SourceReturnGap(code, original.id, covered_month)
+                        for code in sorted(financial_blockers)
+                    )
+                covered_month = _next_month(covered_month)
             if _native_scope(view["document"]) != {source_account}:
                 gaps.append(SourceReturnGap("native_source_scope_ambiguous", original.id))
                 unknown_source_flows = True
@@ -389,11 +433,21 @@ def read_monthly_returns(
         }
     }
     rows = []
-    month = min(source[1] for source in sources).replace(day=1)
+    first = min(source[1] for source in sources)
+    month = first.replace(day=1)
     last = max(source[2] for source in sources)
+    period_uncertain_months = uncertain_months.copy()
     previous_closing = None
     while month <= last:
         end = _month_end(month)
+        if not _flow_coverage_complete(sources, month, end):
+            uncertain_months.add(month)
+            source_flow_reasons[month].add("flow_coverage_gap")
+        # Calendar-edge months can be incomplete while the reported period has
+        # complete Money coverage. Only gaps inside its actual date bounds
+        # invalidate period flows; valuation availability is independent.
+        if not _flow_coverage_complete(sources, max(month, first), min(end, last)):
+            period_uncertain_months.add(month)
         relevant = [source for source in sources if source[1] <= month and source[2] >= end]
 
         def endpoint(index, matches):
@@ -422,6 +476,7 @@ def read_monthly_returns(
                     *calculated.reason_codes,
                     "unknown_flow",
                     *(("currency_unsupported",) if month in currency_months else ()),
+                    *sorted(source_flow_reasons[month]),
                 ),
             )
         flags = list(calculated.reason_codes)
@@ -441,7 +496,7 @@ def read_monthly_returns(
         )
         previous_closing = closing
         month = _next_month(month)
-    period = _period_totals(rows, schedule, uncertain_months)
+    period = _period_totals(rows, schedule, period_uncertain_months)
     groups = []
     current = []
     for row in rows:
@@ -459,7 +514,7 @@ def read_monthly_returns(
             start=group[0].result.opening_date,
             end=group[-1].result.closing_date,
             partial_segment=partial,
-            **asdict(_period_totals(group, schedule, uncertain_months)),
+            **asdict(_period_totals(group, schedule, period_uncertain_months)),
         )
         for group in groups
     ]
@@ -496,7 +551,7 @@ def _period_totals(rows, schedule, uncertain_months):
         (row.result.closing_date, row.result.closing_kopecks) for row in rows
     ]
     period = calculate_monthly_return_chain(boundaries, schedule).period
-    chain_reasons = tuple(
+    chain_reasons = list(
         dict.fromkeys(reason for row in rows for reason in row.result.reason_codes)
     )
     with localcontext() as ctx:
@@ -505,18 +560,21 @@ def _period_totals(rows, schedule, uncertain_months):
         chain = Decimal(1)
         for row in rows:
             if row.result.modified_dietz_return is not None:
-                chain *= 1 + row.result.modified_dietz_return
+                factor = 1 + row.result.modified_dietz_return
+                if factor < 0:
+                    if "negative_dietz_factor" not in chain_reasons:
+                        chain_reasons.append("negative_dietz_factor")
+                else:
+                    chain *= factor
         chained_return = None if chain_reasons else chain - 1
     period = replace(
         period,
         chained_return=chained_return,
-        chain_reason_codes=chain_reasons,
+        chain_reason_codes=tuple(chain_reasons),
         missing_endpoint=any(row.result.missing_endpoint for row in rows),
     )
     if any(row.result.closing_date.replace(day=1) in uncertain_months for row in rows):
-        flow_reasons = tuple(
-            reason for reason in chain_reasons if reason in {"unknown_flow", "currency_unsupported"}
-        )
+        flow_reasons = tuple(reason for reason in chain_reasons if reason in _FLOW_REASONS)
         period = replace(
             period,
             contributions_kopecks=None,

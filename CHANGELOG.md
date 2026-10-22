@@ -20,6 +20,10 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 
 - Face-value test follow-up to [#924](https://github.com/LTstripes/hermes-finance/pull/924): the overlap conflict test now covers missing, empty and blank trade nominal against explicit `1000`, and a non-overlap test pins option A (empty nominal assumes 1000 with `face_value_assumed`, explicit `1000` uses the strict rule, invalid nominal is withheld without fallback). Tests only, synthetic data.
 
+### Fixed
+
+- Astra audit HIGH fixes 1-5: boundary-flow XIRR inclusion, statement flow-coverage continuity, financial parser blockers, cash/NKD classification precedence, and negative Modified Dietz chain factors; synthetic regression coverage.
+
 ### Known limitations
 
 - The source-return tests use synthetic data only; CI success does not establish Owner-real numerical UAT or financial authority. The #917 page is synthetic-tested UI under the same limit. Known limitation: non-dict proof claims raise `AttributeError`.

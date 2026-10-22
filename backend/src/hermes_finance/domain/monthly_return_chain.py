@@ -113,6 +113,8 @@ def _month(
             reasons.append("non_positive_dietz_denominator")
         else:
             rate = Decimal(growth * days) / Decimal(capital_days)
+            if 1 + rate < 0:
+                reasons.append("negative_dietz_factor")
     return MonthlyReturnRow(
         opening_date=start,
         closing_date=end,
@@ -207,7 +209,7 @@ def calculate_monthly_return_chain(
         )
         chain = Decimal(1)
         for month in months:
-            if month.modified_dietz_return is None:
+            if month.modified_dietz_return is None or 1 + month.modified_dietz_return < 0:
                 break
             chain *= 1 + month.modified_dietz_return
         chain_reasons = tuple(

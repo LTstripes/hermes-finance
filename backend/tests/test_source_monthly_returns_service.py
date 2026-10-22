@@ -271,15 +271,24 @@ def test_api_available_rates_are_decimal_strings(db):
     assert Decimal(body["months"][0]["modified_dietz_return"]) == Decimal("0.1211")
 
 
-def test_missing_month_preserves_period_outer_endpoint_calculation(db):
-    april, apr = save_month(db, candidate_count=0)
-    june, jun = save_month(db, 6, beginning="12000", closing="14000", candidate_count=0)
+def test_missing_statement_blocks_period_flows_but_preserves_independent_segments(db):
+    april, apr = save_month(db, beginning="9000", closing="9000", candidate_count=0)
+    june, jun = save_month(db, 6, beginning="19000", closing="19000", candidate_count=0)
     result = read(db, {april: apr, june: jun})
     assert result.months[1].result.missing_endpoint
     assert result.period.chained_return is None
-    assert result.period.growth_kopecks == 500_000
-    assert result.period.xirr_period_return is not None
+    assert result.period.growth_kopecks is None
+    assert result.period.contributions_kopecks is result.period.withdrawals_kopecks is None
+    assert result.period.xirr_period_return is result.period.xirr_annualized_return is None
+    for reasons in (result.period.growth_reason_codes, result.period.xirr_reason_codes):
+        assert "flow_coverage_gap" in reasons and "unknown_flow" in reasons
     assert result.period.missing_endpoint
+    assert len(result.segments) == 2
+    for segment in result.segments:
+        assert segment.growth_kopecks == 0
+        assert segment.contributions_kopecks == segment.withdrawals_kopecks == 0
+        assert segment.xirr_period_return == 0
+    assert result.months[1].result.contributions_kopecks is None
 
 
 def test_overlap_conflicting_endpoints_are_missing_not_arbitrarily_selected(db):
@@ -741,3 +750,210 @@ def test_overlapping_rur_and_rub_deposits_are_one_flow(db):
     assert not {"currency_unsupported", "invalid_money_row"}.intersection(
         gap.code for gap in result.gaps
     )
+
+
+@pytest.mark.parametrize("second_start,has_gap", [(15, False), (16, True)])
+def test_flow_coverage_uses_date_union_separately_from_monthly_values(db, second_start, has_gap):
+    xml_root = ET.fromstring(provisional_xml(candidate_count=0))
+    for index, period in enumerate(("01.04.30-14.05.30", f"{second_start}.05.30-30.06.30")):
+        xml_root.set("synthetic_marker", str(index))
+        xml = ET.tostring(xml_root, encoding="utf-8")
+        with db.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=xml,
+                filename=f"Брокерский 1234567 ({period}).xml",
+                request_id=f"coverage-union-{index}",
+            )
+    result = read(db)
+    assert result.period.missing_endpoint
+    assert result.period.chained_return is None
+    assert result.months[0].result.opening_kopecks is not None
+    assert result.months[-1].result.closing_kopecks is not None
+    if has_gap:
+        assert result.period.growth_kopecks is None
+        assert result.period.xirr_period_return is None
+        assert result.period.contributions_kopecks is None
+        assert "flow_coverage_gap" in result.period.xirr_reason_codes
+        assert "flow_coverage_gap" in result.months[1].flags
+    else:
+        assert result.period.growth_kopecks == 121_100
+        assert result.period.xirr_period_return is not None
+        assert result.period.contributions_kopecks == 0
+        assert "flow_coverage_gap" not in {gap.code for gap in result.gaps}
+
+
+@pytest.mark.parametrize(
+    ("periods", "has_gap"),
+    [
+        (("10.04.30-20.06.30",), False),
+        (("10.04.30-14.05.30", "15.05.30-20.06.30"), False),
+        (("10.04.30-14.05.30", "16.05.30-20.06.30"), True),
+    ],
+)
+def test_partial_calendar_edges_do_not_invalidate_covered_period_flows(db, periods, has_gap):
+    for index, period in enumerate(periods):
+        xml = provisional_xml(candidate_count=1 if index == 0 else 0)
+        with db.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=xml,
+                filename=f"Брокерский 1234567 ({period}).xml",
+                request_id=f"partial-period-{index}",
+            )
+    before = snapshot(db)
+    result = read(db)
+    assert len(result.months) == 3
+    assert all(row.result.missing_endpoint for row in result.months)
+    # The calendar months at both edges still lack full-month flow coverage.
+    for row in (result.months[0], result.months[-1]):
+        assert row.result.contributions_kopecks is None
+        assert "flow_coverage_gap" in row.flags
+    assert result.period.chained_return is None
+    assert result.period.growth_kopecks is result.period.xirr_period_return is None
+    if has_gap:
+        assert result.period.contributions_kopecks is result.period.withdrawals_kopecks is None
+    else:
+        assert result.period.contributions_kopecks == 100_000
+        assert result.period.withdrawals_kopecks == 0
+    for reasons in (result.period.growth_reason_codes, result.period.xirr_reason_codes):
+        assert ("flow_coverage_gap" in reasons) == has_gap
+        assert ("unknown_flow" in reasons) == has_gap
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "structure,expected",
+    [
+        ("Transfers", "4_Transfers_unsupported"),
+        ("UFSR", "5_UFSR_unsupported"),
+        ("unparsed", "unparsed_source_rows"),
+        ("unknown", "unknown_section"),
+        ("position", "position_row_unclassified"),
+    ],
+)
+@pytest.mark.parametrize("long_report", [False, True])
+def test_financial_parser_blockers_null_only_covered_months(db, structure, expected, long_report):
+    root = ET.fromstring(provisional_xml(candidate_count=0))
+    if structure in {"Transfers", "UFSR"}:
+        outer = "Trades3" if structure == "Transfers" else "Trades4"
+        ET.SubElement(root.find(f"{{MyBroker}}{outer}/{{MyBroker}}Report"), "{MyBroker}Synthetic")
+    elif structure == "unparsed":
+        ET.SubElement(root.find("{MyBroker}Trades2/{MyBroker}Report"), "{MyBroker}rn")
+    elif structure == "unknown":
+        ET.SubElement(root, "{MyBroker}SyntheticSection")
+    else:
+        collection = root.find(".//{MyBroker}Details_Collection")
+        ET.SubElement(collection, "{MyBroker}Details", {"acc_code": ACCOUNT})
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session,
+            document=ET.tostring(root, encoding="utf-8"),
+            filename=f"Брокерский 1234567 (01.04.30-{'31.05.30' if long_report else '30.04.30'}).xml",
+            request_id="financial-gap",
+        )
+    if long_report:
+        # Valid overlapping monthly statements cannot erase a bad document's uncertainty.
+        save_month(db, candidate_count=0)
+        save_month(db, 5, candidate_count=0)
+    save_month(db, 6 if long_report else 5, candidate_count=0)
+    before = snapshot(db)
+    result = read(db)
+    for row in result.months[:-1]:
+        assert row.result.contributions_kopecks is row.result.withdrawals_kopecks is None
+        assert row.result.growth_kopecks is row.result.modified_dietz_return is None
+        assert {expected, "unknown_flow"} <= set(row.flags)
+        assert any(
+            gap.code == expected
+            and gap.intake_id == ack["intake_id"]
+            and gap.month == row.result.closing_date.replace(day=1)
+            for gap in result.gaps
+        )
+    assert result.months[-1].result.modified_dietz_return is not None
+    assert result.months[-1].result.growth_kopecks is not None
+    affected_totals = [result.period]
+    for segment in result.segments:
+        if segment.start < result.months[-1].result.opening_date:
+            affected_totals.append(segment)
+        else:
+            assert segment.growth_kopecks is not None
+            assert segment.xirr_period_return is not None
+    for totals in affected_totals:
+        assert totals.growth_kopecks is None
+        assert totals.contributions_kopecks is totals.withdrawals_kopecks is None
+        assert totals.xirr_annualized_return is totals.xirr_period_return is None
+        for reasons in (
+            totals.growth_reason_codes,
+            totals.xirr_reason_codes,
+            totals.chain_reason_codes,
+        ):
+            assert {expected, "unknown_flow"} <= set(reasons)
+    assert snapshot(db) == before
+
+
+def test_non_financial_source_status_does_not_create_flow_uncertainty(db, monkeypatch):
+    from copy import deepcopy
+
+    save_month(db, candidate_count=0)
+    reader = source_intake.read_intake
+
+    def non_financial_status(session, intake_id):
+        view = deepcopy(reader(session, intake_id))
+        view["document"]["syntax_blockers"] = ["source_only", "review_pending"]
+        return view
+
+    monkeypatch.setattr(source_intake, "read_intake", non_financial_status)
+    result = read(db)
+    assert result.months[0].result.modified_dietz_return is not None
+    assert result.period.growth_kopecks == 121_100
+    assert result.period.xirr_period_return is not None
+    assert not result.gaps
+
+
+def test_service_reaggregation_withholds_two_negative_dietz_factors(db):
+    for month, day, end in ((2, 27, 28), (3, 30, 31)):
+        xml = (
+            provisional_xml(
+                beginning="100",
+                closing="100",
+                rub=("0", "0"),
+                candidate_count=0,
+                extra_money=(("Внесено по распоряжению Клиента", "Synthetic funding", "300"),),
+            )
+            .decode()
+            .replace("2030-04-15", f"2030-{month:02d}-{day:02d}")
+        )
+        xml = xml.replace("2030-04-", f"2030-{month:02d}-").replace(
+            ".04.2030", f".{month:02d}.2030"
+        )
+        with db.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=xml.encode(),
+                filename=f"Брокерский 1234567 (01.{month:02d}.30-{end}.{month:02d}.30).xml",
+                request_id=f"negative-factor-{month}",
+            )
+    result = read(db)
+    assert all(row.result.modified_dietz_return < -1 for row in result.months)
+    for totals in (result.period, *result.segments):
+        assert totals.chained_return is None
+        assert totals.chain_reason_codes == ("negative_dietz_factor",)
+        assert totals.contributions_kopecks == 60_000
+        assert totals.growth_kopecks == -60_000
+        assert not totals.growth_reason_codes
+        assert "negative_dietz_factor" not in totals.xirr_reason_codes
+
+
+def test_service_reaggregation_allows_exact_zero_dietz_factor(db):
+    xml = provisional_xml(beginning="100", closing="0", rub=("0", "0"), candidate_count=0)
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session,
+            document=xml,
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="zero-factor",
+        )
+    result = read(db)
+    assert result.months[0].result.modified_dietz_return == -1
+    assert result.period.chained_return == -1
+    assert result.period.chain_reason_codes == ()

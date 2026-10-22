@@ -240,7 +240,7 @@ def test_mid_interval_external_flow_is_xirr_ready_but_twrr_boundary_missing(
         database.engine.dispose()
 
 
-def test_same_day_flow_is_xirr_ready_but_twrr_order_unknown(tmp_path: Path) -> None:
+def test_boundary_day_flow_with_unknown_inclusion_blocks_xirr_and_twrr(tmp_path: Path) -> None:
     session, database, january_id, february_id, account_id = _environment(tmp_path)
     try:
         create_external_flow(
@@ -270,7 +270,8 @@ def test_same_day_flow_is_xirr_ready_but_twrr_order_unknown(tmp_path: Path) -> N
         assert result.opening_valuation.point.coverage.reason_codes == (
             "not_computable_valuation_boundary_order_unknown",
         )
-        assert result.xirr.is_available
+        assert not result.xirr.is_available
+        assert result.xirr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert not result.twrr.is_available
         assert result.twrr.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
         assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
