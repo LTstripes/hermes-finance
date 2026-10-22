@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 import pytest
 from sqlalchemy import select
 from test_source_monthly_returns_service import snapshot
-from test_statement_import_broker_statement_provisional import _free_database, provisional_xml
+from test_statement_import_broker_statement_provisional import provisional_xml
 from test_statement_import_mybroker import ACCOUNT, ISIN
 
 from hermes_finance.persistence import Account, ExecutedTrade, Instrument, SourceMoneyClassification
@@ -31,8 +31,8 @@ INCOME_FIELDS = (
 
 
 @pytest.fixture
-def db(tmp_path):
-    database = _free_database(tmp_path)
+def db(tmp_path, source_returns_database_factory):
+    database = source_returns_database_factory(tmp_path)
     yield database
     database.engine.dispose()
 

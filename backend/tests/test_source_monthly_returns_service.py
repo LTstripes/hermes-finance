@@ -12,7 +12,6 @@ from astra_hunt_runner import ROOT as ASTRA_ROOT
 from astra_hunt_runner import replay as astra_replay
 from test_statement_import_broker_statement_provisional import (
     _finite_tables,
-    _free_database,
     provisional_xml,
 )
 from test_statement_import_mybroker import ACCOUNT
@@ -27,8 +26,8 @@ from hermes_finance.services.source_monthly_returns import read_monthly_returns
 
 
 @pytest.fixture
-def db(tmp_path):
-    database = _free_database(tmp_path)
+def db(tmp_path, source_returns_database_factory):
+    database = source_returns_database_factory(tmp_path)
     yield database
     database.engine.dispose()
 
@@ -1280,11 +1279,11 @@ def test_service_reaggregation_allows_exact_zero_dietz_factor(db):
 
 
 @pytest.fixture(scope="module")
-def astra_results(tmp_path_factory):
+def astra_results(tmp_path_factory, source_returns_database_factory):
     """Every XML reaches real parsing/intake/readers in a separate synthetic DB."""
     results = {}
     for case in ASTRA_CASES:
-        database = _free_database(tmp_path_factory.mktemp(case["case"]))
+        database = source_returns_database_factory(tmp_path_factory.mktemp(case["case"]))
         try:
             results[case["case"]] = astra_replay(database, case)
         finally:
