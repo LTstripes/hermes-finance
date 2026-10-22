@@ -4,7 +4,7 @@
 
 The original remediation is committed at `58cbb8cd736bfc6036d956fe28a86825ab894b0e` on `review/security-audit`; it is no longer an uncommitted candidate at `5394962`. OpenCode reviewed that committed HEAD against pinned main `fd51120dd763a13d3ee98e3619d92c6bbca2db5c` and returned CHANGES (five findings). Its synthetic readback reported 53 security tests passed and 58 protected-backup tests passed / 2 skipped. That review verified the logging, remote-URL, archive-budget and CI privacy-gate protections, but identified the gaps below.
 
-The Owner assigned all five follow-up fixes in this same checkout. This follow-up candidate is the **uncommitted working-tree diff on top of `58cbb8cd`**; no staging, commit or push is authorized. The existing local ownership record matches this security-audit task. Current source/status and the assigned local OpenCode review were read under the repository-only restriction; no external issue/Integrator lookup or network fetch was performed.
+The Owner assigned all five follow-up fixes in this same checkout. During verification, an external checkpoint advanced HEAD and cached origin/review/security-audit to `27c0dc4a1a68c1604a362eb3d603af1717bed2ac`, containing the 20-file follow-up. This Worker did not stage, commit, push or fetch. The final documentation readback remains an **uncommitted diff on top of `27c0dc4a`**, under the Owner's no-commit/no-push instruction. The existing local ownership record matches this security-audit task. Current source/status and the assigned local OpenCode review were read under the repository-only restriction; no external issue/Integrator lookup or network fetch was performed.
 
 | OpenCode finding | Follow-up behavior |
 |---|---|
@@ -23,12 +23,20 @@ Current verification:
 - Security: **70 passed**, no xfail markers (53 at the reviewed HEAD plus 17 follow-up cases).
 - Protected backups: **61 passed, 2 skipped** (Windows symlink creation unavailable; Linux-only unlinkat). This includes all three new creation-boundary/cleanup cases.
 - API, statement-import and broker-month suites: running; final result will replace this line before delivery.
+- Additional touched-endpoint/service/workflow files: **263 passed, 6 failed**. All six failures are in unchanged test_instrument_uat_runtime.py: four Windows directory-handle checks fail with access denied on a temporary-directory ancestor; two synthetic startup/process tests fail closed or cannot start their owned listener. The runtime/preflight/recovery source and that test file have an empty diff from baseline. Baseline execution was not performed, so these are not claimed as proven pre-existing failures.
 - Ruff check and formatting passed for the 16 changed Python files; final readback follows checks.
 - scripts/privacy_check.py: PASS, 1,330 tracked files. git diff --check: PASS.
 
-Delivery readback: baseline/HEAD `58cbb8cd736bfc6036d956fe28a86825ab894b0e`; branch `review/security-audit`; assigned workspace `sec-audit`. Cached origin/review/security-audit matches HEAD and cached origin/main is `fd51120dd763a13d3ee98e3619d92c6bbca2db5c`. Remote network state was not queried. All follow-up changes remain unstaged and uncommitted. Final diff/stat and check readback will be recorded here before delivery.
+Delivery readback: assigned baseline `58cbb8cd736bfc6036d956fe28a86825ab894b0e`; pinned review target `fd51120dd763a13d3ee98e3619d92c6bbca2db5c`; current checkpoint/HEAD `27c0dc4a1a68c1604a362eb3d603af1717bed2ac`; branch `review/security-audit`; assigned workspace `sec-audit`. Cached origin/review/security-audit matches HEAD. Cached origin/main advanced externally to `11ff6627c2dd8b1fc17b21189f0da8f3e3e7d121`; this task retains the assigned target and did not integrate it. Remote network state was not queried by this Worker. Final documentation edits remain unstaged and uncommitted. Final diff/stat and check readback will be recorded here before delivery.
 
-No Owner/Stable/Test/auth data, classification/XIRR source, dependency lock or runtime was changed. No provider, dependency advisory, CI, release, runtime/UAT or independent acceptance result is claimed. Independent review of this follow-up and Integrator acceptance remain pending. The historical assessment below retains its original scope and execution limits.
+Changed files from the assigned baseline:
+
+- API: `backend/src/hermes_finance/api/{debts,deposits,errors,expected_flows,expenses,iis,incomes,instruments,investment_flows,planned_budget,positions,uploads}.py`.
+- Service: `backend/src/hermes_finance/services/protected_backups.py`.
+- Tests: `backend/tests/security/test_security_review.py`, `backend/tests/test_protected_backups.py`, `backend/tests/test_r06_09_api.py`.
+- Documentation: `docs/ARCHITECTURE_AND_CONTRACTS.md`, `docs/CURRENT_STATUS.md`, `docs/OWNER_RUNTIME_OPERATIONS.md`, this review.
+
+The code/test bytes in the checkpoint match those verified by the current runs; subsequent edits are documentation only. No Owner/Stable/Test/auth data, classification/XIRR source, dependency lock or runtime was changed. No provider, dependency advisory, CI, release, runtime/UAT or independent acceptance result is claimed. Independent review of this follow-up and Integrator acceptance remain pending. The historical assessment below retains its original scope and execution limits.
 
 Independent SECURITY REVIEWER; repository-only assessment. **3 medium, 3 low findings; no confirmed critical/high finding or live committed secret.** Dependency advisory status and pytest execution remain **UNVERIFIED**, not clean/passed.
 
