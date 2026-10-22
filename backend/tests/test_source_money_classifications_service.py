@@ -16,6 +16,56 @@ from hermes_finance.services import source_intake
 from hermes_finance.services.source_money_classifications import default_classification
 
 
+@pytest.mark.parametrize(
+    "operation,narrative,amount,expected",
+    [
+        ("Перевод", "Дивиденды Synthetic issuer", "12.34", "dividend"),
+        ("Перевод", "Дивиденды Synthetic issuer", "0", "dividend"),
+        ("Перевод", "Дивиденды Synthetic issuer", "-12.34", "unknown"),
+        ("Перевод", "Дивиденды", "12.34", "unknown"),
+        ("Перевод", "Synthetic дивиденды issuer", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic\nissuer", "12.34", "unknown"),
+        ("Unknown", "Дивиденды Synthetic issuer", "12.34", "unknown"),
+        ("Перевод", "Выплата дивидендов Synthetic issuer", "12.34", "unknown"),
+        ("Перевод", "Погашение купона Synthetic bond", "12.34", "coupon"),
+        ("Перевод", "Дивиденды Synthetic issuer НКД", "12.34", "unknown"),
+    ],
+)
+def test_exact_dividend_transfer_default(operation, narrative, amount, expected):
+    assert default_classification(operation, narrative, "unsupported", amount) == expected
+
+
+def test_dividend_rule_refresh_requires_explicit_resave_and_preserves_user_choices(db):
+    intake, (raw, filename) = save_month(
+        db,
+        candidate_count=0,
+        extra=(
+            ("Перевод", "Дивиденды Synthetic stock", "12.34"),
+            ("Перевод", "Дивиденды Synthetic second stock", "5.66"),
+        ),
+    )
+    with db.session_factory() as session:
+        rows = list(
+            session.scalars(
+                select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+            )
+        )
+        for row in rows:
+            row.classification = "unknown"  # synthetic legacy default
+        rows[1].origin, rows[1].status = "user_choice", "confirmed"
+        session.commit()
+    before = snapshot(db)
+    assert "unrecognized_money" in {gap.code for gap in read(db).gaps}
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-dividend"
+        )
+    rows = saved_rows(db, intake)
+    assert [row.classification for row in rows] == ["dividend", "unknown"]
+    assert (rows[1].origin, rows[1].status) == ("user_choice", "confirmed")
+
+
 def saved_rows(db, intake_id):
     with db.session_factory() as session:
         return list(

@@ -13,6 +13,10 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 - [#915](https://github.com/LTstripes/hermes-finance/pull/915), squashed as `a9a239d8`: read-only per-instrument monthly/all-time source returns for [#914](https://github.com/LTstripes/hermes-finance/issues/914), counting NKD once where an accepted proof or unique per-row MyBroker inference resolves the basis (ambiguous rows withheld), keeping uncovered income NULL, withholding only affected months for unsupported structure, withholding identity-less trades, distinguishing missing from partial months, flagging approximations and treating `RUR` as `RUB`.
 - [#917](https://github.com/LTstripes/hermes-finance/pull/917), merged as `e31848d0`: v2 «Доходность по месяцам» page with multi-file source upload over the read-only monthly and per-instrument source returns, per-file save errors that do not reject the batch, contributions vs growth, and approximate/partial/income-complete flags.
 
+### Fixed
+
+- [#932](https://github.com/LTstripes/hermes-finance/pull/932) (draft): real MyBroker statements — account scope from document evidence, service XML branches no longer block reads, dividend transfers default to dividend, `filename (1).xml` accepted. Follows the 1.4.0 Owner NO-GO.
+
 ### Changed
 
 - [#918](https://github.com/LTstripes/hermes-finance/pull/918), merged as `d931f5b6`: the docs-only CI classifier accepts `docs/archive/**`, and an unknown Playwright project fails with the list of valid projects instead of an opaque error.

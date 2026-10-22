@@ -12,7 +12,6 @@ from astra_hunt_runner import ROOT as ASTRA_ROOT
 from astra_hunt_runner import replay as astra_replay
 from test_statement_import_broker_statement_provisional import (
     _finite_tables,
-    _free_database,
     provisional_xml,
 )
 from test_statement_import_mybroker import ACCOUNT
@@ -27,8 +26,8 @@ from hermes_finance.services.source_monthly_returns import read_monthly_returns
 
 
 @pytest.fixture
-def db(tmp_path):
-    database = _free_database(tmp_path)
+def db(tmp_path, source_returns_database_factory):
+    database = source_returns_database_factory(tmp_path)
     yield database
     database.engine.dispose()
 
@@ -90,6 +89,323 @@ def snapshot(db):
             ).fetchall()
             for table in Base.metadata.sorted_tables
         }
+
+
+def service_structure_xml(raw, *, summary_variant=1):
+    """Fabricated values on the inventoried service paths; no summary is an event."""
+    from copy import deepcopy
+
+    from test_statement_import_mybroker_endpoints import draft_structure_xml
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    n = "{MyBroker}"
+    root = ET.fromstring(metadata_xml(raw))
+    root.set("Textbox6", "Уполномоченное лицо")
+    donor = ET.fromstring(draft_structure_xml(summary_variant=summary_variant))
+    root.find(n + "Positions/" + n + "Report").append(
+        deepcopy(donor.find(n + "Positions/" + n + "Report/" + n + "Tablix3"))
+    )
+    report = root.find(n + "Trades2/" + n + "Report")
+    controls = donor.find(n + "Trades2/" + n + "Report")
+    for child in controls:
+        if child.tag != n + "Tablix1":
+            report.append(deepcopy(child))
+    table = report.find(n + "Tablix1")
+    table.append(deepcopy(controls.find(n + "Tablix1/" + n + "Textbox116")))
+    daily = controls.find(".//" + n + "comment")
+    for group in table.findall(n + "settlement_date_Collection/" + n + "settlement_date"):
+        rows = group.findall(n + "rn_Collection/" + n + "rn")
+        for index, row in enumerate(rows):
+            comment = row.find(n + "oper_type/" + n + "comment")
+            for tag in ("Textbox95", "Textbox93"):
+                display = deepcopy(daily.find(n + tag))
+                if index < len(rows) - 1:
+                    for scalar in display.iter():
+                        for key in scalar.attrib:
+                            scalar.set(key, "")
+                comment.append(display)
+            comment[:] = [
+                comment.find(n + tag)
+                for tag in ("money_volume_begin1_Collection", "Textbox95", "Textbox93", "Textbox11")
+            ]
+    report[:] = [
+        report.find(n + tag)
+        for tag in ("Tablix2", "Tablix1", "Tablix3", "Tablix5", "Tablix4", "Tablix6", "Tablix7")
+    ]
+    return ET.tostring(root, encoding="utf-8")
+
+
+def save_service_month(db, month=4, *, mutate=None, summary_variant=1, row_account=ACCOUNT):
+    raw = provisional_xml(
+        beginning=str(9000 + (month - 4) * 1000),
+        closing=str(10000 + (month - 4) * 1000),
+        candidate_count=0,
+        extra_money=(
+            ("Внесено по распоряжению Клиента", "Synthetic funding", "500"),
+            ("Выведено по распоряжению Клиента", "Synthetic withdrawal", "-100"),
+            ("Перевод", "Погашение купона Synthetic stock", "12.34"),
+            ("Перевод", "Дивиденды Synthetic stock", "5.66"),
+        ),
+    )
+    root = ET.fromstring(service_structure_xml(raw, summary_variant=summary_variant))
+    if mutate:
+        mutate(root)
+    raw = (
+        ET.tostring(root, encoding="utf-8")
+        .decode()
+        .replace("2030-04-", f"2030-{month:02d}-")
+        .replace(".04.2030", f".{month:02d}.2030")
+        .replace(ACCOUNT, row_account)
+        .encode()
+    )
+    end = calendar.monthrange(2030, month)[1]
+    filename = f"Брокерский 1234567 (01.{month:02d}.30-{end}.{month:02d}.30) (1).xml"
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session, document=raw, filename=filename, request_id=f"service-{month}"
+        )
+    return ack["intake_id"], (raw, filename)
+
+
+def test_filename_alias_uses_single_document_row_scope_and_does_not_write(db):
+    save_month(db, candidate_count=0, extra=(("Купон", "Synthetic stock", "12.34"),))
+    before = snapshot(db)
+    native = read(db)
+    alias = read(db, source_account="1234567")
+    assert alias.months == native.months
+    assert alias.flows == native.flows
+    assert alias.months[0].coupons_kopecks == 1234
+    assert alias.months[0].dividends_kopecks == 0
+    assert not alias.gaps
+    assert snapshot(db) == before
+
+
+def test_filename_alias_conflicting_single_row_accounts_across_documents(db):
+    save_service_month(db)
+    save_service_month(db, 5, row_account="7654321-000")
+    result = read(db, source_account="1234567")
+    assert len(result.months) == 2
+    assert "native_source_scope_ambiguous" in {gap.code for gap in result.gaps}
+    for row in result.months:
+        assert row.result.opening_kopecks is None
+        assert row.result.contributions_kopecks is None
+        assert row.coupons_kopecks is row.dividends_kopecks is None
+    assert read(db).months[0].result.modified_dietz_return is not None
+
+
+def test_multi_account_document_never_maps_filename_alias_or_returns_zero_income(db):
+    def mutate(root):
+        root.find(".//{MyBroker}Textbox11").set("acc_code", "7654321-000")
+
+    save_service_month(db, mutate=mutate)
+    for alias in (ACCOUNT, "1234567", "7654321-000"):
+        result = read(db, source_account=alias)
+        assert result.months[0].coupons_kopecks is None
+        assert result.months[0].dividends_kopecks is None
+        assert result.months[0].result.growth_kopecks is None
+        assert "native_source_scope_ambiguous" in {gap.code for gap in result.gaps}
+    assert read(db, source_account="1234567-001").months == ()
+
+
+@pytest.mark.parametrize("summary_variant", range(4))
+def test_exact_service_inventory_is_recomputed_without_changing_frozen_source(db, summary_variant):
+    from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+    intake, original = save_service_month(db, summary_variant=summary_variant)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+        assert set(view["document"]["syntax_blockers"]) == {
+            "unparsed_source_rows",
+            "4_Transfers_unsupported",
+            "5_UFSR_unsupported",
+        }
+        assert source_return_blockers(view) == set()
+        assert source_return_blockers({**view, "observations": []}) == set(
+            view["document"]["syntax_blockers"]
+        )
+    row = read(db, source_account="1234567").months[0]
+    assert row.result.contributions_kopecks == 50_000
+    assert row.result.withdrawals_kopecks == 10_000
+    assert row.result.growth_kopecks == 60_000
+    assert row.coupons_kopecks == 1234 and row.dividends_kopecks == 566
+    assert row.result.modified_dietz_return is not None
+    assert not row.flags
+    assert snapshot(db) == before
+    # Explicit re-save remains compatible with the unchanged frozen manifest.
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=original[0], filename=original[1], request_id="re-save-service"
+        )
+    # Re-save is intentional; the preceding reads themselves made no writes.
+    after = snapshot(db)
+    assert before["source_intake_observations"] == after["source_intake_observations"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "Positions/Report/Tablix3/Details1_Collection/Details1",
+        "Trades2/Report/Tablix2",
+        "Trades2/Report/Tablix3",
+        "Trades2/Report/Tablix1/settlement_date_Collection/settlement_date/rn_Collection/rn/oper_type/comment/Textbox95",
+        "Trades2/Report/Tablix1/Textbox116",
+        "Trades2/Report/Tablix7",
+        "Trades3/Report/Tablix1",
+        "Trades4/Report/Tablix1/Details_Collection/Details",
+    ],
+)
+@pytest.mark.parametrize("change", ["attribute", "child", "foreign_child", "text"])
+def test_service_exceptions_never_hide_unknown_content(db, path, change):
+    def mutate(root):
+        node = root.find("/".join("{MyBroker}" + part for part in path.split("/")))
+        if change == "attribute":
+            node.set("unrecognized", "0")
+        elif change == "text":
+            node.text = "Synthetic hidden content"
+        else:
+            ET.SubElement(node, "{MyBroker}Details" if change == "child" else "{Other}Details")
+
+    save_service_month(db, mutate=mutate)
+    result = read(db, source_account="1234567")
+    assert result.months[0].result.contributions_kopecks is None
+    assert result.months[0].result.modified_dietz_return is None
+    assert {"unparsed_source_rows", "4_Transfers_unsupported", "5_UFSR_unsupported"} & {
+        gap.code for gap in result.gaps
+    }
+
+
+def test_monthly_api_three_service_reports_have_numbers_and_missing_months_stay_gaps(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    for month in (4, 5, 7):
+        save_service_month(db, month)
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    body = client.get("/api/source-returns/monthly", params={"source_account": "1234567"}).json()
+    assert len(body["months"]) == 4
+    fields = (
+        "opening_kopecks",
+        "closing_kopecks",
+        "contributions_kopecks",
+        "withdrawals_kopecks",
+        "growth_kopecks",
+        "modified_dietz_return",
+        "coupons_kopecks",
+        "dividends_kopecks",
+    )
+    for row in (body["months"][0], body["months"][1], body["months"][3]):
+        assert all(row[field] is not None for field in fields)
+        assert not row["flags"]
+    gap = body["months"][2]
+    assert all(gap[field] is None for field in fields)
+    assert {"missing_endpoint", "unknown_flow", "flow_coverage_gap"} <= set(gap["flags"])
+    assert body["period"]["chained_return"] is None
+    assert len(body["flows"]) == 6  # summaries never duplicate the six external flows
+    assert snapshot(db) == before
+
+
+def test_monthly_api_three_contiguous_service_reports_chain_known_flows(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    for month in (4, 5, 6):
+        save_service_month(db, month)
+    before = snapshot(db)
+    body = (
+        TestClient(create_app(database=db))
+        .get("/api/source-returns/monthly", params={"source_account": "1234567"})
+        .json()
+    )
+    assert len(body["months"]) == 3
+    for row in body["months"]:
+        assert not row["flags"]
+        assert row["contributions_kopecks"] == 50_000
+        assert row["withdrawals_kopecks"] == 10_000
+        assert row["growth_kopecks"] == 60_000
+        assert row["modified_dietz_return"] is not None
+        assert row["coupons_kopecks"] == 1234
+        assert row["dividends_kopecks"] == 566
+    assert body["period"]["contributions_kopecks"] == 150_000
+    assert body["period"]["withdrawals_kopecks"] == 30_000
+    assert body["period"]["growth_kopecks"] == 180_000
+    assert body["period"]["chained_return"] is not None
+    assert len(body["segments"]) == 1 and not body["segments"][0]["partial_segment"]
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_service_projection_retains_pending_rows_and_only_known_pending_captions(db, extra):
+    from test_statement_import_mybroker import fixture
+
+    from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+    def mutate(root):
+        n = "{MyBroker}"
+        pending = ET.fromstring(fixture(pending=True)).find(
+            n + "Trades/" + n + "Report/" + n + "Tablix3"
+        )
+        row = pending.find(".//" + n + "Details2")
+        row.attrib.update(
+            p_name2="Synthetic security", Textbox16="RUB", place_name2="Synthetic place"
+        )
+        if extra:
+            row.set("unknown_native_key", "0")
+        root.find(n + "Trades/" + n + "Report").append(pending)
+
+    intake, _ = save_service_month(db, mutate=mutate)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+        assert len(view["document"]["trades"]) == 2
+        assert bool(source_return_blockers(view)) is extra
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "summary_label",
+        "currency_label",
+        "duplicate",
+        "order",
+        "moved",
+        "daily_empty",
+        "daily_early_value",
+        "connection_end",
+    ],
+)
+def test_service_projection_rejects_inexact_known_shapes(db, change):
+    from copy import deepcopy
+
+    def mutate(root):
+        n = "{MyBroker}"
+        report = root.find(n + "Trades2/" + n + "Report")
+        if change == "summary_label":
+            report.find(".//" + n + "oper_group").set("oper_group", "Synthetic unsupported group")
+        elif change == "currency_label":
+            report.find(".//" + n + "p_code6").set("p_code6", "USD")
+        elif change == "duplicate":
+            report.append(deepcopy(report.find(n + "Tablix7")))
+        elif change == "order":
+            report[:] = list(reversed(report[:]))
+        elif change == "moved":
+            summary = report.find(n + "Tablix7")
+            report.remove(summary)
+            report.find(n + "Tablix1").append(summary)
+        elif change.startswith("daily_"):
+            displays = report.findall(".//" + n + "comment/" + n + "Textbox95/" + n + "Textbox83")
+            displays[-1 if change == "daily_empty" else 0].set(
+                "money_volume", "" if change == "daily_empty" else "1.00"
+            )
+        else:
+            root.find(n + "Trades4/.//" + n + "Details").set("sys_end_time", "Synthetic end")
+
+    save_service_month(db, mutate=mutate)
+    row = read(db, source_account="1234567").months[0]
+    assert row.result.growth_kopecks is None
+    assert row.coupons_kopecks is row.dividends_kopecks is None
 
 
 def test_saved_months_own_endpoints_seam_and_missing_month(db):
@@ -963,11 +1279,11 @@ def test_service_reaggregation_allows_exact_zero_dietz_factor(db):
 
 
 @pytest.fixture(scope="module")
-def astra_results(tmp_path_factory):
+def astra_results(tmp_path_factory, source_returns_database_factory):
     """Every XML reaches real parsing/intake/readers in a separate synthetic DB."""
     results = {}
     for case in ASTRA_CASES:
-        database = _free_database(tmp_path_factory.mktemp(case["case"]))
+        database = source_returns_database_factory(tmp_path_factory.mktemp(case["case"]))
         try:
             results[case["case"]] = astra_replay(database, case)
         finally:

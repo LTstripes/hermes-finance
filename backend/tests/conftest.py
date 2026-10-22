@@ -4,10 +4,34 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from shutil import copyfile
+
+import pytest
 
 _TESTS_DIR = Path(__file__).resolve().parent
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
+
+
+@pytest.fixture(scope="session")
+def source_returns_database_factory(tmp_path_factory):
+    """Build the source-reader schema once; keep real commits isolated per case."""
+    from hermes_finance.database import create_database
+    from hermes_finance.persistence import Base
+
+    template = create_database(tmp_path_factory.mktemp("source-returns-schema") / "empty.db")
+    try:
+        Base.metadata.create_all(template.engine)
+    finally:
+        # Close every SQLite handle before copying the pristine, committed schema.
+        template.engine.dispose()
+
+    def factory(directory):
+        database_path = directory / "unbound-provisional.db"
+        copyfile(template.database_path, database_path)
+        return create_database(database_path)
+
+    return factory
 
 
 def pytest_collection_modifyitems(items) -> None:

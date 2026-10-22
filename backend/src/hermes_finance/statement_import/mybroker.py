@@ -41,7 +41,7 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_ROWS = 10000
 FILENAME = re.compile(
     r"Брокерский (?P<account>\d+) \((?P<start>\d{2}\.\d{2}\.\d{2})-"
-    r"(?P<end>\d{2}\.\d{2}\.\d{2})\)\.xml",
+    r"(?P<end>\d{2}\.\d{2}\.\d{2})\)(?: \([1-9][0-9]*\))?\.xml",
     re.ASCII,
 )
 

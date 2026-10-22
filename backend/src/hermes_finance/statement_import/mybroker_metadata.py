@@ -23,23 +23,10 @@ def _node(node: ET.Element, tag: str, attrs: dict, children: int) -> bool:
 
 
 def _safe(wrapper: ET.Element, outer: str) -> bool:
-    if not _node(wrapper, outer, {}, 1):
-        return False
-    report = wrapper[0]
-    if not _node(report, "Report", {"Name": SECTIONS[outer]}, 1):
-        return False
-    table = report[0]
-    if outer == "Trades3":
-        return _node(table, "Tablix1", {}, 0)
-    if not _node(table, "Tablix1", {"Textbox4": "Подключен"}, 1):
-        return False
-    collection = table[0]
-    if not _node(collection, "Details_Collection", {}, 1):
-        return False
-    details = collection[0]
-    start = details.get("sys_start_time", "")
-    if not _node(details, "Details", {"sys_start_time": start, "sys_end_time": "-"}, 0):
-        return False
+    return _section_shape(wrapper, outer, scalar=lambda value: value, valid_start=_valid_start)
+
+
+def _valid_start(start):
     if not START.fullmatch(start):
         return False
     try:
@@ -47,6 +34,28 @@ def _safe(wrapper: ET.Element, outer: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _section_shape(wrapper, outer, *, scalar, valid_start):
+    """Shared exact topology; original-byte metadata additionally validates dates."""
+    if not _node(wrapper, outer, {}, 1):
+        return False
+    report = wrapper[0]
+    if not _node(report, "Report", {"Name": scalar(SECTIONS[outer])}, 1):
+        return False
+    table = report[0]
+    if outer == "Trades3":
+        return _node(table, "Tablix1", {}, 0)
+    if not _node(table, "Tablix1", {"Textbox4": scalar("Подключен")}, 1):
+        return False
+    collection = table[0]
+    if not _node(collection, "Details_Collection", {}, 1):
+        return False
+    details = collection[0]
+    start = details.get("sys_start_time", "")
+    if not _node(details, "Details", {"sys_start_time": start, "sys_end_time": scalar("-")}, 0):
+        return False
+    return valid_start(start)
 
 
 def parse_section_metadata(document: bytes, filename: str) -> dict:
