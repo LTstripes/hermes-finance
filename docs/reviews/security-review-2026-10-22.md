@@ -4,7 +4,7 @@
 
 The original remediation is committed at `58cbb8cd736bfc6036d956fe28a86825ab894b0e` on `review/security-audit`; it is no longer an uncommitted candidate at `5394962`. OpenCode reviewed that committed HEAD against pinned main `fd51120dd763a13d3ee98e3619d92c6bbca2db5c` and returned CHANGES (five findings). Its synthetic readback reported 53 security tests passed and 58 protected-backup tests passed / 2 skipped. That review verified the logging, remote-URL, archive-budget and CI privacy-gate protections, but identified the gaps below.
 
-The Owner assigned all five follow-up fixes in this checkout. The follow-up and its delivery documentation are committed on `review/security-audit` and the branch is merged with main `8297a74774` (no force-push). No external issue/Integrator lookup was performed.
+The Owner assigned all five follow-up fixes in this checkout. The follow-up and its delivery documentation are committed on `review/security-audit` and the branch is merged with main `8297a747` (no force-push). No external issue/Integrator lookup was performed.
 
 | OpenCode finding | Follow-up behavior |
 |---|---|
