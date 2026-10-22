@@ -473,6 +473,17 @@ def test_source_structural_blockers_cannot_be_attested_away(database, kind):
         else (("0", "1") if kind == "zero-with-value" else ("3", "100.01"))
     )
     with database.session_factory() as session:
+        if kind == "duplicate":
+            # The parser now refuses S1 acceptance before an endpoint can be attested.
+            raw = ET.tostring(root)
+            reviewed = preview(session, raw)
+            assert "duplicate_position" in reviewed["conflicts"]
+            assert not reviewed["can_apply"]
+            with pytest.raises(MyBrokerError, match="reconciliation_required"):
+                apply(session, raw, reviewed)
+            assert count(session, MyBrokerImport) == 0
+            assert count(session, HistoricalEndpointRevision) == 0
+            return
         intent, _ = setup_source(
             session,
             xml=ET.tostring(root),

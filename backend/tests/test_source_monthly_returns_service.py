@@ -1078,46 +1078,11 @@ def test_astra_hunt_missing_may_does_not_become_zero_flows(db):
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param(
-            "03_typo_withdrawal",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="AH-01: typo withdrawal is guessed as dividend by income substring; -10% without blocker",
-            ),
-        ),
-        pytest.param(
-            "11_duplicate_position",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="AH-03: duplicate account/ISIN endpoint rows are summed without conflict; 9.473684%",
-            ),
-        ),
-        pytest.param(
-            "21_outside_period",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="AH-04: invalid_external_flow belongs to May, leaving owning April return available at 9%",
-            ),
-        ),
-        pytest.param(
-            "22_hidden_amount",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="AH-05: unconsumed p_code amount leaf is invisible to rn-count completeness; 9%",
-            ),
-        ),
-        pytest.param(
-            "23_hidden_wrapper",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="AH-06: extra financial row outside nested Report bypasses structural inventory; 9%",
-            ),
-        ),
+        "03_typo_withdrawal",
+        "11_duplicate_position",
+        "21_outside_period",
+        "22_hidden_amount",
+        "23_hidden_wrapper",
     ],
 )
 def test_astra_hunt_uncertain_import_must_withhold_returns(astra_results, case, reattached):
@@ -1128,18 +1093,32 @@ def test_astra_hunt_uncertain_import_must_withhold_returns(astra_results, case, 
     assert period["xirr_period_return"] is None
     assert period["xirr_annualized_return"] is None
     assert period["chained_return"] is None
+    assert period["growth_kopecks"] is None
     assert period["xirr_reason_codes"]
     if not reattached:
         assert all(
             row["result"]["modified_dietz_return"] is None for row in result["monthly"]["months"]
         )
+        expected = {
+            "03_typo_withdrawal": "unrecognized_money",
+            "11_duplicate_position": "duplicate_position",
+            "21_outside_period": "invalid_external_flow",
+            "22_hidden_amount": "unparsed_source_rows",
+            "23_hidden_wrapper": "unparsed_source_rows",
+        }[case]
+        assert expected in {gap["code"] for gap in result["monthly"]["gaps"]}
+        for instrument in result["instruments"]["instruments"]:
+            assert all(row["total_kopecks"] is None for row in instrument["months"])
+        if case == "11_duplicate_position":
+            assert result["row_counts"]["positions"] == 2
+            instrument = result["instruments"]["instruments"][0]["months"][0]
+            assert instrument["opening_quantity"] is instrument["closing_quantity"] is None
+            assert (
+                instrument["opening_value_kopecks"] is instrument["closing_value_kopecks"] is None
+            )
+            assert "duplicate_position" in instrument["flags"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="AH-02: cross-account internal transfer is excluded from account schedule; -10% instead of 0%",
-)
 @pytest.mark.parametrize("reattached", [False, True], ids=["saved", "reattached"])
 def test_astra_hunt_account_transfer_is_external_to_account(astra_results, reattached):
     result = astra_results["04_account_transfer"]
@@ -1155,3 +1134,43 @@ def test_astra_hunt_account_transfer_is_external_to_account(astra_results, reatt
         assert period["growth_kopecks"] == 0
         assert period["xirr_period_return"] == 0
         assert period["chained_return"] == 0
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["current", "unflagged_saved_rows"])
+@pytest.mark.parametrize("overlap", [False, True])
+def test_duplicate_positions_block_endpoints_even_with_clean_overlap(
+    db, monkeypatch, legacy, overlap
+):
+    from copy import deepcopy
+
+    root = ET.fromstring(provisional_xml(beginning="100", closing="110", candidate_count=0))
+    collection = root.find(".//{MyBroker}Details_Collection")
+    collection.append(deepcopy(collection.find("{MyBroker}Details[@ISIN1]")))
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session,
+            document=ET.tostring(root),
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="duplicate-position-source",
+        )["intake_id"]
+    if overlap:
+        save_month(db, beginning="100", closing="110", candidate_count=0, marker="clean-copy")
+    if legacy:
+        reader = source_intake.read_intake
+
+        def unflagged_rows(session, intake_id):
+            view = deepcopy(reader(session, intake_id))
+            if intake_id == intake:
+                view["document"]["endpoint_conflicts"] = []
+            return view
+
+        monkeypatch.setattr(source_intake, "read_intake", unflagged_rows)
+    before = snapshot(db)
+    result = read(db)
+    row = result.months[0].result
+    assert row.opening_kopecks is row.closing_kopecks is None
+    assert row.growth_kopecks is row.modified_dietz_return is None
+    assert "duplicate_position" in row.reason_codes
+    assert result.period.growth_kopecks is result.period.xirr_period_return is None
+    assert any(gap.code == "duplicate_position" and gap.intake_id == intake for gap in result.gaps)
+    assert snapshot(db) == before
