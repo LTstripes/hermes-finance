@@ -1,0 +1,5302 @@
+[
+  {
+    "case": "01_control",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "02_unknown",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "unknown"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "unrecognized_money",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:9ab9649642f1a670184205e0ad8bd659ae37692e2c8e596eb36307d77c3300ab"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "unrecognized_money"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "unrecognized_money"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "unrecognized_money",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null,
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "03_typo_withdrawal",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "dividend"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 900000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": -100000,
+            "modified_dietz_return": "-0.1",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": -100000,
+          "income_assumptions_used": true
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": -100000,
+        "chained_return": "-0.1",
+        "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+        "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": -100000,
+          "chained_return": "-0.1",
+          "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+          "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": -100000,
+      "chained_return": "-0.1",
+      "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+      "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": -100000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "unattributed_income"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 800000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": -100000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "unattributed_income"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": -100000,
+          "classification": "dividend",
+          "status": "assumed",
+          "source_references": [
+            "money:1:money:0:cd3eb0cd143b679fe5673033e974ed82571986764c994671ef80394683bae0c7"
+          ],
+          "isin": null
+        }
+      ],
+      "gaps": [
+        {
+          "code": "unattributed_income",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:cd3eb0cd143b679fe5673033e974ed82571986764c994671ef80394683bae0c7",
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "04_account_transfer",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "internal_transfer"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 900000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": -100000,
+            "modified_dietz_return": "-0.1",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": -100000,
+        "chained_return": "-0.1",
+        "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+        "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": -100000,
+          "chained_return": "-0.1",
+          "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+          "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": -100000,
+      "chained_return": "-0.1",
+      "xirr_annualized_return": "-0.722486659710799423701815969105119687513862443271550650023142",
+      "xirr_period_return": "-0.099999999999999999999999999999963047951725166613843378844580",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": -100000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": -100000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "-11.1111111111111111111111111111111111111111111111111111111111",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 800000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": -100000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": -100000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "05_usd_deposit",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "external_deposit"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow",
+              "currency_unsupported"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "currency_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:98728a301dc0fd48733fafc8de0e5e4296eaf4d7d747256b3ad6942d87bf449d"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "currency_unsupported",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "currency_unsupported"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "currency_unsupported"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "currency_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:98728a301dc0fd48733fafc8de0e5e4296eaf4d7d747256b3ad6942d87bf449d",
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "06_fx_zero_rate",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 2,
+      "trades": 0
+    },
+    "classifications": [
+      "unknown",
+      "unknown"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow",
+              "currency_unsupported"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow",
+          "currency_unsupported"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow",
+            "currency_unsupported"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "currency_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:1:f2f71d3c997a156c5660898e36bf65b8a628ed086496200fd11e22b8ecb4faac"
+        },
+        {
+          "code": "unrecognized_money",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:79fa6e6ccd404c7c526f87eeb400b0ab5d8e6b1caa7e1a758129ae420743f7a7"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "currency_unsupported",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow",
+        "currency_unsupported"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "currency_unsupported",
+                "unrecognized_money"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "currency_unsupported",
+              "unrecognized_money"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "currency_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:1:f2f71d3c997a156c5660898e36bf65b8a628ed086496200fd11e22b8ecb4faac",
+          "isin": null
+        },
+        {
+          "code": "unrecognized_money",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null,
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "07_empty_money",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "08_missing_money",
+    "parser_error": "required_section_invalid",
+    "calculation": "not_run_parser_rejected"
+  },
+  {
+    "case": "09_empty_positions",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 0,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "insufficient_boundaries"
+        ],
+        "growth_reason_codes": [
+          "insufficient_boundaries"
+        ],
+        "xirr_reason_codes": [
+          "insufficient_boundaries"
+        ],
+        "approximate": true
+      },
+      "segments": [],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "insufficient_boundaries"
+      ],
+      "growth_reason_codes": [
+        "insufficient_boundaries"
+      ],
+      "xirr_reason_codes": [
+        "insufficient_boundaries"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "10_duplicate_money",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 2,
+      "trades": 0
+    },
+    "classifications": [
+      "external_deposit",
+      "external_deposit"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 20000,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 70000,
+            "modified_dietz_return": "0.0693069306930693069306930693069306930693069306930693069306931",
+            "assumptions_used": true,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 20000,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 70000,
+        "chained_return": "0.06930693069306930693069306930693069306930693069306930693069",
+        "xirr_annualized_return": "1.26014236612229483331250766866304463207020470960534844093055",
+        "xirr_period_return": "0.06931842917786116359814578885116070271544732278947279080649",
+        "assumptions_used": true,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 20000,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 70000,
+          "chained_return": "0.06930693069306930693069306930693069306930693069306930693069",
+          "xirr_annualized_return": "1.26014236612229483331250766866304463207020470960534844093055",
+          "xirr_period_return": "0.06931842917786116359814578885116070271544732278947279080649",
+          "assumptions_used": true,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": 10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:0:cc91c723efd416bd6759cd38927bd1becf19667a74baaba999c1f349e8628996"
+          ],
+          "classification": "external_deposit"
+        },
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": 10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:1:52192ff3c315985131624a086976c5c0b9fa2ad3d762539cc751b972668b978a"
+          ],
+          "classification": "external_deposit"
+        }
+      ],
+      "defaults_applied": [
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": 10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:0:cc91c723efd416bd6759cd38927bd1becf19667a74baaba999c1f349e8628996"
+          ],
+          "classification": "external_deposit"
+        },
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": 10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:1:52192ff3c315985131624a086976c5c0b9fa2ad3d762539cc751b972668b978a"
+          ],
+          "classification": "external_deposit"
+        }
+      ],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 20000,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 70000,
+      "chained_return": "0.06930693069306930693069306930693069306930693069306930693069",
+      "xirr_annualized_return": "1.26014236612229483331250766866304463207020470960534844093055",
+      "xirr_period_return": "0.06931842917786116359814578885116070271544732278947279080649",
+      "assumptions_used": true,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "11_duplicate_position",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 2,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1900000,
+            "closing_kopecks": 2080000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 180000,
+            "modified_dietz_return": "0.0947368421052631578947368421052631578947368421052631578947368",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 180000,
+        "chained_return": "0.09473684210526315789473684210526315789473684210526315789474",
+        "xirr_annualized_return": "2.00793488450099058923504817587998293082084842585481445026443",
+        "xirr_period_return": "0.09473684210526315789473684210634400833744632343746751767862",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 180000,
+          "chained_return": "0.09473684210526315789473684210526315789473684210526315789474",
+          "xirr_annualized_return": "2.00793488450099058923504817587998293082084842585481445026443",
+          "xirr_period_return": "0.09473684210526315789473684210634400833744632343746751767862",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 180000,
+      "chained_return": "0.09473684210526315789473684210526315789473684210526315789474",
+      "xirr_annualized_return": "2.00793488450099058923504817587998293082084842585481445026443",
+      "xirr_period_return": "0.09473684210526315789473684210634400833744632343746751767862",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 180000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 180000,
+              "capital_base_kopecks": 1800000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "20",
+              "closing_quantity": "20",
+              "opening_value_kopecks": 1800000,
+              "closing_value_kopecks": 1980000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 180000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 180000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "12_partial_month",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": null,
+            "closing_kopecks": null,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": true,
+            "reason_codes": [
+              "missing_endpoint",
+              "unknown_flow",
+              "flow_coverage_gap"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [],
+          "flags": [
+            "missing_endpoint",
+            "unknown_flow",
+            "flow_coverage_gap"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": true,
+        "chain_reason_codes": [
+          "missing_endpoint",
+          "unknown_flow",
+          "flow_coverage_gap"
+        ],
+        "growth_reason_codes": [
+          "missing_endpoint"
+        ],
+        "xirr_reason_codes": [
+          "missing_endpoint"
+        ],
+        "approximate": true
+      },
+      "segments": [],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "partial_month_source",
+          "intake_id": 1,
+          "month": null,
+          "source_reference": null
+        },
+        {
+          "code": "missing_endpoint",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "flow_coverage_gap",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": true,
+      "chain_reason_codes": [
+        "missing_endpoint",
+        "unknown_flow",
+        "flow_coverage_gap"
+      ],
+      "growth_reason_codes": [
+        "missing_endpoint"
+      ],
+      "xirr_reason_codes": [
+        "missing_endpoint"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": null,
+              "sells_proceeds_kopecks": null,
+              "price_effect_kopecks": null,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": null,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "missing_endpoint",
+                "missing_month"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": null,
+              "closing_quantity": null,
+              "opening_value_kopecks": null,
+              "closing_value_kopecks": null,
+              "intake_ids": []
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": null,
+            "sells_proceeds_kopecks": null,
+            "price_effect_kopecks": null,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "missing_endpoint",
+              "missing_month"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [
+              "2030-04-01"
+            ],
+            "partial_months": [],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-04-09",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-04-09",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "13_negative_deposit",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "external_deposit"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:658631371ff961d5f02c51408625e8d0cdef0097502c0822b0eb777eaec3a0b4"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "invalid_external_flow"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "invalid_external_flow"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:658631371ff961d5f02c51408625e8d0cdef0097502c0822b0eb777eaec3a0b4",
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "14_zero_deposit",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "external_deposit"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:80dbf9a49bb3408dedd4a20b95bb0e40960bfa2586315fbf882180c0b609717b"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "invalid_external_flow"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "invalid_external_flow"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:80dbf9a49bb3408dedd4a20b95bb0e40960bfa2586315fbf882180c0b609717b",
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "15_negative_withdrawal",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "external_withdrawal"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 10000,
+            "growth_kopecks": 100000,
+            "modified_dietz_return": "0.100502512562814070351758793969849246231155778894472361809045",
+            "assumptions_used": true,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 10000,
+        "growth_kopecks": 100000,
+        "chained_return": "0.10050251256281407035175879396984924623115577889447236180905",
+        "xirr_annualized_return": "2.20602031321537248929289803502389609241600179065477448973714",
+        "xirr_period_return": "0.10049042623650969529706757322298684888035005054388169707804",
+        "assumptions_used": true,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 10000,
+          "growth_kopecks": 100000,
+          "chained_return": "0.10050251256281407035175879396984924623115577889447236180905",
+          "xirr_annualized_return": "2.20602031321537248929289803502389609241600179065477448973714",
+          "xirr_period_return": "0.10049042623650969529706757322298684888035005054388169707804",
+          "assumptions_used": true,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": -10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:0:658631371ff961d5f02c51408625e8d0cdef0097502c0822b0eb777eaec3a0b4"
+          ],
+          "classification": "external_withdrawal"
+        }
+      ],
+      "defaults_applied": [
+        {
+          "event_date": "2030-04-15",
+          "amount_kopecks": -10000,
+          "status": "assumed",
+          "included": true,
+          "source_references": [
+            "money:1:money:0:658631371ff961d5f02c51408625e8d0cdef0097502c0822b0eb777eaec3a0b4"
+          ],
+          "classification": "external_withdrawal"
+        }
+      ],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 10000,
+      "growth_kopecks": 100000,
+      "chained_return": "0.10050251256281407035175879396984924623115577889447236180905",
+      "xirr_annualized_return": "2.20602031321537248929289803502389609241600179065477448973714",
+      "xirr_period_return": "0.10049042623650969529706757322298684888035005054388169707804",
+      "assumptions_used": true,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "16_zero_fee",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "fee"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "17_nkd_buy",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 1
+    },
+    "classifications": [
+      "trade_settlement"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic bond",
+          "instrument_type": "bond",
+          "months": [
+            {
+              "buys_cost_kopecks": 20500,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 69500,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 69500,
+              "capital_base_kopecks": 920500,
+              "return_percent": "7.55024443237370994024986420423682781097229766431287343834872",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [
+                "bond_valuation_basis_unknown"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "8",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 20500,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 69500,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 69500,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [
+              "bond_valuation_basis_unknown"
+            ],
+            "approximate": true,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "18_nkd_sell",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 1
+    },
+    "classifications": [
+      "trade_settlement"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic bond",
+          "instrument_type": "bond",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 20500,
+              "price_effect_kopecks": 110500,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 110500,
+              "capital_base_kopecks": 900000,
+              "return_percent": "12.2777777777777777777777777777777777777777777777777777777778",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [
+                "bond_valuation_basis_unknown"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "12",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 20500,
+            "price_effect_kopecks": 110500,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 110500,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [
+              "bond_valuation_basis_unknown"
+            ],
+            "approximate": true,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "19_partial_redemption",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "unknown"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "unrecognized_money",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": "money:1:money:0:f1b3a1611d63292f8e9b221ae8b48e3a155e2e53a06df94488abcac1ccd3a26b"
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "bond",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": 900000,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "bond_valuation_basis_unknown",
+                "unrecognized_money"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "bond_valuation_basis_unknown",
+              "unrecognized_money"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "unrecognized_money",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null,
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "20_unknown_security",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "ZZ000UNKNOWN",
+          "source_name": "Synthetic stock",
+          "instrument_type": null,
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [
+                "instrument_type_unknown"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [
+              "instrument_type_unknown"
+            ],
+            "approximate": true,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "21_outside_period",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "external_deposit"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-05-01",
+          "source_reference": "money:1:money:0:4c73101757b84e268239af4543a4612e39e1715231527eafa877506c65502343"
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "invalid_external_flow",
+          "intake_id": 1,
+          "month": "2030-05-01",
+          "source_reference": "money:1:money:0:4c73101757b84e268239af4543a4612e39e1715231527eafa877506c65502343",
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "22_hidden_amount",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 1,
+      "trades": 0
+    },
+    "classifications": [
+      "fee"
+    ],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "23_hidden_wrapper",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-04-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "24_transfer_section",
+    "parser": {
+      "syntax_blockers": [
+        "4_Transfers_unsupported"
+      ],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [
+              "unknown_flow",
+              "4_Transfers_unsupported"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [
+            "unknown_flow",
+            "4_Transfers_unsupported"
+          ],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [
+          "unknown_flow",
+          "4_Transfers_unsupported"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow",
+          "4_Transfers_unsupported"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow",
+          "4_Transfers_unsupported"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": null,
+          "withdrawals_kopecks": null,
+          "growth_kopecks": null,
+          "chained_return": null,
+          "xirr_annualized_return": null,
+          "xirr_period_return": null,
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [
+            "unknown_flow",
+            "4_Transfers_unsupported"
+          ],
+          "growth_reason_codes": [
+            "unknown_flow",
+            "4_Transfers_unsupported"
+          ],
+          "xirr_reason_codes": [
+            "unknown_flow",
+            "4_Transfers_unsupported"
+          ],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "4_Transfers_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        },
+        {
+          "code": "4_Transfers_unsupported",
+          "intake_id": null,
+          "month": "2030-04-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": null,
+      "withdrawals_kopecks": null,
+      "growth_kopecks": null,
+      "chained_return": null,
+      "xirr_annualized_return": null,
+      "xirr_period_return": null,
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [
+        "unknown_flow",
+        "4_Transfers_unsupported"
+      ],
+      "growth_reason_codes": [
+        "unknown_flow",
+        "4_Transfers_unsupported"
+      ],
+      "xirr_reason_codes": [
+        "unknown_flow",
+        "4_Transfers_unsupported"
+      ],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": null,
+              "sells_proceeds_kopecks": null,
+              "price_effect_kopecks": null,
+              "coupons_kopecks": null,
+              "dividends_kopecks": null,
+              "assumed_income_kopecks": null,
+              "confirmed_income_kopecks": null,
+              "income_kopecks": null,
+              "total_kopecks": null,
+              "capital_base_kopecks": null,
+              "return_percent": null,
+              "income_assumptions_used": false,
+              "income_complete": false,
+              "flags": [
+                "4_Transfers_unsupported"
+              ],
+              "approximate": true,
+              "month": "2030-04-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": null,
+            "sells_proceeds_kopecks": null,
+            "price_effect_kopecks": null,
+            "coupons_kopecks": null,
+            "dividends_kopecks": null,
+            "assumed_income_kopecks": null,
+            "confirmed_income_kopecks": null,
+            "income_kopecks": null,
+            "total_kopecks": null,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": false,
+            "flags": [
+              "4_Transfers_unsupported"
+            ],
+            "approximate": true,
+            "available_months": [],
+            "missing_months": [],
+            "partial_months": [
+              "2030-04-01"
+            ],
+            "partial": true
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [
+        {
+          "code": "4_Transfers_unsupported",
+          "intake_id": 1,
+          "month": "2030-04-01",
+          "source_reference": null,
+          "isin": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-03-31",
+      "end_date": "2030-04-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "25_june_gap",
+    "parser": {
+      "syntax_blockers": [],
+      "endpoint_blockers": [],
+      "endpoint_conflicts": []
+    },
+    "row_counts": {
+      "positions": 1,
+      "money": 0,
+      "trades": 0
+    },
+    "classifications": [],
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-05-31",
+            "closing_date": "2030-06-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": 0,
+        "withdrawals_kopecks": 0,
+        "growth_kopecks": 90000,
+        "chained_return": "0.09",
+        "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+        "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+        "assumptions_used": false,
+        "missing_endpoint": false,
+        "chain_reason_codes": [],
+        "growth_reason_codes": [],
+        "xirr_reason_codes": [],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-05-31",
+          "end": "2030-06-30",
+          "partial_segment": false
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    },
+    "reattached_period": {
+      "contributions_kopecks": 0,
+      "withdrawals_kopecks": 0,
+      "growth_kopecks": 90000,
+      "chained_return": "0.09",
+      "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+      "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+      "assumptions_used": false,
+      "missing_endpoint": false,
+      "chain_reason_codes": [],
+      "growth_reason_codes": [],
+      "xirr_reason_codes": [],
+      "approximate": true
+    },
+    "instruments": {
+      "source_account": "1234567-000",
+      "instruments": [
+        {
+          "isin": "RU000A000000",
+          "source_name": "Synthetic stock",
+          "instrument_type": "stock",
+          "months": [
+            {
+              "buys_cost_kopecks": 0,
+              "sells_proceeds_kopecks": 0,
+              "price_effect_kopecks": 90000,
+              "coupons_kopecks": 0,
+              "dividends_kopecks": 0,
+              "assumed_income_kopecks": 0,
+              "confirmed_income_kopecks": 0,
+              "income_kopecks": 0,
+              "total_kopecks": 90000,
+              "capital_base_kopecks": 900000,
+              "return_percent": "10",
+              "income_assumptions_used": false,
+              "income_complete": true,
+              "flags": [],
+              "approximate": false,
+              "month": "2030-06-01",
+              "opening_quantity": "10",
+              "closing_quantity": "10",
+              "opening_value_kopecks": 900000,
+              "closing_value_kopecks": 990000,
+              "intake_ids": [
+                1
+              ]
+            }
+          ],
+          "all_time": {
+            "buys_cost_kopecks": 0,
+            "sells_proceeds_kopecks": 0,
+            "price_effect_kopecks": 90000,
+            "coupons_kopecks": 0,
+            "dividends_kopecks": 0,
+            "assumed_income_kopecks": 0,
+            "confirmed_income_kopecks": 0,
+            "income_kopecks": 0,
+            "total_kopecks": 90000,
+            "capital_base_kopecks": null,
+            "return_percent": null,
+            "income_assumptions_used": false,
+            "income_complete": true,
+            "flags": [],
+            "approximate": false,
+            "available_months": [
+              "2030-06-01"
+            ],
+            "missing_months": [],
+            "partial_months": [],
+            "partial": false
+          }
+        }
+      ],
+      "income": [],
+      "gaps": [],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB"
+    },
+    "exact_xirr": {
+      "scope": "portfolio",
+      "start_date": "2030-05-31",
+      "end_date": "2030-06-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "annualized_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ],
+      "iterations": 0,
+      "account_id": null
+    },
+    "exact_twrr": {
+      "scope": "portfolio",
+      "account_id": null,
+      "start_date": "2030-05-31",
+      "end_date": "2030-06-30",
+      "performance_currency": "RUB",
+      "availability": "not_computable",
+      "quality": "unavailable",
+      "return_rate": null,
+      "reason_codes": [
+        "not_computable_closing_valuation_missing",
+        "not_computable_opening_valuation_missing",
+        "not_computable_scope_coverage_incomplete"
+      ]
+    }
+  },
+  {
+    "case": "01_plus_25_missing_may",
+    "monthly": {
+      "source_account": "1234567-000",
+      "months": [
+        {
+          "result": {
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            1
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        },
+        {
+          "result": {
+            "opening_date": "2030-04-30",
+            "closing_date": "2030-05-31",
+            "opening_kopecks": null,
+            "closing_kopecks": null,
+            "contributions_kopecks": null,
+            "withdrawals_kopecks": null,
+            "growth_kopecks": null,
+            "modified_dietz_return": null,
+            "assumptions_used": false,
+            "missing_endpoint": true,
+            "reason_codes": [
+              "missing_endpoint",
+              "unknown_flow",
+              "flow_coverage_gap"
+            ],
+            "approximate": true
+          },
+          "intake_ids": [],
+          "flags": [
+            "missing_endpoint",
+            "unknown_flow",
+            "flow_coverage_gap"
+          ],
+          "previous_closing_kopecks": 1090000,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        },
+        {
+          "result": {
+            "opening_date": "2030-05-31",
+            "closing_date": "2030-06-30",
+            "opening_kopecks": 1000000,
+            "closing_kopecks": 1090000,
+            "contributions_kopecks": 0,
+            "withdrawals_kopecks": 0,
+            "growth_kopecks": 90000,
+            "modified_dietz_return": "0.09",
+            "assumptions_used": false,
+            "missing_endpoint": false,
+            "reason_codes": [],
+            "approximate": true
+          },
+          "intake_ids": [
+            2
+          ],
+          "flags": [],
+          "previous_closing_kopecks": null,
+          "coupons_kopecks": 0,
+          "dividends_kopecks": 0,
+          "income_assumptions_used": false
+        }
+      ],
+      "period": {
+        "contributions_kopecks": null,
+        "withdrawals_kopecks": null,
+        "growth_kopecks": null,
+        "chained_return": null,
+        "xirr_annualized_return": null,
+        "xirr_period_return": null,
+        "assumptions_used": false,
+        "missing_endpoint": true,
+        "chain_reason_codes": [
+          "missing_endpoint",
+          "unknown_flow",
+          "flow_coverage_gap"
+        ],
+        "growth_reason_codes": [
+          "unknown_flow",
+          "flow_coverage_gap"
+        ],
+        "xirr_reason_codes": [
+          "unknown_flow",
+          "flow_coverage_gap"
+        ],
+        "approximate": true
+      },
+      "segments": [
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-03-31",
+          "end": "2030-04-30",
+          "partial_segment": true
+        },
+        {
+          "contributions_kopecks": 0,
+          "withdrawals_kopecks": 0,
+          "growth_kopecks": 90000,
+          "chained_return": "0.09",
+          "xirr_annualized_return": "1.85335445601214948807873277763410401817141817631855899187346",
+          "xirr_period_return": "0.08999999999999999999999999999913962120951876191981737332295",
+          "assumptions_used": false,
+          "missing_endpoint": false,
+          "chain_reason_codes": [],
+          "growth_reason_codes": [],
+          "xirr_reason_codes": [],
+          "approximate": true,
+          "start": "2030-05-31",
+          "end": "2030-06-30",
+          "partial_segment": true
+        }
+      ],
+      "flows": [],
+      "defaults_applied": [],
+      "gaps": [
+        {
+          "code": "missing_endpoint",
+          "intake_id": null,
+          "month": "2030-05-01",
+          "source_reference": null
+        },
+        {
+          "code": "unknown_flow",
+          "intake_id": null,
+          "month": "2030-05-01",
+          "source_reference": null
+        },
+        {
+          "code": "flow_coverage_gap",
+          "intake_id": null,
+          "month": "2030-05-01",
+          "source_reference": null
+        }
+      ],
+      "authority": "provisional",
+      "financial_authority": "none",
+      "currency": "RUB",
+      "approximate": true
+    }
+  }
+]

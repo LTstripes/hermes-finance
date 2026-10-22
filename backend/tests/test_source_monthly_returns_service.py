@@ -7,6 +7,9 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 import pytest
+from astra_hunt_runner import CASES as ASTRA_CASES
+from astra_hunt_runner import ROOT as ASTRA_ROOT
+from astra_hunt_runner import replay as astra_replay
 from test_statement_import_broker_statement_provisional import (
     _finite_tables,
     _free_database,
@@ -957,3 +960,198 @@ def test_service_reaggregation_allows_exact_zero_dietz_factor(db):
     assert result.months[0].result.modified_dietz_return == -1
     assert result.period.chained_return == -1
     assert result.period.chain_reason_codes == ()
+
+
+@pytest.fixture(scope="module")
+def astra_results(tmp_path_factory):
+    """Every XML reaches real parsing/intake/readers in a separate synthetic DB."""
+    results = {}
+    for case in ASTRA_CASES:
+        database = _free_database(tmp_path_factory.mktemp(case["case"]))
+        try:
+            results[case["case"]] = astra_replay(database, case)
+        finally:
+            database.engine.dispose()
+    return results
+
+
+@pytest.mark.parametrize("case", [case["case"] for case in ASTRA_CASES])
+def test_astra_hunt_replays_every_fixture(astra_results, case):
+    result = astra_results[case]
+    if case == "08_missing_money":
+        assert result["parser_error"] == "required_section_invalid"
+        assert result["calculation"] == "not_run_parser_rejected"
+        return
+    assert "parser_error" not in result
+    assert result["monthly"]["authority"] == "provisional"
+    assert result["monthly"]["financial_authority"] == "none"
+    # Source-only Save never grants accepted portfolio valuations or flow coverage.
+    assert result["exact_xirr"]["annualized_rate"] is None
+    assert result["exact_twrr"]["return_rate"] is None
+    for metric in ("exact_xirr", "exact_twrr"):
+        assert result[metric]["availability"] == "not_computable"
+        assert "not_computable_scope_coverage_incomplete" in result[metric]["reason_codes"]
+
+
+@pytest.mark.parametrize(
+    "case,reason",
+    [
+        ("02_unknown", "unrecognized_money"),
+        ("05_usd_deposit", "currency_unsupported"),
+        ("06_fx_zero_rate", "currency_unsupported"),
+        ("12_partial_month", "flow_coverage_gap"),
+        ("13_negative_deposit", "invalid_external_flow"),
+        ("14_zero_deposit", "invalid_external_flow"),
+        ("19_partial_redemption", "unrecognized_money"),
+        ("24_transfer_section", "4_Transfers_unsupported"),
+    ],
+)
+def test_astra_hunt_existing_guards(astra_results, case, reason):
+    result = astra_results[case]["monthly"]
+    assert reason in {gap["code"] for gap in result["gaps"]}
+    assert result["period"]["xirr_period_return"] is None
+    assert result["period"]["chained_return"] is None
+    assert all(row["result"]["modified_dietz_return"] is None for row in result["months"])
+
+
+@pytest.mark.parametrize("case", ["01_control", "07_empty_money", "16_zero_fee"])
+def test_astra_hunt_known_zero_is_not_missing(astra_results, case):
+    result = astra_results[case]["monthly"]
+    assert result["period"]["growth_kopecks"] == 90_000
+    assert result["period"]["chained_return"] == Decimal("0.09")
+    assert abs(result["period"]["xirr_period_return"] - Decimal("0.09")) < Decimal("1e-25")
+    assert not result["gaps"]
+
+
+def test_astra_hunt_occurrences_signs_and_unknown_identity(astra_results):
+    duplicate = astra_results["10_duplicate_money"]["monthly"]
+    assert len(duplicate["flows"]) == 2
+    assert duplicate["period"]["contributions_kopecks"] == 20_000
+    withdrawal = astra_results["15_negative_withdrawal"]["monthly"]["period"]
+    assert withdrawal["withdrawals_kopecks"] == 10_000
+    assert withdrawal["growth_kopecks"] == 100_000
+    assert astra_results["09_empty_positions"]["monthly"]["period"]["xirr_period_return"] is None
+    unknown = astra_results["20_unknown_security"]
+    assert unknown["monthly"]["period"]["growth_kopecks"] == 90_000
+    instrument = unknown["instruments"]["instruments"][0]
+    assert instrument["instrument_type"] is None
+    assert "instrument_type_unknown" in instrument["months"][0]["flags"]
+    assert instrument["months"][0]["approximate"]
+
+
+@pytest.mark.parametrize(
+    "case,field",
+    [
+        ("17_nkd_buy", "buys_cost_kopecks"),
+        ("18_nkd_sell", "sells_proceeds_kopecks"),
+    ],
+)
+def test_astra_hunt_nkd_is_counted_once(astra_results, case, field):
+    result = astra_results[case]
+    assert result["classifications"] == ["trade_settlement"]
+    assert result["monthly"]["months"][0]["coupons_kopecks"] == 0
+    assert result["monthly"]["period"]["contributions_kopecks"] == 0
+    instrument = result["instruments"]["instruments"][0]["months"][0]
+    assert instrument[field] == 20_500  # 200 principal + 5 NKD, not +10 NKD.
+
+
+def test_astra_hunt_missing_may_does_not_become_zero_flows(db):
+    for case in (ASTRA_CASES[0], ASTRA_CASES[-1]):
+        with db.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=(ASTRA_ROOT / (case["case"] + ".xml")).read_bytes(),
+                filename=case["filename"],
+                request_id=case["case"],
+            )
+    result = read(db)
+    assert "flow_coverage_gap" in result.period.xirr_reason_codes
+    assert result.period.xirr_period_return is None
+    assert result.period.chained_return is None
+    assert result.period.growth_kopecks is None
+    assert result.period.contributions_kopecks is None
+    assert len(result.segments) == 2
+    assert all(segment.xirr_period_return is not None for segment in result.segments)
+
+
+@pytest.mark.parametrize("reattached", [False, True], ids=["saved", "reattached"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            "03_typo_withdrawal",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="AH-01: typo withdrawal is guessed as dividend by income substring; -10% without blocker",
+            ),
+        ),
+        pytest.param(
+            "11_duplicate_position",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="AH-03: duplicate account/ISIN endpoint rows are summed without conflict; 9.473684%",
+            ),
+        ),
+        pytest.param(
+            "21_outside_period",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="AH-04: invalid_external_flow belongs to May, leaving owning April return available at 9%",
+            ),
+        ),
+        pytest.param(
+            "22_hidden_amount",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="AH-05: unconsumed p_code amount leaf is invisible to rn-count completeness; 9%",
+            ),
+        ),
+        pytest.param(
+            "23_hidden_wrapper",
+            marks=pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="AH-06: extra financial row outside nested Report bypasses structural inventory; 9%",
+            ),
+        ),
+    ],
+)
+def test_astra_hunt_uncertain_import_must_withhold_returns(astra_results, case, reattached):
+    result = astra_results[case]
+    if "parser_error" in result:
+        return  # Rejecting the unsupported/ambiguous source is also a safe resolution.
+    period = result["reattached_period"] if reattached else result["monthly"]["period"]
+    assert period["xirr_period_return"] is None
+    assert period["xirr_annualized_return"] is None
+    assert period["chained_return"] is None
+    assert period["xirr_reason_codes"]
+    if not reattached:
+        assert all(
+            row["result"]["modified_dietz_return"] is None for row in result["monthly"]["months"]
+        )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="AH-02: cross-account internal transfer is excluded from account schedule; -10% instead of 0%",
+)
+@pytest.mark.parametrize("reattached", [False, True], ids=["saved", "reattached"])
+def test_astra_hunt_account_transfer_is_external_to_account(astra_results, reattached):
+    result = astra_results["04_account_transfer"]
+    if "parser_error" in result:
+        return
+    period = result["reattached_period"] if reattached else result["monthly"]["period"]
+    if period["xirr_period_return"] is None:
+        assert period["xirr_reason_codes"]
+        assert period["chained_return"] is None
+    else:
+        # Once account crossing is supported, a withdrawal explains the entire NAV change.
+        assert period["withdrawals_kopecks"] == 100_000
+        assert period["growth_kopecks"] == 0
+        assert period["xirr_period_return"] == 0
+        assert period["chained_return"] == 0

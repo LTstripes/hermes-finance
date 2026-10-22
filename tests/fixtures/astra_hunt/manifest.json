@@ -1,0 +1,127 @@
+[
+  {
+    "case": "01_control",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Complete RUB statement, no flows: 9% period growth"
+  },
+  {
+    "case": "02_unknown",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Unknown operation must block"
+  },
+  {
+    "case": "03_typo_withdrawal",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Misspelled withdrawal containing dividend keyword"
+  },
+  {
+    "case": "04_account_transfer",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Outgoing transfer to another account; account return is 0%"
+  },
+  {
+    "case": "05_usd_deposit",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "USD deposit without accepted dated RUB conversion"
+  },
+  {
+    "case": "06_fx_zero_rate",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Two FX legs, unusable zero exchange rate"
+  },
+  {
+    "case": "07_empty_money",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Explicitly present empty Money section"
+  },
+  {
+    "case": "08_missing_money",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Absent required Money section"
+  },
+  {
+    "case": "09_empty_positions",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Empty positions and cash; no valuation evidence"
+  },
+  {
+    "case": "10_duplicate_money",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Two identical Money occurrences; preserve native multiplicity"
+  },
+  {
+    "case": "11_duplicate_position",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Duplicate same-account same-ISIN endpoint row"
+  },
+  {
+    "case": "12_partial_month",
+    "filename": "Брокерский 1234567 (10.04.30-30.04.30).xml",
+    "description": "Starts on April 10, no calendar opening EOD"
+  },
+  {
+    "case": "13_negative_deposit",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Deposit sign contradicts operation"
+  },
+  {
+    "case": "14_zero_deposit",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Zero external deposit is invalid"
+  },
+  {
+    "case": "15_negative_withdrawal",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Valid signed withdrawal"
+  },
+  {
+    "case": "16_zero_fee",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Known zero fee must remain zero"
+  },
+  {
+    "case": "17_nkd_buy",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Bond accrued interest on purchase"
+  },
+  {
+    "case": "18_nkd_sell",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Bond accrued interest on sale"
+  },
+  {
+    "case": "19_partial_redemption",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Partial principal redemption is not coupon income"
+  },
+  {
+    "case": "20_unknown_security",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Unknown instrument/class with explicit native RUB endpoints"
+  },
+  {
+    "case": "21_outside_period",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "April statement contains a May cash event"
+  },
+  {
+    "case": "22_hidden_amount",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Extra Money amount leaf outside the supported path"
+  },
+  {
+    "case": "23_hidden_wrapper",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Financial row beside Money Report in the known wrapper"
+  },
+  {
+    "case": "24_transfer_section",
+    "filename": "Брокерский 1234567 (01.04.30-30.04.30).xml",
+    "description": "Opaque Transfers section must propagate a blocker"
+  },
+  {
+    "case": "25_june_gap",
+    "filename": "Брокерский 1234567 (01.06.30-30.06.30).xml",
+    "description": "June statement; pair with 01 to leave May uncovered"
+  }
+]
