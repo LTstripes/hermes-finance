@@ -218,6 +218,7 @@ def test_insufficient_boundaries_return_unavailable_metrics(boundaries):
     assert result.months == ()
     assert result.period.chained_return is result.period.xirr_period_return is None
     assert result.period.chain_reason_codes == ("insufficient_boundaries",)
+    assert result.period.contributions_kopecks is result.period.withdrawals_kopecks is None
 
 
 @pytest.mark.parametrize(

@@ -84,8 +84,8 @@ class SourceMonthlyReturnRow:
     intake_ids: tuple[int, ...]
     flags: tuple[str, ...]
     previous_closing_kopecks: int | None
-    coupons_kopecks: int
-    dividends_kopecks: int
+    coupons_kopecks: int | None
+    dividends_kopecks: int | None
     income_assumptions_used: bool
 
 
@@ -478,7 +478,8 @@ def read_monthly_returns(
     previous_closing = None
     while month <= last:
         end = _month_end(month)
-        if not _flow_coverage_complete(sources, month, end):
+        income_covered = _flow_coverage_complete(sources, month, end)
+        if not income_covered:
             uncertain_months.add(month)
             source_flow_reasons[month].add("flow_coverage_gap")
         # Calendar-edge months can be incomplete while the reported period has
@@ -534,8 +535,8 @@ def read_monthly_returns(
                 tuple(s[0] for s in relevant),
                 tuple(flags),
                 previous_closing,
-                income[month]["coupon"],
-                income[month]["dividend"],
+                income[month]["coupon"] if income_covered else None,
+                income[month]["dividend"] if income_covered else None,
                 month in assumed_income_months,
             )
         )
