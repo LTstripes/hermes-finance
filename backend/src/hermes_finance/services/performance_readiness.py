@@ -114,6 +114,11 @@ _RULES: dict[str, tuple[str, ActionKind, Capability]] = {
         "review_observations",
         "not_implemented",
     ),
+    R.BOUNDARY_OBSERVATION_CONFLICT: (
+        "valuation_order",
+        "review_observations",
+        "not_implemented",
+    ),
     R.CURRENCY_CONVERSION_INCOMPLETE: ("historical_fx", "review_fx", "unsupported"),
     "not_computable_historical_endpoint_ineffective": (
         "historical_endpoint",

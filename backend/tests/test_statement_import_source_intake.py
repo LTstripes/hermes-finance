@@ -1136,9 +1136,23 @@ def test_history_month_boundary_own_transfer_requires_explicit_classification(hi
         assert update.status_code == 200, update.text
         after = _history_returns(client, account, "monthly")
         assert not after["flows"]
-        assert after["period"]["contributions_kopecks"] == 0
-        assert after["period"]["withdrawals_kopecks"] == 0
-        assert all("unknown_flow" not in m["flags"] for m in after["months"])
+        assert update.json()["classification"] == "internal_transfer"
+        assert update.json()["origin"] == "user_choice"
+        assert after["period"]["contributions_kopecks"] is None
+        assert after["period"]["withdrawals_kopecks"] is None
+        assert any("unknown_flow" in m["flags"] for m in after["months"])
+        # A manual label alone does not establish that both accounts are in scope.
+        classification = "external_withdrawal" if day == outgoing else "external_deposit"
+        corrected = client.put(
+            f"/api/source-intakes/{intake['id']}/money-classifications/{choice['source_reference']}",
+            json={"classification": classification},
+        )
+        assert corrected.status_code == 200, corrected.text
+        corrected = _history_returns(client, account, "monthly")
+        assert len(corrected["flows"]) == 1
+        assert corrected["period"]["contributions_kopecks"] == (0 if day == outgoing else 50000)
+        assert corrected["period"]["withdrawals_kopecks"] == (50000 if day == outgoing else 0)
+        assert all("unknown_flow" not in m["flags"] for m in corrected["months"])
 
 
 def test_history_malformed_file_does_not_rollback_other_batch_saves(history_client):

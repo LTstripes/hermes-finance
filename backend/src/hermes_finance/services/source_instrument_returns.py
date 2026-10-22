@@ -211,6 +211,10 @@ def _endpoint(views, isin, month, *, closing, flags):
         rows = [row for row in view["document"]["positions"] if row["isin"] == isin]
         if not rows:
             continue  # An absent position row is not affirmative zero.
+        if len({row["source_account"] for row in rows}) != len(rows):
+            flags.add("duplicate_position")
+            invalid = [True, True]
+            continue
         values = [_minor(row.get("ending_value" if closing else "beginning_value")) for row in rows]
         quantities = []
         for row in rows:

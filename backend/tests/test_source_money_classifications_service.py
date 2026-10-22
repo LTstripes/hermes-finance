@@ -113,8 +113,11 @@ def test_put_confirm_default_and_reclassify_internal_transfer(db):
     assert not result.defaults_applied
     assert client.put(url, json={"classification": "internal_transfer"}).status_code == 200
     result = read(db)
-    assert not result.flows and result.months[0].result.contributions_kopecks == 0
-    assert result.months[0].result.modified_dietz_return is not None
+    assert not result.flows
+    assert result.months[0].result.contributions_kopecks is None
+    assert result.months[0].result.modified_dietz_return is None
+    assert "unrecognized_money" in {gap.code for gap in result.gaps}
+    assert saved_rows(db, intake)[0].classification == "internal_transfer"
 
 
 def test_put_rejects_invalid_enum_extra_fields_sign_missing_and_cross_intake_ref(db):
@@ -155,8 +158,12 @@ def test_overlap_deduplicates_income_and_persisted_choice_overrides_default(db):
     result = read(db)
     assert not result.flows
     assert result.months[0].coupons_kopecks == 2000
-    assert result.months[0].result.contributions_kopecks == 0
-    assert {gap.code for gap in result.gaps} == {"overlap_flow_deduplicated"}
+    assert result.months[0].result.contributions_kopecks is None
+    assert {gap.code for gap in result.gaps} == {
+        "overlap_flow_deduplicated",
+        "unrecognized_money",
+        "unknown_flow",
+    }
     assert one != two
 
 
@@ -413,7 +420,7 @@ def test_captured_text_is_bounded_listing_omits_it_and_long_rows_stay_distinct(d
     assert all(len(row.operation) == OPERATION_MAX_LENGTH for row in rows)
     assert all(len(row.narrative) == NARRATIVE_MAX_LENGTH for row in rows)
     assert rows[0].narrative != rows[1].narrative
-    assert all(row.classification == "coupon" for row in rows)
+    assert all(row.classification == "unknown" for row in rows)
     client = TestClient(create_app(database=db))
     before = snapshot(db)
     listing = client.get("/api/broker-months/intakes")
@@ -426,8 +433,11 @@ def test_captured_text_is_bounded_listing_omits_it_and_long_rows_stay_distinct(d
     for row in view.json()["money_classifications"]:
         assert len(row["operation"]) <= OPERATION_MAX_LENGTH
         assert len(row["narrative"]) <= NARRATIVE_MAX_LENGTH
-    # Two different long narratives, repeated in overlapping reports, are two incomes.
-    assert read(db).months[0].coupons_kopecks == 2000
+    # Distinct opaque operations remain distinct evidence, never guessed income.
+    result = read(db)
+    assert result.months[0].coupons_kopecks == 0
+    assert result.period.growth_kopecks is None
+    assert sum(gap.code == "unrecognized_money" for gap in result.gaps) == 4
     assert snapshot(db) == before
 
 
@@ -464,7 +474,7 @@ def test_legacy_resave_parser_count_drift_is_typed_409_and_atomic(db, monkeypatc
         ("Внесено по распоряжению Клиента", "Купон", "50", "external_deposit"),
         ("Перевод", "в АО Synthetic дивиденды банк", "-50", "external_withdrawal"),
         ("Перевод из Synthetic Банк", "Купон", "50", "external_deposit"),
-        ("Внутренний перевод", "Дивиденды", "50", "internal_transfer"),
+        ("Внутренний перевод", "Дивиденды", "50", "unknown"),
         ("НКД по сделке 123 Synthetic", "Купон", "-5", "trade_settlement"),
         (" НКД ПО СДЕЛКЕ: Synthetic ", "Купон", "-5", "trade_settlement"),
         ("Перевод", "НКД по сделке Synthetic coupon", "-5", "trade_settlement"),
@@ -485,3 +495,189 @@ def test_explicit_cash_and_nkd_semantics_precede_generic_income(
     operation, narrative, amount, expected
 ):
     assert default_classification(operation, narrative, "unsupported", amount) == expected
+
+
+@pytest.mark.parametrize(
+    "origin,status",
+    [
+        ("default_rule", "assumed"),
+        ("user_choice", "confirmed"),
+    ],
+)
+def test_resave_refreshes_only_assumed_default_rules(db, origin, status):
+    intake, (xml, filename) = save_month(
+        db,
+        beginning="100",
+        closing="0",
+        candidate_count=0,
+        extra=(
+            ("Дивиденды", "Synthetic dividend", "100"),
+            ("Выведено по распоряжению Клиента", "Вывод дивидендов", "-100"),
+        ),
+    )
+    original_rows = saved_rows(db, intake)
+    with db.session_factory() as session:
+        row = session.get(SourceMoneyClassification, original_rows[-1].id)
+        row.classification, row.origin, row.status = "dividend", origin, status
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        # An acknowledged command replay must remain read-only even for old defaults.
+        source_intake.save_intake(
+            session, document=xml, filename=filename, request_id="save-4-None"
+        )
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=xml, filename=filename, request_id="new-rules-resave"
+        )
+    rows = saved_rows(db, intake)
+    assert len(rows) == 2
+    assert [(r.id, r.source_reference, r.created_at) for r in rows] == [
+        (r.id, r.source_reference, r.created_at) for r in original_rows
+    ]
+    assert (rows[-1].origin, rows[-1].status) == (origin, status)
+    if (origin, status) == ("default_rule", "assumed"):
+        assert rows[-1].classification == "external_withdrawal"
+        result = read(db)
+        assert result.months[0].dividends_kopecks == 10000
+        assert result.period.withdrawals_kopecks == 10000
+        assert result.period.growth_kopecks == 0
+    else:
+        assert rows[-1].classification == "dividend"
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=xml, filename=filename, request_id="unchanged-resave"
+        )
+    after = saved_rows(db, intake)
+    assert [(r.classification, r.updated_at) for r in after] == [
+        (r.classification, r.updated_at) for r in rows
+    ]
+
+
+@pytest.mark.parametrize(
+    "amount,closing,expected,field",
+    [
+        ("-100", "0", "external_withdrawal", "withdrawals_kopecks"),
+        ("100", "200", "external_deposit", "contributions_kopecks"),
+    ],
+)
+@pytest.mark.parametrize("proven", [True, False])
+def test_internal_broker_transfer_crosses_selected_account(
+    db, amount, closing, expected, field, proven
+):
+    narrative = (
+        (
+            f"Со счета {ACCOUNT} на счет 7654321-000 внутри брокера"
+            if amount.startswith("-")
+            else f"Со счета 7654321-000 на счет {ACCOUNT} внутри брокера"
+        )
+        if proven
+        else "Внутри брокера"
+    )
+    intake, original = save_month(
+        db,
+        beginning="100",
+        closing=closing,
+        candidate_count=0,
+        extra=(("Внутренний перевод", narrative, amount),),
+    )
+    assert saved_rows(db, intake)[0].classification == (expected if proven else "unknown")
+    for originals in (None, {intake: original}):
+        result = read(db, originals)
+        if proven:
+            assert getattr(result.period, field) == 10000
+            assert result.period.growth_kopecks == 0
+            assert result.period.xirr_period_return == 0
+            assert not result.gaps
+        else:
+            assert result.period.growth_kopecks is None
+            assert result.period.xirr_period_return is None
+            assert "unrecognized_money" in {g.code for g in result.gaps}
+
+
+@pytest.mark.parametrize("amount,source_account", [("-100", "1234567"), ("100", "7654321")])
+def test_transfer_is_internal_only_when_both_accounts_are_selected(amount, source_account):
+    from hermes_finance.services.source_money_classifications import transfer_classification
+
+    narrative = "Со счета 1234567 на счет 7654321 внутри брокера"
+    assert (
+        transfer_classification(
+            "Внутренний перевод",
+            narrative,
+            amount,
+            source_account=source_account,
+            selected_accounts={"1234567", "7654321"},
+        )
+        == "internal_transfer"
+    )
+    assert default_classification(
+        "Внутренний перевод",
+        narrative,
+        "unsupported",
+        amount,
+        source_account=source_account,
+        selected_accounts={source_account},
+    ) == ("external_withdrawal" if amount.startswith("-") else "external_deposit")
+    assert (
+        transfer_classification(
+            "Внутренний перевод",
+            narrative,
+            str(-int(amount)),
+            source_account=source_account,
+            selected_accounts={"1234567", "7654321"},
+        )
+        == "unknown"
+    )
+
+
+@pytest.mark.parametrize(
+    "operation,narrative",
+    [
+        ("Вывoд дивидендов", "Synthetic withdrawal"),
+        ("Unknown", "Дивиденды"),
+        ("Unknown", "Купон"),
+        ("Дивиденды", "Synthetic negative income"),
+    ],
+)
+def test_unsupported_operation_is_not_guessed_from_income_words(operation, narrative):
+    assert default_classification(operation, narrative, "unsupported", "-100") == "unknown"
+
+
+@pytest.mark.parametrize("amount", ["-100", "100"])
+@pytest.mark.parametrize("manual", [False, True])
+def test_transfer_full_scope_excludes_flow_without_changing_saved_choice(db, amount, manual):
+    from hermes_finance.services.source_money_classifications import choose_classification
+    from hermes_finance.services.source_monthly_returns import _money
+
+    narrative = (
+        f"Со счета {ACCOUNT} на счет 7654321-000 внутри брокера"
+        if amount.startswith("-")
+        else f"Со счета 7654321-000 на счет {ACCOUNT} внутри брокера"
+    )
+    intake, _ = save_month(
+        db, candidate_count=0, extra=(("Внутренний перевод", narrative, amount),)
+    )
+    if manual:
+        with db.session_factory() as session:
+            choose_classification(
+                session, intake, saved_rows(db, intake)[0].source_reference, "internal_transfer"
+            )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+        gaps = []
+        rows = _money(session, view, None, gaps, selected_accounts={ACCOUNT, "7654321-000"})
+        assert len(rows) == 1 and not gaps
+        flow = rows[0][1]
+        assert flow.classification == "internal_transfer"
+        assert not flow.included  # No contribution or withdrawal in the full-scope schedule.
+        gaps = []
+        account = _money(session, view, None, gaps)[0][1]
+        assert account.included
+        assert account.classification == (
+            "external_withdrawal" if amount.startswith("-") else "external_deposit"
+        )
+        assert not gaps
+    assert snapshot(db) == before

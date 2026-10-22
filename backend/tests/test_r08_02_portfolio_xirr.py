@@ -67,6 +67,7 @@ def _history(
     *,
     opening: str = "1000.00",
     closing: str = "1100.00",
+    closing_date: date = END,
     include_opening: bool = True,
     include_closing: bool = True,
     close_months: bool = True,
@@ -82,9 +83,9 @@ def _history(
     )
     closing_month = create_reporting_month(
         session,
-        year=2032,
-        month=1,
-        snapshot_date=END,
+        year=closing_date.year,
+        month=closing_date.month,
+        snapshot_date=closing_date,
     )
     account = create_account(
         session,
@@ -129,7 +130,7 @@ def _history(
             quantity=1,
             average_cost_per_unit="0.00",
             market_price_per_unit=amount,
-            price_date=START if month_id == opening_month.id else END,
+            price_date=START if month_id == opening_month.id else closing_date,
         )
         create_deposit_snapshot(
             session,
@@ -1287,6 +1288,242 @@ def test_boundary_flow_needs_current_unambiguous_evidence_for_consumed_value(
         )
         assert result.annualized_rate is None
         assert result.reason_codes == ("not_computable_valuation_boundary_order_unknown",)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("scope", ["account", "portfolio"])
+@pytest.mark.parametrize("relation", ["pre_external_flow", "post_external_flow"])
+@pytest.mark.parametrize("boundary", ["start", "end"])
+def test_boundary_conflict_is_checked_before_matching_endpoint(tmp_path, scope, relation, boundary):
+    from _valuation_capture import create_observed_valuation_point
+
+    session, database, opening_id, closing_id, account_id = _history(
+        tmp_path, opening="100", closing="100", close_months=False
+    )
+    day, month_id = (START, opening_id) if boundary == "start" else (END, closing_id)
+    selected = account_id if scope == "account" else None
+    try:
+        flow = create_external_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            event_date=day,
+            boundary_amount="20",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        for amount in ("100", "120"):
+            create_observed_valuation_point(
+                session,
+                reporting_month_id=month_id,
+                scope=scope,
+                account_id=selected,
+                observed_date=day,
+                total_value=amount,
+                performance_currency="RUB",
+                provenance_kind="synthetic_conflicting_capture",
+                relation=relation,
+                external_flow_id=flow.id,
+            )
+        close_reporting_month(session, opening_id)
+        close_reporting_month(session, closing_id)
+        availability = performance_availability_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=scope,
+            account_id=selected,
+        )
+        assert not availability.xirr.is_available
+        result = xirr_for_interval(
+            session,
+            start_date=START,
+            end_date=END,
+            scope=scope,
+            account_id=selected,
+        )
+        assert result.annualized_rate is None
+        assert result.quality is XirrQuality.UNAVAILABLE
+        assert result.reason_codes == ("boundary_observation_conflict",)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_grouped_opening_post_flows_are_excluded_together(tmp_path):
+    from _valuation_capture import create_observed_valuation_point
+
+    from hermes_finance.services.portfolio_xirr import _cash_flows_from_availability
+    from hermes_finance.services.valuation_boundaries import create_external_flow_boundary_group
+
+    session, database, opening_id, closing_id, account_id = _history(
+        tmp_path, opening="100", closing="110", closing_date=MID, close_months=False
+    )
+    try:
+        flows = [
+            create_external_flow(
+                session,
+                reporting_month_id=opening_id,
+                account_id=account_id,
+                event_date=START,
+                boundary_amount=amount,
+                direction=direction,
+                kind=kind,
+                scope_membership="stable_in_scope",
+            )
+            for amount, direction, kind in (
+                ("50", "contribution", "external_contribution"),
+                ("20", "withdrawal", "external_withdrawal"),
+            )
+        ]
+        group = create_external_flow_boundary_group(
+            session,
+            reporting_month_id=opening_id,
+            boundary_date=START,
+            flow_ids=[flow.id for flow in flows],
+            scope="portfolio",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=opening_id,
+            scope="portfolio",
+            observed_date=START,
+            total_value="100",
+            performance_currency="RUB",
+            provenance_kind="synthetic_group_post",
+            relation="post_external_flow",
+            boundary_group_id=group.id,
+        )
+        close_reporting_month(session, opening_id)
+        close_reporting_month(session, closing_id)
+        availability = performance_availability_for_interval(
+            session, start_date=START, end_date=MID
+        )
+        assert [f.amount_kopecks for f in _cash_flows_from_availability(session, availability)] == [
+            -10000,
+            11000,
+        ]
+        result = portfolio_xirr_for_interval(session, start_date=START, end_date=MID)
+        _assert_rate(result, "0.1")
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_account_only_boundary_evidence_does_not_prove_portfolio_inclusion(tmp_path):
+    from _valuation_capture import create_observed_valuation_point
+
+    session, database, opening_id, closing_id, account_id = _history(
+        tmp_path, opening="100", closing="100", close_months=False
+    )
+    try:
+        flow = create_external_flow(
+            session,
+            reporting_month_id=opening_id,
+            account_id=account_id,
+            event_date=START,
+            boundary_amount="20",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        create_observed_valuation_point(
+            session,
+            reporting_month_id=opening_id,
+            scope="account",
+            account_id=account_id,
+            observed_date=START,
+            total_value="100",
+            performance_currency="RUB",
+            provenance_kind="synthetic_account_post",
+            relation="post_external_flow",
+            external_flow_id=flow.id,
+        )
+        close_reporting_month(session, opening_id)
+        close_reporting_month(session, closing_id)
+        _assert_rate(
+            xirr_for_interval(
+                session,
+                start_date=START,
+                end_date=END,
+                scope="account",
+                account_id=account_id,
+            ),
+            "0",
+        )
+        portfolio = portfolio_xirr_for_interval(session, start_date=START, end_date=END)
+        assert portfolio.annualized_rate is None
+        assert "not_computable_valuation_boundary_order_unknown" in portfolio.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("inapplicable", ["stale", "quality_unknown", "coverage_unknown"])
+def test_noncurrent_or_inexact_conflict_cannot_override_current_boundary(tmp_path, inapplicable):
+    from _valuation_capture import create_observed_valuation_point
+
+    session, database, opening_id, closing_id, account_id = _history(
+        tmp_path, opening="100", closing="100", close_months=False
+    )
+    try:
+        flow = create_external_flow(
+            session,
+            reporting_month_id=opening_id,
+            account_id=account_id,
+            event_date=START,
+            boundary_amount="20",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+        )
+        attest_cash_boundary_history(
+            session, account_id=account_id, covered_from=START, covered_to=END
+        )
+        for amount in ("100", "120"):
+            point = create_observed_valuation_point(
+                session,
+                reporting_month_id=opening_id,
+                scope="account",
+                account_id=account_id,
+                observed_date=START,
+                total_value=amount,
+                performance_currency="RUB",
+                provenance_kind="synthetic_currentness",
+                relation="post_external_flow",
+                external_flow_id=flow.id,
+            )
+        if inapplicable == "stale":
+            point.material_signature = "synthetic_stale_signature"
+        elif inapplicable == "quality_unknown":
+            point.quality = "unknown"
+        else:
+            point.coverage_status = "unknown"
+        session.commit()
+        close_reporting_month(session, opening_id)
+        close_reporting_month(session, closing_id)
+        _assert_rate(
+            xirr_for_interval(
+                session,
+                start_date=START,
+                end_date=END,
+                scope="account",
+                account_id=account_id,
+            ),
+            "0",
+        )
     finally:
         session.close()
         database.engine.dispose()

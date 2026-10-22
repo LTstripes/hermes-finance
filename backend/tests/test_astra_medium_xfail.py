@@ -61,11 +61,6 @@ def test_irrelevant_position_does_not_hide_known_external_flow_totals(db):
     ] * len(totals)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="deferred: classifier under concurrent change",
-)
 def test_transfer_with_coupon_income_narrative_is_not_coupon_income():
     classification = default_classification(
         "Перевод", "купонный доход Synthetic bond", "unsupported", "10.00"
