@@ -533,6 +533,7 @@ CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
 }
 
 _CI_LANE_OVERRIDES = {
+    "security/test_security_review.py": "ci_runtime_release",
     # Resolve legacy flat modules and ambiguous additive-marker combinations
     # explicitly. Keep this fail-closed so a new unclassified module cannot
     # disappear from every CI lane by inheriting a broad default.

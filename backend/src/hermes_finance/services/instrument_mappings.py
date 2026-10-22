@@ -141,11 +141,9 @@ def _mapping_instrument_kind(instrument: Instrument) -> InstrumentType:
     try:
         kind = InstrumentType(instrument.instrument_type)
     except ValueError as error:
-        raise ValueError(
-            f"unsupported instrument type for market mapping: {instrument.instrument_type!r}"
-        ) from error
+        raise ValueError("unsupported instrument type for market mapping") from error
     if kind not in SUPPORTED_KINDS:
-        raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
+        raise ValueError("unsupported instrument type for market mapping")
     return kind
 
 
@@ -208,11 +206,9 @@ def validate_accepted_identity(instrument: Instrument, identity: MarketIdentity)
     try:
         kind = InstrumentType(instrument.instrument_type)
     except ValueError as error:
-        raise ValueError(
-            f"unsupported instrument type for market mapping: {instrument.instrument_type!r}"
-        ) from error
+        raise ValueError("unsupported instrument type for market mapping") from error
     if kind not in SUPPORTED_KINDS:
-        raise ValueError(f"unsupported instrument type for market mapping: {kind.value}")
+        raise ValueError("unsupported instrument type for market mapping")
     if identity.provider == T_INVEST_PROVIDER:
         if identity.provider_venue_id is not None:
             raise ValueError("provider_venue_id must be empty for t_invest")
@@ -230,9 +226,7 @@ def validate_accepted_identity(instrument: Instrument, identity: MarketIdentity)
             engine=parts.engine,
             market=parts.market,
         ):
-            raise ValueError(
-                f"engine/market {parts.engine}/{parts.market} is incompatible with {kind.value}"
-            )
+            raise ValueError("engine/market is incompatible with instrument type")
     else:
         raise ValueError(f"unsupported market-data provider: {identity.provider}")
     instrument_isin = _normalize_isin(instrument.isin)

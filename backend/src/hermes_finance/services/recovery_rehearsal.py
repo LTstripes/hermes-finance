@@ -650,10 +650,21 @@ def _open_regular_read_only(path: Path) -> int:
 def _read_fd(descriptor: int) -> bytes:
     os.lseek(descriptor, 0, os.SEEK_SET)
     chunks: list[bytes] = []
+    total = 0
+    limit = protected_backups.MAX_ARTIFACT_BYTES
+    if os.fstat(descriptor).st_size > limit:
+        raise RecoveryRehearsalError(
+            "source-verification", "managed recovery point size limit exceeded"
+        )
     while True:
-        chunk = os.read(descriptor, _READ_CHUNK)
+        chunk = os.read(descriptor, min(_READ_CHUNK, limit - total + 1))
         if not chunk:
             break
+        total += len(chunk)
+        if total > limit:
+            raise RecoveryRehearsalError(
+                "source-verification", "managed recovery point size limit exceeded"
+            )
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -759,7 +770,10 @@ def _verify_source(path: Path, *, protection_state: str, protection_mode: str) -
                 "managed recovery point protection identity does not match",
             )
         with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
-            snapshot_bytes = archive.read(protected_backups._SNAPSHOT_NAME)
+            protected_backups._validate_archive_budget(archive)
+            snapshot_bytes = protected_backups.read_member(
+                archive, protected_backups._SNAPSHOT_NAME, protected_backups.MAX_SNAPSHOT_BYTES
+            )
         result = VerifiedSource(
             path=source,
             descriptor=descriptor,

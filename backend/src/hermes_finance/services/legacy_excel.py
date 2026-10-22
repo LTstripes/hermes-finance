@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, DecimalException
@@ -12,7 +14,13 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from hermes_finance.domain import PercentageRate, RubleAmount
+from hermes_finance.services.archive_limits import read_bounded, validate_members
 from hermes_finance.services.legacy_month_mapping import read_legacy_month_mapping
+
+MAX_XLSX_BYTES = 32 * 1024 * 1024
+MAX_XLSX_MEMBER_BYTES = 32 * 1024 * 1024
+MAX_XLSX_EXPANDED_BYTES = 128 * 1024 * 1024
+MAX_XLSX_MEMBERS = 2048
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,9 +365,17 @@ def extract_legacy_workbook(workbook_path: Path, mapping_path: Path) -> LegacyWo
     workbook: Any | None = None
     cached_workbook: Any | None = None
     try:
-        workbook = load_workbook(workbook_path, data_only=False)
-        cached_workbook = load_workbook(workbook_path, data_only=True)
-    except (InvalidFileException, OSError) as error:
+        payload = read_bounded(workbook_path, MAX_XLSX_BYTES)
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            validate_members(
+                archive,
+                max_members=MAX_XLSX_MEMBERS,
+                max_member=MAX_XLSX_MEMBER_BYTES,
+                max_total=MAX_XLSX_EXPANDED_BYTES,
+            )
+        workbook = load_workbook(io.BytesIO(payload), data_only=False)
+        cached_workbook = load_workbook(io.BytesIO(payload), data_only=True)
+    except (InvalidFileException, OSError, ValueError, zipfile.BadZipFile) as error:
         if workbook is not None:
             workbook.close()
         raise ValueError("legacy workbook could not be opened") from error

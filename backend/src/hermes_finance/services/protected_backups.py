@@ -24,6 +24,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from hermes_finance.database import Database
+from hermes_finance.services.archive_limits import read_bounded, read_member, validate_members
 from hermes_finance.services.backups import (
     BackupStorageError,
     _create_online_snapshot,
@@ -62,6 +63,9 @@ _LOCK_NAME = ".hermes_recovery.lock"
 _FILENAME_CREATED_AT_FORMAT = "%Y%m%dT%H%M%S%fZ"
 _SNAPSHOT_NAME = "snapshot.sqlite3"
 _MANIFEST_NAME = "manifest.json"
+MAX_MANIFEST_BYTES = 64 * 1024
+MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024
+MAX_ARTIFACT_BYTES = MAX_SNAPSHOT_BYTES + MAX_MANIFEST_BYTES + 64 * 1024
 _ZERO_DIGEST = "0" * 64
 _REPARSE_POINT = 0x400
 
@@ -362,15 +366,21 @@ def _snapshot_identity(snapshot: Path) -> tuple[str, int]:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
             size += len(chunk)
+            if size > MAX_SNAPSHOT_BYTES:
+                raise ProtectedBackupError("snapshot exceeds creation size limit")
     return digest.hexdigest(), size
 
 
 def _zip_bytes(snapshot: Path, manifest: dict[str, Any]) -> bytes:
+    try:
+        snapshot_bytes = read_bounded(snapshot, MAX_SNAPSHOT_BYTES)
+    except ValueError as error:
+        raise ProtectedBackupError("snapshot exceeds creation size limit") from error
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, payload in (
             (_MANIFEST_NAME, _canonical_json(manifest)),
-            (_SNAPSHOT_NAME, snapshot.read_bytes()),
+            (_SNAPSHOT_NAME, snapshot_bytes),
         ):
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
@@ -447,9 +457,26 @@ def _verify_snapshot_bytes(snapshot_bytes: bytes) -> tuple[str, ...]:
         connection.close()
 
 
+def _validate_archive_budget(archive: zipfile.ZipFile) -> None:
+    try:
+        validate_members(
+            archive,
+            max_members=2,
+            max_member=MAX_SNAPSHOT_BYTES,
+            max_total=MAX_SNAPSHOT_BYTES + MAX_MANIFEST_BYTES,
+            stored_only=True,
+        )
+        if archive.getinfo(_MANIFEST_NAME).file_size > MAX_MANIFEST_BYTES:
+            raise ValueError("manifest size limit exceeded")
+    except ValueError:
+        raise ProtectedBackupError("managed artifact resource budget exceeded") from None
+
+
 def _verify_payload(
     artifact_bytes: bytes, *, expected_hash: str | None = None
 ) -> tuple[dict[str, Any], str, int]:
+    if len(artifact_bytes) > MAX_ARTIFACT_BYTES:
+        raise ProtectedBackupError("managed artifact size limit exceeded")
     actual = hashlib.sha256(artifact_bytes).hexdigest()
     if expected_hash is not None and actual != expected_hash:
         raise ProtectedBackupError("managed artifact full hash does not verify")
@@ -457,11 +484,12 @@ def _verify_payload(
     with zipfile.ZipFile(io.BytesIO(artifact_bytes), "r") as archive:
         if archive.namelist() != [_MANIFEST_NAME, _SNAPSHOT_NAME]:
             raise ProtectedBackupError("managed artifact members are invalid")
-        manifest = json.loads(archive.read(_MANIFEST_NAME))
+        _validate_archive_budget(archive)
+        manifest = json.loads(read_member(archive, _MANIFEST_NAME, MAX_MANIFEST_BYTES))
         if not isinstance(manifest, dict):
             raise ProtectedBackupError("managed artifact manifest is invalid")
         _validate_manifest_shape(manifest)
-        snapshot_bytes = archive.read(_SNAPSHOT_NAME)
+        snapshot_bytes = read_member(archive, _SNAPSHOT_NAME, MAX_SNAPSHOT_BYTES)
         snapshot_digest = hashlib.sha256(snapshot_bytes).hexdigest()
         if manifest.get("snapshot_sha256") != snapshot_digest:
             raise ProtectedBackupError("managed artifact snapshot hash is invalid")
@@ -489,8 +517,8 @@ def _verify_artifact_content(
         _assert_no_reparse_components(path)
         if not path.is_file() or path.is_symlink():
             raise ProtectedBackupError("managed artifact is not a regular file")
-        return _verify_payload(path.read_bytes(), expected_hash=expected_hash)
-    except (OSError, KeyError, json.JSONDecodeError, sqlite3.Error, zipfile.BadZipFile) as error:
+        return _verify_payload(read_bounded(path, MAX_ARTIFACT_BYTES), expected_hash=expected_hash)
+    except (OSError, KeyError, ValueError, sqlite3.Error, zipfile.BadZipFile) as error:
         raise ProtectedBackupError("managed artifact read-back verification failed") from error
 
 

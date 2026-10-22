@@ -4,7 +4,6 @@ import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -12,6 +11,7 @@ from starlette.responses import JSONResponse
 
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.domain.broker_statement_provisional import ProvisionalAssumptions
 from hermes_finance.services import broker_statement_provisional as service
 from hermes_finance.statement_import.mybroker import MyBrokerError
@@ -19,7 +19,7 @@ from hermes_finance.statement_import.mybroker import MyBrokerError
 NO_STORE = {"Cache-Control": "no-store"}
 
 
-class ProvisionalRoute(APIRoute):
+class ProvisionalRoute(BoundedUploadRoute):
     """Typed errors and no-store also cover multipart validation and upload failures."""
 
     def get_route_handler(self):
@@ -31,7 +31,9 @@ class ProvisionalRoute(APIRoute):
             except (StarletteHTTPException, RequestValidationError) as error:
                 code = (
                     str(error.detail)
-                    if isinstance(error, StarletteHTTPException) and error.status_code != 400
+                    if isinstance(error, StarletteHTTPException)
+                    and error.status_code != 400
+                    and error.detail != "upload_multipart_invalid"
                     else "provisional_request_invalid"
                 )
                 response = JSONResponse(

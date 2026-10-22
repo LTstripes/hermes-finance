@@ -109,7 +109,7 @@ def _validate_flow_type(value: str) -> str:
     try:
         ExpectedCashFlowType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported expected flow type: {value!r}") from error
+        raise ValueError("unsupported expected flow type") from error
     return value
 
 

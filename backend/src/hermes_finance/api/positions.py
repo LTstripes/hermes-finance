@@ -85,7 +85,7 @@ def _validate_price_source(value: str) -> str:
     try:
         PriceSource(value)
     except ValueError as error:
-        raise ValueError(f"unsupported price source: {value!r}") from error
+        raise ValueError("unsupported price source") from error
     return value
 
 

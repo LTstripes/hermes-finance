@@ -405,3 +405,63 @@ def test_snapshot_apply_api_delegates_failure_codes_without_reimplementing_apply
     assert response.status_code == 200
     assert response.json()["error_code"] == "preview_changed"
     assert len(calls) == 1
+
+
+def test_large_statement_select_all_applies_more_than_300_rows(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    database, _month_id, account_id, _instrument_id = _context(tmp_path)
+    with database.session_factory() as session:
+        for month in range(1, 11):
+            create_reporting_month(
+                session, year=2024, month=month, snapshot_date=date(2024, month, 28)
+            )
+    document = build_income_report_pdf(
+        [
+            {
+                "record_date": (date(2024, 1, 1) + timedelta(days=i)).strftime("%d.%m.%Y"),
+                "payment_date": (date(2024, 1, 2) + timedelta(days=i)).strftime("%d.%m.%Y"),
+            }
+            for i in range(301)
+        ]
+    )
+    mapping_json = json.dumps([{"hermes_account_id": account_id, "provider_account_ref": SYN_DEPO}])
+    try:
+        with TestClient(create_app(database)) as client:
+            prepared = client.post(
+                "/api/statement-import/prepare",
+                files={"document": ("synthetic-large.pdf", document, "application/pdf")},
+                data={"account_mappings": mapping_json},
+            )
+            assert prepared.status_code == 200
+            body = prepared.json()
+            assert len(body["rows"]) == 301
+            selections = json.dumps(
+                [
+                    {
+                        "natural_identity": row["natural_identity"],
+                        "material_fingerprint": row["material_fingerprint"],
+                        "expected_hermes_account_id": account_id,
+                        "expected_hermes_instrument_id": row["expected_hermes_instrument_id"],
+                    }
+                    for row in body["rows"]
+                ]
+            )
+            assert 64 * 1024 < len(selections.encode()) < 1024 * 1024
+            applied = client.post(
+                "/api/statement-import/apply",
+                files={"document": ("synthetic-large.pdf", document, "application/pdf")},
+                data={
+                    "account_mappings": mapping_json,
+                    "selections": selections,
+                    "expected_document_sha256": body["document_sha256"],
+                },
+            )
+            assert applied.status_code == 200
+            result = applied.json()
+            assert result["success"] is True, result
+            assert result["selected_count"] == 301
+            assert len(result["items"]) == 301
+            assert all(item["action"] == "created" for item in result["items"])
+    finally:
+        database.engine.dispose()

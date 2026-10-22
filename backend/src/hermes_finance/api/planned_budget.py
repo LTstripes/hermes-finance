@@ -67,7 +67,7 @@ def _validate_expense_type(value: str) -> str:
     try:
         ExpenseType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported expense type: {value!r}") from error
+        raise ValueError("unsupported expense type") from error
     return value
 
 

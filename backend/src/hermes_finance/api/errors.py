@@ -7,7 +7,7 @@ Response shape::
 
     {"error": {"code": "...", "message": "...", "details": [...]}}
 
-Privacy invariant: handlers log the exception class, request path and status
+Privacy invariant: handlers log the exception class, route template and status
 code only — never money amounts, request payloads, or financial details.
 """
 
@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hermes_finance.database import DatabaseMaintenanceError
+from hermes_finance.diagnostics import request_route
 from hermes_finance.services.backups import RestoreOutcomeAmbiguousError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
@@ -55,6 +56,122 @@ _STATUS_CODE_TO_CODE: dict[int, str] = {
     422: "unprocessable",
     500: "internal_error",
 }
+
+
+# Exact reviewed literals only: never accept prefixes/suffixes containing input.
+# Typed domain exceptions retain their own handlers below.
+_SAFE_GENERIC_MESSAGES = frozenset(
+    {
+        "IIS profile was not found",
+        "Backup is not a valid SQLite database",
+        "Backup schema is incompatible with the live database",
+        "MOEX ISS mapping — production provider disabled",
+        "T-Invest инструмент не совместим с типом «Акция».",
+        "T-Invest инструмент не совместим с типом «Облигация».",
+        "T-Invest инструмент не совместим с типом «Фонд».",
+        "accepted mapping identity was not found among provider candidates",
+        "ambiguous market-data candidates cannot be accepted automatically",
+        "engine/market is incompatible with instrument type",
+        "isin mismatch between instrument and market identity",
+        "isin mismatch between instrument and provider candidate",
+        "opening taxable gross must be zero when effective_from_month is 1",
+        "selected payout identity does not match the accepted local mapping",
+        "unsupported instrument type for market mapping",
+        "t_invest mapping requires provider verification",
+        "base_kopecks must be >=0",
+        "invalid_assumed_rate_pct: binary float not allowed",
+        "invalid_assumed_rate_pct: empty",
+        "invalid_assumed_rate_pct: must be decimal string or int",
+        "invalid_assumed_rate_pct: negative rate not allowed",
+        "invalid_assumed_rate_pct: not a decimal",
+        "invalid_assumed_rate_pct: not finite",
+        "invalid_assumed_rate_pct: unsupported type",
+        "invalid_drawdown_pct: binary float not allowed",
+        "invalid_drawdown_pct: empty",
+        "invalid_drawdown_pct: must be decimal string or number",
+        "invalid_drawdown_pct: not a decimal",
+        "invalid_drawdown_pct: not finite",
+        "invalid_drawdown_pct: out of range 0..100",
+        "invalid_drawdown_pct: unsupported type",
+        "invalid_inflation_pct: binary float not allowed",
+        "invalid_inflation_pct: empty",
+        "invalid_inflation_pct: must be decimal string or int",
+        "invalid_inflation_pct: negative inflation not allowed",
+        "invalid_inflation_pct: not a decimal",
+        "invalid_inflation_pct: not finite",
+        "invalid_inflation_pct: unsupported type",
+        "invalid_reporting_value_change_pct: below -100",
+        "invalid_reporting_value_change_pct: binary float not allowed",
+        "invalid_reporting_value_change_pct: empty",
+        "invalid_reporting_value_change_pct: must be decimal string or number",
+        "invalid_reporting_value_change_pct: not a decimal",
+        "invalid_reporting_value_change_pct: not finite",
+        "invalid_reporting_value_change_pct: unsupported type",
+        "invalid_target_currency: canonical three-letter identifier required",
+        "invalid_target_currency: must be a string",
+        "months_ahead must be >= 0",
+        "account cannot be deleted while it is linked to a debt",
+        "account name must not be empty",
+        "account type cannot change while the account is linked to a debt",
+        "amount must not be negative",
+        "annual_rate must not be negative",
+        "balance must not be negative",
+        "cannot change a T-Invest quote while keeping t_invest price_source",
+        "currency must not be empty",
+        "current_balance must not be negative",
+        "deposit and savings interest must be recorded in deposit_snapshots.actual_interest_received",
+        "eligible_close_at must not precede opened_at",
+        "expected cash flow already exists in forecast version",
+        "expected cash flow is retained by historical payout reconciliation",
+        "expected_net_amount must equal gross_amount minus expected_tax_amount",
+        "expected_net_amount must equal gross_amount when tax is unknown",
+        "external_code must be unique when provided",
+        "forecast_version must use one source_as_of_date per reporting month",
+        "instrument name must not be empty",
+        "isin must be unique when provided",
+        "linked account must already be included in capital",
+        "linked account must be cash, deposit, or savings",
+        "linked account must remain included in capital",
+        "linked debt must already be included in liquid capital",
+        "linked debt must remain a credit_card debt",
+        "linked debt must remain included in liquid capital",
+        "market_price_per_unit must not be negative",
+        "name must not be empty",
+        "net_amount must equal gross_amount minus tax_amount and commission_amount",
+        "nominal_value must not be negative",
+        "only credit_card debts can be linked to an account",
+        "only other income may be included in passive income",
+        "position snapshot already exists for month, account and instrument",
+        "quantity must be finite",
+        "quantity must be positive",
+        "quantity must have at most 6 decimal places",
+        "realized_loss net_amount must be negative",
+        "reporting month already has a salary",
+        "reporting month already has a salary income entry",
+        "source-owned payout requires a reviewed source revision",
+        "source-owned position cannot be replaced by a market quote",
+        "source-owned position requires a reviewed source revision",
+        "stock quantity must be a positive whole number",
+        "t_invest price_source can only be set by quote apply",
+        "tax year must be between 1900 and 9999",
+        "unsupported account status",
+        "unsupported account type",
+        "unsupported debt type",
+        "unsupported deposit type",
+        "unsupported expected flow type",
+        "unsupported expense type",
+        "unsupported income type",
+        "unsupported instrument type",
+        "unsupported investment flow type",
+        "unsupported price source",
+        "unsupported tax benefit status",
+    }
+)
+
+
+def _generic_message(exc: Exception, fallback: str) -> str:
+    message = str(exc)
+    return message if message in _SAFE_GENERIC_MESSAGES else fallback
 
 
 def _code_for_status(status_code: int) -> str:
@@ -94,6 +211,23 @@ def _error_response(
     )
 
 
+def _validation_message(error: dict) -> str:
+    """Keep validation guidance while omitting values embedded by validators.
+
+    The response deliberately projects only loc/msg, never Pydantic's input
+    or ctx. Custom validators can also interpolate input into msg itself.
+    """
+    message = error.get("msg", "validation error")
+    value = error.get("input")
+    if isinstance(value, str) and value:
+        message = message.replace(repr(value), "[redacted]")
+        if message == f"Value error, {value}":
+            message = "Value error, [redacted]"
+        elif message.endswith(f": {value}"):
+            message = message[: -len(value)] + "[redacted]"
+    return message
+
+
 def register_error_handlers(application: FastAPI) -> None:
     """Register unified exception handlers on *application*."""
 
@@ -105,9 +239,9 @@ def register_error_handlers(application: FastAPI) -> None:
         code = _code_for_status(status_code)
         message = str(exc.detail) if exc.detail is not None else code
         logger.info(
-            "%s path=%s status=%d code=%s",
+            "%s route=%s status=%d code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             status_code,
             code,
         )
@@ -121,31 +255,36 @@ def register_error_handlers(application: FastAPI) -> None:
         for err in exc.errors():
             loc = err.get("loc", ())
             field = ".".join(str(part) for part in loc if part != "body")
-            details.append(ErrorDetail(field=field, message=err.get("msg", "validation error")))
+            details.append(
+                ErrorDetail(
+                    field=field,
+                    message=_validation_message(err),
+                )
+            )
         logger.info(
-            "%s path=%s status=422 code=unprocessable",
+            "%s route=%s status=422 code=unprocessable",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(422, "unprocessable", "Request validation failed", details)
 
     @application.exception_handler(LookupError)
     async def _not_found_handler(request: Request, exc: LookupError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=404 code=not_found",
+            "%s route=%s status=404 code=not_found",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
-        return _error_response(404, "not_found", str(exc))
+        return _error_response(404, "not_found", _generic_message(exc, "Resource not found"))
 
     @application.exception_handler(LinkedPairReadModelError)
     async def _linked_pair_read_model_handler(
         request: Request, exc: LinkedPairReadModelError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -154,9 +293,9 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(QuotePreviewEvidenceError)
     async def _preview_changed_handler(request: Request, exc: PreviewChangedError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -166,9 +305,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: ClosedReportingMonthError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -177,9 +316,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: InstrumentDeletionBlockedError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -189,9 +328,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: DebtAccountLinkConflictError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -200,9 +339,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: LinkedPairBalanceEvidenceConflictError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=%s",
+            "%s route=%s status=409 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
@@ -212,9 +351,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: TaxBracketYearLockedError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=tax_brackets_year_locked",
+            "%s route=%s status=409 code=tax_brackets_year_locked",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(
             409,
@@ -229,18 +368,18 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(IntegrityError)
     async def _integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", "Database integrity constraint violated")
 
     @application.exception_handler(ConcurrencyError)
     async def _concurrency_error_handler(request: Request, exc: ConcurrencyError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -249,9 +388,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: DatabaseMaintenanceError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=409 code=conflict",
+            "%s route=%s status=409 code=conflict",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(409, "conflict", str(exc))
 
@@ -260,9 +399,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: RestoreOutcomeAmbiguousError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=500 code=restore_outcome_ambiguous",
+            "%s route=%s status=500 code=restore_outcome_ambiguous",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
         )
         return _error_response(500, "restore_outcome_ambiguous", str(exc))
 
@@ -271,9 +410,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: SalaryTaxHistoryIncompleteError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -283,9 +422,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: PayoutMappingRequiredError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -295,9 +434,9 @@ def register_error_handlers(application: FastAPI) -> None:
         request: Request, exc: StatementRetractError
     ) -> JSONResponse:
         logger.info(
-            "%s path=%s status=%d code=%s",
+            "%s route=%s status=%d code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.status_code,
             exc.code,
         )
@@ -314,17 +453,21 @@ def register_error_handlers(application: FastAPI) -> None:
         # generic unprocessable.
         message = str(exc)
         code = "unprocessable"
-        if "scenario-lab" in request.url.path and ":" in message:
+        if "scenario-lab" in request_route(request) and ":" in message:
             prefix = message.split(":", 1)[0].strip()
-            if prefix.startswith("invalid_"):
+            if prefix in {
+                "invalid_target_currency",
+                "invalid_reporting_value_change_pct",
+                "invalid_drawdown_pct",
+            }:
                 code = prefix
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             code,
         )
-        return _error_response(422, code, message)
+        return _error_response(422, code, _generic_message(exc, "Invalid request value"))
 
     # Scenario handlers are registered alongside the generic ValueError and
     # LookupError handlers; Starlette resolves handlers by walking the
@@ -339,9 +482,9 @@ def register_error_handlers(application: FastAPI) -> None:
     @application.exception_handler(ScenarioLabError)
     async def _scenario_lab_error_handler(request: Request, exc: ScenarioLabError) -> JSONResponse:
         logger.info(
-            "%s path=%s status=422 code=%s",
+            "%s route=%s status=422 code=%s",
             exc.__class__.__name__,
-            request.url.path,
+            request_route(request),
             exc.code,
         )
         return _error_response(422, exc.code, str(exc))
@@ -355,15 +498,15 @@ def register_error_handlers(application: FastAPI) -> None:
         # but the historical global mapping is 404/not_found. We keep
         # backward compatibility: scenario-lab paths surface
         # reporting_month_not_found while all other callers keep not_found.
-        path = request.url.path
+        path = request_route(request)
         if "scenario-lab" in path:
             code = "reporting_month_not_found"
         else:
             code = "not_found"
         logger.info(
-            "%s path=%s status=404 code=%s",
+            "%s route=%s status=404 code=%s",
             exc.__class__.__name__,
-            path,
+            request_route(request),
             code,
         )
         return _error_response(404, code, str(exc))

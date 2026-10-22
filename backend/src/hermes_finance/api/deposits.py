@@ -69,7 +69,7 @@ def _validate_deposit_type(value: str) -> str:
     try:
         DepositType(value)
     except ValueError as error:
-        raise ValueError(f"unsupported deposit type: {value!r}") from error
+        raise ValueError("unsupported deposit type") from error
     return value
 
 

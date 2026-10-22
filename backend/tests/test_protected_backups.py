@@ -601,15 +601,16 @@ def test_readback_binds_one_immutable_artifact_byte_sequence(
     artifact = next(path for path in destination.iterdir() if is_managed_recovery_name(path.name))
     original_bytes = artifact.read_bytes()
     original_hash = hashlib.sha256(original_bytes).hexdigest()
-    original_read_bytes = Path.read_bytes
+    original_read = protected_backups.read_bounded
 
-    def replace_after_read(path: Path) -> bytes:
-        content = original_read_bytes(path)
+    def replace_after_read(path: Path, limit: int) -> bytes:
+        assert limit == protected_backups.MAX_ARTIFACT_BYTES
+        content = original_read(path, limit)
         if path == artifact:
             path.write_bytes(b"replacement-after-read")
         return content
 
-    monkeypatch.setattr(Path, "read_bytes", replace_after_read)
+    monkeypatch.setattr(protected_backups, "read_bounded", replace_after_read)
     _manifest, verified_hash, verified_size = protected_backups._verify_artifact(artifact)
 
     assert verified_hash == original_hash
@@ -2018,3 +2019,32 @@ def test_linux_handle_unlink_is_object_bound_or_fails_closed(tmp_path: Path, mon
         assert path.name not in unlinked
     finally:
         protected_backups._close_deletion_target(target)
+
+
+@pytest.mark.parametrize("size", [4, 5])
+def test_snapshot_creation_size_boundary_is_typed(tmp_path, monkeypatch, size):
+    snapshot = tmp_path / "synthetic-snapshot"
+    snapshot.write_bytes(b"x" * size)
+    monkeypatch.setattr(protected_backups, "MAX_SNAPSHOT_BYTES", 4)
+    if size == 4:
+        assert protected_backups._snapshot_identity(snapshot)[1] == 4
+        assert protected_backups._zip_bytes(snapshot, {})
+    else:
+        with pytest.raises(ProtectedBackupError, match="creation size limit"):
+            protected_backups._snapshot_identity(snapshot)
+        with pytest.raises(ProtectedBackupError, match="creation size limit"):
+            protected_backups._zip_bytes(snapshot, {})
+
+
+def test_oversize_creation_preserves_verified_point_and_cleans_staging(
+    tmp_path, synthetic_database, monkeypatch
+):
+    destination = tmp_path / "mounted-protected-destination"
+    destination.mkdir()
+    _publish(monkeypatch, synthetic_database, destination)
+    prior = {p.name: p.read_bytes() for p in destination.iterdir()}
+    monkeypatch.setattr(protected_backups, "MAX_SNAPSHOT_BYTES", 1)
+    with pytest.raises(ProtectedBackupError, match="recovery-point publication failed") as rejected:
+        _publish(monkeypatch, synthetic_database, destination)
+    assert isinstance(rejected.value.__cause__, ProtectedBackupError)
+    assert {p.name: p.read_bytes() for p in destination.iterdir()} == prior

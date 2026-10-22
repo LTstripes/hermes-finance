@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Evidence cut: 2026-10-21, after the #916–#919 merges. This is the only regularly rewritten status page. Procedure/contract books describe stable rules; dated records remain snapshots. Current observations below come from GitHub decisions and explicitly attributed Owner-local receipts, without reading private originals/DBs in this documentation task.
+Main/release evidence cut: 2026-10-21, after the #916–#919 merges; the local #929 security follow-up below is dated 2026-10-22. This is the only regularly rewritten status page. Procedure/contract books describe stable rules; dated records remain snapshots. Current observations below come from GitHub decisions and explicitly attributed Owner-local receipts, without reading private originals/DBs in this documentation task.
 
 <a id="s1"></a>
 ## 1. Code, published release, installed runtime and UAT are separate
@@ -43,6 +43,8 @@ Instrument known payouts/EOD/trades and stock fixed-holding WHAT-IF are delivere
 Local Worker follow-up on `fix/astra-verify-926`, pinned main baseline `fd51120d` and starting candidate `0b45653f` from draft [#927](https://github.com/LTstripes/hermes-finance/pull/927): boundary conflicts precede amount matching, verbal НКД requires purchase linkage, transfers use the selected scope, and new exact re-saves refresh only assumed defaults. All six synthetic hunt findings are addressed, including MEDIUM duplicate positions; the 12 strict xfails are normal regressions. Focused synthetic verification exercised all 35 relevant files (2,768 passed, two outdated expectations corrected). The final six changed test files pass **619/619**, including all 12 former xfails; 19 focused probes also pass. Backend Ruff lint/format (632 files), tracked-file privacy (1,355 paths) and whitespace checks pass. The full suite, CI, independent/external review and Owner numerical UAT were not run. The fixture README/results.json retain the original hunt baseline evidence. P1–P3 partial-period behavior remains outside this task. This is an unaccepted local candidate; no push, merge, external review, protected-environment access, release, runtime update or Owner numerical UAT is implied.
 
 Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) with independent C1–C5 evidence prerequisites. Delivered capability is separate from current numerical readiness and Owner UAT scope; the attributed #836 receipt above is limited, not a claim every class/history is finance-ready.
+
+2026-10-22 security remediation for [#929](https://github.com/LTstripes/hermes-finance/pull/929) on `review/security-audit`: the original remediation (`58cbb8cd`) plus the follow-up for all five OpenCode findings (fixed sibling-validator/generic exception messages, 32-file multipart support, 1 MiB non-file fields, typed 256 MiB backup creation rejection, refreshed delivery docs) are committed and the branch is merged with main `8297a747`. The security suite passes **70 tests**; protected backups pass 61 tests / 2 platform skips. OpenCode re-review confirmed findings 1-4 fixed. See the [security review and verification](reviews/security-review-2026-10-22.md). CI and Integrator acceptance are pending. No release, runtime or financial-authority change is claimed.
 
 <a id="s3"></a>
 ## 3. Current priorities, blockers and Owner actions
