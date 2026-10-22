@@ -5736,8 +5736,10 @@ The separate approximate monthly Modified Dietz/period kernel is
 and one dated schedule; the approximate chained return uses each month’s own
 monthly estimate. A missing monthly endpoint withholds the chain while independently
 known outer-period growth/XIRR may remain available when statements continuously
-cover the dated flow interval. Coverage uses the union of statement date ranges,
-independently of valuation availability; a gap makes affected contributions,
+cover the dated flow interval. Period flow coverage uses the union of statement date
+ranges within the actual outer statement dates, independently of valuation availability.
+Partial calendar-edge months remain incomplete without nulling known period flow totals;
+a gap inside the reported interval makes affected contributions,
 withdrawals, growth and XIRR NULL with `flow_coverage_gap` and `unknown_flow`.
 Independent covered segments remain available. Any Modified Dietz factor `1+r<0`
 withholds the geometric chain with `negative_dietz_factor`, preserving the monthly

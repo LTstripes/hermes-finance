@@ -433,14 +433,21 @@ def read_monthly_returns(
         }
     }
     rows = []
-    month = min(source[1] for source in sources).replace(day=1)
+    first = min(source[1] for source in sources)
+    month = first.replace(day=1)
     last = max(source[2] for source in sources)
+    period_uncertain_months = uncertain_months.copy()
     previous_closing = None
     while month <= last:
         end = _month_end(month)
         if not _flow_coverage_complete(sources, month, end):
             uncertain_months.add(month)
             source_flow_reasons[month].add("flow_coverage_gap")
+        # Calendar-edge months can be incomplete while the reported period has
+        # complete Money coverage. Only gaps inside its actual date bounds
+        # invalidate period flows; valuation availability is independent.
+        if not _flow_coverage_complete(sources, max(month, first), min(end, last)):
+            period_uncertain_months.add(month)
         relevant = [source for source in sources if source[1] <= month and source[2] >= end]
 
         def endpoint(index, matches):
@@ -489,7 +496,7 @@ def read_monthly_returns(
         )
         previous_closing = closing
         month = _next_month(month)
-    period = _period_totals(rows, schedule, uncertain_months)
+    period = _period_totals(rows, schedule, period_uncertain_months)
     groups = []
     current = []
     for row in rows:
@@ -507,7 +514,7 @@ def read_monthly_returns(
             start=group[0].result.opening_date,
             end=group[-1].result.closing_date,
             partial_segment=partial,
-            **asdict(_period_totals(group, schedule, uncertain_months)),
+            **asdict(_period_totals(group, schedule, period_uncertain_months)),
         )
         for group in groups
     ]

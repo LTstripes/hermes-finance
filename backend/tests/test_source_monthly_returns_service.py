@@ -784,6 +784,45 @@ def test_flow_coverage_uses_date_union_separately_from_monthly_values(db, second
 
 
 @pytest.mark.parametrize(
+    ("periods", "has_gap"),
+    [
+        (("10.04.30-20.06.30",), False),
+        (("10.04.30-14.05.30", "15.05.30-20.06.30"), False),
+        (("10.04.30-14.05.30", "16.05.30-20.06.30"), True),
+    ],
+)
+def test_partial_calendar_edges_do_not_invalidate_covered_period_flows(db, periods, has_gap):
+    for index, period in enumerate(periods):
+        xml = provisional_xml(candidate_count=1 if index == 0 else 0)
+        with db.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=xml,
+                filename=f"Брокерский 1234567 ({period}).xml",
+                request_id=f"partial-period-{index}",
+            )
+    before = snapshot(db)
+    result = read(db)
+    assert len(result.months) == 3
+    assert all(row.result.missing_endpoint for row in result.months)
+    # The calendar months at both edges still lack full-month flow coverage.
+    for row in (result.months[0], result.months[-1]):
+        assert row.result.contributions_kopecks is None
+        assert "flow_coverage_gap" in row.flags
+    assert result.period.chained_return is None
+    assert result.period.growth_kopecks is result.period.xirr_period_return is None
+    if has_gap:
+        assert result.period.contributions_kopecks is result.period.withdrawals_kopecks is None
+    else:
+        assert result.period.contributions_kopecks == 100_000
+        assert result.period.withdrawals_kopecks == 0
+    for reasons in (result.period.growth_reason_codes, result.period.xirr_reason_codes):
+        assert ("flow_coverage_gap" in reasons) == has_gap
+        assert ("unknown_flow" in reasons) == has_gap
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
     "structure,expected",
     [
         ("Transfers", "4_Transfers_unsupported"),
