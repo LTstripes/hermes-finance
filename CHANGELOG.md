@@ -23,6 +23,10 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 ### Fixed
 
 - [#929](https://github.com/LTstripes/hermes-finance/pull/929), SEC-01–SEC-06: redact route/exception and rejected-remote diagnostics, hide SQL parameters, bound uploads before multipart spooling, cap recovery/XLSX archives before member reads, strengthen privacy/artifact gates, and omit supplied values from generic validation errors.
+- [#928](https://github.com/LTstripes/hermes-finance/pull/928): expand the certified unique-root XIRR bracket for short periods and isolate Decimal precision; preserve NULL income for uncovered source months and NULL flow totals without a source-backed interval. Three synthetic regressions remain deferred by the protected-file boundary.
+- Follow-up to #926/#927: reject conflicting current boundary observations before XIRR amount matching; preserve grouped opening-flow and account-only evidence behavior. Recognize verbal НКД as linked purchase settlement or unknown, scope broker transfers to their actual account boundary, and refresh only assumed default classifications on a new exact re-save while preserving manual/confirmed choices.
+- Resolve all six synthetic import findings (including the MEDIUM duplicate-position finding): unsupported income-like operation names, cross-account transfers, duplicate account/ISIN positions, out-of-document Money dates, unconsumed amount leaves and financial nodes outside Report. Ambiguous operands withhold dependent numbers with reasons. All 12 strict xfail cases become normal regression tests. Saved duplicate rows are checked independently of parser flags, and clean overlaps cannot silently clear the endpoint conflict. Baseline hunt results remain historical; partial-period P1–P3 behavior is unchanged.
+
 - Astra audit HIGH fixes 1-5: boundary-flow XIRR inclusion, statement flow-coverage continuity, financial parser blockers, cash/NKD classification precedence, and negative Modified Dietz chain factors; synthetic regression coverage.
 
 ### Known limitations

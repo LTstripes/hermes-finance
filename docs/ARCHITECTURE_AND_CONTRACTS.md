@@ -5271,7 +5271,11 @@ Interior date-only ordering is not an XIRR blocker. A start/end-date external
 flow requires known inclusion in the consumed valuation; otherwise XIRR is NULL
 with `not_computable_valuation_boundary_order_unknown`. A current, exact, complete,
 same-scope/currency/date PRE or POST observation must match the consumed endpoint
-value unambiguously. One side suffices. Opening POST and closing PRE flows are
+value unambiguously. Before matching that value, conflicting amounts among current
+applicable COMPLETE/EXACT observations for the same flow/group, scope and PRE/POST
+side withhold XIRR with `boundary_observation_conflict`; stale or other-scope
+observations do not prove or conflict with this scope. One side suffices. Opening
+POST and closing PRE flows are
 excluded from the investor schedule; opening PRE and closing POST flows are
 included once. Interior dates do not require TWRR PRE/POST observations.
 
@@ -5437,7 +5441,10 @@ diagnostics, with no supported in-page repair action implied.
 #### Numerical limitations
 
 The solver uses the date-only XIRR equation with a 365-day year and a
-deterministic bracketed Decimal search.  Before accepting a visible bracket,
+deterministic bracketed Decimal search in an isolated local context. The log-rate
+bracket expands when the initial scan misses a certified unique root; numerical
+search exhaustion or an unrepresentable rate reports convergence failure, not
+proof of no root. Before accepting a visible bracket,
 it applies an exact sign-variation certificate: with
 `z = (1 + rate) ** (1 / 365)`, the equation is a polynomial in positive `z`.
 Histories with more than one coefficient sign change cannot prove a unique
@@ -5750,7 +5757,9 @@ withholds the geometric chain with `negative_dietz_factor`, preserving the month
 estimate and known growth; a factor exactly zero remains allowed. Rates are Decimal fraction
 strings and money is integer kopecks in this endpoint. Results are
 `authority=provisional`, `financial_authority=none`, `approximate=true` and grant
-no financial Apply, Close, source completeness or exact TWRR authority.
+no financial Apply, Close, source completeness or exact TWRR authority. Without
+two boundaries, flow totals remain NULL with `insufficient_boundaries`; no
+source-backed interval is established.
 
 Owner decision (2026-10-20, #912): capture provisional Money classification at
 upload. Migration `0060_source_money_classifications` adds the empty
@@ -5772,12 +5781,21 @@ observations. Deterministic rules reuse the existing original-bound money candid
 patterns: client/bank deposits and withdrawals are external, coupons/dividends are
 income, commissions/tariffs are fees, НДФЛ is tax, settlements/НКД по сделке are
 trade settlement. Explicit withdrawal/deposit/transfer semantics take precedence
-over generic coupon/dividend words. Refined НКД по сделке names remain settlement;
-unrecognized НКД variants are unknown rather than coupon income. Everything else
-is unknown, never a guessed flow. Defaults have
-`origin=default_rule,status=assumed`. Re-upload never duplicates occurrences or
-replaces an existing classification. Exact original re-save with a new request ID
-can capture missing legacy rows; acknowledged same-request replay stays read-only.
+over generic coupon/dividend words. Refined НКД по сделке names remain settlement.
+Verbal «накопленный купонный доход» forms are also НКД, never coupons. They are
+trade settlement only when a native purchase ID plus matching account, settlement
+date, currency and paid NKD amount establish a unique purchase link; otherwise
+unknown. A settlement label without that purchase link is insufficient. Income defaults require supported operation patterns, not an income word
+inside an unsupported operation. A broker transfer is internal only when both
+explicit source and destination accounts belong to the selected scope. A proved
+crossing is a deposit/withdrawal for the selected account; unproved direction or
+scope stays unknown and withholds dependent results, including for a saved manual
+internal-transfer label whose scope is unproved. Manual interpretation is retained.
+Defaults have `origin=default_rule,status=assumed`. Exact original re-save with a
+new request ID re-evaluates only those assumed default rules and may capture
+missing legacy rows. It preserves occurrence identity, creation time and all
+user/confirmed choices; unchanged classifications retain their update time.
+Acknowledged same-request replay stays read-only.
 A changed Money extraction count refuses with
 `source_intake_parser_revision_changed` before capturing any classifications.
 
@@ -5812,13 +5830,23 @@ contributions/withdrawals, growth and rates remain NULL with `unknown_flow`.
 Financial parser blockers (`unparsed_source_rows`, `unknown_section`, unsupported
 Transfers/UFSR and unclassified position rows) likewise mark the document’s covered
 months and containing totals as unknown, retaining each explicit blocker code.
-Non-financial statuses do not block returns; neighbouring complete documents stay
-independently usable.
+Completeness checks cover the whole XML wrapper and every monetary amount leaf,
+including known tags outside supported paths. Duplicate account/ISIN position
+occurrences remain separate source evidence and block endpoint sums with
+`duplicate_position`; instrument quantities, values and dependent results are NULL.
+Readers check saved rows independently of the parser flag. An overlapping clean
+report cannot clear those conflicting endpoint dates without resolving multiplicity.
+A Money date outside its document interval blocks every month covered by that document,
+not only the reported event month. Non-financial statuses do not block returns;
+neighbouring complete documents stay independently usable.
 Currency checks in these source-return readers and shared Money validation normalize
 case and surrounding whitespace; legacy `RUR` is the same ruble currency as `RUB`,
 including persisted classification comparisons and overlap signatures. Native saved
 source facts/fingerprints are not rewritten. Independent complete months remain
-available. Income subtotals are partial when gaps exist. Python callers may
+available. Income totals are NULL when statement date coverage for the month is
+incomplete, retaining `flow_coverage_gap`; a covered quiet month may report zero.
+With complete date coverage, classified income subtotals remain partial when
+interpretation gaps exist. Python callers may
 still verify exact originals through the provisional context reader and supply
 source-bound transient choices for default external rows; a persisted user choice
 always takes precedence. Overlap deduplication preserves references and same-report

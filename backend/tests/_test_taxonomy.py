@@ -92,6 +92,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_astra_medium_xfail.py",
     "test_source_instrument_returns_service.py",
     "test_source_monthly_returns_service.py",
     "test_source_money_classifications_service.py",
@@ -537,6 +538,7 @@ _CI_LANE_OVERRIDES = {
     # explicitly. Keep this fail-closed so a new unclassified module cannot
     # disappear from every CI lane by inheriting a broad default.
     "test_accounts.py": "ci_core",
+    "test_astra_medium_xfail.py": "ci_core",
     "test_cash.py": "ci_core",
     "test_cash_flow_ladder.py": "ci_core",
     "test_close_readiness.py": "ci_core",

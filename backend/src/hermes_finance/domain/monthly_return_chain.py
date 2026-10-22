@@ -174,7 +174,7 @@ def calculate_monthly_return_chain(
     A nonpositive Dietz denominator blocks the rate, preserving known growth.
     All rows/totals carry approximate=True: this method grants no exact TWRR
     or accepted financial/source authority. Assumed flows also flag period XIRR.
-    Empty/single-boundary input returns no months and unavailable rates.
+    Empty/single-boundary input returns no months, unknown flow totals and unavailable rates.
     Malformed types/order/status raise TypeError/ValueError; missing data does not.
     Calculations use a local 60-digit ROUND_HALF_UP Decimal context.
     """
@@ -184,8 +184,8 @@ def calculate_monthly_return_chain(
         return MonthlyReturnChainResult(
             months=(),
             period=PeriodReturnTotals(
-                contributions_kopecks=0,
-                withdrawals_kopecks=0,
+                contributions_kopecks=None,
+                withdrawals_kopecks=None,
                 growth_kopecks=None,
                 chained_return=None,
                 xirr_annualized_return=None,

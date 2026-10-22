@@ -36,8 +36,8 @@ export type MonthlyReturn = {
   approximate: true;
   intake_ids: number[];
   flags: string[];
-  coupons_kopecks: number;
-  dividends_kopecks: number;
+  coupons_kopecks: number | null;
+  dividends_kopecks: number | null;
   income_assumptions_used: boolean;
 };
 export type SourceReturnFlow = {

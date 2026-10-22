@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:Report xmlns:ns0="MyBroker" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Name="MyBroker" Textbox5="Отчет по сделкам и операциям (Отчет брокера)" xsi:schemaLocation="MyBroker http://reporting.alfadirect.ru/ReportServer?%2FCabinet%2FRelease%2FMyBroker&amp;rs%3AFormat=XML&amp;rc%3ASchema=True" synthetic_only="astra-hunt-generated-no-owner-data" synthetic_case="09_empty_positions">
+  <ns0:Positions>
+    <ns0:Report Name="1_Positions" />
+  </ns0:Positions>
+  <ns0:Trades>
+    <ns0:Report Name="2_Trades" />
+  </ns0:Trades>
+  <ns0:Trades2>
+    <ns0:Report Name="3_BrokerMoneyMove">
+      <ns0:Tablix1>
+        <ns0:settlement_date_Collection>
+          <ns0:settlement_date settlement_date="2030-04-15T00:00:00">
+            <ns0:rn_Collection />
+          </ns0:settlement_date>
+        </ns0:settlement_date_Collection>
+      </ns0:Tablix1>
+    </ns0:Report>
+  </ns0:Trades2>
+  <ns0:Trades3>
+    <ns0:Report Name="4_Transfers" />
+  </ns0:Trades3>
+  <ns0:Trades4>
+    <ns0:Report Name="5_UFSR" />
+  </ns0:Trades4>
+</ns0:Report>
