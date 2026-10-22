@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import { listAllSourceIntakes, readSourceIntake, saveSourceIntake } from "../api/sourceIntake";
 import {
   getSourceInstrumentReturns,
@@ -108,7 +108,16 @@ export default function UiV2MonthlyReturnsPage() {
   });
   const accounts = useMemo(
     () =>
-      Array.from(new Set((intakes.data ?? []).flatMap((i) => i.document.source_accounts))).sort(),
+      Array.from(
+        new Set(
+          (intakes.data ?? [])
+            .flatMap(({ document }) => [
+              document.filename_account,
+              ...(document.source_accounts ?? []),
+            ])
+            .filter((value) => typeof value === "string" && value.trim().length > 0),
+        ),
+      ).sort(),
     [intakes.data],
   );
   const [selected, setSelected] = useState("");
@@ -172,7 +181,11 @@ export default function UiV2MonthlyReturnsPage() {
             const ack = await saveSourceIntake(file, id, 0, null);
             intakeId = ack.intake_id;
           } catch (error) {
-            updateUpload(id, { state: "Не сохранен", detail: formatApiError(error) });
+            const detail =
+              error instanceof ApiClientError && error.status === 409
+                ? `${formatApiError(error)} Причина: ${error.message}`
+                : formatApiError(error);
+            updateUpload(id, { state: "Не сохранен", detail });
             return;
           }
           await readUploadedIntake(id, intakeId);

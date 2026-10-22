@@ -37,7 +37,7 @@ export type SourceIntake = {
     policy_revision: number;
     overrides: Record<string, string>;
   };
-  document: MyBrokerDocument;
+  document: Omit<MyBrokerDocument, "source_accounts"> & { source_accounts?: string[] };
   proposals: (NonNullable<BrokerMonthPreview["identity"]>["instruments"][number] & {
     currency_assessment: CurrencyAssessment;
   })[];

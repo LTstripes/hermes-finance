@@ -1,5 +1,7 @@
 """Local original-bound, journal-only commands. No financial endpoint here."""
 
+import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -10,6 +12,8 @@ from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.domain.source_intake import ConfirmIntake, ReviewIntake, SaveIntake
 from hermes_finance.services import source_intake
 from hermes_finance.statement_import.mybroker import MyBrokerError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(route_class=BoundedUploadRoute, prefix="/intakes", tags=["source-intake"])
 
@@ -43,6 +47,7 @@ async def save(
     except ValidationError:
         raise HTTPException(422, "source_intake_intent_invalid") from None
     except MyBrokerError as error:
+        logger.warning("reason=%s request_id=%s", str(error), requested.request_id)
         raise HTTPException(409, str(error)) from None
 
 

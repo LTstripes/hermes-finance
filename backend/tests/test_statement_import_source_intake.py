@@ -1,6 +1,7 @@
 """Durable source journal boundaries; only fabricated originals and disposable DBs."""
 
 import json
+import logging
 from datetime import UTC, date, datetime
 from xml.etree import ElementTree as ET
 
@@ -67,6 +68,35 @@ def intent(view, **changes):
         "deferred_isins": state["deferred_isins"],
         **changes,
     }
+
+
+def test_save_conflict_returns_reason_and_logs_only_reason_and_request_id(database, caplog):
+    client = TestClient(create_app(database=database))
+    request_id = "synthetic-conflict-request"
+    filename = FILENAME.replace("1234567", "7654321")
+    document = b"<Report><Amount>987654.32</Amount><ISIN>SYNTH000001</ISIN>"
+    with caplog.at_level(logging.WARNING, logger="hermes_finance.api.source_intake"):
+        response = client.post(
+            BASE,
+            files={"file": (filename, document, "application/xml")},
+            data={"intent": json.dumps({"request_id": request_id})},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "conflict",
+        "message": "xml_invalid",
+        "details": [],
+    }
+    records = [r for r in caplog.records if r.name == "hermes_finance.api.source_intake"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == f"reason=xml_invalid request_id={request_id}"
+    assert record.args == ("xml_invalid", request_id)
+    assert record.exc_info is None
+    for sensitive in (filename, "7654321", "987654.32", "SYNTH000001", document.decode()):
+        assert sensitive not in repr(record.__dict__)
 
 
 def review(client, view, xml, requested, request_id="decision-1", *, link=False):
