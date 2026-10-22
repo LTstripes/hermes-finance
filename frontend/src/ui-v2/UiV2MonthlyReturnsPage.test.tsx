@@ -14,7 +14,7 @@ const intake = {
   covered_from: "2030-04-01",
   covered_to: "2030-04-30",
   state: { reporting_month_id: null },
-  document: { source_accounts: ["SYNTH-01"] },
+  document: { filename_account: "SYNTH-01" },
   observations: [{ id: 1 }],
   exceptions: [],
   financial_authority: "none",
@@ -158,6 +158,72 @@ function formBody(init: RequestInit | undefined): FormData {
 }
 const saves = (fetcher: ReturnType<typeof vi.fn<typeof fetch>>) =>
   fetcher.mock.calls.filter(([url]) => String(url).endsWith("/api/broker-months/intakes"));
+
+test(
+  "lists sorted unique filename accounts, skips empty accounts and tolerates source_accounts",
+  async () => {
+    const documents = [
+      { filename_account: "SYNTH-02" },
+      { filename_account: "SYNTH-01" },
+      { filename_account: "SYNTH-02", source_accounts: ["SYNTH-03", "SYNTH-01", ""] },
+      { filename_account: "" },
+      { filename_account: null },
+      { filename_account: "   " },
+      {},
+    ];
+    const fetcher = vi.fn<typeof fetch>(async (input) =>
+      String(input).includes("/intakes?")
+        ? json(documents.map((document, id) => ({ ...intake, id, document })))
+        : reads(input),
+    );
+    setup(fetcher);
+    await waitForReturns();
+    const select = screen.getByRole("combobox", { name: "Счёт в выписке" });
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["SYNTH-01", "SYNTH-02", "SYNTH-03"]);
+    expect(select).toHaveValue("SYNTH-01");
+    for (const endpoint of ["monthly", "instruments"]) {
+      expect(
+        fetcher.mock.calls.some(([url]) =>
+          String(url).includes(`/${endpoint}?source_account=SYNTH-01`),
+        ),
+      ).toBe(true);
+    }
+  },
+  testTimeout,
+);
+
+test(
+  "shows the save conflict reason after the generic 409 message",
+  async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/api/broker-months/intakes")
+        ? json(
+            {
+              error: {
+                code: "conflict",
+                message: "source_intake_idempotency_conflict",
+                details: [],
+              },
+            },
+            409,
+          )
+        : reads(input),
+    );
+    setup(fetcher);
+    await waitForReturns();
+    await userEvent.upload(screen.getByLabelText("XML-файлы"), syntheticFile("conflict.xml"));
+    const row = (await screen.findByText("conflict.xml: Не сохранен", {}, queryWait)).closest("li");
+    expect(row).toHaveTextContent(
+      "Операцию нельзя выполнить в текущем состоянии данных. Причина: source_intake_idempotency_conflict",
+    );
+    expect(saves(fetcher)).toHaveLength(1);
+  },
+  testTimeout,
+);
 
 test(
   "shows contributions apart from growth and explicitly approximate chained Dietz",
