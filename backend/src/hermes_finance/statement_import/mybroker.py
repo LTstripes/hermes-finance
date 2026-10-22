@@ -295,6 +295,9 @@ def parse_mybroker(
             raise MyBrokerError("required_section_invalid")
         sections[outer] = reports[0]
     blockers = []
+    # Validate the whole wrapper, not just the selected Report subtree.
+    if any(list(root.find(f"m:{outer}", NS)) != [report] for outer, report in sections.items()):
+        blockers.append("unparsed_source_rows")
     allowed_tags = {
         "Positions": {
             "Report",
@@ -338,6 +341,7 @@ def parse_mybroker(
     if any(child.tag not in {f"{{MyBroker}}{name}" for name in SECTIONS} for child in root):
         blockers.append("unknown_section")
     positions = []
+    position_keys = set()
     rub_money = []
     endpoint_blockers = set()
     endpoint_conflicts = set()
@@ -365,6 +369,10 @@ def parse_mybroker(
                 "ending_value": decimal(row.get("real_volume"), optional=True),
                 **_face_value_fields(row),
             }
+            key = (position["source_account"], isin)
+            if key in position_keys:
+                endpoint_conflicts.add("duplicate_position")
+            position_keys.add(key)
             positions.append(position)
             if position["beginning_actual_quantity"] is None:
                 endpoint_blockers.add("endpoint_beginning_quantity_unavailable")
@@ -408,6 +416,7 @@ def parse_mybroker(
         for i, row in enumerate(sections["Trades"].findall(path, NS)):
             trades.append(_trade(row, pending=pending, ordinal=i))
     money = []
+    consumed_amounts = set()
     native_linkage_observed = False
     groups = sections["Trades2"].findall(
         "m:Tablix1/m:settlement_date_Collection/m:settlement_date", NS
@@ -451,6 +460,7 @@ def parse_mybroker(
             if not amounts:
                 raise MyBrokerError("money_row_invalid")
             for amount in amounts:
+                consumed_amounts.add(amount)
                 money.append(
                     {
                         "section": "money",
@@ -466,6 +476,11 @@ def parse_mybroker(
                         "currency": single(amount.get("p_code")),
                     }
                 )
+    if any(
+        node.tag == "{MyBroker}p_code" and "volume" in node.attrib and node not in consumed_amounts
+        for node in root.iter()
+    ):
+        blockers.append("unparsed_source_rows")
     for outer in ("Trades3", "Trades4"):
         # Opaque section semantics: retain no raw rows, only a visible blocker/count.
         if len(sections[outer]):
@@ -480,7 +495,7 @@ def parse_mybroker(
     ):
         observed = sum(
             1
-            for node in sections[outer].iter()
+            for node in root.find(f"m:{outer}", NS).iter()
             if node.tag
             in (
                 {"{MyBroker}Details", "{MyBroker}Details2"}
@@ -515,7 +530,7 @@ def parse_mybroker(
         "trades": trades,
         "money": money,
         "section_inventory": {
-            name: sum(1 for _ in report.iter()) - 1
+            name: sum(1 for _ in root.find(f"m:{outer}", NS).iter()) - 2
             for outer, name in SECTIONS.items()
             for report in [sections[outer]]
         },

@@ -1596,3 +1596,49 @@ def test_explicit_trade_nominal_500_on_same_counterexample_uses_includes(db):
     assert "face_value_assumed" not in row.flags
     assert "trade_nkd_basis_unknown" not in row.flags
     assert row.approximate  # Bond valuation basis remains a disclosure.
+
+
+@pytest.mark.parametrize(
+    "operation", ["Уплата накопленного купонного дохода", "НАКОПЛЕННЫЙ КУПОННЫЙ ДОХОД"]
+)
+@pytest.mark.parametrize("linked", [True, False])
+@pytest.mark.parametrize("settlement_label", [False, True])
+def test_verbal_nkd_requires_proven_purchase_link_and_is_counted_once(
+    db, operation, linked, settlement_label
+):
+    def mutate(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.set("Price", "100")
+        trade.set("save_settlement_date", "15.04.2030")
+
+    narrative = (
+        "Расчеты по сделке " + ("10000000001" if linked else "99999999999")
+        if settlement_label
+        else ("По сделке 10000000001" if linked else "Synthetic payment")
+    )
+    intake = save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "1020"),
+        trades=((BOND, "1", "1000", "20", "0"),),
+        extra=((operation, narrative, "-20"),),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        )
+        assert row.classification == ("trade_settlement" if linked else "unknown")
+    before = snapshot(db)
+    result = by_isin(read(db))[BOND].months[0]
+    assert result.buys_cost_kopecks == 102000
+    if linked:
+        assert result.coupons_kopecks == 0
+        assert result.total_kopecks == 0
+        assert result.return_percent == 0
+    else:
+        assert result.coupons_kopecks is None
+        assert result.total_kopecks is None
+        assert result.return_percent is None
+        assert "unrecognized_money" in result.flags
+    assert snapshot(db) == before

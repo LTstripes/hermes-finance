@@ -142,8 +142,8 @@ def xirr_boundary_flow_inclusions(
             external_flow_id=target.flow_ids[0] if target.boundary_group_id is None else None,
             boundary_group_id=target.boundary_group_id,
         )
-        relations = {
-            row.relation
+        applicable = [
+            row
             for row in _observed_points_for_target(
                 session, target=target, scope=scope, account_id=account_id
             )
@@ -153,12 +153,24 @@ def xirr_boundary_flow_inclusions(
             and row.performance_currency == performance_currency
             and row.coverage_status == CoverageStatus.COMPLETE.value
             and row.quality == ValuationQuality.EXACT.value
-            and row.total_value_kopecks == point.total_value.kopecks
             and row.relation
             in {
                 ValuationBoundaryRelation.PRE_EXTERNAL_FLOW.value,
                 ValuationBoundaryRelation.POST_EXTERNAL_FLOW.value,
             }
+        ]
+        # Resolve contradictory current evidence before matching the endpoint.
+        # PRE and POST may legitimately differ; two amounts for one side may not.
+        if any(
+            len({row.total_value_kopecks for row in applicable if row.relation == relation}) > 1
+            for relation in {row.relation for row in applicable}
+        ):
+            reasons.add(AvailabilityReasonCode.BOUNDARY_OBSERVATION_CONFLICT.value)
+            continue
+        relations = {
+            row.relation
+            for row in applicable
+            if row.total_value_kopecks == point.total_value.kopecks
         }
         if len(relations) != 1:
             reasons.add(_BOUNDARY_ORDER_UNKNOWN)

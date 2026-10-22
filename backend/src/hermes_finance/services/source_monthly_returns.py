@@ -22,7 +22,11 @@ from hermes_finance.domain.monthly_return_chain import (
 from hermes_finance.persistence import SourceIntakeOriginal, SourceMoneyClassification
 from hermes_finance.services import broker_statement_provisional as provisional
 from hermes_finance.services import source_intake
-from hermes_finance.services.source_money_classifications import source_reference
+from hermes_finance.services.source_money_classifications import (
+    is_broker_transfer,
+    source_reference,
+    transfer_classification,
+)
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
@@ -145,6 +149,9 @@ def _native_scope(document):
 def _saved_totals(document):
     """Apply the provisional native-EOD eligibility rules to saved operands."""
     reasons = set(document.get("endpoint_conflicts", []))
+    keys = [(row["source_account"], row["isin"]) for row in document.get("positions", [])]
+    if len(set(keys)) != len(keys):
+        reasons.add("duplicate_position")
     reasons.update(
         set(document.get("endpoint_blockers", [])) - {"endpoint_beginning_quantity_unavailable"}
     )
@@ -175,7 +182,7 @@ def _saved_totals(document):
     return (None, None, reasons) if reasons else (*totals, reasons)
 
 
-def _money(session, view, choices, gaps):
+def _money(session, view, choices, gaps, *, selected_accounts=None):
     persisted = {
         row.source_reference: row
         for row in session.scalars(
@@ -189,6 +196,20 @@ def _money(session, view, choices, gaps):
     for row in view["document"].get("money", []):
         event_date = date.fromisoformat(row["date"])
         reference = source_reference(view["id"], row)
+        if not view["covered_from"] <= row["date"] <= view["covered_to"]:
+            # The invalid event belongs to this document's coverage, even when
+            # its reported date is outside every displayed calculation month.
+            saved = persisted.get(reference)
+            code = (
+                "invalid_external_flow"
+                if saved and saved.classification in {"external_deposit", "external_withdrawal"}
+                else "invalid_money_row"
+            )
+            month = date.fromisoformat(view["covered_from"]).replace(day=1)
+            while month <= date.fromisoformat(view["covered_to"]):
+                gaps.append(SourceReturnGap(code, view["id"], month, reference))
+                month = _next_month(month)
+            continue
         if normalize_currency(row.get("currency")) != "RUB":
             gaps.append(
                 SourceReturnGap(
@@ -211,6 +232,20 @@ def _money(session, view, choices, gaps):
             )
             continue
         classification = saved.classification
+        if classification == "internal_transfer" or (
+            selected_accounts is not None
+            and (saved.origin, saved.status) == ("default_rule", "assumed")
+            and is_broker_transfer(saved.operation, saved.narrative)
+        ):
+            classification = transfer_classification(
+                saved.operation,
+                saved.narrative,
+                row["amount"],
+                source_account=row["source_account"],
+                selected_accounts=(
+                    {row["source_account"]} if selected_accounts is None else selected_accounts
+                ),
+            )
         amount = saved.amount_kopecks
         external = classification in {"external_deposit", "external_withdrawal"}
         if (
@@ -291,6 +326,7 @@ def read_monthly_returns(
     gaps = []
     money = defaultdict(list)
     uncertain_source_months = set()
+    conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
     for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
         try:
@@ -324,6 +360,8 @@ def read_monthly_returns(
                 opening = closing = None
             else:
                 opening, closing, reasons = _saved_totals(view["document"])
+                if "duplicate_position" in reasons:
+                    conflicting_endpoint_dates.update((start - timedelta(days=1), end))
                 gaps.extend(SourceReturnGap(code, original.id) for code in sorted(reasons))
                 attached = (originals or {}).get(original.id)
                 if attached:
@@ -451,6 +489,9 @@ def read_monthly_returns(
         relevant = [source for source in sources if source[1] <= month and source[2] >= end]
 
         def endpoint(index, matches):
+            point_date = month - timedelta(days=1) if index == 3 else end
+            if point_date in conflicting_endpoint_dates:
+                return None
             values = {
                 source[index]
                 for source in relevant
@@ -465,6 +506,10 @@ def read_monthly_returns(
         calculated = calculate_monthly_return_chain(
             [(month - timedelta(days=1), opening), (end, closing)], schedule
         ).months[0]
+        if {month - timedelta(days=1), end} & conflicting_endpoint_dates:
+            calculated = replace(
+                calculated, reason_codes=(*calculated.reason_codes, "duplicate_position")
+            )
         if month in uncertain_months:
             calculated = replace(
                 calculated,

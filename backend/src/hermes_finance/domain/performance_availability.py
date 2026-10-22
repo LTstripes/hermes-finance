@@ -49,6 +49,7 @@ class PerformanceAvailabilityReasonCode(StrEnum):
     TRANSFER_RECONCILIATION_INCOMPLETE = "not_computable_transfer_reconciliation_incomplete"
     VALUATION_BOUNDARY_MISSING = "not_computable_valuation_boundary_missing"
     VALUATION_BOUNDARY_ORDER_UNKNOWN = "not_computable_valuation_boundary_order_unknown"
+    BOUNDARY_OBSERVATION_CONFLICT = "boundary_observation_conflict"
     IN_KIND_BOUNDARY_COVERAGE_UNKNOWN = "not_computable_in_kind_boundary_coverage_unknown"
     IN_KIND_MOVEMENT_UNVALUED = "not_computable_in_kind_movement_unvalued"
 
