@@ -5433,7 +5433,10 @@ diagnostics, with no supported in-page repair action implied.
 #### Numerical limitations
 
 The solver uses the date-only XIRR equation with a 365-day year and a
-deterministic bracketed Decimal search.  Before accepting a visible bracket,
+deterministic bracketed Decimal search in an isolated local context. The log-rate
+bracket expands when the initial scan misses a certified unique root; numerical
+search exhaustion or an unrepresentable rate reports convergence failure, not
+proof of no root. Before accepting a visible bracket,
 it applies an exact sign-variation certificate: with
 `z = (1 + rate) ** (1 / 365)`, the equation is a polynomial in positive `z`.
 Histories with more than one coefficient sign change cannot prove a unique
@@ -5746,7 +5749,9 @@ withholds the geometric chain with `negative_dietz_factor`, preserving the month
 estimate and known growth; a factor exactly zero remains allowed. Rates are Decimal fraction
 strings and money is integer kopecks in this endpoint. Results are
 `authority=provisional`, `financial_authority=none`, `approximate=true` and grant
-no financial Apply, Close, source completeness or exact TWRR authority.
+no financial Apply, Close, source completeness or exact TWRR authority. Without
+two boundaries, flow totals remain NULL with `insufficient_boundaries`; no
+source-backed interval is established.
 
 Owner decision (2026-10-20, #912): capture provisional Money classification at
 upload. Migration `0060_source_money_classifications` adds the empty
@@ -5814,7 +5819,10 @@ Currency checks in these source-return readers and shared Money validation norma
 case and surrounding whitespace; legacy `RUR` is the same ruble currency as `RUB`,
 including persisted classification comparisons and overlap signatures. Native saved
 source facts/fingerprints are not rewritten. Independent complete months remain
-available. Income subtotals are partial when gaps exist. Python callers may
+available. Income totals are NULL when statement date coverage for the month is
+incomplete, retaining `flow_coverage_gap`; a covered quiet month may report zero.
+With complete date coverage, classified income subtotals remain partial when
+interpretation gaps exist. Python callers may
 still verify exact originals through the provisional context reader and supply
 source-bound transient choices for default external rows; a persisted user choice
 always takes precedence. Overlap deduplication preserves references and same-report

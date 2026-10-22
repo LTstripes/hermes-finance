@@ -22,6 +22,8 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 
 ### Fixed
 
+- [#928](https://github.com/LTstripes/hermes-finance/pull/928): expand the certified unique-root XIRR bracket for short periods and isolate Decimal precision; preserve NULL income for uncovered source months and NULL flow totals without a source-backed interval. Three synthetic regressions remain deferred by the protected-file boundary.
+
 - Astra audit HIGH fixes 1-5: boundary-flow XIRR inclusion, statement flow-coverage continuity, financial parser blockers, cash/NKD classification precedence, and negative Modified Dietz chain factors; synthetic regression coverage.
 
 ### Known limitations

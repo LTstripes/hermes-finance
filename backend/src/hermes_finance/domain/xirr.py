@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, DecimalException, localcontext
+from decimal import ROUND_HALF_UP, Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 
 _DAYS_PER_YEAR = Decimal(365)
@@ -183,6 +183,23 @@ def _scan_root_candidates(
         left_value = right_value
     if left_value == _ZERO:
         exact_roots.append(left)
+    if not exact_roots and not brackets:
+        # The caller has certified one coefficient sign variation, hence one
+        # root. A finite scan window cannot establish mathematical absence.
+        left, right = _SCAN_MIN, _SCAN_MAX
+        for _ in range(_DEFAULT_MAX_ITERATIONS):
+            left, right = left * 2, right * 2
+            left_value, right_value = npv(left), npv(right)
+            if left_value == _ZERO:
+                exact_roots.append(left)
+            if right_value == _ZERO:
+                exact_roots.append(right)
+            if _signs_differ(left_value, right_value):
+                brackets.append((left, right, left_value, right_value))
+            if exact_roots or brackets:
+                break
+        else:
+            raise DecimalException("XIRR bracket search exhausted")
     return tuple(exact_roots), tuple(brackets)
 
 
@@ -246,18 +263,16 @@ def calculate_xirr(
     if _sign_variation_count(amounts) > 1:
         return _unavailable(XirrReasonCode.ROOT_AMBIGUITY)
 
-    first_date = normalised[0][0]
-    cash_flows_with_time = tuple(
-        (
-            amount,
-            Decimal((event_date - first_date).days) / _DAYS_PER_YEAR,
-        )
-        for event_date, amount in normalised
-    )
-
     try:
-        with localcontext() as context:
-            context.prec = max(context.prec, _SOLVER_PRECISION)
+        with localcontext(Context(prec=_SOLVER_PRECISION, rounding=ROUND_HALF_UP)):
+            first_date = normalised[0][0]
+            cash_flows_with_time = tuple(
+                (
+                    amount,
+                    Decimal((event_date - first_date).days) / _DAYS_PER_YEAR,
+                )
+                for event_date, amount in normalised
+            )
 
             def npv(log_growth: Decimal) -> Decimal:
                 return _scaled_npv(log_growth, cash_flows_with_time)
@@ -293,7 +308,7 @@ def calculate_xirr(
                 )
 
             annualized_rate = unique_roots[0].exp() - Decimal(1)
-            if not annualized_rate.is_finite():
+            if not annualized_rate.is_finite() or annualized_rate <= -1:
                 return _unavailable(
                     XirrReasonCode.CONVERGENCE_FAILED,
                     iterations=total_iterations,
