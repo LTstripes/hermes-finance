@@ -36,7 +36,7 @@ Instrument known payouts/EOD/trades and stock fixed-holding WHAT-IF are delivere
 
 2026-10-22 test-only follow-up to [#924](https://github.com/LTstripes/hermes-finance/pull/924) (merged as `35cff382`): face-value option A is pinned for empty vs explicit vs invalid trade nominal, including overlap copies with missing/empty/blank vs explicit `1000` nominal (still a conflict). No source behaviour change; synthetic data only.
 
-2026-10-22 local Worker candidate on `fix/astra-high`, baseline `a0faf088`: **Astra audit HIGH fixes 1-5** covers boundary-flow XIRR inclusion, dated statement flow coverage, financial parser completeness, cash/NKD classification precedence and negative Dietz factors. Synthetic regressions only; changes remain uncommitted for review, with no integration, release, runtime update or Owner numerical UAT implied.
+2026-10-22 local Worker candidate on `fix/astra-high`, baseline `a0faf088`: **Astra audit HIGH fixes 1-5** covers boundary-flow XIRR inclusion, dated statement flow coverage, financial parser completeness, cash/NKD classification precedence and negative Dietz factors. Synthetic regressions only; draft [PR #926](https://github.com/LTstripes/hermes-finance/pull/926) is under review, with no integration, release, runtime update or Owner numerical UAT implied.
 
 Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) with independent C1–C5 evidence prerequisites. Delivered capability is separate from current numerical readiness and Owner UAT scope; the attributed #836 receipt above is limited, not a claim every class/history is finance-ready.
 

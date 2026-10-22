@@ -468,6 +468,9 @@ def test_legacy_resave_parser_count_drift_is_typed_409_and_atomic(db, monkeypatc
         ("НКД по сделке 123 Synthetic", "Купон", "-5", "trade_settlement"),
         (" НКД ПО СДЕЛКЕ: Synthetic ", "Купон", "-5", "trade_settlement"),
         ("Перевод", "НКД по сделке Synthetic coupon", "-5", "trade_settlement"),
+        ("Расчёты по сделке", "Synthetic НКД купон", "-5", "trade_settlement"),
+        ("Расчеты по сделке", "Synthetic НКД", "-5", "trade_settlement"),
+        ("Deal settlement", "Synthetic НКД coupon", "-5", "trade_settlement"),
         ("НКД Synthetic", "Купон", "5", "unknown"),
         ("Купон", "Synthetic НКД correction", "5", "unknown"),
         (

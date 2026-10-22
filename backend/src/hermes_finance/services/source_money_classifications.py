@@ -57,10 +57,10 @@ def default_classification(operation, narrative, kind, amount):
     # Accrued interest on a trade is settlement cash, never coupon income.
     if re.search(r"\bнкд по сделке\b", text):
         return "trade_settlement"
-    if re.search(r"\bнкд\b", text):
-        return "unknown"
     if "расчеты по сделке" in text or "расчёты по сделке" in text or "deal settlement" in text:
         return "trade_settlement"
+    if re.search(r"\bнкд\b", text):
+        return "unknown"
     if pattern == "coupon_paid_candidate":
         return "coupon"
     if "ндфл" in text:
