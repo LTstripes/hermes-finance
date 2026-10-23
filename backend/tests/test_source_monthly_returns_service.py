@@ -364,6 +364,119 @@ def test_service_projection_retains_pending_rows_and_only_known_pending_captions
         assert bool(source_return_blockers(view)) is extra
 
 
+def withdrawal_summary(root):
+    """A fifth exact display layout; fabricated totals are never Money rows."""
+    from copy import deepcopy
+
+    groups = root.find(".//{MyBroker}oper_group_Collection")
+    withdrawal = deepcopy(groups[-1])
+    withdrawal.set("oper_group", "Списано по распоряжению Клиента")
+    withdrawal.find(".//{MyBroker}p_code6").set("volume6", "-999999.00")
+    groups.insert(3, withdrawal)
+
+
+@pytest.mark.parametrize("mutation", [None, "order", "label", "attribute", "child"])
+def test_fifth_summary_is_exact_and_never_counts_display_money(db, mutation):
+    from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+    def mutate(root):
+        withdrawal_summary(root)
+        groups = root.find(".//{MyBroker}oper_group_Collection")
+        if mutation == "order":
+            groups[2], groups[3] = groups[3], groups[2]
+        elif mutation == "label":
+            groups[3].set("oper_group", "Unknown synthetic withdrawal")
+        elif mutation == "attribute":
+            groups[3].set("extra", "0")
+        elif mutation == "child":
+            ET.SubElement(groups[3], "{MyBroker}Extra")
+
+    intake, original = save_service_month(db, mutate=mutate)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+        assert bool(source_return_blockers(view)) is bool(mutation)
+        frozen = view["document"]
+    result = read(db)
+    if mutation is None:
+        assert result.months[0].result.withdrawals_kopecks == 10_000
+        assert result.months[0].result.modified_dietz_return is not None
+    else:
+        assert result.months[0].result.modified_dietz_return is None
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=original[0], filename=original[1], request_id="summary-replay"
+        )
+        after = source_intake.read_intake(session, intake)
+        assert after["document"] == frozen
+        assert after["observations"] == view["observations"]
+
+
+@pytest.mark.parametrize(
+    "change", [None, "nonzero", "lexical_zero", "ordinary", "extra", "pending"]
+)
+def test_repo_zero_field_is_bounded_to_its_completed_native_row(db, change):
+    from test_statement_import_mybroker import fixture
+
+    from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+    def mutate(root):
+        row = root.find(".//{MyBroker}Details[@trade_no]")
+        if change != "ordinary":
+            row.attrib.update(trade_no="B9001", repo_no="B9002", comment="репо ч.1")
+        row.set(
+            "course3",
+            "1.0000" if change == "nonzero" else "0" if change == "lexical_zero" else "0.0000",
+        )
+        if change == "extra":
+            row.set("unknown_native_key", "0")
+        if change == "pending":
+            row.attrib.pop("course3")
+            pending = ET.fromstring(fixture(pending=True)).find(".//{MyBroker}Tablix3")
+            pending.find(".//{MyBroker}Details2").set("course3", "0.0000")
+            root.find("{MyBroker}Trades/{MyBroker}Report").append(pending)
+
+    intake, _ = save_service_month(db, mutate=mutate)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+    assert bool(source_return_blockers(view)) is bool(change)
+    if change is None:
+        trade = view["document"]["trades"][0]
+        assert trade["identity"] is None and trade["repo_observed"]
+        assert "unparsed_source_rows" in view["document"]["syntax_blockers"]
+
+
+@pytest.mark.parametrize("change", ["ordinary_neighbor", "ordinal_mismatch", "reference_mismatch"])
+def test_repo_zero_field_never_borrows_another_rows_identity(db, change):
+    from copy import deepcopy
+
+    from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+    def mutate(root):
+        collection = root.find(
+            "{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+        )
+        ordinary = collection[0]
+        repo = deepcopy(ordinary)
+        repo.attrib.update(trade_no="B9001", repo_no="B9002", comment="репо ч.1", course3="0.0000")
+        collection.append(repo)
+        if change == "ordinary_neighbor":
+            ordinary.set("course3", "0.0000")
+
+    intake, _ = save_service_month(db, mutate=mutate)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+    if change == "ordinal_mismatch":
+        view["document"]["trades"].reverse()
+    elif change == "reference_mismatch":
+        for row in view["observations"]:
+            refs = row["facts"].get("native_references", {})
+            if refs.get("trade_no") == "B9001":
+                refs["repo_no"] = "B9003"
+    assert source_return_blockers(view)
+
+
 @pytest.mark.parametrize(
     "change",
     [
