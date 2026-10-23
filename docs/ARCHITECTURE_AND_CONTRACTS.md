@@ -1470,7 +1470,9 @@ out-of-range semantics. If primary activity dates exist and none fall inside the
 filename interval, preserve that interval and add the nonblocking warning
 `filename_period_mismatch`. Only with an unusable filename, infer the first day of
 the earliest activity month through the last day of the latest activity month,
-with the nonblocking warning `period_inferred_from_content`. Impossible, inverted
+with the import-nonblocking warning `period_inferred_from_content`. This inferred
+range identifies activity months only; it does not establish dates for opening
+or closing balances or authorize computed monthly source returns. Impossible, inverted
 or unrecognized filename ranges are unusable. Without activity
 dates and a usable filename range, reject with `statement_period_unknown`.
 
@@ -5789,6 +5791,18 @@ Reports starting or ending inside a month remain in the calendar and dated-flow
 schedule with `partial_month_source`. Their partial endpoints cannot stand in
 for calendar-month boundaries; without another source those boundaries remain
 NULL. Interior full months retain dated flows and missing EOD independently.
+
+For a source carrying `period_inferred_from_content`, the activity-based range
+does not prove the statement's balance dates. Its balances cannot supply monthly
+EOD endpoints, including when original bytes are reattached. Every covered month
+is uncertain under the financial-blocker rules, with `source_period_inferred`
+and an intake/month gap message explaining that opening and closing balance dates
+are unverified. Without independently dated endpoints it also has
+`missing_endpoint`. Affected monthly growth and Modified Dietz, and dependent
+period/segment growth, chained return and XIRR remain NULL. Overlapping valid
+statements do not erase that source's uncertainty; independent unaffected months
+remain available. Valid filename ranges retain their existing authority and
+return behavior, including when `filename_period_mismatch` is present.
 
 In both monthly and instrument source-return readers, a selected filename account
 alias may select the single native row account evidenced by that same document.

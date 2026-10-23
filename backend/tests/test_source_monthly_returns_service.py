@@ -1495,7 +1495,7 @@ def test_duplicate_positions_block_endpoints_even_with_clean_overlap(
 
 @pytest.mark.parametrize("month", [2, 4, 12])
 @pytest.mark.parametrize("filename", ["renamed.xml", "Брокерский 1234567 (31.02.30-31.03.30).xml"])
-def test_inferred_periods_supply_calendar_month_return_boundaries(db, month, filename):
+def test_inferred_periods_withhold_calendar_month_returns(db, month, filename):
     from datetime import timedelta
 
     intake, original = save_month(db, month, filename=filename)
@@ -1510,10 +1510,139 @@ def test_inferred_periods_supply_calendar_month_return_boundaries(db, month, fil
         assert len(result.months) == 1
         row = result.months[0].result
         assert (row.opening_date, row.closing_date) == (first - timedelta(days=1), last)
-        assert row.opening_kopecks == 1_000_000
-        assert row.closing_kopecks == 1_121_100
+        assert row.opening_kopecks is row.closing_kopecks is None
+        assert row.growth_kopecks is row.modified_dietz_return is None
+        assert row.missing_endpoint
+        assert {"source_period_inferred", "missing_endpoint", "unknown_flow"} <= set(
+            row.reason_codes
+        )
+        assert result.period.growth_kopecks is result.period.chained_return is None
+        assert result.period.xirr_annualized_return is result.period.xirr_period_return is None
+        assert result.period.missing_endpoint
+        assert "source_period_inferred" in result.period.growth_reason_codes
+        gap = next(
+            gap
+            for gap in result.gaps
+            if gap.code == "source_period_inferred" and gap.intake_id == intake
+        )
+        assert gap.month == first
+        assert gap.message == (
+            "Statement period was inferred from activity dates; "
+            "opening and closing balance dates are unverified."
+        )
+
+
+@pytest.mark.parametrize(
+    "month,statement_filename",
+    [
+        (2, "Брокерский 1234567 (01.01.30-31.03.30).xml"),
+        (1, "Брокерский 1234567 (16.01.30-31.01.30).xml"),
+    ],
+)
+def test_renamed_long_and_partial_statements_cannot_supply_monthly_endpoints(
+    db, month, statement_filename
+):
+    from hermes_finance.statement_import.mybroker import parse_mybroker
+
+    # Synthetic balances belong to the actual report's outer dates. Activity
+    # occurs only on the 17th, so renaming loses both report-period boundaries.
+    raw = (
+        provisional_xml(candidate_count=0)
+        .decode()
+        .replace(".04.2030", f".{month:02d}.2030")
+        .replace("2030-04-", f"2030-{month:02d}-")
+        .replace(f"15.{month:02d}.2030", f"17.{month:02d}.2030")
+        .encode()
+    )
+    actual = parse_mybroker(raw, statement_filename)
+    assert actual["covered_from"] == ("2030-01-01" if month == 2 else "2030-01-16")
+    assert actual["covered_to"] == ("2030-03-31" if month == 2 else "2030-01-31")
+    assert "period_inferred_from_content" not in actual.get("warnings", [])
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename="x.xml", request_id="renamed-outer-balances"
+        )["intake_id"]
+    save_month(db, month + 1, candidate_count=0)
+    before = snapshot(db)
+    for attached in (None, {intake: (raw, "x.xml")}):
+        result = read(db, originals=attached)
+        row = result.months[0].result
+        assert row.closing_date.month == month
+        assert row.opening_kopecks is row.closing_kopecks is None
+        assert row.growth_kopecks is row.modified_dietz_return is None
+        assert row.missing_endpoint
+        assert "source_period_inferred" in row.reason_codes
+        assert result.period.growth_kopecks is result.period.chained_return is None
+        assert result.period.xirr_annualized_return is result.period.xirr_period_return is None
+        # The separate valid monthly statement remains independently usable.
+        assert result.months[1].result.modified_dietz_return is not None
+        assert len(result.segments) == 1
+        assert result.segments[0].growth_kopecks is not None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_valid_filename_range_retains_computed_return_despite_period_warning(db, mismatch):
+    raw = provisional_xml(candidate_count=0)
+    if mismatch:
+        raw = raw.replace(b".04.2030", b".05.2030")
+    filename = "Брокерский 1234567 (01.04.30-30.04.30).xml"
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="valid-filename-period"
+        )["intake_id"]
+        view = source_intake.read_intake(session, intake)
+    assert view["document"].get("warnings", []) == (
+        ["filename_period_mismatch"] if mismatch else []
+    )
+    for attached in (None, {intake: (raw, filename)}):
+        result = read(db, originals=attached)
+        row = result.months[0].result
+        assert row.growth_kopecks == 121_100
         assert row.modified_dietz_return is not None
         assert not row.missing_endpoint
+        assert "source_period_inferred" not in row.reason_codes
+        assert result.period.chained_return is not None
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_inferred_multimonth_period_blocks_every_covered_month(db, overlap):
+    raw = provisional_xml().replace(b"2030-04-15", b"2030-05-15")
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename="x.xml", request_id="inferred-multimonth"
+        )["intake_id"]
+        view = source_intake.read_intake(session, intake)
+    assert (view["covered_from"], view["covered_to"]) == ("2030-04-01", "2030-05-31")
+    if overlap:
+        for month in (4, 5):
+            save_month(db, month, candidate_count=0)
+    save_month(db, 6, candidate_count=0)
+    before = snapshot(db)
+    for attached in (None, {intake: (raw, "x.xml")}):
+        result = read(db, originals=attached)
+        for row in result.months[:2]:
+            assert row.result.growth_kopecks is row.result.modified_dietz_return is None
+            assert row.result.contributions_kopecks is row.result.withdrawals_kopecks is None
+            assert row.result.missing_endpoint is not overlap
+            assert {"source_period_inferred", "unknown_flow"} <= set(row.flags)
+            assert any(
+                gap.code == "source_period_inferred"
+                and gap.intake_id == intake
+                and gap.month == row.result.closing_date.replace(day=1)
+                and gap.message
+                for gap in result.gaps
+            )
+        assert result.period.growth_kopecks is result.period.chained_return is None
+        assert result.period.xirr_annualized_return is result.period.xirr_period_return is None
+        assert result.months[-1].result.modified_dietz_return is not None
+        for segment in result.segments:
+            if segment.start < date(2030, 5, 31):
+                assert segment.growth_kopecks is segment.chained_return is None
+                assert "source_period_inferred" in segment.growth_reason_codes
+            else:
+                assert segment.chained_return is not None
+    assert snapshot(db) == before
 
 
 def test_cash_event_outside_overlapping_filename_keeps_out_of_range_semantics(astra_results):

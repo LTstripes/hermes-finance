@@ -41,6 +41,7 @@ _FINANCIAL_COMPLETENESS_BLOCKERS = {
     "position_row_unclassified",
 }
 _FLOW_REASONS = _FINANCIAL_COMPLETENESS_BLOCKERS | {
+    "source_period_inferred",
     "unknown_flow",
     "currency_unsupported",
     "flow_coverage_gap",
@@ -67,6 +68,7 @@ class SourceReturnGap:
     intake_id: int | None = None
     month: date | None = None
     source_reference: str | None = None
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -357,6 +359,7 @@ def read_monthly_returns(
     for original, view, error in selected:
         start, end = original.covered_from, original.covered_to
         unknown_source_flows = False
+        period_inferred = False
         try:
             if error:
                 raise MyBrokerError(error)
@@ -364,13 +367,26 @@ def read_monthly_returns(
             financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
                 (*source_return_blockers(view), *document.get("endpoint_blockers", []))
             )
+            period_inferred = "period_inferred_from_content" in document.get("warnings", [])
+            if period_inferred:
+                financial_blockers.add("source_period_inferred")
             covered_month = start.replace(day=1)
             while covered_month <= end:
                 if financial_blockers:
                     uncertain_source_months.add(covered_month)
                     source_flow_reasons[covered_month].update(financial_blockers)
                     gaps.extend(
-                        SourceReturnGap(code, original.id, covered_month)
+                        SourceReturnGap(
+                            code,
+                            original.id,
+                            covered_month,
+                            message=(
+                                "Statement period was inferred from activity dates; "
+                                "opening and closing balance dates are unverified."
+                                if code == "source_period_inferred"
+                                else None
+                            ),
+                        )
                         for code in sorted(financial_blockers)
                     )
                 covered_month = _next_month(covered_month)
@@ -427,6 +443,10 @@ def read_monthly_returns(
                 covered_month = _next_month(covered_month)
         if start.day != 1 or end != _month_end(end):
             gaps.append(SourceReturnGap("partial_month_source", original.id))
+        if period_inferred:
+            # Activity months cannot date the statement's outer balances, even
+            # when the unchanged original bytes are reattached.
+            opening = closing = None
         sources.append((original.id, start, end, opening, closing))
 
     flows = []

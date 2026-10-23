@@ -55,7 +55,8 @@ Bounded whole-portfolio RUB no-crossing class API/UI is delivered (#700/#701) wi
 
 <a id="s3"></a>
 2026-10-22 Owner test of release 1.4.0 on the test stand was **NO-GO**: empty account
-list, statement rejected by the filename check (`filename_range_invalid`), empty flows
+list, statement rejected by the filename check (`filename_range_invalid`, historical;
+removed by [#935](https://github.com/LTstripes/hermes-finance/pull/935)), empty flows
 and coupons on real MyBroker statements. Decision: the UI is frozen; the core goal is
 upload statement -> future payouts -> manual deposits. Draft
 [#932](https://github.com/LTstripes/hermes-finance/pull/932) (`fix/source-returns-real-statements`,
