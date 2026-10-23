@@ -13,6 +13,86 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_security_reg_isin_mapping_upgrade_downgrade_preserves_existing_tables(tmp_path):
+    import pytest
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.source_intake import save_intake
+
+    path = tmp_path / "synthetic-reg-isin-migration.db"
+    previous = "0061_money_instrument_links"
+    result = run_alembic(path, "upgrade", "head")
+    assert result.returncode == 0, result.stderr
+    database = create_database(path)
+    with database.session_factory() as session:
+        save_intake(
+            session, document=fixture(), filename=FILENAME, request_id="synthetic-crosswalk"
+        )
+    database.engine.dispose()
+    result = run_alembic(path, "downgrade", previous)
+    assert result.returncode == 0, result.stderr
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE source_intake_money_classifications SET classification='dividend',"
+            "origin='user_choice',status='confirmed',updated_at='2030-01-02' "
+            "WHERE id=(SELECT MIN(id) FROM source_intake_money_classifications)"
+        )
+        connection.commit()
+        # Capture all pre-existing tables, including journal and manual choices.
+        names = [
+            r[0]
+            for r in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name != 'alembic_version'"
+            )
+        ]
+        before = {
+            name: connection.execute(f'SELECT * FROM "{name}" ORDER BY rowid').fetchall()
+            for name in names
+        }
+    for _ in range(2):
+        result = run_alembic(path, "upgrade", "head")
+        assert result.returncode == 0, result.stderr
+        assert revision_rows(path) == ["0062_security_reg_isin_mappings"]
+        with sqlite3.connect(path) as connection:
+            assert connection.execute("SELECT * FROM security_reg_isin_mappings").fetchall() == []
+            insert = (
+                "INSERT INTO security_reg_isin_mappings(reg_number,isin,note,created_at,updated_at) "
+                "VALUES (?,?,NULL,'2030-01-01','2030-01-01')"
+            )
+            for reg, isin in [
+                ("1-01-99999-z", "ZZ0000000011"),
+                (" 1-01-99999-Z", "ZZ0000000011"),
+                ("", "ZZ0000000011"),
+                ("1-01-99999-Z", "ZZ000000001Z"),
+                ("1-01-99999-Z", "ZZ00000000!1"),
+                ("1-01-99999-Z", "Z10000000011"),
+                ("1-01-99999-Z", "ZZ123"),
+            ]:
+                with pytest.raises(sqlite3.IntegrityError):
+                    connection.execute(insert, (reg, isin))
+            connection.execute(insert, ("1-01-99999-Z", "ZZ0000000011"))
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(insert, ("1-01-99999-Z", "ZZ0000000022"))
+            connection.commit()
+        result = run_alembic(path, "downgrade", previous)
+        assert result.returncode == 0, result.stderr
+        assert revision_rows(path) == [previous]
+        with sqlite3.connect(path) as connection:
+            assert (
+                connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name='security_reg_isin_mappings'"
+                ).fetchall()
+                == []
+            )
+            for name, rows in before.items():
+                assert (
+                    connection.execute(f'SELECT * FROM "{name}" ORDER BY rowid').fetchall() == rows
+                )
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+            assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+
+
 def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
     from test_statement_import_mybroker import FILENAME, fixture
 

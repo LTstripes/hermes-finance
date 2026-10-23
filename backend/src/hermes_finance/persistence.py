@@ -80,6 +80,32 @@ class SourceIntakeObservation(Base):
     facts_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class SecurityRegIsinMapping(Base):
+    """Owner-maintained offline crosswalk; no provider or financial authority."""
+
+    __tablename__ = "security_reg_isin_mappings"
+    __table_args__ = (
+        UniqueConstraint("reg_number", name="uq_security_reg_isin_reg_number"),
+        CheckConstraint(
+            "length(reg_number) BETWEEN 1 AND 32 AND reg_number = upper(trim(reg_number)) "
+            "AND reg_number NOT GLOB '*[^A-Z0-9-]*'",
+            name="ck_security_reg_isin_reg_number",
+        ),
+        CheckConstraint(
+            "length(isin) = 12 AND substr(isin,1,2) GLOB '[A-Z][A-Z]' "
+            "AND substr(isin,3,9) NOT GLOB '*[^A-Z0-9]*' "
+            "AND substr(isin,12,1) GLOB '[0-9]'",
+            name="ck_security_reg_isin_isin",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reg_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SourceMoneyClassification(Base):
     """Upload-time money interpretation; provisional and separate from financial facts."""
 

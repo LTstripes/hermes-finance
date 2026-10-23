@@ -5,7 +5,7 @@ from collections import defaultdict
 from sqlalchemy import select
 
 from hermes_finance.domain.money_security import parse_money_security
-from hermes_finance.persistence import BrokerIdentityMapping, Instrument
+from hermes_finance.persistence import BrokerIdentityMapping, Instrument, SecurityRegIsinMapping
 from hermes_finance.statement_import.mybroker import PROVIDER
 
 
@@ -19,7 +19,7 @@ def _name(value):
 
 
 class MoneyInstrumentResolver:
-    """Index catalog identifiers and explicit effective MyBroker aliases once.
+    """Index catalog identifiers, effective MyBroker aliases and owner crosswalks.
 
     Co-occurrence, trade identifiers, ticker and issuer alone never invent a
     registration-number/ISIN bridge.
@@ -30,6 +30,9 @@ class MoneyInstrumentResolver:
         self.identifiers = defaultdict(set)
         self.aliases = defaultdict(set)
         self.mapping_targets = defaultdict(set)
+        self.reg_isins = {
+            row.reg_number: row.isin for row in session.scalars(select(SecurityRegIsinMapping))
+        }
         for instrument in self.instruments.values():
             if instrument.isin:
                 self.identifiers[_identifier(instrument.isin)].add(instrument.id)
@@ -57,22 +60,35 @@ class MoneyInstrumentResolver:
                     self.aliases[alias].add(related)
                     self.aliases[related].add(alias)
 
-    def resolve(self, security):
-        reg = security.reg_number
+    def _related(self, identifier):
         # Traverse the complete explicit alias component, independent of query
         # order. Cycles terminate; contradictions propagate through every alias.
-        related, pending = {reg}, [reg]
+        related, pending = {identifier}, [identifier]
         while pending:
             for alias in self.aliases.get(pending.pop(), ()):
                 if alias not in related:
                     related.add(alias)
                     pending.append(alias)
-        candidates = set()
+        return related
+
+    def _candidates(self, related):
+        return {target for identifier in related for target in self.identifiers.get(identifier, ())}
+
+    def resolve(self, security):
+        reg = security.reg_number
+        owner_isin = self.reg_isins.get(reg)
+        # Owner mappings are directional: candidates must be reachable from the
+        # mapped ISIN, not merely a registration alias or another crosswalk row.
+        related = self._related(owner_isin or reg)
+        candidates = self._candidates(related)
+        if owner_isin:
+            reg_related = self._related(reg)
+            if reg_related & self.conflicts or not self._candidates(reg_related) <= candidates:
+                return None, "unresolved_ambiguous"
         mapped = set()
         for identifier in related:
-            candidates.update(self.identifiers.get(identifier, ()))
             mapped.update(self.mapping_targets.get(identifier, ()))
-        if related & self.conflicts or (mapped and len(candidates) > 1):
+        if related & self.conflicts or ((mapped or owner_isin) and len(candidates) > 1):
             return None, "unresolved_ambiguous"
         if not candidates:
             return None, "unresolved_no_match"
