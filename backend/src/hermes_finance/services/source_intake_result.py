@@ -360,6 +360,9 @@ def source_intake_instrument_result(
 
     blockers: set[str] = set()
     observed_reasons: set[str] = set()
+    period_inferred = "period_inferred_from_content" in document.get("warnings", [])
+    if period_inferred:
+        observed_reasons.add("source_period_inferred")
     account = None
     account_id = state.get("account_id")
     if account_id is None:
@@ -466,10 +469,15 @@ def source_intake_instrument_result(
                 observed_reasons.add("changing_quantity_result_unavailable")
             if actual_quantity <= 0:
                 observed_reasons.add("fixed_positive_quantity_required")
-        v0 = _kopecks(
-            position.get("beginning_value"), observed_reasons, "beginning_value_unavailable"
-        )
-        v1 = _kopecks(position.get("ending_value"), observed_reasons, "ending_value_unavailable")
+        # The activity range is retained as selection metadata, but cannot date
+        # the opening/closing valuations or support an observed/conditional return.
+        if not period_inferred:
+            v0 = _kopecks(
+                position.get("beginning_value"), observed_reasons, "beginning_value_unavailable"
+            )
+            v1 = _kopecks(
+                position.get("ending_value"), observed_reasons, "ending_value_unavailable"
+            )
         if v0 is not None and v1 is not None:
             value_change = v1 - v0
             if v0 <= 0:
@@ -501,7 +509,7 @@ def source_intake_instrument_result(
         blockers.add("money_economic_effect_unproven")
 
     payouts = trades = None
-    if instrument is not None and account is not None:
+    if instrument is not None and account is not None and not period_inferred:
         try:
             payouts = known_instrument_cash_income(session, account_id, instrument.id, t0, t1)
             blockers.update(set(payouts["reason_codes"]) - PAYOUT_UNCERTAINTY)

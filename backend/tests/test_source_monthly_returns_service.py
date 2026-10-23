@@ -1520,11 +1520,10 @@ def test_inferred_periods_withhold_calendar_month_returns(db, month, filename):
         assert result.period.xirr_annualized_return is result.period.xirr_period_return is None
         assert result.period.missing_endpoint
         assert "source_period_inferred" in result.period.growth_reason_codes
-        gap = next(
-            gap
-            for gap in result.gaps
-            if gap.code == "source_period_inferred" and gap.intake_id == intake
-        )
+        inferred_gaps = [gap for gap in result.gaps if gap.code == "source_period_inferred"]
+        assert len(inferred_gaps) == 1
+        gap = inferred_gaps[0]
+        assert gap.intake_id == intake
         assert gap.month == first
         assert gap.message == (
             "Statement period was inferred from activity dates; "

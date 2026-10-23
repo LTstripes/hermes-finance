@@ -5,13 +5,16 @@ import json
 from xml.etree import ElementTree as ET
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import event, select, text
 from test_instrument_eod_observations_service import FEB_FILE, eod_xml
 from test_instrument_what_if_service import CHOSEN, assert_null, setup_stock, stock_xml
 from test_statement_import_apply import sqlite_blob
+from test_statement_import_broker_statement_provisional import provisional_xml
 from test_statement_import_mybroker import ACCOUNT, ISIN
 from test_statement_import_mybroker import database as database
 
+from hermes_finance.main import create_app
 from hermes_finance.persistence import Account, Instrument, InvestmentCashFlow, ReportingMonth
 from hermes_finance.services import source_intake
 from hermes_finance.services.accounts import create_account
@@ -20,7 +23,7 @@ from hermes_finance.services.source_intake_result import (
     ASSUMPTIONS,
     source_intake_instrument_result,
 )
-from hermes_finance.statement_import.mybroker import PROVIDER
+from hermes_finance.statement_import.mybroker import PROVIDER, parse_mybroker
 
 BASE = "/api/broker-months/intakes"
 BOND = "RU000A000001"
@@ -177,6 +180,118 @@ def test_source_intake_stock_exact_result_separate_axes_and_no_dml(database):
         assert writes == []
     finally:
         event.remove(database.engine, "before_cursor_execute", inspect)
+
+
+@pytest.mark.parametrize(
+    "month,statement_filename,actual_start,actual_end",
+    [
+        (2, "Брокерский 1234567 (01.01.30-31.03.30).xml", "2030-01-01", "2030-03-31"),
+        (1, "Брокерский 1234567 (16.01.30-31.01.30).xml", "2030-01-16", "2030-01-31"),
+    ],
+)
+def test_renamed_long_and_partial_intake_periods_with_coupon_are_withheld(
+    database, month, statement_filename, actual_start, actual_end
+):
+    raw = (
+        provisional_xml(
+            candidate_count=0,
+            beginning_quantity="9",
+            extra_money=(("Купон", f"Coupon {ISIN}", "7"),),
+        )
+        .decode()
+        .replace(".04.2030", f".{month:02d}.2030")
+        .replace("2030-04-", f"2030-{month:02d}-")
+        .replace(f"15.{month:02d}.2030", f"17.{month:02d}.2030")
+        .encode()
+    )
+    actual = parse_mybroker(raw, statement_filename)
+    assert (actual["covered_from"], actual["covered_to"]) == (actual_start, actual_end)
+    assert "period_inferred_from_content" not in actual.get("warnings", [])
+    client = TestClient(create_app(database))
+    view = save_intake(client, raw, filename="renamed.xml", account_id=None)
+    assert view["document"]["warnings"] == ["period_inferred_from_content"]
+    assert view["document"]["money"]  # A coupon must not restore the result.
+    before = sqlite_blob(database)
+    with database.session_factory() as session:
+        result = read(session, view)
+    assert result["observed"]["availability"] == "unavailable"
+    assert "source_period_inferred" in result["observed"]["reason_codes"]
+    assert "source_period_inferred" in result["hard_blockers"]
+    for field in (
+        "beginning_value",
+        "ending_value",
+        "value_change",
+        "value_change_fraction",
+        "value_change_percent",
+    ):
+        assert result["observed"][field] is None
+    assert result["known"]["payouts"] is result["known"]["trades"] is None
+    assert_null(result)
+    response = api(client, view)
+    assert response.status_code == 200, response.text
+    assert response.json() == result
+    assert sqlite_blob(database) == before
+
+
+def test_inferred_period_blocks_otherwise_available_intake_return(database, monkeypatch):
+    client, _, _, view = setup(database)
+    with database.session_factory() as session:
+        assert read(session, view)["hypothetical_result"]["conditional_result"] == "50.00"
+    real_read = source_intake.read_intake
+
+    def inferred_period(session, intake_id):
+        result = real_read(session, intake_id)
+        result["document"]["warnings"] = ["period_inferred_from_content"]
+        return result
+
+    monkeypatch.setattr(source_intake, "read_intake", inferred_period)
+    before = sqlite_blob(database)
+    with database.session_factory() as session:
+        result = read(session, view)
+    assert result["hard_blockers"] == ["source_period_inferred"]
+    assert result["observed"]["availability"] == "unavailable"
+    assert result["observed"]["value_change"] is None
+    assert result["observed"]["value_change_percent"] is None
+    assert_null(result)
+    response = api(client, view)
+    assert response.status_code == 200, response.text
+    assert response.json() == result
+    assert sqlite_blob(database) == before
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_valid_filename_intake_period_retains_observed_change_with_coupon(database, mismatch):
+    raw = provisional_xml(
+        candidate_count=0,
+        beginning_quantity="9",
+        extra_money=(("Купон", f"Coupon {ISIN}", "7"),),
+    )
+    if mismatch:
+        raw = raw.replace(b".04.2030", b".05.2030").replace(b"2030-04-", b"2030-05-")
+    client = TestClient(create_app(database))
+    view = save_intake(
+        client,
+        raw,
+        account_id=None,
+        filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+    )
+    assert view["document"].get("warnings", []) == (
+        ["filename_period_mismatch"] if mismatch else []
+    )
+    before = sqlite_blob(database)
+    with database.session_factory() as session:
+        result = read(session, view)
+    assert (result["t0"], result["t1"]) == ("2030-03-31", "2030-04-30")
+    assert result["observed"]["availability"] == "available"
+    assert result["observed"]["beginning_value"] == "9000.00"
+    assert result["observed"]["ending_value"] == "10211.00"
+    assert result["observed"]["value_change"] == "1211.00"
+    assert result["observed"]["value_change_percent"] is not None
+    assert "source_period_inferred" not in result["hard_blockers"]
+    response = api(client, view)
+    assert response.status_code == 200, response.text
+    assert response.json() == result
+    assert sqlite_blob(database) == before
 
 
 def test_linked_intake_is_bound_provenance_not_a_new_ledger(database):

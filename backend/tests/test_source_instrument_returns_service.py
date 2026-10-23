@@ -18,7 +18,7 @@ from hermes_finance.services import source_instrument_returns as service
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_instrument_returns import _attribute, read_instrument_returns
 from hermes_finance.services.source_money_classifications import choose_classification
-from hermes_finance.statement_import.mybroker import NS, MyBrokerError
+from hermes_finance.statement_import.mybroker import NS, MyBrokerError, parse_mybroker
 
 BOND = "RU000A000001"
 INCOME_FIELDS = (
@@ -130,6 +130,143 @@ def read(db, source_account=ACCOUNT):
 
 def by_isin(result):
     return {row.isin: row for row in result.instruments}
+
+
+@pytest.mark.parametrize(
+    "month,statement_filename,actual_start,actual_end",
+    [
+        (2, "Брокерский 1234567 (01.01.30-31.03.30).xml", "2030-01-01", "2030-03-31"),
+        (1, "Брокерский 1234567 (16.01.30-31.01.30).xml", "2030-01-16", "2030-01-31"),
+    ],
+)
+def test_renamed_long_and_partial_instrument_periods_with_coupon_are_withheld(
+    db, month, statement_filename, actual_start, actual_end
+):
+    raw = (
+        provisional_xml(
+            candidate_count=0,
+            beginning_quantity="9",
+            extra_money=(("Купон", f"Coupon {ISIN}", "7"),),
+        )
+        .decode()
+        .replace(".04.2030", f".{month:02d}.2030")
+        .replace("2030-04-", f"2030-{month:02d}-")
+        .replace(f"15.{month:02d}.2030", f"17.{month:02d}.2030")
+        .encode()
+    )
+    actual = parse_mybroker(raw, statement_filename)
+    assert (actual["covered_from"], actual["covered_to"]) == (actual_start, actual_end)
+    assert "period_inferred_from_content" not in actual.get("warnings", [])
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename="renamed.xml", request_id="renamed-instrument"
+        )["intake_id"]
+        view = source_intake.read_intake(session, intake)
+    assert view["document"]["warnings"] == ["period_inferred_from_content"]
+    inferred_only = by_isin(read(db))[ISIN].all_time
+    assert inferred_only.available_months == ()
+    assert inferred_only.partial_months == (date(2030, month, 1),)
+    assert inferred_only.price_effect_kopecks is inferred_only.total_kopecks is None
+    assert inferred_only.return_percent is None
+    save(db, month + 1, bond=None, trades=())
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[ISIN]
+    row, valid = instrument.months
+    assert row.month == date(2030, month, 1)
+    assert row.opening_quantity is row.closing_quantity is None
+    assert row.opening_value_kopecks is row.closing_value_kopecks is None
+    assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
+    assert not row.income_complete
+    assert {"source_period_inferred", "missing_endpoint"} <= set(row.flags)
+    # Known coupon evidence remains a partial subtotal, never a complete return.
+    assert row.coupons_kopecks == 700
+    assert any(event.classification == "coupon" and event.isin == ISIN for event in result.income)
+    gaps = [gap for gap in result.gaps if gap.code == "source_period_inferred"]
+    assert len(gaps) == 1
+    assert (gaps[0].intake_id, gaps[0].month) == (intake, row.month)
+    assert gaps[0].message == (
+        "Statement period was inferred from activity dates; "
+        "opening and closing balance dates are unverified."
+    )
+    assert valid.total_kopecks is not None
+    assert instrument.all_time.available_months == (valid.month,)
+    assert instrument.all_time.partial_months == (row.month,)
+    assert instrument.all_time.total_kopecks == valid.total_kopecks
+    assert instrument.all_time.partial and not instrument.all_time.income_complete
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+@pytest.mark.parametrize("coupon", [False, True])
+def test_valid_filename_instrument_period_retains_existing_results(db, mismatch, coupon):
+    raw = provisional_xml(
+        candidate_count=0,
+        beginning_quantity="9",
+        extra_money=(("Купон", f"Coupon {ISIN}", "7"),) if coupon else (),
+    )
+    if mismatch:
+        raw = raw.replace(b".04.2030", b".05.2030").replace(b"2030-04-", b"2030-05-")
+    filename = "Брокерский 1234567 (01.04.30-30.04.30).xml"
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="valid-instrument"
+        )["intake_id"]
+        view = source_intake.read_intake(session, intake)
+    assert view["document"].get("warnings", []) == (
+        ["filename_period_mismatch"] if mismatch else []
+    )
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[ISIN]
+    row = instrument.months[0]
+    assert row.price_effect_kopecks == (121_100 if mismatch else 21_100)
+    if mismatch and coupon:
+        # Existing out-of-range Money rules still apply, independently of period authority.
+        assert not row.income_complete
+        assert row.coupons_kopecks is row.total_kopecks is row.return_percent is None
+        assert "invalid_money_row" in row.flags
+    else:
+        assert row.income_complete
+        assert row.coupons_kopecks == (700 if coupon else 0)
+        assert row.total_kopecks == row.price_effect_kopecks + row.coupons_kopecks
+        assert row.return_percent is not None
+        if not mismatch:
+            assert row.return_percent == Decimal("2.18" if coupon else "2.11")
+    assert "source_period_inferred" not in row.flags
+    assert not any(gap.code == "source_period_inferred" for gap in result.gaps)
+    assert instrument.all_time.available_months == (() if mismatch and coupon else (row.month,))
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_inferred_instrument_period_blocks_every_covered_month(db, overlap):
+    raw = provisional_xml().replace(b"2030-04-15", b"2030-05-15")
+    with db.session_factory() as session:
+        intake = source_intake.save_intake(
+            session, document=raw, filename="renamed.xml", request_id="inferred-multimonth"
+        )["intake_id"]
+    if overlap:
+        for month in (4, 5):
+            save(db, month, bond=None, trades=())
+    save(db, 6, bond=None, trades=())
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[ISIN]
+    for row in instrument.months[:2]:
+        assert "source_period_inferred" in row.flags
+        assert not row.income_complete
+        assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
+        assert ("missing_endpoint" in row.flags) is not overlap
+        gaps = [
+            gap
+            for gap in result.gaps
+            if gap.code == "source_period_inferred" and gap.month == row.month
+        ]
+        assert len(gaps) == 1 and gaps[0].intake_id == intake and gaps[0].message
+    assert instrument.months[-1].total_kopecks is not None
+    assert instrument.all_time.available_months == (date(2030, 6, 1),)
+    assert snapshot(db) == before
 
 
 def test_filename_alias_and_service_structures_share_native_instrument_results(db):

@@ -6079,7 +6079,21 @@ payout, execution or EOD readers.
 Each monthly row retains the statement's own opening/closing quantity and native
 EOD valuation. A missing quantity or value stays NULL independently; an absent
 position is never affirmative zero. A long report supplies only its actual outer
-boundaries. Overlapping copies must agree on each endpoint. Native settled trades
+boundaries when its period is independently dated; activity-inferred periods do
+not date balances. A source carrying `period_inferred_from_content` supplies no
+opening or closing instrument endpoints. Every covered month receives one
+`source_period_inferred` gap per intake/month, with the same plain explanation as
+the monthly account reader: "Statement period was inferred from activity dates;
+opening and closing balance dates are unverified." This is both a source and
+income gap: `income_complete=false`, and price effect, total and return percent
+remain NULL, even if an overlapping valid source supplies endpoints. Without
+independent endpoints, `missing_endpoint` also applies. Observed attributed
+coupon/dividend subtotals remain partial evidence under the income rules below;
+they cannot restore a return. Such months are excluded from all-time available
+months and listed as partial; unaffected months remain usable. Valid filename
+ranges, including those with `filename_period_mismatch`, retain existing behavior.
+
+Overlapping copies must agree on each endpoint. Native settled trades
 are counted in their settlement month, once per ordered two-part native identity.
 One-part or absent identity is `trade_identity_unresolved`: withhold the affected
 buys/sells/total, including across overlapping reports; never deduplicate by intake ID.
@@ -6160,8 +6174,8 @@ keeps same-report multiplicity and prefers confirmed choices.
 
 The service's per-instrument monthly `income_complete` is true exactly when at least
 one usable intake covers the entire calendar month and that instrument/month has
-neither an income gap nor a source-structure gap. Income gaps are
-`unattributed_income`, `currency_unsupported`,
+neither an income gap nor a source gap. Income gaps are
+`source_period_inferred`, `unattributed_income`, `currency_unsupported`,
 `classification_missing_legacy_intake`, `invalid_money_row`,
 `invalid_external_flow`, `unrecognized_money` and `overlap_flow_choice_conflict`;
 the source-gap codes are listed below. Otherwise it is false, including a missing
@@ -6207,7 +6221,7 @@ identities returns an empty instrument list, not an invented complete zero resul
 
 Unknown source structure, scope ambiguity
 or an unreadable overlapping intake withholds affected costs/income completeness.
-The explicit structure-gap codes `source_reader_unavailable`,
+The explicit source-gap codes `source_period_inferred`, `source_reader_unavailable`,
 `native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,
 `4_Transfers_unsupported`, `5_UFSR_unsupported` and `position_row_unclassified`
 are month-local source gaps: preserve their flags, withhold costs and total,
@@ -6465,6 +6479,16 @@ The observed block is the original's own native EOD facts for the ISIN position:
 the shared Decimal discipline. The value change and its percent are reported
 separately from the conditional total and are never labelled profit when the
 quantity changed.
+
+A source carrying `period_inferred_from_content` cannot date these balance
+operands. `source_period_inferred` appears in observed reasons and hard blockers;
+observed availability is `unavailable`, beginning/ending values, value change and
+its fraction/percent are NULL, and all conditional result fields remain NULL.
+No accepted payout/trade interval lookup is made using those inferred boundaries.
+The intake covered range and `t0`/`t1` remain activity-range selection metadata,
+never dates for a computed return. Coupon rows and chosen assumptions do not
+restore a result. Valid filename ranges, including `filename_period_mismatch`,
+retain existing behavior.
 
 `P` is the exact supported net dividend sum once, from the unchanged #858 reader
 inside the same coherent snapshot: every observed payout row must be

@@ -31,6 +31,11 @@ from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
 
+SOURCE_PERIOD_INFERRED_MESSAGE = (
+    "Statement period was inferred from activity dates; "
+    "opening and closing balance dates are unverified."
+)
+
 # These structural gaps can hide financial events even when parsed Money is empty.
 # Endpoint-only limitations and non-financial intake statuses are separate.
 _FINANCIAL_COMPLETENESS_BLOCKERS = {
@@ -381,8 +386,7 @@ def read_monthly_returns(
                             original.id,
                             covered_month,
                             message=(
-                                "Statement period was inferred from activity dates; "
-                                "opening and closing balance dates are unverified."
+                                SOURCE_PERIOD_INFERRED_MESSAGE
                                 if code == "source_period_inferred"
                                 else None
                             ),
@@ -572,7 +576,10 @@ def read_monthly_returns(
         flags = list(calculated.reason_codes)
         if opening is not None and previous_closing is not None and opening != previous_closing:
             flags.append("seam_mismatch")
-        gaps.extend(SourceReturnGap(code, month=month) for code in flags)
+        # Inferred periods already have one explained gap per intake/month.
+        gaps.extend(
+            SourceReturnGap(code, month=month) for code in flags if code != "source_period_inferred"
+        )
         rows.append(
             SourceMonthlyReturnRow(
                 calculated,
