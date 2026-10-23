@@ -5,13 +5,19 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from dataclasses import asdict, dataclass
-from datetime import date
+from dataclasses import asdict, dataclass, replace
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from sqlalchemy import select
 
 from hermes_finance.database import coherent_read_operation
+from hermes_finance.domain.instrument_return import (
+    AccountReconciliation,
+    InstrumentAnalysis,
+    InstrumentEvent,
+    chain_monthly,
+)
 from hermes_finance.persistence import ExecutedTrade
 from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
@@ -71,6 +77,7 @@ class InstrumentReturnMonth(InstrumentReturnTotals):
     opening_value_kopecks: int | None
     closing_value_kopecks: int | None
     intake_ids: tuple[int, ...]
+    analysis: InstrumentAnalysis | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,6 +95,7 @@ class SourceInstrumentReturn:
     instrument_type: str | None
     months: tuple[InstrumentReturnMonth, ...]
     all_time: InstrumentAllTime
+    analysis: InstrumentAnalysis | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +104,10 @@ class SourceInstrumentReturns:
     instruments: tuple[SourceInstrumentReturn, ...]
     income: tuple[InstrumentIncome, ...]
     gaps: tuple[InstrumentReturnGap, ...]
+    native_source_account: str | None = None
+    unresolved_events: tuple[InstrumentEvent, ...] = ()
+    account_reconciliation_events: tuple[InstrumentEvent, ...] = ()
+    reconciliation: AccountReconciliation | None = None
     authority: str = "provisional"
     financial_authority: str = "none"
     currency: str = "RUB"
@@ -163,6 +175,10 @@ def _identities(views):
 
 
 def _income(session, views, identities, gaps):
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+    from hermes_finance.services.source_instrument_events import payout_attribution
+
+    resolver = MoneyInstrumentResolver(session)
     occurrences = defaultdict(list)
     for view in views:
         saved = {r["source_reference"]: r for r in view["money_classifications"]}
@@ -170,7 +186,17 @@ def _income(session, views, identities, gaps):
         try:
             for key, flow in _money(session, view, None, local_gaps):
                 narrative = saved[flow.source_references[0]]
-                isin = _attribute(narrative["operation"] + " " + narrative["narrative"], identities)
+                isin, _, reasons = payout_attribution(narrative, resolver, identities)
+                if flow.classification in {"coupon", "dividend"}:
+                    gaps.extend(
+                        InstrumentReturnGap(
+                            code,
+                            view["id"],
+                            flow.event_date.replace(day=1),
+                            flow.source_references[0],
+                        )
+                        for code in reasons
+                    )
                 occurrences[key].append((flow, isin))
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
             month = date.fromisoformat(view["covered_from"]).replace(day=1)
@@ -668,8 +694,26 @@ def _all_time(months):
 
 
 @coherent_read_operation
-def read_instrument_returns(session, *, source_account: str) -> SourceInstrumentReturns:
+def read_instrument_returns(
+    session,
+    *,
+    source_account: str,
+    isin: str | None = None,
+    opening_date: date | None = None,
+    closing_date: date | None = None,
+) -> SourceInstrumentReturns:
     """Isolate unreadable sources and individual operand gaps; perform no writes."""
+    from hermes_finance.services.source_instrument_events import (
+        analyse,
+        read_events,
+        reconcile_account,
+    )
+
+    if (opening_date is None) != (closing_date is None) or (
+        opening_date is not None and opening_date >= closing_date
+    ):
+        raise ValueError("both dates are required, with opening_date < closing_date")
+    requested_isin = isin
     views = []
     sources = []
     gaps = []
@@ -725,12 +769,25 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
                 gaps.append(InstrumentReturnGap(code, original.id, month))
                 month = _next_month(month)
     identities = _identities(views)
+    event_gaps = []
+    native_account = next(iter(native_scope)) if native_scope else None
+    events, references = read_events(
+        session, views, identities, native_account or source_account, event_gaps
+    )
     income = _income(session, views, identities, gaps)
+    for gap in event_gaps:
+        if gap not in gaps:
+            gaps.append(gap)
     instruments = []
+    reconciliation = None
     if sources:
         start = min(s.covered_from for s in sources).replace(day=1)
         end = max(s.covered_to for s in sources)
+        first = opening_date or min(s.covered_from for s in sources) - timedelta(days=1)
+        last = closing_date or max(s.covered_to for s in sources)
         for isin, metadata in sorted(identities.items()):
+            if requested_isin is not None and isin != requested_isin:
+                continue
             kind = next(iter(metadata["types"])) if len(metadata["types"]) == 1 else None
             name = next(iter(metadata["names"])) if len(metadata["names"]) == 1 else None
             rows = []
@@ -741,7 +798,58 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
                 )
                 rows.append(row)
                 month = _next_month(month)
-            instruments.append(
-                SourceInstrumentReturn(isin, name, kind, tuple(rows), _all_time(rows))
+            rows = [
+                replace(
+                    row,
+                    analysis=analyse(
+                        views,
+                        isin,
+                        kind,
+                        row.month - timedelta(days=1),
+                        _month_end(row.month),
+                        events,
+                        references,
+                        gaps,
+                    ),
+                )
+                for row in rows
+            ]
+            analysis = analyse(views, isin, kind, first, last, events, references, gaps)
+            analysis = replace(
+                analysis,
+                chained_monthly=chain_monthly(
+                    [
+                        r.analysis
+                        for r in rows
+                        if first <= r.analysis.opening_date and r.analysis.closing_date <= last
+                    ],
+                    first,
+                    last,
+                ),
             )
-    return SourceInstrumentReturns(source_account, tuple(instruments), income, tuple(gaps))
+            instruments.append(
+                SourceInstrumentReturn(isin, name, kind, tuple(rows), _all_time(rows), analysis)
+            )
+        reconciliation = reconcile_account(
+            session,
+            views,
+            first,
+            last,
+            [i.analysis for i in instruments],
+            events,
+            filtered=requested_isin is not None,
+        )
+    return SourceInstrumentReturns(
+        source_account,
+        tuple(instruments),
+        income,
+        tuple(gaps),
+        native_source_account=native_account,
+        reconciliation=reconciliation,
+        unresolved_events=tuple(
+            e for e in events if e.isin is None and e.attribution_basis != "account_only"
+        ),
+        account_reconciliation_events=tuple(
+            e for e in events if e.attribution_basis == "account_only"
+        ),
+    )

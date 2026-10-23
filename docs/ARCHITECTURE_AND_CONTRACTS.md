@@ -5926,8 +5926,9 @@ alias/ISIN evidence yield `unresolved_ambiguous`, with NULL `instrument_id`.
 New Save commands refresh this derived metadata even for manual choices without
 changing their classification, origin/status or decision timestamps. Same-command
 replay and GET remain read-only. Classification PUT recomputes the selected row's
-link. This metadata grants no financial receipt/Close authority and does not change
-the instrument-return reader's attribution rules. Downgrade removes only these
+link. This metadata grants no financial receipt/Close authority. The additive
+[instrument-return v2 reader](#c7-instrument-return-v2) consumes and revalidates
+these decisions read-only; GET never relinks them. Downgrade removes only these
 four columns/constraints and preserves classifications and journal observations.
 Migration `0062_security_reg_isin_mappings` adds an empty owner-maintained offline
 crosswalk: unique normalized uppercase `reg_number`, a 12-character ISIN matching
@@ -6090,6 +6091,119 @@ totals; its monthly chain remains unavailable.
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
+The original monthly/all-time fields below remain the compatibility contract.
+The additive dated analysis has stricter full-result availability and explicitly
+separates economic values, known subtotals and conditional statement estimates.
+
+<a id="c7-instrument-return-v2"></a>
+#### Dated instrument analysis, RUB result and Modified Dietz
+
+`GET /api/source-returns/instruments` accepts optional `isin`, and paired ISO
+`opening_date`/`closing_date` with opening < closing. Dates are actual EOD endpoints;
+cash is selected in `(opening_date, closing_date]`. Without dates the disclosed
+interval is the saved-source outer span, never an inferred acquisition date.
+The root returns the requested `source_account` alias separately from resolved
+`native_source_account`; scope remains provider + exact native account + ISIN.
+Binding an intake to Hermes metadata grants no additional authority.
+
+Each instrument and existing monthly row adds `analysis` with
+`contract_version=instrument_return_v2`, actual dates, source history span,
+`history_complete_since_acquisition`, dated `events`, `opening`/`closing`,
+`components`, `pnl`, `known_subtotal`, `modified_dietz`, `chained_monthly`,
+six coverage entries (events, quantity, endpoints, payouts, costs, valuation),
+source references, reasons, assumptions and `statement_estimate`.
+Metric values are integer kopecks for money and Decimal fraction strings for
+rates (`0.1` = 10%). Status is supported/provisional/partial/unavailable.
+Supported means complete within the selected source scope, never an accepted
+financial receipt. Root authority remains provisional / financial authority none.
+
+Events retain native ordered trade IDs, execution time, cash and depository dates,
+signed quantity, source price/unit, dated trade face, amount, NKD, commission,
+gross/withheld/net payout, saved classification and link status, effective ISIN,
+currentness, provenance and reasons. Missing components remain NULL. Dated cash
+legs have credit-positive `account_cash_kopecks`, its negative
+`instrument_flow_kopecks`, references and a unique ownership key. Decomposition
+fields are informational, not additional legs. Validated matched Money rows replace
+the corresponding native principal/NKD/commission component and use their posting
+dates. Without those rows, the native settled cash date is disclosed as
+`attribution_basis=native_trade_settlement`; missing settlement never falls back
+to execution date. Pending observations remain visible but uncounted. Depository
+dates drive quantity reconciliation; missing/cross-boundary settlement, negative
+observed holdings and unexplained Q1-Q0 block full P/rate. An absent holding row is
+not zero; explicit zero endpoints support initial buys and complete sales.
+
+Money validates saved occurrence/date/amount/currency/classification using the
+existing monthly reader. Scoped signature + occurrence multiplicity deduplicates
+replayed reports, with confirmed classification precedence. Same-report identical
+rows remain distinct. Missing overlapping occurrences, conflicting choices,
+trade core/fee/NKD/face/cash/depository-date conflicts and unreadable bound or
+unbound competing sources block dependent results. Whole-source structures and
+the #935 `source_period_inferred` guard remain hard gaps; activity dates cannot
+establish endpoints or coverage. Known events remain inspectable.
+
+Persisted `linked` payouts must resolve again to the saved compatible target
+under the current offline catalog/effective aliases/crosswalk. Stale, ambiguous,
+unresolved or kind-mismatch decisions cannot be overridden by a name match.
+Legacy whole-identifier/name attribution is labelled `legacy_text` only when no
+contradictory persisted decision exists. New possible mappings are never silently
+saved/promoted. Valid linked payout-only ISINs join the universe with missing
+holdings; unresolved events remain at the root. Original digest, frozen parser,
+journal revision and classification/link dependency digests are disclosed.
+The existing coherent read snapshot and proof revision checks apply on every GET;
+`Cache-Control: no-store`, no cache, relink, financial writer or receipt is added.
+
+Let B be purchase cash including fees/paid NKD; S sale cash including received NKD
+less fees; C,D actual credited coupons/dividends; R principal redemption;
+F,T separate attributable costs/taxes not already embedded:
+`P = V1 - V0 - B + S + C + D + R - F - T = V1 - V0 - sum(instrument_flow)`.
+`valuation_and_trades` includes embedded costs/NKD, not pure market movement.
+The accepted native-total basis/proof precedence below remains unchanged.
+Net payout is sufficient even when gross/tax is unknown. The existing strict
+dividend narrative can evidence withheld tax and gross=net+tax; informational
+withholding is not subtracted again. Separate attributable tax cash is counted
+once. A payout plus a BUY remains two events, with no reinvestment-income event.
+Promo/external deposits remain excluded from investment P. Positive dividend-NDFL
+or other contradictory saved classifications produce a gap, never silent zero
+income or automatic repair. Explicit account-only costs stay outside instruments;
+ambiguous possible instrument costs block completeness.
+
+Economic bond endpoints require evidenced dirty value or clean plus boundary NKD.
+Current saved source formats do not provide that proof: `reported_unknown` and
+`bond_valuation_basis_unknown` keep full economic P/MD NULL. Only
+`statement_estimate` may contain the conditional reported-value P/MD, with explicit
+provisional assumptions. Assumed trade face likewise cannot establish a full
+economic result. Unsupported source redemption/amortization/in-kind facts remain
+blockers; the pure adapter supports separate redemption principal but no source
+parser expansion or forecast substitution is implied. A nonapplicable statement
+estimate is NULL. `known_subtotal` is always explicitly partial and cannot stand
+in for a full result or full acquisition history.
+
+For N=(t1-t0).days and dated instrument contributions Fj:
+`capital_days = V0*N + sum(Fj*(t1-tj))`, `r_MD = P*N/capital_days`.
+Integer capital-days avoid rounded weights; arithmetic uses a local precision-60
+ROUND_HALF_UP Decimal context. Closing-day cash has zero weight, dates are not
+shifted, the named rate is approximate and not annualized. Nonpositive capital-days
+leave known P intact and rate NULL with `non_positive_dietz_denominator`.
+Legacy `return_percent` and `capital_base_kopecks` keep their simple meanings below.
+The TypeScript consumer distinguishes these units and types the entire v2 shape.
+
+Direct outer-interval results do not require intermediate valuations. Chaining
+`product(1+r_month)-1` requires all covered calendar months, compatible seams and
+nonnegative factors (zero allowed); it is not exact TWRR and never bridges gaps.
+Partial acquisition history does not prohibit a complete selected period, but
+`history_complete_since_acquisition` requires evidenced opening Q=V=0, an acquisition
+and uninterrupted events/quantity coverage. No acquisition-cost ledger is implied.
+
+Root `reconciliation` compares account growth (including broker cash, less external
+flows) with complete compatible instrument P plus separately evidenced account-only
+cash result. It exposes the residual and claims completeness only at zero residual.
+Incomplete, filtered or incompatible instrument scope remains partial/unavailable;
+no residual is allocated to an instrument and payouts are not added to account
+growth a second time. This first scope is one native account; no averaging or
+summing cross-account rates, XIRR, new ledger, migration or UI is introduced.
+
+#### Legacy monthly and available-history compatibility fields
+
 The separate read-only service `source_instrument_returns` and
 `GET /api/source-returns/instruments?source_account=...` group verified saved
 intakes by native account and ISIN. This is a provisional source interpretation,
@@ -6186,7 +6300,8 @@ monthly flag except `income_confirmed` sets `approximate=true`.
 This grants no financial authority.
 
 Persisted coupon/dividend classifications supply signed income amounts and their
-assumed/confirmed status. Whole ISIN or explicit saved registration aliases take
+assumed/confirmed status. Current persisted-link validation follows v2 above.
+Where bounded legacy attribution is eligible, whole ISIN or explicit saved registration aliases take
 precedence over whole saved names; a missing or ambiguous match stays in the income
 list with `isin=NULL` and an `unattributed_income` gap/reference. Registration aliases
 are usable only if actually present in saved identity evidence; the reader does

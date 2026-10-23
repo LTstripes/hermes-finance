@@ -130,6 +130,17 @@ def _month(
     )
 
 
+def calculate_interval_return(
+    opening: MonthBoundary, closing: MonthBoundary, flows: list[ExternalFlow]
+) -> MonthlyReturnRow:
+    """Validated direct Dietz adapter; no account schedule or XIRR evaluation."""
+    _validate([opening, closing], flows)
+    with localcontext() as context:
+        context.prec = 60
+        context.rounding = ROUND_HALF_UP
+        return _month(opening, closing, [f for f in flows if opening[0] < f[0] <= closing[0]])
+
+
 def _period_xirr(
     opening: MonthBoundary, closing: MonthBoundary, flows: list[ExternalFlow]
 ) -> tuple[Decimal | None, Decimal | None, tuple[str, ...]]:
