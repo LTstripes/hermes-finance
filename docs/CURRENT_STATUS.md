@@ -9,12 +9,22 @@ Evidence cut: 2026-10-23. This is the only maintained status book. Live GitHub e
 | --- | --- |
 | Finance-code checkpoint before #935 | `31e7b41d444945ed5ae5c4e4a813997329c3a354`, [PR #939](https://github.com/LTstripes/hermes-finance/pull/939). Exact [main push CI 39956697053](https://github.com/LTstripes/hermes-finance/actions/runs/39956697053) SUCCESS. This is the earlier code checkpoint reconciled by #941. The subsequent #935 behavior and its exact verification/integration evidence are linked below. |
 | Main schema | Through `0062_security_reg_isin_mappings`, after `0061_money_instrument_links`; both are merged code. This does not identify the schema of every installed database. |
-| Published release | [v1.3.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), release commit `a9c88266fffe26e83688c52fc8f425b04fa14812`, schema `0058_broker_money_ownership`. The 1.4.0 preparation files remain dated snapshots, not proof of a published 1.4.0 release or current migration instructions. |
+| Published release | [v1.3.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), release commit `a9c88266fffe26e83688c52fc8f425b04fa14812`, schema `0058_broker_money_ownership`. [1.4.0 notes](release-notes-1.4.0.md), [checklist](releases/1.4.0-test-run.md) and [recovery disposition](releases/1.4.0-rollback.md) now prepare the post-#935 baseline through 0062; publication remains Integrator-owned through #124. |
 | Installed HONOR Stable | Last attributed [#836 local receipt](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6222421447): backup-first OPS02, separate Start, physical DB continuity, `0044 → 0058`, limited health/API/UI/reload checks. No fresh Stable inspection or update is claimed here. |
 | Owner's 1.4.0 Test | [#940 handoff](https://github.com/LTstripes/hermes-finance/issues/940) reports Test at the code baseline above, database revision 0062, private reg-ISIN seed loaded and coupons linked. Owner reports correct monthly account results and working multi-account upload. This is attributed local acceptance of those paths, not independent remote inspection, per-instrument return UAT or release acceptance. The process was manually started; present reachability/reboot persistence is not verified. |
 | Workspace operations | Accepted code implements recoverable retirement (#864), not legacy permanent Apply. [#892 checkpoint](https://github.com/LTstripes/hermes-finance/issues/554#issuecomment-6255463423) preserved its PAUSED Worker workspace. No scheduler/installation change or future outcome is inferred from that record. |
 
 The earlier [#836 freeze removal](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6225429633) allowed main development after v1.3.0. The later Owner decision of 2026-10-22 freezes **UI work** while statement ingestion and return calculations are corrected; the current Owner order retains that focus. Published release, Stable, Test and UI-freeze decisions are distinct.
+
+Local #940 preparation on 2026-10-23 freshly inspected Stable read-only: clean published
+v1.3.0 HEAD/prepared marker, actual DB at 0058 matching canonical production binding,
+integrity/FK PASS. Effective DB differs from OPS02's default; explicit `-DatabasePath`
+remains mandatory. Test is clean at `31e7b41d444945ed5ae5c4e4a813997329c3a354` / 0062,
+integrity/FK PASS, but its prepared marker does not match HEAD. Existing Owner account/upload
+checks retain their attributed scope; this is not exact-release preparation evidence.
+No Stable/Test mutation or production Start was performed. Cross-schema production rollback
+is absent: exact-schema API restore, OPS02 older-version refusal and isolated-only O4 recovery
+do not compose into a Stable rollback. Integrator must settle recovery/risk before production Start.
 
 ### Recent merged changes
 
