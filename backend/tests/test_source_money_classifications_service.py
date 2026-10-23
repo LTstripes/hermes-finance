@@ -239,6 +239,54 @@ def test_payout_links_upload_reupload_choices_and_read_only_metadata(db):
     assert restored.json()["instrument_id"] == instrument_id
 
 
+@pytest.mark.parametrize("issuer", ["", "   "])
+def test_saved_money_schema_rejects_blank_issuer(db, issuer):
+    from sqlalchemy import inspect, update
+    from sqlalchemy.exc import IntegrityError
+
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", DIVIDEND_SECURITY, "12.34"),))
+    assert any(
+        index["name"] == "ix_source_money_instrument_id"
+        and index["column_names"] == ["instrument_id"]
+        for index in inspect(db.engine).get_indexes(SourceMoneyClassification.__tablename__)
+    )
+    with db.session_factory() as session:
+        with pytest.raises(IntegrityError, match="ck_source_money_security_issuer"):
+            session.execute(
+                update(SourceMoneyClassification)
+                .where(SourceMoneyClassification.intake_id == intake)
+                .values(security_issuer=issuer)
+            )
+
+
+@pytest.mark.parametrize("narrative", [COUPON_SECURITY, DIVIDEND_SECURITY])
+def test_linked_payout_blocks_instrument_delete_with_specific_reference(db, narrative):
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.instruments import (
+        InstrumentDeletionBlockedError,
+        delete_instrument,
+        get_instrument_cleanup,
+    )
+
+    with db.session_factory() as session:
+        instrument_id = _security_instrument(
+            session, isin=parse_money_security(narrative).reg_number
+        ).id
+        session.commit()
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),))
+    assert saved_rows(db, intake)[0].instrument_id == instrument_id
+    with db.session_factory() as session:
+        cleanup = get_instrument_cleanup(session, instrument_id)
+        assert not cleanup.can_delete
+        assert [(ref.kind, ref.count) for ref in cleanup.references] == [("source_money_payout", 1)]
+        with pytest.raises(
+            InstrumentDeletionBlockedError, match="строками купонных/дивидендных выплат"
+        ):
+            delete_instrument(session, instrument_id)
+        assert session.get(Instrument, instrument_id) is not None
+
+
 def test_coupon_link_is_populated_on_initial_import(db):
     with db.session_factory() as session:
         instrument = _security_instrument(

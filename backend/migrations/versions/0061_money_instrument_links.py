@@ -15,12 +15,17 @@ def upgrade():
         batch.add_column(sa.Column("security_issuer", sa.Text(), nullable=True))
         batch.add_column(sa.Column("instrument_id", sa.Integer(), nullable=True))
         batch.add_column(sa.Column("instrument_link_status", sa.String(32), nullable=True))
+        batch.create_index("ix_source_money_instrument_id", ["instrument_id"])
         batch.create_foreign_key(
             "fk_source_money_instrument",
             "instruments",
             ["instrument_id"],
             ["id"],
             ondelete="RESTRICT",
+        )
+        batch.create_check_constraint(
+            "ck_source_money_security_issuer",
+            "security_issuer IS NULL OR length(trim(security_issuer)) > 0",
         )
         batch.create_check_constraint(
             "ck_source_money_instrument_link_status",
@@ -37,6 +42,8 @@ def upgrade():
 
 def downgrade():
     with op.batch_alter_table("source_intake_money_classifications") as batch:
+        batch.drop_index("ix_source_money_instrument_id")
+        batch.drop_constraint("ck_source_money_security_issuer", type_="check")
         batch.drop_constraint("ck_source_money_instrument_link", type_="check")
         batch.drop_constraint("ck_source_money_instrument_link_status", type_="check")
         batch.drop_constraint("fk_source_money_instrument", type_="foreignkey")

@@ -208,6 +208,12 @@ This candidate is the provisional monthly source-return slice merged after v1.3.
 
 ## Compatibility, migration and rollback
 
+- PR #936 adds unmerged migration `0061_money_instrument_links` after `0060`.
+  Synthetic downgrade to `0060` removes the nullable payout identity/link columns,
+  their instrument index, checks and foreign key; saved classifications and journal
+  evidence remain intact. Re-upgrade leaves the derived metadata NULL until an
+  explicit Save or classification PUT. This is not a production rollback procedure;
+  the blocked cross-schema rollback and forward-fix limits below also apply to `0061`.
 - Published v1.3.0 is schema `0058_broker_money_ownership`. This candidate adds
   `0059_source_intake` and `0060_source_money_classifications`. Both are additive to the
   existing schema.
