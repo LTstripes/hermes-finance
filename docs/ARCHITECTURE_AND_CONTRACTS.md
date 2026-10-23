@@ -5836,13 +5836,25 @@ their covered months retain unknown income and flows.
 
 Only these provisional readers can exclude exactly recognized service branches
 from completeness blockers using the verified saved structural inventory: the
-Positions tax footer; Money opening/closing, daily, total and four ordered
+Positions tax footer; Money opening/closing, daily, total and five ordered
 operation-group displays; empty Transfers; and the UFSR connection record. They
 reuse the bounded DRAFT tree grammar and metadata topology. Keys, namespaces,
 ordered service children, cardinalities, fixed label hashes and consumed row
 counts are checked. Unknown/extra attributes, children, payload text, moved rows
 or populated Transfers retain blockers. Pending trade caption keys `p_name2`,
 `Textbox16`, `place_name2` remain opaque, like their completed-row counterparts.
+The fifth operation-group display has exactly funding, dividends, coupons,
+client withdrawal (`Списано по распоряжению Клиента`) and bank charges, in that
+order. Its totals remain opaque and never supply additional Money events.
+Only a completed single-B REPO row may carry opaque `course3="0.0000"`:
+its verified inventory must contain a distinct B partner and exact REPO-leg
+marker. Its own ID, account and ISIN must agree with the corresponding frozen
+parsed trade. Other values,
+lexical zero variants, ordinary/pending rows and extra keys retain blockers.
+This structural exclusion does not resolve REPO identity, quantity or cash
+economics; REPO events remain unsupported and cannot produce full P&L/Dietz.
+Both additions are provisional-reader projections only; shared DRAFT grammar,
+frozen source facts, and financial authority are unchanged.
 Display numbers and connection dates are fingerprint-only and are not validated
 as numeric/date values by this structural exclusion; they never supply money,
 events, valuation, income classification or report periods. This exclusion does

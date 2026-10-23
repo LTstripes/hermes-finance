@@ -9,6 +9,7 @@ deliberately separate from the stronger original-byte incomplete-DRAFT proof.
 
 from __future__ import annotations
 
+import re
 from xml.etree import ElementTree as ET
 
 from hermes_finance.statement_import.mybroker import SCHEMA, SECTIONS, digest
@@ -24,6 +25,7 @@ from hermes_finance.statement_import.mybroker_draft_structure import (
     N,
     _endpoint,
     _shape,
+    _summary,
     _visited,
 )
 from hermes_finance.statement_import.mybroker_metadata import _section_shape
@@ -39,6 +41,7 @@ _LABELS = {
         "Внесено по распоряжению Клиента",
         "Дивиденды",
         "Купоны",
+        "Списано по распоряжению Клиента",
         "Списано по тарифам Банка",
     ),
     "p_code1": ("RUB",),
@@ -47,8 +50,20 @@ _LABELS = {
     "p_code": ("RUB",),
 }
 
+_RETURN_SUMMARIES = SUMMARIES + (
+    _summary(
+        (
+            "Внесено по распоряжению Клиента",
+            "Дивиденды",
+            "Купоны",
+            "Списано по распоряжению Клиента",
+            "Списано по тарифам Банка",
+        )
+    ),
+)
 
-def _inventory_tree(observations):
+
+def _inventory_tree(observations, *, references=None):
     nodes = {}
     counts = {}
     for row in observations:
@@ -66,6 +81,8 @@ def _inventory_tree(observations):
         if len(attrs) != len(facts["attributes"]):
             raise ValueError
         node = ET.Element(facts["tag"], attrs)
+        if references is not None:
+            references[id(node)] = facts.get("native_references", {})
         nodes[locator], counts[locator] = node, facts["child_count"]
         if locator != "0":
             parent, index = locator.rsplit("/", 1)
@@ -101,7 +118,27 @@ def _service(wrapper, outer):
     )
 
 
-def _recognized(root, source):
+def _repo_zero_field(node, trade, references):
+    """Recognize one opaque REPO field without granting any REPO economics."""
+    native = references.get(id(node), {})
+    own, partner = native.get("trade_no", ""), native.get("repo_no", "")
+    return (
+        node.get("course3") == digest("0.0000")
+        and re.fullmatch(r"B[0-9]{1,127}", own) is not None
+        and re.fullmatch(r"B[0-9]{1,127}", partner) is not None
+        and own != partner
+        and node.get("trade_no") == digest(own)
+        and node.get("repo_no") == digest(partner)
+        and node.get("comment") in {digest("репо ч.1"), digest("репо ч.2")}
+        and trade.get("ids") == [own]
+        and trade.get("identity") is None
+        and trade.get("repo_observed") is True
+        and node.get("acc_code") == digest(trade["core"]["source_account"])
+        and node.get("isin_reg") == digest(trade["core"]["isin"])
+    )
+
+
+def _recognized(root, source, references):
     expected = {
         "Name": digest("MyBroker"),
         "Textbox5": digest("Отчет по сделкам и операциям (Отчет брокера)"),
@@ -151,7 +188,7 @@ def _recognized(root, source):
                 "Tablix2": (_endpoint(True),),
                 "Tablix3": (_endpoint(False),),
                 **{key: (value,) for key, value in BLANKS.items()},
-                "Tablix7": SUMMARIES,
+                "Tablix7": _RETURN_SUMMARIES,
             }
         for tag, variants in shapes.items():
             found = report.findall(N + tag)
@@ -207,6 +244,15 @@ def _recognized(root, source):
             parts = ("Report/" + path).split("/")
             allowed.update("/".join(parts[:i]) for i in range(1, len(parts) + 1))
         attrs = {path: set(keys) for path, keys in _ATTRS[outer].items()}
+        if outer == "Trades":
+            rows = report.findall(N + "Tablix2/" + N + "Details_Collection/" + N + "Details")
+            trades = [t for t in source["trades"] if t["section"] == "completed"]
+            if len(rows) != len(trades):
+                return False
+            for row, trade in zip(rows, trades, strict=True):
+                if "course3" in row.attrib and not _repo_zero_field(row, trade, references):
+                    return False
+            attrs["Report/Tablix2/Details_Collection/Details"].add("course3")
         for path, keys in attrs.items():
             if path.endswith(("/Details", "/Details2")):
                 keys.update({"face_value", "nominal", "nominal_value"})
@@ -250,7 +296,9 @@ def source_return_blockers(view):
     if not blockers.intersection(candidates):
         return blockers
     try:
-        if _recognized(_inventory_tree(view.get("observations", [])), source):
+        references = {}
+        root = _inventory_tree(view.get("observations", []), references=references)
+        if _recognized(root, source, references):
             return blockers - candidates
     except (ValueError, TypeError, KeyError, IndexError):
         pass

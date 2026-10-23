@@ -536,6 +536,75 @@ def test_unreadable_overlap_blocks_only_its_covered_months(db, monkeypatch):
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("populated_transfer", [False, True])
+def test_bounded_repo_service_display_does_not_hide_events_or_poison_later_stock(
+    db, populated_transfer
+):
+    from fastapi.testclient import TestClient
+    from test_source_monthly_returns_service import service_structure_xml, withdrawal_summary
+
+    from hermes_finance.main import create_app
+
+    def mutate(root):
+        decorated = ET.fromstring(service_structure_xml(ET.tostring(root)))
+        root.attrib.clear()
+        root.attrib.update(decorated.attrib)
+        root[:] = list(decorated)
+        withdrawal_summary(root)
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.attrib.update(trade_no="B9001", repo_no="B9002", comment="репо ч.1", course3="0.0000")
+        if populated_transfer:
+            table = root.find("m:Trades3/m:Report/m:Tablix1", NS)
+            ET.SubElement(table, "{MyBroker}Details", qty="-1", isin=ISIN)
+
+    save(
+        db,
+        end_month=5,
+        mutate=mutate,
+        extra=(("Внесено по распоряжению Клиента", "Synthetic funding", "500"),),
+    )
+    save(db, 5, stock=("10", "10", "1050", "1100"), bond=None, trades=())
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    response = client.get(
+        "/api/source-returns/instruments",
+        params={
+            "source_account": ACCOUNT,
+            "isin": ISIN,
+            "opening_date": "2030-04-30",
+            "closing_date": "2030-05-31",
+        },
+    )
+    assert response.status_code == 200
+    stock = response.json()["instruments"][0]["analysis"]
+    if populated_transfer:
+        assert stock["pnl"]["value"] is None
+        assert stock["modified_dietz"]["value"] is None
+        assert "4_Transfers_unsupported" in stock["pnl"]["reason_codes"]
+    else:
+        assert stock["pnl"]["value"] == 5000
+        with localcontext() as context:
+            context.prec = 60
+            assert Decimal(stock["modified_dietz"]["value"]) == Decimal(1) / Decimal(21)
+        assert stock["pnl"]["reason_codes"] == []
+    with db.session_factory() as session:
+        repo = (
+            read_instrument_returns(
+                session,
+                source_account=ACCOUNT,
+                isin=BOND,
+                opening_date=date(2030, 3, 31),
+                closing_date=date(2030, 5, 31),
+            )
+            .instruments[0]
+            .analysis
+        )
+    assert repo.pnl.value is None and repo.modified_dietz.value is None
+    assert {"repo_trade_unsupported", "trade_identity_unresolved"} <= set(repo.reason_codes)
+    assert any(not event.counted and event.native_ids == ("B9001",) for event in repo.events)
+    assert snapshot(db) == before
+
+
 def test_missing_legacy_classifications_never_backfilled(db, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(source_intake, "persist_money_classifications", lambda *args: None)
