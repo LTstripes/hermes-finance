@@ -39,6 +39,11 @@ The normal presentation is one month workspace with a useful instrument detail. 
 
 This target changes neither journal Save into financial Apply nor a forecast into confirmed income. Implement the missing statement → identity/position → forecast connection through the accepted contracts, preserving provenance, deduplication, currentness and manual facts. Do not introduce another finance ledger to hide a disconnected workflow.
 
+The backend [saved-statement payout preview](ARCHITECTURE_AND_CONTRACTS.md#c9-source-payout-preview)
+exposes dated source-observed quantity and actual-vs-schedule candidates to typed consumers.
+It is provisional and read-only; an ambiguous paid match needs review and cannot count
+again as a future payment. Screen integration remains a separate UI milestone.
+
 Historical loading is part of the same source-first direction. A long report can supply dated events and outer valuations; missing intermediate month-end values require specific additional evidence. Do not demand redundant monthly exports, invent intermediate prices, or imply that accepting a long file automatically reconstructs every financial month.
 
 <a id="p2-master_spec-931"></a>

@@ -94,6 +94,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 CI_CORE_ADDITIONAL_FILES = (
     "test_instrument_return.py",
     "test_source_instrument_events.py",
+    "test_source_payout_preview.py",
     "test_security_reg_isin_mappings_service.py",
     "test_astra_medium_xfail.py",
     "test_source_instrument_returns_service.py",
@@ -596,6 +597,7 @@ _CI_LANE_OVERRIDES = {
     "test_r08_01b_valuation_points.py": "ci_persistence",
     "test_instrument_mappings_api.py": "ci_integrations",
     "test_ci_lane_ownership.py": "ci_runtime_release",
+    "test_source_payout_preview.py": "ci_core",
 }
 
 _MIGRATION_FILES = frozenset(

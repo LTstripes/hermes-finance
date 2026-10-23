@@ -97,6 +97,7 @@ from hermes_finance.api.source_money_classifications import (
     router as source_money_classifications_router,
 )
 from hermes_finance.api.source_monthly_returns import router as source_monthly_returns_router
+from hermes_finance.api.source_payout_preview import router as source_payout_preview_router
 from hermes_finance.api.statement_import import router as statement_import_router
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
@@ -190,6 +191,7 @@ def create_app(
     application.include_router(broker_months_router)
     application.include_router(source_intake_result_router)
     application.include_router(source_instrument_returns_router)
+    application.include_router(source_payout_preview_router)
     application.include_router(source_monthly_returns_router)
     application.include_router(source_money_classifications_router)
     application.include_router(broker_statement_return_router)
