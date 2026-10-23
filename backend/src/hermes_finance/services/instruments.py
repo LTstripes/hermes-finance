@@ -62,6 +62,7 @@ _REFERENCE_METADATA: dict[str, tuple[str, str]] = {
     "applied_provider_payouts": ("provider_payout", "history"),
     "applied_statement_events": ("statement_event", "history"),
     "applied_statement_event_revisions": ("statement_history", "history"),
+    "source_intake_money_classifications": ("source_money_payout", "history"),
 }
 _REFERENCE_LABELS = {
     "market_mapping": "сопоставлением с источником котировок",
@@ -72,6 +73,7 @@ _REFERENCE_LABELS = {
     "provider_payout": "применённой выплатой провайдера",
     "statement_event": "импортированной выплатой из выписки",
     "statement_history": "историей импортированной выплаты",
+    "source_money_payout": "строками купонных/дивидендных выплат из выписки",
     "other_reference": "сохранённой финансовой записью",
 }
 _MONTH_NAMES = (

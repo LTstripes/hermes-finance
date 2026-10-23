@@ -85,6 +85,7 @@ class SourceMoneyClassification(Base):
 
     __tablename__ = "source_intake_money_classifications"
     __table_args__ = (
+        Index("ix_source_money_instrument_id", "instrument_id"),
         UniqueConstraint("intake_id", "source_reference", name="uq_source_money_reference"),
         UniqueConstraint("observation_id", name="uq_source_money_observation"),
         CheckConstraint(
@@ -98,6 +99,10 @@ class SourceMoneyClassification(Base):
             "(origin = 'default_rule' AND status = 'assumed') OR "
             "(origin = 'user_choice' AND status = 'confirmed')",
             name="ck_source_money_choice_status",
+        ),
+        CheckConstraint(
+            "security_issuer IS NULL OR length(trim(security_issuer)) > 0",
+            name="ck_source_money_security_issuer",
         ),
         CheckConstraint(
             "instrument_link_status IS NULL OR instrument_link_status IN "

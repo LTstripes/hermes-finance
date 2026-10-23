@@ -45,6 +45,9 @@ def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
         assert revision_rows(path) == [REVISION]
         with sqlite3.connect(path) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
+            assert connection.execute(
+                "PRAGMA index_info(ix_source_money_instrument_id)"
+            ).fetchall() == [(0, 16, "instrument_id")]
             assert connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() == [
                 (*row, None, None, None, None) for row in original
             ]
@@ -61,6 +64,11 @@ def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
             )
             import pytest
 
+            for issuer in ("", "   "):
+                with pytest.raises(sqlite3.IntegrityError, match="ck_source_money_security_issuer"):
+                    connection.execute(
+                        f"UPDATE {table} SET security_issuer=? WHERE id=?", (issuer, original[0][0])
+                    )
             with pytest.raises(sqlite3.IntegrityError):
                 connection.execute("DELETE FROM instruments WHERE id=?", (instrument_id,))
             with pytest.raises(sqlite3.IntegrityError):
@@ -93,6 +101,10 @@ def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
         assert downgraded.returncode == 0, downgraded.stderr
         assert revision_rows(path) == [old_revision]
         with sqlite3.connect(path) as connection:
+            assert (
+                connection.execute("PRAGMA index_info(ix_source_money_instrument_id)").fetchall()
+                == []
+            )
             assert connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() == original
             for name, rows in journal.items():
                 assert connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall() == rows
