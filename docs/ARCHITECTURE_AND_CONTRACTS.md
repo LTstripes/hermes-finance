@@ -5821,9 +5821,12 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
-The supported dividend transfer is exactly operation `Перевод` with narrative
-`Дивиденды <nonempty single-line description>` and a nonnegative amount, mirroring
-the supported coupon transfer. A dividend word alone is insufficient. Existing
+The supported dividend transfer is operation `Перевод` with narrative starting
+`Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
+context. Dividend defaults require a strictly positive amount and exclude narratives
+containing `возврат` or account-transfer directions `на счет`, `со счета` or
+`с счета` (case-insensitive, treating ё as е). Coupon defaults are unchanged.
+A dividend word alone is insufficient. Existing
 saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
