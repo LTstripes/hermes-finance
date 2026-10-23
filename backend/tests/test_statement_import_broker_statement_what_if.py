@@ -1186,3 +1186,44 @@ def test_real_effective_h2_withdrawal_needs_no_incoming_narrative_classifier(dat
         == result
     )
     assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("warning", ["period_inferred_from_content", "filename_period_mismatch"])
+@pytest.mark.parametrize("channel", ["metadata", "actual"])
+def test_period_warnings_are_scoped_what_if_diagnostics(database, monkeypatch, warning, channel):
+    from hermes_finance.services import broker_statement_what_if as service
+
+    client, raw = prepared(database)
+    if channel == "metadata":
+        reader = service.parse_section_metadata
+
+        def warned(*args, **kwargs):
+            metadata = reader(*args, **kwargs)
+            metadata["source_warnings"].append(warning)
+            return metadata
+
+        monkeypatch.setattr(service, "parse_section_metadata", warned)
+    else:
+        reader = service.read_statement_return
+
+        def warned(*args, **kwargs):
+            actual = reader(*args, **kwargs)
+            return actual.model_copy(update={"reason_codes": (*actual.reason_codes, warning)})
+
+        monkeypatch.setattr(service, "read_statement_return", warned)
+    before = _all_month_tables(database)
+    response = request(client, raw)
+    assert response.status_code == 200, response.text
+    context = response.json()
+    assert not context["hard_blockers"], context["hard_blockers"]
+    assert context["observed"]["opening"] is not None
+    diagnostics = (
+        context["diagnostic_inventory"]["metadata"]["source_warnings"]
+        if channel == "metadata"
+        else context["actual_result"]["reason_codes"]
+    )
+    assert warning in diagnostics
+    result = request(client, raw, "evaluate", context=context).json()
+    assert result["status"] == "hypothetical", result["reason_codes"]
+    assert result["actual_result"] == context["actual_result"]
+    assert _all_month_tables(database) == before

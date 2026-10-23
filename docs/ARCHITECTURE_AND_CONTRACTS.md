@@ -1475,20 +1475,44 @@ or unrecognized filename ranges are unusable. Without activity
 dates and a usable filename range, reject with `statement_period_unknown`.
 
 Primary activity dates are the first native trade `db_time` / pending `db_time2`
-value and BrokerMoneyMove `settlement_date`. Trade settlement, update, second CRLF and
-comment dates do not select or extend the period. All native date/time fields
-(including both CRLF values) and recognized comment dates remain calendar-validated.
-Malformed date fields reject with `statement_date_invalid`. UFSR
-`sys_start_time`, when present, is validated only: it is a service-connection date,
-never a report-period boundary. Inference does not establish financial completeness
-or intermediate month-end snapshots. Existing original/receipt currentness guards
-continue to fail closed on changed parser facts.
+value on parsed trade rows and BrokerMoneyMove `settlement_date` groups containing
+actual Money rows. Empty trade/Money scaffolding is not activity. Trade settlement,
+update and second CRLF values do not select or extend the period. Only structured
+date attributes are calendar-validated; free-text `comment`, `comment2` and
+`oper_type` tokens are ignored for date validation and period selection.
+Malformed structured dates reject with `statement_date_invalid`. UFSR
+`sys_start_time` is validation-only: empty/whitespace or `-` is absent/opaque,
+leaving section metadata blockers intact. Other present values must be valid; a
+service-connection date never establishes a report-period boundary.
+
+Under `mybroker-s1-v2`, trade day/timestamp attributes accept `D.MM.YYYY` or
+`DD.MM.YYYY` date-only values and `DD.MM.YYYY HH:MM:SS` timestamps (numeric
+components in timestamps may omit leading zeros). Date-only timestamps normalize
+to midnight; day facts retain only the date. Money attributes accept ISO
+`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS` (timestamp components may omit leading
+zeros); settlement groups must normalize to midnight. UFSR additionally accepts
+`D.MM.YYYY H:MM` / `DD.MM.YYYY HH:MM`. Blank lines are ignored, every nonblank
+CRLF-separated value is validated, and only the first is retained in scalar facts.
+Invalid calendar dates/times are never normalized into valid ones.
+
+Inference does not establish financial completeness or intermediate month-end
+snapshots. Period warnings remain advisory in source/metadata/empty-Money readers
+and scoped S3 WHAT-IF diagnostics; they grant no endpoint or financial authority.
+Exact-original reattachment preserves the optional warning shape of frozen v2
+receipts/manifests: absent and empty warning lists are equivalent, and receipts
+without a warning key do not gain advisory warnings during reattachment. Recorded
+nonempty warnings and all other parser facts still compare exactly; original,
+range, account and receipt currentness guards remain in force.
 
 When present, filename account and row `acc_code` are distinct identities:
 both require explicit `alfa_mybroker` registry mappings, with no suffix/name/Alfa
 PRO heuristic. If the filename has no account and the XML observes exactly one
-native account, use that XML account as the source alias. Ambiguous XML accounts
-remain unresolved. Instrument mappings use the manifest's ISIN identity. No current
+native account, use that XML account as the source alias. With multiple XML
+accounts, the filename alias is absent: identity plans require the observed row
+aliases only, and preflight omits empty filename-account calendar/availability
+groups. No filename/row target comparison is made without a filename alias;
+explicit row mappings and existing account/position conflicts still apply.
+Instrument mappings use the manifest's ISIN identity. No current
 instrument class becomes event-C1.
 
 Apply confirms the complete document set. Its confirmation digest binds every
@@ -1630,7 +1654,7 @@ accepted source evidence against the historical account universe, preventing a
 later assertion from ignoring unresolved event-C1. Existing source-free Phase 1
 material signatures and solver behavior are unchanged. Reconciliation/C5 and
 Reopen remain prerequisites where already required; S1 cannot perform them.
-An unresolved pending trade survives the filename range until an explicit
+An unresolved pending trade survives the selected source range until an explicit
 settled occurrence resolves it. Actual settlement/depo dates crossing later
 cutoffs are checked too; a new import surfaces impact on already accepted later
 intervals before writing. Planned dates never clear an unsettled cutoff.
@@ -3288,7 +3312,7 @@ standalone backend diagnostic read. It returns the typed
 HTTP route, persistence model, acceptance endpoint or financial writer.
 
 The read uses a committed coherent snapshot. It reparses the original through
-the unchanged S1 family/namespace/schema/filename/cardinality/bounds rules and
+the S1 family/namespace/schema/selected source range/cardinality/bounds rules and
 requires equality of every parser fact, ordered Money leaf and section inventory
 against the immutable import. Established service enrichment is preserved;
 occurrence fingerprints use the full saved S1 rows, exactly like existing cash

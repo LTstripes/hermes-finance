@@ -658,7 +658,16 @@ def test_unusable_filename_infers_content_period(filename):
     result = parse_mybroker(fixture(), filename)
     assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2030-01-31")
     assert result["warnings"] == ["period_inferred_from_content"]
-    assert result["filename_account"] in {"1234567", ACCOUNT}
+    expected_alias = (
+        "1234567"
+        if filename
+        in {
+            "Брокерский 1234567 (31.01.30-01.01.30).xml",
+            "Брокерский 1234567 (31.02.30-31.03.30).xml",
+        }
+        else ACCOUNT
+    )
+    assert result["filename_account"] == expected_alias
 
 
 @pytest.mark.parametrize(
@@ -1456,7 +1465,7 @@ def test_ufsr_connection_date_is_validated_but_never_used_for_period(start):
         parse_mybroker(ET.tostring(root), "positions-only.xml")
 
 
-@pytest.mark.parametrize("start", ["31.02.2030 12:00", "not-a-date", ""])
+@pytest.mark.parametrize("start", ["31.02.2030 12:00", "not-a-date"])
 def test_malformed_ufsr_connection_date_is_rejected(start):
     root = ET.fromstring(fixture())
     node(root.find("{MyBroker}Trades4/{MyBroker}Report"), "Details", sys_start_time=start)
@@ -1478,3 +1487,117 @@ def test_renamed_multiaccount_source_does_not_invent_a_filename_alias():
     assert source["filename_account"] == ""
     evidence = parse_identity(ET.tostring(root), "renamed.xml")
     assert evidence["source_accounts"] == [ACCOUNT, "7654321-000"]
+
+
+@pytest.mark.parametrize("start", ["", "-", "  -  "])
+def test_absent_ufsr_connection_date_is_nonfatal_metadata_blocker(start):
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    from hermes_finance.statement_import.mybroker_metadata import parse_section_metadata
+
+    root = ET.fromstring(metadata_xml())
+    root.find(".//{MyBroker}Details[@sys_start_time]").set("sys_start_time", start)
+    raw = ET.tostring(root)
+    result = parse_mybroker(raw, "renamed.xml")
+    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2030-01-31")
+    assert "5_UFSR_unsupported" in result["syntax_blockers"]
+    metadata = parse_section_metadata(raw, "renamed.xml")
+    assert next(s for s in metadata["sections"] if s["section"] == "5_UFSR")["status"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("outer", ["Trades", "Trades2", "Trades3", "Trades4"])
+@pytest.mark.parametrize("field", ["comment", "comment2", "oper_type"])
+@pytest.mark.parametrize(
+    "text", ["Reference 1234-56-78", "Reference 31.02.2030", "Trade 2029-13-40"]
+)
+def test_narrative_date_identifiers_never_validate_or_select_period(outer, field, text):
+    root = ET.fromstring(fixture())
+    report = root.find(f"{{MyBroker}}{outer}/{{MyBroker}}Report")
+    if outer == "Trades":
+        report.find(".//{MyBroker}Details[@trade_no]").set(field, text)
+    elif outer == "Trades2":
+        report.find(
+            ".//{MyBroker}oper_type" if field == "oper_type" else ".//{MyBroker}comment"
+        ).set(field, text)
+    else:
+        node(report, "Details", **{field: text})
+    result = parse_mybroker(ET.tostring(root), "renamed.xml")
+    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2030-01-31")
+    assert result["warnings"] == ["period_inferred_from_content"]
+
+
+@pytest.mark.parametrize("empty_group", ["money", "trade", "both"])
+def test_positions_only_empty_activity_scaffolding_is_not_period_evidence(empty_group):
+    root = ET.fromstring(fixture())
+    for outer in ("Trades", "Trades2"):
+        root.find(f"{{MyBroker}}{outer}/{{MyBroker}}Report")[:] = []
+    if empty_group in {"money", "both"}:
+        report = root.find("{MyBroker}Trades2/{MyBroker}Report")
+        groups = node(node(report, "Tablix1"), "settlement_date_Collection")
+        node(
+            node(groups, "settlement_date", settlement_date="2030-03-15T00:00:00"), "rn_Collection"
+        )
+    if empty_group in {"trade", "both"}:
+        report = root.find("{MyBroker}Trades/{MyBroker}Report")
+        node(node(report, "Tablix2"), "Details_Collection", db_time="15.03.2030 9:00:00")
+    raw = ET.tostring(root)
+    with pytest.raises(MyBrokerError, match="^statement_period_unknown$"):
+        parse_mybroker(raw, "positions.xml")
+    named = parse_mybroker(raw, FILENAME)
+    assert (named["covered_from"], named["covered_to"]) == ("2030-01-01", "2030-01-31")
+    assert not named.get("warnings")
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("5.01.2030", "2030-01-05T00:00:00"),
+        ("05.01.2030 9:00:00", "2030-01-05T09:00:00"),
+        ("5.1.2030 9:0:0", "2030-01-05T09:00:00"),
+    ],
+)
+def test_documented_native_trade_date_grammar(value, expected):
+    root = ET.fromstring(fixture())
+    row = root.find(".//{MyBroker}Details[@trade_no]")
+    row.set("db_time", value)
+    row.set("save_settlement_date", value)
+    result = parse_mybroker(ET.tostring(root), "renamed.xml")
+    trade = result["trades"][0]
+    assert trade["core"]["trade_time"] == expected
+    assert trade["settlement_date"] == "2030-01-05"
+
+
+@pytest.mark.parametrize(
+    "fresh_warnings,stored_warnings,equal",
+    [
+        (None, [], True),
+        ([], None, True),
+        (None, None, True),
+        (["filename_period_mismatch"], None, True),
+        (["filename_period_mismatch"], [], False),
+        (None, ["filename_period_mismatch"], False),
+    ],
+)
+def test_frozen_warning_compatibility(fresh_warnings, stored_warnings, equal):
+    from copy import deepcopy
+
+    from hermes_finance.services.mybroker_money_candidates import _original_equal
+
+    fresh = parse_mybroker(fixture(), FILENAME)
+    stored = deepcopy(fresh)
+    if fresh_warnings is not None:
+        fresh["warnings"] = fresh_warnings
+    if stored_warnings is not None:
+        stored["warnings"] = stored_warnings
+    assert _original_equal(fresh, stored) is equal
+    fresh["covered_to"] = "2030-02-28"
+    assert not _original_equal(fresh, stored)
+
+
+def test_empty_money_group_does_not_extend_period_of_real_activity():
+    root = ET.fromstring(fixture())
+    groups = root.find(".//{MyBroker}settlement_date_Collection")
+    node(node(groups, "settlement_date", settlement_date="2031-03-15T00:00:00"), "rn_Collection")
+    result = parse_mybroker(ET.tostring(root), "renamed.xml")
+    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2030-01-31")
+    assert len(result["money"]) == 1

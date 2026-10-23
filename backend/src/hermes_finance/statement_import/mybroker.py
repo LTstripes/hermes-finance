@@ -60,7 +60,7 @@ def digest(value: object) -> str:
 
 
 def frozen_source_shape(fresh: dict, stored: dict) -> dict:
-    """Reproduce only the optional nominal keys already present in frozen v2 facts.
+    """Reproduce optional nominal and advisory-warning keys in frozen v2 facts.
 
     Exact-original checks remain the caller's responsibility. Missing saved keys
     mean the old grammar, never permission to promote a reattached nominal.
@@ -70,6 +70,13 @@ def frozen_source_shape(fresh: dict, stored: dict) -> dict:
     if fresh.get("parser") != PARSER or stored.get("parser") != PARSER:
         return fresh
     result = dict(fresh)
+    # Advisory period warnings did not exist in older v2 receipts. Do not upgrade
+    # their frozen shape during exact-original reattachment. Recorded warnings
+    # still compare exactly, with an absent fresh key equivalent to an empty list.
+    if "warnings" not in stored:
+        result.pop("warnings", None)
+    else:
+        result["warnings"] = fresh.get("warnings", [])
     for section in ("positions", "trades"):
         rows, old_rows = fresh.get(section, []), stored.get(section, [])
         if len(rows) == len(old_rows):
@@ -165,25 +172,36 @@ def _statement_period(
         "save_depo_settlement_date",
         "save_depo_settlement_date3",
     }
+    trade_rows = {
+        row
+        for path in (
+            "m:Tablix2/m:Details_Collection/m:Details",
+            "m:Tablix3/m:Details2_Collection/m:Details2",
+        )
+        for row in sections["Trades"].findall(path, NS)
+    }
+    money_groups = {
+        group
+        for group in sections["Trades2"].findall(
+            "m:Tablix1/m:settlement_date_Collection/m:settlement_date", NS
+        )
+        if group.findall("m:rn_Collection/m:rn", NS)
+    }
     for outer in ("Trades", "Trades2", "Trades3", "Trades4"):
         for node in sections[outer].iter():
             for name, value in node.attrib.items():
                 if name == "sys_start_time" and outer == "Trades4":
-                    _date_values(value, connection=True)  # Never a report-period date.
+                    if value.strip() not in {"", "-"}:
+                        _date_values(value, connection=True)  # Never a report-period date.
                 elif (outer == "Trades" and name in trade_dates) or (
                     outer == "Trades2" and name in {"settlement_date", "last_update"}
                 ):
                     values = _date_values(value, iso=outer == "Trades2", optional=True)
-                    if values and name in {"db_time", "db_time2", "settlement_date"}:
-                        activity.append(values[0].date())
-                elif name in {"comment", "comment2", "oper_type"}:
-                    # Validate narrative dates without using them as period boundaries.
-                    for token in re.findall(
-                        r"(?<![0-9])(?:[0-9]{2}\.[0-9]{2}\.[0-9]{4}|"
-                        r"[0-9]{4}-[0-9]{2}-[0-9]{2})(?![0-9])",
-                        value,
+                    if values and (
+                        (node in trade_rows and name in {"db_time", "db_time2"})
+                        or (node in money_groups and name == "settlement_date")
                     ):
-                        _date_values(token, iso="-" in token)
+                        activity.append(values[0].date())
     filename_period = None
     if filename_match:
         try:

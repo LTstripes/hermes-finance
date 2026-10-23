@@ -26,6 +26,9 @@ from hermes_finance.statement_import.mybroker_metadata import parse_section_meta
 # These literal diagnostic codes are conditional on complete, independently
 # inspected inventory below. Every other code, including future codes, is hard.
 SCOPED_REASONS = {
+    # Advisory S1 period selection is already bound to the inspected source.
+    "period_inferred_from_content": "source_period",
+    "filename_period_mismatch": "source_period",
     "account_crossing_coverage_unproved": "remaining_crossings",
     "historical_membership_not_continuously_included": "native_basis",
     "money_semantics_unsupported": "money_inventory",

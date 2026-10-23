@@ -1233,3 +1233,36 @@ def test_selected_period_and_warning_survive_source_intake_ack_and_get(database,
     assert view["document"]["warnings"] == [warning]
     assert warning not in view["exceptions"]
     assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("zero_overlap", [False, True])
+def test_legacy_intake_without_warning_key_reattaches_without_manifest_upgrade(
+    database, monkeypatch, zero_overlap
+):
+    from hermes_finance.statement_import import mybroker
+
+    root = ET.fromstring(broker_month_xml())
+    if zero_overlap:
+        root.find(".//{MyBroker}Details[@trade_no]").set("db_time", "15.02.2030 9:00:00")
+        for group in root.findall(".//{MyBroker}settlement_date"):
+            group.set("settlement_date", "2030-02-16T00:00:00")
+    raw = ET.tostring(root)
+    period = mybroker._statement_period
+
+    def old_period(*args, **kwargs):
+        start, end, _ = period(*args, **kwargs)
+        return start, end, []
+
+    client = TestClient(create_app(database=database))
+    with monkeypatch.context() as old:
+        old.setattr(mybroker, "_statement_period", old_period)
+        view = save(client, raw, {})
+    assert "warnings" not in view["document"]
+    if zero_overlap:
+        assert mybroker.parse_mybroker(raw, FILENAME)["warnings"] == ["filename_period_mismatch"]
+    before = _tables(database)
+    response = upload(client, f"{BASE}/{view['id']}/review-preview", raw, "intent", intent(view))
+    assert response.status_code == 200, response.text
+    assert response.json()["manifest_digest"] == view["manifest_digest"]
+    assert client.get(f"{BASE}/{view['id']}").json()["document"] == view["document"]
+    assert _tables(database) == before

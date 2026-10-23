@@ -1522,7 +1522,8 @@ def test_cash_event_outside_overlapping_filename_keeps_out_of_range_semantics(as
     case = next(case for case in ASTRA_CASES if case["case"] == "21_outside_period")
     source = parse_mybroker((ASTRA_ROOT / (case["case"] + ".xml")).read_bytes(), case["filename"])
     assert (source["covered_from"], source["covered_to"]) == ("2030-04-01", "2030-04-30")
-    assert not source.get("warnings")
+    # Only the May cash event is dated: filename stays authoritative; zero overlap is advisory.
+    assert source.get("warnings") == ["filename_period_mismatch"]
     result = astra_results[case["case"]]
     assert "parser_error" not in result
     assert "invalid_external_flow" in {gap["code"] for gap in result["monthly"]["gaps"]}
