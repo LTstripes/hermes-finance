@@ -1498,8 +1498,10 @@ CRLF-separated value is validated, and only the first is retained in scalar fact
 Invalid calendar dates/times are never normalized into valid ones.
 
 Inference does not establish financial completeness or intermediate month-end
-snapshots. Period warnings remain advisory in source/metadata/empty-Money readers
-and scoped S3 WHAT-IF diagnostics; they grant no endpoint or financial authority.
+snapshots. Period warnings remain advisory in source/metadata/empty-Money readers.
+In S3 WHAT-IF, `filename_period_mismatch` remains advisory, while
+`period_inferred_from_content` yields the hard `source_period_inferred` reason.
+Neither warning grants endpoint or financial authority.
 Exact-original reattachment preserves the optional warning shape of frozen v2
 receipts/manifests: absent and empty warning lists are equivalent, and receipts
 without a warning key do not gain advisory warnings during reattachment. Recorded

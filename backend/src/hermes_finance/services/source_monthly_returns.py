@@ -426,8 +426,11 @@ def read_monthly_returns(
                         if context.observed.total_closing_kopecks is not None
                         else None
                     )
+                    # Keep the explained per-month inferred-period gaps above.
                     gaps.extend(
-                        SourceReturnGap(code, original.id) for code in context.hard_blockers
+                        SourceReturnGap(code, original.id)
+                        for code in context.hard_blockers
+                        if code != "source_period_inferred" or not period_inferred
                     )
                 for key, flow in _money(
                     session,
