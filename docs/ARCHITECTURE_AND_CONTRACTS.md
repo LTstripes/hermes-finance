@@ -5821,9 +5821,23 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
-The supported dividend transfer is exactly operation `Перевод` with narrative
-`Дивиденды <nonempty single-line description>` and a nonnegative amount, mirroring
-the supported coupon transfer. A dividend word alone is insufficient. Existing
+The supported dividend transfer is operation `Перевод` with narrative starting
+`Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
+context. Narrative matching case-folds, treats ё as е and collapses whitespace
+(including tabs, NBSP and other Unicode spaces) once, reusing that normalized text
+for context, reversal and account-direction checks. Raw CR/LF still disqualifies
+the transfer narrative. Context may follow whitespace or a colon, semicolon, comma
+or dash separator; a keyword or separator alone is insufficient.
+All dividend defaults, including explicitly labelled dividend operations, require
+a strictly positive amount and exclude narratives containing the refund/reversal
+stems `возврат`, `возвращ`, `сторно` or `перерасч`. Only the `Перевод` narrative
+branch excludes cash-account directions: `на счет`, `со счета` or `с счета`, also
+with `брокерский`/`расчетный` (or their genitive forms), followed by a seven-digit
+account with an optional hyphen and three-digit suffix. Account wording without
+that numeric cash-account operand, such as `на счет депо`, does not trigger this
+exclusion. Explicit dividend operations such as `Выплата дивидендов` retain their
+income default when the narrative merely states the credit destination. Coupon
+defaults are unchanged. Existing
 saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; coverage still comes from the filename interval, not XML.

@@ -20,7 +20,7 @@ from hermes_finance.services.source_money_classifications import default_classif
     "operation,narrative,amount,expected",
     [
         ("Перевод", "Дивиденды Synthetic issuer", "12.34", "dividend"),
-        ("Перевод", "Дивиденды Synthetic issuer", "0", "dividend"),
+        ("Перевод", "Дивиденды Synthetic issuer", "0", "unknown"),
         ("Перевод", "Дивиденды Synthetic issuer", "-12.34", "unknown"),
         ("Перевод", "Дивиденды", "12.34", "unknown"),
         ("Перевод", "Synthetic дивиденды issuer", "12.34", "unknown"),
@@ -29,6 +29,31 @@ from hermes_finance.services.source_money_classifications import default_classif
         ("Перевод", "Выплата дивидендов Synthetic issuer", "12.34", "unknown"),
         ("Перевод", "Погашение купона Synthetic bond", "12.34", "coupon"),
         ("Перевод", "Дивиденды Synthetic issuer НКД", "12.34", "unknown"),
+        (
+            "Перевод",
+            "Дивиденды за 2031 год по акциям Synthetic issuer (Synthetic share).",
+            "12.34",
+            "dividend",
+        ),
+        ("пЕрЕвОд", "дИвИдЕнД пО Synthetic share", "12.34", "dividend"),
+        ("Перевод", "Дивиденд по Synthetic issuer", "0", "unknown"),
+        ("Перевод", "Дивиденд по Synthetic issuer", "-12.34", "unknown"),
+        ("Перевод", "Дивиденд по", "12.34", "unknown"),
+        ("Перевод", "Дивиденды   ", "12.34", "unknown"),
+        ("Перевод", "Возврат ошибочно зачисленных дивидендов", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic issuer: ВОЗВРАТ выплаты", "12.34", "unknown"),
+        ("Перевод", "Дивиденд по Synthetic share: возврат", "12.34", "unknown"),
+        ("Перевод", "Перевод дивидендов на счет 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды на счет 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic issuer на счёт 7654321", "12.34", "unknown"),
+        ("ПЕРЕВОД", "ДИВИДЕНД ПО Synthetic share НА СЧЁТ 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды со счета 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденд по Synthetic share со счёта 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды с  счёта 7654321", "12.34", "unknown"),
+        ("Перевод", "Погашение купона Synthetic bond", "0", "coupon"),
+        ("Перевод", "Погашение купона Synthetic bond", "-12.34", "unknown"),
+        ("Дивиденды", "Возврат Synthetic dividend", "12.34", "unknown"),
+        ("Дивиденды", "Synthetic dividend", "0", "unknown"),
     ],
 )
 def test_exact_dividend_transfer_default(operation, narrative, amount, expected):
@@ -1066,6 +1091,184 @@ def test_transfer_full_scope_excludes_flow_without_changing_saved_choice(db, amo
         )
         assert not gaps
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("operation", ["Дивиденды", "Перевод"])
+@pytest.mark.parametrize(
+    "reversal", ["возврат", "возвращены", "возвращено", "сторно", "перерасчет", "ПЕРЕРАСЧЁТ"]
+)
+def test_dividend_refund_and_reversal_forms(operation, reversal):
+    narrative = f"Дивиденды Synthetic {reversal}"
+    assert default_classification(operation, narrative, "unsupported", "12.34") == "unknown"
+
+
+@pytest.mark.parametrize("prefix", ["Дивиденды", "Дивиденд по"])
+@pytest.mark.parametrize(
+    "separator", ["  ", "\t", "\u00a0", "\u2009", ": ", ":", "; ", ", ", " — "]
+)
+def test_dividend_context_separators(prefix, separator):
+    assert (
+        default_classification(
+            "Перевод", f"{prefix}{separator}Synthetic issuer", "unsupported", "12.34"
+        )
+        == "dividend"
+    )
+
+
+@pytest.mark.parametrize(
+    "direction",
+    [
+        "на счет",
+        "на расчетный счет",
+        "на брокерский счет",
+        "со счета",
+        "с счета",
+        "с расчетного счета",
+        "со брокерского счета",
+    ],
+)
+@pytest.mark.parametrize("space", [" ", "  ", "\t", "\u00a0", "\u2009"])
+@pytest.mark.parametrize("account", ["7654321", "7654321-000"])
+def test_dividend_transfer_cash_account_directions(direction, space, account):
+    narrative = f"Дивиденды Synthetic {direction} {account}".replace(" ", space)
+    assert default_classification("Перевод", narrative, "unsupported", "12.34") == "unknown"
+
+
+@pytest.mark.parametrize("operation", ["Выплата дивидендов", "Зачисление дивидендов", "Дивиденды"])
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Дивиденды зачислены на счет",
+        "Дивиденды Synthetic на брокерский счет 7654321",
+        "Дивиденды Synthetic со счета 7654321",
+    ],
+)
+def test_explicit_dividend_operation_keeps_credit_destination(operation, narrative):
+    assert default_classification(operation, narrative, "unsupported", "12.34") == "dividend"
+
+
+@pytest.mark.parametrize(
+    "narrative", ["Дивиденды Synthetic на счет депо", "Дивиденды Synthetic на брокерский счет депо"]
+)
+def test_dividend_transfer_requires_numeric_cash_account_operand(narrative):
+    assert default_classification("Перевод", narrative, "unsupported", "12.34") == "dividend"
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Дивиденды Synthetic\rissuer",
+        "Дивиденды\nSynthetic issuer",
+        "Дивиденды Synthetic issuer\r\n",
+        "Дивиденды: ",
+        "Дивиденд по\u00a0",
+    ],
+)
+def test_dividend_context_stays_nonempty_and_single_line(narrative):
+    assert default_classification("Перевод", narrative, "unsupported", "12.34") == "unknown"
+
+
+@pytest.mark.parametrize(
+    "operation,narrative,amount,expected",
+    [
+        ("Перевод", "Дивиденды Synthetic возвращены", "12.34", "unknown"),
+        ("Дивиденды", "Synthetic dividend возвращены", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic на брокерский счет 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic на расчетный счет 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic на\u00a0счет 7654321", "12.34", "unknown"),
+        ("Перевод", "Дивиденды Synthetic", "0", "unknown"),
+        ("Перевод", "Дивиденды Synthetic", "-12.34", "unknown"),
+        ("Выплата дивидендов", "Дивиденды зачислены на счет", "12.34", "dividend"),
+        ("Дивиденды", "Дивиденды Synthetic на счет 7654321", "12.34", "dividend"),
+        ("Перевод", "Дивиденды: Synthetic issuer", "12.34", "dividend"),
+        ("Перевод", "Дивиденды Synthetic на счет депо", "12.34", "dividend"),
+    ],
+)
+def test_dividend_narrowing_monthly_consumer(db, operation, narrative, amount, expected):
+    intake, original = save_month(db, candidate_count=0, extra=((operation, narrative, amount),))
+    assert saved_rows(db, intake)[0].classification == expected
+    before = snapshot(db)
+    for originals in (None, {intake: original}):
+        result = read(db, originals)
+        month = result.months[0]
+        assert not result.flows
+        assert month.dividends_kopecks == (1234 if expected == "dividend" else None)
+        if expected == "unknown":
+            assert {"unrecognized_money", "unknown_flow"} <= {gap.code for gap in result.gaps}
+            assert "unknown_flow" in month.flags
+            assert month.result.contributions_kopecks is None
+            assert month.result.growth_kopecks is None
+            assert month.result.modified_dietz_return is None
+            for totals in (result.period, result.segments[0]):
+                assert totals.contributions_kopecks is None
+                assert totals.growth_kopecks is None
+                assert totals.xirr_period_return is None
+                assert "unknown_flow" in totals.growth_reason_codes
+        else:
+            assert not result.gaps
+            assert month.result.contributions_kopecks == 0
+            assert month.result.growth_kopecks is not None
+            assert month.result.modified_dietz_return is not None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    ["Дивиденды Synthetic возвращены", "Дивиденды Synthetic на\u00a0брокерский счет 7654321"],
+)
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_dividend_downgrade_requires_new_save_and_preserves_confirmed_choice(
+    db, narrative, confirmed
+):
+    intake, (raw, filename) = save_month(
+        db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),)
+    )
+    with db.session_factory() as session:
+        row = session.get(SourceMoneyClassification, saved_rows(db, intake)[0].id)
+        row.classification = "dividend"  # Synthetic legacy assumed default.
+        row.created_at = row.updated_at = datetime(2000, 1, 1)
+        session.commit()
+    if confirmed:
+        from hermes_finance.services.source_money_classifications import choose_classification
+
+        with db.session_factory() as session:
+            choose_classification(
+                session, intake, saved_rows(db, intake)[0].source_reference, "dividend"
+            )
+    original = saved_rows(db, intake)[0]
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    assert client.get(f"/api/broker-months/intakes/{intake}").status_code == 200
+    assert read(db).months[0].dividends_kopecks == 1234
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="save-4-None"
+        )
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="downgrade-dividend"
+        )
+    row = saved_rows(db, intake)[0]
+    assert (row.id, row.source_reference, row.created_at) == (
+        original.id,
+        original.source_reference,
+        original.created_at,
+    )
+    assert (row.origin, row.status) == (original.origin, original.status)
+    assert row.classification == ("dividend" if confirmed else "unknown")
+    if confirmed:
+        assert row.updated_at == original.updated_at
+        assert read(db).months[0].dividends_kopecks == 1234
+    else:
+        assert row.updated_at > original.updated_at
+        assert "unrecognized_money" in {gap.code for gap in read(db).gaps}
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="unchanged-dividend"
+        )
+    unchanged = saved_rows(db, intake)[0]
+    assert (unchanged.classification, unchanged.updated_at) == (row.classification, row.updated_at)
 
 
 @pytest.mark.parametrize(
