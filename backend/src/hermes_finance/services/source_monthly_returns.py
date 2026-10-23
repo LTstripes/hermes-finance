@@ -560,10 +560,10 @@ def read_monthly_returns(
                 tuple(flags),
                 previous_closing,
                 income[month]["coupon"]
-                if income_covered and month not in uncertain_source_months
+                if income_covered and month not in uncertain_months
                 else None,
                 income[month]["dividend"]
-                if income_covered and month not in uncertain_source_months
+                if income_covered and month not in uncertain_months
                 else None,
                 month in assumed_income_months,
             )

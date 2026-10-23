@@ -5828,10 +5828,20 @@ saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
 Acknowledged same-request replay stays read-only.
+
+Coupon and dividend monthly subtotals remain NULL whenever money classification
+or source-flow coverage is uncertain, including unrecognized money rows. This
+withholds partial known income as well as apparent zero income; a fully classified,
+covered month with no income retains zero. Missing valuations alone do not erase
+known income.
+
 Owner decision (2026-10-23): positive promo-gift Money rows default to
 `external_deposit` when a single-line narrative contains a Cyrillic word beginning
-with `подар` and the bounded promo phrase `по акции` or `в рамках акции`. Bare
-`акци` substrings (shareholders, transactions, excise, reactions or sale of gifted
+with `подар` and the bounded promo phrase `по акции` or `в рамках акции`, or when the
+normalized narrative fully matches the template
+`выплата по поручению клиента в рамках <nonempty promo name> в соответствии с правилами проведения акции`
+with an optional final period. The client-order template does not require gift
+wording. Bare `акци` substrings (shareholders, transactions, excise, reactions or sale of gifted
 shares) are insufficient. Reject CR/LF before normalization; casefold, normalize
 ё/е and collapse whitespace (including NBSP) once, reusing the normalized text for
 phrase matching and exclusions. Native operation/narrative text remains unchanged.

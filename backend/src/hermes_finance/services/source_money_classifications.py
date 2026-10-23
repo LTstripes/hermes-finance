@@ -82,24 +82,31 @@ def _is_promo_gift(operation, narrative):
     )
     text = f"{normalized_operation} {normalized_narrative}"
     return (
-        re.search(r"\bподар[а-я]*\b", normalized_narrative) is not None
-        and re.search(r"\b(?:по|в рамках) акции\b", normalized_narrative) is not None
-        and not any(
-            word in text
-            for word in (
-                "купон",
-                "coupon",
-                "дивиденд",
-                "dividend",
-                "возврат",
-                "возмещ",
-                "возвращ",
-                "refund",
-                "reimbursement",
-                "отмен",
-                "сторно",
-                "reversal",
-            )
+        (
+            re.search(r"\bподар[а-я]*\b", normalized_narrative) is not None
+            and re.search(r"\b(?:по|в рамках) акции\b", normalized_narrative) is not None
+        )
+        or re.fullmatch(
+            r"выплата по поручению клиента в рамках .+ "
+            r"в соответствии с правилами проведения акции\.?",
+            normalized_narrative,
+        )
+        is not None
+    ) and not any(
+        word in text
+        for word in (
+            "купон",
+            "coupon",
+            "дивиденд",
+            "dividend",
+            "возврат",
+            "возмещ",
+            "возвращ",
+            "refund",
+            "reimbursement",
+            "отмен",
+            "сторно",
+            "reversal",
         )
     )
 

@@ -35,13 +35,26 @@ def test_exact_dividend_transfer_default(operation, narrative, amount, expected)
     assert default_classification(operation, narrative, "unsupported", amount) == expected
 
 
-def test_dividend_rule_refresh_requires_explicit_resave_and_preserves_user_choices(db):
+@pytest.mark.parametrize("promo", ["Synthetic promo", "Акция Synthetic в подарок"])
+def test_legacy_unknown_income_and_promo_refresh_on_new_save_preserving_user_choices(db, promo):
     intake, (raw, filename) = save_month(
         db,
         candidate_count=0,
         extra=(
             ("Перевод", "Дивиденды Synthetic stock", "12.34"),
-            ("Перевод", "Дивиденды Synthetic second stock", "5.66"),
+            (
+                "Перевод",
+                f"Выплата по поручению клиента в рамках {promo} "
+                "в соответствии с Правилами проведения акции.",
+                "30",
+            ),
+            ("Перевод", "Дивиденды Synthetic manual stock", "5.66"),
+            (
+                "Перевод",
+                "Выплата по поручению клиента в рамках Synthetic manual promo "
+                "в соответствии с Правилами проведения акции.",
+                "20",
+            ),
         ),
     )
     with db.session_factory() as session:
@@ -52,18 +65,38 @@ def test_dividend_rule_refresh_requires_explicit_resave_and_preserves_user_choic
         )
         for row in rows:
             row.classification = "unknown"  # synthetic legacy default
-        rows[1].origin, rows[1].status = "user_choice", "confirmed"
+        for row in rows[2:]:
+            row.origin, row.status = "user_choice", "confirmed"
         session.commit()
     before = snapshot(db)
     assert "unrecognized_money" in {gap.code for gap in read(db).gaps}
     assert snapshot(db) == before
+    legacy = saved_rows(db, intake)
     with db.session_factory() as session:
         source_intake.save_intake(
-            session, document=raw, filename=filename, request_id="refresh-dividend"
+            session, document=raw, filename=filename, request_id="save-4-None"
         )
+    assert snapshot(db) == before  # Same-command replay never refreshes defaults.
+    client = TestClient(create_app(database=db))
+    response = client.post(
+        "/api/broker-months/intakes",
+        files={"file": (filename, raw, "application/xml")},
+        data={"intent": '{"request_id": "refresh-legacy-defaults"}'},
+    )
+    assert response.status_code == 200, response.text
     rows = saved_rows(db, intake)
-    assert [row.classification for row in rows] == ["dividend", "unknown"]
-    assert (rows[1].origin, rows[1].status) == ("user_choice", "confirmed")
+    assert [row.classification for row in rows] == [
+        "dividend",
+        "external_deposit",
+        "unknown",
+        "unknown",
+    ]
+    assert all((row.origin, row.status) == ("default_rule", "assumed") for row in rows[:2])
+    assert [(row.id, row.source_reference, row.created_at) for row in rows] == [
+        (row.id, row.source_reference, row.created_at) for row in legacy
+    ]
+    assert all((row.origin, row.status) == ("user_choice", "confirmed") for row in rows[2:])
+    assert [row.updated_at for row in rows[2:]] == [row.updated_at for row in legacy[2:]]
 
 
 @pytest.mark.parametrize(
@@ -279,14 +312,24 @@ def test_non_rub_promo_gift_default_is_unconfirmable_and_withholds_returns(db):
     assert snapshot(db) == before
 
 
-def test_promo_gift_upload_and_coupon_compute_monthly_return(db):
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Выплата подарка по акции Synthetic promo",
+        "Выплата по поручению клиента в рамках Synthetic promo "
+        "в соответствии с Правилами проведения акции.",
+        "Выплата по поручению клиента в рамках Акция Synthetic в подарок "
+        "в соответствии с Правилами проведения акции.",
+    ],
+)
+def test_promo_gift_upload_and_coupon_compute_monthly_return(db, narrative):
     intake, _ = save_month(
         db,
         beginning="1000",
         closing="1307",
         candidate_count=0,
         extra=(
-            ("Перевод", "Выплата подарка по акции Synthetic promo", "300"),
+            ("Перевод", narrative, "300"),
             ("Купон", "Synthetic coupon", "7"),
         ),
     )
@@ -406,8 +449,8 @@ def test_upload_persists_every_row_replay_preserves_choices_and_get_income(db):
         (50_000, "assumed")
     ]
     assert body["defaults_applied"] == body["flows"]
-    assert body["months"][0]["coupons_kopecks"] == 1800
-    assert body["months"][0]["dividends_kopecks"] == 0
+    assert body["months"][0]["coupons_kopecks"] is None
+    assert body["months"][0]["dividends_kopecks"] is None
     assert body["months"][0]["modified_dietz_return"] is None
     assert {gap["code"] for gap in body["gaps"]} == {"unrecognized_money", "unknown_flow"}
     assert snapshot(db) == before
@@ -485,6 +528,7 @@ def test_overlap_deduplicates_income_and_persisted_choice_overrides_default(db):
     extra = (("Купон", "Synthetic coupon", "10"), ("Купон", "Synthetic coupon", "10"))
     one, _ = save_month(db, extra=extra)
     two, _ = save_month(db, extra=extra, marker="overlap")
+    assert read(db).months[0].coupons_kopecks == 2000
     client = TestClient(create_app(database=db))
     reference = saved_rows(db, two)[0].source_reference
     assert (
@@ -496,7 +540,8 @@ def test_overlap_deduplicates_income_and_persisted_choice_overrides_default(db):
     )
     result = read(db)
     assert not result.flows
-    assert result.months[0].coupons_kopecks == 2000
+    assert result.months[0].coupons_kopecks is None
+    assert result.months[0].dividends_kopecks is None
     assert result.months[0].result.contributions_kopecks is None
     assert {gap.code for gap in result.gaps} == {
         "overlap_flow_deduplicated",
@@ -704,8 +749,8 @@ def test_non_rub_money_is_disclosed_and_blocks_flow_dependent_metrics(db, operat
     assert result.months[0].result.contributions_kopecks is None
     assert result.months[0].result.growth_kopecks is None
     assert result.months[0].result.modified_dietz_return is None
-    assert result.months[0].coupons_kopecks == 0
-    assert result.months[0].dividends_kopecks == 0
+    assert result.months[0].coupons_kopecks is None
+    assert result.months[0].dividends_kopecks is None
     assert result.period.growth_kopecks is None
     assert result.period.xirr_period_return is None
     assert reasons <= set(result.period.growth_reason_codes)
@@ -774,7 +819,8 @@ def test_captured_text_is_bounded_listing_omits_it_and_long_rows_stay_distinct(d
         assert len(row["narrative"]) <= NARRATIVE_MAX_LENGTH
     # Distinct opaque operations remain distinct evidence, never guessed income.
     result = read(db)
-    assert result.months[0].coupons_kopecks == 0
+    assert result.months[0].coupons_kopecks is None
+    assert result.months[0].dividends_kopecks is None
     assert result.period.growth_kopecks is None
     assert sum(gap.code == "unrecognized_money" for gap in result.gaps) == 4
     assert snapshot(db) == before
@@ -1020,3 +1066,50 @@ def test_transfer_full_scope_excludes_flow_without_changing_saved_choice(db, amo
         )
         assert not gaps
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "promo", ["Synthetic promo", "Акция Synthetic в подарок", "Synthetic подарённый бонус"]
+)
+@pytest.mark.parametrize("ending", ["", "."])
+@pytest.mark.parametrize("spacing", [" ", "\t", "\u00a0", "\u202f"])
+def test_client_order_promo_template_normalization(promo, ending, spacing):
+    narrative = (
+        f"ВЫПЛАТА ПО ПОРУЧЕНИЮ КЛИЕНТА В РАМКАХ {promo} "
+        f"В СООТВЕТСТВИИ С ПРАВИЛАМИ ПРОВЕДЕНИЯ АКЦИИ{ending}"
+    )
+    narrative = spacing + narrative.replace(" ", spacing * 2) + spacing
+    assert default_classification("Перевод", narrative, "unsupported", "30") == "external_deposit"
+
+
+@pytest.mark.parametrize(
+    "operation,promo,amount,prefix,suffix",
+    [
+        ("Перевод", "Synthetic promo", "0", "", "."),
+        ("Перевод", "Synthetic promo", "-30", "", "."),
+        ("Перевод", "", "30", "", "."),
+        ("Перевод", "Synthetic promo", "30", "Synthetic prefix ", "."),
+        ("Перевод", "Synthetic promo", "30", "", ". Synthetic suffix"),
+        ("Перевод", "Synthetic\npromo", "30", "", "."),
+        ("Перевод", "Synthetic\rpromo", "30", "", "."),
+        ("Перевод", "Synthetic promo", "30", "", ".\n"),
+        ("Refund", "Synthetic promo", "30", "", "."),
+        ("Сторно", "Synthetic promo", "30", "", "."),
+        ("Перевод", "Synthetic возврат", "30", "", "."),
+        ("Перевод", "Synthetic возвращённый бонус", "30", "", "."),
+        ("Перевод", "Synthetic возмещение", "30", "", "."),
+        ("Перевод", "Synthetic отмена", "30", "", "."),
+        ("Перевод", "Synthetic reversal", "30", "", "."),
+        ("Перевод", "Synthetic reimbursement", "30", "", "."),
+        ("Перевод", "Synthetic купон", "30", "", "."),
+        ("Перевод", "Synthetic dividend", "30", "", "."),
+    ],
+)
+def test_client_order_promo_template_boundaries_and_exclusions(
+    operation, promo, amount, prefix, suffix
+):
+    narrative = (
+        f"{prefix}Выплата по поручению клиента в рамках {promo} "
+        f"в соответствии с Правилами проведения акции{suffix}"
+    )
+    assert default_classification(operation, narrative, "unsupported", amount) == "unknown"

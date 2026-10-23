@@ -1490,3 +1490,47 @@ def test_duplicate_positions_block_endpoints_even_with_clean_overlap(
     assert result.period.growth_kopecks is result.period.xirr_period_return is None
     assert any(gap.code == "duplicate_position" and gap.intake_id == intake for gap in result.gaps)
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "income",
+    [
+        (),
+        (("Купон", "Synthetic coupon", "7"),),
+        (("Перевод", "Дивиденды Synthetic issuer", "12.34"),),
+        (("Купон", "Synthetic coupon", "7"), ("Перевод", "Дивиденды Synthetic issuer", "12.34")),
+    ],
+)
+def test_unrecognized_money_nulls_income_subtotals_only_in_affected_month(db, income):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    save_month(db, 4, candidate_count=0)
+    save_month(
+        db,
+        5,
+        candidate_count=0,
+        extra=(*income, ("Перевод", "Synthetic unrecognized payment", "17")),
+    )
+    save_month(db, 6, candidate_count=0, extra=income)
+    before = snapshot(db)
+    response = TestClient(create_app(database=db)).get(
+        "/api/source-returns/monthly", params={"source_account": ACCOUNT}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    april, may, june = body["months"]
+    assert april["coupons_kopecks"] == april["dividends_kopecks"] == 0
+    assert may["coupons_kopecks"] is may["dividends_kopecks"] is None
+    assert "unknown_flow" in may["flags"]
+    assert june["coupons_kopecks"] == (700 if any(row[0] == "Купон" for row in income) else 0)
+    assert june["dividends_kopecks"] == (1234 if any(row[0] == "Перевод" for row in income) else 0)
+    assert "unknown_flow" not in april["flags"] + june["flags"]
+    assert body["period"]["growth_kopecks"] is None
+    assert body["period"]["contributions_kopecks"] is None
+    assert "unknown_flow" in body["period"]["growth_reason_codes"]
+    assert any(
+        gap["code"] == "unrecognized_money" and gap["month"] == "2030-05-01" for gap in body["gaps"]
+    )
+    assert snapshot(db) == before
