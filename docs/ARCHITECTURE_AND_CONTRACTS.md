@@ -5869,13 +5869,84 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
-The supported dividend transfer is exactly operation `Перевод` with narrative
-`Дивиденды <nonempty single-line description>` and a nonnegative amount, mirroring
-the supported coupon transfer. A dividend word alone is insufficient. Existing
+Migration `0061_money_instrument_links` adds nullable `security_reg_number`,
+`security_issuer`, `instrument_id` (restricted foreign key to `instruments`) and
+`instrument_link_status` to these provisional rows. Existing rows remain NULL
+until an explicit new Save or classification PUT. Strict complete MyBroker coupon
+and dividend narrative shapes extract registration/issuer only for positive rows
+whose effective classification agrees with the parsed payout kind. Other rows are
+`not_applicable`, including NULL/nonrepresentable kopeck amounts; unsupported or
+truncated income shapes (including empty issuer names) are `not_parsed`. A complete
+payout shape whose kind differs from the effective coupon/dividend classification
+is `kind_mismatch`, with NULL identity/link fields. Save and PUT use the same bounded
+saved narrative and integer amount. Catalog `isin` and effective `alfa_mybroker`
+broker identity aliases/observed ISIN supply candidates offline. Trade identifiers
+do not add candidates. No reg/ISIN crosswalk is inferred from co-occurrence or a name.
+A whole issuer-name match (case/whitespace/quotation typography normalized) may
+break a catalog-identifier candidate tie only when exactly one candidate matches;
+it never creates candidates or overrides contradictory aliases/ISIN evidence.
+No candidate yields `unresolved_no_match`; multiple candidates or contradictory
+alias/ISIN evidence yield `unresolved_ambiguous`, with NULL `instrument_id`.
+New Save commands refresh this derived metadata even for manual choices without
+changing their classification, origin/status or decision timestamps. Same-command
+replay and GET remain read-only. Classification PUT recomputes the selected row's
+link. This metadata grants no financial receipt/Close authority and does not change
+the instrument-return reader's attribution rules. Downgrade removes only these
+four columns/constraints and preserves classifications and journal observations.
+The supported dividend transfer is operation `Перевод` with narrative starting
+`Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
+context. Narrative matching case-folds, treats ё as е and collapses whitespace
+(including tabs, NBSP and other Unicode spaces) once, reusing that normalized text
+for context, reversal and account-direction checks. Raw CR/LF still disqualifies
+the transfer narrative. Context may follow whitespace or a colon, semicolon, comma
+or dash separator; a keyword or separator alone is insufficient.
+All dividend defaults, including explicitly labelled dividend operations, require
+a strictly positive amount and exclude narratives containing the refund/reversal
+stems `возврат`, `возвращ`, `сторно` or `перерасч`. Only the `Перевод` narrative
+branch excludes cash-account directions: `на счет`, `со счета` or `с счета`, also
+with `брокерский`/`расчетный` (or their genitive forms), followed by a seven-digit
+account with an optional hyphen and three-digit suffix. Account wording without
+that numeric cash-account operand, such as `на счет депо`, does not trigger this
+exclusion. Explicit dividend operations such as `Выплата дивидендов` retain their
+income default when the narrative merely states the credit destination. Coupon
+defaults are unchanged. Existing
 saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; interval selection follows the [S1 period policy](#c3-mybroker_s1-1).
 Acknowledged same-request replay stays read-only.
+
+Coupon and dividend monthly subtotals remain NULL whenever money classification
+or source-flow coverage is uncertain, including unrecognized money rows. This
+withholds partial known income as well as apparent zero income; a fully classified,
+covered month with no income retains zero. Missing valuations alone do not erase
+known income.
+
+Owner decision (2026-10-23): positive promo-gift Money rows default to
+`external_deposit` when a single-line narrative contains a Cyrillic word beginning
+with `подар` and the bounded promo phrase `по акции` or `в рамках акции`, or when the
+normalized narrative fully matches the template
+`выплата по поручению клиента в рамках <nonempty promo name> в соответствии с правилами проведения акции`
+with an optional final period. The client-order template does not require gift
+wording. Bare `акци` substrings (shareholders, transactions, excise, reactions or sale of gifted
+shares) are insufficient. Reject CR/LF before normalization; casefold, normalize
+ё/е and collapse whitespace (including NBSP) once, reusing the normalized text for
+phrase matching and exclusions. Native operation/narrative text remains unchanged.
+Coupon/dividend words and refund/reversal wording in either operation or narrative
+exclude this promo rule: `купон`, `coupon`, `дивиденд`, `dividend`, `возврат`,
+`возмещ`, `возвращ`, `refund`, `reimbursement`, `отмен`, `сторно`, `reversal`.
+These exclusions are lexical safeguards, not a general reversal classifier.
+Explicit parsed commission/settlement kinds, cash directions, broker/bank transfers
+and NKD/settlement semantics retain precedence, as does the native coupon candidate.
+The promo rule precedes generic НДФЛ/commission/tariff text checks, so positive
+gifts mentioning withholding or «без комиссии» remain assumed contributions.
+Zero/negative amounts never use the promo rule; ordinary negative tax/fee rows
+retain their existing defaults. The default label is currency-independent:
+a non-RUB promo gift may be assumed `external_deposit`, but PUT confirmation
+refuses with `invalid_external_flow`; monthly returns exclude it and withhold
+flow-dependent metrics with `currency_unsupported` and `unknown_flow`. No FX
+conversion or financial authority is implied. New uploads persist this assumed
+default; an explicit new Save refreshes existing assumed defaults while preserving
+manual PUT choices through the same classification lifecycle.
 A changed Money extraction count refuses with
 `source_intake_parser_revision_changed` before capturing any classifications.
 

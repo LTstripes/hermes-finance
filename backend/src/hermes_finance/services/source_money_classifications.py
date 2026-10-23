@@ -14,6 +14,10 @@ from hermes_finance.domain.source_money_classifications import (
     OPERATION_MAX_LENGTH,
 )
 from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClassification
+from hermes_finance.services.money_instrument_links import (
+    MoneyInstrumentResolver,
+    apply_money_instrument_link,
+)
 from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
@@ -73,6 +77,44 @@ def transfer_classification(operation, narrative, amount, *, source_account, sel
     return "unknown"
 
 
+def _is_promo_gift(operation, narrative):
+    # Check line boundaries before collapsing whitespace, including NBSP.
+    if "\r" in narrative or "\n" in narrative:
+        return False
+    normalized_operation, normalized_narrative = (
+        " ".join(value.casefold().replace("ё", "е").split()) for value in (operation, narrative)
+    )
+    text = f"{normalized_operation} {normalized_narrative}"
+    return (
+        (
+            re.search(r"\bподар[а-я]*\b", normalized_narrative) is not None
+            and re.search(r"\b(?:по|в рамках) акции\b", normalized_narrative) is not None
+        )
+        or re.fullmatch(
+            r"выплата по поручению клиента в рамках .+ "
+            r"в соответствии с правилами проведения акции\.?",
+            normalized_narrative,
+        )
+        is not None
+    ) and not any(
+        word in text
+        for word in (
+            "купон",
+            "coupon",
+            "дивиденд",
+            "dividend",
+            "возврат",
+            "возмещ",
+            "возвращ",
+            "refund",
+            "reimbursement",
+            "отмен",
+            "сторно",
+            "reversal",
+        )
+    )
+
+
 def default_classification(
     operation, narrative, kind, amount, *, source_account=None, selected_accounts=None
 ):
@@ -124,6 +166,9 @@ def default_classification(
         return "unknown"
     if pattern == "coupon_paid_candidate":
         return "coupon" if Decimal(amount) >= 0 else "unknown"
+    # Explicit cash/trade/NKD semantics precede gifts; generic tax/fee words do not.
+    if Decimal(amount) > 0 and _is_promo_gift(operation, narrative):
+        return "external_deposit"
     if "ндфл" in text:
         return "tax"
     if any(word in text for word in ("комисси", "тариф", "commission")):
@@ -135,9 +180,33 @@ def default_classification(
             op == "перевод" and re.fullmatch(r"погашение купона [^\r\n]+", narrative.casefold())
         ):
             return "coupon"
-        if re.fullmatch(
-            r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op
-        ) or (op == "перевод" and re.fullmatch(r"дивиденды \S[^\r\n]*", narrative.casefold())):
+        dividend_text = " ".join(narrative.casefold().replace("ё", "е").split())
+        if (
+            Decimal(amount) > 0
+            and not re.search(r"возврат|возвращ|сторно|перерасч", dividend_text)
+            and (
+                re.fullmatch(
+                    r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op
+                )
+                or (
+                    op == "перевод"
+                    # Reject raw line breaks before normalized text can hide them.
+                    and "\r" not in narrative
+                    and "\n" not in narrative
+                    and re.fullmatch(
+                        r"(?:дивиденды|дивиденд по)(?: | ?[:;,—–-] ?)[^\s:;,—–-].*",
+                        dividend_text,
+                    )
+                    # A cash-account transfer is not evidence of dividend income.
+                    and not re.search(
+                        r"\b(?:на (?:брокерский |расчетный )?счет|"
+                        r"с(?:о)? (?:брокерского |расчетного )?счета) "
+                        r"[0-9]{7}(?:-[0-9]{3})?(?![\w-])",
+                        dividend_text,
+                    )
+                )
+            )
+        ):
             return "dividend"
     return "unknown"
 
@@ -191,7 +260,8 @@ def persist_money_classifications(session, intake_id, document):
     """Called inside the save transaction, after immutable observations exist.
 
     Only assumed defaults are re-evaluated on a new save command.
-    User choices and confirmed defaults retain their classification and metadata.
+    User choices and confirmed defaults retain their classification, origin/status
+    and decision timestamps. Derived instrument-link metadata is refreshed.
     """
     session.flush()
     observations = list(
@@ -227,6 +297,7 @@ def persist_money_classifications(session, intake_id, document):
     if len(observations) != len(narratives):
         raise MyBrokerError("source_intake_parser_revision_changed")
     now = datetime.now(UTC)
+    resolver = MoneyInstrumentResolver(session)
     for observation, (operation, narrative, _) in zip(observations, narratives, strict=True):
         row = json.loads(observation.facts_json)
         reference = source_reference(intake_id, row)
@@ -235,6 +306,7 @@ def persist_money_classifications(session, intake_id, document):
             "default_rule",
             "assumed",
         ):
+            apply_money_instrument_link(previous, resolver)
             continue
         classification = default_classification(
             operation,
@@ -251,24 +323,25 @@ def persist_money_classifications(session, intake_id, document):
             if previous.classification != classification:
                 previous.classification = classification
                 previous.updated_at = now
+            apply_money_instrument_link(previous, resolver)
             continue
-        session.add(
-            SourceMoneyClassification(
-                intake_id=intake_id,
-                observation_id=observation.id,
-                source_reference=reference,
-                date=date.fromisoformat(row["date"]),
-                amount_kopecks=_amount_kopecks(row["amount"]),
-                currency=row["currency"],
-                operation=_bounded_text(operation, OPERATION_MAX_LENGTH),
-                narrative=_bounded_text(narrative, NARRATIVE_MAX_LENGTH),
-                classification=classification,
-                origin="default_rule",
-                status="assumed",
-                created_at=now,
-                updated_at=now,
-            )
+        captured = SourceMoneyClassification(
+            intake_id=intake_id,
+            observation_id=observation.id,
+            source_reference=reference,
+            date=date.fromisoformat(row["date"]),
+            amount_kopecks=_amount_kopecks(row["amount"]),
+            currency=row["currency"],
+            operation=_bounded_text(operation, OPERATION_MAX_LENGTH),
+            narrative=_bounded_text(narrative, NARRATIVE_MAX_LENGTH),
+            classification=classification,
+            origin="default_rule",
+            status="assumed",
+            created_at=now,
+            updated_at=now,
         )
+        apply_money_instrument_link(captured, resolver)
+        session.add(captured)
 
 
 def classification_dict(row):
@@ -280,6 +353,10 @@ def classification_dict(row):
         "currency": row.currency,
         "operation": _bounded_text(row.operation, OPERATION_MAX_LENGTH),
         "narrative": _bounded_text(row.narrative, NARRATIVE_MAX_LENGTH),
+        "security_reg_number": row.security_reg_number,
+        "security_issuer": row.security_issuer,
+        "instrument_id": row.instrument_id,
+        "instrument_link_status": row.instrument_link_status,
         "classification": row.classification,
         "origin": row.origin,
         "status": row.status,
@@ -343,6 +420,7 @@ def choose_classification(session, intake_id, reference, classification):
             row.origin = "user_choice"
             row.status = "confirmed"
             row.updated_at = datetime.now(UTC)
+        apply_money_instrument_link(row, MoneyInstrumentResolver(session))
         session.flush()
         result = classification_dict(row)
         session.commit()

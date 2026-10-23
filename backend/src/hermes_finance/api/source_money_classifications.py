@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.domain.money_security import InstrumentLinkStatus
 from hermes_finance.domain.source_money_classifications import MoneyClassification
 from hermes_finance.services.source_money_classifications import choose_classification
 from hermes_finance.statement_import.mybroker import MyBrokerError
@@ -28,6 +29,10 @@ class MoneyClassificationResponse(MoneyClassificationChoice):
     currency: str
     operation: str
     narrative: str
+    security_reg_number: str | None
+    security_issuer: str | None
+    instrument_id: int | None
+    instrument_link_status: InstrumentLinkStatus | None
     origin: Literal["user_choice"]
     status: Literal["confirmed"]
     created_at: datetime

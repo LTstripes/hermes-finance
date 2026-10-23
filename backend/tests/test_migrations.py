@@ -13,6 +13,105 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.source_intake import save_intake
+
+    path = tmp_path / "synthetic-money-links.db"
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    database = create_database(path)
+    with database.session_factory() as session:
+        save_intake(session, document=fixture(), filename=FILENAME, request_id="links-migration")
+    database.engine.dispose()
+    old_revision = "0060_source_money_classifications"
+    assert run_alembic(path, "downgrade", old_revision).returncode == 0
+    table = "source_intake_money_classifications"
+    with sqlite3.connect(path) as connection:
+        original = connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        assert original
+        journal = {
+            name: connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in (
+                "source_intake_originals",
+                "source_intake_observations",
+                "source_intake_revisions",
+            )
+        }
+    for cycle in range(2):
+        upgraded = run_alembic(path, "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        assert revision_rows(path) == [REVISION]
+        with sqlite3.connect(path) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            assert connection.execute(
+                "PRAGMA index_info(ix_source_money_instrument_id)"
+            ).fetchall() == [(0, 16, "instrument_id")]
+            assert connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() == [
+                (*row, None, None, None, None) for row in original
+            ]
+            for name, rows in journal.items():
+                assert connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall() == rows
+            cursor = connection.execute(
+                "INSERT INTO instruments(name,instrument_type,isin) VALUES (?,?,?)",
+                ("АО Синтетический Ландыш", "bond", f"RU000A09999{cycle}"),
+            )
+            instrument_id = cursor.lastrowid
+            connection.execute(
+                f"UPDATE {table} SET security_reg_number=?,security_issuer=?,instrument_id=?,instrument_link_status='linked' WHERE id=?",
+                ("4B02-09-99999-Z-001P", "АО Синтетический Ландыш", instrument_id, original[0][0]),
+            )
+            import pytest
+
+            for issuer in ("", "   "):
+                with pytest.raises(sqlite3.IntegrityError, match="ck_source_money_security_issuer"):
+                    connection.execute(
+                        f"UPDATE {table} SET security_issuer=? WHERE id=?", (issuer, original[0][0])
+                    )
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute("DELETE FROM instruments WHERE id=?", (instrument_id,))
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    f"UPDATE {table} SET instrument_id=999999999 WHERE id=?", (original[0][0],)
+                )
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    f"UPDATE {table} SET instrument_link_status='guess' WHERE id=?",
+                    (original[0][0],),
+                )
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    f"UPDATE {table} SET instrument_link_status=NULL WHERE id=?", (original[0][0],)
+                )
+            connection.execute(
+                f"UPDATE {table} SET instrument_id=NULL,security_reg_number=NULL,security_issuer=NULL,"
+                "instrument_link_status='kind_mismatch' WHERE id=?",
+                (original[0][0],),
+            )
+            connection.commit()
+            # Instrument insertion legitimately appends a dependency revision;
+            # migrations must preserve the journal as it stands after that write.
+            journal = {
+                name: connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in journal
+            }
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        downgraded = run_alembic(path, "downgrade", old_revision)
+        assert downgraded.returncode == 0, downgraded.stderr
+        assert revision_rows(path) == [old_revision]
+        with sqlite3.connect(path) as connection:
+            assert (
+                connection.execute("PRAGMA index_info(ix_source_money_instrument_id)").fetchall()
+                == []
+            )
+            assert connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() == original
+            for name, rows in journal.items():
+                assert connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall() == rows
+            assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_source_intake_migration_empty_cycle_and_populated_refusal(tmp_path):
     from test_statement_import_mybroker import FILENAME, fixture
 
@@ -528,6 +627,10 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "status",
             "created_at",
             "updated_at",
+            "security_reg_number",
+            "security_issuer",
+            "instrument_id",
+            "instrument_link_status",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(reporting_months)")] == [
             "id",
