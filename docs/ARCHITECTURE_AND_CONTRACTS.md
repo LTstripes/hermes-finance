@@ -1462,11 +1462,29 @@ Upload is available under **Data → Files**, independently of a reporting month
 The multipart API is `/api/mybroker-import/preview` and `/apply`; `/{import_id}`
 provides committed readback and `/lineage` provides the reduced source history.
 
-Preview returns the hash, strict filename interval, parser/provider identity,
+Preview returns the hash, selected statement interval, parser/provider identity,
 section inventory, normalized rows, explicit mapping bindings, conflicts and
-unresolved evidence. Filename account and row `acc_code` are distinct identities:
+unresolved evidence. The filename interval is an optional hint: use a valid, ordered
+range only when every content activity date lies within it. Otherwise infer the
+first day of the earliest activity month through the last day of the latest
+activity month, retaining nonblocking `warnings` with `period_inferred_from_content`
+and, for a contradictory valid filename range, `filename_period_mismatch`. Impossible,
+inverted or unrecognized filename ranges are unusable hints. Without activity
+dates and a usable filename range, reject with `statement_period_unknown`.
+
+Trade date/time fields (including both CRLF values), BrokerMoneyMove settlement
+and update dates, and dates mentioned in comments are calendar-validated activity
+evidence. Malformed date fields reject with `statement_date_invalid`. UFSR
+`sys_start_time`, when present, is validated only: it is a service-connection date,
+never a report-period boundary. Inference does not establish financial completeness
+or intermediate month-end snapshots. Existing original/receipt currentness guards
+continue to fail closed on changed parser facts.
+
+When present, filename account and row `acc_code` are distinct identities:
 both require explicit `alfa_mybroker` registry mappings, with no suffix/name/Alfa
-PRO heuristic. Instrument mappings use the manifest's ISIN identity. No current
+PRO heuristic. If the filename has no account and the XML observes exactly one
+native account, use that XML account as the source alias. Ambiguous XML accounts
+remain unresolved. Instrument mappings use the manifest's ISIN identity. No current
 instrument class becomes event-C1.
 
 Apply confirms the complete document set. Its confirmation digest binds every
@@ -2082,7 +2100,8 @@ receipt, mapping or financial row. There is no batch Apply endpoint.
 
 Intent permits `account_bindings` with the existing identity-preview shape and
 optional `requested_from` / `requested_to` dates supplied together. Omitted dates
-select the uploaded filename-declared range. Bounds are 8 MiB per original,
+select the uploaded statement range under the [S1 period policy](#c3-mybroker_s1-1).
+Bounds are 8 MiB per original,
 32 MiB per batch, 30,000 parsed rows and 120 calendar months.
 Multipart data is parsed directly from the request stream into bounded memory.
 File count, each original and aggregate bytes are checked before extending a
@@ -2097,8 +2116,8 @@ may clear only proved nonidentity structure for the advisory DRAFT candidate
 marker. Standalone identity stays strict; S1 warnings and all financial, H0 and
 seam blockers remain visible. Previously persisted originals retain their recorded
 Money grammar and must match their immutable binder. H0 remains the inventory of persisted accepted
-sources; this preflight does not replace it. A new original's range is declared
-by its filename under the S1 contract, not independently attested by this Preview.
+sources; this preflight does not replace it. A new original's range follows the
+[S1 period policy](#c3-mybroker_s1-1); this Preview supplies no independent period attestation.
 
 The response separates:
 
@@ -2150,7 +2169,8 @@ Quote, settlement, payout, denomination and native EOD currencies are separate. 
 ### Original-bound identity and RUB proof
 
 `POST /api/mybroker-import/identity-preview` accepts the unchanged original XML
-and strict source-range filename, plus optional multipart `intent` JSON:
+and its filename (an optional period hint under the [S1 policy](#c3-mybroker_s1-1)),
+plus optional multipart `intent` JSON:
 
 ```json
 {"account_bindings": [{"identity": "1234567-000", "hermes_id": 1}]}
@@ -2166,7 +2186,7 @@ and duplicate resolved position aliases block the entire batch.
 The `mybroker-identity-v1` envelope reparses authoritative bytes using the bounded
 `mybroker-s1-v2` family and adds metadata separately. Existing S1 normalized rows,
 source acceptance, receipts, Skip and correction lifecycle remain unchanged.
-There are no invented root dates. The Preview binds the original hash, filename
+There are no invented root dates. The Preview binds the original hash, selected
 range/account, parser identities, observed row accounts/ISINs/type/names/custody,
 trade currency observations, proposals and current dependency revision. Its
 confirmation digest is deterministic. Preview uses the committed read-only

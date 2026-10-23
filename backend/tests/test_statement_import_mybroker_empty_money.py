@@ -271,8 +271,7 @@ def test_family_and_original_bounds_are_reused():
         target = node(target, "nested")
     with pytest.raises(MyBrokerError, match="^xml_bounds_exceeded$"):
         evidence(ET.tostring(root))
-    with pytest.raises(MyBrokerError, match="^filename_range_invalid$"):
-        evidence(raw, filename="other.xml")
+    assert evidence(raw, filename="other.xml")["status"] == "EXACT_EMPTY_TREE_OBSERVED"
 
 
 @pytest.mark.parametrize("reverse", [False, True])

@@ -98,6 +98,6 @@ def parse_section_metadata(document: bytes, filename: str) -> dict:
         "metadata_parser": METADATA_PARSER,
         "document_sha256": source["document_sha256"],
         "sections": sections,
-        "source_warnings": source["syntax_blockers"],
+        "source_warnings": sorted(set(source["syntax_blockers"] + source.get("warnings", []))),
         "coverage_state": "unknown",
     }

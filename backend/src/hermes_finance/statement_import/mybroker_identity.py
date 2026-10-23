@@ -135,12 +135,14 @@ def parse_identity(document: bytes, filename: str, *, incomplete_draft: bool = F
         "filename_account": source["filename_account"],
         "covered_from": source["covered_from"],
         "covered_to": source["covered_to"],
-        "source_accounts": sorted(row_accounts | {source["filename_account"]}),
+        "source_accounts": sorted(
+            row_accounts | ({source["filename_account"]} if source["filename_account"] else set())
+        ),
         "row_accounts": sorted(row_accounts),
         "position_aliases": position_aliases,
         "instruments": instruments,
         "conflicts": sorted(conflicts),
-        "source_warnings": source["syntax_blockers"],
+        "source_warnings": sorted(set(source["syntax_blockers"] + source.get("warnings", []))),
         **(
             {
                 "draft_structure": {

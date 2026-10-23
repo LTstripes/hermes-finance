@@ -327,6 +327,12 @@ def test_section_unsafe_original_never_grants_or_partially_writes(database, muta
     else:
         details.append(ET.ProcessingInstruction("extra", "source"))
     raw = ET.tostring(root)
+    if mutation == "date":
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError, match="^statement_date_invalid$"):
+            parse_mybroker(raw, FILENAME)
+        assert _all_month_tables(database) == before
+        return
     client, intent, raw = section_setup(database, raw=raw)
     before = _all_month_tables(database)
     plan = section_preview(client, intent, raw).json()
@@ -748,7 +754,20 @@ def test_missing_or_duplicate_fixed_node_blocks(outer, depth):
 )
 def test_timestamp_is_ascii_exact_and_calendar_valid(start):
     raw = metadata_xml().replace(b"29.02.2028 23:59", start.encode())
-    assert evidence(raw)["sections"][1]["status"] == "BLOCKED"
+    invalid = {
+        "29.02.2029 23:59",
+        "31.04.2028 12:00",
+        "01.01.2028 24:00",
+        "01.01.2028 12:60",
+        "01.01.0000 12:00",
+        "０1.01.2028 12:00",
+        "",
+    }
+    if start in invalid:
+        with pytest.raises(MyBrokerError, match="^statement_date_invalid$"):
+            evidence(raw)
+    else:
+        assert evidence(raw)["sections"][1]["status"] == "BLOCKED"
 
 
 @pytest.mark.parametrize(

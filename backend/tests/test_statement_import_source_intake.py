@@ -1206,3 +1206,24 @@ def test_history_malformed_file_does_not_rollback_other_batch_saves(history_clie
         readback = client.get(f"{BASE}/{response.json()['intake_id']}")
         assert readback.status_code == 200 and readback.json()["observations"]
         assert _history_returns(client, account, "instruments")["instruments"]
+
+
+@pytest.mark.parametrize("filename", ["renamed.xml", "Брокерский 1234567 (01.02.30-28.02.30).xml"])
+def test_inferred_period_and_warning_survive_source_intake_ack_and_get(database, filename):
+    client = TestClient(create_app(database=database))
+    before = _all_month_tables(database)
+    raw = broker_month_xml()
+    response = client.post(
+        BASE,
+        files={"file": (filename, raw, "application/xml")},
+        data={"intent": json.dumps({"request_id": "save-inferred-period"})},
+    )
+    assert response.status_code == 200, response.text
+    ack = response.json()
+    response = client.get(f"{BASE}/{ack['intake_id']}")
+    assert response.status_code == 200, response.text
+    view = response.json()
+    assert (view["covered_from"], view["covered_to"]) == ("2030-01-01", "2030-01-31")
+    assert "period_inferred_from_content" in view["document"]["warnings"]
+    assert "period_inferred_from_content" not in view["exceptions"]
+    assert _all_month_tables(database) == before

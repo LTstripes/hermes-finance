@@ -463,7 +463,7 @@ def _prepare(
             for b in planned_bindings
         ]
     accounts = sorted(
-        {document["filename_account"]}
+        ({document["filename_account"]} if document["filename_account"] else set())
         | {p["source_account"] for p in document["positions"]}
         | {r["source_account"] for r in document["rub_money"]}
         | {t["core"]["source_account"] for t in document["trades"]}

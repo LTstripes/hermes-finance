@@ -379,7 +379,7 @@ def test_bounds_bad_intent_and_sanitized_errors(database):
     response = client.post(
         "/api/mybroker-preflight/preview", files={"files": ("private-path.xml", b"private-source")}
     )
-    assert response.status_code == 422 and "filename_range_invalid" in response.text
+    assert response.status_code == 422 and "xml_invalid" in response.text
     assert "private" not in response.text
 
 
@@ -700,4 +700,24 @@ def test_http_sub_kopeck_monetary_endpoints_never_establish_equal_seam(
         for d in result["documents"]
     )
     assert result["financial_completeness"] == "unknown" and not result["financial_apply_available"]
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "renamed.xml",
+        FILENAME.replace(".xml", " (1).xml"),
+        FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30"),
+    ],
+)
+def test_preflight_accepts_filename_hints_and_preserves_period_warnings(database, filename):
+    _, raw = original(trades=True)
+    before = snapshot(database)
+    result = run(database, [(filename, raw)])
+    document = result["documents"][0]["document"]
+    assert (document["covered_from"], document["covered_to"]) == ("2030-01-01", "2030-01-31")
+    if filename != FILENAME.replace(".xml", " (1).xml"):
+        assert "period_inferred_from_content" in document["warnings"]
+    assert result["documents"][0]["range_kind"] == "whole_month"
     assert snapshot(database) == before
