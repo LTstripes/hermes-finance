@@ -582,6 +582,7 @@ export default function UiV2CapitalPerformanceDetail() {
           <Link to="/v2/capital/statement-return">Предварительная доходность по выписке</Link>
           <br />
           <Link to="/v2/capital/monthly-returns">Доходность по месяцам</Link>
+          <Link to="/v2/capital/monthly-returns#bond-slice">Облигации: история и купоны</Link>
           <p className={pageStyles.subtitle}>
             {context
               ? `${formatDate(context.start)} — ${formatDate(context.end)} · ${scopeLabel}`

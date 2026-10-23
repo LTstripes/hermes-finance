@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { ApiClientError, formatApiError } from "../api/client";
 import { listAllSourceIntakes, readSourceIntake, saveSourceIntake } from "../api/sourceIntake";
 import {
@@ -9,11 +9,12 @@ import {
   type InstrumentTotals,
   type ReturnGap,
 } from "../api/sourceReturns";
+import { UiV2BondSlice } from "./UiV2BondSlice";
+import styles from "./UiV2MonthlyReturnsPage.module.css";
+import pageStyles from "./UiV2Page.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
-import pageStyles from "./UiV2Page.module.css";
-import styles from "./UiV2MonthlyReturnsPage.module.css";
 
 const money = (value: number | null) =>
   value === null
@@ -120,7 +121,8 @@ export default function UiV2MonthlyReturnsPage() {
       ).sort(),
     [intakes.data],
   );
-  const [selected, setSelected] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selected = searchParams.get("source_account") ?? "";
   const account = selected || accounts[0] || "";
   const [uploads, setUploads] = useState<Upload[]>([]);
   const uploadBusy = useRef(false);
@@ -286,7 +288,15 @@ export default function UiV2MonthlyReturnsPage() {
             <select
               aria-label="Счёт в выписке"
               value={account}
-              onChange={(e) => setSelected(e.target.value)}
+              onChange={(e) =>
+                setSearchParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set("source_account", e.target.value);
+                  next.delete("bond_period");
+                  next.delete("bond_isin");
+                  return next;
+                })
+              }
             >
               {accounts.map((value) => (
                 <option key={value}>{value}</option>
@@ -295,6 +305,9 @@ export default function UiV2MonthlyReturnsPage() {
           </label>
         )}
       </UiV2Panel>
+      {!!account && instruments.data && (
+        <UiV2BondSlice key={account} account={account} sources={instruments.data} />
+      )}
       {!!account &&
         (monthly.isPending ? (
           <UiV2Loading label="Считаем месяцы…" />
@@ -400,6 +413,10 @@ export default function UiV2MonthlyReturnsPage() {
             title="Цена и выплаты по инструментам"
             wide
           >
+            <p className={styles.note}>
+              Совместимые месячные показатели используют простой процент, не Modified Dietz. Полный
+              результат и условная оценка облигаций показаны отдельно в блоке выше.
+            </p>
             <ReturnGaps gaps={instruments.data.gaps} />
             <div className={styles.tableWrap}>
               <table className={styles.table}>
