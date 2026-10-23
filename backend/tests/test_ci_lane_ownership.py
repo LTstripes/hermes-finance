@@ -112,19 +112,27 @@ def test_accepted_core_shard_anchors_stay_put() -> None:
     assert ci_core_shard_for_test_path(TESTS_ROOT / "test_cash_api.py") == "ci_core_a"
 
 
-def test_persistence_shards_cover_the_lane_once_and_are_balanced() -> None:
+def _report_duration_estimates(name: str, totals: dict[str, float]) -> None:
+    """Optional `pytest -s` diagnostics; real workflow timeouts remain the gate."""
+    ratio = max(totals.values()) / min(totals.values())
+    print(f"{name}: estimated seconds={totals}, max/min={ratio:.3f}")
+
+
+def test_persistence_shards_cover_the_lane_once() -> None:
     files = {
         path.relative_to(TESTS_ROOT).as_posix()
         for path in iter_backend_test_files()
         if ci_lane_for_test_path(path) == "ci_persistence"
     }
     assert set(CI_PERSISTENCE_SHARD_WEIGHTS) == files
+    assert all(weight > 0 for weight in CI_PERSISTENCE_SHARD_WEIGHTS.values())
     totals = dict.fromkeys(CI_PERSISTENCE_SHARD_MARKERS, 0.0)
     for key, weight in CI_PERSISTENCE_SHARD_WEIGHTS.items():
         shard = ci_persistence_shard_for_test_path(TESTS_ROOT / key)
         assert shard in CI_PERSISTENCE_SHARD_MARKERS
         totals[shard] += weight
-    assert max(totals.values()) / min(totals.values()) <= 1.02
+    assert min(totals.values()) > 0
+    _report_duration_estimates("persistence", totals)
     assert ci_persistence_shard_for_test_path(TESTS_ROOT / "test_migrations.py") == (
         "ci_persistence_a"
     )
@@ -156,7 +164,8 @@ def test_unknown_integration_weight_fails_closed(monkeypatch) -> None:
     assert ci_integrations_shard_for_test_path(TESTS_ROOT / removed) is None
 
 
-def test_integration_files_have_one_exclusive_balanced_shard() -> None:
+def test_integration_files_have_one_exclusive_shard() -> None:
+    assert all(weight > 0 for weight in CI_INTEGRATIONS_SHARD_WEIGHTS.values())
     totals = {marker: 0.0 for marker in CI_INTEGRATIONS_SHARD_MARKERS}
     for test_path in _integration_files():
         shard = ci_integrations_shard_for_test_path(test_path)
@@ -165,12 +174,8 @@ def test_integration_files_have_one_exclusive_balanced_shard() -> None:
         totals[shard] += CI_INTEGRATIONS_SHARD_WEIGHTS[key]
 
     assert set(totals) == set(CI_INTEGRATIONS_SHARD_MARKERS)
-    heavier = max(totals.values())
-    lighter = min(totals.values())
-    assert lighter > 0
-    assert heavier / lighter <= 1.15
-    largest = max(CI_INTEGRATIONS_SHARD_WEIGHTS.values())
-    assert largest * 2 < sum(CI_INTEGRATIONS_SHARD_WEIGHTS.values())
+    assert min(totals.values()) > 0
+    _report_duration_estimates("integrations", totals)
 
 
 def test_integrations_a_weights_cover_only_the_original_a_group() -> None:
@@ -208,7 +213,7 @@ def test_unknown_integrations_a_weight_fails_closed(monkeypatch) -> None:
     )
 
 
-def test_integrations_a_shards_are_stable_and_within_estimated_ci_budget(monkeypatch) -> None:
+def test_integrations_a_shards_are_stable(monkeypatch) -> None:
     import _test_taxonomy as taxonomy
 
     totals = dict.fromkeys(CI_INTEGRATIONS_A_SHARD_MARKERS, 0.0)
@@ -227,10 +232,7 @@ def test_integrations_a_shards_are_stable_and_within_estimated_ci_budget(monkeyp
             assert ci_integrations_a_shard_for_test_node(path, f"tests/{key}[second]") == shard
 
     assert min(totals.values()) > 0
-    # Planning budget with the requested conservative CI/local multiplier.
-    # Actual CI timing remains separate from these local duration weights.
-    assert max(totals.values()) / min(totals.values()) <= 1.05
-    assert max(totals.values()) * 1.4 <= 5 * 60
+    _report_duration_estimates("integrations-a", totals)
 
     monkeypatch.setattr(
         taxonomy,
@@ -280,7 +282,7 @@ def test_unknown_integrations_b_weight_fails_closed(monkeypatch) -> None:
     )
 
 
-def test_integrations_b_shards_are_stable_and_within_estimated_ci_budget(monkeypatch) -> None:
+def test_integrations_b_shards_are_stable(monkeypatch) -> None:
     import _test_taxonomy as taxonomy
 
     totals = dict.fromkeys(CI_INTEGRATIONS_B_SHARD_MARKERS, 0.0)
@@ -299,10 +301,7 @@ def test_integrations_b_shards_are_stable_and_within_estimated_ci_budget(monkeyp
             assert ci_integrations_b_shard_for_test_node(path, f"tests/{key}[second]") == shard
 
     assert min(totals.values()) > 0
-    # Normalize local measured weights to the issue's approximate 17-minute
-    # old CI lane. This is a planning budget, not a measured CI speedup.
-    ci_scale = 17 * 60 / sum(totals.values())
-    assert max(totals.values()) * ci_scale <= 6 * 60
+    _report_duration_estimates("integrations-b", totals)
 
     monkeypatch.setattr(
         taxonomy,

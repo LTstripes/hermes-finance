@@ -267,7 +267,7 @@ After restore, discard pre-restore read models/confirmations, reread restored mo
 <a id="d4"></a>
 ## 4. Verification, independent review and evidence
 
-Choose affected semantic lanes and concrete regression/failure boundaries. Use existing exact-candidate CI for its actual covered jobs; do not run full local suites again just because roles change. Explicit task requirements still apply. This consolidation requires full exact-candidate CI, independent financial-semantic review and an independent reader given only the five books. No Apply/Close/Start/update or private-data UAT is authorized by a documentation change.
+Choose affected semantic lanes and concrete regression/failure boundaries. Use existing exact-candidate CI for its actual covered jobs; do not run full local suites again just because roles change. Explicit task requirements still apply. Independent review follows D1 risk and explicit task requirements; a role change does not require repeating valid checks. No Apply/Close/Start/update or private-data UAT is authorized by a documentation change.
 
 A read-only review preflight verifies actual source access and exact candidate identity. Setup failure is UNVERIFIED; repair its cause before another preflight. Reviewer self-message is not a PASS. Synthetic tests, Windows probes, local private UAT, published release and installed runtime each retain their own provenance and limits.
 
@@ -364,7 +364,7 @@ Skipped, pending, failed, чужой SHA или отфильтрованный �
 Зелёный check `Documentation fast path` у pull request означает только доказанную классификацию обычной неисполняемой документации и успешные сохранённые проверки privacy/diff. Он не доказывает выполнение backend, frontend, browser или Windows product suites. Push в canonical `main` и release gates этот режим не использует: они остаются полными.
 Проверки на новом executable/config/dependency состоянии должны соответствовать этому состоянию; отчёт явно связывает каждый результат с кандидатом/run.
 Для интеграции обязательны зелёный PR CI принятого кандидата и зелёный canonical main push CI точного merge SHA. Ни одно не заменяет другое.
-Эта задача не меняет workflow coverage, filters, assertions или release guards; не обходи существующие required jobs.
+Не обходи существующие required jobs; изменение coverage, filters, assertions или release guards требует явного scope и проверки сохранённого охвата.
 Reviewer/Integrator используют подтверждённое evidence кандидата. Независимость означает отдельную оценку diff/контракта, а не обязательный повтор всех тестов.
 Reviewer запускает focused reproduction/probe, когда есть спорный вывод, пробел покрытия или другое конкретное основание; для локального запуска нужна изоляция.
 
@@ -407,18 +407,18 @@ renaming, moving, merging, or deleting test files.
 
 
 <a id="d4-test_suite_guide-1-current-ci-topology--2026-10-09"></a>
-#### Current CI topology — 2026-10-09
+#### CI sources and required guarantees
 
-The optimization wave is complete; this is the supported topology, not a queue for further speed work.
+Use the executable sources for current jobs, filters, selections and timeouts:
 
-- **Ordinary PR concurrency (#671):** only a newer run of the same repository/workflow/PR cancels its predecessor. Canonical main, release and protected integration/UAT work use independent groups.
-- **Desktop-only cleanup (#747):** obsolete phone/390px duplicates are removed; unique financial, actual-backend, lifecycle and keyboard coverage remains at established desktop sizes. No phone UAT or mobile matrix is required. See [desktop coverage policy](#d4-mobile_retirement_coverage-5). Existing desktop projects and all safety lanes remain.
-- **Visual ownership (#668):** tests that replace the project viewport execute once on the 1440 reference project; tests that genuinely use project viewport still retain the required 1366/1440/1920 coverage.
-- **Exact-head UI evidence (#669):** the UI-evidence workflow still checks out the PR head and owns its screenshots, production dist build and provenance. Normal PR CI may omit the overlapping 1440 grep only when head, merge and checkout tree identity is proven; uncertainty falls back to full execution.
-- **Docs-only PRs (#670):** the workflow always runs. A narrow fail-closed classifier permits the fast path only for explicitly allowlisted non-executable prose. Unknown/mixed/executable/build/test/release inputs, mode changes, rename/delete and classifier/workflow changes stay full. backend/README.md is deliberately full because Hatchling consumes it as package metadata. Canonical main pushes are always full.
-- **Launcher retirement (#629):** the Launcher GUI/C# harness/package/install and launcher-only CI path/safety jobs are gone. Windows production smoke, direct start-local/prepared-runtime regressions, recovery, backup-first update and other shared runtime protections remain.
+- [Product CI](../.github/workflows/ci.yml) owns the matrix, marker expressions, Windows selections, concurrency and terminal `ci-ok` gate.
+- [Path classifier](../scripts/ci_paths.py) and its [behavioral checks](../scripts/tests/test-ci-paths.py) own area selection and conservative fallback.
+- [UI evidence workflow](../.github/workflows/ui-v2-evidence.yml) and [identity checks](../scripts/tests/test-ui-evidence-identity.py) own candidate provenance and safe duplicate omission.
+- [Playwright projects](../frontend/playwright.config.ts) and [visual configuration](../frontend/playwright.visual.config.ts) own browser selections and desktop viewports.
 
-A green Documentation fast path means only that the candidate was proven safe docs-only and the retained classification/privacy/diff checks succeeded. It never claims that omitted product suites passed. Ordinary PRs use conservative area filters: backend leaves retain backend and browser jobs; frontend leaves retain frontend, browser and visual coverage. Shared, unknown or ambiguous inputs retain the Linux product suites plus release and Windows safety jobs. Scripts (`scripts/**` and `*.ps1`), packaging/release/installer paths and backend runtime/backup/recovery inputs retain release and Windows coverage. On PRs, Release safety and Release runtime safety follow the classifier’s `release` output; Windows timezone and production smoke follow `windows`. A failed/skipped classifier or missing/ambiguous output runs these jobs conservatively. Main pushes and PRs labelled `ci:windows`/`ci:full` run all four regardless of paths. `ci:full` bypasses every product path filter, including docs-only and visual filtering; PRs using either opt-in label omit the documentation-only verdict when product jobs run. Adding a label retriggers CI with unchanged concurrency. Privacy and cheap classifier checks always run, main pushes and release gates stay full, and the terminal `ci-ok` job checks every other job, rejecting failure/cancellation while accepting success or intentional skips.
+Do not copy matrix counts, shard lists, timeout values or selected Windows node counts into this handbook. Update their executable owner and relevant contract checks together. D4 owns verification policy: required coverage must remain complete, ambiguous classification must fail conservatively, ordinary PR cancellation must not cancel canonical/protected work, and exact-head evidence must identify the code it checked. Desktop coverage follows the [desktop policy](#d4-verification_policy-1-12-ui-платформа-и-визуальная-приёмка).
+
+The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. Canonical main pushes and release gates retain full verification.
 
 
 <a id="d4-test_suite_guide-1-add-a-regression-to-the-semantic-owner"></a>
@@ -472,89 +472,18 @@ instead of hiding it in a bulk rename.
 <a id="d4-test_suite_guide-1-backend-ci-primary-lanes"></a>
 #### Backend CI primary lanes
 
-Issue #282 adds one exclusive primary CI marker to every collected backend
-test. The additive semantic markers above remain useful for targeted local
-debugging; they do not decide CI ownership when a test has more than one
-semantic marker.
+Every collected backend node has one exclusive primary CI owner. Additive semantic markers support focused debugging and do not replace that owner.
 
-| Primary marker | CI lane | Ownership rule |
-| --- | --- | --- |
-| `ci_core` | Backend core (two deterministic weighted shards) | Domain, service, general API, and explicitly mapped flat financial tests; `ci_core_a` and `ci_core_b` split the same ownership by a committed duration-weighted test-file assignment |
-| `ci_persistence` | Backend persistence | SQLite, persisted state, and migration tests |
-| `ci_integrations` | Backend integrations (eight weighted jobs) | Provider, reconciliation, and import/export boundaries; `ci_integrations_a1` through `ci_integrations_a4` partition the original `ci_integrations_a` group, and `ci_integrations_b1` through `ci_integrations_b4` partition the original `ci_integrations_b` group |
-| `ci_runtime_release` | Backend runtime/release | Runtime, release, legacy, Windows, and CI-contract tests |
-| `ci_benchmark` | Backend benchmark | Explicit benchmark/performance tests only |
+- [Taxonomy](../backend/tests/_test_taxonomy.py) owns path-to-lane mapping, duration weights and deterministic execution-shard assignment.
+- [Collection hooks](../backend/tests/conftest.py) apply markers and reject missing/conflicting ownership.
+- [Ownership guard](../backend/tests/test_ci_lane_ownership.py) verifies file/weight coverage, deterministic assignment, exact collected-node union/disjointness, and one execution per node against the actual [workflow matrix](../.github/workflows/ci.yml).
+- [Registered markers](../backend/pyproject.toml) provide the supported local selection vocabulary.
 
-`backend/tests/_test_taxonomy.py` owns the deterministic path-to-lane map.
-`backend/tests/conftest.py` adds the primary marker to each collected node and
-raises a collection error for an unclassified or conflicting node. The
-`test_ci_lane_ownership.py` guard also inventories every pytest-style backend
-test file. A new flat test module therefore requires an explicit owner before
-any lane can pass; benchmark tests cannot silently join a correctness lane.
-New backend test modules must get a weight in `backend/tests/_test_taxonomy.py` so they land in a CI shard (#904).
+A new test module needs an explicit semantic/primary owner and any weight required by its execution shard. Weights remain scheduling inputs; they must be complete and positive where used. Benchmark isolation and fail-closed unknown ownership remain mandatory.
 
-CI runs the five ownership surfaces as independent matrix jobs. The core
-surface is split into `ci_core_a` and `ci_core_b`. The integrations surface
-keeps its original A/B groups, each partitioned into four weighted jobs:
-`ci_integrations_a1` through `ci_integrations_a4` and
-`ci_integrations_b1` through `ci_integrations_b4`. Each job selects the parent
-`ci_integrations` marker, its A/B group marker, and exactly one execution
-shard marker. Shard markers are additive to the single parent lane. The
-execution shards are disjoint and their union is the parent collection, so
-each collected node runs once. Each four-way union also exactly covers its
-original A or B collection.
+Estimated shard balance and old planning-time budgets are diagnostics, not acceptance gates. Adding a useful regression does not require retuning historical durations to satisfy a ratio. To inspect estimates, run `uv run --locked python -I -m pytest -q -s tests/test_ci_lane_ownership.py` from `backend/`. Actual job failures/timeouts remain blocking; investigate observed bottlenecks before changing scheduling or runtime limits.
 
-Core, persistence, runtime/release, benchmark, and all eight integration jobs
-have a 10-minute timeout. All integration jobs share the unchanged backend
-path-filter condition; `ci-ok` waits for the entire backend-tests matrix. The
-pytest command stays `uv run --locked python -I -m pytest -q --durations=40`
-with only the shard marker expression changing. There is no within-runner
-pytest parallelism.
-
-The original A/B group weights remain fixed to preserve their membership.
-They derive from Actions run 39104674667 (`--durations=40` on the 2530-test
-suite, 1511.72s), with its residual per-node rate for unlisted nodes. Separate
-A and B weight tables sum local test/setup/teardown durations from full
-`pytest -m ci_integrations_a --durations=0` and
-`pytest -m ci_integrations_b --durations=0` profiles for #902. Deterministic
-longest-first scheduling assigns each group's weights to four jobs. Only
-`test_statement_import_mybroker_endpoints.py` in A and
-`test_statement_import_source_cash_coverage.py` in B are split by function;
-all parameter variants of each function stay together, and other modules
-stay whole. Missing weights fail closed at collection. The ownership guard
-checks each group's union, disjointness, complete weight coverage, stable
-assignment, and planning budget: at most five minutes per A job using a 1.4
-CI/local multiplier, and about six minutes per B job after scaling to the
-issue's roughly 17-minute old CI lane. Local weights are CI estimates, not
-measured CI speedups.
-
-The dedicated Windows timezone job protects runtime `tzdata` availability,
-`Europe/Moscow` calendar behavior, and real Windows runtime exports. A Linux
-system IANA timezone database can mask a missing runtime dependency, as in
-issue #164. The Windows job installs locked backend dependencies, including
-`tzdata`, and retains a separate `ZoneInfo("Europe/Moscow")` probe. Dependency,
-probe, or test failure blocks the job; its timeout remains 10 minutes.
-
-Its pytest selection is:
-
-- all of `tests/test_moscow_tz.py`;
-- `tests/test_ai_analysis_bundle_export.py::test_bundle_export_is_schema_valid_full_history_and_read_only`;
-- `tests/test_ai_analysis_bundle_export.py::test_ai_financial_review_route_is_schema_valid_and_read_only`.
-
-This currently selects seven nodes: five timezone tests and two real export
-integration tests. The export tests exercise production assembly, SQLite and
-schema-file paths, UTF-8 responses, date-based filenames, deterministic output,
-and read-only/network guards on Windows.
-
-The complete `test_ai_analysis_bundle_contract.py` and
-`test_ai_analysis_bundle_export.py` suites remain mandatory in the Linux
-`ci_integrations` lane, including all 28 nodes outside this Windows selection.
-The Moscow tests also remain in Linux `ci_runtime_release`. No test assertions
-or Linux lane ownership are removed by this Windows selection.
-
-Reassess the Windows subset whenever a new platform-specific export regression
-appears. Add the relevant regression to the Windows selection and update this
-coverage map when the existing selected tests do not protect its guarantee.
+The workflow owns platform-specific selections. Linux ownership does not replace unique Windows timezone/export/runtime guarantees; when changing a platform subset, prove where each retained guarantee runs and update its executable contract checks.
 
 The shared support modules have these owners:
 
@@ -596,23 +525,14 @@ D4; it is not mandatory in addition to complete relevant CI.
 
 ```powershell
 uv run --locked python -I -m pytest -q -m domain
-uv run --locked python -I -m pytest -q -m "ci_core and ci_core_a"
-uv run --locked python -I -m pytest -q -m "ci_core and ci_core_b"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a"  # Full A group
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a and ci_integrations_a1"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a and ci_integrations_a2"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a and ci_integrations_a3"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_a and ci_integrations_a4"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b"  # Full B group
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b1"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b2"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b3"
-uv run --locked python -I -m pytest -q -m "ci_integrations and ci_integrations_b and ci_integrations_b4"
 uv run --locked python -I -m pytest -q -m "migration or persistence"
 uv run --locked python -I -m pytest -q -m "integration and network_free"
 uv run --locked python -I -m pytest -q -m benchmark
+uv run --locked python -I -m pytest -q tests/test_ci_lane_ownership.py
 uv run --locked python -I -m pytest -q
 ```
+
+For an individual execution shard, use the marker expression from the [current workflow matrix](../.github/workflows/ci.yml); do not maintain a second shard command list here.
 
 `benchmark` is an explicit performance lane; it is preserved and selectable,
 not silently removed from the default correctness suite in Phase 2A. A marker
@@ -622,26 +542,9 @@ selection is targeted evidence, not a claim that unrelated lanes passed.
 <a id="d4-test_suite_guide-1-local-helper-versus-ci"></a>
 #### Local helper versus CI
 
-The root `scripts/test.ps1` is an optional developer convenience path, not a
-mandatory handoff command. It checks the backend lockfile/full tests and
-frontend tests/build. The canonical CI matrix
-also runs Ruff, Biome, the Windows timezone subset, the G04 synthetic
-real-backend owner journey, synthetic visual audit, privacy/path checks,
-release PowerShell contracts and production smoke (direct `start-local` /
-`prepare-runtime` prepared-runtime lane). The retired Windows Launcher GUI,
-C# safety harness, package/install smoke and its path-gated CI jobs were
-removed by #629; `test_r04_08_windows_launcher_path.py` remains because it
-covers the direct PowerShell runtime and spaced/Cyrillic paths, not the
-retired shell.
+The root [scripts/test.ps1](../scripts/test.ps1) is an optional developer convenience, not a mandatory handoff command. It does not replace the [canonical workflow](../.github/workflows/ci.yml), which owns the full set of product, browser, privacy, release and Windows jobs. Use their actual results and D4's proportional rules instead of duplicating them locally for each role.
 
-Outside the accepted fail-closed documentation-only PR fast path, the G04 browser gate is not product-path-filtered: frontend routing/editor or backend/API changes can break the same monthly workflow. Canonical main push and release gates remain full. A successful docs-only fast path claims only its actual classification/privacy/diff checks, not omitted product suites.
-G04 remains its original deterministic journey. The #572 aggregate also retains
-the accepted Performance preparation/PRE-POST journey, native statement
-import/apply/readback (`playwright.config.ts --project=statement`) and native Monthly Close
-edit/return/close/report/reopen (`playwright.config.ts --project=monthly-close`). They run
-serially on temporary synthetic databases in the same required browser job;
-the two acceptance projects serve the production frontend build. This is the
-bounded aggregate gate, not a general browser harness redesign.
+Browser acceptance protects the real synthetic monthly journey and unique financial/lifecycle interactions. Its current project selection and execution order live in the workflow and project configuration; a docs-only fast path does not claim those journeys passed. Retired Launcher/phone coverage must not be restored by an old candidate; preserve the supported direct-runtime and desktop guarantees.
 
 Playwright suites share `frontend/playwright.config.ts`. From `frontend`, run
 `npm run test:e2e:<name>` or `npx playwright test --project=<name>`.
