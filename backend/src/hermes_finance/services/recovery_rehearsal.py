@@ -497,7 +497,7 @@ def _open_windows_path(
     return int(handle), identity, attributes, link_count
 
 
-def _create_windows_exclusive_leaf(path: Path) -> int:
+def _create_windows_exclusive_leaf(path: Path, *, deny_delete: bool = False) -> int:
     import ctypes
     import msvcrt
     from ctypes import wintypes
@@ -517,7 +517,7 @@ def _create_windows_exclusive_leaf(path: Path) -> int:
     handle = create_file(
         str(path),
         0x80000000 | 0x40000000,
-        0x00000001 | 0x00000002 | 0x00000004,
+        0x00000001 | 0x00000002 | (0 if deny_delete else 0x00000004),
         None,
         1,
         0x00200000,

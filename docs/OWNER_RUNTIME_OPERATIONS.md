@@ -850,6 +850,111 @@ Stable rollback. Settle the concrete recovery disposition with Owner/Integrator 
 schema-changing production Start; preserving a verified old code/backup pair is evidence,
 not an accepted command to restore it over Stable.
 
+<a id="o4-forward-recovery"></a>
+### Bounded 0058 forward recovery at the selected release
+
+The separate `hermes_finance.forward_recovery_cli` module implements one offline
+Windows path under #940. This is checkpoint recovery at the **new** code head;
+it is not old-code rollback. Integration, independent operational acceptance,
+publication and explicit local operational authority remain prerequisites. The
+module never publishes, switches code, starts Hermes or invokes OPS02. Existing
+API exact-schema restore, OPS02 older-version refusal and O4 isolated-rehearsal
+exclusions remain unchanged.
+
+V1 requires fixed local NTFS and a same-volume transaction directory, an authentic
+managed point produced by published v1.3.0 at 0058, a clean detached independent
+recovery checkout at the selected **published and prepared** future release, and
+Stable already pinned/prepared to that same SHA. Control remains independent.
+The point's provenance and acceptable loss of changes after that checkpoint must
+be explicitly selected by the Owner/operator; manifest verification is not a new
+attestation that an arbitrary file originated from production. Plain OPS02 backups
+are not managed points and must not be relabeled. Preserve a fresh managed 0058
+point through the existing publisher before the actual update; this development
+task creates no such production point.
+
+`qualify` writes only a fresh disjoint qualification directory and returns a
+frozen plan digest plus snapshot digest. It verifies actual canonical inventory,
+production identity, exact Stable Settings/interpreter/working-directory selector,
+prepared state, stopped process evidence, source protection/hash/producer/schema,
+integrity/FK, and an unambiguous forward migration graph. It generates synthetic
+reference schemas from the selected immutable migration graph. Schema signatures
+preserve columns, SQL expressions, indexes and triggers; only the order of
+table-level constraints is canonicalized because Alembic reflection emits that
+order nondeterministically across Python processes. Live/source DBs are unchanged.
+References, plans, hashes and numerical preservation evidence stay outside Git.
+
+Run only with the selected checkout's own isolated interpreter; all path variables
+are explicit verified local values. No inherited-environment uv bootstrap is used:
+
+```powershell
+$python = Join-Path $recoveryCheckout 'backend\.venv\Scripts\python.exe'
+& $python -I -m hermes_finance.forward_recovery_cli qualify `
+  --database $productionDatabase --artifact $managedPoint --inventory $runtimeConfig `
+  --checkout $recoveryCheckout --control $controlCheckout --selected-sha $releaseSha `
+  --work $freshDisjointTransactionDirectory `
+  --protection-state $acceptedProtectionState --protection-mode $acceptedProtectionMode
+```
+
+Qualification is not permission to install. Each following command requires the
+separately retained exact plan digest and **explicit acceptance of that snapshot's
+RPO/cutoff**, expressed as `--accept-checkpoint $snapshotDigest`:
+
+```powershell
+& $python -I -m hermes_finance.forward_recovery_cli recover `
+  --plan $plan --plan-sha256 $planDigest --accept-checkpoint $snapshotDigest
+# After a failed/lost-ACK recover, use explicit resume, never repeat recover blindly:
+& $python -I -m hermes_finance.forward_recovery_cli resume `
+  --plan $plan --plan-sha256 $planDigest --accept-checkpoint $snapshotDigest
+# Separate authoritative readback; this still does not Start:
+& $python -I -m hermes_finance.forward_recovery_cli finish `
+  --plan $plan --plan-sha256 $planDigest --accept-checkpoint $snapshotDigest
+```
+
+Stock CLI lifetime admission, direct migration and SQLite connection opening share
+the same pre-writer admission protocol. The durable adjacent
+`<database>.hermes-recovery.json` fence blocks Start even after process death; a
+malformed or linked fence never means success. Recovery proves stopped ownership
+and obtains native file/ancestor custody before its first operational mutation.
+V1 refuses **any** WAL/SHM/journal/super-journal family member before SQLite reads;
+it never checkpoints, deletes sidecars or repairs a hot journal. Immutable reads
+are made only from handle-bound, sidecar-free bytes. A free port is insufficient.
+
+After the fence is flushed, a fresh staging file is held from CREATE_NEW through
+SQLite online backup and forward-only migration. All SQLite writers close before
+stage sealing; original file ID and final hash must survive sealing. Final schema,
+integrity/FK and every original table/column/row (including CLOSED/history and
+provenance) are verified. Native non-overwriting handle renames retain the original
+incident in the transaction directory and install the sealed stage at the same
+production path without releasing live/stage custody or rebinding production.
+The selected future code stays unchanged. A failed migration on stage does not
+authorize rewriting released migrations or guessing a corrective release.
+
+`recover` returns `installed_fenced`. Only `finish`, after source/code/binding,
+incident and installed-file readback and a flushed acceptance receipt, retires the
+fence into the transaction directory. Separate stock Start remains an explicitly
+authorized operation. A lost finish ACK is reconciled from matching installed,
+accepted and completed-fence records; `already_finished` is historical transaction
+completion, not an assertion that later permitted financial writes are absent.
+
+Explicit `resume` never re-migrates or overwrites a recorded sealed stage. Before
+sealing, it can build a new unique stage while retaining incomplete attempts.
+After incident/install renames it reconciles actual file IDs/hashes rather than
+repeating destructive actions. Torn/foreign records, unknown object arrangements,
+changed source/code/binding, late sidecars, disk/full-sharing failures or uncertain
+outcomes leave the fence and all incident/stage evidence intact. Never manually
+clear a fence, reuse an ambiguous target, delete incident files or retry Start.
+
+Crash qualification covers abrupt **process termination** at durable phase
+boundaries and lost ACK, including kernel handle/mutex cleanup. It does not claim
+hardware/power-loss durability from file `fsync` alone. Following OS/storage/power
+failure, preserve all objects, keep runtime stopped and reconcile authoritative
+file identities and complete transaction records under local operational authority;
+unproved namespace/record durability is not GO. No automatic repair/purge exists.
+The synthetic service harness declares external release/installed-profile evidence;
+native custody, subprocess Start/writer exclusion, forward migration, abrupt exits,
+resume, finish and guarded CLI readiness are exercised on generated data. Those
+checks do not attest the real Stable runtime or constitute Owner UAT.
+
 <a id="o4-owner_runtime_operations-155"></a>
 ### Managed backup, retention and isolated recovery
 

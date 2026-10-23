@@ -6,6 +6,7 @@ from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
 from hermes_finance.database import create_database
+from hermes_finance.services.database_admission import database_admission
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_CONFIG_PATH = BACKEND_ROOT / "alembic.ini"
@@ -35,6 +36,7 @@ def _database_heads(database_path: Path, config: Config) -> tuple[str, ...]:
 
 
 def upgrade_database(database_path: Path) -> None:
-    config = _alembic_config(database_path)
-    command.upgrade(config, "head")
-    _database_heads(database_path, config)
+    with database_admission(database_path):
+        config = _alembic_config(database_path)
+        command.upgrade(config, "head")
+        _database_heads(database_path, config)
