@@ -665,6 +665,7 @@ _RUNTIME_FILES = frozenset(
 )
 _RELEASE_FILES = frozenset(
     {
+        "test_forward_recovery.py",
         "test_f05_restore_backup.py",
         "test_g02_workflow.py",
         "test_g08_mvp_control.py",

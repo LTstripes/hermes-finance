@@ -610,6 +610,7 @@ jobs:
           uv run --locked python -I -m pytest -q
           tests/test_recovery_rehearsal.py
           tests/test_recovery_process.py
+          tests/test_forward_recovery.py
           tests/test_settings.py
           tests/test_startup.py
           tests/test_scratch_preflight_runtime.py

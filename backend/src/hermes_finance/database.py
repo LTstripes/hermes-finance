@@ -282,6 +282,7 @@ def coherent_read_operation(
 
 def create_database(database_path: Path) -> Database:
     from hermes_finance.services.broker_money_lifecycle import install_hooks as money_hooks
+    from hermes_finance.services.database_admission import database_admission
     from hermes_finance.services.historical_endpoint_lifecycle import install_hooks
     from hermes_finance.services.historical_owner_flow_lifecycle import install_hooks as owner_hooks
     from hermes_finance.services.historical_portfolio_flow_lifecycle import (
@@ -299,11 +300,18 @@ def create_database(database_path: Path) -> Database:
     portfolio_hooks()
     money_hooks()
     resolved_path = database_path.expanduser().resolve()
-    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with database_admission(resolved_path):
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def admitted_connection():
+        # The SQLite RW handle is opened while Start/recovery admission is held.
+        # Once opened it excludes native recovery deny-write custody until closed.
+        with database_admission(resolved_path):
+            return sqlite3.connect(str(resolved_path), check_same_thread=False)
 
     engine = create_engine(
         URL.create("sqlite+pysqlite", database=resolved_path.as_posix()),
-        connect_args={"check_same_thread": False},
+        creator=admitted_connection,
         hide_parameters=True,
     )
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
