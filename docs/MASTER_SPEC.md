@@ -24,6 +24,23 @@ After a successful ACK, failed readback is recovered by GET. Never replay a fina
 
 The monthly workflow derives progress from authoritative read models, not a second progress ledger. It presents one next useful action, keeps optional provider stages conditional on supported accounts/data and returns native month edits to the selected Close context. Final review composes existing income, capital, budget, tax and readiness reads. Close is explicit; next-month outlook is read-only until an explicit month-create/copy action.
 
+<a id="p2-statement-led-target"></a>
+### Statement-led monthly workflow — Owner target
+
+The approved product direction is one ordinary monthly path. [CURRENT_STATUS](CURRENT_STATUS.md#s3) identifies what is delivered, pending and frozen; the sequence below is not a claim that every step is already connected.
+
+1. **Manual personal facts:** salary and other personal entries, deposits/savings, credit-card debt and comments stay convenient to enter and correct.
+2. **Broker statements:** upload one or several originals; show which securities were bought/sold, dates, quantities, prices/costs, new securities and actual coupons/dividends. Match known instruments and create clearly identified new ones without a separate manual catalogue task. Ask for decisions only on unresolved or conflicting facts; reuse saved mappings. The Owner default is RUB unless explicitly specified otherwise, with provenance and contradictory evidence preserved under C/#889.
+3. **Future payouts:** refresh the existing T-Invest schedule by ISIN, using the relevant MyBroker-derived position quantity and its date. Reconcile statement-observed payouts with forecast events so paid events do not remain future and the same income is not counted twice. Forecast is not actual receipt; an unknown tax basis must not be labelled personal after-tax income.
+4. **Recalculation:** backend read models provide the supported instrument and account/month results. The instrument view includes dated acquisition/disposal history, position/value, payouts and costs, and a supported period percentage. Reinvestment must not duplicate income. Full result, known partial components and missing evidence remain distinguishable; C owns formulas and authority.
+5. **Dashboards:** present those same saved facts and forecasts without requiring another round of input. Keep correction/history access, recoverable Save/readback and explicit Close/Reopen.
+
+The normal presentation is one month workspace with a useful instrument detail. Technical preparation and diagnostic material is secondary and opened when needed; show a short actionable explanation when missing evidence affects a result. Existing Alfa PRO integration and legacy manual/service screens are optional capabilities, not required monthly steps.
+
+This target changes neither journal Save into financial Apply nor a forecast into confirmed income. Implement the missing statement → identity/position → forecast connection through the accepted contracts, preserving provenance, deduplication, currentness and manual facts. Do not introduce another finance ledger to hide a disconnected workflow.
+
+Historical loading is part of the same source-first direction. A long report can supply dated events and outer valuations; missing intermediate month-end values require specific additional evidence. Do not demand redundant monthly exports, invent intermediate prices, or imply that accepting a long file automatically reconstructs every financial month.
+
 <a id="p2-master_spec-931"></a>
 ### Manual month lifecycle and editor capabilities
 
