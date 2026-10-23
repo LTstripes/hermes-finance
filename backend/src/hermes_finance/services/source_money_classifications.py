@@ -14,6 +14,11 @@ from hermes_finance.domain.source_money_classifications import (
     OPERATION_MAX_LENGTH,
 )
 from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClassification
+from hermes_finance.services.money_instrument_links import (
+    MoneyInstrumentResolver,
+    apply_money_instrument_link,
+    intake_money_resolver,
+)
 from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
@@ -292,6 +297,7 @@ def persist_money_classifications(session, intake_id, document):
     if len(observations) != len(narratives):
         raise MyBrokerError("source_intake_parser_revision_changed")
     now = datetime.now(UTC)
+    resolver = MoneyInstrumentResolver(session, trades)
     for observation, (operation, narrative, _) in zip(observations, narratives, strict=True):
         row = json.loads(observation.facts_json)
         reference = source_reference(intake_id, row)
@@ -300,6 +306,7 @@ def persist_money_classifications(session, intake_id, document):
             "default_rule",
             "assumed",
         ):
+            apply_money_instrument_link(previous, resolver)
             continue
         classification = default_classification(
             operation,
@@ -316,24 +323,25 @@ def persist_money_classifications(session, intake_id, document):
             if previous.classification != classification:
                 previous.classification = classification
                 previous.updated_at = now
+            apply_money_instrument_link(previous, resolver)
             continue
-        session.add(
-            SourceMoneyClassification(
-                intake_id=intake_id,
-                observation_id=observation.id,
-                source_reference=reference,
-                date=date.fromisoformat(row["date"]),
-                amount_kopecks=_amount_kopecks(row["amount"]),
-                currency=row["currency"],
-                operation=_bounded_text(operation, OPERATION_MAX_LENGTH),
-                narrative=_bounded_text(narrative, NARRATIVE_MAX_LENGTH),
-                classification=classification,
-                origin="default_rule",
-                status="assumed",
-                created_at=now,
-                updated_at=now,
-            )
+        captured = SourceMoneyClassification(
+            intake_id=intake_id,
+            observation_id=observation.id,
+            source_reference=reference,
+            date=date.fromisoformat(row["date"]),
+            amount_kopecks=_amount_kopecks(row["amount"]),
+            currency=row["currency"],
+            operation=_bounded_text(operation, OPERATION_MAX_LENGTH),
+            narrative=_bounded_text(narrative, NARRATIVE_MAX_LENGTH),
+            classification=classification,
+            origin="default_rule",
+            status="assumed",
+            created_at=now,
+            updated_at=now,
         )
+        apply_money_instrument_link(captured, resolver)
+        session.add(captured)
 
 
 def classification_dict(row):
@@ -345,6 +353,10 @@ def classification_dict(row):
         "currency": row.currency,
         "operation": _bounded_text(row.operation, OPERATION_MAX_LENGTH),
         "narrative": _bounded_text(row.narrative, NARRATIVE_MAX_LENGTH),
+        "security_reg_number": row.security_reg_number,
+        "security_issuer": row.security_issuer,
+        "instrument_id": row.instrument_id,
+        "instrument_link_status": row.instrument_link_status,
         "classification": row.classification,
         "origin": row.origin,
         "status": row.status,
@@ -408,6 +420,7 @@ def choose_classification(session, intake_id, reference, classification):
             row.origin = "user_choice"
             row.status = "confirmed"
             row.updated_at = datetime.now(UTC)
+        apply_money_instrument_link(row, intake_money_resolver(session, intake_id))
         session.flush()
         result = classification_dict(row)
         session.commit()

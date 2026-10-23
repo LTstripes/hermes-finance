@@ -5821,6 +5821,27 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
+Migration `0061_money_instrument_links` adds nullable `security_reg_number`,
+`security_issuer`, `instrument_id` (restricted foreign key to `instruments`) and
+`instrument_link_status` to these provisional rows. Existing rows remain NULL
+until an explicit new Save or classification PUT. Strict complete MyBroker coupon
+and dividend narrative shapes extract registration/issuer only for positive rows
+whose effective classification agrees with the parsed payout kind. Other rows are
+`not_applicable`, including NULL/nonrepresentable kopeck amounts; unsupported or
+truncated income shapes are `not_parsed`. Save and PUT use the same bounded saved
+narrative and integer amount. Exact same-statement
+trade identifiers (completed or pending), catalog `isin` and effective
+`alfa_mybroker` broker identity aliases/observed ISIN supply candidates offline.
+No reg/ISIN crosswalk is inferred from co-occurrence or a name. Whole normalized
+issuer names may break an identifier-candidate tie only when exactly one matches.
+No candidate yields `unresolved_no_match`; multiple candidates or contradictory
+alias/ISIN evidence yield `unresolved_ambiguous`, with NULL `instrument_id`.
+New Save commands refresh this derived metadata even for manual choices without
+changing their classification, origin/status or decision timestamps. Same-command
+replay and GET remain read-only. Classification PUT recomputes the selected row's
+link. This metadata grants no financial receipt/Close authority and does not change
+the instrument-return reader's attribution rules. Downgrade removes only these
+four columns/constraints and preserves classifications and journal observations.
 The supported dividend transfer is operation `Перевод` with narrative starting
 `Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
 context. Narrative matching case-folds, treats ё as е and collapses whitespace

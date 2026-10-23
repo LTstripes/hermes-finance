@@ -99,6 +99,17 @@ class SourceMoneyClassification(Base):
             "(origin = 'user_choice' AND status = 'confirmed')",
             name="ck_source_money_choice_status",
         ),
+        CheckConstraint(
+            "instrument_link_status IS NULL OR instrument_link_status IN "
+            "('linked','unresolved_no_match','unresolved_ambiguous','not_parsed','not_applicable')",
+            name="ck_source_money_instrument_link_status",
+        ),
+        CheckConstraint(
+            "(instrument_link_status IS NOT NULL AND instrument_link_status = 'linked' AND instrument_id IS NOT NULL "
+            "AND security_reg_number IS NOT NULL AND security_issuer IS NOT NULL) OR "
+            "(COALESCE(instrument_link_status, '') != 'linked' AND instrument_id IS NULL)",
+            name="ck_source_money_instrument_link",
+        ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     intake_id: Mapped[int] = mapped_column(
@@ -114,6 +125,12 @@ class SourceMoneyClassification(Base):
     currency: Mapped[str] = mapped_column(String(16), nullable=False)
     operation: Mapped[str] = mapped_column(Text, nullable=False)
     narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    security_reg_number: Mapped[str | None] = mapped_column(String(32))
+    security_issuer: Mapped[str | None] = mapped_column(Text)
+    instrument_id: Mapped[int | None] = mapped_column(
+        ForeignKey("instruments.id", name="fk_source_money_instrument", ondelete="RESTRICT")
+    )
+    instrument_link_status: Mapped[str | None] = mapped_column(String(32))
     classification: Mapped[str] = mapped_column(String(32), nullable=False)
     origin: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
