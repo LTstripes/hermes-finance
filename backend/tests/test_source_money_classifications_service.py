@@ -92,6 +92,193 @@ def test_promo_gift_default_and_exclusions(operation, narrative, amount, expecte
     assert default_classification(operation, narrative, "unsupported", amount) == expected
 
 
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Подарок акционеру Synthetic",
+        "Подарок за транзакцию Synthetic",
+        "Подарок по акцизной программе Synthetic",
+        "Подарок за реакцию Synthetic",
+        "Продажа подаренных акций Synthetic",
+        "Антиподарок по акции Synthetic",
+        "Подарок Synthetic\nПродажа акций Synthetic",
+        "Подарок Synthetic\rПродажа акций Synthetic",
+        "Подарок Synthetic\r\nПродажа акций Synthetic",
+        "Подарок Synthetic\nпо акции Synthetic",
+        "Подарок по акции Synthetic\nдополнение Synthetic",
+    ],
+)
+def test_promo_gift_requires_a_single_line_gift_and_promo_phrase(narrative):
+    assert default_classification("Перевод", narrative, "unsupported", "300") == "unknown"
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "  Подарок  по  акции  Synthetic  ",
+        "Подарок\tпо\tакции Synthetic",
+        "Подарок\u00a0по\u00a0акции Synthetic",
+        "Подарок\u202fв\u00a0рамках\tакции Synthetic",
+        "ПОДАРЁННЫЕ\u00a0СРЕДСТВА ПО АКЦИИ Synthetic",
+    ],
+)
+def test_promo_gift_normalizes_case_letters_and_whitespace(narrative):
+    assert default_classification("Перевод", narrative, "unsupported", "300") == "external_deposit"
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Отмена подарка по акции Synthetic",
+        "Сторно подарка по акции Synthetic",
+        "Подарок по акции, возвращённый брокеру Synthetic",
+        "Подарок по акции, возвращенный брокеру Synthetic",
+        "Возвращение подарка по акции Synthetic",
+        "Reversal: подарок по акции Synthetic",
+        "Reimbursement: подарок по акции Synthetic",
+    ],
+)
+@pytest.mark.parametrize("amount", ["300", "-300"])
+def test_promo_gift_reversals_stay_unknown(narrative, amount):
+    assert default_classification("Перевод", narrative, "unsupported", amount) == "unknown"
+
+
+@pytest.mark.parametrize("operation", ["Отмена", "Сторно", "Возвращение", "Reversal"])
+def test_promo_gift_reversal_operation_is_excluded(operation):
+    assert (
+        default_classification(operation, "Подарок по акции Synthetic", "unsupported", "300")
+        == "unknown"
+    )
+
+
+@pytest.mark.parametrize(
+    "operation,narrative,kind,amount,expected",
+    [
+        (
+            "Перевод",
+            "Подарок по акции (НДФЛ 35%) Synthetic",
+            "unsupported",
+            "300",
+            "external_deposit",
+        ),
+        (
+            "Перевод",
+            "Подарок по акции без комиссии Synthetic",
+            "unsupported",
+            "300",
+            "external_deposit",
+        ),
+        ("Перевод", "Подарок по акции (НДФЛ 35%) Synthetic", "unsupported", "-300", "tax"),
+        ("Перевод", "Подарок по акции без комиссии Synthetic", "unsupported", "-300", "fee"),
+        ("НДФЛ", "Synthetic withholding", "unsupported", "-3", "tax"),
+        ("Комиссия", "Synthetic fee", "unsupported", "-3", "fee"),
+        ("Перевод", "Подарок по акции Synthetic", "commission", "300", "fee"),
+        ("Перевод", "Подарок по акции Synthetic", "settlement", "300", "trade_settlement"),
+        ("Вывод", "Подарок по акции Synthetic", "unsupported", "300", "external_withdrawal"),
+        ("Внесено", "Подарок по акции Synthetic", "unsupported", "300", "external_deposit"),
+        ("Перевод", "в АО Synthetic подарок по акции", "unsupported", "300", "external_withdrawal"),
+        (
+            "Перевод",
+            "Перевод в Synthetic банк: подарок по акции",
+            "unsupported",
+            "300",
+            "external_withdrawal",
+        ),
+        ("Внутренний перевод", "Подарок по акции Synthetic", "unsupported", "300", "unknown"),
+        ("Перевод", "Подарок по акции Synthetic НКД", "unsupported", "300", "unknown"),
+        (
+            "Перевод",
+            "Подарок по акции Synthetic накопленный купонный доход",
+            "unsupported",
+            "300",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Подарок по акции Synthetic НКД по сделке",
+            "unsupported",
+            "300",
+            "trade_settlement",
+        ),
+        (
+            "Расчёты по сделке",
+            "Подарок по акции Synthetic",
+            "unsupported",
+            "300",
+            "trade_settlement",
+        ),
+    ],
+)
+def test_promo_gift_precedence(operation, narrative, kind, amount, expected):
+    assert default_classification(operation, narrative, kind, amount) == expected
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        "Подарок по акции (НДФЛ 35%) Synthetic",
+        "Подарок\u00a0по\u00a0акции без комиссии Synthetic",
+    ],
+)
+def test_promo_gift_tax_or_fee_mentions_are_contributions(db, narrative):
+    intake, _ = save_month(
+        db,
+        beginning="1000",
+        closing="1300",
+        candidate_count=0,
+        extra=(("Перевод", narrative, "300"),),
+    )
+    row = saved_rows(db, intake)[0]
+    assert row.classification == "external_deposit"
+    assert row.narrative == narrative
+    assert (row.origin, row.status) == ("default_rule", "assumed")
+    before = snapshot(db)
+    result = read(db)
+    assert result.months[0].result.contributions_kopecks == 30_000
+    assert result.months[0].result.growth_kopecks == 0
+    assert len(result.flows) == 1
+    assert result.flows[0].status == "assumed"
+    assert result.defaults_applied == result.flows
+    assert not result.gaps
+    assert snapshot(db) == before
+
+
+def test_non_rub_promo_gift_default_is_unconfirmable_and_withholds_returns(db):
+    intake, _ = save_month(
+        db,
+        candidate_count=0,
+        extra=(("Перевод", "Подарок по акции Synthetic foreign promo", "300"),),
+        money_currency="USD",
+    )
+    row = saved_rows(db, intake)[0]
+    assert row.currency == "USD"
+    assert row.classification == "external_deposit"
+    assert (row.origin, row.status) == ("default_rule", "assumed")
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{row.source_reference}",
+        json={"classification": "external_deposit"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["message"] == "invalid_external_flow"
+    assert snapshot(db) == before
+    result = read(db)
+    assert not result.flows
+    reasons = {"currency_unsupported", "unknown_flow"}
+    assert reasons <= {gap.code for gap in result.gaps}
+    assert reasons <= set(result.months[0].flags)
+    assert result.months[0].result.contributions_kopecks is None
+    assert result.months[0].result.growth_kopecks is None
+    assert result.months[0].result.modified_dietz_return is None
+    for totals in (result.period, result.segments[0]):
+        assert totals.contributions_kopecks is None
+        assert totals.growth_kopecks is None
+        assert totals.xirr_period_return is None
+        assert reasons <= set(totals.growth_reason_codes)
+    assert snapshot(db) == before
+
+
 def test_promo_gift_upload_and_coupon_compute_monthly_return(db):
     intake, _ = save_month(
         db,
