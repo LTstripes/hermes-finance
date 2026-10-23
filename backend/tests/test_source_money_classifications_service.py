@@ -15,6 +15,468 @@ from hermes_finance.persistence import SourceMoneyClassification
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_money_classifications import default_classification
 
+COUPON_SECURITY = (
+    'погашение купона 4B02-09-99999-Z-001P (облигации АО "Синтетический Ландыш") д.ф.04.08.30'
+)
+DIVIDEND_SECURITY = 'Дивиденды за 2029 г. по акциям ПАО "Синтетический Ландыш" (1-01-99999-Z). (Удержан налог 100 руб.). Эмитентом уменьшена НОБ'
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (COUPON_SECURITY, ("4B02-09-99999-Z-001P", 'АО "Синтетический Ландыш"', "coupon")),
+        (
+            COUPON_SECURITY.replace('АО "Синтетический Ландыш"', "АО Синтетический Ландыш"),
+            ("4B02-09-99999-Z-001P", "АО Синтетический Ландыш", "coupon"),
+        ),
+        (DIVIDEND_SECURITY, ("1-01-99999-Z", 'ПАО "Синтетический Ландыш"', "dividend")),
+        (
+            "Дивиденды за 2029 г. по акциям ПАО Синтетический Ландыш (10399999Z). (Удержан налог 10 руб.).",
+            ("10399999Z", "ПАО Синтетический Ландыш", "dividend"),
+        ),
+        ("garbage", None),
+        ("Возврат " + DIVIDEND_SECURITY, None),
+        (COUPON_SECURITY + " возврат", None),
+        (DIVIDEND_SECURITY + " Возврат", None),
+        (COUPON_SECURITY.replace("04.08.30", "31.02.30"), None),
+        (DIVIDEND_SECURITY.replace("1-01-99999-Z", "UNKNOWN"), None),
+        (COUPON_SECURITY.replace("4B02-09-99999-Z-001P", "RU000A099991"), None),
+        (DIVIDEND_SECURITY.replace("Ландыш", "Ландыш\n"), None),
+        (COUPON_SECURITY + "\n", None),
+        ("prefix " + COUPON_SECURITY, None),
+        ("", None),
+        (COUPON_SECURITY.replace('АО "Синтетический Ландыш"', 'АО "   "'), None),
+        (DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО    "), None),
+        (DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО «\t »"), None),
+    ],
+)
+def test_money_security_parser_strict_shapes(text, expected):
+    from hermes_finance.domain.money_security import parse_money_security
+
+    assert parse_money_security(text) == expected
+
+
+def _security_instrument(session, *, name='ПАО "Синтетический Ландыш"', isin=None):
+    from hermes_finance.persistence import Instrument
+
+    row = Instrument(name=name, instrument_type="stock", isin=isin)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _security_mapping(
+    session,
+    instrument,
+    alias="1-01-99999-Z",
+    *,
+    isin=None,
+    status="effective",
+    provider="alfa_mybroker",
+):
+    from hermes_finance.persistence import BrokerIdentityMapping
+
+    row = BrokerIdentityMapping(
+        provider=provider,
+        subject_kind="instrument",
+        provider_identity=alias,
+        hermes_instrument_id=instrument.id,
+        observed_isin=isin,
+        status=status,
+        confirmed_at=datetime.now(UTC),
+        revoked_at=datetime.now(UTC) if status == "revoked" else None,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_money_security_resolver_known_registration_mapping(db):
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        _security_mapping(session, instrument, isin=instrument.isin)
+        resolver = MoneyInstrumentResolver(session)
+        assert resolver.resolve(parse_money_security(DIVIDEND_SECURITY)) == (
+            instrument.id,
+            "linked",
+        )
+
+
+@pytest.mark.parametrize(
+    "mode", ["no_match", "ambiguous", "tie_break", "conflict", "revoked", "other_provider"]
+)
+def test_money_security_resolver_fail_closed_and_exact_issuer_tie_break(db, mode):
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+
+    with db.session_factory() as session:
+        first = _security_instrument(session, isin="RU000A099991")
+        if mode in {"ambiguous", "tie_break"}:
+            # Two case-normalized catalog identifiers, never first-row selection.
+            _security_instrument(
+                session,
+                name=first.name if mode == "ambiguous" else "АО Другая синтетика",
+                isin="1-01-99999-z",
+            )
+            first.isin = "1-01-99999-Z"
+            session.flush()
+        elif mode == "conflict":
+            _security_mapping(session, first, isin="RU000A099992")
+        elif mode in {"revoked", "other_provider"}:
+            _security_mapping(
+                session,
+                first,
+                status="revoked" if mode == "revoked" else "effective",
+                provider="alfa_mybroker" if mode == "revoked" else "synthetic_other",
+            )
+        # Even an exact issuer cannot invent a registration mapping.
+        resolver = MoneyInstrumentResolver(session)
+        expected = {
+            "no_match": (None, "unresolved_no_match"),
+            "revoked": (None, "unresolved_no_match"),
+            "other_provider": (None, "unresolved_no_match"),
+            "ambiguous": (None, "unresolved_ambiguous"),
+            "conflict": (None, "unresolved_ambiguous"),
+            "tie_break": (first.id, "linked"),
+        }[mode]
+        assert resolver.resolve(parse_money_security(DIVIDEND_SECURITY)) == expected
+
+
+@pytest.mark.parametrize("amount", ["-12.34", "0", "12.34"])
+def test_negative_payout_identity_is_text_only_and_never_automatic_income_link(db, amount):
+    from hermes_finance.domain.money_security import parse_money_security
+
+    # The pure text parser has no money policy; the persistence boundary owns sign.
+    assert parse_money_security(DIVIDEND_SECURITY).kind == "dividend"
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", DIVIDEND_SECURITY, amount),))
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_id is None
+    assert row.instrument_link_status == (
+        "unresolved_no_match" if amount == "12.34" else "not_applicable"
+    )
+
+
+def test_payout_links_upload_reupload_choices_and_read_only_metadata(db):
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        instrument_id = instrument.id
+        session.commit()
+    intake, (raw, filename) = save_month(
+        db,
+        candidate_count=0,
+        extra=(
+            ("Перевод", DIVIDEND_SECURITY, "12.34"),
+            ("Перевод", COUPON_SECURITY, "5.67"),
+            ("Перевод", "Дивиденды unsupported shape", "1"),
+            ("Перевод", "Возврат " + DIVIDEND_SECURITY, "2"),
+        ),
+    )
+    original = saved_rows(db, intake)
+    assert [r.instrument_link_status for r in original] == [
+        "unresolved_no_match",
+        "unresolved_no_match",
+        "not_parsed",
+        "not_applicable",
+    ]
+    client = TestClient(create_app(database=db))
+    url = f"/api/source-intakes/{intake}/money-classifications/{original[0].source_reference}"
+    manual = client.put(url, json={"classification": "dividend"})
+    assert manual.status_code == 200, manual.text
+    decision_time = manual.json()["updated_at"]
+    assert manual.json()["instrument_link_status"] == "unresolved_no_match"
+    with db.session_factory() as session:
+        from hermes_finance.persistence import Instrument
+
+        _security_mapping(session, session.get(Instrument, instrument_id), isin="RU000A099991")
+        session.commit()
+    # A GET never refreshes the metadata as a side effect.
+    before = snapshot(db)
+    view = client.get(f"/api/broker-months/intakes/{intake}")
+    assert view.status_code == 200
+    assert view.json()["money_classifications"][0]["instrument_id"] is None
+    assert snapshot(db) == before
+    for request in ("refresh-security", "refresh-security-again"):
+        with db.session_factory() as session:
+            source_intake.save_intake(session, document=raw, filename=filename, request_id=request)
+        rows = saved_rows(db, intake)
+        assert len(rows) == 4
+        assert [(r.id, r.source_reference, r.created_at) for r in rows] == [
+            (r.id, r.source_reference, r.created_at) for r in original
+        ]
+        assert rows[0].instrument_id == instrument_id
+        assert rows[0].instrument_link_status == "linked"
+        assert (rows[0].classification, rows[0].origin, rows[0].status) == (
+            "dividend",
+            "user_choice",
+            "confirmed",
+        )
+        assert (
+            rows[0].updated_at.isoformat()
+            == datetime.fromisoformat(decision_time).replace(tzinfo=None).isoformat()
+        )
+        assert rows[1].instrument_link_status == "unresolved_no_match"
+    # Same request replay retains the exact persisted snapshot.
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-security-again"
+        )
+    assert snapshot(db) == before
+    changed = client.put(url, json={"classification": "fee"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["instrument_id"] is None
+    assert changed.json()["instrument_link_status"] == "not_applicable"
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="preserve-manual-fee"
+        )
+    assert saved_rows(db, intake)[0].classification == "fee"
+    restored = client.put(url, json={"classification": "dividend"})
+    assert restored.status_code == 200
+    assert restored.json()["instrument_id"] == instrument_id
+
+
+@pytest.mark.parametrize("issuer", ["", "   "])
+def test_saved_money_schema_rejects_blank_issuer(db, issuer):
+    from sqlalchemy import inspect, update
+    from sqlalchemy.exc import IntegrityError
+
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", DIVIDEND_SECURITY, "12.34"),))
+    assert any(
+        index["name"] == "ix_source_money_instrument_id"
+        and index["column_names"] == ["instrument_id"]
+        for index in inspect(db.engine).get_indexes(SourceMoneyClassification.__tablename__)
+    )
+    with db.session_factory() as session:
+        with pytest.raises(IntegrityError, match="ck_source_money_security_issuer"):
+            session.execute(
+                update(SourceMoneyClassification)
+                .where(SourceMoneyClassification.intake_id == intake)
+                .values(security_issuer=issuer)
+            )
+
+
+@pytest.mark.parametrize("narrative", [COUPON_SECURITY, DIVIDEND_SECURITY])
+def test_linked_payout_blocks_instrument_delete_with_specific_reference(db, narrative):
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.instruments import (
+        InstrumentDeletionBlockedError,
+        delete_instrument,
+        get_instrument_cleanup,
+    )
+
+    with db.session_factory() as session:
+        instrument_id = _security_instrument(
+            session, isin=parse_money_security(narrative).reg_number
+        ).id
+        session.commit()
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),))
+    assert saved_rows(db, intake)[0].instrument_id == instrument_id
+    with db.session_factory() as session:
+        cleanup = get_instrument_cleanup(session, instrument_id)
+        assert not cleanup.can_delete
+        assert [(ref.kind, ref.count) for ref in cleanup.references] == [("source_money_payout", 1)]
+        with pytest.raises(
+            InstrumentDeletionBlockedError, match="строками купонных/дивидендных выплат"
+        ):
+            delete_instrument(session, instrument_id)
+        assert session.get(Instrument, instrument_id) is not None
+
+
+def test_coupon_link_is_populated_on_initial_import(db):
+    with db.session_factory() as session:
+        instrument = _security_instrument(
+            session, name='АО "Синтетический Ландыш"', isin="RU000A099992"
+        )
+        instrument.instrument_type = "bond"
+        instrument_id = instrument.id
+        _security_mapping(session, instrument, "4B02-09-99999-Z-001P", isin=instrument.isin)
+        session.commit()
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", COUPON_SECURITY, "5.67"),))
+    row = saved_rows(db, intake)[0]
+    assert row.security_reg_number == "4B02-09-99999-Z-001P"
+    assert row.security_issuer == 'АО "Синтетический Ландыш"'
+    assert (row.instrument_id, row.instrument_link_status) == (instrument_id, "linked")
+
+
+@pytest.mark.parametrize(
+    "narrative,classification",
+    [(DIVIDEND_SECURITY, "coupon"), (COUPON_SECURITY, "dividend")],
+)
+def test_parsed_payout_kind_mismatch_is_distinct_and_preserves_choice(
+    db, narrative, classification
+):
+    intake, (raw, filename) = save_month(
+        db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),)
+    )
+    original = saved_rows(db, intake)[0]
+    client = TestClient(create_app(database=db))
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{original.source_reference}",
+        json={"classification": classification},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["instrument_link_status"] == "kind_mismatch"
+    decision_time = response.json()["updated_at"]
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-kind-mismatch"
+        )
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_link_status == "kind_mismatch"
+    assert (row.security_reg_number, row.security_issuer, row.instrument_id) == (None, None, None)
+    assert (row.classification, row.origin, row.status) == (
+        classification,
+        "user_choice",
+        "confirmed",
+    )
+    assert row.updated_at == datetime.fromisoformat(decision_time).replace(tzinfo=None)
+
+
+@pytest.mark.parametrize(
+    "operation,narrative",
+    [
+        ("НДФЛ", "НДФЛ с купона " + COUPON_SECURITY),
+        ("НДФЛ", "Налог на дивиденды " + DIVIDEND_SECURITY),
+        ("Перевод на счет", "Перевод на счет 9999999 " + DIVIDEND_SECURITY),
+        ("Банковский перевод", "Перевод на счет 9999999 " + COUPON_SECURITY),
+        ("Перевод", "Возврат " + DIVIDEND_SECURITY),
+        ("Перевод", COUPON_SECURITY + " возврат"),
+        ("Перевод", DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО    ")),
+        ("Перевод", COUPON_SECURITY.replace('АО "Синтетический Ландыш"', 'АО "  "')),
+    ],
+)
+def test_tax_transfer_refund_and_empty_issuer_never_link(db, operation, narrative):
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        _security_mapping(session, instrument, isin=instrument.isin)
+        bond = _security_instrument(session, name='АО "Синтетический Ландыш"', isin="RU000A099992")
+        _security_mapping(session, bond, "4B02-09-99999-Z-001P", isin=bond.isin)
+        session.commit()
+    intake, _ = save_month(db, candidate_count=0, extra=((operation, narrative, "12.34"),))
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_link_status in {"not_applicable", "not_parsed"}
+    assert (row.security_reg_number, row.security_issuer, row.instrument_id) == (None, None, None)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_money_security_alias_chain_conflicts_are_order_independent(db, reverse):
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+
+    with db.session_factory() as session:
+        first = _security_instrument(session)
+        second = _security_instrument(session)
+        evidence = [(first, "1-01-99999-Z"), (second, "RU000A099991")]
+        for instrument, alias in reversed(evidence) if reverse else evidence:
+            _security_mapping(session, instrument, alias, isin="RU000A099991")
+        resolver = MoneyInstrumentResolver(session)
+        assert resolver.resolve(parse_money_security(DIVIDEND_SECURITY)) == (
+            None,
+            "unresolved_ambiguous",
+        )
+
+
+@pytest.mark.parametrize("amount", ["0.001", "92233720368547758.08"])
+def test_nonrepresentable_payout_links_are_consistent_on_save_choice_and_resave(db, amount):
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        _security_mapping(session, instrument, isin=instrument.isin)
+        session.commit()
+    intake, (raw, filename) = save_month(
+        db, candidate_count=0, extra=(("Перевод", DIVIDEND_SECURITY, amount),)
+    )
+    row = saved_rows(db, intake)[0]
+    assert row.amount_kopecks is None
+    assert (row.instrument_id, row.instrument_link_status) == (None, "not_applicable")
+    client = TestClient(create_app(database=db))
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{row.source_reference}",
+        json={"classification": "dividend"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["instrument_link_status"] == "not_applicable"
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-precision"
+        )
+    assert saved_rows(db, intake)[0].instrument_link_status == "not_applicable"
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("identifier", ["1-01-99999-Z", "RU000A099991"])
+def test_payout_upload_accepts_opaque_completed_and_pending_trade_identifiers(
+    db, pending, identifier
+):
+    import json
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_broker_statement_provisional import provisional_xml
+
+    from hermes_finance.persistence import SourceIntakeObservation
+    from hermes_finance.statement_import.mybroker import NS
+
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        instrument_id = instrument.id
+        _security_mapping(session, instrument, isin=instrument.isin)
+        session.commit()
+    root = ET.fromstring(
+        provisional_xml(
+            pending=pending,
+            candidate_count=0,
+            extra_money=(("Перевод", DIVIDEND_SECURITY, "12.34"),),
+        )
+    )
+    attribute = "isin_reg1" if pending else "isin_reg"
+    tag = "Details2" if pending else "Details"
+    root.find(f".//m:{tag}[@{attribute}]", NS).set(attribute, identifier)
+    with db.session_factory() as session:
+        saved = source_intake.save_intake(
+            session,
+            document=ET.tostring(root, encoding="utf-8"),
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="opaque-trade",
+        )
+        trades = [
+            json.loads(row.facts_json)
+            for row in session.scalars(
+                select(SourceIntakeObservation).where(
+                    SourceIntakeObservation.original_id == saved["intake_id"],
+                    SourceIntakeObservation.section == "trades",
+                )
+            )
+        ]
+    assert any(
+        t["core"]["isin"] == identifier and t["state"] == ("pending" if pending else "settled")
+        for t in trades
+    )
+    row = saved_rows(db, saved["intake_id"])[0]
+    assert (row.instrument_id, row.instrument_link_status) == (instrument_id, "linked")
+
+
+def test_truncated_payout_identity_is_consistent_on_save_and_classification(db):
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        _security_mapping(session, instrument, isin=instrument.isin)
+        session.commit()
+    narrative = DIVIDEND_SECURITY.replace("Ландыш", "Синтетический Ландыш " * 300)
+    intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),))
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_link_status == "not_parsed"
+    client = TestClient(create_app(database=db))
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{row.source_reference}",
+        json={"classification": "dividend"},
+    )
+    assert response.status_code == 200
+    assert response.json()["instrument_id"] is None
+    assert response.json()["instrument_link_status"] == "not_parsed"
+
 
 @pytest.mark.parametrize(
     "operation,narrative,amount,expected",

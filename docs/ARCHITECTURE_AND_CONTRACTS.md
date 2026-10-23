@@ -5821,6 +5821,30 @@ Defaults have `origin=default_rule,status=assumed`. Exact original re-save with 
 new request ID re-evaluates only those assumed default rules and may capture
 missing legacy rows. It preserves occurrence identity, creation time and all
 user/confirmed choices; unchanged classifications retain their update time.
+Migration `0061_money_instrument_links` adds nullable `security_reg_number`,
+`security_issuer`, `instrument_id` (restricted foreign key to `instruments`) and
+`instrument_link_status` to these provisional rows. Existing rows remain NULL
+until an explicit new Save or classification PUT. Strict complete MyBroker coupon
+and dividend narrative shapes extract registration/issuer only for positive rows
+whose effective classification agrees with the parsed payout kind. Other rows are
+`not_applicable`, including NULL/nonrepresentable kopeck amounts; unsupported or
+truncated income shapes (including empty issuer names) are `not_parsed`. A complete
+payout shape whose kind differs from the effective coupon/dividend classification
+is `kind_mismatch`, with NULL identity/link fields. Save and PUT use the same bounded
+saved narrative and integer amount. Catalog `isin` and effective `alfa_mybroker`
+broker identity aliases/observed ISIN supply candidates offline. Trade identifiers
+do not add candidates. No reg/ISIN crosswalk is inferred from co-occurrence or a name.
+A whole issuer-name match (case/whitespace/quotation typography normalized) may
+break a catalog-identifier candidate tie only when exactly one candidate matches;
+it never creates candidates or overrides contradictory aliases/ISIN evidence.
+No candidate yields `unresolved_no_match`; multiple candidates or contradictory
+alias/ISIN evidence yield `unresolved_ambiguous`, with NULL `instrument_id`.
+New Save commands refresh this derived metadata even for manual choices without
+changing their classification, origin/status or decision timestamps. Same-command
+replay and GET remain read-only. Classification PUT recomputes the selected row's
+link. This metadata grants no financial receipt/Close authority and does not change
+the instrument-return reader's attribution rules. Downgrade removes only these
+four columns/constraints and preserves classifications and journal observations.
 The supported dividend transfer is operation `Перевод` with narrative starting
 `Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
 context. Narrative matching case-folds, treats ё as е and collapses whitespace
