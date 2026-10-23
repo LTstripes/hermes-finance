@@ -139,6 +139,27 @@ def default_classification(
             r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op
         ) or (op == "перевод" and re.fullmatch(r"дивиденды \S[^\r\n]*", narrative.casefold())):
             return "dividend"
+    # Promo gifts are external funding; income and refunds retain their own meaning.
+    normalized_narrative = narrative.casefold().replace("ё", "е")
+    if (
+        Decimal(amount) > 0
+        and "подар" in normalized_narrative
+        and "акци" in normalized_narrative
+        and not any(
+            word in text
+            for word in (
+                "купон",
+                "coupon",
+                "дивиденд",
+                "dividend",
+                "возврат",
+                "возмещ",
+                "refund",
+                "reimbursement",
+            )
+        )
+    ):
+        return "external_deposit"
     return "unknown"
 
 

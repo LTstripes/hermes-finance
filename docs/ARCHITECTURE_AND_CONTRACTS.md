@@ -5828,6 +5828,12 @@ saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
 Acknowledged same-request replay stays read-only.
+Owner decision (2026-10-23): positive promo-gift Money rows whose narrative
+contains both `подар` and `акци` (case-insensitive, ё/е normalized) default to
+`external_deposit`. Coupon/dividend and refund semantics are excluded; zero and
+negative amounts do not use this rule. New uploads persist this assumed default;
+an explicit new Save refreshes existing assumed defaults while preserving manual
+PUT choices through the same classification lifecycle.
 A changed Money extraction count refuses with
 `source_intake_parser_revision_changed` before capturing any classifications.
 

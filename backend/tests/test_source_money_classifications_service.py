@@ -66,6 +66,108 @@ def test_dividend_rule_refresh_requires_explicit_resave_and_preserves_user_choic
     assert (rows[1].origin, rows[1].status) == ("user_choice", "confirmed")
 
 
+@pytest.mark.parametrize(
+    "operation,narrative,amount,expected",
+    [
+        ("Перевод", "Выплата подарка в рамках акции Synthetic promo", "300", "external_deposit"),
+        ("Payment", "ПОДАРЁННЫЕ СРЕДСТВА ПО АКЦИИ Synthetic promo", "300", "external_deposit"),
+        ("Выплата", "Подарок по акции Synthetic promo", "300", "external_deposit"),
+        ("Перевод", "Подарок по акции Synthetic promo", "0", "unknown"),
+        ("Перевод", "Подарок по акции Synthetic promo", "-300", "unknown"),
+        ("Перевод", "Подарок Synthetic promo", "300", "unknown"),
+        ("Перевод", "Выплата по акции Synthetic promo", "300", "unknown"),
+        ("Купон", "Подарок по акции Synthetic bond", "7", "coupon"),
+        ("Дивиденды", "Подарок по акции Synthetic stock", "7", "dividend"),
+        ("Перевод", "Погашение купона Подарок по акции Synthetic bond", "7", "coupon"),
+        ("Перевод", "Дивиденды Подарок по акции Synthetic stock", "7", "dividend"),
+        ("Payment", "Купон: подарок по акции Synthetic bond", "7", "unknown"),
+        ("Payment", "Dividend: подарок по акции Synthetic stock", "7", "unknown"),
+        ("Возврат", "Подарок по акции Synthetic promo", "300", "unknown"),
+        ("Refund", "Подарок по акции Synthetic promo", "300", "unknown"),
+        ("Перевод", "Возврат подарка по акции Synthetic promo", "300", "unknown"),
+        ("Перевод", "Возмещение подарка по акции Synthetic promo", "300", "unknown"),
+    ],
+)
+def test_promo_gift_default_and_exclusions(operation, narrative, amount, expected):
+    assert default_classification(operation, narrative, "unsupported", amount) == expected
+
+
+def test_promo_gift_upload_and_coupon_compute_monthly_return(db):
+    intake, _ = save_month(
+        db,
+        beginning="1000",
+        closing="1307",
+        candidate_count=0,
+        extra=(
+            ("Перевод", "Выплата подарка по акции Synthetic promo", "300"),
+            ("Купон", "Synthetic coupon", "7"),
+        ),
+    )
+    rows = saved_rows(db, intake)
+    assert [row.classification for row in rows] == ["external_deposit", "coupon"]
+    assert all((row.origin, row.status) == ("default_rule", "assumed") for row in rows)
+    before = snapshot(db)
+    result = read(db)
+    month = result.months[0]
+    assert month.result.contributions_kopecks == 30_000
+    assert month.result.withdrawals_kopecks == 0
+    assert month.result.growth_kopecks == 700
+    assert month.result.modified_dietz_return is not None
+    assert month.coupons_kopecks == 700
+    assert len(result.flows) == 1
+    assert result.flows[0].amount_kopecks == 30_000
+    assert not result.gaps
+    assert snapshot(db) == before
+
+
+def test_promo_gift_resave_refreshes_defaults_and_preserves_manual_put(db):
+    intake, (raw, filename) = save_month(
+        db,
+        candidate_count=0,
+        extra=(
+            ("Перевод", "Подарок по акции Synthetic first promo", "300"),
+            ("Перевод", "Подарок по акции Synthetic second promo", "200"),
+        ),
+    )
+    with db.session_factory() as session:
+        rows = list(
+            session.scalars(
+                select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+            )
+        )
+        for row in rows:
+            row.classification = "unknown"  # synthetic pre-rule defaults
+        session.commit()
+    client = TestClient(create_app(database=db))
+    reference = saved_rows(db, intake)[1].source_reference
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{reference}",
+        json={"classification": "unknown"},
+    )
+    assert response.status_code == 200, response.text
+    before = saved_rows(db, intake)
+    assert "unknown_flow" in {gap.code for gap in read(db).gaps}
+    assert [row.classification for row in saved_rows(db, intake)] == ["unknown", "unknown"]
+    with db.session_factory() as session:
+        # Same-request replay cannot refresh defaults.
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="save-4-None"
+        )
+    assert [row.classification for row in saved_rows(db, intake)] == ["unknown", "unknown"]
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-promo-gifts"
+        )
+    after = saved_rows(db, intake)
+    assert [row.classification for row in after] == ["external_deposit", "unknown"]
+    assert [(row.id, row.source_reference, row.created_at) for row in after] == [
+        (row.id, row.source_reference, row.created_at) for row in before
+    ]
+    assert (after[0].origin, after[0].status) == ("default_rule", "assumed")
+    assert (after[1].origin, after[1].status) == ("user_choice", "confirmed")
+    assert after[1].updated_at == before[1].updated_at
+
+
 def saved_rows(db, intake_id):
     with db.session_factory() as session:
         return list(
