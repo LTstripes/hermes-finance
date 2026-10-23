@@ -1209,7 +1209,7 @@ def test_history_malformed_file_does_not_rollback_other_batch_saves(history_clie
 
 
 @pytest.mark.parametrize("filename", ["renamed.xml", "Брокерский 1234567 (01.02.30-28.02.30).xml"])
-def test_inferred_period_and_warning_survive_source_intake_ack_and_get(database, filename):
+def test_selected_period_and_warning_survive_source_intake_ack_and_get(database, filename):
     client = TestClient(create_app(database=database))
     before = _all_month_tables(database)
     raw = broker_month_xml()
@@ -1223,7 +1223,13 @@ def test_inferred_period_and_warning_survive_source_intake_ack_and_get(database,
     response = client.get(f"{BASE}/{ack['intake_id']}")
     assert response.status_code == 200, response.text
     view = response.json()
-    assert (view["covered_from"], view["covered_to"]) == ("2030-01-01", "2030-01-31")
-    assert "period_inferred_from_content" in view["document"]["warnings"]
-    assert "period_inferred_from_content" not in view["exceptions"]
+    if filename == "renamed.xml":
+        expected_period = ("2030-01-01", "2030-01-31")
+        warning = "period_inferred_from_content"
+    else:
+        expected_period = ("2030-02-01", "2030-02-28")
+        warning = "filename_period_mismatch"
+    assert (view["covered_from"], view["covered_to"]) == expected_period
+    assert view["document"]["warnings"] == [warning]
+    assert warning not in view["exceptions"]
     assert _all_month_tables(database) == before

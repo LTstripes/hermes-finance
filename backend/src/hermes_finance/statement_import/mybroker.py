@@ -147,8 +147,7 @@ def day(value: str | None, *, optional: bool = False) -> str | None:
 
 def timestamp(value: str | None, *, iso: bool = False, optional: bool = False) -> str | None:
     values = _date_values(value, iso=iso, optional=optional)
-    # Keep the first source value in the existing scalar fact. Every value
-    # participates in date validation and statement-period selection below.
+    # Keep the first source value in the existing scalar fact; validate all values.
     return values[0].isoformat() if values else None
 
 
@@ -174,20 +173,17 @@ def _statement_period(
                 elif (outer == "Trades" and name in trade_dates) or (
                     outer == "Trades2" and name in {"settlement_date", "last_update"}
                 ):
-                    activity.extend(
-                        stamp.date()
-                        for stamp in _date_values(value, iso=outer == "Trades2", optional=True)
-                    )
+                    values = _date_values(value, iso=outer == "Trades2", optional=True)
+                    if values and name in {"db_time", "db_time2", "settlement_date"}:
+                        activity.append(values[0].date())
                 elif name in {"comment", "comment2", "oper_type"}:
-                    # Narrative dates inform activity; raw text is never retained.
+                    # Validate narrative dates without using them as period boundaries.
                     for token in re.findall(
                         r"(?<![0-9])(?:[0-9]{2}\.[0-9]{2}\.[0-9]{4}|"
                         r"[0-9]{4}-[0-9]{2}-[0-9]{2})(?![0-9])",
                         value,
                     ):
-                        activity.extend(
-                            stamp.date() for stamp in _date_values(token, iso="-" in token)
-                        )
+                        _date_values(token, iso="-" in token)
     filename_period = None
     if filename_match:
         try:
@@ -198,17 +194,18 @@ def _statement_period(
             if start <= end:
                 filename_period = start, end
         except ValueError:
-            pass  # An impossible filename date makes only the hint unusable.
-    if filename_period and all(
-        filename_period[0] <= value <= filename_period[1] for value in activity
-    ):
-        return *filename_period, []
+            pass  # An impossible filename date makes the filename range unusable.
+    if filename_period:
+        warnings = []
+        if activity and not any(
+            filename_period[0] <= value <= filename_period[1] for value in activity
+        ):
+            warnings.append("filename_period_mismatch")
+        return *filename_period, warnings
     if not activity:
         raise MyBrokerError("statement_period_unknown")
     earliest, latest = min(activity), max(activity)
     warnings = ["period_inferred_from_content"]
-    if filename_period:
-        warnings.append("filename_period_mismatch")
     return (
         earliest.replace(day=1),
         latest.replace(day=calendar.monthrange(latest.year, latest.month)[1]),

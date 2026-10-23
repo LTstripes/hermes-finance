@@ -151,7 +151,6 @@ def generate():
     )
     save("24_transfer_section", root, "Opaque Transfers section must propagate a blocker")
     root = base()
-    root.find(".//m:settlement_date", NS).set("settlement_date", "2030-06-15T00:00:00")
     save(
         "25_june_gap",
         root,

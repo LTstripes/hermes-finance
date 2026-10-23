@@ -1464,17 +1464,21 @@ provides committed readback and `/lineage` provides the reduced source history.
 
 Preview returns the hash, selected statement interval, parser/provider identity,
 section inventory, normalized rows, explicit mapping bindings, conflicts and
-unresolved evidence. The filename interval is an optional hint: use a valid, ordered
-range only when every content activity date lies within it. Otherwise infer the
-first day of the earliest activity month through the last day of the latest
-activity month, retaining nonblocking `warnings` with `period_inferred_from_content`
-and, for a contradictory valid filename range, `filename_period_mismatch`. Impossible,
-inverted or unrecognized filename ranges are unusable hints. Without activity
+unresolved evidence. A valid, ordered filename interval is the period authority,
+regardless of overlap with content. Rows outside that range retain their existing
+out-of-range semantics. If primary activity dates exist and none fall inside the
+filename interval, preserve that interval and add the nonblocking warning
+`filename_period_mismatch`. Only with an unusable filename, infer the first day of
+the earliest activity month through the last day of the latest activity month,
+with the nonblocking warning `period_inferred_from_content`. Impossible, inverted
+or unrecognized filename ranges are unusable. Without activity
 dates and a usable filename range, reject with `statement_period_unknown`.
 
-Trade date/time fields (including both CRLF values), BrokerMoneyMove settlement
-and update dates, and dates mentioned in comments are calendar-validated activity
-evidence. Malformed date fields reject with `statement_date_invalid`. UFSR
+Primary activity dates are the first native trade `db_time` / pending `db_time2`
+value and BrokerMoneyMove `settlement_date`. Trade settlement, update, second CRLF and
+comment dates do not select or extend the period. All native date/time fields
+(including both CRLF values) and recognized comment dates remain calendar-validated.
+Malformed date fields reject with `statement_date_invalid`. UFSR
 `sys_start_time`, when present, is validated only: it is a service-connection date,
 never a report-period boundary. Inference does not establish financial completeness
 or intermediate month-end snapshots. Existing original/receipt currentness guards
@@ -2169,7 +2173,7 @@ Quote, settlement, payout, denomination and native EOD currencies are separate. 
 ### Original-bound identity and RUB proof
 
 `POST /api/mybroker-import/identity-preview` accepts the unchanged original XML
-and its filename (an optional period hint under the [S1 policy](#c3-mybroker_s1-1)),
+and its filename (the period authority when valid under the [S1 policy](#c3-mybroker_s1-1)),
 plus optional multipart `intent` JSON:
 
 ```json
@@ -5846,7 +5850,7 @@ The supported dividend transfer is exactly operation `Перевод` with narra
 the supported coupon transfer. A dividend word alone is insufficient. Existing
 saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
-` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
+` (1)` before `.xml`; interval selection follows the [S1 period policy](#c3-mybroker_s1-1).
 Acknowledged same-request replay stays read-only.
 A changed Money extraction count refuses with
 `source_intake_parser_revision_changed` before capturing any classifications.

@@ -716,8 +716,12 @@ def test_preflight_accepts_filename_hints_and_preserves_period_warnings(database
     before = snapshot(database)
     result = run(database, [(filename, raw)])
     document = result["documents"][0]["document"]
-    assert (document["covered_from"], document["covered_to"]) == ("2030-01-01", "2030-01-31")
-    if filename != FILENAME.replace(".xml", " (1).xml"):
-        assert "period_inferred_from_content" in document["warnings"]
+    if "01.02.30-28.02.30" in filename:
+        assert (document["covered_from"], document["covered_to"]) == ("2030-02-01", "2030-02-28")
+        assert document["warnings"] == ["filename_period_mismatch"]
+    else:
+        assert (document["covered_from"], document["covered_to"]) == ("2030-01-01", "2030-01-31")
+        if filename == "renamed.xml":
+            assert document["warnings"] == ["period_inferred_from_content"]
     assert result["documents"][0]["range_kind"] == "whole_month"
     assert snapshot(database) == before

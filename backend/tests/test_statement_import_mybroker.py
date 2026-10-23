@@ -724,7 +724,7 @@ def test_source_only_apply_idempotency_overlap_and_authoritative_readback(databa
 def test_pending_to_settled_monotonic_lifecycle_and_rollback_refusal(database):
     with database.session_factory() as session:
         pending = fixture(pending=True, forward="20")
-        earlier = "Брокерский 1234567 (01.01.30-17.01.30).xml"
+        earlier = "Брокерский 1234567 (01.01.30-16.01.30).xml"
         p = preview(session, pending, earlier)
         assert "pending_not_cash" in p["blockers"] and "endpoint_unsettled" in p["blockers"]
         apply(session, pending, p, earlier)
@@ -743,7 +743,7 @@ def test_pending_to_settled_monotonic_lifecycle_and_rollback_refusal(database):
 
 @pytest.mark.parametrize("settled_first", [False, True])
 def test_source_chronology_not_upload_order_controls_enrichment(database, settled_first):
-    earlier = "Брокерский 1234567 (01.01.30-17.01.30).xml"
+    earlier = "Брокерский 1234567 (01.01.30-16.01.30).xml"
     observations = [(fixture(pending=True), earlier), (fixture(), FILENAME)]
     if settled_first:
         observations.reverse()
@@ -802,7 +802,7 @@ def test_pending_disappearance_checks_the_whole_overlapping_set(
 def test_settled_overlap_enriches_cash_and_optional_evidence_without_duplicates(
     database, wide_first
 ):
-    narrow = "Брокерский 1234567 (01.01.30-17.01.30).xml"
+    narrow = "Брокерский 1234567 (01.01.30-16.01.30).xml"
     partial = (
         fixture(money=False)
         .replace(b'bank_tax="0"', b"")
@@ -876,10 +876,10 @@ def test_reduction_is_a_pure_function_of_the_document_set(database):
 
     with database.session_factory() as session:
         documents = [
-            preview(session, fixture(pending=True), "Брокерский 1234567 (01.01.30-17.01.30).xml")[
+            preview(session, fixture(pending=True), "Брокерский 1234567 (01.01.30-16.01.30).xml")[
                 "document"
             ],
-            preview(session, fixture(nkd="1.23"), "Брокерский 1234567 (01.01.30-18.01.30).xml")[
+            preview(session, fixture(nkd="1.23"), "Брокерский 1234567 (01.01.30-17.01.30).xml")[
                 "document"
             ],
             preview(session, fixture(money=False), FILENAME)["document"],
@@ -1068,7 +1068,7 @@ def test_pending_survives_old_report_range_until_explicit_settlement(database):
 
     with database.session_factory() as session:
         pending = fixture(pending=True)
-        earlier = "Брокерский 1234567 (01.01.30-17.01.30).xml"
+        earlier = "Брокерский 1234567 (01.01.30-16.01.30).xml"
         p = preview(session, pending, earlier)
         account = next(b["hermes_id"] for b in p["mappings"] if b["kind"] == "account")
         apply(session, pending, p, earlier)
@@ -1298,14 +1298,13 @@ def test_valid_filename_hint_preserves_exact_interval(filename):
     assert not result.get("warnings")
 
 
-def test_filename_contradicting_content_infers_full_months_without_blocking(database):
+def test_filename_with_zero_primary_overlap_preserves_period_with_warning(database):
     filename = FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30")
     with database.session_factory() as session:
         result = preview(session, fixture(), filename)
-    assert result["can_apply"]
     document = result["document"]
-    assert (document["covered_from"], document["covered_to"]) == ("2030-01-01", "2030-01-31")
-    assert set(document["warnings"]) == {"period_inferred_from_content", "filename_period_mismatch"}
+    assert (document["covered_from"], document["covered_to"]) == ("2030-02-01", "2030-02-28")
+    assert document["warnings"] == ["filename_period_mismatch"]
     assert not set(document["warnings"]).intersection(result["blockers"] + result["conflicts"])
 
 
@@ -1367,34 +1366,70 @@ def test_malformed_iso_activity_date_is_sanitized(field, value):
         parse_mybroker(ET.tostring(root), FILENAME)
 
 
+@pytest.mark.parametrize("pending", [False, True])
 @pytest.mark.parametrize(
     "field", ["db_time", "settlement_time", "save_settlement_date", "save_depo_settlement_date"]
 )
-def test_each_activity_date_can_extend_inferred_period(field):
-    root = ET.fromstring(fixture())
-    row = root.find(".//{MyBroker}Details[@trade_no]")
+def test_only_first_primary_trade_date_selects_inferred_period(field, pending):
+    root = ET.fromstring(fixture(pending=pending))
+    if pending:
+        field += "3" if field.startswith("save_") else "2"
+    row = root.find(".//{MyBroker}Details2" if pending else ".//{MyBroker}Details[@trade_no]")
     row.set(field, "12.12.2029 9:00:00\r\n14.02.2030 10:00:00")
-    result = parse_mybroker(ET.tostring(root), FILENAME)
-    assert (result["covered_from"], result["covered_to"]) == ("2029-12-01", "2030-02-28")
-    assert "filename_period_mismatch" in result["warnings"]
-    if field == "db_time":
-        assert result["trades"][0]["core"]["trade_time"] == "2029-12-12T09:00:00"
+    raw = ET.tostring(root)
+    result = parse_mybroker(raw, "renamed.xml")
+    expected_start = "2029-12-01" if field in {"db_time", "db_time2"} else "2030-01-01"
+    expected_end = "2029-12-31" if field == "db_time2" else "2030-01-31"
+    assert (result["covered_from"], result["covered_to"]) == (expected_start, expected_end)
+    named = parse_mybroker(raw, FILENAME)
+    if field == "db_time2":
+        # Pending-only sources have no Money date to overlap the January filename.
+        assert (named["covered_from"], named["covered_to"]) == ("2030-01-01", "2030-01-31")
+        assert "filename_period_mismatch" in named["warnings"]
+    else:
+        # January Money overlaps even when the settled trade date is outside.
+        assert (named["covered_from"], named["covered_to"]) == ("2030-01-01", "2030-01-31")
+        assert not named.get("warnings")
 
 
 @pytest.mark.parametrize("field", ["settlement_date", "last_update"])
-def test_iso_activity_date_can_extend_inferred_period(field):
+def test_only_money_settlement_date_extends_inferred_period(field):
     root = ET.fromstring(fixture())
     row = root.find(f".//{{MyBroker}}{'rn' if field == 'last_update' else 'settlement_date'}")
     row.set(field, "2032-02-12T00:00:00")
     result = parse_mybroker(ET.tostring(root), "renamed.xml")
-    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2032-02-29")
+    expected_end = "2032-02-29" if field == "settlement_date" else "2030-01-31"
+    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", expected_end)
 
 
-def test_comment_activity_dates_are_parsed_without_retaining_private_text():
+@pytest.mark.parametrize("period", ["15.01.30-15.01.30", "17.01.30-17.01.30"])
+def test_any_primary_overlap_preserves_exact_filename_range(period):
+    filename = FILENAME.replace("01.01.30-31.01.30", period)
+    result = parse_mybroker(fixture(), filename)
+    expected_day = "15" if period.startswith("15") else "17"
+    assert result["covered_from"] == result["covered_to"] == f"2030-01-{expected_day}"
+    assert not result.get("warnings")
+
+
+def test_secondary_dates_cannot_suppress_zero_primary_overlap_warning():
+    root = ET.fromstring(fixture())
+    row = root.find(".//{MyBroker}Details[@trade_no]")
+    row.set("db_time", "15.01.2030 9:00:00\r\n14.02.2030 10:00:00")
+    row.set("settlement_time", "14.02.2030 10:00:00")
+    row.set("save_settlement_date", "14.02.2030")
+    root.find(".//{MyBroker}rn").set("last_update", "2030-02-14T00:00:00")
+    root.find(".//{MyBroker}comment").set("comment", "Synthetic event 14.02.2030")
+    filename = FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30")
+    result = parse_mybroker(ET.tostring(root), filename)
+    assert (result["covered_from"], result["covered_to"]) == ("2030-02-01", "2030-02-28")
+    assert result["warnings"] == ["filename_period_mismatch"]
+
+
+def test_comment_dates_do_not_select_period_or_retain_private_text():
     root = ET.fromstring(fixture())
     root.find(".//{MyBroker}comment").set("comment", "Synthetic event 12.12.2029 and 14.02.2030")
     result = parse_mybroker(ET.tostring(root), "renamed.xml")
-    assert (result["covered_from"], result["covered_to"]) == ("2029-12-01", "2030-02-28")
+    assert (result["covered_from"], result["covered_to"]) == ("2030-01-01", "2030-01-31")
     assert "Synthetic event" not in json.dumps(result)
 
 

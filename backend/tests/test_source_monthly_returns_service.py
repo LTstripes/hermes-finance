@@ -1078,13 +1078,6 @@ def test_flow_coverage_uses_date_union_separately_from_monthly_values(db, second
     for index, period in enumerate(("01.04.30-14.05.30", f"{second_start}.05.30-30.06.30")):
         xml_root.set("synthetic_marker", str(index))
         xml = ET.tostring(xml_root, encoding="utf-8")
-        if index:
-            # Keep the synthetic activity within this source's declared interval.
-            xml = (
-                xml.replace(b"15.04.2030", b"20.05.2030")
-                .replace(b"17.04.2030", b"20.05.2030")
-                .replace(b"2030-04-15", b"2030-05-20")
-            )
         with db.session_factory() as session:
             source_intake.save_intake(
                 session,
@@ -1121,12 +1114,6 @@ def test_flow_coverage_uses_date_union_separately_from_monthly_values(db, second
 def test_partial_calendar_edges_do_not_invalidate_covered_period_flows(db, periods, has_gap):
     for index, period in enumerate(periods):
         xml = provisional_xml(candidate_count=1 if index == 0 else 0)
-        if index:
-            xml = (
-                xml.replace(b"15.04.2030", b"20.05.2030")
-                .replace(b"17.04.2030", b"20.05.2030")
-                .replace(b"2030-04-15", b"2030-05-20")
-            )
         with db.session_factory() as session:
             source_intake.save_intake(
                 session,
@@ -1410,6 +1397,7 @@ def test_astra_hunt_missing_may_does_not_become_zero_flows(db):
     [
         "03_typo_withdrawal",
         "11_duplicate_position",
+        "21_outside_period",
         "22_hidden_amount",
         "23_hidden_wrapper",
     ],
@@ -1431,6 +1419,7 @@ def test_astra_hunt_uncertain_import_must_withhold_returns(astra_results, case, 
         expected = {
             "03_typo_withdrawal": "unrecognized_money",
             "11_duplicate_position": "duplicate_position",
+            "21_outside_period": "invalid_external_flow",
             "22_hidden_amount": "unparsed_source_rows",
             "23_hidden_wrapper": "unparsed_source_rows",
         }[case]
@@ -1505,7 +1494,7 @@ def test_duplicate_positions_block_endpoints_even_with_clean_overlap(
 
 
 @pytest.mark.parametrize("month", [2, 4, 12])
-@pytest.mark.parametrize("filename", ["renamed.xml", "Брокерский 1234567 (01.01.30-31.01.30).xml"])
+@pytest.mark.parametrize("filename", ["renamed.xml", "Брокерский 1234567 (31.02.30-31.03.30).xml"])
 def test_inferred_periods_supply_calendar_month_return_boundaries(db, month, filename):
     from datetime import timedelta
 
@@ -1515,9 +1504,7 @@ def test_inferred_periods_supply_calendar_month_return_boundaries(db, month, fil
     first = date(2030, month, 1)
     last = date(2030, month, calendar.monthrange(2030, month)[1])
     assert (view["covered_from"], view["covered_to"]) == (first.isoformat(), last.isoformat())
-    assert "period_inferred_from_content" in view["document"]["warnings"]
-    if filename.startswith("Брокерский"):
-        assert "filename_period_mismatch" in view["document"]["warnings"]
+    assert view["document"]["warnings"] == ["period_inferred_from_content"]
     for attached in (None, {intake: original}):
         result = read(db, originals=attached)
         assert len(result.months) == 1
@@ -1529,23 +1516,17 @@ def test_inferred_periods_supply_calendar_month_return_boundaries(db, month, fil
         assert not row.missing_endpoint
 
 
-def test_cash_event_outside_filename_infers_period_without_inventing_monthly_endpoints(
-    astra_results,
-):
+def test_cash_event_outside_overlapping_filename_keeps_out_of_range_semantics(astra_results):
     from hermes_finance.statement_import.mybroker import parse_mybroker
 
     case = next(case for case in ASTRA_CASES if case["case"] == "21_outside_period")
     source = parse_mybroker((ASTRA_ROOT / (case["case"] + ".xml")).read_bytes(), case["filename"])
-    assert (source["covered_from"], source["covered_to"]) == ("2030-04-01", "2030-05-31")
-    assert set(source["warnings"]) == {"period_inferred_from_content", "filename_period_mismatch"}
+    assert (source["covered_from"], source["covered_to"]) == ("2030-04-01", "2030-04-30")
+    assert not source.get("warnings")
     result = astra_results[case["case"]]
     assert "parser_error" not in result
-    assert [row["result"]["closing_date"] for row in result["monthly"]["months"]] == [
-        date(2030, 4, 30),
-        date(2030, 5, 31),
-    ]
-    assert all(row["result"]["missing_endpoint"] for row in result["monthly"]["months"])
-    assert "invalid_external_flow" not in {gap["code"] for gap in result["monthly"]["gaps"]}
+    assert "invalid_external_flow" in {gap["code"] for gap in result["monthly"]["gaps"]}
     for period in (result["monthly"]["period"], result["reattached_period"]):
+        assert period["growth_kopecks"] is None
         assert period["chained_return"] is None
-        assert period["xirr_period_return"] is not None
+        assert period["xirr_period_return"] is None
