@@ -73,6 +73,44 @@ def transfer_classification(operation, narrative, amount, *, source_account, sel
     return "unknown"
 
 
+def _is_promo_gift(operation, narrative):
+    # Check line boundaries before collapsing whitespace, including NBSP.
+    if "\r" in narrative or "\n" in narrative:
+        return False
+    normalized_operation, normalized_narrative = (
+        " ".join(value.casefold().replace("ё", "е").split()) for value in (operation, narrative)
+    )
+    text = f"{normalized_operation} {normalized_narrative}"
+    return (
+        (
+            re.search(r"\bподар[а-я]*\b", normalized_narrative) is not None
+            and re.search(r"\b(?:по|в рамках) акции\b", normalized_narrative) is not None
+        )
+        or re.fullmatch(
+            r"выплата по поручению клиента в рамках .+ "
+            r"в соответствии с правилами проведения акции\.?",
+            normalized_narrative,
+        )
+        is not None
+    ) and not any(
+        word in text
+        for word in (
+            "купон",
+            "coupon",
+            "дивиденд",
+            "dividend",
+            "возврат",
+            "возмещ",
+            "возвращ",
+            "refund",
+            "reimbursement",
+            "отмен",
+            "сторно",
+            "reversal",
+        )
+    )
+
+
 def default_classification(
     operation, narrative, kind, amount, *, source_account=None, selected_accounts=None
 ):
@@ -124,6 +162,9 @@ def default_classification(
         return "unknown"
     if pattern == "coupon_paid_candidate":
         return "coupon" if Decimal(amount) >= 0 else "unknown"
+    # Explicit cash/trade/NKD semantics precede gifts; generic tax/fee words do not.
+    if Decimal(amount) > 0 and _is_promo_gift(operation, narrative):
+        return "external_deposit"
     if "ндфл" in text:
         return "tax"
     if any(word in text for word in ("комисси", "тариф", "commission")):
