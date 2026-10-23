@@ -226,7 +226,9 @@ def _calendar(entries: list[dict], start: date, end: date) -> list[dict]:
     if len(cutoffs) > MAX_MONTHS:
         raise MyBrokerError("preflight_range_too_large")
     result = []
-    for account in sorted({e["document"]["filename_account"] for e in entries}):
+    for account in sorted(
+        {e["document"]["filename_account"] for e in entries if e["document"]["filename_account"]}
+    ):
         selected = [e for e in entries if e["document"]["filename_account"] == account]
         for cutoff in cutoffs:
             month_start = cutoff.replace(day=1)
@@ -556,7 +558,7 @@ def _preview(session, originals, account_bindings, requested_from, requested_to)
             if _adjacent_month_originals(entries, account)
             else "unknown_missing_adjacent_original",
         }
-        for account in sorted({d["filename_account"] for d in documents})
+        for account in sorted({d["filename_account"] for d in documents if d["filename_account"]})
     ]
     return {
         "contract": "mybroker-batch-preflight-v1",

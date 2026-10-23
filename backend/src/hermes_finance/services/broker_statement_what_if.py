@@ -26,6 +26,8 @@ from hermes_finance.statement_import.mybroker_metadata import parse_section_meta
 # These literal diagnostic codes are conditional on complete, independently
 # inspected inventory below. Every other code, including future codes, is hard.
 SCOPED_REASONS = {
+    # A valid filename range remains authoritative despite the mismatch advisory.
+    "filename_period_mismatch": "source_period",
     "account_crossing_coverage_unproved": "remaining_crossings",
     "historical_membership_not_continuously_included": "native_basis",
     "money_semantics_unsupported": "money_inventory",
@@ -409,6 +411,9 @@ def read_context(
     codes = set(actual.reason_codes) | set(cash["blockers"] if cash else [])
     if metadata:
         codes.update(metadata["source_warnings"])
+    if "period_inferred_from_content" in codes:
+        codes.remove("period_inferred_from_content")
+        codes.add("source_period_inferred")
     for code in codes:
         slot = SCOPED_REASONS.get(code)
         if slot is None:
@@ -445,7 +450,9 @@ def read_context(
     inventory["raw_dependency_fingerprint"] = digest(raw_inventory)
     # Preserve only independently verified endpoint facts. The unchanged actual
     # envelope is still included verbatim as diagnostics, never relabelled observed.
-    verified = not (set(actual.reason_codes) - set(SCOPED_REASONS))
+    verified = not (set(actual.reason_codes) - set(SCOPED_REASONS)) and (
+        "source_period_inferred" not in hard
+    )
     v0, v1 = actual.opening.total_value_kopecks, actual.closing.total_value_kopecks
     observed = WhatIfObserved(
         opening=actual.opening if verified else None,

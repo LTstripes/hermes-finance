@@ -379,7 +379,7 @@ def test_bounds_bad_intent_and_sanitized_errors(database):
     response = client.post(
         "/api/mybroker-preflight/preview", files={"files": ("private-path.xml", b"private-source")}
     )
-    assert response.status_code == 422 and "filename_range_invalid" in response.text
+    assert response.status_code == 422 and "xml_invalid" in response.text
     assert "private" not in response.text
 
 
@@ -701,3 +701,52 @@ def test_http_sub_kopeck_monetary_endpoints_never_establish_equal_seam(
     )
     assert result["financial_completeness"] == "unknown" and not result["financial_apply_available"]
     assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "renamed.xml",
+        FILENAME.replace(".xml", " (1).xml"),
+        FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30"),
+    ],
+)
+def test_preflight_accepts_filename_hints_and_preserves_period_warnings(database, filename):
+    _, raw = original(trades=True)
+    before = snapshot(database)
+    result = run(database, [(filename, raw)])
+    document = result["documents"][0]["document"]
+    if "01.02.30-28.02.30" in filename:
+        assert (document["covered_from"], document["covered_to"]) == ("2030-02-01", "2030-02-28")
+        assert document["warnings"] == ["filename_period_mismatch"]
+    else:
+        assert (document["covered_from"], document["covered_to"]) == ("2030-01-01", "2030-01-31")
+        if filename == "renamed.xml":
+            assert document["warnings"] == ["period_inferred_from_content"]
+    assert result["documents"][0]["range_kind"] == "whole_month"
+    assert snapshot(database) == before
+
+
+def test_renamed_multiaccount_preflight_omits_empty_filename_groups(database):
+    from test_statement_import_mybroker_identity import identity_xml
+
+    from hermes_finance.persistence import Account
+
+    root = ET.fromstring(identity_xml())
+    other_alias = "7654321-000"
+    root.find(".//{MyBroker}Textbox11").set("acc_code", other_alias)
+    with database.session_factory() as session:
+        target = session.scalar(select(Account).where(Account.account_type == "brokerage"))
+        result = preview_batch(
+            session,
+            originals=[("renamed.xml", ET.tostring(root))],
+            account_bindings=[
+                {"identity": alias, "hermes_id": target.id} for alias in (ACCOUNT, other_alias)
+            ],
+        )
+    entry = result["documents"][0]
+    assert entry["document"]["filename_account"] == ""
+    assert "" not in entry["document"]["source_accounts"]
+    assert "source_account_conflict" not in entry["mappings"]["conflicts"]
+    assert {a["source_account"] for a in entry["accounts"]} == {ACCOUNT, other_alias}
+    assert result["calendar"] == result["report_availability"] == []

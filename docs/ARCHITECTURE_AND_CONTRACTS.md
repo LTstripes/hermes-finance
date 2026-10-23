@@ -1462,11 +1462,61 @@ Upload is available under **Data → Files**, independently of a reporting month
 The multipart API is `/api/mybroker-import/preview` and `/apply`; `/{import_id}`
 provides committed readback and `/lineage` provides the reduced source history.
 
-Preview returns the hash, strict filename interval, parser/provider identity,
+Preview returns the hash, selected statement interval, parser/provider identity,
 section inventory, normalized rows, explicit mapping bindings, conflicts and
-unresolved evidence. Filename account and row `acc_code` are distinct identities:
+unresolved evidence. A valid, ordered filename interval is the period authority,
+regardless of overlap with content. Rows outside that range retain their existing
+out-of-range semantics. If primary activity dates exist and none fall inside the
+filename interval, preserve that interval and add the nonblocking warning
+`filename_period_mismatch`. Only with an unusable filename, infer the first day of
+the earliest activity month through the last day of the latest activity month,
+with the import-nonblocking warning `period_inferred_from_content`. This inferred
+range identifies activity months only; it does not establish dates for opening
+or closing balances or authorize computed monthly source returns. Impossible, inverted
+or unrecognized filename ranges are unusable. Without activity
+dates and a usable filename range, reject with `statement_period_unknown`.
+
+Primary activity dates are the first native trade `db_time` / pending `db_time2`
+value on parsed trade rows and BrokerMoneyMove `settlement_date` groups containing
+actual Money rows. Empty trade/Money scaffolding is not activity. Trade settlement,
+update and second CRLF values do not select or extend the period. Only structured
+date attributes are calendar-validated; free-text `comment`, `comment2` and
+`oper_type` tokens are ignored for date validation and period selection.
+Malformed structured dates reject with `statement_date_invalid`. UFSR
+`sys_start_time` is validation-only: empty/whitespace or `-` is absent/opaque,
+leaving section metadata blockers intact. Other present values must be valid; a
+service-connection date never establishes a report-period boundary.
+
+Under `mybroker-s1-v2`, trade day/timestamp attributes accept `D.MM.YYYY` or
+`DD.MM.YYYY` date-only values and `DD.MM.YYYY HH:MM:SS` timestamps (numeric
+components in timestamps may omit leading zeros). Date-only timestamps normalize
+to midnight; day facts retain only the date. Money attributes accept ISO
+`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS` (timestamp components may omit leading
+zeros); settlement groups must normalize to midnight. UFSR additionally accepts
+`D.MM.YYYY H:MM` / `DD.MM.YYYY HH:MM`. Blank lines are ignored, every nonblank
+CRLF-separated value is validated, and only the first is retained in scalar facts.
+Invalid calendar dates/times are never normalized into valid ones.
+
+Inference does not establish financial completeness or intermediate month-end
+snapshots. Period warnings remain advisory in source/metadata/empty-Money readers.
+In S3 WHAT-IF, `filename_period_mismatch` remains advisory, while
+`period_inferred_from_content` yields the hard `source_period_inferred` reason.
+Neither warning grants endpoint or financial authority.
+Exact-original reattachment preserves the optional warning shape of frozen v2
+receipts/manifests: absent and empty warning lists are equivalent, and receipts
+without a warning key do not gain advisory warnings during reattachment. Recorded
+nonempty warnings and all other parser facts still compare exactly; original,
+range, account and receipt currentness guards remain in force.
+
+When present, filename account and row `acc_code` are distinct identities:
 both require explicit `alfa_mybroker` registry mappings, with no suffix/name/Alfa
-PRO heuristic. Instrument mappings use the manifest's ISIN identity. No current
+PRO heuristic. If the filename has no account and the XML observes exactly one
+native account, use that XML account as the source alias. With multiple XML
+accounts, the filename alias is absent: identity plans require the observed row
+aliases only, and preflight omits empty filename-account calendar/availability
+groups. No filename/row target comparison is made without a filename alias;
+explicit row mappings and existing account/position conflicts still apply.
+Instrument mappings use the manifest's ISIN identity. No current
 instrument class becomes event-C1.
 
 Apply confirms the complete document set. Its confirmation digest binds every
@@ -1608,7 +1658,7 @@ accepted source evidence against the historical account universe, preventing a
 later assertion from ignoring unresolved event-C1. Existing source-free Phase 1
 material signatures and solver behavior are unchanged. Reconciliation/C5 and
 Reopen remain prerequisites where already required; S1 cannot perform them.
-An unresolved pending trade survives the filename range until an explicit
+An unresolved pending trade survives the selected source range until an explicit
 settled occurrence resolves it. Actual settlement/depo dates crossing later
 cutoffs are checked too; a new import surfaces impact on already accepted later
 intervals before writing. Planned dates never clear an unsettled cutoff.
@@ -2082,7 +2132,8 @@ receipt, mapping or financial row. There is no batch Apply endpoint.
 
 Intent permits `account_bindings` with the existing identity-preview shape and
 optional `requested_from` / `requested_to` dates supplied together. Omitted dates
-select the uploaded filename-declared range. Bounds are 8 MiB per original,
+select the uploaded statement range under the [S1 period policy](#c3-mybroker_s1-1).
+Bounds are 8 MiB per original,
 32 MiB per batch, 30,000 parsed rows and 120 calendar months.
 Multipart data is parsed directly from the request stream into bounded memory.
 File count, each original and aggregate bytes are checked before extending a
@@ -2097,8 +2148,8 @@ may clear only proved nonidentity structure for the advisory DRAFT candidate
 marker. Standalone identity stays strict; S1 warnings and all financial, H0 and
 seam blockers remain visible. Previously persisted originals retain their recorded
 Money grammar and must match their immutable binder. H0 remains the inventory of persisted accepted
-sources; this preflight does not replace it. A new original's range is declared
-by its filename under the S1 contract, not independently attested by this Preview.
+sources; this preflight does not replace it. A new original's range follows the
+[S1 period policy](#c3-mybroker_s1-1); this Preview supplies no independent period attestation.
 
 The response separates:
 
@@ -2150,7 +2201,8 @@ Quote, settlement, payout, denomination and native EOD currencies are separate. 
 ### Original-bound identity and RUB proof
 
 `POST /api/mybroker-import/identity-preview` accepts the unchanged original XML
-and strict source-range filename, plus optional multipart `intent` JSON:
+and its filename (the period authority when valid under the [S1 policy](#c3-mybroker_s1-1)),
+plus optional multipart `intent` JSON:
 
 ```json
 {"account_bindings": [{"identity": "1234567-000", "hermes_id": 1}]}
@@ -2166,7 +2218,7 @@ and duplicate resolved position aliases block the entire batch.
 The `mybroker-identity-v1` envelope reparses authoritative bytes using the bounded
 `mybroker-s1-v2` family and adds metadata separately. Existing S1 normalized rows,
 source acceptance, receipts, Skip and correction lifecycle remain unchanged.
-There are no invented root dates. The Preview binds the original hash, filename
+There are no invented root dates. The Preview binds the original hash, selected
 range/account, parser identities, observed row accounts/ISINs/type/names/custody,
 trade currency observations, proposals and current dependency revision. Its
 confirmation digest is deterministic. Preview uses the committed read-only
@@ -3264,7 +3316,7 @@ standalone backend diagnostic read. It returns the typed
 HTTP route, persistence model, acceptance endpoint or financial writer.
 
 The read uses a committed coherent snapshot. It reparses the original through
-the unchanged S1 family/namespace/schema/filename/cardinality/bounds rules and
+the S1 family/namespace/schema/selected source range/cardinality/bounds rules and
 requires equality of every parser fact, ordered Money leaf and section inventory
 against the immutable import. Established service enrichment is preserved;
 occurrence fingerprints use the full saved S1 rows, exactly like existing cash
@@ -3782,6 +3834,13 @@ row is referenced by import, section, ordinal and fingerprint. Quantities and
 source total values retain their canonical decimal strings. RUB money must be
 exactly representable in signed 64-bit integer kopecks; fractional kopecks and
 overflow block acceptance. No price, cost, P&L, NKD or FX is derived.
+
+An activity-inferred period (`period_inferred_from_content`) does not date either
+balance. Selecting that source blocks H1 acceptance and effective readback with
+`source_period_inferred`, including with affirmative endpoint claims. Other
+inferred sources remain in dependency/trade conflict checks, but their balance
+values and forward quantities cannot corroborate or contradict an exact dated
+endpoint merely because the inferred range touches its date.
 
 Migration `0050_historical_endpoints` adds two empty tables without backfill:
 `historical_endpoint_revisions` and `historical_endpoint_applies`. Revisions and
@@ -5555,6 +5614,12 @@ projection, current dependencies, endpoint completeness, cash/quantity controls
 and competing overlapping reports are rechecked. Untrusted changed source values
 are not exposed as accepted facts.
 
+For a stored document carrying `period_inferred_from_content`, the adapter adds
+the hard reason `source_period_inferred`: S3 remains unavailable with a NULL rate
+even when cash coverage is otherwise effective. The interval remains a diagnostic
+activity range, not proof of the balance dates. Renamed-file upload/Apply remains
+available; `filename_period_mismatch` alone retains the valid filename interval.
+
 Crossings come only from effective existing HistoricalOwnerFlow revisions, with
 independently accepted, currently effective source CashBoundaryCoverage for the
 exact `(t0,t1]` interval. The coverage reader rechecks its whole source inventory,
@@ -5617,6 +5682,13 @@ endpoints as observations. All effective H2 crossings are mandatory and counted
 once. Compatible H2/Money ownership of the same target is one event; incompatible,
 conflicting or ineffective ownership cannot become an optional candidate.
 Coupon and trade dispositions come from the existing H2 inventory.
+
+`source_period_inferred` is a hard WHAT-IF blocker; the equivalent parser warning
+from actual or metadata diagnostics maps to that reason. No scenario choice can
+waive it, verified observed endpoints/capital delta are withheld, and evaluation
+returns no scenario rate or result. A filename mismatch advisory remains scoped
+to the independently dated source and does not itself block the scenario.
+
 H2-A2 v4 `accepted_non_owner_paid_nkd` is compatible only with one exact permanent
 trade owner and its matching `trade_target_id`; missing ownership is a hard
 inventory mismatch. It retains the separate `money_basis` choice and pattern
@@ -5741,6 +5813,18 @@ Reports starting or ending inside a month remain in the calendar and dated-flow
 schedule with `partial_month_source`. Their partial endpoints cannot stand in
 for calendar-month boundaries; without another source those boundaries remain
 NULL. Interior full months retain dated flows and missing EOD independently.
+
+For a source carrying `period_inferred_from_content`, the activity-based range
+does not prove the statement's balance dates. Its balances cannot supply monthly
+EOD endpoints, including when original bytes are reattached. Every covered month
+is uncertain under the financial-blocker rules, with `source_period_inferred`
+and an intake/month gap message explaining that opening and closing balance dates
+are unverified. Without independently dated endpoints it also has
+`missing_endpoint`. Affected monthly growth and Modified Dietz, and dependent
+period/segment growth, chained return and XIRR remain NULL. Overlapping valid
+statements do not erase that source's uncertainty; independent unaffected months
+remain available. Valid filename ranges retain their existing authority and
+return behavior, including when `filename_period_mismatch` is present.
 
 In both monthly and instrument source-return readers, a selected filename account
 alias may select the single native row account evidenced by that same document.
@@ -5907,7 +5991,7 @@ income default when the narrative merely states the credit destination. Coupon
 defaults are unchanged. Existing
 saved defaults change only on an explicit new Save command; GET never refreshes
 them. MyBroker filenames may include a positive integer duplicate suffix such as
-` (1)` before `.xml`; coverage still comes from the filename interval, not XML.
+` (1)` before `.xml`; interval selection follows the [S1 period policy](#c3-mybroker_s1-1).
 Acknowledged same-request replay stays read-only.
 
 Coupon and dividend monthly subtotals remain NULL whenever money classification
@@ -6017,7 +6101,21 @@ payout, execution or EOD readers.
 Each monthly row retains the statement's own opening/closing quantity and native
 EOD valuation. A missing quantity or value stays NULL independently; an absent
 position is never affirmative zero. A long report supplies only its actual outer
-boundaries. Overlapping copies must agree on each endpoint. Native settled trades
+boundaries when its period is independently dated; activity-inferred periods do
+not date balances. A source carrying `period_inferred_from_content` supplies no
+opening or closing instrument endpoints. Every covered month receives one
+`source_period_inferred` gap per intake/month, with the same plain explanation as
+the monthly account reader: "Statement period was inferred from activity dates;
+opening and closing balance dates are unverified." This is both a source and
+income gap: `income_complete=false`, and price effect, total and return percent
+remain NULL, even if an overlapping valid source supplies endpoints. Without
+independent endpoints, `missing_endpoint` also applies. Observed attributed
+coupon/dividend subtotals remain partial evidence under the income rules below;
+they cannot restore a return. Such months are excluded from all-time available
+months and listed as partial; unaffected months remain usable. Valid filename
+ranges, including those with `filename_period_mismatch`, retain existing behavior.
+
+Overlapping copies must agree on each endpoint. Native settled trades
 are counted in their settlement month, once per ordered two-part native identity.
 One-part or absent identity is `trade_identity_unresolved`: withhold the affected
 buys/sells/total, including across overlapping reports; never deduplicate by intake ID.
@@ -6098,8 +6196,8 @@ keeps same-report multiplicity and prefers confirmed choices.
 
 The service's per-instrument monthly `income_complete` is true exactly when at least
 one usable intake covers the entire calendar month and that instrument/month has
-neither an income gap nor a source-structure gap. Income gaps are
-`unattributed_income`, `currency_unsupported`,
+neither an income gap nor a source gap. Income gaps are
+`source_period_inferred`, `unattributed_income`, `currency_unsupported`,
 `classification_missing_legacy_intake`, `invalid_money_row`,
 `invalid_external_flow`, `unrecognized_money` and `overlap_flow_choice_conflict`;
 the source-gap codes are listed below. Otherwise it is false, including a missing
@@ -6145,7 +6243,7 @@ identities returns an empty instrument list, not an invented complete zero resul
 
 Unknown source structure, scope ambiguity
 or an unreadable overlapping intake withholds affected costs/income completeness.
-The explicit structure-gap codes `source_reader_unavailable`,
+The explicit source-gap codes `source_period_inferred`, `source_reader_unavailable`,
 `native_source_scope_ambiguous`, `unparsed_source_rows`, `unknown_section`,
 `4_Transfers_unsupported`, `5_UFSR_unsupported` and `position_row_unclassified`
 are month-local source gaps: preserve their flags, withhold costs and total,
@@ -6217,6 +6315,11 @@ quantity/value conflicts and every other unproven endpoint diagnostic withhold t
 totals and the return. A missing beginning quantity is disclosed as a limitation but
 does not invalidate a present beginning value. Cash is counted exactly once; the
 per-security values and the separate RUB row are never double-counted.
+
+For bound and unbound source intakes, `period_inferred_from_content` adds the hard
+blocker `source_period_inferred`. Raw per-row values remain inspectable, but
+date-dependent opening/closing totals and reported change are NULL, and all
+scenario choices together still cannot produce a provisional rate or result.
 
 <a id="c7-broker_statement_provisional-12-assumptions"></a>
 #### Finite assumptions
@@ -6403,6 +6506,16 @@ The observed block is the original's own native EOD facts for the ISIN position:
 the shared Decimal discipline. The value change and its percent are reported
 separately from the conditional total and are never labelled profit when the
 quantity changed.
+
+A source carrying `period_inferred_from_content` cannot date these balance
+operands. `source_period_inferred` appears in observed reasons and hard blockers;
+observed availability is `unavailable`, beginning/ending values, value change and
+its fraction/percent are NULL, and all conditional result fields remain NULL.
+No accepted payout/trade interval lookup is made using those inferred boundaries.
+The intake covered range and `t0`/`t1` remain activity-range selection metadata,
+never dates for a computed return. Coupon rows and chosen assumptions do not
+restore a result. Valid filename ranges, including `filename_period_mismatch`,
+retain existing behavior.
 
 `P` is the exact supported net dividend sum once, from the unchanged #858 reader
 inside the same coherent snapshot: every observed payout row must be

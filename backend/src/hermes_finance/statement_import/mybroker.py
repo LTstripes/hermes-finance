@@ -8,10 +8,11 @@ XML are discarded. No class inference, payout or bond arithmetic.
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from xml.etree import ElementTree as ET
 
@@ -59,7 +60,7 @@ def digest(value: object) -> str:
 
 
 def frozen_source_shape(fresh: dict, stored: dict) -> dict:
-    """Reproduce only the optional nominal keys already present in frozen v2 facts.
+    """Reproduce optional nominal and advisory-warning keys in frozen v2 facts.
 
     Exact-original checks remain the caller's responsibility. Missing saved keys
     mean the old grammar, never permission to promote a reattached nominal.
@@ -69,6 +70,13 @@ def frozen_source_shape(fresh: dict, stored: dict) -> dict:
     if fresh.get("parser") != PARSER or stored.get("parser") != PARSER:
         return fresh
     result = dict(fresh)
+    # Advisory period warnings did not exist in older v2 receipts. Do not upgrade
+    # their frozen shape during exact-original reattachment. Recorded warnings
+    # still compare exactly, with an absent fresh key equivalent to an empty list.
+    if "warnings" not in stored:
+        result.pop("warnings", None)
+    else:
+        result["warnings"] = fresh.get("warnings", [])
     for section in ("positions", "trades"):
         rows, old_rows = fresh.get(section, []), stored.get(section, [])
         if len(rows) == len(old_rows):
@@ -110,35 +118,117 @@ def decimal(value: str | None, *, optional: bool = False) -> str | None:
     return normalized.rstrip("0").rstrip(".") if "." in normalized else normalized
 
 
+def _date_values(
+    value: str | None, *, iso: bool = False, optional: bool = False, connection: bool = False
+) -> list[datetime]:
+    """Validate every native value, including both CRLF-separated trade values."""
+    tokens = lines(value)
+    if not tokens and not optional:
+        raise MyBrokerError("statement_date_invalid")
+    result = []
+    for token in tokens:
+        try:
+            if iso:
+                if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", token):
+                    parsed = datetime.combine(date.fromisoformat(token), datetime.min.time())
+                else:
+                    parsed = datetime.strptime(token, "%Y-%m-%dT%H:%M:%S")
+            else:
+                pattern = r"[0-9]{1,2}\.[0-9]{2}\.[0-9]{4}"
+                if re.fullmatch(pattern, token):
+                    parsed = datetime.strptime(token, "%d.%m.%Y")
+                elif connection and re.fullmatch(pattern + r" [0-9]{1,2}:[0-9]{2}", token):
+                    parsed = datetime.strptime(token, "%d.%m.%Y %H:%M")
+                else:
+                    parsed = datetime.strptime(token, "%d.%m.%Y %H:%M:%S")
+        except ValueError:
+            raise MyBrokerError("statement_date_invalid") from None
+        result.append(parsed)
+    return result
+
+
 def day(value: str | None, *, optional: bool = False) -> str | None:
-    token = single(value, optional=optional)
-    if token is None:
-        return None
-    if not re.fullmatch(r"[0-9]{2}\.[0-9]{2}\.[0-9]{4}", token):
-        raise MyBrokerError("invalid_date")
-    try:
-        return datetime.strptime(token, "%d.%m.%Y").date().isoformat()
-    except ValueError:
-        raise MyBrokerError("invalid_date") from None
+    values = _date_values(value, optional=optional)
+    return values[0].date().isoformat() if values else None
 
 
 def timestamp(value: str | None, *, iso: bool = False, optional: bool = False) -> str | None:
-    token = single(value, optional=optional)
-    if token is None:
-        return None
-    pattern = (
-        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
-        if iso
-        else r"[0-9]{1,2}\.[0-9]{2}\.[0-9]{4} [0-9]{1,2}:[0-9]{2}:[0-9]{2}"
+    values = _date_values(value, iso=iso, optional=optional)
+    # Keep the first source value in the existing scalar fact; validate all values.
+    return values[0].isoformat() if values else None
+
+
+def _statement_period(
+    sections: dict, filename_match: re.Match | None
+) -> tuple[date, date, list[str]]:
+    activity = []
+    trade_dates = {
+        "db_time",
+        "db_time2",
+        "settlement_time",
+        "settlement_time2",
+        "save_settlement_date",
+        "save_settlement_date3",
+        "save_depo_settlement_date",
+        "save_depo_settlement_date3",
+    }
+    trade_rows = {
+        row
+        for path in (
+            "m:Tablix2/m:Details_Collection/m:Details",
+            "m:Tablix3/m:Details2_Collection/m:Details2",
+        )
+        for row in sections["Trades"].findall(path, NS)
+    }
+    money_groups = {
+        group
+        for group in sections["Trades2"].findall(
+            "m:Tablix1/m:settlement_date_Collection/m:settlement_date", NS
+        )
+        if group.findall("m:rn_Collection/m:rn", NS)
+    }
+    for outer in ("Trades", "Trades2", "Trades3", "Trades4"):
+        for node in sections[outer].iter():
+            for name, value in node.attrib.items():
+                if name == "sys_start_time" and outer == "Trades4":
+                    if value.strip() not in {"", "-"}:
+                        _date_values(value, connection=True)  # Never a report-period date.
+                elif (outer == "Trades" and name in trade_dates) or (
+                    outer == "Trades2" and name in {"settlement_date", "last_update"}
+                ):
+                    values = _date_values(value, iso=outer == "Trades2", optional=True)
+                    if values and (
+                        (node in trade_rows and name in {"db_time", "db_time2"})
+                        or (node in money_groups and name == "settlement_date")
+                    ):
+                        activity.append(values[0].date())
+    filename_period = None
+    if filename_match:
+        try:
+            start, end = (
+                datetime.strptime(filename_match[key], "%d.%m.%y").date()
+                for key in ("start", "end")
+            )
+            if start <= end:
+                filename_period = start, end
+        except ValueError:
+            pass  # An impossible filename date makes the filename range unusable.
+    if filename_period:
+        warnings = []
+        if activity and not any(
+            filename_period[0] <= value <= filename_period[1] for value in activity
+        ):
+            warnings.append("filename_period_mismatch")
+        return *filename_period, warnings
+    if not activity:
+        raise MyBrokerError("statement_period_unknown")
+    earliest, latest = min(activity), max(activity)
+    warnings = ["period_inferred_from_content"]
+    return (
+        earliest.replace(day=1),
+        latest.replace(day=calendar.monthrange(latest.year, latest.month)[1]),
+        sorted(warnings),
     )
-    if not re.fullmatch(pattern, token):
-        raise MyBrokerError("invalid_timestamp")
-    try:
-        return datetime.strptime(
-            token, "%Y-%m-%dT%H:%M:%S" if iso else "%d.%m.%Y %H:%M:%S"
-        ).isoformat()
-    except ValueError:
-        raise MyBrokerError("invalid_timestamp") from None
 
 
 def _ids(value: str | None) -> list[str]:
@@ -254,15 +344,6 @@ def parse_mybroker(
     if money_linkage_version not in (None, MONEY_LINKAGE):
         raise MyBrokerError("money_linkage_version_unsupported")
     match = FILENAME.fullmatch(filename)
-    if not match:
-        raise MyBrokerError("filename_range_invalid")
-    try:
-        # This grammar uses a two-digit year; Python's strict %y interpretation is fixed.
-        start, end = [datetime.strptime(match[key], "%d.%m.%y").date() for key in ("start", "end")]
-    except ValueError:
-        raise MyBrokerError("filename_range_invalid") from None
-    if start > end:
-        raise MyBrokerError("filename_range_invalid")
     if not document or len(document) > MAX_BYTES:
         raise MyBrokerError("document_size_invalid")
     try:
@@ -294,6 +375,7 @@ def parse_mybroker(
         if len(reports) != 1 or reports[0].get("Name") != name:
             raise MyBrokerError("required_section_invalid")
         sections[outer] = reports[0]
+    start, end, warnings = _statement_period(sections, match)
     blockers = []
     # Validate the whole wrapper, not just the selected Report subtree.
     if any(list(root.find(f"m:{outer}", NS)) != [report] for outer, report in sections.items()):
@@ -507,6 +589,10 @@ def parse_mybroker(
             blockers.append("unparsed_source_rows")
     if consumed_positions + len(trades) + len(money) > MAX_ROWS:
         raise MyBrokerError("row_limit_exceeded")
+    native_accounts = sorted(
+        {row["source_account"] for row in positions + rub_money + money}
+        | {row["core"]["source_account"] for row in trades}
+    )
     return {
         "provider": PROVIDER,
         "parser": PARSER,
@@ -516,9 +602,14 @@ def parse_mybroker(
             else {}
         ),
         "document_sha256": hashlib.sha256(document).hexdigest(),
-        "filename_account": match["account"],
+        "filename_account": match["account"]
+        if match
+        else native_accounts[0]
+        if len(native_accounts) == 1
+        else "",
         "covered_from": start.isoformat(),
         "covered_to": end.isoformat(),
+        **({"warnings": warnings} if warnings else {}),
         "positions": positions,
         "rub_money": rub_money,
         "endpoint_basis": {

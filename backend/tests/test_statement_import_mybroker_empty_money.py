@@ -271,8 +271,7 @@ def test_family_and_original_bounds_are_reused():
         target = node(target, "nested")
     with pytest.raises(MyBrokerError, match="^xml_bounds_exceeded$"):
         evidence(ET.tostring(root))
-    with pytest.raises(MyBrokerError, match="^filename_range_invalid$"):
-        evidence(raw, filename="other.xml")
+    assert evidence(raw, filename="other.xml")["status"] == "EXACT_EMPTY_TREE_OBSERVED"
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -388,3 +387,22 @@ def test_exact_blank_never_changes_source_month_get_close_or_money_blockers(data
     assert not original_get["bookkeeping_ready"] and not original_readiness["can_close"]
     assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
     assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "filename,warning",
+    [
+        ("renamed.xml", "period_inferred_from_content"),
+        (FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30"), "filename_period_mismatch"),
+    ],
+)
+def test_empty_money_preview_preserves_advisory_period_warnings(database, filename, warning):
+    from hermes_finance.services.mybroker_import import preview_mybroker
+
+    raw = layout_xml()
+    with database.session_factory() as session:
+        preview = preview_mybroker(session, document=raw, filename=filename)
+    result = preview["empty_money_layout_evidence"]
+    assert result["status"] == "EXACT_EMPTY_TREE_OBSERVED"
+    assert warning in result["source_warnings"]
+    assert warning not in preview["blockers"] + preview["conflicts"]

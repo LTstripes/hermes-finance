@@ -327,6 +327,12 @@ def test_section_unsafe_original_never_grants_or_partially_writes(database, muta
     else:
         details.append(ET.ProcessingInstruction("extra", "source"))
     raw = ET.tostring(root)
+    if mutation == "date":
+        before = _all_month_tables(database)
+        with pytest.raises(MyBrokerError, match="^statement_date_invalid$"):
+            parse_mybroker(raw, FILENAME)
+        assert _all_month_tables(database) == before
+        return
     client, intent, raw = section_setup(database, raw=raw)
     before = _all_month_tables(database)
     plan = section_preview(client, intent, raw).json()
@@ -748,7 +754,19 @@ def test_missing_or_duplicate_fixed_node_blocks(outer, depth):
 )
 def test_timestamp_is_ascii_exact_and_calendar_valid(start):
     raw = metadata_xml().replace(b"29.02.2028 23:59", start.encode())
-    assert evidence(raw)["sections"][1]["status"] == "BLOCKED"
+    invalid = {
+        "29.02.2029 23:59",
+        "31.04.2028 12:00",
+        "01.01.2028 24:00",
+        "01.01.2028 12:60",
+        "01.01.0000 12:00",
+        "０1.01.2028 12:00",
+    }  # Empty sys_start_time means "no connection date" and is accepted.
+    if start in invalid:
+        with pytest.raises(MyBrokerError, match="^statement_date_invalid$"):
+            evidence(raw)
+    else:
+        assert evidence(raw)["sections"][1]["status"] == "BLOCKED"
 
 
 @pytest.mark.parametrize(
@@ -942,3 +960,21 @@ def test_old_shape_source_with_nominal_still_validates_section_original(database
     assert response.status_code == 200, response.text
     assert response.json()["can_apply"], response.json()
     assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize(
+    "filename,warning",
+    [
+        ("renamed.xml", "period_inferred_from_content"),
+        (FILENAME.replace("01.01.30-31.01.30", "01.02.30-28.02.30"), "filename_period_mismatch"),
+    ],
+)
+def test_metadata_preview_preserves_advisory_period_warnings(database, filename, warning):
+    raw = metadata_xml()
+    with database.session_factory() as session:
+        preview = preview_mybroker(session, document=raw, filename=filename)
+    assert warning in preview["metadata_evidence"]["source_warnings"]
+    assert warning not in preview["blockers"] + preview["conflicts"]
+    assert [s["status"] for s in preview["metadata_evidence"]["sections"]] == [
+        "READY_SAFE_STRUCTURE"
+    ] * 2

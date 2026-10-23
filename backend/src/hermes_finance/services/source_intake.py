@@ -192,6 +192,11 @@ def _manifest(session, document, filename, *, stored_source=None):
     if stored_source is not None:
         source = frozen_source_shape(source, stored_source)
     evidence = parse_identity(document, filename, incomplete_draft=True)
+    # Match the warning shape selected for this immutable source, including v2
+    # manifests saved before advisory period warnings were introduced.
+    evidence["source_warnings"] = sorted(
+        set(source["syntax_blockers"] + source.get("warnings", []))
+    )
     observations = []
     for section, rows in (
         ("positions", source["positions"]),

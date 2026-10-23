@@ -149,6 +149,7 @@ def test_decimal_period_return_and_independent_ruble_residual(v0, v1, flows, exp
         ({"t0": T1}, "statement_interval_invalid"),
         ({"sources": ()}, "statement_source_missing"),
         ({"reason_codes": ("missing_dated_crossing",)}, "missing_dated_crossing"),
+        ({"reason_codes": ("source_period_inferred",)}, "source_period_inferred"),
     ],
 )
 def test_unknown_evidence_never_becomes_zero(changes, reason):
@@ -244,13 +245,13 @@ def native_xml(*, opaque=False):
     return ET.tostring(root, encoding="utf-8")
 
 
-def prepared(database, *, covered=False, opaque=False):
+def prepared(database, *, covered=False, opaque=False, filename=FILENAME, raw=None):
     intent = _broker_month_setup(database)
     client = TestClient(create_app(database=database))
-    raw = native_xml(opaque=opaque)
-    reviewed = _broker_month_preview(client, intent, raw)
+    raw = raw if raw is not None else native_xml(opaque=opaque)
+    reviewed = _broker_month_preview(client, intent, raw, filename=filename)
     assert reviewed["can_apply"], reviewed
-    applied = _broker_month_apply(client, intent, reviewed, raw)
+    applied = _broker_month_apply(client, intent, reviewed, raw, filename=filename)
     assert applied.status_code == 200, applied.text
     if covered:
         with database.session_factory() as session:
@@ -260,6 +261,46 @@ def prepared(database, *, covered=False, opaque=False):
             )
             certify(session, claims(session, candidate, zero=True))
     return client, raw
+
+
+def test_renamed_upload_applies_but_s3_and_what_if_cannot_date_balances(database):
+    from test_statement_import_broker_statement_provisional import _add_money
+    from test_statement_import_broker_statement_what_if import request
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+    from test_statement_import_mybroker_money_candidates import COUPON
+
+    root = ET.fromstring(native_xml())
+    _add_money(root, "Прочие операции", COUPON, "280", day="2030-01-15")
+    raw = ET.tostring(root, encoding="utf-8")
+    filename = "renamed.xml"
+    client, raw = prepared(database, filename=filename, raw=raw)
+    with database.session_factory() as session:
+        stored = json.loads(session.scalar(select(MyBrokerImport)).normalized_json)
+        assert stored["warnings"] == ["period_inferred_from_content"]
+    before = _all_month_tables(database)
+    url = "/api/broker-statement-returns?account_id=1&request_id=synthetic-batch"
+    result = client.get(url).json()
+    assert result["status"] == "unavailable"
+    assert result["rate_fraction"] is None
+    assert "source_period_inferred" in result["reason_codes"]
+    assert client.get(url.replace("returns?", "returns/export?")).json() == result
+    response = client.post(
+        "/api/broker-statement-returns/preview",
+        data={"account_id": "1", "request_id": "synthetic-batch"},
+        files={"file": (filename, raw, "application/xml")},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == result
+    context = request(client, raw, filename=filename).json()
+    assert "source_period_inferred" in context["hard_blockers"]
+    assert context["observed"] == {"opening": None, "closing": None, "capital_delta_kopecks": None}
+    evaluated = request(client, raw, "evaluate", context=context, filename=filename).json()
+    assert evaluated["status"] == "blocked"
+    assert evaluated["scenario_rate_fraction"] is evaluated["scenario_result_kopecks"] is None
+    exported = request(client, raw, "export", context=context, result=evaluated, filename=filename)
+    assert exported.status_code == 200, exported.text
+    assert exported.json() == evaluated
+    assert _all_month_tables(database) == before
 
 
 def test_committed_native_facts_missing_flows_and_zero_write_preview_export(database):

@@ -125,5 +125,5 @@ def parse_empty_money_layout(
         "authority": "none",
         "derived_movements": 0,
         "coverage_state": "unknown",
-        "source_warnings": source["syntax_blockers"],
+        "source_warnings": sorted(set(source["syntax_blockers"] + source.get("warnings", []))),
     }

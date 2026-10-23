@@ -16,6 +16,7 @@ from hermes_finance.persistence import ExecutedTrade
 from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
 from hermes_finance.services.source_monthly_returns import (
+    SOURCE_PERIOD_INFERRED_MESSAGE,
     SourceReturnGap,
     _money,
     _month_end,
@@ -208,6 +209,8 @@ def _endpoint(views, isin, month, *, closing, flags):
     invalid = [False, False]
     boundary = _month_end(month) if closing else month
     for view in views:
+        if "period_inferred_from_content" in view["document"].get("warnings", []):
+            continue  # Activity dates cannot date the statement's outer balances.
         if date.fromisoformat(view["covered_to" if closing else "covered_from"]) != boundary:
             continue
         rows = [row for row in view["document"]["positions"] if row["isin"] == isin]
@@ -494,6 +497,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
 
 
 _INCOME_GAPS = {
+    "source_period_inferred",
     "unattributed_income",
     "currency_unsupported",
     "classification_missing_legacy_intake",
@@ -503,6 +507,7 @@ _INCOME_GAPS = {
     "overlap_flow_choice_conflict",
 }
 _SOURCE_GAPS = {
+    "source_period_inferred",
     # Structure gaps affect both trades and income; currency/REPO gaps do not.
     "4_Transfers_unsupported",
     "5_UFSR_unsupported",
@@ -681,20 +686,31 @@ def read_instrument_returns(session, *, source_account: str) -> SourceInstrument
             ):
                 raise MyBrokerError("native_source_scope_ambiguous")
             views.append(view)
+            period_inferred = "period_inferred_from_content" in view["document"].get("warnings", [])
             month = original.covered_from.replace(day=1)
             while month <= original.covered_to:
                 gaps.extend(
-                    InstrumentReturnGap(code, original.id, month)
-                    for code in (
-                        *source_return_blockers(view),
-                        *(
-                            code
-                            for code in (
-                                *view["document"].get("endpoint_blockers", []),
-                                *view["document"].get("endpoint_conflicts", []),
-                            )
-                            if _source_gap(code)
-                        ),
+                    InstrumentReturnGap(
+                        code,
+                        original.id,
+                        month,
+                        message=SOURCE_PERIOD_INFERRED_MESSAGE
+                        if code == "source_period_inferred"
+                        else None,
+                    )
+                    for code in sorted(
+                        {
+                            *(("source_period_inferred",) if period_inferred else ()),
+                            *source_return_blockers(view),
+                            *(
+                                code
+                                for code in (
+                                    *view["document"].get("endpoint_blockers", []),
+                                    *view["document"].get("endpoint_conflicts", []),
+                                )
+                                if _source_gap(code)
+                            ),
+                        }
                     )
                 )
                 month = _next_month(month)

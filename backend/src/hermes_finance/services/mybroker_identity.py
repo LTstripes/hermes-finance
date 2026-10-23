@@ -107,7 +107,7 @@ def _prepare(
             }
         )
     # Filename and row code remain separately proved aliases, never suffix guesses.
-    if any(
+    if evidence["filename_account"] and any(
         targets.get(alias) != targets.get(evidence["filename_account"])
         for alias in evidence["row_accounts"]
     ):

@@ -240,6 +240,8 @@ def read_statement_return(
     except (KeyError, TypeError, ValueError, MyBrokerError, DecimalException):
         reasons.add("statement_dependencies_invalid")
     if document:
+        if "period_inferred_from_content" in document.get("warnings", []):
+            reasons.add("source_period_inferred")
         reasons.update(document["endpoint_blockers"])
         reasons.update(document["endpoint_conflicts"])
         # Diagnostic safe wrappers cannot assess financial REPO/UFSR/custody impact.

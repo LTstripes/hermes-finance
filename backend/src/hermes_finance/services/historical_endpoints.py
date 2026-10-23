@@ -365,12 +365,17 @@ def _source_union(session, intent, selected, blockers):
             blockers.update(
                 set(document.get("endpoint_blockers", [])) & {"position_row_unclassified"}
             )
-        if row.covered_to <= intent.valuation_date and any(
-            Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
-            for p in document["positions"]
+        period_known = "period_inferred_from_content" not in document.get("warnings", [])
+        if (
+            period_known
+            and row.covered_to <= intent.valuation_date
+            and any(
+                Decimal(p["actual_quantity"]) != Decimal(p["forward_quantity"])
+                for p in document["positions"]
+            )
         ):
             blockers.add("unresolved_source_forward_exposure")
-        if row.covered_to == intent.valuation_date and row.id != selected.id:
+        if period_known and row.covered_to == intent.valuation_date and row.id != selected.id:
             other_bindings = _bindings(session, row, blockers, scoped_bindings)
             if row.parser_version != "mybroker-s1-v2":
                 blockers.add("overlap_source_basis_unknown")
@@ -386,7 +391,8 @@ def _source_union(session, intent, selected, blockers):
                 blockers.add("reconciliation_required")
         # A beginning observation supports the preceding day's EOD, never the report start.
         if (
-            row.id != selected.id
+            period_known
+            and row.id != selected.id
             and row.covered_from.toordinal() - 1 == intent.valuation_date.toordinal()
         ):
             if row.parser_version != "mybroker-s1-v2":
@@ -493,6 +499,8 @@ def _build(session, intent):
     if row is None:
         raise MyBrokerError("source_import_not_found")
     document = json.loads(row.normalized_json)
+    if "period_inferred_from_content" in document.get("warnings", []):
+        blockers.add("source_period_inferred")
     if (
         row.parser_version != "mybroker-s1-v2"
         or document["parser"] != row.parser_version

@@ -486,3 +486,24 @@ def test_contradictory_trade_currency_observations_block_whole_batch(database):
             stage(session, reviewed, xml)
         session.rollback()
         assert inventory(session) == before
+
+
+@pytest.mark.parametrize("separate_targets", [False, True])
+def test_renamed_multiaccount_identity_stages_only_observed_aliases(database, separate_targets):
+    root = ET.fromstring(identity_xml())
+    other_alias = "7654321-000"
+    root.find(".//{MyBroker}Textbox11").set("acc_code", other_alias)
+    raw = ET.tostring(root)
+    with database.session_factory() as session:
+        first = session.scalar(select(Account).where(Account.account_type == "brokerage"))
+        second = create_account(session, name="Synthetic second", account_type="brokerage")
+        bindings = [
+            {"identity": ACCOUNT, "hermes_id": first.id},
+            {"identity": other_alias, "hermes_id": second.id if separate_targets else first.id},
+        ]
+        reviewed = plan(session, raw, filename="renamed.xml", bindings=bindings)
+        assert reviewed["evidence"]["filename_account"] == ""
+        assert {a["identity"] for a in reviewed["accounts"]} == {ACCOUNT, other_alias}
+        assert "source_account_conflict" not in reviewed["conflicts"]
+        assert reviewed["can_stage"], (reviewed["conflicts"], reviewed["evidence_gaps"])
+        assert stage(session, reviewed, raw, filename="renamed.xml", bindings=bindings)["staged"]
