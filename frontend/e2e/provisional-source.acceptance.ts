@@ -41,6 +41,22 @@ test("synthetic zero-metadata desktop: unbound intake → 211 RUB / 2.01%", asyn
   expect(intake.state.account_id).toBeNull();
   expect(intake.state.reporting_month_id).toBeNull();
 
+  // Backend v2 remains additive while the existing desktop retains its frozen UI.
+  const instrumentResponse = await request.get(
+    "/api/source-returns/instruments?source_account=1234567",
+  );
+  expect(instrumentResponse.status()).toBe(200);
+  expect(instrumentResponse.headers()["cache-control"]).toBe("no-store");
+  const instrumentReturns = await instrumentResponse.json();
+  expect(instrumentReturns.financial_authority).toBe("none");
+  expect(instrumentReturns.instruments.length).toBeGreaterThan(0);
+  for (const instrument of instrumentReturns.instruments) {
+    expect(instrument.analysis.contract_version).toBe("instrument_return_v2");
+    expect(instrument.analysis.modified_dietz.method).toBe("modified_dietz");
+    expect(instrument.analysis.events.length).toBeGreaterThan(0);
+    expect(instrument.all_time.return_percent).toBeNull();
+  }
+
   await page.goto("/v2/data/source-intake");
   await expect(page.getByRole("heading", { name: "Разбор источника" })).toBeVisible();
   await expect(page.getByText(/Страница выбирает уже сохранённый журнал/)).toBeVisible();

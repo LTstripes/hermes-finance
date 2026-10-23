@@ -1,7 +1,7 @@
 # Hermes Finance 1.4.0
 
-Release preparation from accepted main `418b88a8c9a1b9b8e5f2d72e6112426282f3d285`
-(2026-10-23), after #935. Backend manifest/package/uv lock, frontend manifest/lock and
+Release preparation started from accepted main `418b88a8c9a1b9b8e5f2d72e6112426282f3d285`
+(2026-10-23), after #935; #944 prepares identity/recovery and #945 adds the accepted #891 backend scope when included in the selected canonical SHA. Backend manifest/package/uv lock, frontend manifest/lock and
 current health/identity checks use 1.4.0. This publication-ready content does not assert
 that a tag, Release or Stable update exists. Current disposition belongs in
 [CURRENT_STATUS](CURRENT_STATUS.md) and the release PR.
@@ -21,10 +21,12 @@ readback under [O3](OWNER_RUNTIME_OPERATIONS.md#o3).
   growth; provide provisional Modified Dietz estimates, an approximate chained return and
   period XIRR. Missing boundaries/unknown flows remain unavailable with reasons. Closing-day
   flows have zero Dietz weight. Long reports do not invent intermediate month ends.
-- Per-instrument returns (#915) expose available price-effect/payout components and
-  partial/missing coverage/NKD flags. The current rate uses `total / (opening_value + all_buys)`;
-  all-time percentage remains NULL. The new #891 changing-quantity event/Dietz implementation
-  is outside this release.
+- Per-instrument returns (#915, #891/#945) retain the legacy simple percentage and NULL all-time
+  legacy rate, and add dated events, current payout attribution, quantity/cash reconciliation,
+  monthly or selected-interval RUB P&L and Modified Dietz under `instrument_return_v2`.
+  The new rate is a Decimal fraction, not the legacy percentage. Full economic results,
+  known subtotals and conditional statement-value estimates remain distinct. Unknown bond
+  valuation basis withholds full economic P&L/MD. No instrument UI or private numerical UAT is implied.
 - Audit fixes (#924/#926/#928) tighten nominal/NKD, boundary/scope, flow coverage,
   short-period XIRR and Decimal behavior. MyBroker statement/account support (#932) preserves
   native evidence rather than filling unknown operands with zero.
@@ -88,5 +90,4 @@ flows. Owner account checks do not remove those limitations.
 
 Parser-generation drift fails closed. Retain unchanged originals for a separately accepted
 fresh rebuild; no manifest rewrite, trigger removal or in-place V1 reparse bypass. Reported
-reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Full instrument
-economic return and forecast-ingestion seams remain separate work.
+reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Private instrument numerical UAT, history loading, the instrument UI and forecast-ingestion seams remain separate work.

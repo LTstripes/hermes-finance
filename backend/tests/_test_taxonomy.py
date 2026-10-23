@@ -92,6 +92,8 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_instrument_return.py",
+    "test_source_instrument_events.py",
     "test_security_reg_isin_mappings_service.py",
     "test_astra_medium_xfail.py",
     "test_source_instrument_returns_service.py",
@@ -713,13 +715,14 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     filename = relative_path.name
     markers: set[str] = set()
 
-    if (
-        relative_path.parts and relative_path.parts[0] == "domain"
-    ) or filename == "test_monthly_return_chain.py":
+    if (relative_path.parts and relative_path.parts[0] == "domain") or filename in {
+        "test_monthly_return_chain.py",
+        "test_instrument_return.py",
+    }:
         markers.add("domain")
     if filename.endswith("_api.py"):
         markers.add("api")
-    if filename.endswith("_service.py"):
+    if filename.endswith("_service.py") or filename == "test_source_instrument_events.py":
         markers.add("service")
     if filename.startswith("test_legacy_"):
         markers.update({"import_export", "legacy"})
