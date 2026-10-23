@@ -110,3 +110,66 @@ test("synthetic zero-metadata desktop: unbound intake → 211 RUB / 2.01%", asyn
   expect(metadataRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("renamed XML and second account upload, reload and blocked provisional result", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const source = await (await request.get("/api/synthetic-provisional-original")).text();
+  const first = source.replace(">", ' synthetic_revision="935-b2">');
+  const account = /acc_code="([^"]+)"/.exec(first)?.[1];
+  if (!account) throw new Error("Synthetic account missing from fixture");
+  const second = first.replaceAll(account, "7654321");
+  const stateBefore = await (await request.get("/api/synthetic-provisional-state")).json();
+  await page.goto("/v2/capital/monthly-returns");
+  await page.getByLabel("XML-файлы", { exact: true }).setInputFiles([
+    { name: "renamed.xml", mimeType: "application/xml", buffer: Buffer.from(first) },
+    {
+      name: "Брокерский 7654321 (01.04.30-30.04.30).xml",
+      mimeType: "application/xml",
+      buffer: Buffer.from(second),
+    },
+  ]);
+  await expect(page.getByText(/renamed.xml: Сохранен/)).toBeVisible();
+  await expect(page.getByText(/7654321.*Сохранен/)).toBeVisible();
+  await page.reload();
+  const intakes = await (
+    await request.get("/api/broker-months/intakes?include_unbound=true")
+  ).json();
+  const inferred = intakes.find((row: { document: { warnings?: string[] } }) =>
+    row.document.warnings?.includes("period_inferred_from_content"),
+  );
+  expect(inferred).toBeTruthy();
+  expect(
+    intakes.some(
+      (row: { document: { filename_account: string } }) =>
+        row.document.filename_account === "7654321",
+    ),
+  ).toBeTruthy();
+  await page.goto("/v2/data/source-intake");
+  await page.getByLabel("Сохранённый разбор").selectOption(String(inferred.id));
+  await page.getByLabel("Точный оригинал XML").setInputFiles({
+    name: "renamed.xml",
+    mimeType: "application/xml",
+    buffer: Buffer.from(first),
+  });
+  const panel = page.getByRole("region", { name: "Предварительная доходность по source-intake" });
+  const pending = page.waitForResponse((response) =>
+    response.url().endsWith("/broker-statement-provisional/context"),
+  );
+  await panel.getByRole("button", { name: "Рассчитать наблюдаемые величины" }).click();
+  const context = await (await pending).json();
+  expect(context.hard_blockers).toContain("source_period_inferred");
+  expect(context.observed.total_opening_kopecks).toBeNull();
+  expect(context.observed.total_closing_kopecks).toBeNull();
+  await expect(panel.getByText("source_period_inferred", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Рассчитать предварительный сценарий" }),
+  ).toBeDisabled();
+  await panel.screenshot({ path: info.outputPath("renamed-period-blocked-1440.png") });
+  expect(await (await request.get("/api/synthetic-provisional-state")).json()).toEqual(stateBefore);
+  expect(errors).toEqual([]);
+});

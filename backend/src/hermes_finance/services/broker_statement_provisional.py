@@ -62,6 +62,7 @@ SOURCE_KEYS = (
 )
 ENDPOINT_CODES = frozenset(
     {
+        "source_period_inferred",
         "provisional_endpoint_basis_unsupported",
         "provisional_endpoint_value_unavailable",
         "provisional_endpoint_value_invalid",
@@ -211,6 +212,8 @@ def read_context(
     t0 = original_row.covered_from - timedelta(days=1)
     t1 = original_row.covered_to
     hard: set[str] = set()
+    if "period_inferred_from_content" in stored.get("warnings", []):
+        hard.add("source_period_inferred")
     limitations = list(BASE_LIMITATIONS)
     positions_raw = stored.get("positions", [])
     rub_raw = stored.get("rub_money", [])

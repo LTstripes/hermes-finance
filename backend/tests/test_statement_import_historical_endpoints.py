@@ -117,6 +117,87 @@ def count(session, model):
     return session.scalar(select(func.count()).select_from(model))
 
 
+def test_renamed_source_cannot_be_accepted_as_historical_endpoint(database, monkeypatch):
+    from hermes_finance.services import historical_endpoints as service
+
+    with database.session_factory() as session:
+        raw = endpoint_xml()
+        source = apply(session, raw, preview(session, raw, "renamed.xml"), "renamed.xml")
+        assert source["document"]["warnings"] == ["period_inferred_from_content"]
+        account_id = next(b["hermes_id"] for b in source["mappings"] if b["kind"] == "account")
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=account_id,
+                effective_from=date(2030, 1, 1),
+                effective_to=DAY,
+                include_in_returns=True,
+            )
+        )
+        session.commit()
+        intent = attest(
+            session,
+            EndpointIntent(
+                account_id=account_id,
+                valuation_date=DAY,
+                source_import_id=source["import_id"],
+            ),
+        )
+        plan = preview_historical_endpoint(session, intent)
+        assert "source_period_inferred" in plan["blockers"]
+        assert not plan["can_apply"]
+        with pytest.raises(MyBrokerError, match="source_period_inferred"):
+            apply_historical_endpoint(
+                session,
+                intent,
+                confirmation_digest=plan["confirmation_digest"],
+                request_id="renamed-endpoint",
+            )
+        assert count(session, HistoricalEndpointRevision) == 0
+        # Reproduce an already accepted receipt from the pre-B2 reader without
+        # changing its original, signature, bindings or dependencies.
+        build = service._build
+
+        def legacy_build(*args, **kwargs):
+            evidence, blockers, *rest = build(*args, **kwargs)
+            return evidence, [b for b in blockers if b != "source_period_inferred"], *rest
+
+        with monkeypatch.context() as legacy:
+            legacy.setattr(service, "_build", legacy_build)
+            previous = accept(session, intent)["readback"]
+            assert previous["effective_state"] == "accepted"
+            assert previous["total_value_kopecks"] is not None
+        current = read_historical_endpoint(session, previous["endpoint_key"])
+        assert current["effective_state"] == "invalidated"
+        assert current["total_value_kopecks"] is None
+        assert "source_period_inferred" in current["blockers"]
+        assert current["revision"] == 1
+
+
+@pytest.mark.parametrize("side", ["ending", "beginning"])
+def test_inferred_overlap_balances_do_not_conflict_with_dated_endpoint(database, side):
+    with database.session_factory() as session:
+        intent, _ = setup_source(session)
+        intent = attest(session, intent)
+        accepted = accept(session, intent)["readback"]
+        root = ET.fromstring(endpoint_xml())
+        # Retain an explicit activity date but no unsettled trade at the cutoff.
+        position = root.find(".//{MyBroker}Details[@ISIN1]")
+        position.set("income_volume", "99999")
+        position.set("real_volume", "99999")
+        position.set("real_rest", "3")
+        position.set("forward_rest", "3")
+        raw = ET.tostring(root, encoding="utf-8")
+        if side == "beginning":
+            raw = raw.replace(b".01.2030", b".02.2030").replace(b"2030-01-", b"2030-02-")
+        inferred = apply(session, raw, preview(session, raw, "renamed.xml"), "renamed.xml")
+        assert inferred["document"]["covered_from"] == (
+            "2030-02-01" if side == "beginning" else "2030-01-01"
+        )
+        readback = read_historical_endpoint(session, accepted["endpoint_key"])
+        assert "reconciliation_required" not in readback["blockers"]
+        assert readback["effective_state"] == "accepted", readback["blockers"]
+
+
 def matching_month(session, intent, instrument_id):
     month = ReportingMonth(
         year=2030, month=1, period_start=date(2030, 1, 1), period_end=DAY, snapshot_date=DAY

@@ -3833,6 +3833,13 @@ source total values retain their canonical decimal strings. RUB money must be
 exactly representable in signed 64-bit integer kopecks; fractional kopecks and
 overflow block acceptance. No price, cost, P&L, NKD or FX is derived.
 
+An activity-inferred period (`period_inferred_from_content`) does not date either
+balance. Selecting that source blocks H1 acceptance and effective readback with
+`source_period_inferred`, including with affirmative endpoint claims. Other
+inferred sources remain in dependency/trade conflict checks, but their balance
+values and forward quantities cannot corroborate or contradict an exact dated
+endpoint merely because the inferred range touches its date.
+
 Migration `0050_historical_endpoints` adds two empty tables without backfill:
 `historical_endpoint_revisions` and `historical_endpoint_applies`. Revisions and
 receipts are append-only, with SQL triggers protecting migrated databases;
@@ -5605,6 +5612,12 @@ projection, current dependencies, endpoint completeness, cash/quantity controls
 and competing overlapping reports are rechecked. Untrusted changed source values
 are not exposed as accepted facts.
 
+For a stored document carrying `period_inferred_from_content`, the adapter adds
+the hard reason `source_period_inferred`: S3 remains unavailable with a NULL rate
+even when cash coverage is otherwise effective. The interval remains a diagnostic
+activity range, not proof of the balance dates. Renamed-file upload/Apply remains
+available; `filename_period_mismatch` alone retains the valid filename interval.
+
 Crossings come only from effective existing HistoricalOwnerFlow revisions, with
 independently accepted, currently effective source CashBoundaryCoverage for the
 exact `(t0,t1]` interval. The coverage reader rechecks its whole source inventory,
@@ -5667,6 +5680,13 @@ endpoints as observations. All effective H2 crossings are mandatory and counted
 once. Compatible H2/Money ownership of the same target is one event; incompatible,
 conflicting or ineffective ownership cannot become an optional candidate.
 Coupon and trade dispositions come from the existing H2 inventory.
+
+`source_period_inferred` is a hard WHAT-IF blocker; the equivalent parser warning
+from actual or metadata diagnostics maps to that reason. No scenario choice can
+waive it, verified observed endpoints/capital delta are withheld, and evaluation
+returns no scenario rate or result. A filename mismatch advisory remains scoped
+to the independently dated source and does not itself block the scenario.
+
 H2-A2 v4 `accepted_non_owner_paid_nkd` is compatible only with one exact permanent
 trade owner and its matching `trade_target_id`; missing ownership is a hard
 inventory mismatch. It retains the separate `money_basis` choice and pattern
@@ -6293,6 +6313,11 @@ quantity/value conflicts and every other unproven endpoint diagnostic withhold t
 totals and the return. A missing beginning quantity is disclosed as a limitation but
 does not invalidate a present beginning value. Cash is counted exactly once; the
 per-security values and the separate RUB row are never double-counted.
+
+For bound and unbound source intakes, `period_inferred_from_content` adds the hard
+blocker `source_period_inferred`. Raw per-row values remain inspectable, but
+date-dependent opening/closing totals and reported change are NULL, and all
+scenario choices together still cannot produce a provisional rate or result.
 
 <a id="c7-broker_statement_provisional-12-assumptions"></a>
 #### Finite assumptions

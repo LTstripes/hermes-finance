@@ -1215,8 +1215,9 @@ def test_period_warnings_are_scoped_what_if_diagnostics(database, monkeypatch, w
     response = request(client, raw)
     assert response.status_code == 200, response.text
     context = response.json()
-    assert not context["hard_blockers"], context["hard_blockers"]
-    assert context["observed"]["opening"] is not None
+    inferred = warning == "period_inferred_from_content"
+    assert ("source_period_inferred" in context["hard_blockers"]) == inferred
+    assert (context["observed"]["opening"] is None) == inferred
     diagnostics = (
         context["diagnostic_inventory"]["metadata"]["source_warnings"]
         if channel == "metadata"
@@ -1224,6 +1225,8 @@ def test_period_warnings_are_scoped_what_if_diagnostics(database, monkeypatch, w
     )
     assert warning in diagnostics
     result = request(client, raw, "evaluate", context=context).json()
-    assert result["status"] == "hypothetical", result["reason_codes"]
+    assert result["status"] == ("blocked" if inferred else "hypothetical"), result["reason_codes"]
+    if inferred:
+        assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
     assert result["actual_result"] == context["actual_result"]
     assert _all_month_tables(database) == before

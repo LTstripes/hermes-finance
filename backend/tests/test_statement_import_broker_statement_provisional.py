@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from xml.etree import ElementTree as ET
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from test_statement_import_mybroker import ACCOUNT, node, repo_fixture
@@ -281,6 +282,34 @@ def evaluate(client, context, assumptions, xml, *, filename=FILENAME_APRIL):
             "assumptions": json.dumps(assumptions),
         },
     )
+
+
+@pytest.mark.parametrize("bound", [False, True])
+def test_renamed_source_save_readback_blocks_provisional_even_with_all_choices(database, bound):
+    scope = april_scope(database) if bound else {}
+    raw = provisional_xml()
+    filename = "renamed.xml"
+    client = TestClient(create_app(database=database))
+    saved = client.post(
+        BASE,
+        files={"file": (filename, raw, "application/xml")},
+        data={"intent": json.dumps({**scope, "request_id": "renamed-save"})},
+    )
+    assert saved.status_code == 200, saved.text
+    view = client.get(f"{BASE}/{saved.json()['intake_id']}").json()
+    assert view["document"]["warnings"] == ["period_inferred_from_content"]
+    before = _all_month_tables(database)
+    context = context_for(client, raw, view, filename=filename)
+    assert "source_period_inferred" in context["hard_blockers"]
+    assert context["observed"]["total_opening_kopecks"] is None
+    assert context["observed"]["total_closing_kopecks"] is None
+    assert context["observed"]["reported_value_change_kopecks"] is None
+    response = evaluate(client, context, choices(context), raw, filename=filename)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["status"] == "blocked"
+    assert result["scenario_rate_fraction"] is result["scenario_result_kopecks"] is None
+    assert _all_month_tables(database) == before
 
 
 def test_domain_reference_math_and_no_annualized_override():
