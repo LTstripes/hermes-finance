@@ -6,6 +6,13 @@
 
 Current integration, runtime and next-action evidence is maintained only in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+1.4.0 preparation after #935 aligns backend/frontend versions and locks, current identity/health
+checks and the compatible [release notes](docs/release-notes-1.4.0.md). The selected migration
+path is 0058→0059→0060→0061→0062. Synthetic release verification adds preservation of every
+pre-existing row and an isolated forward recovery from a consistent 0058 snapshot. The
+[recovery disposition](docs/releases/1.4.0-rollback.md) removes the unsupported OPS02 downgrade
+recipe; this entry does not imply publication or a Stable update.
+
 ### Added
 
 - [#911](https://github.com/LTstripes/hermes-finance/pull/911): domain monthly return chain separating contributions from growth, with approximate Modified Dietz monthly/chained returns and XIRR; a missing boundary withholds the chained return, with per-segment handling in [#913](https://github.com/LTstripes/hermes-finance/pull/913).
@@ -15,7 +22,7 @@ Current integration, runtime and next-action evidence is maintained only in [CUR
 
 ### Fixed
 
-- [#932](https://github.com/LTstripes/hermes-finance/pull/932) (draft): real MyBroker statements — account scope from document evidence, service XML branches no longer block reads, dividend transfers default to dividend, `filename (1).xml` accepted. Follows the 1.4.0 Owner NO-GO.
+- [#932](https://github.com/LTstripes/hermes-finance/pull/932): real MyBroker statements — account scope from document evidence, service XML branches no longer block reads, dividend transfers default to dividend, `filename (1).xml` accepted.
 
 ### Changed
 

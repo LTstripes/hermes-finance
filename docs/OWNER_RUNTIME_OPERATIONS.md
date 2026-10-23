@@ -843,6 +843,13 @@ Use supported consistent SQLite online backup, verified managed publication/read
 
 For confirmed-negative validation failure report the failure without inventing a successful restore. A lost ACK or ambiguous mutation/restore preserves evidence and blocks blind retry. Reread authoritative restored state, invalidate in-flight requests/confirmations and reconcile month selection before showing current success. A changed or uncertain target is not reused. Do not improvise raw DB copying or downgrade to resolve ambiguity.
 
+Stock production restore requires the backup's exact live schema signature. OPS02 refuses
+older target versions, including a return after code pinning before DB migration; the O4
+rehearsal writes only fresh isolated targets. These operations do not provide cross-schema
+Stable rollback. Settle the concrete recovery disposition with Owner/Integrator before a
+schema-changing production Start; preserving a verified old code/backup pair is evidence,
+not an accepted command to restore it over Stable.
+
 <a id="o4-owner_runtime_operations-155"></a>
 ### Managed backup, retention and isolated recovery
 
