@@ -135,18 +135,30 @@ def default_classification(
             op == "перевод" and re.fullmatch(r"погашение купона [^\r\n]+", narrative.casefold())
         ):
             return "coupon"
-        dividend_text = narrative.casefold().replace("ё", "е")
+        dividend_text = " ".join(narrative.casefold().replace("ё", "е").split())
         if (
             Decimal(amount) > 0
-            and "возврат" not in dividend_text
-            and not re.search(r"\b(?:на[ \t]+счет|с(?:о)?[ \t]+счета)\b", dividend_text)
+            and not re.search(r"возврат|возвращ|сторно|перерасч", dividend_text)
             and (
                 re.fullmatch(
                     r"(?:выплата |зачисление )?дивиденд(?:ы|ов)?|dividends?(?: payment)?", op
                 )
                 or (
                     op == "перевод"
-                    and re.fullmatch(r"(?:дивиденды|дивиденд по) \S[^\r\n]*", dividend_text)
+                    # Reject raw line breaks before normalized text can hide them.
+                    and "\r" not in narrative
+                    and "\n" not in narrative
+                    and re.fullmatch(
+                        r"(?:дивиденды|дивиденд по)(?: | ?[:;,—–-] ?)[^\s:;,—–-].*",
+                        dividend_text,
+                    )
+                    # A cash-account transfer is not evidence of dividend income.
+                    and not re.search(
+                        r"\b(?:на (?:брокерский |расчетный )?счет|"
+                        r"с(?:о)? (?:брокерского |расчетного )?счета) "
+                        r"[0-9]{7}(?:-[0-9]{3})?(?![\w-])",
+                        dividend_text,
+                    )
                 )
             )
         ):
