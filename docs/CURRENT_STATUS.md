@@ -5,7 +5,9 @@ Main/release evidence cut: 2026-10-21, after the #916–#919 merges; the local #
 Candidate note (2026-10-23): [#936](https://github.com/LTstripes/hermes-finance/pull/936)
 adds migration `0061_money_instrument_links` after 0060. The 1.4.0 preparation documents
 are marked as historical 0060 snapshots, not current-head runtime instructions.
-This unmerged candidate does not change published/installed schema or UAT acceptance.
+The stacked `feat/reg-isin-mapping` candidate adds empty migration
+`0062_security_reg_isin_mappings` and backend-only owner CSV/CLI editing with explicit
+relink. These unmerged candidates do not change published/installed schema or UAT acceptance.
 
 <a id="s1"></a>
 ## 1. Code, published release, installed runtime and UAT are separate
