@@ -41,6 +41,11 @@ def _recovery_readiness(database_path: Path) -> dict[str, str] | None:
 
 def main(arguments: list[str] | None = None) -> None:
     arguments = sys.argv[1:] if arguments is None else arguments
+    if arguments[:1] == ["reg-isin"]:
+        from hermes_finance.reg_isin_cli import main as reg_isin_main
+
+        reg_isin_main(arguments[1:])
+        return
     if arguments[:1] == ["scratch-preflight"]:
         from hermes_finance.scratch_preflight import main as scratch_main
 

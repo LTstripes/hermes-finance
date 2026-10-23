@@ -92,6 +92,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_security_reg_isin_mappings_service.py",
     "test_astra_medium_xfail.py",
     "test_source_instrument_returns_service.py",
     "test_source_monthly_returns_service.py",

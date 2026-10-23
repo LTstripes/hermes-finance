@@ -5893,6 +5893,49 @@ replay and GET remain read-only. Classification PUT recomputes the selected row'
 link. This metadata grants no financial receipt/Close authority and does not change
 the instrument-return reader's attribution rules. Downgrade removes only these
 four columns/constraints and preserves classifications and journal observations.
+Migration `0062_security_reg_isin_mappings` adds an empty owner-maintained offline
+crosswalk: unique normalized uppercase `reg_number`, a 12-character ISIN matching
+`[A-Z]{2}[A-Z0-9]{9}[0-9]`, nullable note, id and creation/update timestamps. No real
+identifiers are seeded in code or migrations. The CLI validates the supported
+registration grammar, trims/uppercases identifiers and rejects malformed entries;
+ISIN format validation does not assert checksum or external registry existence.
+The resolver follows an explicit reg → mapped ISIN into the existing catalog and
+effective MyBroker alias/observed-ISIN component. Exactly one non-conflicting target
+links; none is `unresolved_no_match`; multiple targets or contradictory evidence
+are `unresolved_ambiguous`. An issuer-name match cannot choose between targets in
+an owner-crosswalk component or override conflicting existing broker identities.
+Mapping edits create no instruments or broker identities and make no network calls.
+
+Owner editing is backend-only through `hermes-finance-api reg-isin`:
+`list`, `set <reg> <isin> [--note <text>]`, `remove <reg>`, `import <csv>` and `relink`.
+Every command requires an explicit `HERMES_FINANCE_DATABASE_PATH` selecting an
+existing database already migrated to the checkout's head; it neither starts the
+server nor migrates implicitly. CSV is UTF-8 (optional BOM), with the exact header
+`reg_number,isin,note`. The entire file is validated before one reserved transaction;
+identical normalized duplicates are allowed, conflicting duplicates fail atomically.
+Upserts preserve id/creation time and leave update time unchanged for identical
+values. A blank/omitted note on `set` clears the note; removing an absent key is
+idempotent. Real values are imported locally only, outside tracked fixtures/CI.
+
+Mapping edits do not rewrite saved links. Explicit `reg-isin relink` refreshes the
+four derived link fields on existing classification rows in one reserved transaction,
+using current mappings/catalog/effective identities. It preserves occurrence/source
+identity, classifications, manual decisions, origin/status and decision timestamps;
+it creates no missing legacy classifications or journal events. Rows bound to CLOSED
+months are skipped until explicit Reopen. The command reports processed, changed
+and skipped-closed row counts; unchanged relinks are idempotent. New Save and
+classification PUT also use the current crosswalk. Reads remain read-only.
+Downgrade 0062 drops the crosswalk only (including local notes/entries), preserving
+0061 link metadata, classifications and journal evidence; re-upgrade starts empty.
+For an authorized selected database, from the repository root in PowerShell:
+
+```powershell
+$env:HERMES_FINANCE_DATABASE_PATH = 'C:\OwnerScratch\selected.db'
+uv run --project backend --locked hermes-finance-api reg-isin import 'C:\OwnerScratch\mappings.csv'
+uv run --project backend --locked hermes-finance-api reg-isin relink
+uv run --project backend --locked hermes-finance-api reg-isin list
+```
+
 The supported dividend transfer is operation `Перевод` with narrative starting
 `Дивиденды` or `Дивиденд по` followed by nonempty single-line issuer/security
 context. Narrative matching case-folds, treats ё as е and collapses whitespace

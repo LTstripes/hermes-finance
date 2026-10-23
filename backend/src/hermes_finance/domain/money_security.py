@@ -36,6 +36,14 @@ _DIVIDEND = re.compile(
 )
 
 
+def normalize_registration_number(value: str) -> str:
+    """Normalize a supported registration identifier without guessing punctuation."""
+    normalized = value.strip().upper()
+    if re.fullmatch(_REG, normalized) is None:
+        raise ValueError("reg_number_invalid")
+    return normalized
+
+
 def parse_money_security(narrative: str) -> MoneySecurity | None:
     """Extract only the complete supported shapes. Refunds/extra text fail closed.
 
