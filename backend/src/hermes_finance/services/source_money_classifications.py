@@ -17,7 +17,6 @@ from hermes_finance.persistence import SourceIntakeObservation, SourceMoneyClass
 from hermes_finance.services.money_instrument_links import (
     MoneyInstrumentResolver,
     apply_money_instrument_link,
-    intake_money_resolver,
 )
 from hermes_finance.services.mybroker_money_candidates import _narratives, _pattern
 from hermes_finance.statement_import.money import normalize_currency
@@ -261,7 +260,8 @@ def persist_money_classifications(session, intake_id, document):
     """Called inside the save transaction, after immutable observations exist.
 
     Only assumed defaults are re-evaluated on a new save command.
-    User choices and confirmed defaults retain their classification and metadata.
+    User choices and confirmed defaults retain their classification, origin/status
+    and decision timestamps. Derived instrument-link metadata is refreshed.
     """
     session.flush()
     observations = list(
@@ -297,7 +297,7 @@ def persist_money_classifications(session, intake_id, document):
     if len(observations) != len(narratives):
         raise MyBrokerError("source_intake_parser_revision_changed")
     now = datetime.now(UTC)
-    resolver = MoneyInstrumentResolver(session, trades)
+    resolver = MoneyInstrumentResolver(session)
     for observation, (operation, narrative, _) in zip(observations, narratives, strict=True):
         row = json.loads(observation.facts_json)
         reference = source_reference(intake_id, row)
@@ -420,7 +420,7 @@ def choose_classification(session, intake_id, reference, classification):
             row.origin = "user_choice"
             row.status = "confirmed"
             row.updated_at = datetime.now(UTC)
-        apply_money_instrument_link(row, intake_money_resolver(session, intake_id))
+        apply_money_instrument_link(row, MoneyInstrumentResolver(session))
         session.flush()
         result = classification_dict(row)
         session.commit()

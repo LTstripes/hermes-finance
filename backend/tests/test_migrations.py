@@ -76,6 +76,11 @@ def test_money_instrument_links_additive_populated_upgrade_downgrade(tmp_path):
                 connection.execute(
                     f"UPDATE {table} SET instrument_link_status=NULL WHERE id=?", (original[0][0],)
                 )
+            connection.execute(
+                f"UPDATE {table} SET instrument_id=NULL,security_reg_number=NULL,security_issuer=NULL,"
+                "instrument_link_status='kind_mismatch' WHERE id=?",
+                (original[0][0],),
+            )
             connection.commit()
             # Instrument insertion legitimately appends a dependency revision;
             # migrations must preserve the journal as it stands after that write.

@@ -45,6 +45,9 @@ DIVIDEND_SECURITY = 'Дивиденды за 2029 г. по акциям ПАО "
         (COUPON_SECURITY + "\n", None),
         ("prefix " + COUPON_SECURITY, None),
         ("", None),
+        (COUPON_SECURITY.replace('АО "Синтетический Ландыш"', 'АО "   "'), None),
+        (DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО    "), None),
+        (DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО «\t »"), None),
     ],
 )
 def test_money_security_parser_strict_shapes(text, expected):
@@ -88,18 +91,14 @@ def _security_mapping(
     return row
 
 
-@pytest.mark.parametrize("trade_identifier", ["1-01-99999-Z", "RU000A099991", None])
-def test_money_security_resolver_known_registration_mapping_and_statement_trade(
-    db, trade_identifier
-):
+def test_money_security_resolver_known_registration_mapping(db):
     from hermes_finance.domain.money_security import parse_money_security
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
 
     with db.session_factory() as session:
         instrument = _security_instrument(session, isin="RU000A099991")
         _security_mapping(session, instrument, isin=instrument.isin)
-        trades = [{"core": {"isin": trade_identifier}}] if trade_identifier else []
-        resolver = MoneyInstrumentResolver(session, trades)
+        resolver = MoneyInstrumentResolver(session)
         assert resolver.resolve(parse_money_security(DIVIDEND_SECURITY)) == (
             instrument.id,
             "linked",
@@ -133,8 +132,8 @@ def test_money_security_resolver_fail_closed_and_exact_issuer_tie_break(db, mode
                 status="revoked" if mode == "revoked" else "effective",
                 provider="alfa_mybroker" if mode == "revoked" else "synthetic_other",
             )
-        # Even an exact issuer and a same-statement ISIN cannot invent a reg mapping.
-        resolver = MoneyInstrumentResolver(session, [{"core": {"isin": "RU000A099991"}}])
+        # Even an exact issuer cannot invent a registration mapping.
+        resolver = MoneyInstrumentResolver(session)
         expected = {
             "no_match": (None, "unresolved_no_match"),
             "revoked": (None, "unresolved_no_match"),
@@ -256,9 +255,68 @@ def test_coupon_link_is_populated_on_initial_import(db):
     assert (row.instrument_id, row.instrument_link_status) == (instrument_id, "linked")
 
 
+@pytest.mark.parametrize(
+    "narrative,classification",
+    [(DIVIDEND_SECURITY, "coupon"), (COUPON_SECURITY, "dividend")],
+)
+def test_parsed_payout_kind_mismatch_is_distinct_and_preserves_choice(
+    db, narrative, classification
+):
+    intake, (raw, filename) = save_month(
+        db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),)
+    )
+    original = saved_rows(db, intake)[0]
+    client = TestClient(create_app(database=db))
+    response = client.put(
+        f"/api/source-intakes/{intake}/money-classifications/{original.source_reference}",
+        json={"classification": classification},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["instrument_link_status"] == "kind_mismatch"
+    decision_time = response.json()["updated_at"]
+    with db.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="refresh-kind-mismatch"
+        )
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_link_status == "kind_mismatch"
+    assert (row.security_reg_number, row.security_issuer, row.instrument_id) == (None, None, None)
+    assert (row.classification, row.origin, row.status) == (
+        classification,
+        "user_choice",
+        "confirmed",
+    )
+    assert row.updated_at == datetime.fromisoformat(decision_time).replace(tzinfo=None)
+
+
+@pytest.mark.parametrize(
+    "operation,narrative",
+    [
+        ("НДФЛ", "НДФЛ с купона " + COUPON_SECURITY),
+        ("НДФЛ", "Налог на дивиденды " + DIVIDEND_SECURITY),
+        ("Перевод на счет", "Перевод на счет 9999999 " + DIVIDEND_SECURITY),
+        ("Банковский перевод", "Перевод на счет 9999999 " + COUPON_SECURITY),
+        ("Перевод", "Возврат " + DIVIDEND_SECURITY),
+        ("Перевод", COUPON_SECURITY + " возврат"),
+        ("Перевод", DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "ПАО    ")),
+        ("Перевод", COUPON_SECURITY.replace('АО "Синтетический Ландыш"', 'АО "  "')),
+    ],
+)
+def test_tax_transfer_refund_and_empty_issuer_never_link(db, operation, narrative):
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        _security_mapping(session, instrument, isin=instrument.isin)
+        bond = _security_instrument(session, name='АО "Синтетический Ландыш"', isin="RU000A099992")
+        _security_mapping(session, bond, "4B02-09-99999-Z-001P", isin=bond.isin)
+        session.commit()
+    intake, _ = save_month(db, candidate_count=0, extra=((operation, narrative, "12.34"),))
+    row = saved_rows(db, intake)[0]
+    assert row.instrument_link_status in {"not_applicable", "not_parsed"}
+    assert (row.security_reg_number, row.security_issuer, row.instrument_id) == (None, None, None)
+
+
 @pytest.mark.parametrize("reverse", [False, True])
-@pytest.mark.parametrize("trade_identifier", [None, "1-01-99999-Z", "RU000A099991"])
-def test_money_security_alias_chain_conflicts_are_order_independent(db, reverse, trade_identifier):
+def test_money_security_alias_chain_conflicts_are_order_independent(db, reverse):
     from hermes_finance.domain.money_security import parse_money_security
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
 
@@ -268,8 +326,7 @@ def test_money_security_alias_chain_conflicts_are_order_independent(db, reverse,
         evidence = [(first, "1-01-99999-Z"), (second, "RU000A099991")]
         for instrument, alias in reversed(evidence) if reverse else evidence:
             _security_mapping(session, instrument, alias, isin="RU000A099991")
-        trades = [{"core": {"isin": trade_identifier}}] if trade_identifier else []
-        resolver = MoneyInstrumentResolver(session, trades)
+        resolver = MoneyInstrumentResolver(session)
         assert resolver.resolve(parse_money_security(DIVIDEND_SECURITY)) == (
             None,
             "unresolved_ambiguous",

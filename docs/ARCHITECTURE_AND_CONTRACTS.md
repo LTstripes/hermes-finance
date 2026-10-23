@@ -5828,12 +5828,15 @@ until an explicit new Save or classification PUT. Strict complete MyBroker coupo
 and dividend narrative shapes extract registration/issuer only for positive rows
 whose effective classification agrees with the parsed payout kind. Other rows are
 `not_applicable`, including NULL/nonrepresentable kopeck amounts; unsupported or
-truncated income shapes are `not_parsed`. Save and PUT use the same bounded saved
-narrative and integer amount. Exact same-statement
-trade identifiers (completed or pending), catalog `isin` and effective
-`alfa_mybroker` broker identity aliases/observed ISIN supply candidates offline.
-No reg/ISIN crosswalk is inferred from co-occurrence or a name. Whole normalized
-issuer names may break an identifier-candidate tie only when exactly one matches.
+truncated income shapes (including empty issuer names) are `not_parsed`. A complete
+payout shape whose kind differs from the effective coupon/dividend classification
+is `kind_mismatch`, with NULL identity/link fields. Save and PUT use the same bounded
+saved narrative and integer amount. Catalog `isin` and effective `alfa_mybroker`
+broker identity aliases/observed ISIN supply candidates offline. Trade identifiers
+do not add candidates. No reg/ISIN crosswalk is inferred from co-occurrence or a name.
+A whole issuer-name match (case/whitespace/quotation typography normalized) may
+break a catalog-identifier candidate tie only when exactly one candidate matches;
+it never creates candidates or overrides contradictory aliases/ISIN evidence.
 No candidate yields `unresolved_no_match`; multiple candidates or contradictory
 alias/ISIN evidence yield `unresolved_ambiguous`, with NULL `instrument_id`.
 New Save commands refresh this derived metadata even for manual choices without

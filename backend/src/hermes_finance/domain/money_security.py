@@ -5,7 +5,12 @@ from datetime import datetime
 from typing import Literal, NamedTuple
 
 InstrumentLinkStatus = Literal[
-    "linked", "unresolved_no_match", "unresolved_ambiguous", "not_parsed", "not_applicable"
+    "linked",
+    "unresolved_no_match",
+    "unresolved_ambiguous",
+    "not_parsed",
+    "kind_mismatch",
+    "not_applicable",
 ]
 
 
@@ -48,5 +53,10 @@ def parse_money_security(narrative: str) -> MoneySecurity | None:
                 datetime.strptime(match["date"], "%d.%m.%y")
             except ValueError:
                 return None
-        return MoneySecurity(match["reg"].upper(), match["issuer"].strip(), kind)
+        issuer = match["issuer"].strip()
+        # Legal-form prefixes and empty quotes are not an issuer name.
+        name = re.sub(r"^(?:ПАО|АО|ООО)\s*", "", issuer, flags=re.IGNORECASE)
+        if not name.strip('"«»').strip():
+            return None
+        return MoneySecurity(match["reg"].upper(), issuer, kind)
     return None

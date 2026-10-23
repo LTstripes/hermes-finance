@@ -1,5 +1,10 @@
 # Hermes Finance 1.4.0 — DRAFT
 
+> **Historical schema scope:** the 0060 head references below describe the 2026-10-21
+> preparation snapshot. PR #936 adds candidate migration `0061_money_instrument_links`;
+> these steps are not a current-head runbook. Reconcile the selected candidate schema
+> before any separately authorized runtime operation.
+
 > **Status:** DRAFT, unpublished candidate preparation. Owner-real numerical UAT PENDING.
 > No tag, GitHub Release, publication request, Stable update or financial acceptance exists
 > for 1.4.0. This file is not a release announcement, UAT acceptance or financial result.

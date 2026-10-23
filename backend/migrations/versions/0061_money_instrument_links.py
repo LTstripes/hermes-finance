@@ -25,7 +25,7 @@ def upgrade():
         batch.create_check_constraint(
             "ck_source_money_instrument_link_status",
             "instrument_link_status IS NULL OR instrument_link_status IN "
-            "('linked','unresolved_no_match','unresolved_ambiguous','not_parsed','not_applicable')",
+            "('linked','unresolved_no_match','unresolved_ambiguous','not_parsed','kind_mismatch','not_applicable')",
         )
         batch.create_check_constraint(
             "ck_source_money_instrument_link",

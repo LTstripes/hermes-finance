@@ -5,7 +5,7 @@ from collections import defaultdict
 from sqlalchemy import select
 
 from hermes_finance.domain.money_security import parse_money_security
-from hermes_finance.persistence import BrokerIdentityMapping, Instrument, SourceIntakeObservation
+from hermes_finance.persistence import BrokerIdentityMapping, Instrument
 from hermes_finance.statement_import.mybroker import PROVIDER
 
 
@@ -21,12 +21,11 @@ def _name(value):
 class MoneyInstrumentResolver:
     """Index catalog identifiers and explicit effective MyBroker aliases once.
 
-    isin_reg/isin_reg1 are opaque in saved trade.core.isin: either an ISIN or a
-    registration number. A trade is usable only through this same exact index;
-    co-occurrence, p_name, ticker and issuer alone never invent a reg/ISIN bridge.
+    Co-occurrence, trade identifiers, ticker and issuer alone never invent a
+    registration-number/ISIN bridge.
     """
 
-    def __init__(self, session, trades):
+    def __init__(self, session):
         self.instruments = {row.id: row for row in session.scalars(select(Instrument))}
         self.identifiers = defaultdict(set)
         self.aliases = defaultdict(set)
@@ -57,7 +56,6 @@ class MoneyInstrumentResolver:
                 if related:
                     self.aliases[alias].add(related)
                     self.aliases[related].add(alias)
-        self.trades = {_identifier(trade["core"]["isin"]) for trade in trades}
 
     def resolve(self, security):
         reg = security.reg_number
@@ -69,11 +67,7 @@ class MoneyInstrumentResolver:
                 if alias not in related:
                     related.add(alias)
                     pending.append(alias)
-        # First collect matching same-statement trade identities, then catalog /
-        # known mappings. A trade ISIN needs an explicit path from this reg.
         candidates = set()
-        for identifier in self.trades & related:
-            candidates.update(self.identifiers.get(identifier, ()))
         mapped = set()
         for identifier in related:
             candidates.update(self.identifiers.get(identifier, ()))
@@ -107,24 +101,11 @@ def apply_money_instrument_link(row, resolver):
     # Save and PUT use the same bounded persisted text and representable amount.
     # Truncation digests cannot accidentally satisfy a complete payout grammar.
     security = parse_money_security(row.narrative)
-    if security is None or security.kind != row.classification:
+    if security is None:
         row.instrument_link_status = "not_parsed"
+        return
+    if security.kind != row.classification:
+        row.instrument_link_status = "kind_mismatch"
         return
     row.security_reg_number, row.security_issuer = security.reg_number, security.issuer_name
     row.instrument_id, row.instrument_link_status = resolver.resolve(security)
-
-
-def intake_money_resolver(session, intake_id):
-    import json
-
-    trades = [
-        json.loads(observation.facts_json)
-        for observation in session.scalars(
-            select(SourceIntakeObservation).where(
-                SourceIntakeObservation.original_id == intake_id,
-                SourceIntakeObservation.section == "trades",
-                SourceIntakeObservation.generation == 1,
-            )
-        )
-    ]
-    return MoneyInstrumentResolver(session, trades)
