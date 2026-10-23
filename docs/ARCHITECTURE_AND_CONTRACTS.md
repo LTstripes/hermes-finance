@@ -12175,6 +12175,48 @@ If a position disappears after an earlier apply, the event is not auto-deleted. 
 
 Closed-month applied data is never rewritten by refresh of another month.
 
+<a id="c9-source-payout-preview"></a>
+#### Saved-statement quantity preview (#711 / #889)
+
+`POST /api/source-returns/payout-preview` takes exact `source_account`, `isin` and
+`as_of` (native closing EOD). It reuses effective durable intake views, the dated
+source-event reader and accepted catalogue/T-Invest crosswalk. A filename alias
+must resolve to exactly one native row account through the existing source selector.
+There is no latest-month fallback, quantity aggregation across accounts, catalogue
+creation or PositionSnapshot write. Missing, conflicting, inferred-date or unsettled
+quantity stays NULL with reasons; explicit zero remains zero. A missing accepted
+T-Invest mapping is actionable unavailable state, never implicit provider discovery.
+
+This separate preview has `authority=provisional`, `financial_authority=none` and
+`quantity_authority=source_observed`, even when a journal links an accepted strict
+receipt. It does not issue a financial Apply selection or alter existing calendars,
+provider revisions, cash, Close or returns. `fixed_source_quantity_not_entitlement`
+discloses that a dated observed holding is a scenario quantity, not proof of future
+record-date entitlement. Totals reuse Decimal/ROUND_HALF_UP payout arithmetic and
+are provider-announced RUB amounts; personal tax remains unknown, never labelled net.
+
+Only the existing T-Invest payout provider is called, on explicit POST. The request
+contains its accepted public UID and dates, never native account, quantity or source
+payload. Its future horizon is one year from `as_of`; comparison history is bounded
+to 366 prior days. Payment dates outside the future horizon cannot count. Provider
+failures remain explicit; omission does not cancel previously applied events.
+
+Actuals retain existing source event keys, overlap deduplication, classifications,
+persisted payout links/currentness, uncertainty and source references. Same-kind
+actuals within three days are `possible_paid`, with exact candidate event keys and
+`actual_provider_identity_unproven`; date/amount similarity cannot establish provider
+identity or equate gross and net. These candidates, past unreconciled events,
+duplicate provider identities and events with unresolved actual attribution cannot
+count as future. Actuals remain visible, including unmatched/unsupported evidence.
+No automatic paid-state mutation, new reconciliation registry or money ledger exists.
+
+The response retains original/parser/manifest/journal/classification/link provenance
+and a dependency fingerprint. Two coherent query-only reads bracket provider I/O;
+source/mapping changes, including journal ABA revisions, return 409 rather than a
+mixed-state preview. Replay/reload is read-only and deterministic for unchanged
+source and provider evidence; no response is a persisted acceptance receipt. The
+typed consumer preserves Decimal strings, integer minor units, NULL and candidates.
+
 
 <a id="c9-0011-automatic-investment-payout-calendar-18-horizon-and-provider-coverage"></a>
 #### Horizon and provider coverage
