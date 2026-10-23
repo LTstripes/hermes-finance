@@ -175,9 +175,7 @@ def source_payout_context(session, source_account: str, isin: str, as_of: date):
     actuals = tuple(
         e
         for e in events
-        if e.isin in (isin, None)
-        and e.kind in {"COUPON", "DIVIDEND", "REDEMPTION", "UNRESOLVED"}
-        and (e.event_date is None or e.event_date <= as_of)
+        if e.isin in (isin, None) and e.kind in {"COUPON", "DIVIDEND", "REDEMPTION", "UNRESOLVED"}
     )
     # Bind complete source revisions (including ABA dependency events), catalogue,
     # current payout links/classifications and mapping mutation time across provider I/O.
@@ -292,7 +290,7 @@ def reconcile_source_payouts(context: SourcePayoutContext, fetched: PayoutFetchR
                 "source_method": event.source_method,
                 "per_unit_amount": event.per_unit_amount,
                 "currency": event.currency,
-                "announced_amount_kopecks": total,
+                "announced_amount_kopecks": str(total) if total is not None else None,
                 "personal_tax_known": False,
                 "status": status,
                 "countable_future": countable,
@@ -318,7 +316,41 @@ def reconcile_source_payouts(context: SourcePayoutContext, fetched: PayoutFetchR
         "reason_codes": context.reason_codes,
         "provider": T_INVEST_PROVIDER,
         "instrument_uid": context.instrument_uid,
-        "actuals": context.actuals,
+        "actuals": [
+            {
+                **{
+                    key: getattr(e, key)
+                    for key in (
+                        "event_key",
+                        "provider",
+                        "native_source_account",
+                        "isin",
+                        "kind",
+                        "source_references",
+                        "event_date",
+                        "effective_isin",
+                        "classification",
+                        "classification_origin",
+                        "classification_status",
+                        "persisted_link_status",
+                        "attribution_basis",
+                        "current",
+                        "counted",
+                        "reason_codes",
+                        "assumptions",
+                    )
+                },
+                **{
+                    key: str(value) if (value := getattr(e, key)) is not None else None
+                    for key in (
+                        "net_payout_kopecks",
+                        "gross_payout_kopecks",
+                        "withheld_tax_kopecks",
+                    )
+                },
+            }
+            for e in context.actuals
+        ],
         "reconciliation_reasons": context.reconciliation_reasons,
         "rows": rows,
         "failures": [f.status.value for f in fetched.failures] if fetched else [],

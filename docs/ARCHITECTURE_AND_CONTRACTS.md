@@ -12202,7 +12202,9 @@ to 366 prior days. Payment dates outside the future horizon cannot count. Provid
 failures remain explicit; omission does not cancel previously applied events.
 
 Actuals retain existing source event keys, overlap deduplication, classifications,
-persisted payout links/currentness, uncertainty and source references. Same-kind
+persisted payout links/currentness, uncertainty and source references. All
+already saved actuals remain visible even after the selected quantity date: `as_of`
+is a quantity basis date, never a knowledge cutoff. Same-kind
 actuals within three days are `possible_paid`, with exact candidate event keys and
 `actual_provider_identity_unproven`; date/amount similarity cannot establish provider
 identity or equate gross and net. These candidates, past unreconciled events,
@@ -12215,7 +12217,9 @@ and a dependency fingerprint. Two coherent query-only reads bracket provider I/O
 source/mapping changes, including journal ABA revisions, return 409 rather than a
 mixed-state preview. Replay/reload is read-only and deterministic for unchanged
 source and provider evidence; no response is a persisted acceptance receipt. The
-typed consumer preserves Decimal strings, integer minor units, NULL and candidates.
+typed consumer preserves Decimal strings, NULL and candidates. This endpoint sends
+announced and actual payout minor units as exact integer strings, including values
+above JavaScript's safe integer range; it performs no floating-point conversion.
 
 
 <a id="c9-0011-automatic-investment-payout-calendar-18-horizon-and-provider-coverage"></a>

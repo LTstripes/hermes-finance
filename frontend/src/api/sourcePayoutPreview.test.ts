@@ -32,7 +32,7 @@ it("sends exact native scope and preserves Decimal, UNKNOWN, provenance and reco
         source_method: "GetDividends",
         per_unit_amount: "1.2345",
         currency: "RUB",
-        announced_amount_kopecks: null,
+        announced_amount_kopecks: "9007199254740993",
         personal_tax_known: false,
         status: "possible_paid",
         countable_future: false,
@@ -48,6 +48,15 @@ it("sends exact native scope and preserves Decimal, UNKNOWN, provenance and reco
   vi.stubGlobal("fetch", fetcher);
   const controller = new AbortController();
   expect(await previewSourcePayouts(payload, controller.signal)).toEqual(response);
+  const unknown = structuredClone(response);
+  unknown.quantity = null;
+  unknown.rows[0].announced_amount_kopecks = null;
+  fetcher.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify(unknown),
+  });
+  expect(await previewSourcePayouts(payload)).toEqual(unknown);
   expect(fetcher.mock.calls[0][0]).toBe("/api/source-returns/payout-preview");
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(payload);
   expect(fetcher.mock.calls[0][1].signal).toBe(controller.signal);

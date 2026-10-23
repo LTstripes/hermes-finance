@@ -92,7 +92,7 @@ def test_saved_source_quantity_no_finance_authority_replay_reload_and_no_dml(db)
         assert data["authority"] == "provisional"
         assert data["native_source_account"] == ACCOUNT
         assert data["reason_codes"] == []
-        assert data["rows"][0]["announced_amount_kopecks"] == 1235
+        assert data["rows"][0]["announced_amount_kopecks"] == "1235"
         assert data["rows"][0]["countable_future"]
         assert not data["rows"][0]["personal_tax_known"]
         assert data["source_references"][0]["original_digest"]
@@ -117,7 +117,7 @@ def test_zero_and_fractional_quantity_are_not_unknown(db, quantity):
     client, _ = environment(db, quantity=quantity)
     data = client.post(PATH, json=PAYLOAD).json()
     assert Decimal(data["quantity"]) == Decimal(quantity)
-    assert data["rows"][0]["announced_amount_kopecks"] == (0 if quantity == "0" else 309)
+    assert data["rows"][0]["announced_amount_kopecks"] == ("0" if quantity == "0" else "309")
 
 
 @pytest.mark.parametrize(
@@ -158,7 +158,7 @@ def test_actual_dividend_is_single_source_event_and_not_second_future_payment(db
     client, _ = environment(db, extra=(("Дивиденды", ISIN, "100"),), provider=provider)
     data = client.post(PATH, json=PAYLOAD).json()
     assert len(data["actuals"]) == 1
-    assert data["actuals"][0]["net_payout_kopecks"] == 10000
+    assert data["actuals"][0]["net_payout_kopecks"] == "10000"
     assert data["rows"][0]["status"] == "possible_paid"
     assert data["rows"][0]["actual_event_keys"] == [data["actuals"][0]["event_key"]]
     assert not data["rows"][0]["countable_future"]
@@ -254,6 +254,39 @@ def test_bond_uses_quantity_without_inventing_dirty_value_or_tax(db):
     )
     data = TestClient(app).post(PATH, json={**PAYLOAD, "isin": BOND}).json()
     assert data["quantity"] == "2"
-    assert data["rows"][0]["announced_amount_kopecks"] == 247
+    assert data["rows"][0]["announced_amount_kopecks"] == "247"
     assert data["rows"][0]["personal_tax_known"] is False
     assert data["financial_authority"] == "none"
+
+
+def test_later_saved_actual_suppresses_future_for_older_quantity_date(db):
+    client, _ = environment(db, provider=Provider(events=(payout(date(2030, 5, 15)),)))
+    later = save(
+        db,
+        5,
+        stock=("10", "10", "1000", "1000"),
+        bond=None,
+        trades=(),
+        extra=(("Дивиденды", ISIN, "100"),),
+    )
+    data = client.post(PATH, json=PAYLOAD).json()
+    assert data["as_of"] == "2030-04-30" and data["quantity"] == "10"
+    assert data["actuals"][0]["event_date"] == "2030-05-15"
+    assert any(s["intake_id"] == later for s in data["source_references"])
+    assert data["rows"][0]["status"] == "possible_paid"
+    assert not data["rows"][0]["countable_future"]
+
+
+def test_minor_units_above_js_safe_integer_are_exact_strings(db):
+    client, _ = environment(db, provider=Provider(events=(payout(amount="9007199254740.993"),)))
+    data = client.post(PATH, json=PAYLOAD).json()
+    assert data["rows"][0]["announced_amount_kopecks"] == "9007199254740993"
+    assert data["rows"][0]["countable_future"]
+
+
+def test_actual_minor_units_also_use_exact_transport(db):
+    client, _ = environment(db, extra=(("Дивиденды", ISIN, "90071992547409.93"),))
+    data = client.post(PATH, json=PAYLOAD).json()
+    assert data["actuals"][0]["net_payout_kopecks"] == "9007199254740993"
+    assert data["actuals"][0]["gross_payout_kopecks"] is None
+    assert data["actuals"][0]["withheld_tax_kopecks"] is None

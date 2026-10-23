@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.market_data import close_owned_payout_resource, resolve_payout_provider
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.domain.instrument_return import InstrumentEvent, SourceReference
+from hermes_finance.domain.instrument_return import SourceReference
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER
 from hermes_finance.market_data.payout import PayoutEventStatus
 from hermes_finance.market_data.payout_protocol import PayoutFailure, PayoutFetchResult
@@ -37,12 +37,35 @@ class SourcePayoutRow(BaseModel):
     source_method: str | None
     per_unit_amount: Decimal | None
     currency: str | None
-    announced_amount_kopecks: int | None
+    announced_amount_kopecks: str | None
     personal_tax_known: Literal[False]
     status: str
     countable_future: bool
     actual_event_keys: list[str]
     reason_codes: list[str]
+
+
+class SourcePayoutActual(BaseModel):
+    event_key: str
+    provider: str
+    native_source_account: str
+    isin: str | None
+    kind: str
+    source_references: tuple[str, ...]
+    event_date: date | None
+    effective_isin: str | None
+    classification: str | None
+    classification_origin: str | None
+    classification_status: str | None
+    persisted_link_status: str | None
+    attribution_basis: str | None
+    current: bool
+    counted: bool
+    reason_codes: tuple[str, ...]
+    assumptions: tuple[str, ...]
+    net_payout_kopecks: str | None
+    gross_payout_kopecks: str | None
+    withheld_tax_kopecks: str | None
 
 
 class SourcePayoutResponse(BaseModel):
@@ -63,7 +86,7 @@ class SourcePayoutResponse(BaseModel):
     reason_codes: tuple[str, ...]
     provider: Literal["t_invest"]
     instrument_uid: str | None
-    actuals: tuple[InstrumentEvent, ...]
+    actuals: tuple[SourcePayoutActual, ...]
     reconciliation_reasons: tuple[str, ...]
     rows: list[SourcePayoutRow]
     failures: list[str]
