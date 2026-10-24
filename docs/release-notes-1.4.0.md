@@ -1,11 +1,14 @@
 # Hermes Finance 1.4.0
 
-Selected **v1.4.0 code/Test candidate:** accepted `main@e487d57080dca0eb88484adeda52c51889b9fd5d`
-(2026-10-24), including merged #953 backend Close and #954 Month UI. Backend/frontend
-manifests, locks and health identity use 1.4.0. [Exact post-main push CI](https://github.com/LTstripes/hermes-finance/actions/runs/40099148969)
-is SUCCESS. The bounded Month code is frozen for this release; another main change
-requires an exact candidate decision. **No 1.4.0 GitHub Release or Stable update exists yet.**
-Latest Test/O4 and production gates are in [CURRENT_STATUS](CURRENT_STATUS.md) and [#940](https://github.com/LTstripes/hermes-finance/issues/940).
+Hermes Finance **1.4.0** includes the accepted Month workflow and intentional-empty
+Close safeguards from #953/#954, source-account and instrument return views,
+and schema **0064**. Backend/frontend manifests, locks and health identity use 1.4.0.
+
+The accepted application baseline is `e487d57080dca0eb88484adeda52c51889b9fd5d`
+(2026-10-24), with [exact post-main push CI](https://github.com/LTstripes/hermes-finance/actions/runs/40099148969)
+SUCCESS and bounded Owner-local Test UAT. Release identity, installation evidence and
+operational gates are tracked in [CURRENT_STATUS](CURRENT_STATUS.md) and
+[#940](https://github.com/LTstripes/hermes-finance/issues/940).
 
 Keep the canonical path `docs/release-notes-1.4.0.md`: the installed v1.3.0 updater reads
 that path in the target commit. Publication requires accepted canonical main, exact-main
@@ -78,7 +81,7 @@ Neither demonstrates a real Stable 0058→0064 migration or return to old code.
 
 ## Update and recovery
 
-Follow the [candidate checklist](releases/1.4.0-test-run.md),
+Follow the [release checklist](releases/1.4.0-test-run.md),
 [recovery disposition](releases/1.4.0-rollback.md) and O3/O4. Owner-local Test **O4 PASS**
 covers a managed plaintext synced backup, independent cloud SHA256 readback, and detached
 same-revision **0064→0064** restoration with 76 matching table fingerprints. It does **not**
@@ -115,4 +118,4 @@ flows. Owner account checks do not remove those limitations.
 
 Parser-generation drift fails closed. Retain unchanged originals for a separately accepted
 fresh rebuild; no manifest rewrite, trigger removal or in-place V1 reparse bypass. Reported
-reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Private instrument numerical UAT, history loading, the instrument UI and forecast-ingestion seams remain separate work.
+reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Further private instrument numerical acceptance, history loading and forecast-ingestion seams remain separate work; the bounded read-only instrument surfaces listed above are included.
