@@ -23,6 +23,7 @@ TRANSITION = (
     "0062_security_reg_isin_mappings",
     "0063_intentional_empty_close",
     "0064_month_template_provenance",
+    "0065_source_return_proofs",
 )
 
 

@@ -1,4 +1,76 @@
-import { apiRequest } from "./client";
+import { apiMultipart, apiRequest } from "./client";
+
+export type SourceReturnProof = {
+  status: "absent" | "current" | "stale";
+  proof_id: number | null;
+  version: string;
+  confirmed_at: string | null;
+  currentness: string | null;
+  reason_codes: string[];
+  financial_authority: "none";
+};
+export type SourceReturnProofPreview = {
+  source_account: string;
+  version: string;
+  preview_digest: string;
+  form_token: string;
+  source_count: number;
+  cancellation_months: string[];
+  table_deltas: Record<string, number>;
+  other_table_deltas: number;
+  trigger_deltas: number;
+  financial_effects: 0;
+  financial_authority: "none";
+};
+export type SourceReturnProofAck = {
+  request_id: string;
+  source_account: string;
+  proof: SourceReturnProof;
+  replay: boolean;
+};
+
+export function previewSourceReturnProof(
+  sourceAccount: string,
+  expectedSources: { intake_id: number; manifest_digest: string }[],
+  files: File[],
+  signal?: AbortSignal,
+) {
+  const form = new FormData();
+  form.set(
+    "request",
+    JSON.stringify({ source_account: sourceAccount, expected_sources: expectedSources }),
+  );
+  files.forEach((file) => {
+    form.append("files", file, file.name);
+  });
+  return apiMultipart<SourceReturnProofPreview>("/api/source-returns/proofs/preview", form, signal);
+}
+
+export function confirmSourceReturnProof(
+  sourceAccount: string,
+  preview: SourceReturnProofPreview,
+  requestId: string,
+  signal?: AbortSignal,
+) {
+  return apiRequest<SourceReturnProofAck>("/api/source-returns/proofs/confirm", {
+    method: "POST",
+    signal,
+    body: {
+      source_account: sourceAccount,
+      preview_digest: preview.preview_digest,
+      form_token: preview.form_token,
+      request_id: requestId,
+      attested: true,
+    },
+  });
+}
+
+export function getSourceReturnProofRequest(requestId: string, signal?: AbortSignal) {
+  return apiRequest<SourceReturnProofAck>(
+    `/api/source-returns/proofs/requests/${encodeURIComponent(requestId)}`,
+    { signal },
+  );
+}
 
 export type ReturnGap = {
   code: string;
@@ -49,6 +121,7 @@ export type SourceReturnFlow = {
   classification: string;
 };
 export type SourceMonthlyReturns = {
+  source_proof?: SourceReturnProof | null;
   source_account: string;
   months: MonthlyReturn[];
   defaults_applied: SourceReturnFlow[];

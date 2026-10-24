@@ -205,6 +205,37 @@ class SourceIntakeRevision(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SourceReturnProof(Base):
+    """Append-only non-economic custody-month evidence; no XML or calculated rate."""
+
+    __tablename__ = "source_return_proofs"
+    __table_args__ = (
+        CheckConstraint(
+            "proof_version = 'source_return_custody_v1'", name="ck_source_return_proof_version"
+        ),
+        CheckConstraint("length(dependency_digest) = 64", name="ck_source_return_proof_dependency"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_account: Mapped[str] = mapped_column(String(256), nullable=False)
+    native_account: Mapped[str] = mapped_column(String(256), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    proof_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    dependency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SourceReturnProofDependency(Base):
+    """Monotonic source-proof retirement only; not a financial/source event ledger."""
+
+    __tablename__ = "source_return_proof_dependencies"
+    __table_args__ = ({"sqlite_autoincrement": True},)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class MyBrokerImport(Base):
     """Append-only normalized S1 evidence, separate from financial facts.
 

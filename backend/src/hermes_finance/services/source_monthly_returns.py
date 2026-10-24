@@ -39,6 +39,17 @@ from hermes_finance.statement_import.mybroker_return_structure import (
 @coherent_read_operation
 def read_monthly_returns_with_originals(session, *, source_account, documents, expected_sources):
     """Transient evidence for ALL selected journals; never a source-exclusion API."""
+    _, originals = verified_originals(
+        session,
+        source_account=source_account,
+        documents=documents,
+        expected_sources=expected_sources,
+    )
+    return read_monthly_returns(session, source_account=source_account, originals=originals)
+
+
+def verified_originals(session, *, source_account, documents, expected_sources):
+    """Shared exact-original verification, without calculating or saving anything."""
     selected, _ = _selected_sources(session, source_account)
     if not selected or any(error for _, _, error in selected):
         raise MyBrokerError("source_return_original_scope_unavailable")
@@ -66,7 +77,7 @@ def read_monthly_returns_with_originals(session, *, source_account, documents, e
             expected_manifest_digest=view["manifest_digest"],
         )
         originals[row.id] = (document, filename)
-    return read_monthly_returns(session, source_account=source_account, originals=originals)
+    return selected, originals
 
 
 SOURCE_PERIOD_INFERRED_MESSAGE = (
@@ -156,6 +167,7 @@ class SourceMonthlyReturns:
     financial_authority: str = "none"
     currency: str = "RUB"
     approximate: bool = True
+    source_proof: dict | None = None
 
     def to_dict(self):
         value = asdict(self)
@@ -193,7 +205,7 @@ def _native_scope(document):
     return aliases - {None}
 
 
-def _selected_sources(session, source_account):
+def _selected_sources(session, source_account, *, reserved=False):
     """Resolve a filename alias only through its documents' single row account.
 
     This is local source selection, not a persisted Hermes account mapping.
@@ -206,7 +218,11 @@ def _selected_sources(session, source_account):
             aliases = json.loads(original.native_accounts_json)
             if not isinstance(aliases, list) or source_account not in aliases:
                 continue
-            view = source_intake.read_intake(session, original.id)
+            view = (
+                source_intake._view(session, original)
+                if reserved
+                else source_intake.read_intake(session, original.id)
+            )
             document = view["document"]
             native = _native_scope(document)
             if len(native) == 1 and source_account in native | {document["filename_account"]}:
@@ -400,6 +416,9 @@ def read_monthly_returns(
     conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
     selected, native_scope = _selected_sources(session, source_account)
+    from hermes_finance.services.source_return_proofs import resolve_proof
+
+    saved_dates, proof_status = resolve_proof(session, source_account, selected, native_scope)
     for original, view, error in selected:
         start, end = original.covered_from, original.covered_to
         unknown_source_flows = False
@@ -426,12 +445,14 @@ def read_monthly_returns(
                     expected_manifest_digest=view["manifest_digest"],
                 )
                 cancellation_dates = original_cancellation_dates(view, attached[0])
-                if cancellation_dates is not None:
-                    blockers -= {
-                        "unparsed_source_rows",
-                        "4_Transfers_unsupported",
-                        "5_UFSR_unsupported",
-                    }
+            elif not originals and scope_valid:
+                cancellation_dates = saved_dates.get(original.id)
+            if cancellation_dates is not None:
+                blockers -= {
+                    "unparsed_source_rows",
+                    "4_Transfers_unsupported",
+                    "5_UFSR_unsupported",
+                }
             financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
                 (*blockers, *document.get("endpoint_blockers", []))
             )
@@ -560,6 +581,7 @@ def read_monthly_returns(
             tuple(flows),
             tuple(f for f in flows if f.status == "assumed"),
             tuple(gaps),
+            source_proof=proof_status,
         )
 
     currency_months = {gap.month for gap in gaps if gap.code == "currency_unsupported"}
@@ -702,6 +724,7 @@ def read_monthly_returns(
         tuple(flows),
         tuple(f for f in flows if f.status == "assumed"),
         tuple(gaps),
+        source_proof=proof_status,
     )
 
 

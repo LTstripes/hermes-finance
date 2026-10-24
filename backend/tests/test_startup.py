@@ -194,7 +194,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0064_month_template_provenance",
+        "revision": "0065_source_return_proofs",
         "months_status": 200,
     }
 
@@ -224,7 +224,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0064_month_template_provenance"}
+    assert observed == {"revision": "0065_source_return_proofs"}
     assert starts == 2
 
 

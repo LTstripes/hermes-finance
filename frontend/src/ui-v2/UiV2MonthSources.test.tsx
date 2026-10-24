@@ -26,17 +26,22 @@ function Location() {
 }
 function mount(path = "/v2/close?month=12&step=readiness", closed = false) {
   const onReview = vi.fn();
-  const fetcher = vi.fn(
-    async () =>
-      new Response(
-        JSON.stringify([
-          intake(1, "ACCOUNT-A"),
-          intake(2, "ACCOUNT-B"),
-          intake(3, "OTHER-PERIOD", { covered_from: "2031-07-01", covered_to: "2031-07-31" }),
-          intake(4, "OTHER-MONTH", { state: { reporting_month_id: 91 } } as Partial<SourceIntake>),
-        ]),
-        { headers: { "Content-Type": "application/json" } },
-      ),
+  const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+    String(input).startsWith("/api/source-returns/monthly")
+      ? new Response(JSON.stringify({ months: [] }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      : new Response(
+          JSON.stringify([
+            intake(1, "ACCOUNT-A"),
+            intake(2, "ACCOUNT-B"),
+            intake(3, "OTHER-PERIOD", { covered_from: "2031-07-01", covered_to: "2031-07-31" }),
+            intake(4, "OTHER-MONTH", {
+              state: { reporting_month_id: 91 },
+            } as Partial<SourceIntake>),
+          ]),
+          { headers: { "Content-Type": "application/json" } },
+        ),
   );
   vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -75,7 +80,10 @@ it("keeps both accounts, calendar scope, precise review and the accepted bond li
   );
   fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #2" }));
   expect(onReview).toHaveBeenCalledWith(2);
-  expect(fetcher.mock.calls).toHaveLength(2);
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toContain(
+    "/api/source-returns/monthly?source_account=ACCOUNT-B",
+  );
+  expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
 
 it.each(["source_account=MISSING", "source_account=ACCOUNT-A&source_account=ACCOUNT-B"])(

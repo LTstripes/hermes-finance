@@ -2175,6 +2175,53 @@ choice remains unchanged; expiry, replacement proof or an incompatible target st
 pending. No RUB assumption supplies this proof.
 
 
+<a id="c3-source_return_proof-confirmation"></a>
+#### Additive custody-month proof confirmation
+
+Schema `0065_source_return_proofs` adds empty `source_return_proofs` and
+`source_return_proof_dependencies`. This does not reparse, extend or rewrite V1
+manifest/observation/review operations. A proof holds only a version, explicit
+request identity, native account, all selected immutable source hashes/parsers/
+manifest heads, server-proven cancellation months and dependency digest/time.
+It holds no raw XML, filenames/paths, quantities, money, rates, positions or
+financial receipt. Nonce revisions are auxiliary monotonic retirement state,
+not an event/financial ledger. SQL guards make both tables append-only.
+
+`POST /api/source-returns/proofs/preview` reuses the complete exact-original
+verification and narrow grammar below, without calculating or persisting a
+return. It issues a bounded 15-minute single-use server plan; original bytes are
+not retained. The Preview discloses one proof INSERT, zero other table/trigger
+deltas and zero financial effects. `POST /proofs/confirm` requires JSON `true`
+attestation, exact Preview/token and request ID. It reserves the SQLite writer,
+then rechecks all dependencies and latest predecessor before appending one proof.
+Repeated same request/intent is read-only ACK replay; changed intent conflicts.
+Failed/lost ACK recovers through `GET /proofs/requests/{request_id}` and the
+ordinary monthly GET, never an automatic second POST. A replay cannot reactivate
+stale evidence. Protected real-data confirmation still requires its exact
+Preview, separate Owner GO and fresh validated backup/readback.
+
+All selected sources remain present. Document-local filename/native aliases may
+share a proof only through the same single native account and exact source-set
+binding. SQL retirement revisions cover real source/head, classification,
+catalogue/mapping, correction/disposition and month changes, including ABA;
+global conservative invalidation is intentional. Parser/proof implementation
+changes invalidate old evidence too. A stale/latest-invalid proof never falls
+back to an older record or silently refreshes itself. Unrelated ordinary
+source calculations that need no custody proof retain their normal guards.
+
+Durable effectiveness additionally requires the original physical DB object:
+file identity plus creation/birth time, with a matching SQL connection stamp.
+Windows birth time and Linux fd-bound `statx(STATX_BTIME)` are supported; absent
+capability is fail-closed, never mtime/ctime fallback. Ordinary process restart
+preserves proof effectiveness; restart/restore retires uncommitted form tokens.
+Supported API restore replaces the DB; O4/forward recovery create a fresh target,
+so even identical restored bytes require fresh explicit proof confirmation.
+The shared restore/backup format is unchanged. Arbitrary in-place/raw filesystem
+replacement while serving is outside the supported restore contract.
+Offline downgrade refuses before DDL if any proof exists, even stale. With no
+proof history, auxiliary nonce-only state can be dropped without discarding
+accepted evidence. Upgrade creates no proof or financial backfill.
+
 <a id="c3-source_intake-8-binding-consumers-and-protected-lifecycle"></a>
 #### Binding, consumers and protected lifecycle
 
@@ -5963,7 +6010,9 @@ path, not Save/reimport or a scenario. Multipart `request` contains one native
 duplicate, renamed or changed originals and stale/missing manifest membership
 fail closed (409); request fields/selections outside this contract fail 422.
 Responses and errors are `no-store`. Original bytes are not cached or persisted.
-The ordinary GET has no original bytes and retains its existing behavior.
+The ordinary GET has no original bytes and retains its existing behavior unless
+a current explicitly confirmed additive custody-month proof supplies this same
+narrow evidence; the confirmation/currentness contract is in C3 above.
 
 Only after exact original descriptor/frozen-parser/currentness verification and
 whole-tree inventory agreement can the monthly reader recognize a populated
@@ -5984,9 +6033,19 @@ all ordinary guards pass, while all selected long originals and their Money
 observations still participate. Unknown principal redemption Money remains
 unknown in its own month. Closing cash already includes booked Money: never add
 cash from a custody row or count duplicate original observations as new payments.
-This exception changes only the original-bound provisional monthly reader;
+This exception changes only the original-bound or current proof-backed provisional monthly reader;
 frozen S1 facts, DRAFT/Apply/Close guards, persisted classifications, receipts,
 instrument-return eligibility and financial authority remain unchanged.
+
+The existing Month source view and Monthly Returns use the same ordinary GET.
+After explicit proof confirmation they display period RUB growth, approximate
+period Modified Dietz, native boundary dates, source-only quality, persisted flow
+assumptions, proof version/time and NULL reasons without reselecting XML on
+Back/Reload. Fetching or failed source/currentness reads hide cached confirmation
+and proof-dependent monthly numeric results; late responses cannot confirm a changed form. Changing
+account/originals/source tokens retires Preview. The cancellation month and
+unrecognized principal retain NULL; a current source proof does not assert
+principal ownership, full bond economics, financial Apply or Close readiness.
 
 The separate approximate monthly Modified Dietz/period kernel is
 `calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints

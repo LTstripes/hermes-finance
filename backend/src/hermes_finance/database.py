@@ -291,6 +291,8 @@ def create_database(database_path: Path) -> Database:
     from hermes_finance.services.mybroker_dispositions import install_hooks as skip_hooks
     from hermes_finance.services.source_cash_coverage_lifecycle import install_hooks as cash_hooks
     from hermes_finance.services.source_intake import install_hooks as intake_hooks
+    from hermes_finance.source_proof_file import file_incarnation
+    from hermes_finance.source_return_proof_schema import install_hooks as proof_hooks
 
     intake_hooks()
     skip_hooks()
@@ -299,6 +301,7 @@ def create_database(database_path: Path) -> Database:
     cash_hooks()
     portfolio_hooks()
     money_hooks()
+    proof_hooks()
     resolved_path = database_path.expanduser().resolve()
     with database_admission(resolved_path):
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -315,6 +318,11 @@ def create_database(database_path: Path) -> Database:
         hide_parameters=True,
     )
     event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+
+    @event.listens_for(engine, "connect")
+    def stamp_source_proof_connection(_connection, record):
+        record.info["source_proof_incarnation"] = file_incarnation(resolved_path)
+
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
     return Database(

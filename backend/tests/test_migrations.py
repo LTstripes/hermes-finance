@@ -13,6 +13,60 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history_loss(tmp_path):
+    from test_source_monthly_returns_service import save_service_month
+
+    from hermes_finance.database import create_database
+
+    path = tmp_path / "synthetic-proof-migration.db"
+    previous = "0064_month_template_provenance"
+    assert run_alembic(path, "upgrade", previous).returncode == 0
+    database = create_database(path)
+    save_service_month(database)
+    database.engine.dispose()
+
+    def existing_rows():
+        with sqlite3.connect(path) as connection:
+            return {
+                name: connection.execute(f'SELECT * FROM "{name}" ORDER BY rowid').fetchall()
+                for (name,) in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('alembic_version','source_return_proofs','source_return_proof_dependencies')"
+                )
+            }
+
+    before = existing_rows()
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    assert revision_rows(path) == [REVISION]
+    assert existing_rows() == before
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM source_return_proofs").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM source_return_proof_dependencies"
+        ).fetchone() == (0,)
+        assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+    assert run_alembic(path, "downgrade", previous).returncode == 0
+    assert existing_rows() == before
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO source_return_proof_dependencies(token) VALUES (?)", ("1" * 64,)
+        )
+    assert run_alembic(path, "downgrade", previous).returncode == 0
+    assert existing_rows() == before
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    from test_source_monthly_returns_service import proof_confirm, proof_preview
+
+    database = create_database(path)
+    _, _, preview = proof_preview(database)
+    proof_confirm(database, preview)
+    database.engine.dispose()
+    before_history = existing_rows()
+    failed = run_alembic(path, "downgrade", previous)
+    assert failed.returncode != 0 and "populated source return proof history" in failed.stderr
+    assert revision_rows(path) == [REVISION]
+    assert existing_rows() == before_history
+
+
 def test_month_template_provenance_preserves_unknown_legacy_and_windows_recovery(tmp_path):
     from test_r13_00_release_verification import _backup, _integrity, _snapshot
 

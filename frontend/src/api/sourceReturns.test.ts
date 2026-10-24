@@ -1,11 +1,45 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   getSourceInstrumentReturns,
+  previewSourceReturnProof,
+  confirmSourceReturnProof,
+  getSourceReturnProofRequest,
   type InstrumentAnalysis,
   type InstrumentTotals,
 } from "./sourceReturns";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("binds all proof originals to the multipart Preview and separates explicit save from GET recovery", async () => {
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "{}" });
+  vi.stubGlobal("fetch", fetcher);
+  const sources = [{ intake_id: 2, manifest_digest: "a".repeat(64) }];
+  const file = new File(["synthetic"], "synthetic.xml", { type: "application/xml" });
+  await previewSourceReturnProof("SYNTH", sources, [file]);
+  const form = fetcher.mock.calls[0][1].body as FormData;
+  expect(JSON.parse(String(form.get("request")))).toEqual({
+    source_account: "SYNTH",
+    expected_sources: sources,
+  });
+  expect(form.getAll("files")).toHaveLength(1);
+  await confirmSourceReturnProof(
+    "SYNTH",
+    { form_token: "token", preview_digest: "digest" } as Parameters<
+      typeof confirmSourceReturnProof
+    >[1],
+    "request-id",
+  );
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({
+    source_account: "SYNTH",
+    form_token: "token",
+    preview_digest: "digest",
+    request_id: "request-id",
+    attested: true,
+  });
+  await getSourceReturnProofRequest("request-id");
+  expect(fetcher.mock.calls[2][0]).toBe("/api/source-returns/proofs/requests/request-id");
+  expect(fetcher.mock.calls[2][1].method).toBeUndefined();
+});
 
 it("keeps the legacy call and sends an exact optional interval without converting money or rates", async () => {
   const analysis: Pick<InstrumentAnalysis, "pnl" | "modified_dietz"> = {

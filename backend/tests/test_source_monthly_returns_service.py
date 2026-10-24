@@ -147,6 +147,434 @@ def read_all_originals(db, originals, *, expected=None, documents=None):
         )
 
 
+def proof_preview(db):
+    from hermes_finance.services.source_return_proofs import preview_proof
+
+    originals = dict(save_service_month(db, month) for month in (4, 5, 6))
+    intake, original = save_cancellation_long(db)
+    originals[intake] = original
+    with db.session_factory() as session:
+        expected = {
+            key: source_intake.read_intake(session, key)["manifest_digest"] for key in originals
+        }
+        preview = preview_proof(
+            session,
+            source_account=ACCOUNT,
+            documents=list(originals.values()),
+            expected_sources=expected,
+        )
+    return originals, expected, preview
+
+
+def proof_confirm(db, preview, request_id="proof-confirmed"):
+    from hermes_finance.services.source_return_proofs import confirm_proof
+
+    with db.session_factory() as session:
+        return confirm_proof(
+            session,
+            source_account=ACCOUNT,
+            form_token=preview["form_token"],
+            preview_digest=preview["preview_digest"],
+            request_id=request_id,
+        )
+
+
+def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clock(db):
+    from sqlalchemy import func, select, text
+
+    from hermes_finance.persistence import SourceIntakeRevision, SourceReturnProofDependency
+    from hermes_finance.services.accounts import create_account
+
+    with db.session_factory() as session:
+        account = create_account(session, name="Synthetic ABA", account_type="brokerage")
+        account_id = account.id
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+
+    def tokens():
+        with db.session_factory() as session:
+            return (
+                session.scalar(select(func.max(SourceIntakeRevision.seq))),
+                session.scalar(select(func.max(SourceReturnProofDependency.seq))),
+            )
+
+    before = tokens()
+    with db.engine.begin() as connection:
+        connection.execute(
+            text("UPDATE accounts SET name='Synthetic changed' WHERE id=:id"), {"id": account_id}
+        )
+        connection.execute(
+            text("UPDATE accounts SET name='Synthetic ABA' WHERE id=:id"), {"id": account_id}
+        )
+    after = tokens()
+    assert after[0] > before[0] and after[1:] == before[1:]
+    assert read(db).source_proof["status"] == "stale"
+
+
+@pytest.mark.parametrize("failure", ["missing", "extra", "generic", "bad_manifest", "bad_token"])
+def test_durable_proof_rejected_preview_or_intent_has_no_writes(db, failure):
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    originals, expected, preview = proof_preview(db)
+    documents = list(originals.values())
+    if failure == "generic":
+        intake, raw = save_cancellation_long(
+            db,
+            request_id="unknown-transfer",
+            mutate=lambda root, row: row.set("comment_new", "Unknown synthetic transfer"),
+        )
+        documents.append(raw)
+        with db.session_factory() as session:
+            expected[intake] = source_intake.read_intake(session, intake)["manifest_digest"]
+    elif failure == "missing":
+        documents.pop()
+    elif failure == "extra":
+        documents.append((b"Synthetic changed original", "extra.xml"))
+    elif failure == "bad_manifest":
+        expected[next(iter(expected))] = "0" * 64
+    before = snapshot(db)
+    with pytest.raises((proofs.ProofError, MyBrokerError)):
+        if failure == "bad_token":
+            proof_confirm(db, {**preview, "form_token": "synthetic-unknown-token"})
+        else:
+            with db.session_factory() as session:
+                proofs.preview_proof(
+                    session, source_account=ACCOUNT, documents=documents, expected_sources=expected
+                )
+    assert snapshot(db) == before
+
+
+def test_durable_proof_preview_save_get_and_restart_no_xml_no_financial_writes(db):
+    import json
+
+    from hermes_finance.database import create_database
+
+    originals, expected, preview = proof_preview(db)
+    before = snapshot(db)
+    assert preview["table_deltas"] == {
+        "source_return_proofs": 1,
+        "source_return_proof_dependencies": 0,
+    }
+    assert preview["financial_effects"] == preview["trigger_deltas"] == 0
+    assert preview["cancellation_months"] == ["2030-05-01"]
+    assert all(row.result.growth_kopecks is None for row in read(db).months)
+    ack = proof_confirm(db, preview)
+    assert ack["proof"]["status"] == "current"
+    after = snapshot(db)
+    for table in before:
+        if table != "source_return_proofs":
+            assert before[table] == after[table]
+    assert len(after["source_return_proofs"]) == 1
+    with db.session_factory() as session:
+        from hermes_finance.persistence import SourceReturnProof
+
+        row = session.get(SourceReturnProof, ack["proof"]["proof_id"])
+        evidence = json.loads(row.evidence_json)
+        assert set(evidence) == {"sources", "cancellations"}
+        assert len(evidence["sources"]) == len(originals)
+        assert all(set(item) == {"intake_id", "months"} for item in evidence["cancellations"])
+        assert "<" not in row.evidence_json and "growth_kopecks" not in row.evidence_json
+    result = read(db)
+    assert result.source_proof["status"] == "current"
+    assert (
+        read(db, source_account="1234567").source_proof["proof_id"]
+        == result.source_proof["proof_id"]
+    )
+    by_month = {row.result.closing_date.month: row for row in result.months}
+    assert by_month[4].result.growth_kopecks == by_month[6].result.growth_kopecks == 60_000
+    assert by_month[5].result.growth_kopecks is None
+    assert "custody_cancellation_unresolved" in by_month[5].flags
+    db.engine.dispose()
+    restarted = create_database(db.database_path)
+    try:
+        assert read(restarted).to_dict() == result.to_dict()
+    finally:
+        restarted.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["classification_aba", "mapping_aba", "source_added", "parser", "physical_unavailable"],
+)
+def test_durable_proof_dependency_changes_never_revive_old_values(db, monkeypatch, change):
+    from sqlalchemy import text
+
+    from hermes_finance.services import source_return_proofs as proofs
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    if change == "classification_aba":
+        with db.engine.begin() as connection:
+            row = connection.exec_driver_sql(
+                "SELECT id,narrative FROM source_intake_money_classifications LIMIT 1"
+            ).one()
+            connection.execute(
+                text("UPDATE source_intake_money_classifications SET narrative=:n WHERE id=:id"),
+                {"n": "Synthetic changed", "id": row.id},
+            )
+            connection.execute(
+                text("UPDATE source_intake_money_classifications SET narrative=:n WHERE id=:id"),
+                {"n": row.narrative, "id": row.id},
+            )
+    elif change == "mapping_aba":
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO security_reg_isin_mappings(reg_number,isin,created_at,updated_at) VALUES('SYNTH-REG','RU000A000000',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "DELETE FROM security_reg_isin_mappings WHERE reg_number='SYNTH-REG'"
+            )
+    elif change == "source_added":
+        save_service_month(db, 7)
+    elif change == "parser":
+        monkeypatch.setattr(proofs, "VERSION", "future-proof-version")
+    else:
+        monkeypatch.setattr(proofs, "file_incarnation", lambda _: None)
+    result = read(db)
+    assert result.source_proof["status"] == "stale"
+    assert all(
+        row.result.growth_kopecks is None
+        for row in result.months
+        if row.result.closing_date.month in (4, 5, 6)
+    )
+    assert proof_confirm(db, preview)["proof"]["status"] == "stale"
+    assert all(
+        row.result.growth_kopecks is None
+        for row in read(db).months
+        if row.result.closing_date.month in (4, 5, 6)
+    )
+
+
+def test_durable_proof_stale_preview_replay_supersession_and_exact_no_write_ack(db):
+    from hermes_finance.services.source_return_proofs import ProofError, preview_proof
+
+    originals, expected, preview = proof_preview(db)
+    with db.session_factory() as session:
+        other = preview_proof(
+            session,
+            source_account=ACCOUNT,
+            documents=list(originals.values()),
+            expected_sources=expected,
+        )
+    ack = proof_confirm(db, preview)
+    before = snapshot(db)
+    assert proof_confirm(db, preview)["proof"]["proof_id"] == ack["proof"]["proof_id"]
+    assert snapshot(db) == before
+    with pytest.raises(ProofError, match="dependencies_changed"):
+        proof_confirm(db, other, "outstanding-form")
+    with pytest.raises(ProofError, match="request_conflict"):
+        proof_confirm(db, {**preview, "preview_digest": "0" * 64})
+
+
+def test_durable_proof_real_restore_and_fresh_copy_are_stale_without_changing_backup(db, tmp_path):
+    from shutil import copyfile
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.backups import backup_directory, create_backup, restore_backup
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    saved = create_backup(db)
+    path = backup_directory(db) / saved.name
+    content = path.read_bytes()
+    for _ in range(2):
+        restore_backup(db, saved.id)
+        assert path.read_bytes() == content
+        result = read(db)
+        assert result.source_proof["status"] == "stale"
+        assert all(row.result.growth_kopecks is None for row in result.months)
+    fresh = tmp_path / "isolated-restored.db"
+    copyfile(path, fresh)
+    isolated = create_database(fresh)
+    try:
+        assert read(isolated).source_proof["status"] == "stale"
+    finally:
+        isolated.engine.dispose()
+
+
+def test_durable_proof_file_birth_identity_and_missing_capability_fail_closed(db, monkeypatch):
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.source_proof_file import file_incarnation
+
+    assert file_incarnation(db.database_path) is not None
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    monkeypatch.setattr(proofs, "file_incarnation", lambda _: "0" * 64)
+    assert read(db).source_proof["status"] == "stale"
+
+
+def test_durable_proof_file_id_reuse_requires_same_birth_time(db, monkeypatch):
+    import os
+    from types import SimpleNamespace
+
+    from hermes_finance.source_proof_file import file_incarnation
+
+    original = file_incarnation(db.database_path)
+    assert original is not None
+    native = os.fstat
+
+    def reused_inode(descriptor):
+        info = native(descriptor)
+        return SimpleNamespace(
+            st_mode=info.st_mode,
+            st_nlink=info.st_nlink,
+            st_dev=info.st_dev,
+            st_ino=info.st_ino,
+            st_birthtime_ns=getattr(info, "st_birthtime_ns", 1) + 1,
+        )
+
+    monkeypatch.setattr(os, "fstat", reused_inode)
+    assert file_incarnation(db.database_path) not in (None, original)
+
+
+def test_durable_proof_form_expires_and_restore_retires_open_api_preview(db, monkeypatch):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+    from hermes_finance.services import source_return_proofs as proofs
+
+    originals, expected, preview = proof_preview(db)
+    now = proofs.monotonic()
+    with monkeypatch.context() as context:
+        context.setattr(proofs, "monotonic", lambda: now + 901)
+        with pytest.raises(proofs.ProofError, match="expired"):
+            proof_confirm(db, preview)
+    client = TestClient(create_app(database=db))
+    files = [("files", (name, raw, "application/xml")) for raw, name in originals.values()]
+    request = {
+        "source_account": ACCOUNT,
+        "expected_sources": [
+            {"intake_id": key, "manifest_digest": value} for key, value in expected.items()
+        ],
+    }
+    reply = client.post(
+        "/api/source-returns/proofs/preview", data={"request": json.dumps(request)}, files=files
+    ).json()
+    with db.maintenance.restore():
+        pass
+    before = snapshot(db)
+    response = client.post(
+        "/api/source-returns/proofs/confirm",
+        json={
+            "source_account": ACCOUNT,
+            "form_token": reply["form_token"],
+            "preview_digest": reply["preview_digest"],
+            "request_id": "after-restore",
+            "attested": True,
+        },
+    )
+    assert response.status_code == 409 and "expired" in response.text
+    assert snapshot(db) == before
+
+
+def test_durable_proof_tables_are_append_only_and_leave_nine_closed_periods_unchanged(db):
+    from datetime import UTC, datetime
+
+    from sqlalchemy.exc import IntegrityError
+
+    from hermes_finance.persistence import ReportingMonth
+
+    with db.session_factory() as session:
+        for month in range(1, 10):
+            end = date(2029, month, calendar.monthrange(2029, month)[1])
+            session.add(
+                ReportingMonth(
+                    year=2029,
+                    month=month,
+                    period_start=end.replace(day=1),
+                    period_end=end,
+                    snapshot_date=end,
+                    status="closed",
+                    source="manual",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+    _, _, preview = proof_preview(db)
+    before = snapshot(db)
+    proof_confirm(db, preview)
+    after = snapshot(db)
+    for table in before:
+        if table != "source_return_proofs":
+            assert before[table] == after[table]
+    assert len(after["reporting_months"]) == 9
+    for table in ("source_return_proofs", "source_return_proof_dependencies"):
+        for operation in (
+            f"DELETE FROM {table}",
+            f"UPDATE {table} SET {'id=id' if table.endswith('proofs') else 'seq=seq'}",
+        ):
+            with pytest.raises(IntegrityError):
+                with db.engine.begin() as connection:
+                    connection.exec_driver_sql(operation)
+
+
+def test_durable_proof_api_preview_confirm_get_reload_and_lost_ack(db):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    originals, expected, _ = proof_preview(db)
+    client = TestClient(create_app(database=db))
+    files = [("files", (name, raw, "application/xml")) for raw, name in originals.values()]
+    request = {
+        "source_account": ACCOUNT,
+        "expected_sources": [
+            {"intake_id": key, "manifest_digest": value} for key, value in expected.items()
+        ],
+    }
+    before = snapshot(db)
+    reply = client.post(
+        "/api/source-returns/proofs/preview", data={"request": json.dumps(request)}, files=files
+    )
+    assert reply.status_code == 200, reply.text
+    assert reply.headers["cache-control"] == "no-store"
+    assert snapshot(db) == before
+    preview = reply.json()
+    payload = {
+        "source_account": ACCOUNT,
+        "form_token": preview["form_token"],
+        "preview_digest": preview["preview_digest"],
+        "request_id": "api-proof",
+        "attested": True,
+    }
+    assert (
+        client.post(
+            "/api/source-returns/proofs/confirm", json={**payload, "months": []}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/source-returns/proofs/confirm", json={**payload, "attested": False}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/source-returns/proofs/confirm", json={**payload, "attested": 1}
+        ).status_code
+        == 422
+    )
+    assert client.post("/api/source-returns/proofs/confirm", json=payload).status_code == 200
+    # Lost ACK uses independent GET only; no re-upload or second command needed.
+    recovered = client.get("/api/source-returns/proofs/requests/api-proof")
+    assert recovered.status_code == 200 and recovered.json()["proof"]["status"] == "current"
+    after = snapshot(db)
+    for _ in range(2):
+        result = client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT})
+        assert result.json()["source_proof"]["status"] == "current"
+        april = next(x for x in result.json()["months"] if x["closing_date"] == "2030-04-30")
+        assert april["growth_kopecks"] == 60_000
+        assert isinstance(april["modified_dietz_return"], str)
+        assert snapshot(db) == after
+
+
 def test_original_bound_cancellation_keeps_event_month_unknown_and_unblocks_own_months(db):
     originals = dict(save_service_month(db, month) for month in (4, 5, 6))
     long_id, long_original = save_cancellation_long(db)

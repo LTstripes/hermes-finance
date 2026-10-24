@@ -220,6 +220,28 @@ def main():
                 )
         with database.session_factory() as session:
             crosswalk.relink(session)
+        # All originals are synthetic. Proof is obtained only through the UI.
+        from test_source_monthly_returns_service import (
+            save_cancellation_long,
+            save_service_month,
+        )
+
+        proof_originals = dict(
+            save_service_month(database, value) for value in (4, 5, 6)
+        )
+        proof_id, proof_original = save_cancellation_long(database)
+        proof_originals[proof_id] = proof_original
+        proof_paths = []
+        for raw, filename in proof_originals.values():
+            path = Path(temporary) / filename
+            path.write_bytes(raw)
+            proof_paths.append(str(path))
+        with database.session_factory() as session:
+            proof_month = create_reporting_month(
+                session, year=2030, month=4, snapshot_date=date(2030, 4, 30)
+            )
+            proof_month_id = proof_month.id
+
         app = create_app(database, static_dir=root / "frontend/dist")
 
         class SyntheticProvider:
@@ -265,7 +287,13 @@ def main():
         async def read_only(request, call_next):
             if request.method not in {"GET", "HEAD"} and not (
                 request.method == "POST"
-                and request.url.path == "/api/source-returns/payout-preview"
+                and request.url.path
+                in {
+                    "/api/source-returns/payout-preview",
+                    "/api/source-returns/proofs/preview",
+                    "/api/source-returns/proofs/confirm",
+                    "/api/synthetic-proof-aba",
+                }
             ):
                 return JSONResponse(
                     {"detail": "synthetic reader is read-only"}, status_code=405
@@ -280,6 +308,45 @@ def main():
             }
 
         app.add_api_route("/api/synthetic-bond-state", state, methods=["GET"])
+        app.router.routes.insert(0, app.router.routes.pop())
+
+        def proof_inputs():
+            values = snapshot(database)
+            return {
+                "paths": proof_paths,
+                "month_id": proof_month_id,
+                "other_tables": {
+                    key: hashlib.sha256(repr(value).encode()).hexdigest()
+                    for key, value in values.items()
+                    if key
+                    not in {"source_return_proofs", "source_return_proof_dependencies"}
+                },
+            }
+
+        def proof_aba():
+            from sqlalchemy import text
+
+            with database.engine.begin() as connection:
+                row = connection.exec_driver_sql(
+                    "SELECT id,narrative FROM source_intake_money_classifications LIMIT 1"
+                ).one()
+                connection.execute(
+                    text(
+                        "UPDATE source_intake_money_classifications SET narrative=:n WHERE id=:id"
+                    ),
+                    {"n": "Synthetic ABA", "id": row.id},
+                )
+                connection.execute(
+                    text(
+                        "UPDATE source_intake_money_classifications SET narrative=:n WHERE id=:id"
+                    ),
+                    {"n": row.narrative, "id": row.id},
+                )
+            return {"synthetic_only": True}
+
+        app.add_api_route("/api/synthetic-proof-inputs", proof_inputs, methods=["GET"])
+        app.router.routes.insert(0, app.router.routes.pop())
+        app.add_api_route("/api/synthetic-proof-aba", proof_aba, methods=["POST"])
         app.router.routes.insert(0, app.router.routes.pop())
 
         def month_state():

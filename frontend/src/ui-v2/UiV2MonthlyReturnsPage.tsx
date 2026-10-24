@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
@@ -16,6 +16,7 @@ import pageStyles from "./UiV2Page.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { SourceReturnProofPanel } from "./SourceReturnProofPanel";
 
 const money = (value: number | null) =>
   value === null
@@ -37,6 +38,10 @@ const flagLabels: Record<string, string> = {
   unattributed_income: "доход не отнесён",
   overlap_flow_deduplicated: "повтор потока в перекрывающихся выписках учтён один раз",
   partial_month_source: "источник покрывает месяц частично",
+  custody_cancellation_unresolved: "аннулирование выпуска: денежная связь не доказана",
+  "4_Transfers_unsupported": "неподдержанные операции с бумагами",
+  "5_UFSR_unsupported": "структура служебного раздела не подтверждена",
+  unparsed_source_rows: "нераспознанные исходные строки",
 };
 const flags = (values: string[]) =>
   values.length
@@ -95,6 +100,7 @@ const instrumentCells = (row: InstrumentTotals, partial = row.total_kopecks === 
 );
 
 export default function UiV2MonthlyReturnsPage() {
+  const queryClient = useQueryClient();
   const intakes = useQuery({
     queryKey: ["source-intakes", "all"],
     queryFn: ({ signal }) => listAllSourceIntakes(signal),
@@ -126,6 +132,23 @@ export default function UiV2MonthlyReturnsPage() {
     queryFn: ({ signal }) => getSourceInstrumentReturns(account, signal),
     enabled: !!account,
   });
+  const proofSources = (intakes.data ?? [])
+    .filter(
+      (item) =>
+        item.document.filename_account === account ||
+        item.document.source_accounts?.includes(account),
+    )
+    .map((item) => ({ intake_id: item.id, manifest_digest: item.manifest_digest }));
+  const proofUnavailable = monthly.isError || intakes.isError;
+  const proof = proofUnavailable ? undefined : monthly.data?.source_proof;
+  const proofKey = JSON.stringify([
+    account,
+    proofSources,
+    proof?.proof_id,
+    proof?.status,
+    proof?.currentness,
+    proofUnavailable,
+  ]);
   return (
     <UiV2Shell
       active="capital"
@@ -149,6 +172,22 @@ export default function UiV2MonthlyReturnsPage() {
       >
         <SourceIntakeUpload />
       </UiV2Panel>
+      {!!account && (
+        <SourceReturnProofPanel
+          key={proofKey}
+          account={account}
+          expected={proofSources}
+          proof={proof}
+          unavailable={proofUnavailable}
+          loading={monthly.isPending || monthly.isFetching || intakes.isFetching}
+          refresh={() =>
+            Promise.all([
+              queryClient.invalidateQueries({ queryKey: ["source-returns", "monthly", account] }),
+              queryClient.invalidateQueries({ queryKey: ["source-intakes", "all"] }),
+            ])
+          }
+        />
+      )}
       <UiV2Panel
         eyebrow="Охват"
         id="monthly-account"
@@ -191,11 +230,11 @@ export default function UiV2MonthlyReturnsPage() {
         <UiV2BondSlice key={account} account={account} sources={instruments.data} />
       )}
       {!!account &&
-        (monthly.isPending ? (
+        (monthly.isPending || monthly.isFetching || intakes.isFetching ? (
           <UiV2Loading label="Считаем месяцы…" />
-        ) : monthly.isError ? (
+        ) : monthly.isError || intakes.isError ? (
           <UiV2Notice title="Не удалось рассчитать месяцы">
-            {formatApiError(monthly.error)}
+            {formatApiError(monthly.isError ? monthly.error : intakes.error)}
           </UiV2Notice>
         ) : (
           <>
@@ -253,14 +292,20 @@ export default function UiV2MonthlyReturnsPage() {
                       <th>Рост</th>
                       <th>Купоны</th>
                       <th>Дивиденды</th>
-                      <th>Доходность</th>
+                      <th>Modified Dietz за месяц, %</th>
                       <th>Качество и флаги</th>
                     </tr>
                   </thead>
                   <tbody>
                     {monthly.data.months.map((row) => (
                       <tr key={row.closing_date}>
-                        <td>{month(row.closing_date)}</td>
+                        <td>
+                          {month(row.closing_date)}
+                          <br />
+                          <small>
+                            {row.opening_date} — {row.closing_date}
+                          </small>
+                        </td>
                         <td>{money(row.contributions_kopecks)}</td>
                         <td>{money(row.withdrawals_kopecks)}</td>
                         <td>{money(row.growth_kopecks)}</td>
@@ -268,7 +313,12 @@ export default function UiV2MonthlyReturnsPage() {
                         <td>{money(row.dividends_kopecks)}</td>
                         <td>{rate(row.modified_dietz_return)}</td>
                         <td>
-                          {badges(row.approximate, row.missing_endpoint)}
+                          {badges(
+                            row.approximate,
+                            row.missing_endpoint ||
+                              row.growth_kopecks === null ||
+                              row.modified_dietz_return === null,
+                          )}
                           {assumptions(row.assumptions_used, row.income_assumptions_used)}
                           {flags([...row.reason_codes, ...row.flags])}
                         </td>

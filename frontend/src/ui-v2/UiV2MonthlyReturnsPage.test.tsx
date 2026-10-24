@@ -159,6 +159,63 @@ function setup(fetcher: typeof fetch) {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test.each(["monthly", "intakes"])(
+  "failed %s refetch hides retained current proof and disables confirmation",
+  async (failedQuery) => {
+    let fail = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes("/intakes"))
+          return fail && failedQuery === "intakes"
+            ? json({ error: { code: "offline", message: "Synthetic failed source read" } }, 503)
+            : json([intake]);
+        if (path.includes("/monthly?"))
+          return fail && failedQuery === "monthly"
+            ? json({ error: { code: "offline", message: "Synthetic failed read" } }, 503)
+            : json({
+                ...monthly,
+                source_proof: {
+                  status: "current",
+                  proof_id: 3,
+                  version: "source_return_custody_v1",
+                  confirmed_at: "2030-05-01T00:00:00Z",
+                  currentness: "c",
+                  reason_codes: [],
+                  financial_authority: "none",
+                },
+              });
+        return json(instruments);
+      }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <UiV2MonthlyReturnsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText(/Источник подтверждён:/);
+    fail = true;
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey:
+          failedQuery === "monthly" ? ["source-returns", "monthly"] : ["source-intakes", "all"],
+      });
+    });
+    await screen.findByText(/Не удалось проверить актуальность источников/);
+    expect(screen.queryByText(/Источник подтверждён:/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверить оригиналы" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Сохранить подтверждение" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Не удалось проверить актуальность источников/)).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Взносы и рост" })).not.toBeInTheDocument();
+  },
+);
+
 const queryWait = { timeout: 10_000 };
 const testTimeout = 20_000;
 const syntheticFile = (name: string) => new File(["<synthetic/>"], name, { type: "text/xml" });
