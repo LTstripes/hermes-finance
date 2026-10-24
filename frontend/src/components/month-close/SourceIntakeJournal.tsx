@@ -1,11 +1,11 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type {
   BrokerMonthPreview,
   BrokerMonthReadback,
   InstrumentDecision,
 } from "../../api/brokerMonths";
-import { formatApiError } from "../../api/client";
+import { ApiClientError, formatApiError } from "../../api/client";
 import {
   confirmIntakeReview,
   type IntakeAck,
@@ -24,6 +24,52 @@ import { useBrokerOriginalSession } from "./brokerOriginalSession";
 import { SourceIdentityInbox } from "./SourceIdentityInbox";
 import { SourceIntakeInstrumentResult } from "./SourceIntakeInstrumentResult";
 
+type PendingCommand = {
+  id: string;
+  intakeId: number | null;
+  monthId: number;
+  sourceAccount: string;
+  file: File;
+  accountId: number | null;
+  intent: IntakeIntent | null;
+  digest: string | null;
+  ack: IntakeAck | null;
+};
+// Like BrokerOriginalSession, uncertain journal commands belong to the app's
+// QueryClient lifetime, not a mounted form. Neither bytes nor intents enter
+// browser storage/query data; SPA Back cannot erase the original recovery key.
+function recoveryStore() {
+  let value: PendingCommand | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    snapshot: () => value,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    update: (
+      next: PendingCommand | null | ((previous: PendingCommand | null) => PendingCommand | null),
+    ) => {
+      value = typeof next === "function" ? next(value) : next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+const recoveries = new WeakMap<QueryClient, ReturnType<typeof recoveryStore>>();
+export function useSourceIntakeRecovery() {
+  const client = useQueryClient();
+  let store = recoveries.get(client);
+  if (!store) {
+    store = recoveryStore();
+    recoveries.set(client, store);
+  }
+  return {
+    command: useSyncExternalStore(store.subscribe, store.snapshot),
+    update: store.update,
+    snapshot: store.snapshot,
+  };
+}
+
 /** Extends the existing identity queue; File and outbound consent remain memory-only. */
 export function SourceIntakeJournal({
   monthId,
@@ -34,6 +80,7 @@ export function SourceIntakeJournal({
   onReview,
   onChanged,
   intakeSelection,
+  sourceAccount,
 }: {
   monthId: number;
   closed: boolean;
@@ -43,6 +90,7 @@ export function SourceIntakeJournal({
   onReview: (decisions: InstrumentDecision[]) => void;
   onChanged: () => void;
   intakeSelection?: { id: number } | null;
+  sourceAccount?: string | null;
 }) {
   const { session, original } = useBrokerOriginalSession();
   const client = useQueryClient();
@@ -56,12 +104,33 @@ export function SourceIntakeJournal({
   const [defaultEnabled, setDefaultEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ack, setAck] = useState<IntakeAck | null>(null);
+  const {
+    command: pendingCommand,
+    update: pending,
+    snapshot: pendingSnapshot,
+  } = useSourceIntakeRecovery();
+  const ack = pendingCommand?.ack ?? null;
+  function setAck(value: IntakeAck) {
+    pending((previous) =>
+      previous?.id === value.request_id ? { ...previous, ack: value } : previous,
+    );
+  }
+  function settle(id: string) {
+    pending((previous) => (previous?.id === id ? null : previous));
+  }
   const [reviewed, setReviewed] = useState<{ intent: IntakeIntent; digest: string } | null>(null);
   const requestId = useRef<string | null>(null);
   const epoch = useRef(0);
   const file = original.file;
   const accountId = original.accountId;
+  const sources = (list.data ?? []).filter(
+    (item) =>
+      sourceAccount !== null &&
+      (!sourceAccount ||
+        [item.document.filename_account, ...(item.document.source_accounts ?? [])].includes(
+          sourceAccount,
+        )),
+  );
   const context = useRef({ monthId, fileEpoch: original.epoch });
   useEffect(() => {
     epoch.current++;
@@ -70,7 +139,6 @@ export function SourceIntakeJournal({
     if (context.current.fileEpoch !== original.epoch) requestId.current = null;
     if (context.current.monthId !== monthId) {
       setSelected(null);
-      setAck(null);
       setError(null);
       requestId.current = null;
     }
@@ -87,15 +155,20 @@ export function SourceIntakeJournal({
     setAccountCurrency(value.state.account_currency ?? "");
     setDefaultEnabled(value.state.default_enabled);
     setReviewed(null);
-    setAck(null);
     setError(null);
     requestId.current = null;
   }, []);
   const openedIntake = useRef<typeof intakeSelection>(null);
   useEffect(() => {
-    if (!intakeSelection || openedIntake.current === intakeSelection || busy || ack || disabled)
+    if (
+      !intakeSelection ||
+      openedIntake.current === intakeSelection ||
+      busy ||
+      pendingCommand ||
+      disabled
+    )
       return;
-    const value = list.data?.find((item) => item.id === intakeSelection.id);
+    const value = sources.find((item) => item.id === intakeSelection.id);
     if (value) {
       openedIntake.current = intakeSelection;
       // An explicit saved-source selection retires another original's Preview,
@@ -103,12 +176,20 @@ export function SourceIntakeJournal({
       session.select(null, monthId, "");
       choose(value);
     }
-  }, [intakeSelection, list.data, busy, ack, disabled, session, monthId, choose]);
+  }, [intakeSelection, sources, busy, pendingCommand, disabled, session, monthId, choose]);
   useEffect(() => {
-    if (!selected && !ack && !busy && Array.isArray(list.data) && list.data.length === 1)
-      choose(list.data[0]);
-  }, [selected, ack, busy, list.data, choose]);
+    if (!selected && !pendingCommand && !busy && sources.length === 1) choose(sources[0]);
+  }, [selected, pendingCommand, busy, sources, choose]);
   async function readAck(value: IntakeAck, version: number) {
+    const command = pendingSnapshot();
+    if (
+      !command ||
+      value.request_id !== command.id ||
+      (command.intakeId !== null && command.intakeId !== value.intake_id)
+    )
+      throw new Error(
+        "Ответ журнала не соответствует исходному запросу. Требуется чтение прежнего intent.",
+      );
     const current = await readSourceIntake(value.intake_id);
     if (epoch.current !== version) return;
     if (
@@ -122,35 +203,95 @@ export function SourceIntakeJournal({
     setOverrides(current.state.overrides);
     setAccountCurrency(current.state.account_currency ?? "");
     setDefaultEnabled(current.state.default_enabled);
-    setAck(null);
     setReviewed(null);
     requestId.current = null;
     await client.invalidateQueries({ queryKey: ["source-intakes", monthId] });
     // All old financial confirmations must be reviewed again after a journal command.
-    onChanged();
+    if (epoch.current === version) onChanged();
     void client.invalidateQueries({
       predicate: (q) =>
         ["broker-months", "month-close-workflow", "dashboard"].includes(String(q.queryKey[0])),
     });
+    settle(command.id);
+  }
+  async function recover() {
+    if (!pendingCommand || busy) return;
+    const version = epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      if (ack) await readAck(ack, version);
+      else {
+        // A lost ACK is neither success nor failure. Find the original immutable
+        // request in server history; never reconstruct or replay its POST.
+        const candidates =
+          pendingCommand.intakeId === null
+            ? await listSourceIntakes(pendingCommand.monthId)
+            : [await readSourceIntake(pendingCommand.intakeId)];
+        if (epoch.current !== version) return;
+        const matches = candidates.flatMap((item) =>
+          item.history
+            .filter((entry) => entry.request_id === pendingCommand.id)
+            .map((entry) => ({
+              intake_id: item.id,
+              request_id: entry.request_id,
+              head_seq: entry.seq,
+              duplicate: false,
+            })),
+        );
+        if (matches.length !== 1)
+          throw new Error(
+            "Результат исходного запроса пока не подтверждён. Повтори чтение журнала; intent сохранён.",
+          );
+        setAck(matches[0]);
+        await readAck(matches[0], version);
+      }
+    } catch (e) {
+      if (epoch.current === version) setError(formatApiError(e));
+    } finally {
+      if (epoch.current === version) setBusy(false);
+    }
   }
   async function saveParsing() {
-    if (!file || busy || ack || closed) return;
+    if (!file || busy || pendingSnapshot() || closed || disabled) return;
     setBusy(true);
     setError(null);
     const version = epoch.current;
     requestId.current ??= crypto.randomUUID();
+    const commandId = requestId.current;
+    pending({
+      id: commandId,
+      intakeId: null,
+      monthId,
+      sourceAccount: sourceAccount ?? "",
+      file,
+      accountId: accountId ? Number(accountId) : null,
+      intent: null,
+      digest: null,
+      ack: null,
+    });
+    let acknowledged = false;
     try {
       const saved = await saveSourceIntake(
         file,
-        requestId.current,
+        commandId,
         monthId,
         accountId ? Number(accountId) : null,
       );
       if (version !== epoch.current) return;
+      acknowledged = true;
       setAck(saved);
       await readAck(saved, version);
     } catch (e) {
-      if (epoch.current === version) setError(formatApiError(e));
+      // Settlement belongs to the command, even if its form unmounted. Match
+      // the key so a late refusal cannot retire a newer pending command.
+      if (!acknowledged && e instanceof ApiClientError && e.status >= 400 && e.status < 500)
+        settle(commandId);
+      if (epoch.current === version) {
+        // A confirmed command refusal is not an unknown outcome. A failed GET
+        // after ACK, including 404, must retain the original recovery intent.
+        setError(formatApiError(e));
+      }
     } finally {
       if (epoch.current === version) setBusy(false);
     }
@@ -175,7 +316,7 @@ export function SourceIntakeJournal({
     };
   }
   async function inspectChanges(link?: string) {
-    if (!selected || !file || busy || ack) return;
+    if (!selected || !file || busy || pendingCommand || closed || disabled) return;
     const version = epoch.current;
     setBusy(true);
     setError(null);
@@ -195,29 +336,62 @@ export function SourceIntakeJournal({
     }
   }
   async function confirm() {
-    if (!selected || !file || !reviewed || !requestId.current || busy || ack) return;
+    if (
+      !selected ||
+      !file ||
+      !reviewed ||
+      !requestId.current ||
+      busy ||
+      pendingSnapshot() ||
+      closed ||
+      disabled
+    )
+      return;
     const version = epoch.current;
+    const commandId = requestId.current;
     setBusy(true);
     setError(null);
+    pending({
+      id: commandId,
+      intakeId: selected.id,
+      monthId,
+      sourceAccount: sourceAccount ?? selected.document.filename_account,
+      file,
+      accountId: reviewed.intent.account_id,
+      intent: reviewed.intent,
+      digest: reviewed.digest,
+      ack: null,
+    });
+    let acknowledged = false;
     try {
       const saved = await confirmIntakeReview(
         selected.id,
         file,
         reviewed.intent,
         reviewed.digest,
-        requestId.current,
+        commandId,
         Boolean(reviewed.intent.finance_request_id),
       );
       if (epoch.current !== version) return;
+      acknowledged = true;
       setAck(saved);
       await readAck(saved, version);
     } catch (e) {
-      if (epoch.current === version) setError(formatApiError(e));
+      const refused =
+        !acknowledged && e instanceof ApiClientError && e.status >= 400 && e.status < 500;
+      if (refused) settle(commandId);
+      if (epoch.current === version) {
+        if (refused) {
+          setReviewed(null);
+          requestId.current = null;
+        }
+        setError(formatApiError(e));
+      }
     } finally {
       if (epoch.current === version) setBusy(false);
     }
   }
-  const blocked = disabled || busy || closed || Boolean(ack);
+  const blocked = disabled || busy || closed || Boolean(pendingCommand);
   const data = selected;
   const queue =
     preview ??
@@ -258,20 +432,20 @@ export function SourceIntakeJournal({
         </Button>
       )}
       {list.error && <p role="alert">Не удалось прочитать очередь: {formatApiError(list.error)}</p>}
-      {Array.isArray(list.data) && list.data.length > 0 && (
+      {sources.length > 0 && (
         <label className={styles.field}>
           Сохранённый разбор
           <select
             aria-label="Сохранённый разбор"
             value={selected?.id ?? ""}
-            disabled={busy || Boolean(ack)}
+            disabled={blocked}
             onChange={(e) => {
-              const value = list.data?.find((v) => v.id === Number(e.target.value));
+              const value = sources.find((v) => v.id === Number(e.target.value));
               if (value) choose(value);
             }}
           >
             <option value="">Выбери источник</option>
-            {list.data.map((v) => (
+            {sources.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.covered_from} — {v.covered_to} · #{v.id} · {v.observations.length} наблюдений ·{" "}
                 {v.exceptions.length} причин
@@ -359,22 +533,14 @@ export function SourceIntakeJournal({
         </>
       )}
       {data && <SourceIntakeInstrumentResult key={`${data.id}:${data.head_seq}`} intake={data} />}
-      {ack && (
+      {pendingCommand && (
         <div role="status">
           <p>
-            Сохранение подтверждено сервером. Заверши независимое чтение; новый POST не требуется.
+            {ack
+              ? "Сохранение подтверждено сервером. Заверши независимое чтение; новый POST не требуется."
+              : "Ответ сохранения не подтверждён. Сначала проверь результат исходного запроса; intent сохранён."}
           </p>
-          <Button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              const version = epoch.current;
-              void readAck(ack, version)
-                .catch((e) => setError(formatApiError(e)))
-                .finally(() => setBusy(false));
-            }}
-          >
+          <Button type="button" disabled={busy} onClick={() => void recover()}>
             Повторить чтение журнала
           </Button>
         </div>
@@ -384,7 +550,7 @@ export function SourceIntakeJournal({
           key={`provisional:${data.id}:${data.head_seq}:${data.manifest_digest}:${original.epoch}:${ack?.head_seq ?? 0}`}
           intake={data}
           file={file}
-          disabled={busy || Boolean(ack)}
+          disabled={blocked}
         />
       )}
       {error && (

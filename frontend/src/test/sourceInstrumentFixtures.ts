@@ -1,0 +1,188 @@
+import type {
+  InstrumentAnalysis,
+  InstrumentEvent,
+  SourceInstrumentReturns,
+} from "../api/sourceReturns";
+
+export const ISIN = "RU000A000001";
+export const metric = <T>(value: T | null, codes: string[] = []) => ({
+  value,
+  status: value === null ? ("unavailable" as const) : ("provisional" as const),
+  reason_codes: codes,
+  assumptions: [],
+});
+export function analysis(): InstrumentAnalysis {
+  const basis = ["bond_valuation_basis_unknown"];
+  const endpoint = {
+    quantity: "2",
+    reported_value_kopecks: 200000,
+    economic_value_kopecks: null,
+    accrued_interest_kopecks: null,
+    valuation_basis: "reported_unknown" as const,
+    source_references: ["position:1:0"],
+    reason_codes: basis,
+  };
+  return {
+    contract_version: "instrument_return_v2",
+    opening_date: "2030-04-30",
+    closing_date: "2030-05-31",
+    history_start: "2030-04-30",
+    history_end: "2030-05-31",
+    history_complete_since_acquisition: false,
+    opening: { ...endpoint, date: "2030-04-30" },
+    closing: { ...endpoint, date: "2030-05-31", reported_value_kopecks: 201234 },
+    events: [],
+    components: {
+      buys: metric<number>(null),
+      sells: metric<number>(null),
+      coupons: metric(1234),
+      dividends: metric<number>(null),
+      redemption: metric<number>(null),
+      fees: metric<number>(null),
+      taxes: metric<number>(null),
+      valuation_and_trades: metric<number>(null),
+    },
+    pnl: metric<number>(null, basis),
+    known_subtotal: { ...metric(1234), status: "partial" },
+    modified_dietz: {
+      ...metric<string>(null, [...basis, "missing_endpoint"]),
+      method: "modified_dietz",
+      approximate: true,
+      annualized: false,
+      capital_days: null,
+    },
+    chained_monthly: metric<string>(null),
+    coverage: {
+      events: { complete: true, reason_codes: [] },
+      quantity: { complete: true, reason_codes: [] },
+      endpoints: { complete: true, reason_codes: [] },
+      payouts: { complete: true, reason_codes: [] },
+      costs: { complete: true, reason_codes: [] },
+      valuation: { complete: false, reason_codes: basis },
+    },
+    source_references: [
+      {
+        intake_id: 1,
+        original_digest: "a".repeat(64),
+        parser_version: "synthetic-v1",
+        journal_revision: 3,
+        manifest_digest: "b".repeat(64),
+        classification_dependencies: [],
+        link_dependencies: "c".repeat(64),
+      },
+    ],
+    reason_codes: basis,
+    assumptions: [],
+    statement_estimate: {
+      pnl: metric(1234),
+      modified_dietz: {
+        ...metric("0.00617"),
+        method: "modified_dietz",
+        approximate: true,
+        annualized: false,
+        capital_days: 6200000,
+      },
+      assumptions: basis,
+    },
+  };
+}
+export function event(patch: Partial<InstrumentEvent>): InstrumentEvent {
+  return {
+    event_key: "synthetic-event",
+    provider: "synthetic",
+    native_source_account: "SYNTH-01-000",
+    isin: ISIN,
+    kind: "COUPON",
+    source_references: ["money:1:coupon:0"],
+    event_date: "2030-05-15",
+    native_identity: null,
+    native_ids: [],
+    trade_time: null,
+    cash_settlement_date: null,
+    depository_settlement_date: null,
+    quantity_delta: null,
+    unit_price: null,
+    price_unit: "UNKNOWN",
+    face_value: null,
+    face_value_date: null,
+    native_trade_amount_kopecks: null,
+    native_total_basis: null,
+    proof_dependency: null,
+    accrued_interest_kopecks: null,
+    commission_kopecks: null,
+    gross_payout_kopecks: null,
+    withheld_tax_kopecks: null,
+    net_payout_kopecks: 1234,
+    classification: "coupon",
+    classification_origin: "default_rule",
+    classification_status: "assumed",
+    persisted_link_status: "linked",
+    attribution_basis: "persisted_link",
+    effective_isin: ISIN,
+    current: true,
+    counted: true,
+    cash_legs: [],
+    reason_codes: [],
+    assumptions: ["income_assumed"],
+    ...patch,
+  };
+}
+export function source(account = "SYNTH-01"): SourceInstrumentReturns {
+  const a = analysis();
+  const totals = {
+    buys_cost_kopecks: null,
+    sells_proceeds_kopecks: null,
+    price_effect_kopecks: null,
+    coupons_kopecks: 1234,
+    dividends_kopecks: null,
+    assumed_income_kopecks: 1234,
+    confirmed_income_kopecks: null,
+    income_kopecks: 1234,
+    total_kopecks: 99999999,
+    capital_base_kopecks: null,
+    return_percent: "99",
+    income_assumptions_used: true,
+    income_complete: true,
+    flags: [],
+    approximate: true,
+  };
+  return {
+    source_account: account,
+    native_source_account: `${account}-000`,
+    financial_authority: "none",
+    authority: "provisional",
+    currency: "RUB",
+    gaps: [],
+    unresolved_events: [],
+    account_reconciliation_events: [],
+    reconciliation: null,
+    income: [],
+    instruments: [
+      {
+        isin: ISIN,
+        source_name: `Синтетическая облигация ${account}`,
+        instrument_type: "bond",
+        analysis: a,
+        months: [
+          {
+            ...totals,
+            month: "2030-05-01",
+            opening_quantity: "2",
+            closing_quantity: "2",
+            opening_value_kopecks: 200000,
+            closing_value_kopecks: 201234,
+            intake_ids: [1],
+            analysis: a,
+          },
+        ],
+        all_time: {
+          ...totals,
+          available_months: [],
+          missing_months: [],
+          partial_months: [],
+          partial: true,
+        },
+      },
+    ],
+  };
+}

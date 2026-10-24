@@ -1,22 +1,23 @@
-import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-
 import { ApiClientError, formatApiError } from "../api/client";
 import type { GuidedCloseActionId, GuidedCloseStep } from "../api/monthCloseWorkflow";
-import type { ReportingMonth } from "../api/types";
 import { listMonths } from "../api/months";
+import type { ReportingMonth } from "../api/types";
+import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
-import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
-import { isGuidedCloseStepId, routeForGuidedAction } from "../components/month-close/navigation";
-import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
-import { closeOwnerCopy } from "../components/month-close/ownerCopy";
-import { withMonthlyCloseReturn } from "../components/month-close/navigation";
 import {
-  parseAlfaStatementTransientOutcome,
+  isGuidedCloseStepId,
+  routeForGuidedAction,
+  withMonthlyCloseReturn,
+} from "../components/month-close/navigation";
+import { closeOwnerCopy } from "../components/month-close/ownerCopy";
+import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
+import {
   type AlfaStatementTransientOutcome,
+  parseAlfaStatementTransientOutcome,
 } from "../components/month-close/statementOutcome";
 import { useMonthCloseLifecycle } from "../components/month-close/useMonthCloseLifecycle";
 import { Button, ConfirmDialog } from "../components/ui";
@@ -28,12 +29,12 @@ import {
   selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
-import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
-import { UiV2Shell } from "./UiV2Shell";
 import { UiV2MonthSources } from "./UiV2MonthSources";
-import { UiV2Panel } from "./UiV2Panel";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
+import { UiV2Panel } from "./UiV2Panel";
+import { UiV2Shell } from "./UiV2Shell";
+import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
 const STATE_LABELS: Record<GuidedCloseStep["state"], string> = {
   not_started: "Ещё не начато",
@@ -120,9 +121,6 @@ export default function UiV2ClosePage() {
         ? newestDraft
         : null;
   const monthId = selectedMonth?.id ?? null;
-  const [intakeSelection, setIntakeSelection] = useState<{ monthId: number; id: number } | null>(
-    null,
-  );
   useBrokerOriginalContext(monthId, selectedMonth?.status === "closed");
   const selectionKey = params.getAll("month").join(":");
   const identity = useRef<{
@@ -354,23 +352,7 @@ export default function UiV2ClosePage() {
           </nav>
         </UiV2Panel>
 
-        <UiV2MonthSources
-          key={workflow.month.id}
-          month={workflow.month}
-          onReview={(id) => {
-            setIntakeSelection({ monthId: workflow.month.id, id });
-            document.getElementById("month-source-review")?.scrollIntoView({ block: "start" });
-          }}
-        />
-
-        <div id="month-source-review" tabIndex={-1}>
-          <BrokerMonthReview
-            key={workflow.month.id}
-            monthId={workflow.month.id}
-            closed={closed}
-            intakeSelection={intakeSelection?.monthId === monthId ? intakeSelection : null}
-          />
-        </div>
+        <UiV2MonthSources key={workflow.month.id} month={workflow.month} />
 
         {statementOutcome ? (
           <section className={styles.closeOutcome} role="status">

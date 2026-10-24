@@ -961,6 +961,23 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
     fullPage: true,
   });
   const response = page.waitForResponse((r) => r.url().endsWith("/api/broker-months/apply"));
+  // A URL/Back scope change cannot discard the uncertain original key or expose
+  // it as a different account's actions. No POST recovery is offered while detached.
+  await page.evaluate(() => {
+    window.history.pushState(
+      {},
+      "",
+      `${window.location.pathname}${window.location.search}&source_account=UNAVAILABLE`,
+    );
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByText(/Переключение счёта отложено/)).toBeVisible();
+  await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toHaveCount(0);
+  await expect(replay).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Повторить чтение", exact: true })).toBeEnabled();
+  expect(posts).toBe(1);
+  await page.goBack();
+  await expect(replay).toBeEnabled();
   await replay.click();
   const duplicate = await (await response).json();
   expect(duplicate.duplicate).toBe(true);
@@ -1309,15 +1326,25 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     notes: "Protected synthetic manual position",
   });
   const before = await manual();
-  const rawA = await (await request.get("/api/synthetic-broker-source/month-ui-a")).body();
-  const rawB = await (await request.get("/api/synthetic-broker-source/month-ui-b")).body();
+  // This scenario owns disjoint native aliases: preceding acceptance journeys
+  // may already have frozen 7654321/8765432 mappings to their own Hermes accounts.
+  const rawA = Buffer.from(
+    (await (await request.get("/api/synthetic-broker-source/month-ui-a")).body())
+      .toString("utf8")
+      .replaceAll("7654321", "7452034"),
+  );
+  const rawB = Buffer.from(
+    (await (await request.get("/api/synthetic-broker-source/month-ui-b")).body())
+      .toString("utf8")
+      .replaceAll("8765432", "8562034"),
+  );
   const fileA = {
-    name: "Брокерский 7654321 (01.05.34-31.05.34).xml",
+    name: "Брокерский 7452034 (01.05.34-31.05.34).xml",
     mimeType: "application/xml",
     buffer: rawA,
   };
   const fileB = {
-    name: "Брокерский 8765432 (01.05.34-31.05.34).xml",
+    name: "Брокерский 8562034 (01.05.34-31.05.34).xml",
     mimeType: "application/xml",
     buffer: rawB,
   };
@@ -1377,32 +1404,93 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   expect(await currentIntakes()).toHaveLength(2);
   const picker = sourcePanel.getByLabel("Счёт источника месяца");
   const list = sourcePanel.getByRole("list", { name: "Источники и исключения месяца" });
-  await picker.selectOption("7654321");
-  await expect(list).not.toContainText("8765432");
-  await picker.selectOption("8765432");
-  await expect(list).not.toContainText("7654321");
+  await picker.selectOption("7452034");
+  await expect(list).not.toContainText("8562034");
+  await picker.selectOption("8562034");
+  await expect(list).not.toContainText("7452034");
   await page.goBack();
-  await expect(picker).toHaveValue("7654321");
+  await expect(picker).toHaveValue("7452034");
   await page.reload();
-  await expect(picker).toHaveValue("7654321");
-  await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7654321" }).click();
-  await expect(page).toHaveURL(/source_account=7654321&bond_period=2034-05-01#bond-slice/);
+  await expect(picker).toHaveValue("7452034");
+  await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
+  await expect(page).toHaveURL(/source_account=7452034&bond_period=2034-05-01#bond-slice/);
   await expect(page.getByRole("region", { name: "Детали облигации RU000A000001" })).toBeVisible();
   await page.goBack();
-  await expect(picker).toHaveValue("7654321");
+  await expect(picker).toHaveValue("7452034");
   await page.getByRole("link", { name: /Снимок и общие данные/ }).click();
   await page.getByLabel("Дата снимка", { exact: true }).fill("2034-05-31");
   await page.getByRole("button", { name: "Сохранить общие данные", exact: true }).click();
   await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
   await page.getByRole("link", { name: "Вернуться к закрытию", exact: true }).click();
   await expect(page.getByText(/Снимок 31.05.2034/)).toBeVisible();
-  await picker.selectOption("8765432");
+  const sourceA = (await currentIntakes()).find(
+    (row: { document: { filename_account: string } }) =>
+      row.document.filename_account === "7452034",
+  );
+  await picker.selectOption("7452034");
+  await sourcePanel.getByRole("button", { name: `Разобрать и исправить #${sourceA.id}` }).click();
+  const journal = page.getByRole("region", { name: "Долговечный разбор источника" });
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(fileA);
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(brokerA.id));
+  await expect(page.getByRole("button", { name: "Проверить MyBroker", exact: true })).toBeEnabled();
+  let releasePreview!: () => void;
+  let previewHeld!: () => void;
+  const release = new Promise<void>((resolve) => {
+    releasePreview = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    previewHeld = resolve;
+  });
+  await page.route("**/api/broker-months/preview", async (route) => {
+    const result = await route.fetch();
+    previewHeld();
+    await release;
+    await route.fulfill({ response: result }).catch(() => {
+      /* retired request */
+    });
+  });
+  await page.getByRole("button", { name: "Проверить MyBroker", exact: true }).click();
+  await held;
+  await picker.selectOption("8562034");
+  await picker.selectOption("7452034");
+  releasePreview();
+  await page.unroute("**/api/broker-months/preview");
+  await expect(page.getByRole("region", { name: "Сводка исходного DRAFT" })).toHaveCount(0);
+  await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toHaveValue("");
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(fileA);
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(brokerA.id));
+  await expect(page.getByRole("button", { name: "Проверить MyBroker", exact: true })).toBeEnabled();
+  await journal.getByLabel("Валюта предложения счёта").fill("USD");
+  await journal.getByRole("button", { name: "Проверить изменения разбора", exact: true }).click();
+  await expect(journal.getByText(/финансовых изменений — 0/)).toBeVisible();
+  await picker.selectOption("8562034");
+  await expect(journal.getByRole("button", { name: "Подтвердить сохранение разбора" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByText(`Оригинал в текущем сеансе: ${fileA.name}`, { exact: false }),
+  ).toHaveCount(0);
+  await expect(journal.getByLabel("Валюта предложения счёта")).toHaveValue("");
+  await expect(journal.getByRole("option", { name: new RegExp(`#${sourceA.id} ·`) })).toHaveCount(
+    0,
+  );
+  await picker.selectOption("7452034");
+  await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceA.id));
+  await expect(journal.getByLabel("Валюта предложения счёта")).toHaveValue("");
+  await expect(journal.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
+  await picker.selectOption("");
+  await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue("");
+  await page.goBack();
+  await expect(picker).toHaveValue("7452034");
+  await page.reload();
+  await expect(picker).toHaveValue("7452034");
+  await expect(journal.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
+  await picker.selectOption("8562034");
   const sourceB = (await currentIntakes()).find(
     (row: { document: { filename_account: string } }) =>
-      row.document.filename_account === "8765432",
+      row.document.filename_account === "8562034",
   );
   await sourcePanel.getByRole("button", { name: `Разобрать и исправить #${sourceB.id}` }).click();
-  const journal = page.getByRole("region", { name: "Долговечный разбор источника" });
   await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceB.id));
   await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(fileB);
   await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(brokerB.id));
@@ -1412,9 +1500,34 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await journal.getByLabel("Валюта предложения счёта").fill("RUB");
   await journal.getByRole("button", { name: "Проверить изменения разбора", exact: true }).click();
   await expect(journal.getByText(/финансовых изменений — 0/)).toBeVisible();
+  // Commit the non-economic review normally, then lose its ACK and first GET.
+  // The immutable request is resolved via journal history, with no second POST.
+  let decisionPosts = 0;
+  let decisionKey = "";
+  await page.route(`**/api/broker-months/intakes/${sourceB.id}/decisions`, async (route) => {
+    decisionPosts++;
+    const result = await route.fetch();
+    expect(result.ok()).toBe(true);
+    decisionKey = (await result.json()).request_id;
+    await route.abort("connectionreset");
+  });
   await journal
     .getByRole("button", { name: "Подтвердить сохранение разбора", exact: true })
     .click();
+  await expect(journal.getByRole("button", { name: "Повторить чтение журнала" })).toBeEnabled();
+  await picker.selectOption("7452034");
+  await expect(page.getByText(/Переключение счёта отложено/)).toContainText("8562034");
+  await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceB.id));
+  await expect(journal.getByLabel("Валюта предложения счёта")).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Инструменты и выплаты месяца" })).toHaveCount(0);
+  await page
+    .locator("#month-source-review")
+    .screenshot({ path: info.outputPath("month-scope-pending-history-get-1440.png") });
+  await journal.getByRole("button", { name: "Повторить чтение журнала" }).click();
+  await expect(page.getByText(/Переключение счёта отложено/)).toHaveCount(0);
+  await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceA.id));
+  expect(decisionPosts).toBe(1);
+  expect(decisionKey).not.toBe("");
   await expect
     .poll(
       async () =>
@@ -1422,8 +1535,9 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
           .account_id,
     )
     .toBe(brokerB.id);
+  await picker.selectOption("8562034");
   await page.reload();
-  await expect(picker).toHaveValue("8765432");
+  await expect(picker).toHaveValue("8562034");
   await page.getByRole("link", { name: "Открыть итоговую проверку", exact: true }).click();
   await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
   const denied = await request.post(`/api/months/${month.id}/close`);

@@ -6,6 +6,8 @@ import type { SourceIntake } from "../api/sourceIntake";
 import { uiV2Months } from "../test/uiV2Fixtures";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 
+vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
+
 function intake(id: number, account: string, patch: Partial<SourceIntake> = {}) {
   return {
     id,
@@ -73,7 +75,7 @@ it("keeps both accounts, calendar scope, precise review and the accepted bond li
   );
   fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #2" }));
   expect(onReview).toHaveBeenCalledWith(2);
-  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls).toHaveLength(2);
 });
 
 it.each(["source_account=MISSING", "source_account=ACCOUNT-A&source_account=ACCOUNT-B"])(
