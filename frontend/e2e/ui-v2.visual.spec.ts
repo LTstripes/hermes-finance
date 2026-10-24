@@ -370,7 +370,7 @@ function closeReadyWorkflow(): MonthCloseWorkflow {
   if (!finalStep) throw new Error("Synthetic final close step is missing");
   finalStep.primary_action = {
     id: "confirm_close",
-    label: "Закрыть месяц",
+    label: "Месяц",
     target: "confirm_close",
   };
   finalStep.state = "ready";

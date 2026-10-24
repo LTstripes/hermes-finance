@@ -24,6 +24,8 @@ After a successful ACK, failed readback is recovered by GET. Never replay a fina
 
 The monthly workflow derives progress from authoritative read models, not a second progress ledger. It presents one next useful action, keeps optional provider stages conditional on supported accounts/data and returns native month edits to the selected Close context. Final review composes existing income, capital, budget, tax and readiness reads. Close is explicit; next-month outlook is read-only until an explicit month-create/copy action.
 
+`/v2/close` is the normal **Month** entry: reporting month and snapshot date, links to the existing manual editor sections, shared multi-file source-intake upload and a concise saved-source/exception list. Each XML has its own Save/readback result; a broken file does not discard valid siblings. Month displays sources bound to that month and unbound sources overlapping its calendar period, with an explicit source-account filter; this display never binds or financially accepts an original. Source review reuses the existing identity/journal/strict-DRAFT controls, with exact originals reselected after reload. Unknown ISINs require explicit review. Account-and-period links open the existing read-only bond/monthly-return reader; source estimates do not establish financial readiness. The backend-owned DRAFT/Close/Reopen workflow and existing routes remain available.
+
 <a id="p2-statement-led-target"></a>
 ### Statement-led monthly workflow — Owner target
 

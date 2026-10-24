@@ -21,7 +21,7 @@ const NATIVE_DATA_LINKS = [
 ];
 
 const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [
-  { label: "Закрыть месяц", to: "/v2/close" },
+  { label: "Месяц", to: "/v2/close" },
   { label: "Счета и справочники", to: "/v2/data/catalogs" },
   { label: "История и результаты", to: "/v2/capital/performance" },
   { label: "Доход и цели", to: "/v2/income/goals" },

@@ -33,6 +33,7 @@ export function SourceIntakeJournal({
   receipts,
   onReview,
   onChanged,
+  intakeSelection,
 }: {
   monthId: number;
   closed: boolean;
@@ -41,8 +42,9 @@ export function SourceIntakeJournal({
   receipts: BrokerMonthReadback[];
   onReview: (decisions: InstrumentDecision[]) => void;
   onChanged: () => void;
+  intakeSelection?: { id: number } | null;
 }) {
-  const { original } = useBrokerOriginalSession();
+  const { session, original } = useBrokerOriginalSession();
   const client = useQueryClient();
   const list = useQuery({
     queryKey: ["source-intakes", monthId],
@@ -89,6 +91,19 @@ export function SourceIntakeJournal({
     setError(null);
     requestId.current = null;
   }, []);
+  const openedIntake = useRef<typeof intakeSelection>(null);
+  useEffect(() => {
+    if (!intakeSelection || openedIntake.current === intakeSelection || busy || ack || disabled)
+      return;
+    const value = list.data?.find((item) => item.id === intakeSelection.id);
+    if (value) {
+      openedIntake.current = intakeSelection;
+      // An explicit saved-source selection retires another original's Preview,
+      // decisions and public-search consent, after any pending result is resolved.
+      session.select(null, monthId, "");
+      choose(value);
+    }
+  }, [intakeSelection, list.data, busy, ack, disabled, session, monthId, choose]);
   useEffect(() => {
     if (!selected && !ack && !busy && Array.isArray(list.data) && list.data.length === 1)
       choose(list.data[0]);

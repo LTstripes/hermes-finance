@@ -30,6 +30,9 @@ import {
 } from "./monthSelection";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
+import { UiV2MonthSources } from "./UiV2MonthSources";
+import { UiV2Panel } from "./UiV2Panel";
+import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
 
 const STATE_LABELS: Record<GuidedCloseStep["state"], string> = {
@@ -42,6 +45,17 @@ const STATE_LABELS: Record<GuidedCloseStep["state"], string> = {
 };
 
 const CURRENT_STEP_ID = "v2-close-current-step";
+
+const MANUAL_SECTIONS = [
+  ["general", "Снимок и общие данные", "Дата, источник, настройки месяца"],
+  ["income", "Зарплата и другие доходы", "Ручные поступления"],
+  ["assets", "Депозиты, накопления и деньги", "Остатки и проценты"],
+  ["positions", "Счета и позиции", "Количество и оценка"],
+  ["payouts", "Полученные выплаты", "Фактические инвестиционные выплаты"],
+  ["budget", "Расходы и план", "Обязательные расходы и откладывание"],
+  ["liabilities", "Долги, кредитка и недвижимость", "Долг, ипотека и платежи"],
+  ["note", "Комментарии", "Пояснения к месяцу"],
+] as const;
 
 function actionPath(actionId: GuidedCloseActionId, monthId: number, stepId: GuidedCloseStep["id"]) {
   if (actionId === "open_final_review") return monthWorkspacePath(monthId, "final_review_close");
@@ -106,6 +120,9 @@ export default function UiV2ClosePage() {
         ? newestDraft
         : null;
   const monthId = selectedMonth?.id ?? null;
+  const [intakeSelection, setIntakeSelection] = useState<{ monthId: number; id: number } | null>(
+    null,
+  );
   useBrokerOriginalContext(monthId, selectedMonth?.status === "closed");
   const selectionKey = params.getAll("month").join(":");
   const identity = useRef<{
@@ -146,6 +163,7 @@ export default function UiV2ClosePage() {
     ),
   );
   const focusedStepRef = useRef<string | null>(null);
+  const explicitInitialStep = useRef(params.has("step"));
   const workflow = workflowQuery.data;
   const workflowIdentityMatches =
     selectionIdentityMatches &&
@@ -201,6 +219,10 @@ export default function UiV2ClosePage() {
   useEffect(() => {
     const focusKey = `${monthId}:${viewedStep?.id}`;
     if (!viewedStep || focusedStepRef.current === focusKey) return;
+    if (focusedStepRef.current === null && !explicitInitialStep.current) {
+      focusedStepRef.current = focusKey;
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       const element = document.getElementById(CURRENT_STEP_ID);
       if (!element) return;
@@ -290,7 +312,6 @@ export default function UiV2ClosePage() {
         : null;
     content = (
       <div className={styles.closeWorkspace} data-testid="v2-close-workspace">
-        <BrokerMonthReview key={workflow.month.id} monthId={workflow.month.id} closed={closed} />
         <div className={styles.closeContext}>
           <span className={closed ? styles.closedBadge : styles.draftBadge}>
             {closed ? "Месяц закрыт" : "Черновик"}
@@ -307,6 +328,48 @@ export default function UiV2ClosePage() {
               подтверждены сохранёнными фактами. События следующего месяца — после закрытия.
             </span>
           )}
+        </div>
+
+        <UiV2Panel
+          eyebrow={closed ? "Сохранённые факты" : "Личные данные"}
+          title="Ручные разделы"
+          id="month-manual"
+          testIdPrefix="month"
+          wide
+        >
+          <nav className={monthStyles.manual} aria-label="Ручные разделы месяца">
+            {MANUAL_SECTIONS.map(([section, label, hint]) => (
+              <Link
+                key={section}
+                to={withMonthlyCloseReturn(
+                  `/v2/data/months/${workflow.month.id}?section=${section}`,
+                  workflow.month.id,
+                  viewedStep.id,
+                )}
+              >
+                {label}
+                <span>{hint}</span>
+              </Link>
+            ))}
+          </nav>
+        </UiV2Panel>
+
+        <UiV2MonthSources
+          key={workflow.month.id}
+          month={workflow.month}
+          onReview={(id) => {
+            setIntakeSelection({ monthId: workflow.month.id, id });
+            document.getElementById("month-source-review")?.scrollIntoView({ block: "start" });
+          }}
+        />
+
+        <div id="month-source-review" tabIndex={-1}>
+          <BrokerMonthReview
+            key={workflow.month.id}
+            monthId={workflow.month.id}
+            closed={closed}
+            intakeSelection={intakeSelection?.monthId === monthId ? intakeSelection : null}
+          />
         </div>
 
         {statementOutcome ? (
@@ -526,14 +589,15 @@ export default function UiV2ClosePage() {
       busy={!monthsReady || (selectionIdentityMatches && monthId !== null && !workflowReady)}
       header={
         <>
-          <p className={styles.eyebrow}>Пошаговое закрытие</p>
+          <p className={styles.eyebrow}>Месяц</p>
           <h1>
             {selectedPeriod
-              ? `Закрытие месяца · ${formatMonth(selectedPeriod.year, selectedPeriod.month)}`
-              : "Закрытие месяца"}
+              ? `Месяц · ${formatMonth(selectedPeriod.year, selectedPeriod.month)}`
+              : "Месяц"}
           </h1>
           <p className={styles.subtitle}>
-            Проверь сохранённые данные, исправь нужное и подтверди закрытие этого месяца.
+            Заполни личные данные, добавь выписки и разбери исключения. Затем проверь готовность и
+            явно закрой месяц.
           </p>
         </>
       }

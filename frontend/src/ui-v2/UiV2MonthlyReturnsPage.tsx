@@ -1,14 +1,15 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ApiClientError, formatApiError } from "../api/client";
-import { listAllSourceIntakes, readSourceIntake, saveSourceIntake } from "../api/sourceIntake";
+import { formatApiError } from "../api/client";
+import { listAllSourceIntakes } from "../api/sourceIntake";
 import {
   getSourceInstrumentReturns,
   getSourceMonthlyReturns,
   type InstrumentTotals,
   type ReturnGap,
 } from "../api/sourceReturns";
+import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
 import { UiV2BondSlice } from "./UiV2BondSlice";
 import styles from "./UiV2MonthlyReturnsPage.module.css";
 import pageStyles from "./UiV2Page.module.css";
@@ -78,14 +79,6 @@ function ReturnGaps({ gaps }: { gaps: ReturnGap[] }) {
     </div>
   );
 }
-type Upload = {
-  id: string;
-  name: string;
-  state: string;
-  detail: string;
-  intakeId?: number;
-  readbackFailed?: boolean;
-};
 const instrumentCells = (row: InstrumentTotals, partial = row.total_kopecks === null) => (
   <>
     <td>{money(row.price_effect_kopecks)}</td>
@@ -102,7 +95,6 @@ const instrumentCells = (row: InstrumentTotals, partial = row.total_kopecks === 
 );
 
 export default function UiV2MonthlyReturnsPage() {
-  const client = useQueryClient();
   const intakes = useQuery({
     queryKey: ["source-intakes", "all"],
     queryFn: ({ signal }) => listAllSourceIntakes(signal),
@@ -124,9 +116,6 @@ export default function UiV2MonthlyReturnsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get("source_account") ?? "";
   const account = selected || accounts[0] || "";
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const uploadBusy = useRef(false);
-  const [uploading, setUploading] = useState(false);
   const monthly = useQuery({
     queryKey: ["source-returns", "monthly", account],
     queryFn: ({ signal }) => getSourceMonthlyReturns(account, signal),
@@ -137,73 +126,9 @@ export default function UiV2MonthlyReturnsPage() {
     queryFn: ({ signal }) => getSourceInstrumentReturns(account, signal),
     enabled: !!account,
   });
-  function updateUpload(id: string, patch: Partial<Upload>) {
-    setUploads((old) => old.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-  }
-  async function readUploadedIntake(id: string, intakeId: number) {
-    updateUpload(id, { state: "Сохранен · читаем", intakeId, readbackFailed: false });
-    try {
-      const intake = await readSourceIntake(intakeId);
-      const detail = intake.exceptions.length
-        ? `Сохранено наблюдений: ${intake.observations.length}. Флаги: ${intake.exceptions.join(", ")}`
-        : `Сохранено наблюдений: ${intake.observations.length}. Пробелов не найдено.`;
-      updateUpload(id, { state: "Сохранен", detail });
-    } catch (error) {
-      updateUpload(id, {
-        state: "Сохранен · не удалось прочитать",
-        detail: `Сохранение подтверждено. Повторите чтение без повторной загрузки. ${formatApiError(error)}`,
-        readbackFailed: true,
-      });
-    }
-  }
-  async function retryReadback(id: string, intakeId: number) {
-    if (uploadBusy.current) return;
-    uploadBusy.current = true;
-    setUploading(true);
-    try {
-      await readUploadedIntake(id, intakeId);
-    } finally {
-      uploadBusy.current = false;
-      setUploading(false);
-    }
-  }
-  async function upload(files: File[]) {
-    if (uploadBusy.current || !files.length) return;
-    uploadBusy.current = true;
-    setUploading(true);
-    const batch = files.map((file) => ({ file, id: crypto.randomUUID() }));
-    setUploads(
-      batch.map(({ file, id }) => ({ id, name: file.name, state: "Сохраняем", detail: "" })),
-    );
-    try {
-      await Promise.all(
-        batch.map(async ({ file, id }) => {
-          let intakeId: number;
-          try {
-            const ack = await saveSourceIntake(file, id, 0, null);
-            intakeId = ack.intake_id;
-          } catch (error) {
-            const detail =
-              error instanceof ApiClientError && error.status === 409
-                ? `${formatApiError(error)} Причина: ${error.message}`
-                : formatApiError(error);
-            updateUpload(id, { state: "Не сохранен", detail });
-            return;
-          }
-          await readUploadedIntake(id, intakeId);
-        }),
-      );
-      await client.invalidateQueries({ queryKey: ["source-intakes"] });
-      await client.invalidateQueries({ queryKey: ["source-returns"] });
-    } finally {
-      uploadBusy.current = false;
-      setUploading(false);
-    }
-  }
   return (
     <UiV2Shell
       active="capital"
-      busy={uploading}
       header={
         <>
           <p className={pageStyles.eyebrow}>Капитал · Источник</p>
@@ -222,50 +147,7 @@ export default function UiV2MonthlyReturnsPage() {
         title="Добавить несколько файлов"
         wide
       >
-        <div className={styles.upload}>
-          <label>
-            XML-файлы
-            <input
-              aria-label="XML-файлы"
-              accept=".xml"
-              multiple
-              type="file"
-              disabled={uploading}
-              onChange={(event) => {
-                const files = Array.from(event.target.files ?? []);
-                event.target.value = "";
-                void upload(files);
-              }}
-            />
-          </label>
-          <p className={styles.note}>
-            Каждый файл обрабатывается отдельно: всё распознанное сохраняется, а пробелы и флаги
-            остаются видимыми.
-          </p>
-          {uploads.length > 0 && (
-            <ul className={styles.fileList}>
-              {uploads.map((item) => (
-                <li key={item.id}>
-                  <strong>
-                    {item.name}: {item.state}
-                  </strong>
-                  {item.detail && <> — {item.detail}</>}
-                  {item.readbackFailed && item.intakeId !== undefined && (
-                    <button
-                      type="button"
-                      disabled={uploading}
-                      onClick={() => {
-                        if (item.intakeId !== undefined) void retryReadback(item.id, item.intakeId);
-                      }}
-                    >
-                      Повторить чтение {item.name}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <SourceIntakeUpload />
       </UiV2Panel>
       <UiV2Panel
         eyebrow="Охват"

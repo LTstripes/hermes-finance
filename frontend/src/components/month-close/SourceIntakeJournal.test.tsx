@@ -98,13 +98,14 @@ beforeEach(() => {
   });
 });
 
-function setup(file: File | null = original) {
+function setup(file: File | null = original, intakeSelection?: { id: number }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   brokerOriginalSession(client).select(file, 1, "7");
   const changed = vi.fn();
   const content = (
     <QueryClientProvider client={client}>
       <SourceIntakeJournal
+        intakeSelection={intakeSelection}
         monthId={1}
         closed={false}
         disabled={false}
@@ -185,4 +186,16 @@ it("currency override is only a reviewed journal proposal and context ABA retire
 it("mounts the provisional estimate for the selected saved intake", async () => {
   setup();
   expect(await screen.findByText("Предварительная доходность по source-intake")).toBeVisible();
+});
+
+it("explicit Month source selection retires another original and leaves the saved source selected without bytes", async () => {
+  const other = { ...structuredClone(stored), id: 2, document_sha256: "d".repeat(64) };
+  vi.mocked(listSourceIntakes).mockResolvedValue([structuredClone(stored), other]);
+  const { client } = setup(original, { id: 2 });
+  await waitFor(() => expect(screen.getByLabelText("Сохранённый разбор")).toHaveValue("2"));
+  expect(brokerOriginalSession(client).snapshot().file).toBeNull();
+  expect(brokerOriginalSession(client).snapshot().accountId).toBe("");
+  expect(screen.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
 });
