@@ -296,6 +296,27 @@ const suites: Record<string, PlaywrightTestConfig> = {
       timeout: 120000,
     },
   },
+  "bond-source": {
+    testDir: "./e2e",
+    testMatch: "bond-source.acceptance.ts",
+    outputDir: path.join(os.tmpdir(), "hermes-bond-source-playwright"),
+    workers: 1,
+    retries: 0,
+    reporter: "list",
+    use: {
+      baseURL: `http://127.0.0.1:${process.env.HERMES_BOND_TEST_PORT ?? "18791"}`,
+      locale: "ru-RU",
+      trace: "retain-on-failure",
+      launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },
+    },
+    webServer: {
+      command: "uv run --locked --group dev python ../frontend/e2e/bond_source_fixture.py",
+      cwd: path.resolve(configDir, "../backend"),
+      url: `http://127.0.0.1:${process.env.HERMES_BOND_TEST_PORT ?? "18791"}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+  },
   "quote-mapping": {
     testDir: "./e2e",
     testMatch: "quote-mapping.acceptance.ts",

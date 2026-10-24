@@ -1,0 +1,96 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.card {
+  border: 1px solid var(--border, #dce3ea);
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+.card h4 {
+  margin: 0 0 10px;
+}
+.card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.card dd {
+  margin: 0;
+  font-weight: 600;
+}
+.value {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 8px 0;
+}
+.note {
+  font-size: 13px;
+  color: var(--muted);
+}
+.estimate {
+  background: #fff7e8;
+  border: 1px solid #e2c48b;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 16px 0;
+}
+.tableWrap {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table caption {
+  text-align: left;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.table th,
+.table td {
+  padding: 10px;
+  border-bottom: 1px solid #e8ecf0;
+  vertical-align: top;
+  text-align: left;
+  min-width: 110px;
+}
+.table button {
+  text-align: left;
+  padding: 7px 9px;
+  border: 1px solid #bbccdc;
+  border-radius: 7px;
+  background: #fff;
+  color: #123c63;
+  cursor: pointer;
+}
+.table button[aria-pressed="true"] {
+  background: #eaf3fc;
+  border-color: #3b75ab;
+}
+.table td:last-child {
+  min-width: 210px;
+}
+.reasons {
+  padding-left: 18px;
+  font-size: 13px;
+}
+.reasons code,
+.references code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.references {
+  padding-left: 18px;
+}
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

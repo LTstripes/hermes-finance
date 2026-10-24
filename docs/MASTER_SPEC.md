@@ -254,6 +254,18 @@ Performance separates capability from data readiness and separates portfolio, ac
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
 
+The source-backed bond block on `/v2/capital/monthly-returns` shows each native
+account separately: reported quantity/value and their EOD boundary, dated trades
+with source price units/NKD/commission, actual coupon rows and source references.
+Account, bond and month selection travel in the page URL for Back/Reload. Missing
+holdings, values, NKD, gross or tax remain unknown. The server's complete economic
+P&L/Modified Dietz are separate from its eligible conditional `statement_estimate`;
+the latter is explicitly labelled as an estimate using statement value with
+unverified valuation/NKD composition. Known coupon components are not full P&L.
+Forecast stays in the existing income view. This read-only presentation grants
+no financial position, Apply or Close authority and does not replace the Month
+workspace or its existing guards.
+
 <a id="p3-ui_v2_analytics_reconciliation-25"></a>
 ### Preserved analytics meanings
 

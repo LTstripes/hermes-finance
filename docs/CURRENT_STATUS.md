@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Evidence cut: 2026-10-23. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
+Evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated evidence retains its original scope. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
 
 <a id="s1"></a>
 ## 1. Code, published release, installed runtime and UAT are separate
@@ -15,7 +15,7 @@ Evidence cut: 2026-10-23. This is the only maintained status book. Live GitHub e
 | Owner's 1.4.0 Test | [#940 handoff](https://github.com/LTstripes/hermes-finance/issues/940) attributes correct monthly account results/multi-account upload to Owner, with private reg-ISIN seed and linked coupons. Fresh read-only HEAD/schema/runtime observations are below. This is not per-instrument numerical UAT or release acceptance; reboot persistence remains unverified. |
 | Workspace operations | Accepted code implements recoverable retirement (#864), not legacy permanent Apply. [#892 checkpoint](https://github.com/LTstripes/hermes-finance/issues/554#issuecomment-6255463423) preserved its PAUSED Worker workspace. No scheduler/installation change or future outcome is inferred from that record. |
 
-The earlier [#836 freeze removal](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6225429633) allowed main development after v1.3.0. The later Owner decision of 2026-10-22 freezes **UI work** while statement ingestion and return calculations are corrected; the current Owner order retains that focus. Published release, Stable, Test and UI-freeze decisions are distinct.
+The earlier [#836 freeze removal](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6225429633) allowed main development after v1.3.0. The 2026-10-22 UI freeze is now bounded by the Owner's [2026-10-24 Month authorization](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6375180628) and [useful-bond decision](https://github.com/LTstripes/hermes-finance/issues/891#issuecomment-6375176825). The assigned first read-only bond presentation reuses instrument v2 on the existing monthly-returns route, including conditional statement estimates without inventing NKD or complete economic return. Acceptance/desktop/CI evidence belongs to its Draft PR; this is not general route retirement, financial UAT, or permission for protected runtime changes. Published release, Stable and Test gates remain distinct.
 
 Local #940 preparation on 2026-10-23 freshly inspected Stable read-only: clean published
 v1.3.0 HEAD/prepared marker, actual DB at 0058 matching canonical production binding,
