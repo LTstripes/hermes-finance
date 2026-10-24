@@ -7,6 +7,7 @@ import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
 import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
 import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
+import { IntentionalEmptyClose } from "../components/month-close/IntentionalEmptyClose";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import {
   isGuidedCloseStepId,
@@ -104,6 +105,7 @@ function StepList({
 
 export default function UiV2ClosePage() {
   const [params] = useSearchParams();
+  const [emptyClosePending, setEmptyClosePending] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const monthsQuery = useQuery({
@@ -475,7 +477,12 @@ export default function UiV2ClosePage() {
               </p>
             </div>
             <Button
-              disabled={!workflow.readiness.can_close || preparingClose || lifecycleBusy}
+              disabled={
+                !workflow.readiness.can_close ||
+                preparingClose ||
+                lifecycleBusy ||
+                emptyClosePending
+              }
               onClick={() => void prepareClose()}
               type="button"
               variant="primary"
@@ -553,7 +560,7 @@ export default function UiV2ClosePage() {
               Вернуться в «Мои финансы»
             </Link>
             <Button
-              disabled={lifecycleBusy}
+              disabled={lifecycleBusy || emptyClosePending}
               onClick={requestReopen}
               type="button"
               variant="secondary"
@@ -586,6 +593,20 @@ export default function UiV2ClosePage() {
     >
       <Link to="/v2/data/months">Отчётные месяцы →</Link>
       {content}
+      {selectionIdentityMatches && selectedMonth ? (
+        <IntentionalEmptyClose
+          key={`${selectedMonth.id}:${selectedMonth.year}:${selectedMonth.month}:${selectedMonth.snapshot_date}`}
+          month={selectedMonth}
+          onPendingChange={setEmptyClosePending}
+          available={Boolean(
+            workflowIdentityMatches &&
+              workflowReady &&
+              !closed &&
+              finalReviewActive &&
+              workflow.readiness.reason_codes.includes("empty_manual_month"),
+          )}
+        />
+      ) : null}
       <ConfirmDialog
         busy={lifecycleBusy}
         cancelLabel="Отмена"

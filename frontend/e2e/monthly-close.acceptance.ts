@@ -1,5 +1,123 @@
 import { expect, test } from "@playwright/test";
 
+test("intentional empty UI: Clone, zero, guards, stale consent, lost ACK and GET-only Back/Reload", async ({
+  page,
+  request,
+}, info) => {
+  const source = await (
+    await request.post("/api/months", {
+      data: { year: 2035, month: 1, snapshot_date: "2035-01-31" },
+    })
+  ).json();
+  expect(
+    (
+      await request.post("/api/expenses", {
+        data: {
+          reporting_month_id: source.id,
+          category: "Synthetic recurring",
+          expense_type: "mandatory",
+          is_recurring: true,
+          amount: { amount: "123.45", currency: "RUB" },
+        },
+      })
+    ).status(),
+  ).toBe(201);
+  const clonedResponse = await request.post(`/api/months/${source.id}/clone`, {
+    data: { year: 2035, month: 2, snapshot_date: "2035-02-28" },
+  });
+  expect(clonedResponse.status()).toBe(201);
+  const cloned = await clonedResponse.json();
+  const path = `/v2/close?month=${cloned.id}&step=final_review_close`;
+  const readinessPath = `/api/months/${cloned.id}/close-readiness`;
+  const commandPath = `/api/months/${cloned.id}/close-intentionally-empty`;
+  let posts = 0;
+  page.on("request", (sent) => {
+    if (sent.method() === "POST" && sent.url().endsWith(commandPath)) posts++;
+  });
+  const readiness = await (await request.get(readinessPath)).json();
+  expect(readiness.can_close).toBe(false);
+  expect(readiness.intentional_empty_close.eligible).toBe(true);
+  expect((await request.post(`/api/months/${cloned.id}/close`)).status()).toBe(422);
+  await page.goto(path);
+  const start = page.getByRole("button", { name: "Закрыть намеренно пустой период…" });
+  await start.click();
+  const dialog = page.getByRole("alertdialog", { name: "Закрыть намеренно пустой период?" });
+  await expect(dialog).toContainText(`ID ${cloned.id}`);
+  await expect(dialog).toContainText("28.02.2035");
+  const confirm = page.getByRole("button", { name: "Подтвердить пустой Close" });
+  await expect(confirm).toBeDisabled();
+  await page.getByLabel("Причина пустого периода").fill("Synthetic intentionally unobserved month");
+  await expect(confirm).toBeDisabled();
+  await page
+    .getByRole("checkbox", { name: "Подтверждаю точный период и намеренное отсутствие фактов" })
+    .check();
+  await page.screenshot({ path: info.outputPath("empty-confirm-desktop.png"), fullPage: true });
+  await page.keyboard.press("Escape");
+  expect(posts).toBe(0);
+
+  // A real header revision after consent prevents dispatch, even with the same calendar month.
+  await start.click();
+  await page.getByLabel("Причина пустого периода").fill("Stale consent");
+  await page.getByRole("checkbox", { name: /Подтверждаю точный период/ }).check();
+  expect(
+    (
+      await request.patch(`/api/months/${cloned.id}`, { data: { snapshot_date: "2035-02-27" } })
+    ).ok(),
+  ).toBe(true);
+  await confirm.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText(/Снимок 27\.02\.2035/).first()).toBeVisible();
+  expect(posts).toBe(0);
+  await page.reload();
+
+  // A committed POST loses its ACK and initial GET; recovery remains GET-only after Back/Reload.
+  await start.click();
+  await page.getByLabel("Причина пустого периода").fill("Synthetic empty Close with lost ACK");
+  await page.getByRole("checkbox", { name: /Подтверждаю точный период/ }).check();
+  await page.route(`**${commandPath}`, async (route) => {
+    await route.fetch();
+    await route.abort();
+  });
+  const receiptPattern = `**/api/months/${cloned.id}/intentional-empty-close-receipts/*`;
+  await page.route(receiptPattern, (route) => route.abort());
+  await confirm.click();
+  await expect(page.getByRole("button", { name: "Проверить результат закрытия" })).toBeEnabled();
+  expect(posts).toBe(1);
+  expect((await (await request.get(`/api/months/${cloned.id}`)).json()).status).toBe("closed");
+  await page.getByRole("link", { name: "Отчётные месяцы →", exact: true }).click();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Проверить результат закрытия" })).toBeEnabled();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Проверить результат закрытия" })).toBeEnabled();
+  expect(posts).toBe(1);
+  await page.unroute(receiptPattern);
+  await page.getByRole("button", { name: "Проверить результат закрытия" }).click();
+  await expect(page.getByText(/Закрытие пустого периода подтверждено квитанцией/)).toBeVisible();
+  expect(posts).toBe(1);
+  await page.screenshot({ path: info.outputPath("empty-recovered-desktop.png"), fullPage: true });
+
+  // Fresh explicit zero in another real Clone is an actual fact; ordinary Close becomes valid.
+  const zero = await (
+    await request.post(`/api/months/${source.id}/clone`, {
+      data: { year: 2035, month: 3, snapshot_date: "2035-03-31" },
+    })
+  ).json();
+  const expenses = await (await request.get(`/api/expenses?month_id=${zero.id}`)).json();
+  expect(
+    (
+      await request.patch(`/api/expenses/${expenses[0].id}`, {
+        data: { amount: { amount: "0.00", currency: "RUB" } },
+      })
+    ).ok(),
+  ).toBe(true);
+  const zeroReady = await (await request.get(`/api/months/${zero.id}/close-readiness`)).json();
+  expect(zeroReady.can_close).toBe(true);
+  await page.goto(`/v2/close?month=${zero.id}&step=final_review_close`);
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
+  await expect(start).toHaveCount(0);
+  expect((await request.post(`/api/months/${zero.id}/close`)).status()).toBe(200);
+});
+
 test("synthetic real-backend native Close: edit, reread, report, reopen and restore", async ({
   page,
   request,

@@ -1523,8 +1523,16 @@ POST retry returns the same immutable receipt without another Close or audit;
 reusing a key for different intent conflicts. A receipt's `result_status=closed`
 is the historical command result, not the current month status after Reopen or
 deletion. Re-read month/readiness separately; new Close requires fresh consent.
-The typed API consumer exposes these operations without adding a UI confirmation
-or automatically falling back from ordinary Close. Owner UI/UAT is a separate gate.
+The Month final review uses this typed command through a separate reason/period
+confirmation; it never automatically falls back from ordinary Close. Server
+eligibility and all hard blockers are reread before confirmation and dispatch.
+The exact immutable request is stored in browser session storage before POST;
+unavailable storage prevents dispatch. Pending/lost ACK, failed receipt/current
+month readback and Back/Reload allow only GET recovery with the same request ID.
+A missing receipt alone does not authorize another POST. Only a typed definitive
+command rejection retires the failed intent. Receipt identity/reason/policy and
+current month identity/status must match before reporting success; historical
+receipt after Reopen never recloses the month. Owner Test UAT is a separate gate.
 
 Migration `0063_intentional_empty_close` adds only an initially empty audit table,
 index and immutability triggers. It does not reinterpret/backfill historical months,

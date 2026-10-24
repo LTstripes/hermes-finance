@@ -1,7 +1,15 @@
 # Current state, limitations and next actions
 
-2026-10-24 Worker candidate for [#952](https://github.com/LTstripes/hermes-finance/issues/952),
-based on accepted `main@ea6bf4fb1d98acc049eefd054502e814240de8a7`: shared server
+The #952/#711 Month consumer candidate adds explicit intentional-empty period
+confirmation using merged #953: exact period/reason, fresh server guards and
+GET-only recovery across Back/Reload. Synthetic verification and independent
+review/exact CI belong to its PR receipt. No persistent Test upgrade, real Close,
+provider call or Stable acceptance is implied by this candidate.
+
+2026-10-24 accepted backend [#953](https://github.com/LTstripes/hermes-finance/pull/953)
+for [#952](https://github.com/LTstripes/hermes-finance/issues/952) is integrated at
+`main@a88b86ac2c89157e3581a006e3c6b5dfd6f07188`, with exact-main
+[push CI SUCCESS](https://github.com/LTstripes/hermes-finance/actions/runs/40096328127): shared server
 `empty_manual_month` guard and a separate typed exact-period intentional-empty
 Close command with immutable audit/readback. Ordinary partial/manual-only months
 retain advisory completeness and require no XML; no economic facts are invented.
@@ -10,11 +18,11 @@ expense and saving rows. Clone templates and legacy unknown origins cannot alone
 satisfy ordinary MANUAL DRAFT Close; explicit amount saves, including zero, confirm
 the selected row. Existing amounts/CLOSED history are preserved without guessed
 backfill. Populated audit/provenance blocks downgrade and requires forward
-recovery. This is backend/API work with a typed consumer, not the separate UI
-confirmation/Owner UAT acceptance. Independent financial/operational review and
-exact PR CI are delivery gates; no merge, protected runtime operation or real
-Close/Apply/Reopen is authorized by this candidate. Final evidence belongs to its
-Draft PR, rather than implying deployment from code delivery.
+recovery. The backend had independent financial/operational acceptance and exact
+PR CI/UI SUCCESS; its [Integrator receipt](https://github.com/LTstripes/hermes-finance/pull/953#issuecomment-6384545412)
+records guarded integration. The Month UI consumer above and final persistent
+Test 0062→0064 upgrade/UAT remain separately evidenced. Code acceptance does not
+authorize a real Close/Apply/Reopen or Stable operations.
 
 Evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated evidence retains its original scope. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
 
@@ -25,7 +33,7 @@ Evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated eviden
 | --- | --- |
 | #891 original implementation base | Main `418b88a8c9a1b9b8e5f2d72e6112426282f3d285`, after [#935 acceptance/integration](https://github.com/LTstripes/hermes-finance/pull/935#issuecomment-6369982626); exact [main push CI 39988134177](https://github.com/LTstripes/hermes-finance/actions/runs/39988134177) SUCCESS. The current acceptance and integration evidence is linked below; the baseline does not identify an installed runtime. |
 | Finance-code checkpoint before #935 | `31e7b41d444945ed5ae5c4e4a813997329c3a354`, [PR #939](https://github.com/LTstripes/hermes-finance/pull/939). Exact [main push CI 39956697053](https://github.com/LTstripes/hermes-finance/actions/runs/39956697053) SUCCESS. This is the earlier code checkpoint reconciled by #941. The subsequent #935 behavior and its exact verification/integration evidence are linked below. |
-| Main schema | Through `0062_security_reg_isin_mappings`, after `0061_money_instrument_links`; both are merged code. This does not identify the schema of every installed database. |
+| Main schema | Through `0064_month_template_provenance`, after `0063_intentional_empty_close` and `0062_security_reg_isin_mappings`; these are merged code. This does not identify the schema of every installed database. |
 | Published release | [v1.3.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.3.0), release commit `a9c88266fffe26e83688c52fc8f425b04fa14812`, schema `0058_broker_money_ownership`. [1.4.0 notes](release-notes-1.4.0.md), [checklist](releases/1.4.0-test-run.md) and [recovery disposition](releases/1.4.0-rollback.md) now prepare the post-#935 baseline through 0062; publication remains Integrator-owned through #124. |
 | Installed HONOR Stable | Prior [#836 receipt](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6222421447): backup-first OPS02, separate Start, physical DB continuity, `0044 → 0058`, limited health/API/UI/reload checks. Fresh #940 read-only 0058 binding/integrity evidence is below; no new update or Stable Start. |
 | Owner's 1.4.0 Test | [#940 handoff](https://github.com/LTstripes/hermes-finance/issues/940) attributes correct monthly account results/multi-account upload to Owner, with private reg-ISIN seed and linked coupons. Fresh read-only HEAD/schema/runtime observations are below. This is not per-instrument numerical UAT or release acceptance; reboot persistence remains unverified. |
