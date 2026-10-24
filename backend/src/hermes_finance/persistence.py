@@ -1713,6 +1713,9 @@ class IncomeEntry(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )
@@ -2596,6 +2599,9 @@ class ExpenseEntry(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )
@@ -2615,6 +2621,9 @@ class SavingAllocation(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )

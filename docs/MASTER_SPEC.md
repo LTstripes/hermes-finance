@@ -21,7 +21,9 @@ Start with the selected reporting month and its snapshot date. Manual facts, ful
 Ordinary Close of a completely unfilled manual DRAFT is blocked with
 `empty_manual_month`. Saved actual month facts, including an explicit zero, make
 the month nonempty; XML is optional and partial completeness remains advisory.
-Notes, plans, forecasts and source-only Save do not fill a month. A separate
+Notes, plans, forecasts, copied salary/expense/saving templates and source-only
+Save do not fill a month. Copied templates require explicit amount confirmation,
+including zero; legacy rows without provenance are not silently confirmed. A separate
 intentional-empty command requires a fresh exact-period confirmation and reason,
 retains audit and creates no economic facts. It waives only this empty guard;
 snapshot/source/receipt guards remain mandatory. Reopen/clone require new consent.

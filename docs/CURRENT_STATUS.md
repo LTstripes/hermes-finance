@@ -5,7 +5,11 @@ based on accepted `main@ea6bf4fb1d98acc049eefd054502e814240de8a7`: shared server
 `empty_manual_month` guard and a separate typed exact-period intentional-empty
 Close command with immutable audit/readback. Ordinary partial/manual-only months
 retain advisory completeness and require no XML; no economic facts are invented.
-Migration 0063 is additive; populated audit blocks downgrade and requires forward
+Migration 0063 adds audit; 0064 adds nullable versioned provenance for income,
+expense and saving rows. Clone templates and legacy unknown origins cannot alone
+satisfy ordinary MANUAL DRAFT Close; explicit amount saves, including zero, confirm
+the selected row. Existing amounts/CLOSED history are preserved without guessed
+backfill. Populated audit/provenance blocks downgrade and requires forward
 recovery. This is backend/API work with a typed consumer, not the separate UI
 confirmation/Owner UAT acceptance. Independent financial/operational review and
 exact PR CI are delivery gates; no merge, protected runtime operation or real

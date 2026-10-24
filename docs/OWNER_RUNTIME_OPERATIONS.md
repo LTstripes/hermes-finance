@@ -620,6 +620,15 @@ Runtime update is backup-first, published immutable release-pinned and separate 
 <a id="o3-empty-close-recovery"></a>
 ### Intentional-empty Close audit schema recovery (#952)
 
+Schema `0064_month_template_provenance` adds nullable origin columns to income,
+expense and saving tables without modifying old values. NULL remains unknown;
+MANUAL DRAFT rows require explicit amount confirmation to count for the empty
+guard. Backup/restore preserves origins. Downgrade refuses before mutation if any
+origin is populated: old code would accept copied templates as facts. Preserve
+the code/schema pair and use reviewed forward recovery. An isolated old backup
+upgraded to 0064 retains unknown origins, never invented acceptance. These checks
+authorize no production migration or runtime operation.
+
 Schema `0063_intentional_empty_close` is additive over 0062: one initially empty
 audit table/index and immutable UPDATE/DELETE guards, no changed historical month
 or economic rows. Before any separately authorized deployment, verify a fresh

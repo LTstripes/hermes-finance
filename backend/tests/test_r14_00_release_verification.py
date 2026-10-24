@@ -22,6 +22,7 @@ TRANSITION = (
     "0061_money_instrument_links",
     "0062_security_reg_isin_mappings",
     "0063_intentional_empty_close",
+    "0064_month_template_provenance",
 )
 
 

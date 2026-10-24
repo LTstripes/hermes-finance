@@ -50,12 +50,12 @@ MONTH_ACTUAL_MODELS = (
 def has_month_actual_facts(session: Session, month: ReportingMonth) -> bool:
     with session.no_autoflush:
         for model in MONTH_ACTUAL_MODELS:
-            if (
-                session.scalar(
-                    select(model.id).where(model.reporting_month_id == month.id).limit(1)
-                )
-                is not None
-            ):
+            statement = select(model.id).where(model.reporting_month_id == month.id)
+            if model in (IncomeEntry, ExpenseEntry, SavingAllocation):
+                # Legacy NULL and unknown versions cannot prove a fresh actual.
+                # Dates, recurrence and the value (including zero) are not provenance.
+                statement = statement.where(model.actual_fact_origin == "saved_actual_v1")
+            if session.scalar(statement.limit(1)) is not None:
                 return True
 
         # These accepted facts are date-owned rather than month FK-owned. Use

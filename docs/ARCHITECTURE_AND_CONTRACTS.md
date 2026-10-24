@@ -1462,6 +1462,23 @@ or provider-announced payout alone is insufficient. Existence is the criterion:
 explicitly recorded zero and offsetting postings count, independently of totals
 or inclusion flags. Presence proves no completeness or exact-return eligibility.
 
+For income, expense and saving rows, presence additionally requires persisted
+`actual_fact_origin=saved_actual_v1`. Clone writes `clone_template_v1` for all
+three families, even for zero templates and copies of already confirmed rows.
+Existing create writers record actuals; explicit amount updates (including an
+unchanged value or `0.00`) confirm the selected row inside the existing writer
+transaction. Notes, dates, recurrence flags and empty updates cannot confirm it.
+The existing all-zero salary **replace/delete** command retains its deletion
+semantics; explicit zero income create/update remains a saved fact.
+
+Migration `0064_month_template_provenance` adds nullable origin columns without
+backfilling or changing amounts. Legacy NULL/unknown versions cannot establish
+actual presence for these three families: their old writer did not distinguish
+cloned settings from confirmed facts. A legacy MANUAL DRAFT with only those rows
+therefore needs explicit amount confirmation, another accepted fact, or the
+existing intentional-empty command. This is no inference from `received_at`,
+amount or recurrence, and does not reinterpret CLOSED history or totals.
+
 No actual facts yields hard blocker `empty_manual_month` in `close_hard_guards`,
 readiness, workflow/Final Review and ordinary HTTP Close. Partial months retain
 the previous completeness warnings; XML and all-account snapshots are optional.

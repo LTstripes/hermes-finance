@@ -13,6 +13,97 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_month_template_provenance_preserves_unknown_legacy_and_windows_recovery(tmp_path):
+    from test_r13_00_release_verification import _backup, _integrity, _snapshot
+
+    from hermes_finance.database import create_database
+    from hermes_finance.persistence import ExpenseEntry, IncomeEntry, SavingAllocation
+    from hermes_finance.services.close_readiness import build_close_readiness
+    from hermes_finance.services.expenses import update_expense_entry, update_saving_allocation
+    from hermes_finance.services.incomes import update_income_entry
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    path = tmp_path / "synthetic-provenance.db"
+    previous = "0063_intentional_empty_close"
+    assert run_alembic(path, "upgrade", previous).returncode == 0
+    database = create_database(path)
+    with database.session_factory() as session:
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+        month_id = month.id
+    database.engine.dispose()
+    # Pre-provenance schema cannot prove whether these are actuals or copies.
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO income_entries(reporting_month_id,income_type,name,"
+            "gross_amount_kopecks,tax_amount_kopecks,net_amount_kopecks) VALUES (?, 'salary','Zero',0,0,0)",
+            (month_id,),
+        )
+        connection.execute(
+            "INSERT INTO expense_entries(reporting_month_id,category,amount_kopecks,expense_type) "
+            "VALUES (?, 'Zero',0,'mandatory')",
+            (month_id,),
+        )
+        connection.execute(
+            "INSERT INTO saving_allocations(reporting_month_id,destination,amount_kopecks) "
+            "VALUES (?, 'Zero',0)",
+            (month_id,),
+        )
+        connection.commit()
+        before = _snapshot(connection)
+    original = tmp_path / "synthetic-old-backup.db"
+    _backup(path, original)
+    for _ in range(2):
+        upgraded = run_alembic(path, "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        with sqlite3.connect(path) as connection:
+            _integrity(connection)
+            after = _snapshot(connection)
+            for table in ("income_entries", "expense_entries", "saving_allocations"):
+                assert connection.execute(f"SELECT actual_fact_origin FROM {table}").fetchall() == [
+                    (None,)
+                ]
+            for table, (columns, rows) in before.items():
+                current_columns, current_rows = after[table]
+                indices = [current_columns.index(column) for column in columns]
+                assert [tuple(row[i] for i in indices) for row in current_rows] == rows
+        assert run_alembic(path, "downgrade", previous).returncode == 0
+        with sqlite3.connect(path) as connection:
+            assert _snapshot(connection) == before
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    database = create_database(path)
+    with database.session_factory() as session:
+        assert not build_close_readiness(session, month_id, today=date(2030, 1, 31)).can_close
+        for model, update_row, changes in (
+            (IncomeEntry, update_income_entry, {"net_amount": "0.00"}),
+            (ExpenseEntry, update_expense_entry, {"amount": "0.00"}),
+            (SavingAllocation, update_saving_allocation, {"amount": "0.00"}),
+        ):
+            row = session.query(model).one()
+            update_row(session, row.id, **changes)
+            assert row.actual_fact_origin == "saved_actual_v1"
+        assert build_close_readiness(session, month_id, today=date(2030, 1, 31)).can_close
+    database.engine.dispose()
+    refused = run_alembic(path, "downgrade", previous)
+    assert refused.returncode != 0 and "cannot downgrade populated" in refused.stderr
+    assert revision_rows(path) == [REVISION]
+    with sqlite3.connect(path) as connection:
+        committed = _snapshot(connection)
+    backup = tmp_path / "synthetic-provenance-backup.db"
+    _backup(path, backup)
+    with sqlite3.connect(backup) as connection:
+        _integrity(connection)
+        assert _snapshot(connection) == committed
+    recovered = tmp_path / "synthetic-provenance-forward.db"
+    _backup(original, recovered)
+    assert run_alembic(recovered, "upgrade", "head").returncode == 0
+    with sqlite3.connect(recovered) as connection:
+        assert connection.execute("SELECT actual_fact_origin FROM income_entries").fetchall() == [
+            (None,)
+        ]
+    with sqlite3.connect(path) as connection:
+        assert _snapshot(connection) == committed
+
+
 def test_intentional_empty_close_migration_audit_and_windows_recovery(tmp_path):
     import pytest
     from test_r13_00_release_verification import _backup, _integrity, _snapshot
@@ -39,7 +130,7 @@ def test_intentional_empty_close_migration_audit_and_windows_recovery(tmp_path):
     original_backup = tmp_path / "synthetic-0062-backup.db"
     _backup(path, original_backup)
     for _ in range(2):
-        upgraded = run_alembic(path, "upgrade", "head")
+        upgraded = run_alembic(path, "upgrade", "0063_intentional_empty_close")
         assert upgraded.returncode == 0, upgraded.stderr
         with sqlite3.connect(path) as connection:
             _integrity(connection)
@@ -51,6 +142,8 @@ def test_intentional_empty_close_migration_audit_and_windows_recovery(tmp_path):
         assert downgraded.returncode == 0, downgraded.stderr
         with sqlite3.connect(path) as connection:
             assert _snapshot(connection) == before
+    # Current readers require the current schema; the loop above independently
+    # probes the unchanged 0063 upgrade/downgrade contract.
     assert run_alembic(path, "upgrade", "head").returncode == 0
     database = create_database(path)
     with database.session_factory() as session:
@@ -72,10 +165,17 @@ def test_intentional_empty_close_migration_audit_and_windows_recovery(tmp_path):
             with pytest.raises(sqlite3.IntegrityError, match="immutable"):
                 connection.execute(sql)
             connection.rollback()
+    # Origins are all NULL here. Preserve the audit guard for the whole
+    # downgrade chain, including every provenance column.
+    with sqlite3.connect(path) as connection:
+        for table in ("income_entries", "expense_entries", "saving_allocations"):
+            assert "actual_fact_origin" in [
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            ]
     refused = run_alembic(path, "downgrade", previous)
     assert refused.returncode != 0 and "cannot downgrade populated" in refused.stderr
     assert revision_rows(path) == [REVISION]
-    current_backup = tmp_path / "synthetic-0063-backup.db"
+    current_backup = tmp_path / "synthetic-current-audit-backup.db"
     _backup(path, current_backup)
     with sqlite3.connect(current_backup) as connection:
         assert _snapshot(connection) == committed

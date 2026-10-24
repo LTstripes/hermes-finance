@@ -54,12 +54,186 @@ from hermes_finance.services.reporting_months import (
 DAY = date(2030, 1, 31)
 
 
+def clone_templates(session, family="all", amount=12345):
+    source = month_for(session)
+    if family in {"all", "income"}:
+        session.add(
+            IncomeEntry(
+                reporting_month_id=source.id,
+                income_type="salary",
+                name="Salary settings",
+                gross_amount_kopecks=amount,
+                tax_amount_kopecks=0,
+                net_amount_kopecks=amount,
+                is_recurring=True,
+                received_at=None,
+            )
+        )
+    if family in {"all", "expense"}:
+        session.add(
+            ExpenseEntry(
+                reporting_month_id=source.id,
+                category="Recurring expense",
+                amount_kopecks=amount,
+                expense_type="mandatory",
+                is_recurring=True,
+            )
+        )
+    if family in {"all", "saving"}:
+        session.add(
+            SavingAllocation(
+                reporting_month_id=source.id,
+                destination="Planned saving",
+                amount_kopecks=amount,
+            )
+        )
+    session.commit()
+    return clone_reporting_month(
+        session,
+        source.id,
+        target_year=2030,
+        target_month=2,
+        snapshot_date=date(2030, 2, 28),
+    )
+
+
+@pytest.mark.parametrize("family", ["all", "income", "expense", "saving"])
+@pytest.mark.parametrize("amount", [0, 12345])
+def test_real_clone_templates_block_readiness_and_authoritative_close(db, family, amount):
+    with db.session_factory() as session:
+        target = clone_templates(session, family, amount)
+        target_id = target.id
+        assert not has_month_actual_facts(session, target)
+        assert not build_close_readiness(session, target_id, today=date(2030, 2, 28)).can_close
+        with pytest.raises(CloseGuardError) as error:
+            close_reporting_month(session, target_id)
+        assert error.value.code == "empty_manual_month"
+    with TestClient(create_app(db)) as client:
+        readiness = client.get(f"/api/months/{target_id}/close-readiness").json()
+        assert not readiness["can_close"]
+        assert "empty_manual_month" in [item["code"] for item in readiness["items"]]
+        workflow = client.get(f"/api/months/{target_id}/close-workflow").json()
+        assert not workflow["readiness"]["can_close"]
+        blocked = client.post(f"/api/months/{target_id}/close")
+        assert blocked.status_code == 422
+        assert blocked.json()["error"]["code"] == "empty_manual_month"
+    with db.session_factory() as session:
+        assert session.get(ReportingMonth, target_id).status == "draft"
+
+
+@pytest.mark.parametrize("family", ["income", "expense", "saving"])
+@pytest.mark.parametrize("amount", ["0.00", "123.45"])
+def test_clone_requires_explicit_amount_confirmation_including_unchanged_and_zero(
+    db, family, amount
+):
+    from hermes_finance.services.expenses import update_expense_entry, update_saving_allocation
+    from hermes_finance.services.incomes import update_income_entry
+
+    model, update_row = {
+        "income": (IncomeEntry, update_income_entry),
+        "expense": (ExpenseEntry, update_expense_entry),
+        "saving": (SavingAllocation, update_saving_allocation),
+    }[family]
+    with db.session_factory() as session:
+        target = clone_templates(session)
+        row = session.scalar(select(model).where(model.reporting_month_id == target.id))
+        update_row(session, row.id, notes="A note does not confirm an amount")
+        assert not has_month_actual_facts(session, target)
+        update_row(session, row.id)
+        assert not has_month_actual_facts(session, target)
+        changes = (
+            {"gross_amount": amount, "tax_amount": "0.00", "net_amount": amount}
+            if family == "income"
+            else {"amount": amount}
+        )
+        update_row(session, row.id, **changes)
+        session.expire_all()
+        assert has_month_actual_facts(session, target)
+        assert build_close_readiness(session, target.id, today=date(2030, 2, 28)).can_close
+        # Confirmation belongs to this period only; re-clone retires it.
+        following = clone_reporting_month(
+            session,
+            target.id,
+            target_year=2030,
+            target_month=3,
+            snapshot_date=date(2030, 3, 31),
+        )
+        assert not has_month_actual_facts(session, following)
+        assert close_reporting_month(session, target.id).status == "closed"
+
+
 @pytest.fixture
 def db(tmp_path):
     database = create_database(tmp_path / "synthetic-empty-close.db")
     Base.metadata.create_all(database.engine)
     yield database
     database.engine.dispose()
+
+
+@pytest.mark.parametrize("family", ["income", "expense", "saving"])
+def test_fresh_salary_expense_saving_zero_and_null_salary_date_are_actuals(db, family):
+    from hermes_finance.services.expenses import create_expense_entry, create_saving_allocation
+    from hermes_finance.services.incomes import create_income_entry
+
+    with db.session_factory() as session:
+        month = month_for(session)
+        if family == "income":
+            row = create_income_entry(
+                session,
+                reporting_month_id=month.id,
+                income_type="salary",
+                name="Explicit zero",
+                gross_amount="0.00",
+                tax_amount="0.00",
+                net_amount="0.00",
+                is_recurring=True,
+                received_at=None,
+            )
+        elif family == "expense":
+            row = create_expense_entry(
+                session,
+                reporting_month_id=month.id,
+                category="Explicit zero",
+                amount="0.00",
+                expense_type="mandatory",
+                is_recurring=True,
+            )
+        else:
+            row = create_saving_allocation(
+                session,
+                reporting_month_id=month.id,
+                destination="Explicit zero",
+                amount="0.00",
+            )
+        assert row.actual_fact_origin == "saved_actual_v1"
+        assert has_month_actual_facts(session, month)
+        assert close_reporting_month(session, month.id).status == "closed"
+
+
+@pytest.mark.parametrize("family", ["income", "expense", "saving"])
+def test_http_clone_confirmation_requires_amount_and_preserves_zero(db, family):
+    model, path, field = {
+        "income": (IncomeEntry, "incomes", "net_amount"),
+        "expense": (ExpenseEntry, "expenses", "amount"),
+        "saving": (SavingAllocation, "savings", "amount"),
+    }[family]
+    with db.session_factory() as session:
+        month = clone_templates(session, family)
+        month_id = month.id
+        row_id = session.scalar(select(model.id).where(model.reporting_month_id == month_id))
+    with TestClient(create_app(db)) as client:
+        url = f"/api/{path}/{row_id}"
+        note = client.patch(url, json={"notes": "Still a template"})
+        assert note.status_code == 200, note.text
+        assert not client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
+        invalid = client.patch(url, json={field: {"amount": "-1.00", "currency": "RUB"}})
+        assert invalid.status_code == 422
+        assert not client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
+        confirmed = client.patch(url, json={field: {"amount": "0.00", "currency": "RUB"}})
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()[field]["amount"] == "0.00"
+        assert client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
+        assert client.post(f"/api/months/{month_id}/close").status_code == 200
 
 
 def month_for(session):
