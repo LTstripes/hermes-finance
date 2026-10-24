@@ -1,10 +1,14 @@
 # Hermes Finance 1.4.0
 
-Release preparation started from accepted main `418b88a8c9a1b9b8e5f2d72e6112426282f3d285`
-(2026-10-23), after #935; #944 prepares identity/recovery and #945 adds the accepted #891 backend scope when included in the selected canonical SHA. Backend manifest/package/uv lock, frontend manifest/lock and
-current health/identity checks use 1.4.0. This publication-ready content does not assert
-that a tag, Release or Stable update exists. Current disposition belongs in
-[CURRENT_STATUS](CURRENT_STATUS.md) and the release PR.
+Hermes Finance **1.4.0** includes the accepted Month workflow and intentional-empty
+Close safeguards from #953/#954, source-account and instrument return views,
+and schema **0064**. Backend/frontend manifests, locks and health identity use 1.4.0.
+
+The accepted application baseline is `e487d57080dca0eb88484adeda52c51889b9fd5d`
+(2026-10-24), with [exact post-main push CI](https://github.com/LTstripes/hermes-finance/actions/runs/40099148969)
+SUCCESS and bounded Owner-local Test UAT. Release identity, installation evidence and
+operational gates are tracked in [CURRENT_STATUS](CURRENT_STATUS.md) and
+[#940](https://github.com/LTstripes/hermes-finance/issues/940).
 
 Keep the canonical path `docs/release-notes-1.4.0.md`: the installed v1.3.0 updater reads
 that path in the target commit. Publication requires accepted canonical main, exact-main
@@ -26,7 +30,7 @@ readback under [O3](OWNER_RUNTIME_OPERATIONS.md#o3).
   monthly or selected-interval RUB P&L and Modified Dietz under `instrument_return_v2`.
   The new rate is a Decimal fraction, not the legacy percentage. Full economic results,
   known subtotals and conditional statement-value estimates remain distinct. Unknown bond
-  valuation basis withholds full economic P&L/MD. No instrument UI or private numerical UAT is implied.
+  valuation basis withholds full economic P&L/MD. Read-only instrument surfaces (#949/#951) and bounded Owner-local Test UAT are now delivered; neither proves full bond economics or unsupported historical coverage.
 - Audit fixes (#924/#926/#928) tighten nominal/NKD, boundary/scope, flow coverage,
   short-period XIRR and Decimal behavior. MyBroker statement/account support (#932) preserves
   native evidence rather than filling unknown operands with zero.
@@ -39,13 +43,26 @@ readback under [O3](OWNER_RUNTIME_OPERATIONS.md#o3).
 - #935 closes B2 across applied S3, WHAT-IF, historical and provisional paths, including the
   corrected duplicate diagnostic; renamed import behavior is retained. Its independent review
   and exact candidate/main CI are linked from [#940](https://github.com/LTstripes/hermes-finance/issues/940).
+- The ordinary **«Месяц»** workspace (#950/#951) combines manual-data links, multi-original
+  statement intake, account-scoped source review and exceptions. It keeps actual versus
+  possible-paid versus future forecasts distinct and preserves strict Apply/Close authority.
+- Read-only stock returns, bond conditional estimates and T-Invest payout preview (#946/#949/#951)
+  are surfaced without fabricating missing clean/dirty/NKD or automatically accepting source
+  evidence. Unsupported full bond returns stay NULL. No live T-Invest was called during Test UAT.
+- The server empty-month policy (#952/#953) blocks ordinary empty MANUAL-DRAFT Close. Explicit
+  saved zero counts; cloned income/expense/saving templates and legacy UNKNOWN origins do not.
+  The separate intentional-empty Close requires a fresh exact-period reason, writer guards and
+  immutable audit/receipt. No financial or synthetic-zero backfill occurs.
+- The corresponding UI (#954) requires explicit consent, exact period and server eligibility;
+  unknown ACK, Back and Reload allow GET-only recovery without a second Close command.
+  Real October Close was not executed; success/lost-ACK command cases were synthetic.
 - Security/CI/docs maintenance includes #929, #916/#918/#919/#920/#941. Release notes retain
   full CI classification; a docs-only verdict is not a release gate.
 
-## Database transition: 0058 → 0062
+## Database transition: 0058 → 0064
 
 Published v1.3.0 (`a9c88266fffe26e83688c52fc8f425b04fa14812`) supports
-`0058_broker_money_ownership`. The selected head is `0062_security_reg_isin_mappings`.
+`0058_broker_money_ownership`. The selected head is `0064_month_template_provenance`.
 
 | Revision | Effect and preservation boundary |
 | --- | --- |
@@ -53,19 +70,29 @@ Published v1.3.0 (`a9c88266fffe26e83688c52fc8f425b04fa14812`) supports
 | `0060_source_money_classifications` | Adds provisional classifications. No legacy backfill; missing classification is explicit. Downgrade loses choices. |
 | `0061_money_instrument_links` | Adds nullable link/registration/issuer fields, index/checks/FK through SQLite batch alteration. Existing rows stay unprocessed/NULL; no automatic relink. Downgrade loses link fields. |
 | `0062_security_reg_isin_mappings` | Adds an empty crosswalk. No private seed. Downgrade drops mappings; re-upgrade does not recover them. |
+| `0063_intentional_empty_close` | Adds an initially empty immutable Close audit/receipts table and triggers. No existing financial data or zeros are invented; populated audit rejects downgrade before DDL. |
+| `0064_month_template_provenance` | Adds nullable actual/template provenance to income, expense and saving rows. Clone writes `clone_template_v1`; explicit amount confirmation writes `saved_actual_v1`; old NULL stays UNKNOWN. Populated origin/audit rejects downgrade. |
 
-Forward migration preserves existing CLOSED/DRAFT/history/receipts/provenance. Released
-migration sources, including `backend/migrations/README`, remain unchanged. Candidate tests
-exercise direct 0058→head and every hop with synthetic CLOSED/history rows, integrity/FK,
-online-backup readback and isolated forward recovery. This is not production rollback.
+Forward migration must preserve existing CLOSED/DRAFT/history/receipts/provenance;
+released migration sources, including `backend/migrations/README`, stay unchanged.
+See [#954's consolidated receipt](https://github.com/LTstripes/hermes-finance/pull/954#issuecomment-6385205231)
+for the actual Test 0062→0064 migration and synthetic migration/backup evidence.
+Neither demonstrates a real Stable 0058→0064 migration or return to old code.
 
 ## Update and recovery
 
-Follow the [candidate checklist](releases/1.4.0-test-run.md),
-[recovery disposition](releases/1.4.0-rollback.md) and O3/O4. Integrator must resolve recovery
-before production migration: stock OPS02 refuses older target versions even before DB mutation;
-in-app restore requires an exact schema signature; O4 writes only a fresh isolated target.
-No stock procedure returns migrated Stable to the old code/database pair.
+Follow the [release checklist](releases/1.4.0-test-run.md),
+[recovery disposition](releases/1.4.0-rollback.md) and O3/O4. Owner-local Test **O4 PASS**
+covers a managed plaintext synced backup, independent cloud SHA256 readback, and detached
+same-revision **0064→0064** restoration with 76 matching table fingerprints. It does **not**
+prove the existing Stable 0058 source, a **0058→0064** rehearsal or production rollback.
+
+Before a production Start, verify Stable's real 0058 binding; collect a fresh authentic
+managed 0058 point in the already Owner-accepted `owner_accepted_plaintext` /
+`synced_filesystem_destination_v1` mode, confirm its independent readback, and exercise
+one fresh isolated **0058→0064 forward** route with the selected published/prepared release.
+The checkpoint RPO/cutoff and residual outage/forward-fix risk need explicit Owner approval.
+If that cannot be established, remain HOLD; never downgrade or run old code on migrated data.
 
 After acceptance/publication: stop owned runtime → one backup-first OPS02 from trusted
 Control outside Stable with explicit existing physical `-DatabasePath` and disjoint
@@ -75,12 +102,13 @@ No Test-data copy, private seed, bulk history reimport, Apply, Close or Reopen b
 
 ## Evidence and limits
 
-Reuse [#940 Owner/Test evidence](https://github.com/LTstripes/hermes-finance/issues/940):
-monthly account results/multi-account upload were checked at earlier Test baseline
-`31e7b41d444945ed5ae5c4e4a813997329c3a354` / 0062 with a private seed. This is attributed
-local evidence, not per-instrument numerical UAT, new release identity or seedless Stable
-mapping acceptance. Reuse #935's accepted review/CI only for its covered behavior; release
-packaging needs its own exact-candidate CI and Integrator disposition.
+Use [#954's one consolidated Test/O4 receipt](https://github.com/LTstripes/hermes-finance/pull/954#issuecomment-6385205231)
+as attributed Owner-local evidence: Test installed at `e487d57080dca0eb88484adeda52c51889b9fd5d`
+and schema 0064, ten retained original statements plus mappings/manual/history, bounded
+Month UAT PASS, independently downloaded cloud backup with SHA256 match and detached O4
+restoration/readiness PASS. The cloud Integrator verified GitHub records, not private DB bytes.
+No real October Close/Apply/Reopen, live T-Invest or Stable changes were performed.
+Release identity, Stable 0058 backup and explicit recovery-risk approval remain separate.
 
 Source returns remain provisional (`financial_authority=none`). Approximate Dietz/chained
 rates are not exact TWRR. Instrument results are not cost-basis/net-of-tax accounting.
@@ -90,4 +118,4 @@ flows. Owner account checks do not remove those limitations.
 
 Parser-generation drift fails closed. Retain unchanged originals for a separately accepted
 fresh rebuild; no manifest rewrite, trigger removal or in-place V1 reparse bypass. Reported
-reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Private instrument numerical UAT, history loading, the instrument UI and forecast-ingestion seams remain separate work.
+reg-ISIN CLI non-UTF8 output/`~` path issues remain outside this preparation. Further private instrument numerical acceptance, history loading and forecast-ingestion seams remain separate work; the bounded read-only instrument surfaces listed above are included.
