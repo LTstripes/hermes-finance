@@ -5956,6 +5956,38 @@ Absent or unrecognized inventory retains the original warnings and requires
 original-byte evidence through the applicable re-upload/rebuild workflow, without
 an in-place manifest rewrite.
 
+`POST /api/source-returns/monthly/originals` is a transient read-only evidence
+path, not Save/reimport or a scenario. Multipart `request` contains one native
+`source_account` and `expected_sources` (each `intake_id`, `manifest_digest`);
+`files` supplies every selected immutable original exactly once. Missing, extra,
+duplicate, renamed or changed originals and stale/missing manifest membership
+fail closed (409); request fields/selections outside this contract fail 422.
+Responses and errors are `no-store`. Original bytes are not cached or persisted.
+The ordinary GET has no original bytes and retains its existing behavior.
+
+Only after exact original descriptor/frozen-parser/currentness verification and
+whole-tree inventory agreement can the monthly reader recognize a populated
+Transfers table of explicit custody issue cancellations. Each row must have the
+exact known namespace/topology/eight attributes, own single native row account,
+NRD custody, negative finite quantity, a two-line name/ISIN, a strict midnight
+settlement date and valid clock time inside the original coverage, and exactly
+`Аннулирование выпуска <uppercase native issue token>.`. Extra attributes,
+text/comments/PIs, other transfer narratives, out-of-range/invalid dates,
+ambiguous accounts or any other unknown branch retain document-wide blockers.
+Hashes are checked against original bytes, never decoded into event operands.
+
+This proves a source-booked custody quantity debit only. Its month remains
+uncertain with `custody_cancellation_unresolved`; no cash, income, external flow,
+SELL, principal/security attribution or economic effective date is derived.
+Other covered months may use their own complete monthly endpoints/flows after
+all ordinary guards pass, while all selected long originals and their Money
+observations still participate. Unknown principal redemption Money remains
+unknown in its own month. Closing cash already includes booked Money: never add
+cash from a custody row or count duplicate original observations as new payments.
+This exception changes only the original-bound provisional monthly reader;
+frozen S1 facts, DRAFT/Apply/Close guards, persisted classifications, receipts,
+instrument-return eligibility and financial authority remain unchanged.
+
 The separate approximate monthly Modified Dietz/period kernel is
 `calculate_monthly_return_chain`. Period growth and XIRR use the outer endpoints
 and one dated schedule; the approximate chained return uses each month’s own

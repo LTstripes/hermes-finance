@@ -92,6 +92,268 @@ def snapshot(db):
         }
 
 
+def save_cancellation_long(db, *, mutate=None, request_id="custody-long"):
+    raw = service_structure_xml(
+        provisional_xml(
+            candidate_count=0,
+            extra_money=(("Комиссия", "Synthetic fee", "-1"),),
+        )
+    )
+    root = ET.fromstring(raw)
+    n = "{MyBroker}"
+    table = root.find(n + "Trades3/" + n + "Report/" + n + "Tablix1")
+    rows = ET.SubElement(table, n + "Details_Collection")
+    row = ET.SubElement(
+        rows,
+        n + "Details",
+        {
+            "settlement_date": "2030-05-15T00:00:00",
+            "settlement_time": "07:12:34",
+            "place_name": "НРД",
+            "oper_type": "Перевод",
+            "p_name": "Synthetic bond\r\nRU000A000000",
+            "comment_new": "Аннулирование выпуска SYNTH001.",
+            "qty": "-10.0000000000",
+            "acc_code": ACCOUNT,
+        },
+    )
+    if mutate:
+        mutate(root, row)
+    raw = ET.tostring(root, encoding="utf-8")
+    filename = "Брокерский 1234567 (01.03.30-31.07.30).xml"
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session, document=raw, filename=filename, request_id=request_id
+        )
+    return ack["intake_id"], (raw, filename)
+
+
+def read_all_originals(db, originals, *, expected=None, documents=None):
+    from hermes_finance.services.source_monthly_returns import read_monthly_returns_with_originals
+
+    with db.session_factory() as session:
+        expected = (
+            expected
+            if expected is not None
+            else {
+                key: source_intake.read_intake(session, key)["manifest_digest"] for key in originals
+            }
+        )
+        return read_monthly_returns_with_originals(
+            session,
+            source_account=ACCOUNT,
+            expected_sources=expected,
+            documents=documents if documents is not None else list(originals.values()),
+        )
+
+
+def test_original_bound_cancellation_keeps_event_month_unknown_and_unblocks_own_months(db):
+    originals = dict(save_service_month(db, month) for month in (4, 5, 6))
+    long_id, long_original = save_cancellation_long(db)
+    originals[long_id] = long_original
+    before = snapshot(db)
+    assert all(row.result.growth_kopecks is None for row in read(db).months)
+    bound = read_all_originals(db, originals)
+    months = {row.result.closing_date.month: row for row in bound.months}
+    for month in (4, 6):
+        assert months[month].result.growth_kopecks == 60_000
+        assert months[month].result.modified_dietz_return is not None
+        assert months[month].coupons_kopecks == 1234
+    assert months[5].result.growth_kopecks is months[5].result.modified_dietz_return is None
+    assert "custody_cancellation_unresolved" in months[5].flags
+    assert bound.period.growth_kopecks is None
+    assert bound.financial_authority == "none"
+    assert snapshot(db) == before
+    assert all(row.result.growth_kopecks is None for row in read(db).months)
+
+
+def test_original_bound_repeated_documents_do_not_create_cash_or_duplicate_default_flows(db):
+    originals = dict([save_service_month(db)])
+    intake, raw = save_cancellation_long(db)
+    originals[intake] = raw
+    first = read_all_originals(db, originals)
+
+    def distinct_original(root, row):
+        # Distinct immutable original, same native custody observation and fee.
+        root.find(".//{MyBroker}Details[@sys_start_time]").set("sys_start_time", "02.04.2030 01:00")
+
+    second, other_raw = save_cancellation_long(
+        db, mutate=distinct_original, request_id="second-long"
+    )
+    assert second != intake
+    originals[second] = other_raw
+    before = snapshot(db)
+    repeated = read_all_originals(db, originals)
+    assert repeated.flows == first.flows
+    assert [row.result for row in repeated.months] == [row.result for row in first.months]
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("settlement_date", "2030-02-28T00:00:00"),
+        ("settlement_date", "2030-05-32T00:00:00"),
+        ("settlement_date", "2030-05-15T01:00:00"),
+        ("settlement_time", "25:00:00"),
+        ("qty", "0"),
+        ("qty", "1"),
+        ("qty", "NaN"),
+        ("qty", "-Infinity"),
+        ("acc_code", "other-000"),
+        ("place_name", "Other custody"),
+        ("oper_type", "Вывод"),
+        ("p_name", "Ambiguous instrument"),
+        ("p_name", "Synthetic\r\ninvalid"),
+        ("comment_new", "Unknown transfer"),
+        ("comment_new", "Аннулирование выпуска SYNTH001. д.ф.01.04.30"),
+        ("effective_date", "2030-04-01"),
+    ],
+)
+def test_original_bound_unknown_transfer_is_still_document_wide(db, key, value):
+    originals = dict(save_service_month(db, month) for month in (4, 5, 6))
+    intake, original = save_cancellation_long(db, mutate=lambda root, row: row.set(key, value))
+    originals[intake] = original
+    result = read_all_originals(db, originals)
+    for row in result.months:
+        assert row.result.growth_kopecks is row.result.modified_dietz_return is None
+        assert "4_Transfers_unsupported" in row.flags
+
+
+@pytest.mark.parametrize("kind", ["text", "child", "comment", "pi", "other_branch"])
+def test_original_bound_whole_tree_is_required(db, kind):
+    def mutate(root, row):
+        if kind == "text":
+            row.text = "Unknown effect"
+        elif kind == "child":
+            ET.SubElement(row, "{MyBroker}Unknown")
+        elif kind == "comment":
+            row.append(ET.Comment("Unknown effect"))
+        elif kind == "pi":
+            row.append(ET.ProcessingInstruction("effect", "unknown"))
+        else:
+            root.find("{MyBroker}Trades4").set("unknown", "1")
+
+    originals = dict([save_service_month(db)])
+    intake, original = save_cancellation_long(db, mutate=mutate)
+    originals[intake] = original
+    assert all(
+        row.result.growth_kopecks is None for row in read_all_originals(db, originals).months
+    )
+
+
+def test_original_bound_redemption_stays_unknown_no_synthetic_cash_and_replay(db):
+    original = service_structure_xml(
+        provisional_xml(
+            candidate_count=0,
+            extra_money=(("Перевод", "полное погашение номинала SYNTH-REG д.ф.15.04.30", "10000"),),
+        )
+    )
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session,
+            document=original,
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="principal",
+        )
+        replay = source_intake.save_intake(
+            session,
+            document=original,
+            filename="Брокерский 1234567 (01.04.30-30.04.30).xml",
+            request_id="principal-replay",
+        )
+    assert ack["intake_id"] == replay["intake_id"]
+    originals = {ack["intake_id"]: (original, "Брокерский 1234567 (01.04.30-30.04.30).xml")}
+    intake, custody = save_cancellation_long(
+        db, mutate=lambda root, row: row.set("settlement_date", "2030-04-15T00:00:00")
+    )
+    originals[intake] = custody
+    before = snapshot(db)
+    result = read_all_originals(db, originals)
+    april = next(row for row in result.months if row.result.closing_date.month == 4)
+    assert april.result.growth_kopecks is None
+    assert "custody_cancellation_unresolved" in april.flags
+    assert any(gap.code == "unrecognized_money" for gap in result.gaps)
+    assert not any(flow.included for flow in result.flows)
+    assert april.coupons_kopecks is april.dividends_kopecks is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("failure", ["missing", "extra", "duplicate", "filename", "manifest"])
+def test_original_bound_requires_exact_all_originals_and_current_manifests(db, failure):
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    originals = dict([save_service_month(db), save_cancellation_long(db)])
+    documents = list(originals.values())
+    with db.session_factory() as session:
+        expected = {
+            key: source_intake.read_intake(session, key)["manifest_digest"] for key in originals
+        }
+    if failure == "missing":
+        documents.pop()
+    elif failure == "extra":
+        documents.append((b"unknown", "unknown.xml"))
+    elif failure == "duplicate":
+        documents.append(documents[0])
+    elif failure == "filename":
+        documents[0] = (documents[0][0], "renamed.xml")
+    else:
+        expected[next(iter(expected))] = "0" * 64
+    with pytest.raises((MyBrokerError, ValueError)):
+        read_all_originals(db, originals, expected=expected, documents=documents)
+
+
+def test_original_bound_api_is_no_store_read_only_and_get_remains_unchanged(db):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    originals = dict([save_service_month(db), save_cancellation_long(db)])
+    with db.session_factory() as session:
+        expected = [
+            {
+                "intake_id": key,
+                "manifest_digest": source_intake.read_intake(session, key)["manifest_digest"],
+            }
+            for key in originals
+        ]
+    client = TestClient(create_app(database=db))
+    before = snapshot(db)
+    get_before = client.get(
+        "/api/source-returns/monthly", params={"source_account": ACCOUNT}
+    ).json()
+    payload = {"source_account": ACCOUNT, "expected_sources": expected}
+    files = [("files", (filename, raw, "application/xml")) for raw, filename in originals.values()]
+    response = client.post(
+        "/api/source-returns/monthly/originals", data={"request": json.dumps(payload)}, files=files
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    april = next(row for row in response.json()["months"] if row["closing_date"] == "2030-04-30")
+    assert april["growth_kopecks"] == 60_000
+    assert isinstance(april["modified_dietz_return"], str)
+    assert response.json()["financial_authority"] == "none"
+    for invalid_files, body, status in [
+        (files[:-1], payload, 409),
+        (files, {**payload, "assumptions": {}}, 422),
+        (files, {**payload, "expected_sources": expected + expected}, 422),
+    ]:
+        error = client.post(
+            "/api/source-returns/monthly/originals",
+            data={"request": json.dumps(body)},
+            files=invalid_files,
+        )
+        assert error.status_code == status
+        assert error.headers["cache-control"] == "no-store"
+    assert (
+        client.get("/api/source-returns/monthly", params={"source_account": ACCOUNT}).json()
+        == get_before
+    )
+    assert snapshot(db) == before
+
+
 def service_structure_xml(raw, *, summary_variant=1):
     """Fabricated values on the inventoried service paths; no summary is an event."""
     from copy import deepcopy

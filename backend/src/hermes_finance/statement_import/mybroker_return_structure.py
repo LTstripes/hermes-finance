@@ -9,7 +9,10 @@ deliberately separate from the stronger original-byte incomplete-DRAFT proof.
 
 from __future__ import annotations
 
+import hashlib
 import re
+from datetime import date, datetime, time
+from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 from hermes_finance.statement_import.mybroker import SCHEMA, SECTIONS, digest
@@ -138,7 +141,7 @@ def _repo_zero_field(node, trade, references):
     )
 
 
-def _recognized(root, source, references):
+def _recognized(root, source, references, *, cancellation_tree=None):
     expected = {
         "Name": digest("MyBroker"),
         "Textbox5": digest("Отчет по сделкам и операциям (Отчет брокера)"),
@@ -163,7 +166,12 @@ def _recognized(root, source, references):
             return False
         report = wrapper[0]
         if outer in {"Trades3", "Trades4"}:
-            if len(report) and not _service(wrapper, outer):
+            cancellation = (
+                outer == "Trades3"
+                and cancellation_tree is not None
+                and ET.tostring(wrapper) == cancellation_tree
+            )
+            if len(report) and not _service(wrapper, outer) and not cancellation:
                 return False
             continue
         order = {
@@ -282,6 +290,106 @@ def _recognized(root, source, references):
         if count != expected_count:
             return False
     return True
+
+
+def original_cancellation_dates(view, original):
+    """Bound explicit custody cancellations to their source-booked dates only.
+
+    Exact original bytes, not scalar hashes, prove these dates. This recognizes
+    neither principal cash nor an effective economic date: every cancellation
+    month remains financially uncertain. Any other Transfers grammar stays
+    document-wide. The caller additionally verifies filename/parser/currentness.
+    """
+    if hashlib.sha256(original).hexdigest() != view["document_sha256"]:
+        return None
+    try:
+        raw = ET.fromstring(
+            original.decode("utf-8-sig"),
+            parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True)),
+        )
+        refs = {}
+        inventory = _inventory_tree(view["observations"], references=refs)
+        raw_nodes, saved_nodes = list(raw.iter()), list(inventory.iter())
+        if len(raw_nodes) != len(saved_nodes) or any(
+            a.tag != b.tag
+            or {key: digest(value) for key, value in a.attrib.items()} != b.attrib
+            or len(a) != len(b)
+            or (a.text or "").strip()
+            or (a.tail or "").strip()
+            for a, b in zip(raw_nodes, saved_nodes, strict=True)
+        ):
+            return None
+        wrapper = raw.find(N + "Trades3")
+        if wrapper is None or wrapper.attrib or len(wrapper) != 1:
+            return None
+        report = wrapper[0]
+        if report.tag != N + "Report" or report.attrib != {"Name": "4_Transfers"}:
+            return None
+        if len(report) != 1 or report[0].tag != N + "Tablix1" or report[0].attrib:
+            return None
+        table = report[0]
+        if len(table) != 1 or table[0].tag != N + "Details_Collection" or table[0].attrib:
+            return None
+        rows = table[0]
+        if not len(rows):
+            return None
+        accounts = {
+            row.get("source_account")
+            for key in ("positions", "rub_money", "money")
+            for row in view["document"][key]
+        }
+        accounts.update(t["core"]["source_account"] for t in view["document"]["trades"])
+        if len(accounts) != 1 or None in accounts:
+            return None
+        expected = {
+            "settlement_date",
+            "settlement_time",
+            "place_name",
+            "oper_type",
+            "p_name",
+            "comment_new",
+            "qty",
+            "acc_code",
+        }
+        dates = []
+        for row in rows:
+            if row.tag != N + "Details" or len(row) or set(row.attrib) != expected:
+                return None
+            attrs = row.attrib
+            if (
+                attrs["acc_code"] not in accounts
+                or attrs["place_name"] != "НРД"
+                or attrs["oper_type"] != "Перевод"
+                or not re.fullmatch(r"Аннулирование выпуска [A-Z0-9]{1,32}\.", attrs["comment_new"])
+                or not re.fullmatch(r"[^\r\n]{1,256}\r\n[A-Z]{2}[A-Z0-9]{9}[0-9]", attrs["p_name"])
+                or not re.fullmatch(r"-[0-9]{1,18}(?:\.[0-9]{1,10})?", attrs["qty"])
+                or Decimal(attrs["qty"]) >= 0
+                or not re.fullmatch(
+                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00", attrs["settlement_date"]
+                )
+                or not re.fullmatch(r"[0-9]{2}:[0-9]{2}:[0-9]{2}", attrs["settlement_time"])
+            ):
+                return None
+            booked = datetime.fromisoformat(attrs["settlement_date"]).date()
+            time.fromisoformat(attrs["settlement_time"])
+            if (
+                not date.fromisoformat(view["covered_from"])
+                <= booked
+                <= date.fromisoformat(view["covered_to"])
+            ):
+                return None
+            dates.append(booked)
+        saved_wrapper = inventory.find(N + "Trades3")
+        if not _recognized(
+            inventory,
+            view["document"],
+            refs,
+            cancellation_tree=ET.tostring(saved_wrapper),
+        ):
+            return None
+        return tuple(dates)
+    except (ValueError, TypeError, KeyError, IndexError, ET.ParseError):
+        return None
 
 
 def source_return_blockers(view):
