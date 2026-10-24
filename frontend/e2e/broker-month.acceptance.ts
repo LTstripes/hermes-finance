@@ -1240,8 +1240,14 @@ test("durable full source observations survive reload and reviewed currency over
   });
   const after = await (await request.get("/api/synthetic-broker-inventory")).json();
   for (const [name, value] of Object.entries(before.counts)) {
-    if (!name.startsWith("source_intake_")) expect(after.counts[name], name).toBe(value);
+    if (!name.startsWith("source_intake_") && name !== "source_return_proof_dependencies")
+      expect(after.counts[name], name).toBe(value);
   }
+  // The reviewed currency change retires source-return evidence, without
+  // creating a proof or changing any pre-existing financial table.
+  expect(after.counts.source_return_proof_dependencies).toBe(
+    before.counts.source_return_proof_dependencies + 1,
+  );
   expect(economicPosts).toBe(0);
   const close = await request.post(`/api/months/${month.id}/close`);
   expect(close.ok()).toBe(false);

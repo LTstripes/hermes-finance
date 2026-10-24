@@ -37,7 +37,14 @@ def isolated_public_cache(monkeypatch):
 
 
 def _all_month_tables(database):
-    return {k: v for k, v in _tables(database).items() if not k.startswith("source_intake_")}
+    # S1 classification updates retire any pending/durable source proof. The
+    # append-only nonce is non-economic; proof rows and every previous table
+    # remain in this unchanged-data comparison.
+    return {
+        k: v
+        for k, v in _tables(database).items()
+        if not k.startswith("source_intake_") and k != "source_return_proof_dependencies"
+    }
 
 
 def upload(client, path, xml, field, value):
