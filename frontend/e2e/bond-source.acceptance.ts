@@ -120,3 +120,159 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
   expect(mutations).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("Month instruments and explicit source payout preview keep two accounts, dates, full/conditional/NULL and actual/candidate/future separate", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const before = await (await request.get("/api/synthetic-month-state")).json();
+  const writes: string[] = [];
+  page.on("request", (sent) => {
+    if (!["GET", "HEAD"].includes(sent.method())) writes.push(new URL(sent.url()).pathname);
+  });
+  const months = await (await request.get("/api/months")).json();
+  const month = months.find(
+    (row: { year: number; month: number }) => row.year === 2030 && row.month === 5,
+  );
+  const stock = "RU000MONTH02";
+  const bond = "RU000A000001";
+  await page.goto(`/v2/close?month=${month.id}&source_account=2222222&instrument_isin=${stock}`);
+  const panel = page.getByRole("region", { name: "Инструменты и выплаты месяца" });
+  await expect(panel.getByRole("region", { name: `Инструмент ${stock}` })).toBeVisible();
+  await expect(page.getByText(/Снимок 01.06.2030/)).toBeVisible();
+  await expect(panel.getByText(/Интервал результата: \(2030-04-30, 2030-05-31\]/)).toBeVisible();
+  const native = await (
+    await request.get(
+      "/api/source-returns/instruments?source_account=2222222&opening_date=2030-04-30&closing_date=2030-05-31",
+    )
+  ).json();
+  const stockData = native.instruments.find((row: { isin: string }) => row.isin === stock);
+  expect(stockData.analysis.pnl.value).toBe(10000);
+  expect(stockData.analysis.modified_dietz.value).toBe("0.1");
+  await expect(panel.getByRole("heading", { name: "Полный P&L, ₽" }).locator("..")).toContainText(
+    "100,00 ₽",
+  );
+  await expect(
+    panel
+      .getByRole("heading", { name: "Modified Dietz · приблизительно, за период", exact: true })
+      .locator(".."),
+  ).toContainText("10 %");
+  expect(
+    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
+  ).toHaveLength(0);
+  expect(writes).toEqual([]);
+
+  const run = panel.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" });
+  const responseA = page.waitForResponse((response) =>
+    response.url().endsWith("/api/source-returns/payout-preview"),
+  );
+  await run.click();
+  const a = await (await responseA).json();
+  expect(a).toMatchObject({
+    source_account: "2222222",
+    native_source_account: "2222222-000",
+    isin: stock,
+    as_of: "2030-05-31",
+    quantity: "10",
+    financial_authority: "none",
+  });
+  expect(a.rows.filter((row: { countable_future: boolean }) => row.countable_future)).toHaveLength(
+    2,
+  );
+  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toContainText(
+    "25,00 ₽",
+  );
+  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).not.toContainText(
+    "possible_paid",
+  );
+  const requestsAfterA = (await (await request.get("/api/synthetic-month-state")).json())
+    .provider_requests.length;
+  await panel.getByLabel("Дата количества из выписки").fill("2030-04-30");
+  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
+  expect(
+    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
+  ).toHaveLength(requestsAfterA);
+  const missingResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/source-returns/payout-preview"),
+  );
+  await run.click();
+  const missing = await (await missingResponse).json();
+  expect(missing.quantity).toBeNull();
+  expect(missing.rows).toHaveLength(0);
+  await expect(panel.getByText(/количество: неизвестно на 2030-04-30/)).toBeVisible();
+  expect(
+    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
+  ).toHaveLength(requestsAfterA);
+
+  await page.getByLabel("Счёт источника месяца").selectOption("3333333");
+  await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
+  await expect(panel.getByLabel("Дата количества из выписки")).toHaveValue("2030-05-31");
+  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
+  const responseB = page.waitForResponse((response) =>
+    response.url().endsWith("/api/source-returns/payout-preview"),
+  );
+  await run.click();
+  const b = await (await responseB).json();
+  expect(b).toMatchObject({
+    source_account: "3333333",
+    native_source_account: "3333333-000",
+    isin: stock,
+    quantity: "5",
+    financial_authority: "none",
+  });
+  expect(
+    b.actuals.some(
+      (event: { event_date: string; net_payout_kopecks: string }) =>
+        event.event_date === "2030-06-15" && event.net_payout_kopecks === "1234",
+    ),
+  ).toBe(true);
+  expect(
+    b.rows.find((row: { payment_date: string }) => row.payment_date === "2030-06-15").status,
+  ).toBe("possible_paid");
+  const actuals = panel.getByRole("table", {
+    name: "Actual для сверки · включая события после даты количества",
+  });
+  await expect(actuals).toContainText("2030-06-15");
+  await expect(actuals).toContainText("12,34 ₽");
+  await expect(
+    panel.getByRole("table", { name: "Возможно уже выплачено (possible_paid)" }),
+  ).toContainText("2030-06-15");
+  await expect(panel.getByRole("region", { name: "Будущие кандидаты (future)" })).not.toContainText(
+    "2030-06-15",
+  );
+  await panel.screenshot({ path: info.outputPath("month-stock-actual-possible-paid-1440.png") });
+
+  await panel.getByRole("button", { name: "Синтетическая облигация", exact: true }).click();
+  await expect(panel.getByRole("heading", { name: "Полный P&L, ₽" }).locator("..")).toContainText(
+    "Недоступен",
+  );
+  await expect(panel.getByRole("region", { name: "Условная оценка по выписке" })).toBeVisible();
+  await expect(
+    panel.getByRole("table", { name: "Actual для сверки · включая события после даты количества" }),
+  ).toHaveCount(0);
+  const providerCount = (await (await request.get("/api/synthetic-month-state")).json())
+    .provider_requests.length;
+  await page.reload();
+  await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
+  await expect(
+    panel.getByRole("table", { name: "Actual для сверки · включая события после даты количества" }),
+  ).toHaveCount(0);
+  expect(
+    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
+  ).toHaveLength(providerCount);
+  await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
+  await page.goBack();
+  await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await panel.screenshot({ path: info.outputPath("month-bond-conditional-null-1440-125.png") });
+  const after = await (await request.get("/api/synthetic-month-state")).json();
+  expect(after.snapshot_sha256).toBe(before.snapshot_sha256);
+  expect(writes.every((path) => path === "/api/source-returns/payout-preview")).toBe(true);
+});

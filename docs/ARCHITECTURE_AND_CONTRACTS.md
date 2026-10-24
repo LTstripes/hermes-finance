@@ -6129,6 +6129,15 @@ rates (`0.1` = 10%). Status is supported/provisional/partial/unavailable.
 Supported means complete within the selected source scope, never an accepted
 financial receipt. Root authority remains provisional / financial authority none.
 
+Month and the existing bond reader share one instrument-detail presentation. The
+Month reader requests the exact selected source account and reporting-month EOD
+endpoints; it does not use legacy simple percentages as Modified Dietz or promote
+known subtotals/statement estimates to full P&L. A mismatched account, contract,
+period or explicit unavailable ISIN withholds dependent detail and payout actions.
+Integer minor-unit and Decimal-fraction formatting remains exact; legacy unsafe
+JSON money numbers are withheld rather than displayed as precise amounts.
+
+
 Events retain native ordered trade IDs, execution time, cash and depository dates,
 signed quantity, source price/unit, dated trade face, amount, NKD, commission,
 gross/withheld/net payout, saved classification and link status, effective ISIN,

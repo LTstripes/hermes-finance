@@ -24,6 +24,7 @@
   font-weight: 600;
 }
 .value {
+  overflow-wrap: anywhere;
   font-size: 22px;
   font-weight: 700;
   margin: 8px 0;
@@ -88,6 +89,12 @@
 }
 .references {
   padding-left: 18px;
+}
+.preview {
+  min-width: 0;
+}
+.preview code {
+  overflow-wrap: anywhere;
 }
 @media (max-width: 700px) {
   .grid {

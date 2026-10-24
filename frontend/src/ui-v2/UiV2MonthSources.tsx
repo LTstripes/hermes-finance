@@ -7,6 +7,7 @@ import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
 import { UiV2Panel } from "./UiV2Panel";
+import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import styles from "./UiV2MonthWorkspace.module.css";
 
@@ -47,126 +48,149 @@ export function UiV2MonthSources({
     : sources.filter((item) => !account || sourceAccounts(item).includes(account));
 
   return (
-    <UiV2Panel
-      eyebrow="Выписки"
-      title="XML и исключения"
-      id="month-sources"
-      testIdPrefix="month"
-      wide
-    >
-      <div className={styles.stack}>
-        {month.status === "closed" ? (
-          <p>
-            Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой
-            месяц заново.
+    <>
+      <UiV2Panel
+        eyebrow="Выписки"
+        title="XML и исключения"
+        id="month-sources"
+        testIdPrefix="month"
+        wide
+      >
+        <div className={styles.stack}>
+          {month.status === "closed" ? (
+            <p>
+              Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой
+              месяц заново.
+            </p>
+          ) : (
+            <SourceIntakeUpload key={month.id} compact />
+          )}
+          <p className={styles.note}>
+            Загрузка сохраняет наблюдения без привязки к финансовому месяцу или счёту Hermes.
+            Неизвестный ISIN требует явного разбора. Оригиналы после Reload нужно выбрать заново.
+            Другие периоды доступны в{" "}
+            <Link to="/v2/data/source-intake">общем журнале источников</Link>.
           </p>
-        ) : (
-          <SourceIntakeUpload key={month.id} compact />
-        )}
-        <p className={styles.note}>
-          Загрузка сохраняет наблюдения без привязки к финансовому месяцу или счёту Hermes.
-          Неизвестный ISIN требует явного разбора. Оригиналы после Reload нужно выбрать заново.
-          Другие периоды доступны в{" "}
-          <Link to="/v2/data/source-intake">общем журнале источников</Link>.
+          {list.isPending ? (
+            <UiV2Loading label="Читаем источники месяца…" />
+          ) : list.isError ? (
+            <UiV2Notice title="Источники месяца не подтверждены" retry={() => void list.refetch()}>
+              {formatApiError(list.error)}
+            </UiV2Notice>
+          ) : (
+            <>
+              <label className={styles.field}>
+                Счёт источника месяца
+                <select
+                  aria-label="Счёт источника месяца"
+                  value={account}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setParams((previous) => {
+                      const next = new URLSearchParams(previous);
+                      next.delete("source_account");
+                      next.delete("instrument_isin");
+                      next.delete("payout_as_of");
+                      if (value) next.set("source_account", value);
+                      return next;
+                    });
+                  }}
+                >
+                  <option value="">Все счета</option>
+                  {invalidAccount && (
+                    <option value={account}>Недоступный счёт: {account || "пустой"}</option>
+                  )}
+                  {accounts.map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              {invalidAccount ? (
+                <p role="alert">
+                  Выбранный счёт источника не подтверждён для этого месяца. Выбери счёт явно.
+                </p>
+              ) : !sources.length ? (
+                <p>
+                  Выписок за отчётный месяц пока нет. Добавь XML выше; ручные данные сохраняются
+                  отдельно.
+                </p>
+              ) : (
+                <ul className={styles.sources} aria-label="Источники и исключения месяца">
+                  {visible.map((intake) => (
+                    <li key={intake.id} className={styles.source}>
+                      <div>
+                        <strong>
+                          Источник #{intake.id} ·{" "}
+                          {sourceAccounts(intake).join(" / ") || "Счёт неизвестен"}
+                        </strong>
+                        <p>
+                          {formatDate(intake.covered_from)} — {formatDate(intake.covered_to)} ·
+                          наблюдений: {intake.observations.length}
+                        </p>
+                        <p>
+                          {intake.state.reporting_month_id === null
+                            ? "Без финансовой привязки"
+                            : "Привязан к месяцу"}{" "}
+                          · исключений: {intake.exceptions.length}. Save не разрешает Close.
+                        </p>
+                        {!!intake.exceptions.length && (
+                          <details>
+                            <summary>Что исправить</summary>
+                            <ul>
+                              {[...new Set(intake.exceptions)].map((code) => (
+                                <li key={code}>
+                                  {brokerSourceTitle(code) ??
+                                    "Нужно уточнить доказательства источника"}{" "}
+                                  <code>{code}</code>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </div>
+                      <div className={styles.actions}>
+                        <button type="button" onClick={() => onReview(intake.id)}>
+                          {month.status === "closed"
+                            ? "Просмотреть разбор"
+                            : "Разобрать и исправить"}{" "}
+                          #{intake.id}
+                        </button>
+                        {sourceAccounts(intake)
+                          .filter((value) => !account || value === account)
+                          .map((value) => (
+                            <Link
+                              key={value}
+                              to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}#bond-slice`}
+                            >
+                              Облигации и доходность · {value}
+                            </Link>
+                          ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      </UiV2Panel>
+      {!list.isPending && !list.isError && !list.isFetching && !invalidAccount && account ? (
+        <UiV2MonthInstruments
+          key={`${month.id}:${account}`}
+          monthId={month.id}
+          year={month.year}
+          month={month.month}
+          account={account}
+          sourceVersion={JSON.stringify(
+            sources.map((source) => [source.id, source.head_seq, source.manifest_digest]),
+          )}
+        />
+      ) : !invalidAccount && !account && sources.length > 0 ? (
+        <p>
+          Выбери один счёт источника, чтобы открыть инструменты и предварительные выплаты этого
+          месяца.
         </p>
-        {list.isPending ? (
-          <UiV2Loading label="Читаем источники месяца…" />
-        ) : list.isError ? (
-          <UiV2Notice title="Источники месяца не подтверждены" retry={() => void list.refetch()}>
-            {formatApiError(list.error)}
-          </UiV2Notice>
-        ) : (
-          <>
-            <label className={styles.field}>
-              Счёт источника месяца
-              <select
-                aria-label="Счёт источника месяца"
-                value={account}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setParams((previous) => {
-                    const next = new URLSearchParams(previous);
-                    next.delete("source_account");
-                    if (value) next.set("source_account", value);
-                    return next;
-                  });
-                }}
-              >
-                <option value="">Все счета</option>
-                {invalidAccount && (
-                  <option value={account}>Недоступный счёт: {account || "пустой"}</option>
-                )}
-                {accounts.map((value) => (
-                  <option key={value}>{value}</option>
-                ))}
-              </select>
-            </label>
-            {invalidAccount ? (
-              <p role="alert">
-                Выбранный счёт источника не подтверждён для этого месяца. Выбери счёт явно.
-              </p>
-            ) : !sources.length ? (
-              <p>
-                Выписок за отчётный месяц пока нет. Добавь XML выше; ручные данные сохраняются
-                отдельно.
-              </p>
-            ) : (
-              <ul className={styles.sources} aria-label="Источники и исключения месяца">
-                {visible.map((intake) => (
-                  <li key={intake.id} className={styles.source}>
-                    <div>
-                      <strong>
-                        Источник #{intake.id} ·{" "}
-                        {sourceAccounts(intake).join(" / ") || "Счёт неизвестен"}
-                      </strong>
-                      <p>
-                        {formatDate(intake.covered_from)} — {formatDate(intake.covered_to)} ·
-                        наблюдений: {intake.observations.length}
-                      </p>
-                      <p>
-                        {intake.state.reporting_month_id === null
-                          ? "Без финансовой привязки"
-                          : "Привязан к месяцу"}{" "}
-                        · исключений: {intake.exceptions.length}. Save не разрешает Close.
-                      </p>
-                      {!!intake.exceptions.length && (
-                        <details>
-                          <summary>Что исправить</summary>
-                          <ul>
-                            {[...new Set(intake.exceptions)].map((code) => (
-                              <li key={code}>
-                                {brokerSourceTitle(code) ??
-                                  "Нужно уточнить доказательства источника"}{" "}
-                                <code>{code}</code>
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                    <div className={styles.actions}>
-                      <button type="button" onClick={() => onReview(intake.id)}>
-                        {month.status === "closed" ? "Просмотреть разбор" : "Разобрать и исправить"}{" "}
-                        #{intake.id}
-                      </button>
-                      {sourceAccounts(intake)
-                        .filter((value) => !account || value === account)
-                        .map((value) => (
-                          <Link
-                            key={value}
-                            to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}#bond-slice`}
-                          >
-                            Облигации и доходность · {value}
-                          </Link>
-                        ))}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-    </UiV2Panel>
+      ) : null}
+    </>
   );
 }
