@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 
 import { Button } from "./Button";
 
@@ -10,6 +10,8 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   busy?: boolean;
   danger?: boolean;
+  children?: ReactNode;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -22,6 +24,8 @@ export function ConfirmDialog({
   cancelLabel = "Отмена",
   busy = false,
   danger = false,
+  children,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -132,12 +136,13 @@ export function ConfirmDialog({
         <p className="dialog__body" id={descriptionId}>
           {description}
         </p>
+        {children}
         <div className="dialog__actions">
           <Button disabled={busy} onClick={onCancel} ref={cancelRef} type="button">
             {cancelLabel}
           </Button>
           <Button
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
             type="button"
             variant={danger ? "danger" : "primary"}

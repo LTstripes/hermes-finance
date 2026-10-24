@@ -28,7 +28,12 @@ intentional-empty command requires a fresh exact-period confirmation and reason,
 retains audit and creates no economic facts. It waives only this empty guard;
 snapshot/source/receipt guards remain mandatory. Reopen/clone require new consent.
 The backend contract is in [C3](ARCHITECTURE_AND_CONTRACTS.md#c3-empty-manual-close);
-the user-facing confirmation and Owner UAT require their separate accepted step.
+the Month final-review screen offers a separate reasoned confirmation only after
+server readiness confirms eligibility. It displays the exact calendar period,
+month ID and snapshot date, requires an explicit checkbox and a nonblank reason,
+and rereads readiness before sending. Pending intent survives Back/Reload in the
+same browser session; recovery reads the receipt and current month by GET only.
+Owner Test UAT remains a separate acceptance gate.
 
 Data → Files permits source review without selecting a month. Keep every observed position, trade, Money occurrence and unsupported branch visible. The full original is indivisible: hiding one problem row does not turn 12 of 13 into a complete source. A default RUB preference is a proposal with provenance, not denomination proof. An incomplete DRAFT may retain unresolved evidence under its explicit contract; it does not waive financial or Close guards.
 

@@ -1,5 +1,11 @@
 # Current state, limitations and next actions
 
+The #952/#711 Month consumer candidate adds explicit intentional-empty period
+confirmation using merged #953: exact period/reason, fresh server guards and
+GET-only recovery across Back/Reload. Synthetic verification and independent
+review/exact CI belong to its PR receipt. No persistent Test upgrade, real Close,
+provider call or Stable acceptance is implied by this candidate.
+
 2026-10-24 Worker candidate for [#952](https://github.com/LTstripes/hermes-finance/issues/952),
 based on accepted `main@ea6bf4fb1d98acc049eefd054502e814240de8a7`: shared server
 `empty_manual_month` guard and a separate typed exact-period intentional-empty
