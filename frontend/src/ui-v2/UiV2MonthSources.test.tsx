@@ -6,6 +6,8 @@ import type { SourceIntake } from "../api/sourceIntake";
 import { uiV2Months } from "../test/uiV2Fixtures";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 
+vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
+
 function intake(id: number, account: string, patch: Partial<SourceIntake> = {}) {
   return {
     id,

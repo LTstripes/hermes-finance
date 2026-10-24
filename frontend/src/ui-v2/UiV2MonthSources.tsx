@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLayoutEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { listSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { ReportingMonth } from "../api/types";
+import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
+import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
+import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
-import { UiV2Panel } from "./UiV2Panel";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
-import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import styles from "./UiV2MonthWorkspace.module.css";
+import { UiV2Panel } from "./UiV2Panel";
+import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
 function sourceAccounts(intake: SourceIntake): string[] {
   return [
@@ -22,9 +26,40 @@ export function UiV2MonthSources({
   onReview,
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
-  onReview: (id: number) => void;
+  onReview?: (id: number) => void;
 }) {
   const [params, setParams] = useSearchParams();
+  const { session, original } = useBrokerOriginalSession();
+  const { command: journalCommand } = useSourceIntakeRecovery();
+  // Raw URL values distinguish invalid/duplicate scopes, including A→invalid→A.
+  const scope = JSON.stringify(params.getAll("source_account"));
+  const [review, setReview] = useState(() => ({
+    // A retained command owns its original scope even after SPA remount. A
+    // retained File without a command must be reselected for an explicit filter.
+    scope: journalCommand
+      ? JSON.stringify(journalCommand.sourceAccount ? [journalCommand.sourceAccount] : [])
+      : original.pending
+        ? JSON.stringify([original.pending.preview.document.filename_account])
+        : original.file && scope !== "[]"
+          ? "[]"
+          : scope,
+    generation: 0,
+    monthId: journalCommand?.monthId ?? month.id,
+    selection: null as { id: number } | null,
+  }));
+  const changingScope = scope !== review.scope || month.id !== review.monthId;
+  const unresolved = Boolean(original.pending) || original.busy || Boolean(journalCommand);
+  useLayoutEffect(() => {
+    if (!changingScope || unresolved) return;
+    // Never select/clear while a command's ACK or independent GET is unresolved.
+    session.select(null, month.id, "");
+    setReview((previous) => ({
+      scope,
+      monthId: month.id,
+      generation: previous.generation + 1,
+      selection: null,
+    }));
+  }, [changingScope, unresolved, scope, month.id, session]);
   const list = useQuery({
     queryKey: ["source-intakes", month.id],
     queryFn: ({ signal }) => listSourceIntakes(month.id, signal),
@@ -149,7 +184,20 @@ export function UiV2MonthSources({
                         )}
                       </div>
                       <div className={styles.actions}>
-                        <button type="button" onClick={() => onReview(intake.id)}>
+                        <button
+                          type="button"
+                          disabled={changingScope || unresolved}
+                          onClick={() => {
+                            setReview((previous) => ({
+                              ...previous,
+                              selection: { id: intake.id },
+                            }));
+                            onReview?.(intake.id);
+                            document
+                              .getElementById("month-source-review")
+                              ?.scrollIntoView?.({ block: "start" });
+                          }}
+                        >
                           {month.status === "closed"
                             ? "Просмотреть разбор"
                             : "Разобрать и исправить"}{" "}
@@ -174,7 +222,12 @@ export function UiV2MonthSources({
           )}
         </div>
       </UiV2Panel>
-      {!list.isPending && !list.isError && !list.isFetching && !invalidAccount && account ? (
+      {!changingScope &&
+      !list.isPending &&
+      !list.isError &&
+      !list.isFetching &&
+      !invalidAccount &&
+      account ? (
         <UiV2MonthInstruments
           key={`${month.id}:${account}`}
           monthId={month.id}
@@ -191,6 +244,30 @@ export function UiV2MonthSources({
           месяца.
         </p>
       ) : null}
+      <div id="month-source-review" tabIndex={-1}>
+        {changingScope && unresolved && (
+          <p role="alert">
+            Переключение счёта отложено. Разбор остаётся в прежнем контексте:{" "}
+            {original.pending?.preview.document.filename_account ||
+              JSON.parse(review.scope).join(" / ") ||
+              "Все счета"}{" "}
+            · месяц #{review.monthId}. Заверши чтение результата исходного запроса. Изменения
+            заблокированы; новый POST не выполняется.
+          </p>
+        )}
+        {(!changingScope || unresolved) && (
+          <BrokerMonthReview
+            key={review.generation}
+            monthId={review.monthId}
+            closed={month.status === "closed"}
+            scopeBlocked={changingScope}
+            sourceAccount={
+              changingScope ? (JSON.parse(review.scope)[0] ?? "") : invalidAccount ? null : account
+            }
+            intakeSelection={review.selection}
+          />
+        )}
+      </div>
     </>
   );
 }

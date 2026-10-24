@@ -20,7 +20,7 @@ import { BrokerMoneyReview } from "./BrokerMoneyReview";
 import styles from "./BrokerMonthReview.module.css";
 import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
-import { SourceIntakeJournal } from "./SourceIntakeJournal";
+import { SourceIntakeJournal, useSourceIntakeRecovery } from "./SourceIntakeJournal";
 
 function SourceInventory({ document }: { document: MyBrokerDocument }) {
   return (
@@ -194,10 +194,14 @@ export function BrokerMonthReview({
   monthId,
   closed,
   intakeSelection,
+  scopeBlocked = false,
+  sourceAccount,
 }: {
   monthId: number;
   closed: boolean;
   intakeSelection?: { id: number } | null;
+  scopeBlocked?: boolean;
+  sourceAccount?: string | null;
 }) {
   const queryClient = useQueryClient();
   const { session, original } = useBrokerOriginalSession();
@@ -232,6 +236,9 @@ export function BrokerMonthReview({
   const [bindingsReviewed, setBindingsReviewed] = useState(false);
   const [checking, setBusy] = useState(false);
   const busy = checking || original.busy;
+  const { command: journalCommand } = useSourceIntakeRecovery();
+  const journalPending = Boolean(journalCommand);
+  const readOnly = closed || scopeBlocked || sourceAccount === null;
   const [error, setError] = useState<string | null>(null);
   const request = useRef<string | null>(null);
   const generation = useRef(0);
@@ -284,7 +291,7 @@ export function BrokerMonthReview({
     selected = accountId,
     decisions: InstrumentDecision[] = session.snapshot().decisions,
   ) {
-    if (!original || closed || session.snapshot().pending) return;
+    if (!original || readOnly || journalPending || session.snapshot().pending) return;
     invalidateReview();
     const version = generation.current;
     const epoch = session.snapshot().epoch;
@@ -354,6 +361,13 @@ export function BrokerMonthReview({
         result.account_id !== Number(target)
       )
         throw new Error("Получен Preview другого счёта или месяца.");
+      if (
+        sourceAccount &&
+        ![result.document.filename_account, ...(result.document.source_accounts ?? [])].includes(
+          sourceAccount,
+        )
+      )
+        throw new Error("Оригинал не соответствует выбранному счёту источника месяца.");
       setPreviewEpoch(session.snapshot().epoch);
       setPreview(result);
       request.current = crypto.randomUUID();
@@ -371,7 +385,8 @@ export function BrokerMonthReview({
       !file ||
       !preview?.can_apply ||
       busy ||
-      closed ||
+      readOnly ||
+      journalPending ||
       !request.current ||
       previewEpoch !== session.snapshot().epoch
     )
@@ -399,6 +414,14 @@ export function BrokerMonthReview({
         return accounts;
       }, new Map<number, BrokerMonthReadback>())
       .values(),
+  ).filter(
+    (batch) =>
+      sourceAccount !== null &&
+      (!sourceAccount ||
+        [
+          batch.accepted.document?.filename_account,
+          ...(batch.accepted.document?.source_accounts ?? []),
+        ].includes(sourceAccount)),
   );
   return (
     <Panel title="Месяц из MyBroker" label="Исходный отчёт">
@@ -412,7 +435,7 @@ export function BrokerMonthReview({
           Полнота всего портфеля этим отчётом не подтверждается. Неразобранные движения остаются
           видимыми.
         </p>
-        {!closed ? (
+        {!readOnly ? (
           <>
             <label className={styles.field}>
               Оригинальный XML MyBroker{" "}
@@ -421,6 +444,7 @@ export function BrokerMonthReview({
                 type="file"
                 accept=".xml"
                 key={`${monthId}:${original.epoch}`}
+                disabled={original.busy || Boolean(original.pending) || journalPending}
                 onChange={(e) => {
                   const original = e.target.files?.[0] ?? null;
                   session.select(original, monthId, "");
@@ -434,6 +458,7 @@ export function BrokerMonthReview({
               <select
                 aria-label="Брокерский счёт"
                 value={accountId}
+                disabled={original.busy || Boolean(original.pending) || journalPending}
                 onChange={(e) => {
                   const target = e.target.value;
                   session.select(file, monthId, target);
@@ -456,13 +481,17 @@ export function BrokerMonthReview({
             <Button
               type="button"
               onClick={() => void inspect()}
-              disabled={!file || busy || original.pending != null}
+              disabled={!file || busy || original.pending != null || journalPending}
             >
               {busy ? "Проверяем…" : "Проверить MyBroker"}
             </Button>
           </>
         ) : (
-          <p>Месяц закрыт. Доступно чтение сохранённого источника; импорт его не изменяет.</p>
+          <p>
+            {closed
+              ? "Месяц закрыт. Доступно чтение сохранённого источника; импорт его не изменяет."
+              : "Редактирование прежнего контекста заблокировано до подтверждения счёта и результата сохранения."}
+          </p>
         )}
         {accounts.error || batches.error ? (
           <p role="alert">
@@ -487,7 +516,10 @@ export function BrokerMonthReview({
             <Button type="button" disabled={busy} onClick={() => void session.retryRead()}>
               Повторить чтение
             </Button>
-            {!original.pending.committed && original.pending.replayAllowed && !busy ? (
+            {!scopeBlocked &&
+            !original.pending.committed &&
+            original.pending.replayAllowed &&
+            !busy ? (
               <Button type="button" onClick={() => void session.post()}>
                 Повторить сохранение с прежним запросом
               </Button>
@@ -497,8 +529,9 @@ export function BrokerMonthReview({
         {notice ? <p role="status">{notice}</p> : null}
         <SourceIntakeJournal
           intakeSelection={intakeSelection}
+          sourceAccount={sourceAccount}
           monthId={monthId}
-          closed={closed}
+          closed={readOnly}
           disabled={busy || Boolean(original.pending)}
           preview={previewEpoch === original.epoch ? preview : null}
           receipts={saved}
@@ -511,7 +544,11 @@ export function BrokerMonthReview({
             void inspect(file, accountId, decisions);
           }}
         />
-        {preview && previewEpoch === original.epoch && !closed && !original.pending ? (
+        {preview &&
+        previewEpoch === original.epoch &&
+        !readOnly &&
+        !original.pending &&
+        !journalPending ? (
           <>
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
             {preview.account_bindings.length ? (
@@ -580,9 +617,11 @@ export function BrokerMonthReview({
                 monthId={monthId}
                 accountId={previous.account_id}
                 importId={previous.import_id}
-                closed={closed}
+                closed={readOnly || journalPending}
                 stored={previous.money_acceptance}
-                originalFile={!closed ? session.candidate(previous) : undefined}
+                originalFile={
+                  !readOnly && !journalPending ? session.candidate(previous) : undefined
+                }
                 sessionEpoch={original.epoch}
               />
             </div>
