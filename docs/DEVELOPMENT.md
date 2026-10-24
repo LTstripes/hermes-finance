@@ -1181,4 +1181,3 @@ Local paths, concrete model choices and config stay machine-local. Changes here 
 #### Invariants that automation does not weaken
 
 The shared financial, privacy/runtime, workspace, authority and evidence boundaries apply unchanged to every execution mode.
-
