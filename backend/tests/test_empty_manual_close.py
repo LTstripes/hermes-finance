@@ -14,6 +14,7 @@ from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     Account,
+    AccountPerformanceScopeMembership,
     Base,
     CashBalance,
     Debt,
@@ -26,7 +27,6 @@ from hermes_finance.persistence import (
     IntentionalEmptyCloseReceipt,
     InvestmentCashFlow,
     MonthlyComment,
-    ObservedValuationPoint,
     PlannedBudgetLine,
     PositionSnapshot,
     PropertySnapshot,
@@ -171,33 +171,54 @@ def add_family(session, month, family, amount=0):
         ),
     }
     if family == "valuation":
-        # A valid valuation belongs to a persisted boundary. Keep the boundary
-        # outside this month to isolate the presence query's month-FK scope.
-        other = create_reporting_month(session, year=2030, month=2, snapshot_date=date(2030, 2, 28))
-        boundary = ExternalFlow(
-            reporting_month_id=other.id,
+        from hermes_finance.services.external_flows import create_external_flow
+        from hermes_finance.services.valuation_boundaries import create_observed_valuation_point
+        from hermes_finance.services.valuation_material_signature import (
+            material_signature_for_boundary,
+        )
+
+        # A sanctioned point needs an actual boundary in this same month. This
+        # case covers their valid combined presence, not a standalone point.
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=account.id,
+                effective_from=date(2030, 1, 1),
+                effective_to=DAY,
+                include_in_returns=True,
+            )
+        )
+        session.commit()
+        boundary = create_external_flow(
+            session,
+            **shared,
             account_id=account.id,
-            event_date=date(2030, 2, 1),
+            event_date=DAY,
             kind="external_contribution",
             direction="contribution",
-            boundary_amount_kopecks=0,
-            currency="RUB",
-            source="manual",
+            boundary_amount="0.00",
         )
-        session.add(boundary)
-        session.flush()
-        row = ObservedValuationPoint(
+        signature = material_signature_for_boundary(
+            session,
+            scope="account",
+            account_id=account.id,
+            external_flow_id=boundary.id,
+            boundary_group_id=None,
+        )
+        assert signature is not None
+        return create_observed_valuation_point(
+            session,
             **shared,
             scope="account",
             account_id=account.id,
             observed_date=DAY,
-            total_value_kopecks=amount,
+            total_value=f"{amount // 100}.{amount % 100:02d}",
             performance_currency="RUB",
-            coverage_status="unknown",
+            coverage="unknown",
             quality="unknown",
             provenance_kind="manual",
             relation="pre_external_flow",
             external_flow_id=boundary.id,
+            expected_material_signature=signature,
         )
     else:
         row = rows[family]()

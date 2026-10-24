@@ -1,7 +1,7 @@
 from calendar import monthrange
 from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -291,7 +291,13 @@ def reserve_close_writer(session: Session, month_id: int) -> None:
     )
     # Canonical source readers may encounter previously loaded dependency rows.
     # Reload them under this reservation, including after a competing writer.
-    session.expire_all()
+    for instance in list(session.identity_map.values()):
+        # Keep already-returned service objects materialized for callers using
+        # expire_on_commit=False, while loading current source dependencies.
+        identity = inspect(instance).identity
+        if session.get(type(instance), identity, populate_existing=True) is None:
+            if instance in session:
+                session.expunge(instance)
 
 
 def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:

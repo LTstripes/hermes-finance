@@ -3,6 +3,7 @@
 from datetime import date
 from pathlib import Path
 
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -23,7 +24,6 @@ from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
 from hermes_finance.services.passive_income_average import passive_income_average
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
     reopen_reporting_month,
 )
@@ -85,7 +85,7 @@ def test_three_closed_months_average_from_deposit_interest(tmp_path: Path) -> No
         for i, amount in enumerate(("500.00", "1000.00", "500.00"), start=1):
             month_id = build_month(session, 2031, i)
             add_deposit_interest(session, month_id, account.id, amount)
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
 
         result = passive_income_average(session)
         assert result.count_months == 3
@@ -112,7 +112,7 @@ def test_draft_months_are_excluded(tmp_path: Path) -> None:
         # draft month intentionally left open
         closed_id = build_month(session, 2031, 2)
         add_deposit_interest(session, closed_id, account.id, "500.00")
-        close_reporting_month(session, closed_id)
+        close_fixture_month(session, closed_id)
 
         result = passive_income_average(session)
         assert result.count_months == 1
@@ -136,10 +136,10 @@ def test_thirteen_closed_months_use_last_twelve(tmp_path: Path) -> None:
         for i in range(1, 13):
             month_id = build_month(session, 2031, i)
             add_deposit_interest(session, month_id, account.id, f"{10 * i}.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
         month_id = build_month(session, 2032, 1)
         add_deposit_interest(session, month_id, account.id, "130.00")
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
 
         result = passive_income_average(session)
         assert result.count_months == 12
@@ -170,9 +170,9 @@ def test_closed_month_with_zero_data_counts_as_zero(tmp_path: Path) -> None:
         )
         month_id = build_month(session, 2031, 1)
         add_deposit_interest(session, month_id, account.id, "500.00")
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
         empty_id = build_month(session, 2031, 2)
-        close_reporting_month(session, empty_id)
+        close_fixture_month(session, empty_id)
 
         result = passive_income_average(session)
         assert result.count_months == 2
@@ -223,7 +223,7 @@ def test_month_aggregates_deposit_coupon_and_income_sources(tmp_path: Path) -> N
             net_amount="8700.00",
             include_in_passive_income=True,
         )
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
 
         result = passive_income_average(session)
         # 500.00 + 860.00 + 8700.00 = 10060.00 RUB
@@ -248,7 +248,7 @@ def test_result_months_ordered_by_year_month(tmp_path: Path) -> None:
         for year, month in ((2032, 3), (2031, 1), (2032, 1), (2031, 12), (2031, 6)):
             month_id = build_month(session, year, month)
             add_deposit_interest(session, month_id, account.id, "100.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
 
         result = passive_income_average(session)
         assert result.count_months == 5
@@ -278,14 +278,14 @@ def test_persisted_history_boundary_filters_closed_months_and_clear_restores_his
 
         pre_boundary = build_month(session, 2031, 1)
         add_deposit_interest(session, pre_boundary, account.id, "1000.00")
-        close_reporting_month(session, pre_boundary)
+        close_fixture_month(session, pre_boundary)
 
         boundary_zero = build_month(session, 2031, 5)
-        close_reporting_month(session, boundary_zero)
+        close_fixture_month(session, boundary_zero)
 
         eligible = build_month(session, 2031, 6)
         add_deposit_interest(session, eligible, account.id, "300.00")
-        close_reporting_month(session, eligible)
+        close_fixture_month(session, eligible)
 
         draft = build_month(session, 2031, 7)
         add_deposit_interest(session, draft, account.id, "400.00")
@@ -293,7 +293,7 @@ def test_persisted_history_boundary_filters_closed_months_and_clear_restores_his
         # August is present, while July is draft and April is a missing calendar month.
         reclose_target = build_month(session, 2031, 8)
         add_deposit_interest(session, reclose_target, account.id, "500.00")
-        close_reporting_month(session, reclose_target)
+        close_fixture_month(session, reclose_target)
 
         update_settings(session, passive_income_history_start_month="2031-05")
         filtered = passive_income_average(session)
@@ -311,7 +311,7 @@ def test_persisted_history_boundary_filters_closed_months_and_clear_restores_his
         assert reopened.sum_total == RubleAmount(30_000)
         assert reopened.average == RubleAmount(15_000)
 
-        close_reporting_month(session, reclose_target)
+        close_fixture_month(session, reclose_target)
         reclosed = passive_income_average(session)
         assert reclosed.months_used == filtered.months_used
         assert reclosed.average == filtered.average

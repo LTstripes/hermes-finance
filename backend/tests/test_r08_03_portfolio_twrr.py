@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from _valuation_capture import create_observed_valuation_point
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -42,7 +43,7 @@ from hermes_finance.services.portfolio_twrr import (
     twrr_for_interval,
 )
 from hermes_finance.services.positions import create_position_snapshot
-from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
+from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.valuation_boundaries import (
     create_external_flow_boundary_group,
 )
@@ -117,8 +118,8 @@ def _environment(
 
 
 def _close_interval(session: Session, january_id: int, february_id: int) -> None:
-    close_reporting_month(session, january_id)
-    close_reporting_month(session, february_id)
+    close_fixture_month(session, january_id)
+    close_fixture_month(session, february_id)
 
 
 def _flow(

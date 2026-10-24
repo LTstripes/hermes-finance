@@ -160,12 +160,14 @@ def _codes(result) -> list[str]:
     return [item.code for item in result.insights]
 
 
-def test_empty_month_has_no_signal(session: Session) -> None:
+def test_empty_month_surfaces_server_close_guard(session: Session) -> None:
     month = _month(session, year=2030, month=1)
 
     result = build_deterministic_insights(session, month.id, evaluated_on=TODAY)
 
-    assert result.insights == ()
+    assert len(result.insights) == 1
+    assert result.insights[0].evidence["close_readiness_code"] == "empty_manual_month"
+    assert result.insights[0].evidence["can_close"] is False
 
 
 def test_missing_active_capital_account_snapshot_is_actionable_coverage_warning(
@@ -188,7 +190,7 @@ def test_missing_active_capital_account_snapshot_is_actionable_coverage_warning(
     assert insight.evidence == {
         "close_readiness_code": "active_account_snapshot_missing",
         "close_readiness_severity": "warning",
-        "can_close": True,
+        "can_close": False,
         "status": "draft",
         "snapshot_date": "2030-05-12",
         "context": {
@@ -525,7 +527,8 @@ def test_service_is_deterministic_read_only_and_api_serializes_contract(
     assert body["ruleset_version"] == "v1"
     assert body["forecast_version"] == "v1"
     assert body["snapshot_date"] == "2030-01-31"
-    assert body["insights"] == []
+    assert len(body["insights"]) == 1
+    assert body["insights"][0]["evidence"]["close_readiness_code"] == "empty_manual_month"
 
 
 def test_api_serializes_structured_insight_contract(

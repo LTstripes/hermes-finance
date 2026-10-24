@@ -126,6 +126,14 @@ def session_for(tmp_path: Path) -> tuple[Session, object]:
     return database.session_factory(), database
 
 
+def _manual_month_with_saved_fact(session, **kwargs):
+    month = create_reporting_month(session, **kwargs)
+    # These cases exercise child/CLOSED serialization, independently of the
+    # empty-month policy. The zero is an explicit saved synthetic observation.
+    create_cash_balance(session, reporting_month_id=month.id, name="Recorded cash", amount="0.00")
+    return month
+
+
 def _create_account(session: Session, name: str, account_type: AccountType) -> object:
     return create_account(session, name=name, account_type=account_type)
 
@@ -327,7 +335,9 @@ MONTH_SCOPED_CASES = [
 def test_closed_month_blocks_child_create_update_delete(tmp_path: Path, case: dict) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         child = case["create"](session, month.id)
         close_reporting_month(session, month.id)
 
@@ -347,7 +357,9 @@ def test_closed_month_blocks_child_create_update_delete(tmp_path: Path, case: di
 def test_closed_month_blocks_comment_reorder(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
         create_monthly_comment(session, reporting_month_id=month.id, text="Second")
         close_reporting_month(session, month.id)
@@ -364,7 +376,9 @@ def test_closed_month_blocks_comment_reorder(tmp_path: Path) -> None:
 def test_draft_month_child_crud_still_works(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         entry = create_income_entry(
             session,
             reporting_month_id=month.id,
@@ -392,7 +406,9 @@ def test_draft_month_child_crud_still_works(tmp_path: Path) -> None:
 def test_reopen_allows_child_edits_again(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         entry = create_income_entry(
             session,
             reporting_month_id=month.id,
@@ -423,7 +439,9 @@ def test_child_write_and_close_serialize(
     reached_guard = Event()
     release_child = Event()
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         entry = (
             create_expense_entry(
                 session,
@@ -512,7 +530,9 @@ def test_child_write_and_close_serialize(
 def test_failed_child_write_releases_reservation_and_reopen_is_fresh(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         with database.session_factory() as failed_session:
             with pytest.raises(ValueError):
                 create_expense_entry(
@@ -555,7 +575,9 @@ def test_comment_delete_keeps_reposition_inside_guarded_commit(
     reached_reposition = Event()
     release_delete = Event()
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
         create_monthly_comment(session, reporting_month_id=month.id, text="Second")
         original_reposition = comments_service._reposition
@@ -595,7 +617,9 @@ def test_comment_delete_keeps_reposition_inside_guarded_commit(
 def test_noop_comment_move_releases_writer_for_close(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         first = create_monthly_comment(session, reporting_month_id=month.id, text="First")
         create_monthly_comment(session, reporting_month_id=month.id, text="Second")
 
@@ -619,7 +643,9 @@ def test_noop_comment_move_releases_writer_for_close(tmp_path: Path) -> None:
 def test_closed_month_does_not_block_global_entities(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
-        month = create_reporting_month(session, year=2030, month=6, snapshot_date=date(2030, 6, 15))
+        month = _manual_month_with_saved_fact(
+            session, year=2030, month=6, snapshot_date=date(2030, 6, 15)
+        )
         close_reporting_month(session, month.id)
 
         account = create_account(

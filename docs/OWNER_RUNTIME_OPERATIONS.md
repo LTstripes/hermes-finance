@@ -611,6 +611,12 @@ CI claims real Owner UAT or a Stable update.
 <a id="o3"></a>
 ## 3. Publication, backup-first update and separate Start
 
+Publish only an Owner-selected accepted canonical candidate through the guarded release route. Distinguish application version, release commit/tag, prepared code and database schema. Keep release-note family paths `docs/release-notes-{Version}.md`. Do not mutate historical tag content or published assets to repair main's links.
+
+Historical notes before 1.3.0 are organized under `docs/release-notes/` on main; their original paths remain in the published tags. The current `docs/release-notes-1.3.0.md` is the sole auxiliary docs-root exception: release identity checks require it, and the published v1.3.0 `Assert-HermesStableTargetCodeIdentity` checks `docs/release-notes-{Version}.md` in the target commit before updating. Moving the active release-note family requires a separately accepted compatible updater transition; changing only main's reader cannot update already installed readers. Keep the current note and future publication paths compatible until then, without root redirects or weaker release gates.
+
+Runtime update is backup-first, published immutable release-pinned and separate from Start. Explicitly bind the existing physical production DB and disjoint backup destination. Preserve the matching old code/database recovery pair; old code must not open an unsupported newer schema. `backend/migrations/README` and released migrations remain byte-stable. Current installed/released identity belongs only in S.
+
 <a id="o3-empty-close-recovery"></a>
 ### Intentional-empty Close audit schema recovery (#952)
 
@@ -635,13 +641,6 @@ backup cannot stand in for current financial history. A same-0063 backup preserv
 audit and triggers. Synthetic Windows evidence covers populated table preservation,
 empty downgrade/re-upgrade, populated downgrade refusal, backup readback and an
 isolated 0062→0063 forward target; actual Owner recovery remains separately gated.
-
-
-Publish only an Owner-selected accepted canonical candidate through the guarded release route. Distinguish application version, release commit/tag, prepared code and database schema. Keep release-note family paths `docs/release-notes-{Version}.md`. Do not mutate historical tag content or published assets to repair main's links.
-
-Historical notes before 1.3.0 are organized under `docs/release-notes/` on main; their original paths remain in the published tags. The current `docs/release-notes-1.3.0.md` is the sole auxiliary docs-root exception: release identity checks require it, and the published v1.3.0 `Assert-HermesStableTargetCodeIdentity` checks `docs/release-notes-{Version}.md` in the target commit before updating. Moving the active release-note family requires a separately accepted compatible updater transition; changing only main's reader cannot update already installed readers. Keep the current note and future publication paths compatible until then, without root redirects or weaker release gates.
-
-Runtime update is backup-first, published immutable release-pinned and separate from Start. Explicitly bind the existing physical production DB and disjoint backup destination. Preserve the matching old code/database recovery pair; old code must not open an unsupported newer schema. `backend/migrations/README` and released migrations remain byte-stable. Current installed/released identity belongs only in S.
 
 <a id="o3-owner_runtime_operations-100"></a>
 ### Backup-first immutable release update

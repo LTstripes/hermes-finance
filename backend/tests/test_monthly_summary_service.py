@@ -16,6 +16,7 @@ fixture value is synthetic (2031/2032).
 from datetime import date
 from pathlib import Path
 
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -40,7 +41,7 @@ from hermes_finance.services.income_plan_summary import income_plan_summary
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.monthly_summary import monthly_summary
-from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
+from hermes_finance.services.reporting_months import create_reporting_month
 
 DELTA_WARNING = "Нет предыдущего месяца для расчёта дельты"
 NORM_BONUS_WARNING = "Нет закрытых месяцев для оценки нормализованной премии"
@@ -217,7 +218,7 @@ def test_income_plan_summary_reuses_canonical_planning_services(tmp_path: Path) 
     session, database = session_for(tmp_path)
     try:
         month_id = build_month(session, 2031, 6)
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
 
         result = income_plan_summary(session, month_id, forecast_version="v2")
 
@@ -327,7 +328,7 @@ def test_deltas_only_liquid_capital_and_passive_income(tmp_path: Path) -> None:
         add_salary(session, month_id=feb_id, net_amount="150000.00")
 
         jan = monthly_summary(session, jan_id)
-        close_reporting_month(session, jan_id)
+        close_fixture_month(session, jan_id)
         feb = monthly_summary(session, feb_id)
 
         # Salary is neither liquid capital nor passive income, so a salary-only

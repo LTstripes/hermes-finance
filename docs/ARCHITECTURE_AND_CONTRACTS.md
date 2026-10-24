@@ -1466,7 +1466,7 @@ No actual facts yields hard blocker `empty_manual_month` in `close_hard_guards`,
 readiness, workflow/Final Review and ordinary HTTP Close. Partial months retain
 the previous completeness warnings; XML and all-account snapshots are optional.
 Existing CLOSED history and non-MANUAL policies are unchanged. Both Close commands
-reserve the existing SQLite writer, expire cached dependencies and repeat all
+reserve the existing SQLite writer, refresh cached dependencies and repeat all
 guards before commit. Pending unsaved ORM edits are rejected; they cannot become
 saved facts as a side effect of Close.
 

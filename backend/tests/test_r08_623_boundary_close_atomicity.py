@@ -19,6 +19,7 @@ from hermes_finance.persistence import Base, InKindMovement
 from hermes_finance.persistence import CashBoundaryCoverage as CashCoverage
 from hermes_finance.persistence import InKindBoundaryCoverage as InKindCoverage
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
     close_reporting_month,
@@ -43,6 +44,13 @@ def _seed(tmp_path: Path):
         account = create_account(
             session, name="Synthetic Boundary Account", account_type=AccountType.BROKERAGE
         )
+        # These tests isolate boundary-writer/CLOSED serialization. Both manual
+        # periods contain an explicitly saved actual under the #952 policy;
+        # coverage metadata itself must not stand in for a financial fact.
+        for month_id in (january.id, february.id):
+            create_cash_balance(
+                session, reporting_month_id=month_id, name="Recorded cash", amount="0.00"
+            )
         return database, january.id, february.id, account.id
 
 

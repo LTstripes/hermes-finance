@@ -11,6 +11,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month_http
 from fastapi.testclient import TestClient
 
 from hermes_finance.database import create_database
@@ -478,7 +479,7 @@ def test_debt_account_link_api_is_explicit_and_month_local(client: TestClient) -
     _assert_error(invalid_account.json(), "unprocessable")
     assert client.get(f"/api/debts/{debt_id}").json()["linked_account_id"] == deposit_id
 
-    client.post(f"/api/months/{month_id}/close")
+    close_fixture_month_http(client, month_id)
     blocked = client.delete(f"/api/debts/{debt_id}/linked-account")
     assert blocked.status_code == 409
     _assert_error(blocked.json(), "conflict")
@@ -588,7 +589,7 @@ def test_comments_crud_and_move(client: TestClient) -> None:
 
 def test_closed_month_blocks_writes(client: TestClient) -> None:
     month_id = _month(client)
-    client.post(f"/api/months/{month_id}/close")
+    close_fixture_month_http(client, month_id)
 
     blocked = client.post(
         "/api/incomes",

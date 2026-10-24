@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -21,7 +22,6 @@ from hermes_finance.services.forecast_passive_income import forecast_passive_inc
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
 )
 from hermes_finance.services.settings import update_settings
@@ -246,7 +246,7 @@ def test_dividend_component_uses_closed_months_only(tmp_path: Path) -> None:
         month_id, account_id, _instrument_id = build_environment(session)
         closed_id = build_month(session, 2030, 1)
         add_dividend(session, closed_id, account_id, 2030, 1, "500.00")
-        close_reporting_month(session, closed_id)
+        close_fixture_month(session, closed_id)
         draft_id = build_month(session, 2030, 2)
         add_dividend(session, draft_id, account_id, 2030, 2, "500.00")
         # draft month intentionally left open -> excluded
@@ -275,7 +275,7 @@ def test_three_closed_months_average_dividend_component(tmp_path: Path) -> None:
         for i, net in enumerate(("500.00", "1000.00", "1500.00"), start=1):
             closed_id = build_month(session, 2030, i)
             add_dividend(session, closed_id, account_id, 2030, i, net)
-            close_reporting_month(session, closed_id)
+            close_fixture_month(session, closed_id)
 
         result = forecast_passive_income(
             session, reporting_month_id=month_id, forecast_version=FORECAST_VERSION
@@ -400,7 +400,7 @@ def test_monthly_total_rounds_with_dividend_component(tmp_path: Path) -> None:
         )
         closed_id = build_month(session, 2030, 1)
         add_dividend(session, closed_id, account_id, 2030, 1, "500.00")
-        close_reporting_month(session, closed_id)
+        close_fixture_month(session, closed_id)
 
         result = forecast_passive_income(
             session, reporting_month_id=month_id, forecast_version=FORECAST_VERSION
@@ -445,12 +445,12 @@ def test_history_boundary_filters_actual_dividends_only_and_preserves_expected_f
 
         pre_boundary = build_month(session, 2030, 1)
         add_dividend(session, pre_boundary, account_id, 2030, 1, "900.00")
-        close_reporting_month(session, pre_boundary)
+        close_fixture_month(session, pre_boundary)
         boundary_zero = build_month(session, 2030, 2)
-        close_reporting_month(session, boundary_zero)
+        close_fixture_month(session, boundary_zero)
         eligible = build_month(session, 2030, 3)
         add_dividend(session, eligible, account_id, 2030, 3, "300.00")
-        close_reporting_month(session, eligible)
+        close_fixture_month(session, eligible)
 
         all_history = forecast_passive_income(
             session, reporting_month_id=month_id, forecast_version=FORECAST_VERSION
