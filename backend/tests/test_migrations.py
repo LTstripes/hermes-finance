@@ -1024,6 +1024,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "include_in_cash_flow",
             "include_in_passive_income",
             "notes",
+            "actual_fact_origin",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(investment_cash_flows)")
@@ -1152,6 +1153,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "expense_type",
             "is_recurring",
             "notes",
+            "actual_fact_origin",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(saving_allocations)")] == [
             "id",
@@ -1159,6 +1161,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "destination",
             "amount_kopecks",
             "notes",
+            "actual_fact_origin",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(planned_budget_lines)")
