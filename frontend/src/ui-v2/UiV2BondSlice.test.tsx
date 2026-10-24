@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type {
   InstrumentAnalysis,
@@ -192,12 +192,16 @@ function source(account = "SYNTH-01"): SourceInstrumentReturns {
     ],
   };
 }
-function setup(data = source()) {
+function LocationReadback() {
+  return <output aria-label="Текущий URL">{useLocation().search}</output>;
+}
+function setup(data = source(), url = "/") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (next: SourceInstrumentReturns) => (
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
         <UiV2BondSlice key={next.source_account} account={next.source_account} sources={next} />
+        <LocationReadback />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -208,6 +212,78 @@ const card = (name: string) =>
   within(screen.getByRole("heading", { name }).parentElement as HTMLElement);
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
+function twoBonds() {
+  const data = source();
+  data.instruments.push({
+    ...source().instruments[0],
+    isin: "RU000A000002",
+    source_name: "Вторая синтетическая облигация",
+    analysis: analysis(),
+  });
+  return data;
+}
+
+test.each(["RU000STALE01", ""])(
+  "explicit absent ISIN %j never substitutes another bond, including after reload",
+  async (isin) => {
+    const data = twoBonds();
+    const url = `/?source_account=SYNTH-01&bond_isin=${isin}`;
+    const first = setup(data, url);
+    expect(screen.getByText("Выбранная облигация недоступна")).toBeVisible();
+    expect(screen.queryByRole("region", { name: /Детали облигации/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Полный P&L, ₽" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Условная оценка по выписке" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { pressed: true })).not.toBeInTheDocument();
+    const savedUrl = screen.getByLabelText("Текущий URL").textContent;
+    expect(new URLSearchParams(savedUrl ?? "").get("bond_isin")).toBe(isin);
+    first.unmount();
+    setup(data, `/${savedUrl}`);
+    expect(screen.getByText("Выбранная облигация недоступна")).toBeVisible();
+    expect(screen.queryByRole("region", { name: /Детали облигации/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Вторая синтетическая облигация" }));
+    expect(screen.getByRole("region", { name: "Детали облигации RU000A000002" })).toBeVisible();
+    expect(screen.queryByText("Выбранная облигация недоступна")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Текущий URL")).toHaveTextContent("bond_isin=RU000A000002");
+  },
+);
+
+test("without explicit ISIN the first bond is selected by default", () => {
+  setup(twoBonds(), "/?source_account=SYNTH-01");
+  expect(screen.getByRole("region", { name: `Детали облигации ${ISIN}` })).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Синтетическая облигация SYNTH-01", pressed: true }),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("region", { name: "Детали облигации RU000A000002" }),
+  ).not.toBeInTheDocument();
+  expect(
+    new URLSearchParams(screen.getByLabelText("Текущий URL").textContent ?? "").has("bond_isin"),
+  ).toBe(false);
+});
+
+test("explicit ISIN removed from the selected period stays unavailable and preserves URL scope", async () => {
+  const data = twoBonds();
+  const month = twoBonds();
+  month.instruments.shift();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => json(month)),
+  );
+  setup(data, `/?source_account=SYNTH-01&bond_isin=${ISIN}`);
+  expect(screen.getByRole("region", { name: `Детали облигации ${ISIN}` })).toBeVisible();
+  await userEvent.selectOptions(screen.getByLabelText("Период облигаций"), "2030-05-01");
+  await screen.findByText("Выбранная облигация недоступна");
+  expect(screen.queryByRole("region", { name: /Детали облигации/ })).not.toBeInTheDocument();
+  const params = new URLSearchParams(screen.getByLabelText("Текущий URL").textContent ?? "");
+  expect(Object.fromEntries(params)).toEqual({
+    source_account: "SYNTH-01",
+    bond_isin: ISIN,
+    bond_period: "2030-05-01",
+  });
+});
 
 test("no-trade bond shows reported operands and server-only conditional fraction, with full result NULL", () => {
   const fetcher = vi.fn();

@@ -356,7 +356,7 @@ export function UiV2BondSlice({
   const [params, setParams] = useSearchParams();
   const ownContext = !params.get("source_account") || params.get("source_account") === account;
   const period = ownContext ? (params.get("bond_period") ?? "history") : "history";
-  const chosenIsin = ownContext ? (params.get("bond_isin") ?? "") : "";
+  const chosenIsin = ownContext ? params.get("bond_isin") : null;
   function select(key: "bond_period" | "bond_isin", value: string) {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -384,7 +384,7 @@ export function UiV2BondSlice({
   });
   const data = period === "history" ? sources : selected.data;
   const bonds = data?.instruments.filter((row) => row.instrument_type === "bond") ?? [];
-  const instrument = bonds.find((row) => row.isin === chosenIsin) ?? bonds[0];
+  const instrument = chosenIsin === null ? bonds[0] : bonds.find((row) => row.isin === chosenIsin);
   const scopeMismatch =
     data &&
     (data.source_account !== account ||
@@ -490,14 +490,19 @@ export function UiV2BondSlice({
                 Стоимость показана как reported value из выписки. Подтверждённый состав clean/dirty
                 указан в деталях.
               </p>
-              {instrument && (
+              {chosenIsin !== null && !instrument ? (
+                <UiV2Notice title="Выбранная облигация недоступна">
+                  ISIN <code>{chosenIsin || "(пустой ISIN)"}</code> не найден в выбранном счёте и
+                  периоде. Выберите облигацию в таблице или проверьте ISIN в ссылке.
+                </UiV2Notice>
+              ) : instrument ? (
                 <section aria-label={`Детали облигации ${instrument.isin}`}>
                   <h3>
                     {instrument.source_name ?? instrument.isin} · {instrument.isin}
                   </h3>
                   <BondDetail analysis={instrument.analysis} />
                 </section>
-              )}
+              ) : null}
               {!!data?.unresolved_events.length && (
                 <details>
                   <summary>

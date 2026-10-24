@@ -1,5 +1,52 @@
 import { expect, test } from "@playwright/test";
 
+test("explicit stale bond ISIN stays unavailable on reload; account switch resets to its default", async ({
+  page,
+  request,
+}, info) => {
+  const before = await (await request.get("/api/synthetic-bond-state")).json();
+  const mutations: string[] = [];
+  page.on("request", (r) => {
+    if (!["GET", "HEAD"].includes(r.method())) mutations.push(r.method());
+  });
+  await page.goto(
+    "/v2/capital/monthly-returns?source_account=7654321&bond_period=2030-05-01&bond_isin=RU000STALE01#bond-slice",
+  );
+  const panel = page.getByRole("region", { name: "Облигации: позиции, сделки и купоны" });
+  await expect(panel.getByText("Выбранная облигация недоступна", { exact: true })).toBeVisible();
+  await expect(panel.getByText("RU000STALE01", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("region", { name: /Детали облигации/ })).toHaveCount(0);
+  await expect(panel.getByRole("region", { name: "Условная оценка по выписке" })).toHaveCount(0);
+  await page.reload();
+  await expect(panel.getByText("Выбранная облигация недоступна", { exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("bond_isin")).toBe("RU000STALE01");
+  await expect(panel.getByLabel("Период облигаций")).toHaveValue("2030-05-01");
+  await expect(panel.getByRole("region", { name: /Детали облигации/ })).toHaveCount(0);
+  await panel.screenshot({ path: info.outputPath("bond-stale-isin.png") });
+  await panel.getByRole("button", { name: "Синтетическая облигация", exact: true }).click();
+  await expect(panel.getByRole("region", { name: "Детали облигации RU000A000001" })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("bond_isin")).toBe("RU000A000001");
+
+  await page.getByLabel("Счёт в выписке", { exact: true }).selectOption("8765432");
+  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.has("bond_isin")).toBe(false);
+  expect(new URL(page.url()).searchParams.has("bond_period")).toBe(false);
+  await panel.getByLabel("Период облигаций").selectOption("2030-05-01");
+  await expect(panel.getByRole("region", { name: "Детали облигации RU000A000001" })).toBeVisible();
+  await page.reload();
+  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
+  await expect(panel.getByLabel("Период облигаций")).toHaveValue("2030-05-01");
+  await expect(
+    panel.getByRole("button", { name: "Синтетическая облигация", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    panel.getByRole("table", { name: "Облигации выбранного счёта и периода" }),
+  ).toContainText("8");
+  expect(new URL(page.url()).searchParams.has("bond_isin")).toBe(false);
+  expect(await (await request.get("/api/synthetic-bond-state")).json()).toEqual(before);
+  expect(mutations).toEqual([]);
+});
+
 test("two-account bond desktop: reported holdings, linked coupons, eligible estimates, unknown NKD and reload", async ({
   page,
   request,
