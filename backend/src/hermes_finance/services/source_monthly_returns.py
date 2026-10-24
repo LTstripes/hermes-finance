@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
 import json
 from collections import defaultdict
 from dataclasses import asdict, dataclass, replace
@@ -29,7 +30,44 @@ from hermes_finance.services.source_money_classifications import (
 )
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
-from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+from hermes_finance.statement_import.mybroker_return_structure import (
+    original_cancellation_dates,
+    source_return_blockers,
+)
+
+
+@coherent_read_operation
+def read_monthly_returns_with_originals(session, *, source_account, documents, expected_sources):
+    """Transient evidence for ALL selected journals; never a source-exclusion API."""
+    selected, _ = _selected_sources(session, source_account)
+    if not selected or any(error for _, _, error in selected):
+        raise MyBrokerError("source_return_original_scope_unavailable")
+    current = {row.id: view["manifest_digest"] for row, view, _ in selected}
+    if current != expected_sources:
+        raise MyBrokerError("source_return_original_set_stale")
+    by_sha = {}
+    for document, filename in documents:
+        sha = hashlib.sha256(document).hexdigest()
+        if sha in by_sha:
+            raise MyBrokerError("source_return_duplicate_original")
+        by_sha[sha] = (document, filename)
+    if set(by_sha) != {row.document_sha256 for row, _, _ in selected}:
+        raise MyBrokerError("source_return_original_set_mismatch")
+    originals = {}
+    for row, view, _ in selected:
+        document, filename = by_sha[row.document_sha256]
+        # Verify the immutable descriptor and frozen parser shape before the
+        # ordinary reader's per-document error isolation can catch anything.
+        provisional.read_context(
+            session,
+            intake_id=row.id,
+            original=document,
+            filename=filename,
+            expected_manifest_digest=view["manifest_digest"],
+        )
+        originals[row.id] = (document, filename)
+    return read_monthly_returns(session, source_account=source_account, originals=originals)
+
 
 SOURCE_PERIOD_INFERRED_MESSAGE = (
     "Statement period was inferred from activity dates; "
@@ -44,6 +82,7 @@ _FINANCIAL_COMPLETENESS_BLOCKERS = {
     "4_Transfers_unsupported",
     "5_UFSR_unsupported",
     "position_row_unclassified",
+    "custody_cancellation_unresolved",
 }
 _FLOW_REASONS = _FINANCIAL_COMPLETENESS_BLOCKERS | {
     "source_period_inferred",
@@ -369,17 +408,46 @@ def read_monthly_returns(
             if error:
                 raise MyBrokerError(error)
             document = view["document"]
+            attached = (originals or {}).get(original.id)
+            context = None
+            cancellation_dates = None
+            blockers = source_return_blockers(view)
+            scope_valid = (
+                native_scope is not None
+                and _native_scope(document) == native_scope
+                and source_account in native_scope | {document["filename_account"]}
+            )
+            if attached and scope_valid:
+                context = provisional.read_context(
+                    session,
+                    intake_id=original.id,
+                    original=attached[0],
+                    filename=attached[1],
+                    expected_manifest_digest=view["manifest_digest"],
+                )
+                cancellation_dates = original_cancellation_dates(view, attached[0])
+                if cancellation_dates is not None:
+                    blockers -= {
+                        "unparsed_source_rows",
+                        "4_Transfers_unsupported",
+                        "5_UFSR_unsupported",
+                    }
             financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
-                (*source_return_blockers(view), *document.get("endpoint_blockers", []))
+                (*blockers, *document.get("endpoint_blockers", []))
             )
             period_inferred = "period_inferred_from_content" in document.get("warnings", [])
             if period_inferred:
                 financial_blockers.add("source_period_inferred")
             covered_month = start.replace(day=1)
             while covered_month <= end:
-                if financial_blockers:
+                month_blockers = financial_blockers.copy()
+                if cancellation_dates and any(
+                    day.replace(day=1) == covered_month for day in cancellation_dates
+                ):
+                    month_blockers.add("custody_cancellation_unresolved")
+                if month_blockers:
                     uncertain_source_months.add(covered_month)
-                    source_flow_reasons[covered_month].update(financial_blockers)
+                    source_flow_reasons[covered_month].update(month_blockers)
                     gaps.extend(
                         SourceReturnGap(
                             code,
@@ -391,14 +459,10 @@ def read_monthly_returns(
                                 else None
                             ),
                         )
-                        for code in sorted(financial_blockers)
+                        for code in sorted(month_blockers)
                     )
                 covered_month = _next_month(covered_month)
-            if (
-                native_scope is None
-                or _native_scope(view["document"]) != native_scope
-                or source_account not in native_scope | {document["filename_account"]}
-            ):
+            if not scope_valid:
                 gaps.append(SourceReturnGap("native_source_scope_ambiguous", original.id))
                 unknown_source_flows = True
                 opening = closing = None
@@ -407,15 +471,7 @@ def read_monthly_returns(
                 if "duplicate_position" in reasons:
                     conflicting_endpoint_dates.update((start - timedelta(days=1), end))
                 gaps.extend(SourceReturnGap(code, original.id) for code in sorted(reasons))
-                attached = (originals or {}).get(original.id)
-                if attached:
-                    context = provisional.read_context(
-                        session,
-                        intake_id=original.id,
-                        original=attached[0],
-                        filename=attached[1],
-                        expected_manifest_digest=view["manifest_digest"],
-                    )
+                if context is not None:
                     opening = (
                         int(context.observed.total_opening_kopecks)
                         if context.observed.total_opening_kopecks is not None
