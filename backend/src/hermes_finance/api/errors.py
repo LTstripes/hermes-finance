@@ -37,6 +37,7 @@ from hermes_finance.services.quote_apply import PreviewChangedError
 from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceError
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
+    CloseGuardError,
     ReportingMonthNotFoundError,
 )
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
@@ -299,6 +300,17 @@ def register_error_handlers(application: FastAPI) -> None:
             exc.code,
         )
         return _error_response(409, exc.code, str(exc))
+
+    @application.exception_handler(CloseGuardError)
+    async def _close_guard_handler(request: Request, exc: CloseGuardError) -> JSONResponse:
+        logger.info(
+            "%s route=%s status=%d code=%s",
+            exc.__class__.__name__,
+            request_route(request),
+            exc.status_code,
+            exc.code,
+        )
+        return _error_response(exc.status_code, exc.code, str(exc))
 
     @application.exception_handler(ClosedReportingMonthError)
     async def _closed_month_handler(

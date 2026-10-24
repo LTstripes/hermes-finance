@@ -92,6 +92,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_empty_manual_close.py",
     "test_instrument_return.py",
     "test_source_instrument_events.py",
     "test_source_payout_preview.py",
@@ -546,6 +547,7 @@ _CI_LANE_OVERRIDES = {
     "test_cash.py": "ci_core",
     "test_cash_flow_ladder.py": "ci_core",
     "test_close_readiness.py": "ci_core",
+    "test_empty_manual_close.py": "ci_core",
     "test_comments.py": "ci_core",
     "test_debts.py": "ci_core",
     "test_deposits.py": "ci_core",

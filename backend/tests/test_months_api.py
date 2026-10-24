@@ -127,6 +127,17 @@ def test_create_validation_and_duplicate(client: TestClient) -> None:
 
 def test_close_and_reopen_cycle(client: TestClient) -> None:
     created = _create(client, 2031, 3, "2031-03-15")
+    assert (
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": created["id"],
+                "name": "Recorded cash",
+                "amount": {"amount": "0.00", "currency": "RUB"},
+            },
+        ).status_code
+        == 201
+    )
 
     closed = client.post(f"/api/months/{created['id']}/close")
     assert closed.status_code == 200
@@ -151,6 +162,17 @@ def test_close_and_reopen_cycle(client: TestClient) -> None:
 
 def test_closed_month_guards_patch_and_delete(client: TestClient) -> None:
     created = _create(client, 2031, 4, "2031-04-15")
+    assert (
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": created["id"],
+                "name": "Recorded cash",
+                "amount": {"amount": "0.00", "currency": "RUB"},
+            },
+        ).status_code
+        == 201
+    )
     closed = client.post(f"/api/months/{created['id']}/close")
     assert closed.status_code == 200
 
@@ -169,6 +191,17 @@ def test_error_contract_codes(client: TestClient) -> None:
     _assert_error_body(not_found.json(), "not_found")
 
     created = _create(client, 2031, 5, "2031-05-15")
+    assert (
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": created["id"],
+                "name": "Recorded cash",
+                "amount": {"amount": "0.00", "currency": "RUB"},
+            },
+        ).status_code
+        == 201
+    )
     client.post(f"/api/months/{created['id']}/close")
     conflict = client.patch(f"/api/months/{created['id']}", json={"snapshot_date": "2031-05-20"})
     assert conflict.status_code == 409

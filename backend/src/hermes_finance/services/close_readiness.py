@@ -48,6 +48,7 @@ class CloseReadinessSeverity(StrEnum):
 
 
 class CloseReadinessCode(StrEnum):
+    EMPTY_MANUAL_MONTH = "empty_manual_month"
     SNAPSHOT_DATE_REQUIRED = "snapshot_date_required"
     SALARY_TAX_HISTORY_INCOMPLETE = "salary_tax_history_incomplete"
     UNRESOLVED_PAYOUT_RECONCILIATION = "unresolved_payout_reconciliation"
@@ -107,6 +108,7 @@ class CloseReadiness:
     source: str
     can_close: bool
     items: tuple[CloseReadinessItem, ...]
+    intentional_empty_close: dict[str, object] | None = None
 
 
 def _item(
@@ -438,4 +440,22 @@ def build_close_readiness(
             source=month.source,
             can_close=can_close,
             items=ordered,
+            intentional_empty_close=_empty_close_option(session, month, ordered),
         )
+
+
+def _empty_close_option(session, month, items):
+    if not any(item.code == CloseReadinessCode.EMPTY_MANUAL_MONTH for item in items):
+        return None
+    from hermes_finance.services.intentional_empty_close import POLICY_VERSION, empty_close_identity
+
+    return {
+        **empty_close_identity(session, month).model_dump(mode="json"),
+        "command": "close_intentionally_empty_manual_month",
+        "policy_version": POLICY_VERSION,
+        "eligible": not any(
+            item.severity is CloseReadinessSeverity.HARD_BLOCKER
+            and item.code != CloseReadinessCode.EMPTY_MANUAL_MONTH
+            for item in items
+        ),
+    }

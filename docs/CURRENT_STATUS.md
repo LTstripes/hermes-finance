@@ -1,5 +1,17 @@
 # Current state, limitations and next actions
 
+2026-10-24 Worker candidate for [#952](https://github.com/LTstripes/hermes-finance/issues/952),
+based on accepted `main@ea6bf4fb1d98acc049eefd054502e814240de8a7`: shared server
+`empty_manual_month` guard and a separate typed exact-period intentional-empty
+Close command with immutable audit/readback. Ordinary partial/manual-only months
+retain advisory completeness and require no XML; no economic facts are invented.
+Migration 0063 is additive; populated audit blocks downgrade and requires forward
+recovery. This is backend/API work with a typed consumer, not the separate UI
+confirmation/Owner UAT acceptance. Independent financial/operational review and
+exact PR CI are delivery gates; no merge, protected runtime operation or real
+Close/Apply/Reopen is authorized by this candidate. Final evidence belongs to its
+Draft PR, rather than implying deployment from code delivery.
+
 Evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated evidence retains its original scope. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
 
 <a id="s1"></a>

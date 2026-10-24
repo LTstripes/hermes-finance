@@ -611,6 +611,32 @@ CI claims real Owner UAT or a Stable update.
 <a id="o3"></a>
 ## 3. Publication, backup-first update and separate Start
 
+<a id="o3-empty-close-recovery"></a>
+### Intentional-empty Close audit schema recovery (#952)
+
+Schema `0063_intentional_empty_close` is additive over 0062: one initially empty
+audit table/index and immutable UPDATE/DELETE guards, no changed historical month
+or economic rows. Before any separately authorized deployment, verify a fresh
+backup and code/schema pairing using the existing O2/O4 procedures. This backend
+Worker change does not authorize Test/Stable/Owner migration, Start or actual Close.
+
+Downgrade to 0062 is allowed only while the new audit is empty. A populated audit
+fails before schema mutation; never drop triggers, delete receipts or rewrite
+status/history to get past that refusal. Preserve the current code/database pair
+and use a reviewed forward fix. An older binary also lacks the new Close policy,
+so merely opening a newer database with old code is not an accepted rollback.
+
+Stock in-app restore still rejects a cross-schema backup. Retain a verified 0062
+backup with its producing code as an old recovery pair. Supported forward recovery
+copies that verified artifact to a fresh isolated target and upgrades it to 0063;
+it does not replace the live database or invent post-backup audit. After any real
+successful Close, recovery must preserve that decision and its receipt; a pre-Close
+backup cannot stand in for current financial history. A same-0063 backup preserves
+audit and triggers. Synthetic Windows evidence covers populated table preservation,
+empty downgrade/re-upgrade, populated downgrade refusal, backup readback and an
+isolated 0062→0063 forward target; actual Owner recovery remains separately gated.
+
+
 Publish only an Owner-selected accepted canonical candidate through the guarded release route. Distinguish application version, release commit/tag, prepared code and database schema. Keep release-note family paths `docs/release-notes-{Version}.md`. Do not mutate historical tag content or published assets to repair main's links.
 
 Historical notes before 1.3.0 are organized under `docs/release-notes/` on main; their original paths remain in the published tags. The current `docs/release-notes-1.3.0.md` is the sole auxiliary docs-root exception: release identity checks require it, and the published v1.3.0 `Assert-HermesStableTargetCodeIdentity` checks `docs/release-notes-{Version}.md` in the target commit before updating. Moving the active release-note family requires a separately accepted compatible updater transition; changing only main's reader cannot update already installed readers. Keep the current note and future publication paths compatible until then, without root redirects or weaker release gates.

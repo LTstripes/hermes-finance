@@ -13,6 +13,87 @@ from _migration_helpers import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_intentional_empty_close_migration_audit_and_windows_recovery(tmp_path):
+    import pytest
+    from test_r13_00_release_verification import _backup, _integrity, _snapshot
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services.close_readiness import build_close_readiness
+    from hermes_finance.services.intentional_empty_close import (
+        IntentionalEmptyCloseCommand,
+        close_intentionally_empty_month,
+    )
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    path = tmp_path / "synthetic-empty-close-migration.db"
+    previous = "0062_security_reg_isin_mappings"
+    result = run_alembic(path, "upgrade", previous)
+    assert result.returncode == 0, result.stderr
+    database = create_database(path)
+    with database.session_factory() as session:
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+        month_id = month.id
+    database.engine.dispose()
+    with sqlite3.connect(path) as connection:
+        before = _snapshot(connection)
+    original_backup = tmp_path / "synthetic-0062-backup.db"
+    _backup(path, original_backup)
+    for _ in range(2):
+        upgraded = run_alembic(path, "upgrade", "head")
+        assert upgraded.returncode == 0, upgraded.stderr
+        with sqlite3.connect(path) as connection:
+            _integrity(connection)
+            after = _snapshot(connection)
+            assert {k: after[k] for k in before} == before
+            assert set(after) - set(before) == {"intentional_empty_close_receipts"}
+            assert after["intentional_empty_close_receipts"][1] == []
+        downgraded = run_alembic(path, "downgrade", previous)
+        assert downgraded.returncode == 0, downgraded.stderr
+        with sqlite3.connect(path) as connection:
+            assert _snapshot(connection) == before
+    assert run_alembic(path, "upgrade", "head").returncode == 0
+    database = create_database(path)
+    with database.session_factory() as session:
+        option = build_close_readiness(
+            session, month_id, today=date(2030, 1, 31)
+        ).intentional_empty_close
+        command = IntentionalEmptyCloseCommand.model_validate(
+            {k: v for k, v in option.items() if k != "eligible"}
+            | {"request_id": "migration-close", "reason": "Synthetic intentional empty period"}
+        )
+        close_intentionally_empty_month(session, month_id, command)
+    database.engine.dispose()
+    with sqlite3.connect(path) as connection:
+        committed = _snapshot(connection)
+        for sql in [
+            "UPDATE intentional_empty_close_receipts SET reason='changed'",
+            "DELETE FROM intentional_empty_close_receipts",
+        ]:
+            with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+                connection.execute(sql)
+            connection.rollback()
+    refused = run_alembic(path, "downgrade", previous)
+    assert refused.returncode != 0 and "cannot downgrade populated" in refused.stderr
+    assert revision_rows(path) == [REVISION]
+    current_backup = tmp_path / "synthetic-0063-backup.db"
+    _backup(path, current_backup)
+    with sqlite3.connect(current_backup) as connection:
+        assert _snapshot(connection) == committed
+    # Existing 0062 snapshots remain an old code/data pair; forward recovery
+    # uses a fresh independent target, never an in-place cross-schema restore.
+    recovered = tmp_path / "synthetic-forward-recovery.db"
+    _backup(original_backup, recovered)
+    assert run_alembic(recovered, "upgrade", "head").returncode == 0
+    with sqlite3.connect(recovered) as connection:
+        _integrity(connection)
+        assert connection.execute("SELECT status FROM reporting_months").fetchall() == [("draft",)]
+        assert connection.execute(
+            "SELECT count(*) FROM intentional_empty_close_receipts"
+        ).fetchone() == (0,)
+    with sqlite3.connect(path) as connection:
+        assert _snapshot(connection) == committed
+
+
 def test_security_reg_isin_mapping_upgrade_downgrade_preserves_existing_tables(tmp_path):
     import pytest
     from test_statement_import_mybroker import FILENAME, fixture
@@ -53,7 +134,7 @@ def test_security_reg_isin_mapping_upgrade_downgrade_preserves_existing_tables(t
     for _ in range(2):
         result = run_alembic(path, "upgrade", "head")
         assert result.returncode == 0, result.stderr
-        assert revision_rows(path) == ["0062_security_reg_isin_mappings"]
+        assert revision_rows(path) == [REVISION]
         with sqlite3.connect(path) as connection:
             assert connection.execute("SELECT * FROM security_reg_isin_mappings").fetchall() == []
             insert = (

@@ -13,6 +13,7 @@ from hermes_finance.domain import ReportingMonthSource, ReportingMonthStatus
 from hermes_finance.persistence import Base, CashBalance, IncomeEntry
 from hermes_finance.services import _guard as month_guard
 from hermes_finance.services import reporting_months as reporting_months_service
+from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.reporting_months import (
     ClosedReportingMonthError,
     close_reporting_month,
@@ -98,6 +99,9 @@ def test_closed_reporting_month_requires_reopen_before_edit_or_delete(tmp_path: 
             year=2026,
             month=7,
             snapshot_date=date(2026, 8, 2),
+        )
+        create_cash_balance(
+            session, reporting_month_id=reporting_month.id, name="Recorded cash", amount="0.00"
         )
         closed = close_reporting_month(session, reporting_month.id)
         assert closed.status == ReportingMonthStatus.CLOSED.value
@@ -223,6 +227,9 @@ def test_close_wins_after_patch_session_saw_draft(
     release_patch = Event()
     try:
         month = create_reporting_month(session, year=2026, month=7, snapshot_date=expected_date)
+        create_cash_balance(
+            session, reporting_month_id=month.id, name="Recorded cash", amount="0.00"
+        )
         with database.session_factory() as patch_session:
             original_get = reporting_months_service.get_reporting_month
 
@@ -277,6 +284,9 @@ def test_patch_reserves_writer_until_commit_before_close(
     release_patch = Event()
     try:
         month = create_reporting_month(session, year=2026, month=7, snapshot_date=date(2026, 8, 2))
+        create_cash_balance(
+            session, reporting_month_id=month.id, name="Recorded cash", amount="0.00"
+        )
         original_guard = month_guard.require_editable_reporting_month
 
         def paused_guard(patch_session: Session, month_id: int):
@@ -321,6 +331,9 @@ def test_failed_patch_rolls_back_parent_changes_and_releases_writer(tmp_path: Pa
     session, database = session_for(tmp_path)
     try:
         month = create_reporting_month(session, year=2026, month=7, snapshot_date=date(2026, 8, 2))
+        create_cash_balance(
+            session, reporting_month_id=month.id, name="Recorded cash", amount="0.00"
+        )
         with database.session_factory() as patch_session:
             with pytest.raises(ValueError, match="unsupported reporting month source"):
                 update_reporting_month(

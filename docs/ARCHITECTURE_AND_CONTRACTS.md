@@ -1447,6 +1447,73 @@ An intact original, S1 source acceptance, journal capture, financial DRAFT, inde
 
 Close classification is precise: required month/snapshot geometry and date rules, existing financial conflicts and applicable unresolved source/intake/receipt guards are blocking. An ordinary active-account snapshot absence is a nonblocking warning with a partial known subtotal. Stale valuation is freshness, not missing source coverage. Cash-boundary/in-kind/performance prerequisites remain separate; Close does not attest them. Bound intake obligations survive defer/unbind/rebind and forbid delete→recreate erasure. Unknown section economics never becomes a zero movement.
 
+<a id="c3-empty-manual-close"></a>
+### Empty manual month and intentional-empty Close (#952)
+
+[Owner policy](https://github.com/LTstripes/hermes-finance/issues/952) amends ordinary
+Close for a completely unfilled `MANUAL DRAFT`. The shared server predicate uses
+persisted month-owned cash, deposit and position snapshots, income, expenses,
+saving allocations, debt/property balances, investment cash flows, external flows,
+in-kind movements and observed valuation points. Date-owned canonical executions,
+historical owner flows and historical endpoints count only inside this calendar
+period and while their existing acceptance readers confirm current accepted facts.
+A source receipt, journal Save, catalogue/mapping, note, plan, expected cash flow
+or provider-announced payout alone is insufficient. Existence is the criterion:
+explicitly recorded zero and offsetting postings count, independently of totals
+or inclusion flags. Presence proves no completeness or exact-return eligibility.
+
+No actual facts yields hard blocker `empty_manual_month` in `close_hard_guards`,
+readiness, workflow/Final Review and ordinary HTTP Close. Partial months retain
+the previous completeness warnings; XML and all-account snapshots are optional.
+Existing CLOSED history and non-MANUAL policies are unchanged. Both Close commands
+reserve the existing SQLite writer, expire cached dependencies and repeat all
+guards before commit. Pending unsaved ORM edits are rejected; they cannot become
+saved facts as a side effect of Close.
+
+Readiness additively exposes nullable `intentional_empty_close`: exact `month_id`,
+`year`, calendar `month`, `snapshot_date`, `expected_identity`, the typed command
+`close_intentionally_empty_manual_month`, policy `intentional_empty_manual_month_v1`
+and `eligible`. Ordinary `can_close` stays false. Eligibility means only the empty
+guard has an alternative; other blockers still require resolution. The identity
+digest binds the persisted header incarnation/revision (including creation/update
+times, source/status/period bounds) and latest successful empty-Close receipt, plus the existing request database/restore
+epoch. Process restart, database replacement and restore retire uncommitted tokens;
+original-intent receipt readback remains durable.
+It is not an economic completeness attestation. Header ABA, Reopen and clone
+retire confirmation; newly present facts and source guards are re-read under the
+writer even when the header identity has not changed.
+
+`POST /api/months/{id}/close-intentionally-empty` accepts that exact identity,
+command/policy version, a unique `request_id` and a nonblank reason (1–2000 chars).
+It bypasses only `empty_manual_month`. Wrong/stale identity, a non-MANUAL DRAFT,
+new actual facts or any other hard guard rejects atomically. Normal empty Close
+returns HTTP 422 with typed `error.code=empty_manual_month`; identity/fact/request
+conflicts return 409. Invalid command/reason fields return the existing 422 envelope.
+The existing ordinary Close request/response shape is retained.
+
+A successful intentional Close atomically changes status and appends one
+`intentional_empty_close_receipts` audit: request/digest, exact period and expected
+identity, reason, policy version and server UTC time. It inserts no cash, position,
+income or other economic row, and does not claim there was no economic activity.
+Existing NULL/unknown financial availability and source Save/Apply distinctions
+remain. Audit UPDATE/DELETE is prohibited by SQL triggers. Audit has no live month
+FK and survives sanctioned draft deletion without transferring consent to a new
+month with a reused numeric ID. Clone never copies audit.
+
+After lost ACK, use provider-free read-only
+`GET /api/months/{id}/intentional-empty-close-receipts/{request_id}`. Original-intent
+POST retry returns the same immutable receipt without another Close or audit;
+reusing a key for different intent conflicts. A receipt's `result_status=closed`
+is the historical command result, not the current month status after Reopen or
+deletion. Re-read month/readiness separately; new Close requires fresh consent.
+The typed API consumer exposes these operations without adding a UI confirmation
+or automatically falling back from ordinary Close. Owner UI/UAT is a separate gate.
+
+Migration `0063_intentional_empty_close` adds only an initially empty audit table,
+index and immutability triggers. It does not reinterpret/backfill historical months,
+change released migration bytes or seed economic zeros. See
+[recovery limits](OWNER_RUNTIME_OPERATIONS.md#o3-empty-close-recovery).
+
 <a id="c3-mybroker_s1-1"></a>
 ### Frozen original and S1 source normalization
 

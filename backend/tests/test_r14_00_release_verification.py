@@ -1,4 +1,4 @@
-"""Synthetic published 0058 -> 0062 preservation; no Owner data or production restore."""
+"""Synthetic published 0058 -> current preservation; no Owner data or production restore."""
 
 import hashlib
 import sqlite3
@@ -21,6 +21,7 @@ TRANSITION = (
     "0060_source_money_classifications",
     "0061_money_instrument_links",
     "0062_security_reg_isin_mappings",
+    "0063_intentional_empty_close",
 )
 
 
