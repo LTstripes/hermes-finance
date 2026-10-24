@@ -1349,13 +1349,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   const retry = sourcePanel.getByRole("button", { name: /^Повторить чтение / });
   await expect(retry).toBeEnabled();
   expect(saves).toBe(3);
-  await retry.click();
-  expect(saves).toBe(3);
-
-  await expect(sourcePanel.getByText(`${fileA.name}: Сохранен`, { exact: true })).toBeVisible();
   await expect(sourcePanel.getByText("broken.xml: Не сохранен", { exact: true })).toBeVisible();
-  await expect(sourcePanel.getByText(`${fileB.name}: Сохранен`, { exact: true })).toBeVisible();
-  expect(saves).toBe(3);
   const currentIntakes = async () =>
     (await (await request.get("/api/broker-months/intakes?include_unbound=true")).json()).filter(
       (row: { covered_from: string }) => row.covered_from === "2034-05-01",
@@ -1371,7 +1365,15 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   expect(await (await request.get("/api/instruments")).json()).toEqual(instrumentsBefore);
   await sourcePanel.getByLabel("XML-файлы").setInputFiles([fileA, fileB]);
   await expect.poll(() => saves).toBe(5);
-  await expect(sourcePanel.getByLabel("XML-файлы")).toBeEnabled();
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  expect(saves).toBe(5);
+  await expect(
+    sourcePanel.getByText(`${fileA.name}: Сохранен`, { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    sourcePanel.getByText(`${fileB.name}: Сохранен`, { exact: true }).first(),
+  ).toBeVisible();
   expect(await currentIntakes()).toHaveLength(2);
   const picker = sourcePanel.getByLabel("Счёт источника месяца");
   const list = sourcePanel.getByRole("list", { name: "Источники и исключения месяца" });

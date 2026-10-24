@@ -3,11 +3,13 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
+import type { IntakeAck } from "../api/sourceIntake";
 import UiV2MonthlyReturnsPage from "./UiV2MonthlyReturnsPage";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const intake = {
+  contract_version: "source_intake_v1",
   id: 1,
   head_seq: 1,
   manifest_digest: "m",
@@ -19,6 +21,31 @@ const intake = {
   exceptions: [],
   financial_authority: "none",
 };
+// Synthetic server acknowledgement history, keyed by the actual outbound intent.
+const savedAcks = new Map<number, IntakeAck[]>();
+function saveAck(init: RequestInit | undefined, intakeId = 2) {
+  const requestId = JSON.parse(String(formBody(init).get("intent"))).request_id;
+  const prior = savedAcks.get(intakeId) ?? [];
+  const ack = {
+    intake_id: intakeId,
+    request_id: requestId,
+    head_seq: prior.length + 1,
+    duplicate: false,
+  };
+  savedAcks.set(intakeId, [...prior, ack]);
+  return json(ack);
+}
+function readSaved(intakeId = 2, patch: Record<string, unknown> = {}) {
+  const acks = savedAcks.get(intakeId) ?? [];
+  return {
+    ...intake,
+    id: intakeId,
+    head_seq: acks.at(-1)?.head_seq ?? 1,
+    history: acks.map((ack) => ({ seq: ack.head_seq, request_id: ack.request_id })),
+    ...patch,
+  };
+}
+afterEach(() => savedAcks.clear());
 const totals = {
   buys_cost_kopecks: 10000,
   sells_proceeds_kopecks: 0,
@@ -248,14 +275,12 @@ test(
 test(
   "uploads every synthetic file independently and keeps per-file flags",
   async () => {
-    const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/api/broker-months/intakes"))
-        return json({ intake_id: 2, request_id: "r", head_seq: 1, duplicate: false });
+      if (url.endsWith("/api/broker-months/intakes")) return saveAck(init);
       if (url.endsWith("/2"))
         return json({
-          ...intake,
-          id: 2,
+          ...readSaved(),
           observations: [{ id: 1 }, { id: 2 }],
           exceptions: ["unknown_section"],
         });
@@ -485,9 +510,9 @@ test(
             { error: { code: "synthetic_failure", message: "Синтетический отказ" } },
             422,
           );
-        return json({ intake_id: 2, request_id: "r", head_seq: 1, duplicate: false });
+        return saveAck(init);
       }
-      if (url.endsWith("/2")) return json({ ...intake, id: 2 });
+      if (url.endsWith("/2")) return json(readSaved());
       return reads(input);
     });
     setup(fetcher);
@@ -510,13 +535,12 @@ test(
   "preserves Save ACK on readback failure and retries only GET",
   async () => {
     let readCount = 0;
-    const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/api/broker-months/intakes"))
-        return json({ intake_id: 2, request_id: "r", head_seq: 1, duplicate: false });
+      if (url.endsWith("/api/broker-months/intakes")) return saveAck(init);
       if (url.endsWith("/2")) {
         readCount += 1;
-        return readCount === 1 ? json({}, 503) : json({ ...intake, id: 2 });
+        return readCount === 1 ? json({}, 503) : json(readSaved());
       }
       return reads(input);
     });
@@ -559,15 +583,19 @@ test(
       releaseFirst = resolve;
     });
     let saveCount = 0;
-    const fetcher = vi.fn<typeof fetch>(async (input) => {
+    let firstInit: RequestInit | undefined;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/api/broker-months/intakes")) {
         saveCount += 1;
-        if (saveCount === 1) return firstSave;
-        return json({ intake_id: 3, request_id: "r3", head_seq: 1, duplicate: false });
+        if (saveCount === 1) {
+          firstInit = init;
+          return firstSave;
+        }
+        return saveAck(init, 3);
       }
-      if (url.endsWith("/2")) return json({ ...intake, id: 2, exceptions: ["first_file_flag"] });
-      if (url.endsWith("/3")) return json({ ...intake, id: 3, exceptions: ["second_file_flag"] });
+      if (url.endsWith("/2")) return json(readSaved(2, { exceptions: ["first_file_flag"] }));
+      if (url.endsWith("/3")) return json(readSaved(3, { exceptions: ["second_file_flag"] }));
       return reads(input);
     });
     setup(fetcher);
@@ -583,7 +611,7 @@ test(
     expect(saves(fetcher)).toHaveLength(2);
     expect(screen.queryByText(/blocked.xml/)).not.toBeInTheDocument();
     await act(async () => {
-      releaseFirst(json({ intake_id: 2, request_id: "r2", head_seq: 1, duplicate: false }));
+      releaseFirst(saveAck(firstInit));
     });
     await waitFor(() => expect(input).toBeEnabled(), queryWait);
     const rows = screen.getAllByText("same.xml: Сохранен").map((element) => element.closest("li"));
@@ -607,13 +635,12 @@ test(
   "shared uploader refuses mismatched GET and keeps ACK for GET-only recovery",
   async () => {
     let readsCount = 0;
-    const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/api/broker-months/intakes"))
-        return json({ intake_id: 2, request_id: "r", head_seq: 1, duplicate: false });
+      if (url.endsWith("/api/broker-months/intakes")) return saveAck(init);
       if (url.endsWith("/2")) {
         readsCount++;
-        return json({ ...intake, id: readsCount === 1 ? 99 : 2 });
+        return json(readSaved(2, { id: readsCount === 1 ? 99 : 2 }));
       }
       return reads(input);
     });
@@ -649,6 +676,75 @@ test(
     ).toBeVisible();
     expect(screen.queryByText("uncertain.xml: Не сохранен")).not.toBeInTheDocument();
     expect(saves(fetcher)).toHaveLength(1);
+  },
+  testTimeout,
+);
+
+test.each([
+  ["older head", { head_seq: 0 }],
+  ["missing command in same-ID history", { history: [{ seq: 1, request_id: "another-command" }] }],
+  ["wrong contract", { contract_version: "unrecognized" }],
+])(
+  "retains ACK and GET-only recovery across another batch: %s",
+  async (_reason, patch) => {
+    let firstReads = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/broker-months/intakes")) {
+        const file = formBody(init).get("file") as File;
+        return saveAck(init, file.name === "first.xml" ? 2 : 3);
+      }
+      if (url.endsWith("/2")) {
+        firstReads++;
+        return json(readSaved(2, firstReads === 1 ? patch : {}));
+      }
+      if (url.endsWith("/3")) return json(readSaved(3));
+      return reads(input);
+    });
+    setup(fetcher);
+    await waitForReturns();
+    const input = screen.getByLabelText("XML-файлы");
+    await userEvent.upload(input, syntheticFile("first.xml"));
+    await waitFor(
+      () =>
+        expect(screen.getByRole("button", { name: "Повторить чтение first.xml" })).toBeEnabled(),
+      queryWait,
+    );
+    expect(screen.queryByText("first.xml: Сохранен", { exact: true })).not.toBeInTheDocument();
+    await userEvent.upload(input, syntheticFile("second.xml"));
+    expect(await screen.findByText("second.xml: Сохранен", {}, queryWait)).toBeVisible();
+    const retry = screen.getByRole("button", { name: "Повторить чтение first.xml" });
+    await waitFor(() => expect(retry).toBeEnabled(), queryWait);
+    await userEvent.click(retry);
+    expect(await screen.findByText("first.xml: Сохранен", {}, queryWait)).toBeVisible();
+    expect(firstReads).toBe(2);
+    expect(saves(fetcher)).toHaveLength(2);
+    expect(saves(fetcher).map(([, init]) => (formBody(init).get("file") as File).name)).toEqual([
+      "first.xml",
+      "second.xml",
+    ]);
+  },
+  testTimeout,
+);
+
+test(
+  "rejects an ACK for another request without reading or retrying that command",
+  async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/api/broker-months/intakes")) {
+        const response = await saveAck(init).json();
+        return json({ ...response, request_id: "wrong-command" });
+      }
+      return reads(input);
+    });
+    setup(fetcher);
+    await waitForReturns();
+    await userEvent.upload(screen.getByLabelText("XML-файлы"), syntheticFile("wrong-ack.xml"));
+    expect(
+      await screen.findByText("wrong-ack.xml: Результат сохранения неизвестен", {}, queryWait),
+    ).toBeVisible();
+    expect(saves(fetcher)).toHaveLength(1);
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/2"))).toBe(false);
   },
   testTimeout,
 );
