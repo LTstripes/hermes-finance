@@ -375,7 +375,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await backToClose.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/v2\/close\?month=12&step=future_payouts$/);
-    await expect(page.getByRole("heading", { level: 1, name: /Закрытие месяца/ })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
     await assertNoPageOverflow(page);
     await expect(api.errors).toEqual([]);
   });

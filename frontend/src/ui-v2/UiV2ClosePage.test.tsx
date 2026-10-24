@@ -134,6 +134,21 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("shows snapshot identity and links every manual section back to this Month", async () => {
+    const { mount } = setup("/v2/close?month=12&step=readiness");
+    mount();
+    const nav = await screen.findByRole("navigation", { name: "Ручные разделы месяца" });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Месяц · Август 2031");
+    expect(screen.getByText(/Снимок 30.08.2031/)).toBeVisible();
+    const links = within(nav).getAllByRole("link");
+    expect(links).toHaveLength(8);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toMatch(
+        /^\/v2\/data\/months\/12\?section=(general|income|assets|positions|payouts|budget|liabilities|note)&from=monthly-close-v2&step=readiness&monthId=12$/,
+      );
+    }
+  });
+
   it("resolves the bare route to the shared newest draft and server recommendation", async () => {
     const { mount, state } = setup();
     mount();
@@ -412,7 +427,7 @@ describe("native Monthly Close work mode", () => {
   it("pins the original period when both months and workflow refresh to a reused ID", async () => {
     const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
     state.workflow = readyForClose();
-    const originalHeading = `Закрытие месяца · Август ${state.workflow.month.year}`;
+    const originalHeading = `Месяц · Август ${state.workflow.month.year}`;
     const view = mount();
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     await screen.findByRole("alertdialog");

@@ -560,6 +560,6 @@ test("v2 Close actual_payouts routes to the native statement-import anchor and b
   await backToClose.focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=actual_payouts$/);
-  await expect(page.getByRole("heading", { level: 1, name: /Закрытие месяца/ })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
   expect(api.errors).toEqual([]);
 });

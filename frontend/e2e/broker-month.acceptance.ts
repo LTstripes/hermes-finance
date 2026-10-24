@@ -1232,3 +1232,213 @@ test("durable full source observations survive reload and reviewed currency over
     (await (await request.get(`/api/broker-months/intakes/${intake.id}`)).json()).state.overrides,
   ).toEqual({ RU000A008815: "USD" });
 });
+
+test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload, corrections and negative Close", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(120000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  async function post(path: string, data: unknown) {
+    const result = await request.post(path, { data });
+    expect(result.ok(), await result.text()).toBe(true);
+    return result.json();
+  }
+  const month = await post("/api/months", {
+    year: 2034,
+    month: 5,
+    snapshot_date: "2034-06-01",
+    source: "manual",
+  });
+  const brokerA = await post("/api/accounts", {
+    name: "Month synthetic broker A",
+    account_type: "brokerage",
+  });
+  const brokerB = await post("/api/accounts", {
+    name: "Month synthetic broker B",
+    account_type: "iis",
+  });
+  const savings = await post("/api/accounts", {
+    name: "Month synthetic savings",
+    account_type: "deposit",
+  });
+  const rub = (amount: string) => ({ amount, currency: "RUB" });
+  const salary = await request.put(`/api/incomes/salary/${month.id}`, {
+    data: {
+      gross_amount: rub("100000.00"),
+      tax_amount: rub("13000.00"),
+      net_amount: rub("87000.00"),
+    },
+  });
+  expect(salary.ok()).toBe(true);
+  await post("/api/deposits", {
+    reporting_month_id: month.id,
+    account_id: savings.id,
+    name: "Month synthetic deposit",
+    deposit_type: "deposit",
+    balance: rub("12345.67"),
+    annual_rate: "10.00",
+  });
+  await post("/api/debts", {
+    reporting_month_id: month.id,
+    debt_type: "credit_card",
+    name: "Month synthetic credit card",
+    current_balance: rub("7654.32"),
+  });
+  await post("/api/comments", {
+    reporting_month_id: month.id,
+    text: "Protected synthetic month comment",
+  });
+  const manual = async () =>
+    Promise.all(
+      ["incomes", "deposits", "debts", "comments", "positions"].map(async (name) =>
+        (await request.get(`/api/${name}?month_id=${month.id}`)).json(),
+      ),
+    );
+  const instrumentsBefore = await (await request.get("/api/instruments")).json();
+  await post("/api/positions", {
+    reporting_month_id: month.id,
+    account_id: brokerA.id,
+    instrument_id: instrumentsBefore.find((row: { isin: string }) => row.isin === "RU000A000000")
+      .id,
+    quantity: "3",
+    average_cost_per_unit: rub("99.00"),
+    market_price_per_unit: rub("101.00"),
+    price_source: "manual",
+    price_date: "2034-05-31",
+    notes: "Protected synthetic manual position",
+  });
+  const before = await manual();
+  const rawA = await (await request.get("/api/synthetic-broker-source/month-ui-a")).body();
+  const rawB = await (await request.get("/api/synthetic-broker-source/month-ui-b")).body();
+  const fileA = {
+    name: "Брокерский 7654321 (01.05.34-31.05.34).xml",
+    mimeType: "application/xml",
+    buffer: rawA,
+  };
+  const fileB = {
+    name: "Брокерский 8765432 (01.05.34-31.05.34).xml",
+    mimeType: "application/xml",
+    buffer: rawB,
+  };
+  const fileBad = {
+    name: "broken.xml",
+    mimeType: "application/xml",
+    buffer: Buffer.from("<broken>"),
+  };
+  let saves = 0;
+  const financialPosts: string[] = [];
+  page.on("request", (sent) => {
+    const path = new URL(sent.url()).pathname;
+    if (sent.method() === "POST" && path === "/api/broker-months/intakes") saves++;
+    if (sent.method() === "POST" && (path.endsWith("/apply") || path.endsWith("/close")))
+      financialPosts.push(path);
+  });
+  await page.goto(`/v2/close?month=${month.id}`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Месяц.*Май\s2034/);
+  await expect(page.getByText(/Снимок 01.06.2034/)).toBeVisible();
+  const sourcePanel = page.getByRole("region", { name: "XML и исключения" });
+  let failedRead = false;
+  await page.route(/\/api\/broker-months\/intakes\/\d+$/, async (route) => {
+    if (!failedRead && route.request().method() === "GET") {
+      failedRead = true;
+      await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+    } else await route.continue();
+  });
+  await sourcePanel.getByLabel("XML-файлы").setInputFiles([fileA, fileBad, fileB]);
+  const retry = sourcePanel.getByRole("button", { name: /^Повторить чтение / });
+  await expect(retry).toBeEnabled();
+  expect(saves).toBe(3);
+  await retry.click();
+  expect(saves).toBe(3);
+
+  await expect(sourcePanel.getByText(`${fileA.name}: Сохранен`, { exact: true })).toBeVisible();
+  await expect(sourcePanel.getByText("broken.xml: Не сохранен", { exact: true })).toBeVisible();
+  await expect(sourcePanel.getByText(`${fileB.name}: Сохранен`, { exact: true })).toBeVisible();
+  expect(saves).toBe(3);
+  const currentIntakes = async () =>
+    (await (await request.get("/api/broker-months/intakes?include_unbound=true")).json()).filter(
+      (row: { covered_from: string }) => row.covered_from === "2034-05-01",
+    );
+  const saved = await currentIntakes();
+  expect(saved).toHaveLength(2);
+  for (const row of saved) {
+    expect(row.financial_authority).toBe("none");
+    expect(row.state.account_id).toBeNull();
+    expect(row.state.reporting_month_id).toBeNull();
+  }
+  expect(await manual()).toEqual(before);
+  expect(await (await request.get("/api/instruments")).json()).toEqual(instrumentsBefore);
+  await sourcePanel.getByLabel("XML-файлы").setInputFiles([fileA, fileB]);
+  await expect.poll(() => saves).toBe(5);
+  await expect(sourcePanel.getByLabel("XML-файлы")).toBeEnabled();
+  expect(await currentIntakes()).toHaveLength(2);
+  const picker = sourcePanel.getByLabel("Счёт источника месяца");
+  const list = sourcePanel.getByRole("list", { name: "Источники и исключения месяца" });
+  await picker.selectOption("7654321");
+  await expect(list).not.toContainText("8765432");
+  await picker.selectOption("8765432");
+  await expect(list).not.toContainText("7654321");
+  await page.goBack();
+  await expect(picker).toHaveValue("7654321");
+  await page.reload();
+  await expect(picker).toHaveValue("7654321");
+  await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7654321" }).click();
+  await expect(page).toHaveURL(/source_account=7654321&bond_period=2034-05-01#bond-slice/);
+  await expect(page.getByRole("region", { name: "Детали облигации RU000A000001" })).toBeVisible();
+  await page.goBack();
+  await expect(picker).toHaveValue("7654321");
+  await page.getByRole("link", { name: /Снимок и общие данные/ }).click();
+  await page.getByLabel("Дата снимка", { exact: true }).fill("2034-05-31");
+  await page.getByRole("button", { name: "Сохранить общие данные", exact: true }).click();
+  await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
+  await page.getByRole("link", { name: "Вернуться к закрытию", exact: true }).click();
+  await expect(page.getByText(/Снимок 31.05.2034/)).toBeVisible();
+  await picker.selectOption("8765432");
+  const sourceB = (await currentIntakes()).find(
+    (row: { document: { filename_account: string } }) =>
+      row.document.filename_account === "8765432",
+  );
+  await sourcePanel.getByRole("button", { name: `Разобрать и исправить #${sourceB.id}` }).click();
+  const journal = page.getByRole("region", { name: "Долговечный разбор источника" });
+  await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceB.id));
+  await page.getByLabel("Оригинальный XML MyBroker", { exact: true }).setInputFiles(fileB);
+  await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(brokerB.id));
+  await expect(journal.getByRole("option", { name: /Synthetic unknown month bond/ })).toHaveCount(
+    1,
+  );
+  await journal.getByLabel("Валюта предложения счёта").fill("RUB");
+  await journal.getByRole("button", { name: "Проверить изменения разбора", exact: true }).click();
+  await expect(journal.getByText(/финансовых изменений — 0/)).toBeVisible();
+  await journal
+    .getByRole("button", { name: "Подтвердить сохранение разбора", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get(`/api/broker-months/intakes/${sourceB.id}`)).json()).state
+          .account_id,
+    )
+    .toBe(brokerB.id);
+  await page.reload();
+  await expect(picker).toHaveValue("8765432");
+  await page.getByRole("link", { name: "Открыть итоговую проверку", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
+  const denied = await request.post(`/api/months/${month.id}/close`);
+  expect(denied.ok()).toBe(false);
+  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("draft");
+  expect(await manual()).toEqual(before);
+  expect(await (await request.get("/api/instruments")).json()).toEqual(instrumentsBefore);
+  expect(financialPosts).toEqual([]);
+  expect(brokerA.id).not.toBe(brokerB.id);
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+  await page.screenshot({
+    path: info.outputPath("month-two-accounts-negative-close-1440.png"),
+    fullPage: true,
+  });
+});

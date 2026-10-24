@@ -602,3 +602,53 @@ test(
   },
   testTimeout,
 );
+
+test(
+  "shared uploader refuses mismatched GET and keeps ACK for GET-only recovery",
+  async () => {
+    let readsCount = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/broker-months/intakes"))
+        return json({ intake_id: 2, request_id: "r", head_seq: 1, duplicate: false });
+      if (url.endsWith("/2")) {
+        readsCount++;
+        return json({ ...intake, id: readsCount === 1 ? 99 : 2 });
+      }
+      return reads(input);
+    });
+    setup(fetcher);
+    await waitForReturns();
+    await userEvent.upload(screen.getByLabelText("XML-файлы"), syntheticFile("mismatch.xml"));
+    const retry = await screen.findByRole(
+      "button",
+      { name: "Повторить чтение mismatch.xml" },
+      queryWait,
+    );
+    await waitFor(() => expect(retry).toBeEnabled(), queryWait);
+    await userEvent.click(retry);
+    expect(await screen.findByText("mismatch.xml: Сохранен", {}, queryWait)).toBeVisible();
+    expect(saves(fetcher)).toHaveLength(1);
+    expect(readsCount).toBe(2);
+  },
+  testTimeout,
+);
+
+test(
+  "shared uploader reports lost Save ACK as uncertain without a blind retry",
+  async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).endsWith("/api/broker-months/intakes")) throw new TypeError("network lost");
+      return reads(input);
+    });
+    setup(fetcher);
+    await waitForReturns();
+    await userEvent.upload(screen.getByLabelText("XML-файлы"), syntheticFile("uncertain.xml"));
+    expect(
+      await screen.findByText("uncertain.xml: Результат сохранения неизвестен", {}, queryWait),
+    ).toBeVisible();
+    expect(screen.queryByText("uncertain.xml: Не сохранен")).not.toBeInTheDocument();
+    expect(saves(fetcher)).toHaveLength(1);
+  },
+  testTimeout,
+);

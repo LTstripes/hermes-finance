@@ -207,6 +207,20 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind in {"month-ui-a", "month-ui-b"}:
+                from bond_source_fixture import original
+
+                raw, _ = original("7654321" if kind == "month-ui-a" else "8765432")
+                raw = raw.replace(b"2030", b"2034")
+                if kind == "month-ui-b":
+                    tree = ET.fromstring(raw)
+                    position = tree.find(".//{MyBroker}Details[@ISIN1]")
+                    unknown = deepcopy(position)
+                    unknown.set("ISIN1", "RU000MONTH01")
+                    unknown.set("active_name", "Synthetic unknown month bond")
+                    tree.find(".//{MyBroker}Details_Collection").append(unknown)
+                    raw = ET.tostring(tree, encoding="utf-8")
+                return Response(raw, media_type="application/xml")
             if kind == "source-inbox":
                 return Response(inbox_xml, media_type="application/xml")
             if kind in {"original-first", "session"}:

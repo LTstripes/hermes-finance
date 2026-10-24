@@ -28,7 +28,7 @@ describe("UiV2Shell native navigation", () => {
     const user = userEvent.setup();
     renderShell();
     expect(screen.getByText("Основной интерфейс")).toBeVisible();
-    const close = screen.getByRole("link", { name: "Закрыть месяц" });
+    const close = screen.getByRole("link", { name: "Месяц" });
     expect(close).toHaveAttribute("href", "/v2/close");
     close.focus();
     expect(close).toHaveFocus();

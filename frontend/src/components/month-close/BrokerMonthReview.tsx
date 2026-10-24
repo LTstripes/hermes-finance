@@ -190,7 +190,15 @@ function AccountAliases({ preview }: { preview: BrokerMonthPreview }) {
   );
 }
 
-export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed: boolean }) {
+export function BrokerMonthReview({
+  monthId,
+  closed,
+  intakeSelection,
+}: {
+  monthId: number;
+  closed: boolean;
+  intakeSelection?: { id: number } | null;
+}) {
   const queryClient = useQueryClient();
   const { session, original } = useBrokerOriginalSession();
   const { file, accountId } = original;
@@ -412,7 +420,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
                 aria-label="Оригинальный XML MyBroker"
                 type="file"
                 accept=".xml"
-                key={monthId}
+                key={`${monthId}:${original.epoch}`}
                 onChange={(e) => {
                   const original = e.target.files?.[0] ?? null;
                   session.select(original, monthId, "");
@@ -488,6 +496,7 @@ export function BrokerMonthReview({ monthId, closed }: { monthId: number; closed
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
         <SourceIntakeJournal
+          intakeSelection={intakeSelection}
           monthId={monthId}
           closed={closed}
           disabled={busy || Boolean(original.pending)}

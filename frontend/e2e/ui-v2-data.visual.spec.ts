@@ -302,7 +302,7 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
     page.getByRole("link", { name: "Открыть закрытие месяца →" }).press("Enter"),
   ]);
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=readiness$/);
-  await expect(page.getByRole("heading", { name: /Закрытие месяца/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Месяц/ })).toBeVisible();
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
