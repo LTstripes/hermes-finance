@@ -115,6 +115,7 @@ def update_expense_entry(
         entry.category = _normalize_text(category, field="category")
     if amount is not None:
         entry.amount_kopecks = _normalize_amount(amount, field="amount")
+        entry.actual_fact_origin = "saved_actual_v1"
     if expense_type is not None:
         entry.expense_type = _coerce_expense_type(expense_type).value
     if is_recurring is not None:
@@ -194,6 +195,7 @@ def update_saving_allocation(
         allocation.destination = _normalize_text(destination, field="destination")
     if amount is not None:
         allocation.amount_kopecks = _normalize_amount(amount, field="amount")
+        allocation.actual_fact_origin = "saved_actual_v1"
     if notes is not None:
         allocation.notes = notes
     session.commit()

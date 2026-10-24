@@ -151,6 +151,7 @@ def _copy_mandatory_expenses(session: Session, *, source_id: int, target_id: int
     for row in rows:
         session.add(
             ExpenseEntry(
+                actual_fact_origin="clone_template_v1",
                 reporting_month_id=target_id,
                 category=row.category,
                 amount_kopecks=row.amount_kopecks,
@@ -168,6 +169,7 @@ def _copy_savings(session: Session, *, source_id: int, target_id: int) -> None:
     for row in rows:
         session.add(
             SavingAllocation(
+                actual_fact_origin="clone_template_v1",
                 reporting_month_id=target_id,
                 destination=row.destination,
                 amount_kopecks=row.amount_kopecks,
@@ -254,6 +256,7 @@ def _copy_salary_settings(session: Session, *, source_id: int, target_id: int) -
     first = rows[0]
     session.add(
         IncomeEntry(
+            actual_fact_origin="clone_template_v1",
             reporting_month_id=target_id,
             income_type=IncomeType.SALARY.value,
             name=first.name,

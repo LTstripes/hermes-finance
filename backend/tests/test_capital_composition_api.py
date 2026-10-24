@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month_http
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -186,7 +187,7 @@ def test_fixed_pair_set_removes_exact_mixed_components_once(client, cash, deposi
         _linked_debt(client, month_id, accounts[2] if i == 0 else accounts[3], "3.00")
         _create_cash(client, month_id, "2.00" if i == 0 else "5.00")
         _create_debt(client, month_id, "4.00" if i == 0 else "1.00")
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     explanation = body["explanation"]
     assert debt_ids[0] != debt_ids[1]
@@ -222,7 +223,7 @@ def test_pair_explanation_reopen_relink_reclose_fresh_readback(client):
         for account_id in accounts:
             _create_cash(client, month_id, "100.00", account_id=account_id)
         debts.append(_linked_debt(client, month_id, accounts[0], "80.00"))
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     original = _comparison(client)
     assert len(original["explanation"]["pairs"]) == 1
     assert client.post(f"/api/months/{months[0]}/reopen").status_code == 200
@@ -233,7 +234,7 @@ def test_pair_explanation_reopen_relink_reclose_fresh_readback(client):
         ).status_code
         == 200
     )
-    assert client.post(f"/api/months/{months[0]}/close").status_code == 200
+    assert close_fixture_month_http(client, months[0]).status_code == 200
     relinked = _comparison(client)
     assert relinked["explanation"]["pairs"] == []
     assert relinked["explanation"]["noncomparable_account_ids"] == accounts
@@ -254,7 +255,7 @@ def test_pair_explanation_reopen_relink_reclose_fresh_readback(client):
         ).status_code
         == 409
     )
-    assert client.post(f"/api/months/{months[0]}/close").status_code == 200
+    assert close_fixture_month_http(client, months[0]).status_code == 200
     assert _comparison(client)["explanation"] == original["explanation"]
 
 
@@ -269,7 +270,7 @@ def test_explanation_partial_coverage_and_invalid_missing_pair_fail_closed(clien
     for month_id in months:
         _create_cash(client, month_id, "0.00", account_id=known)
         _linked_debt(client, month_id, known, "0.00")
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     assert body["liquid_capital_net_delta_coverage"]["status"] == "partial"
     assert body["explanation"]["pairs"][0]["net_contribution_delta"] == _rub("0.00")
@@ -286,7 +287,7 @@ def test_explanation_partial_coverage_and_invalid_missing_pair_fail_closed(clien
 def test_explanation_without_any_snapshot_is_unavailable(client):
     for m in (1, 2):
         month_id = _create_month(client, year=2039, month=m, snapshot_date=f"2039-0{m}-28")
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     assert body["liquid_capital_net_delta_coverage"]["status"] == "unavailable"
     assert body["explanation"] is None
@@ -318,7 +319,7 @@ def test_pair_residuals_after_cash_exclusion_preserves_deposit_evidence(
         _create_deposit(client, month_id, account_id, "40.00")
         _linked_debt(client, month_id, account_id, "80.00" if i == 0 else "20.00")
         _create_cash(client, month_id, "10.00" if i == 0 else "15.00")
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     assert _comparison(client)["explanation"]["pairs"][0]["net_contribution_delta"] == _rub("60.00")
     month_id = months[excluded_endpoint]
     assert client.post(f"/api/months/{month_id}/reopen").status_code == 200
@@ -327,7 +328,7 @@ def test_pair_residuals_after_cash_exclusion_preserves_deposit_evidence(
     )
     assert response.status_code == 200, response.text
     assert response.json()["include_in_capital"] is False
-    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     pair = body["explanation"]["pairs"][0]
     assert pair["previous"]["account_balance"] == _rub(
@@ -363,7 +364,7 @@ def test_comparison_link_projection_uses_same_snapshot_as_canonical_totals(clien
         for account_id in accounts:
             _create_cash(client, month_id, "100.00", account_id=account_id)
         debts.append(_linked_debt(client, month_id, accounts[0], "80.00"))
-        assert client.post(f"/api/months/{month_id}/close").status_code == 200
+        assert close_fixture_month_http(client, month_id).status_code == 200
     database = client.app.state.database
     with database.engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
@@ -405,12 +406,12 @@ def test_known_capital_subtotal_carries_account_coverage_through_all_read_models
     first = _create_month(client, year=2033, month=1, snapshot_date="2033-01-31")
     _create_cash(client, first, "100.00", account_id=account_a)
     _create_cash(client, first, "0.00", account_id=account_b)
-    assert client.post(f"/api/months/{first}/close").status_code == 200
+    assert close_fixture_month_http(client, first).status_code == 200
 
     second = _create_month(client, year=2033, month=2, snapshot_date="2033-02-28")
     _create_cash(client, second, "120.00", account_id=account_a)
     _create_cash(client, second, "5.00")  # Synthetic cash contributes, but cannot cover B.
-    assert client.post(f"/api/months/{second}/close").status_code == 200
+    assert close_fixture_month_http(client, second).status_code == 200
 
     history = client.get("/api/analytics/capital-composition").json()["points"]
     assert [point["liquid_capital_net"] for point in history] == [_rub("100.00"), _rub("125.00")]
@@ -470,7 +471,7 @@ def test_closed_history_uses_one_snapshot_when_month_is_reopened_mid_read(
         amount="100.00",
         price_date="2032-02-29",
     )
-    closed = client.post(f"/api/months/{month_id}/close")
+    closed = close_fixture_month_http(client, month_id)
     assert closed.status_code == 200, closed.text
 
     database = client.app.state.database
@@ -566,7 +567,7 @@ def test_capital_composition_closed_history_gap_and_known_zero(client: TestClien
         price_date="2031-05-31",
     )
     _create_debt(client, may_id, "100000.00")
-    close_may = client.post(f"/api/months/{may_id}/close")
+    close_may = close_fixture_month_http(client, may_id)
     assert close_may.status_code == 200, close_may.text
 
     june_id = _create_month(client, year=2031, month=6, snapshot_date="2031-06-30")
@@ -593,7 +594,7 @@ def test_capital_composition_closed_history_gap_and_known_zero(client: TestClien
         price_date="2031-07-31",
     )
     _create_debt(client, july_id, "50000.00")
-    close_july = client.post(f"/api/months/{july_id}/close")
+    close_july = close_fixture_month_http(client, july_id)
     assert close_july.status_code == 200, close_july.text
 
     response = client.get("/api/analytics/capital-composition")
@@ -645,7 +646,7 @@ def test_capital_composition_closed_history_gap_and_known_zero(client: TestClien
 def test_reopened_month_disappears_from_capital_composition_history(client: TestClient) -> None:
     month_id = _create_month(client, year=2032, month=1, snapshot_date="2032-01-31")
     _create_cash(client, month_id, "1000.00")
-    close = client.post(f"/api/months/{month_id}/close")
+    close = close_fixture_month_http(client, month_id)
     assert close.status_code == 200, close.text
 
     before = client.get("/api/analytics/capital-composition")
@@ -714,7 +715,7 @@ def test_closed_report_comparison_uses_closed_pair_and_reconciles_deltas(
         price_date="2033-01-31",
     )
     _create_debt(client, previous_id, "100000.00")
-    assert client.post(f"/api/months/{previous_id}/close").status_code == 200
+    assert close_fixture_month_http(client, previous_id).status_code == 200
 
     draft_id = _create_month(client, year=2033, month=2, snapshot_date="2033-02-28")
     _create_cash(client, draft_id, "9999999.00")
@@ -739,7 +740,7 @@ def test_closed_report_comparison_uses_closed_pair_and_reconciles_deltas(
         price_date="2033-03-31",
     )
     _create_debt(client, current_id, "50000.00")
-    assert client.post(f"/api/months/{current_id}/close").status_code == 200
+    assert close_fixture_month_http(client, current_id).status_code == 200
 
     body = _comparison(client)
     assert body["comparison_basis"] == "latest_closed_to_previous_closed"
@@ -776,7 +777,7 @@ def test_closed_report_comparison_exposes_first_closed_report_without_zero_basel
 ) -> None:
     month_id = _create_month(client, year=2034, month=1, snapshot_date="2034-01-31")
     _create_cash(client, month_id, "1000.00")
-    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+    assert close_fixture_month_http(client, month_id).status_code == 200
 
     body = _comparison(client)
     assert body["availability"] == "previous_closed_report_unavailable"
@@ -828,7 +829,7 @@ def test_closed_report_comparison_does_not_double_count_linked_debt(
         ).status_code
         == 200
     )
-    assert client.post(f"/api/months/{previous_id}/close").status_code == 200
+    assert close_fixture_month_http(client, previous_id).status_code == 200
 
     current_id = _create_month(client, year=2035, month=2, snapshot_date="2035-02-28")
     _create_cash(client, current_id, "150.00", account_id=account["id"])
@@ -849,7 +850,7 @@ def test_closed_report_comparison_does_not_double_count_linked_debt(
         ).status_code
         == 200
     )
-    assert client.post(f"/api/months/{current_id}/close").status_code == 200
+    assert close_fixture_month_http(client, current_id).status_code == 200
 
     body = _comparison(client)
     assert body["current"]["liquid_assets_total"] == _rub("150.00")

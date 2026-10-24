@@ -254,6 +254,11 @@ def test_bad_whole_class_material_rejects_attestation_and_blocks_read(env, mutat
     session.commit()
     with pytest.raises(ValueError, match=reason):
         attest(env)
+    if mutation == "disappear":
+        # Retained historical CLOSED with missing observations remains readable;
+        # the new ordinary Close policy must not erase this legacy case.
+        env[2][1].status = "closed"
+        session.commit()
     close(env)
     result = read(env)
     assert reason in result["reason_codes"]

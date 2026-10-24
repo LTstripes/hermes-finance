@@ -34,6 +34,7 @@ from hermes_finance.services.applied_statement_events import (
     list_applied_statement_event_revisions,
     list_applied_statement_events,
 )
+from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.instruments import create_instrument, list_instruments
 from hermes_finance.services.investment_cash_flows import (
     create_investment_cash_flow,
@@ -910,6 +911,9 @@ def test_closed_month_rejects_with_zero_writes(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, _ = build_env(session)
+        create_cash_balance(
+            session, reporting_month_id=month_id, name="Recorded cash", amount="0.00"
+        )
         close_reporting_month(session, month_id)
         document = build_income_report_pdf()
         row = preview(session, document, account_id).rows[0]
@@ -985,6 +989,9 @@ def test_spanning_months_fail_atomically_when_one_month_is_invalid(tmp_path: Pat
         january_id, account_id, _ = build_env(session, extra_isins=(SYN_ISIN_COUPON,))
         february = create_reporting_month(
             session, year=2026, month=2, snapshot_date=date(2026, 2, 28)
+        )
+        create_cash_balance(
+            session, reporting_month_id=february.id, name="Recorded cash", amount="0.00"
         )
         close_reporting_month(session, february.id)
         document = build_income_report_pdf(

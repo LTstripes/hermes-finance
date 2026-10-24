@@ -1,7 +1,7 @@
 from calendar import monthrange
-from datetime import date
+from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,15 @@ class ClosedReportingMonthError(ValueError):
 
 CLOSE_SNAPSHOT_DATE_REQUIRED_CODE = "snapshot_date_required"
 CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE = "snapshot_date is required before closing a reporting month"
+CLOSE_EMPTY_MANUAL_MONTH_CODE = "empty_manual_month"
+CLOSE_EMPTY_MANUAL_MONTH_MESSAGE = "В ручном месяце нет сохранённых финансовых фактов."
+
+
+class CloseGuardError(ValueError):
+    def __init__(self, code: str, message: str, status_code: int = 422):
+        self.code = code
+        self.status_code = status_code
+        super().__init__(message)
 
 
 def close_hard_guards(
@@ -26,16 +35,24 @@ def close_hard_guards(
 ) -> tuple[tuple[str, str], ...]:
     """Return ``(code, message)`` pairs that the authoritative close already rejects.
 
-    Legacy accounts retain advisory completeness. Only explicitly source-owned
-    broker components require live source readiness (#773 Owner decision).
+    Manual DRAFTs require at least one actual saved fact (#952). Legacy account
+    completeness remains advisory; source-owned readiness is still mandatory.
     """
     snapshot_date = getattr(reporting_month, "snapshot_date", None)
     if snapshot_date is None:
         return ((CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE),)
     if session is not None:
         from hermes_finance.services.broker_months import broker_month_close_blockers
+        from hermes_finance.services.month_actual_facts import has_month_actual_facts
 
-        return broker_month_close_blockers(session, reporting_month.id)
+        blockers = list(broker_month_close_blockers(session, reporting_month.id))
+        if (
+            reporting_month.status == ReportingMonthStatus.DRAFT.value
+            and reporting_month.source == ReportingMonthSource.MANUAL.value
+            and not has_month_actual_facts(session, reporting_month)
+        ):
+            blockers.append((CLOSE_EMPTY_MANUAL_MONTH_CODE, CLOSE_EMPTY_MANUAL_MONTH_MESSAGE))
+        return tuple(blockers)
     return ()
 
 
@@ -264,13 +281,30 @@ def delete_reporting_month(session: Session, month_id: int) -> None:
         raise
 
 
+def reserve_close_writer(session: Session, month_id: int) -> None:
+    if session.new or session.dirty or session.deleted:
+        raise CloseGuardError(
+            "close_pending_mutations", "Save or discard pending edits before Close", 409
+        )
+    session.execute(
+        text("UPDATE reporting_months SET status = status WHERE id = :id"), {"id": month_id}
+    )
+    # Canonical source readers may encounter previously loaded dependency rows.
+    # Reload them under this reservation, including after a competing writer.
+    for instance in list(session.identity_map.values()):
+        # Keep already-returned service objects materialized for callers using
+        # expire_on_commit=False, while loading current source dependencies.
+        identity = inspect(instance).identity
+        if session.get(type(instance), identity, populate_existing=True) is None:
+            if instance in session:
+                session.expunge(instance)
+
+
 def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
     try:
         # Same writer reservation as child edits and source batch Apply. No
         # source/mapping/financial mutation can commit between recheck and Close.
-        session.execute(
-            text("UPDATE reporting_months SET status = status WHERE id = :id"), {"id": month_id}
-        )
+        reserve_close_writer(session, month_id)
         reporting_month = get_reporting_month(session, month_id)
         session.refresh(reporting_month)
         if reporting_month.status == ReportingMonthStatus.CLOSED.value:
@@ -278,7 +312,7 @@ def close_reporting_month(session: Session, month_id: int) -> ReportingMonth:
             return get_reporting_month(session, month_id)
         blockers = close_hard_guards(reporting_month, session)
         if blockers:
-            raise ValueError(blockers[0][1])
+            raise CloseGuardError(*blockers[0])
         reporting_month.status = ReportingMonthStatus.CLOSED.value
         session.commit()
     except BaseException:
@@ -301,6 +335,8 @@ def reopen_reporting_month(session: Session, month_id: int) -> ReportingMonth:
     session.refresh(reporting_month)
     invalidate_class_coverages_for_reopen(session, reporting_month)
     reporting_month.status = ReportingMonthStatus.DRAFT.value
+    # Retire every header confirmation, even an explicit Reopen of a DRAFT.
+    reporting_month.updated_at = datetime.now(UTC)
     session.commit()
     session.refresh(reporting_month)
     return reporting_month

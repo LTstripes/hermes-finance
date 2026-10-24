@@ -8,16 +8,21 @@ the unified error handlers registered in ``api.errors``.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.services.intentional_empty_close import (
+    IntentionalEmptyCloseCommand,
+    close_intentionally_empty_month,
+    read_intentional_empty_close,
+)
 from hermes_finance.services.month_clone import clone_reporting_month
 from hermes_finance.services.reporting_months import (
-    close_hard_guards,
     close_reporting_month,
     create_reporting_month,
     delete_reporting_month,
@@ -153,15 +158,56 @@ def close_month(
     month_id: int,
     session: Session = Depends(session_for_request),
 ) -> ReportingMonthResponse:
-    month = get_reporting_month(session, month_id)
-    blockers = close_hard_guards(month)
-    if blockers:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=blockers[0][1],
-        )
     closed = close_reporting_month(session, month_id)
     return ReportingMonthResponse.model_validate(closed)
+
+
+class IntentionalEmptyCloseReceiptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    request_id: str
+    month_id: int
+    year: int
+    month: int
+    snapshot_date: date
+    expected_identity: str
+    reason: str
+    policy_version: Literal["intentional_empty_manual_month_v1"]
+    closed_at: datetime
+    result_status: Literal["closed"] = "closed"
+
+    @field_validator("closed_at")
+    @classmethod
+    def utc_server_time(cls, value: datetime) -> datetime:
+        # SQLite retains UTC values without their tzinfo.
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+@router.post(
+    "/{month_id}/close-intentionally-empty", response_model=IntentionalEmptyCloseReceiptOut
+)
+def close_intentionally_empty(
+    month_id: int,
+    payload: IntentionalEmptyCloseCommand,
+    session: Session = Depends(session_for_request),
+) -> IntentionalEmptyCloseReceiptOut:
+    return IntentionalEmptyCloseReceiptOut.model_validate(
+        close_intentionally_empty_month(session, month_id, payload)
+    )
+
+
+@router.get(
+    "/{month_id}/intentional-empty-close-receipts/{request_id}",
+    response_model=IntentionalEmptyCloseReceiptOut,
+)
+def get_intentional_empty_close_receipt(
+    month_id: int,
+    request_id: str,
+    session: Session = Depends(session_for_request),
+) -> IntentionalEmptyCloseReceiptOut:
+    return IntentionalEmptyCloseReceiptOut.model_validate(
+        read_intentional_empty_close(session, month_id, request_id)
+    )
 
 
 @router.post("/{month_id}/reopen", response_model=ReportingMonthResponse)

@@ -3,6 +3,7 @@
 from datetime import date
 from pathlib import Path
 
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -11,7 +12,6 @@ from hermes_finance.persistence import Base
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.normalized_bonus import normalized_bonus
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
 )
 
@@ -67,7 +67,7 @@ def test_three_closed_months_average(tmp_path: Path) -> None:
         for i, net in enumerate(("3000.00", "6000.00", "9000.00"), start=1):
             month_id = build_month(session, 2031, i)
             add_bonus(session, month_id, net)
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
 
         result = normalized_bonus(session)
         # (3000 + 6000 + 9000) / 12 = 1500.00 RUB
@@ -92,7 +92,7 @@ def test_draft_months_are_excluded(tmp_path: Path) -> None:
         # draft month intentionally left open
         closed_id = build_month(session, 2031, 2)
         add_bonus(session, closed_id, "2000.00")
-        close_reporting_month(session, closed_id)
+        close_fixture_month(session, closed_id)
 
         result = normalized_bonus(session)
         assert result.count_months == 1
@@ -112,7 +112,7 @@ def test_multiple_bonus_entries_sum_per_month(tmp_path: Path) -> None:
         month_id = build_month(session, 2031, 1)
         add_bonus(session, month_id, "500.00")
         add_bonus(session, month_id, "1500.00")
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
 
         result = normalized_bonus(session)
         assert result.count_months == 1
@@ -132,10 +132,10 @@ def test_thirteen_closed_months_use_last_twelve(tmp_path: Path) -> None:
         for i in range(1, 13):
             month_id = build_month(session, 2031, i)
             add_bonus(session, month_id, f"{1000 * i}.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
         month_id = build_month(session, 2032, 1)
         add_bonus(session, month_id, "13000.00")
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
 
         result = normalized_bonus(session)
         # kept: (2031,2)..(2031,12) = 2000..12000 + (2032,1) = 13000 -> sum 90000.00
@@ -160,9 +160,9 @@ def test_closed_month_without_bonus_counts_as_zero(tmp_path: Path) -> None:
     try:
         month_id = build_month(session, 2031, 1)
         add_bonus(session, month_id, "500.00")
-        close_reporting_month(session, month_id)
+        close_fixture_month(session, month_id)
         empty_id = build_month(session, 2031, 2)
-        close_reporting_month(session, empty_id)
+        close_fixture_month(session, empty_id)
 
         result = normalized_bonus(session)
         # (500 + 0) / 12 = 41.67 RUB; observed closed months are explicit,
@@ -184,7 +184,7 @@ def test_result_months_ordered_by_year_month(tmp_path: Path) -> None:
         for year, month in ((2032, 3), (2031, 1), (2032, 1), (2031, 12)):
             month_id = build_month(session, year, month)
             add_bonus(session, month_id, "1000.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
 
         result = normalized_bonus(session)
         assert [(m.year, m.month) for m in result.months] == [

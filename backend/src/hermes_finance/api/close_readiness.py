@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,7 @@ from hermes_finance.services.close_readiness import (
     CloseReadinessItem,
     build_close_readiness,
 )
+from hermes_finance.services.intentional_empty_close import EmptyCloseIdentity
 
 router = APIRouter(prefix="/api/months", tags=["close-readiness"])
 
@@ -31,6 +33,12 @@ class CloseReadinessItemOut(BaseModel):
     context: dict[str, object] = Field(default_factory=dict)
 
 
+class IntentionalEmptyCloseOptionOut(EmptyCloseIdentity):
+    command: Literal["close_intentionally_empty_manual_month"]
+    policy_version: Literal["intentional_empty_manual_month_v1"]
+    eligible: bool
+
+
 class CloseReadinessOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -41,6 +49,7 @@ class CloseReadinessOut(BaseModel):
     source: str
     can_close: bool
     items: list[CloseReadinessItemOut]
+    intentional_empty_close: IntentionalEmptyCloseOptionOut | None = None
 
 
 def _item_out(item: CloseReadinessItem) -> CloseReadinessItemOut:
@@ -61,6 +70,7 @@ def _readiness_out(result: CloseReadiness) -> CloseReadinessOut:
         source=result.source,
         can_close=result.can_close,
         items=[_item_out(item) for item in result.items],
+        intentional_empty_close=result.intentional_empty_close,
     )
 
 

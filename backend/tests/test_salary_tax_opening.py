@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -9,7 +10,6 @@ from hermes_finance.domain import IncomeType
 from hermes_finance.persistence import Base
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
     reopen_reporting_month,
 )
@@ -33,7 +33,7 @@ def build_month(session: Session, year: int, month: int, *, closed: bool = False
         session, year=year, month=month, snapshot_date=date(year, month, 15)
     )
     if closed:
-        close_reporting_month(session, reporting_month.id)
+        close_fixture_month(session, reporting_month.id)
     return reporting_month.id
 
 
@@ -86,7 +86,7 @@ def test_opening_is_not_doubled_by_real_earlier_months(tmp_path: Path) -> None:
         for month in range(1, 5):
             month_id = build_month(session, 2031, month)
             add_salary(session, month_id, "100000.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
         may_id = build_month(session, 2031, 5)
         add_salary(session, may_id, "300000.00")
 
@@ -132,7 +132,7 @@ def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(tmp_path:
             calculate_salary_tax(session, june_id)
 
         add_salary(session, may_id, "100000.00")
-        close_reporting_month(session, may_id)
+        close_fixture_month(session, may_id)
         assert calculate_salary_tax(session, june_id).tax_kopecks == 1_300_000
 
         reopen_reporting_month(session, may_id)
@@ -171,7 +171,7 @@ def test_full_closed_history_works_without_opening_context(tmp_path: Path) -> No
         for month in range(1, 5):
             month_id = build_month(session, 2031, month)
             add_salary(session, month_id, "500000.00")
-            close_reporting_month(session, month_id)
+            close_fixture_month(session, month_id)
         may_id = build_month(session, 2031, 5)
         add_salary(session, may_id, "500000.00")
 

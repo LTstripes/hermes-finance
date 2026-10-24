@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from fastapi.testclient import TestClient
 
 import hermes_finance.services.external_flows as external_flows_service
@@ -30,7 +31,6 @@ from hermes_finance.services.in_kind_boundary_coverage import (
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
     delete_reporting_month,
     reopen_reporting_month,
@@ -109,7 +109,7 @@ def test_month_delete_invalidates_only_intersecting_account_and_date(
         )
         month_id, movement_id = february.id, movement.id
         for month in (january, february, march):
-            close_reporting_month(session, month.id)
+            close_fixture_month(session, month.id)
         reopen_reporting_month(session, month_id)
         delete_reporting_month(session, month_id)
 
@@ -177,7 +177,7 @@ def test_public_performance_stays_unavailable_after_in_kind_month_delete(tmp_pat
         coverage = _coverage(session, account.id)
         _movement(session, february.id, InKindMovementKind.EXTERNAL_IN, None, account.id)
         for month in (january, february, march):
-            close_reporting_month(session, month.id)
+            close_fixture_month(session, month.id)
         account_id, month_id, coverage_id = account.id, february.id, coverage.id
         session.close()
 

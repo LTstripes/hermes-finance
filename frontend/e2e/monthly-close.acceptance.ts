@@ -15,7 +15,8 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   const initial = await (await request.get(workflowPath)).json();
   expect(initial.contract_version).toBe("monthly_close_workflow_v1");
   expect(initial.month).toMatchObject({ id: 1, status: "draft" });
-  expect(initial.readiness.can_close).toBe(true);
+  expect(initial.readiness.can_close).toBe(false);
+  expect(initial.readiness.reason_codes).toContain("empty_manual_month");
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
@@ -38,6 +39,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
   expect(expenseWrites).toBe(1);
   const afterSave = await (await request.get(workflowPath)).json();
+  expect(afterSave.readiness.can_close).toBe(true);
   expect(
     afterSave.final_review.manual_review_cards.find(
       (card: { id: string }) => card.id === "income_budget",
@@ -113,7 +115,23 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   });
   expect(laterResponse.status()).toBe(201);
   const later = await laterResponse.json();
-  expect((await request.post(`/api/months/${later.id}/close`)).status()).toBe(200);
+  const laterReadiness = await (
+    await request.get(`/api/months/${later.id}/close-readiness`)
+  ).json();
+  expect(laterReadiness.can_close).toBe(false);
+  const { eligible, ...laterIdentity } = laterReadiness.intentional_empty_close;
+  expect(eligible).toBe(true);
+  expect(
+    (
+      await request.post(`/api/months/${later.id}/close-intentionally-empty`, {
+        data: {
+          ...laterIdentity,
+          request_id: "synthetic-later-history",
+          reason: "Intentionally empty synthetic archive fixture",
+        },
+      })
+    ).status(),
+  ).toBe(200);
   await page.goto("/v2/reports/1");
   await expect(
     page.getByRole("heading", { name: "Исторический отчёт", exact: true }),
@@ -198,7 +216,21 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
       data: { year, month, snapshot_date, source: "manual" },
     });
     expect(response.ok()).toBe(true);
-    return (await response.json()).id as number;
+    const id = (await response.json()).id as number;
+    // History/navigation cases use a genuine explicitly saved zero observation.
+    // Empty-month confirmation UI is a separate consumer task.
+    expect(
+      (
+        await request.post("/api/cash-balances", {
+          data: {
+            reporting_month_id: id,
+            name: "Synthetic recorded cash",
+            amount: { amount: "0.00", currency: "RUB" },
+          },
+        })
+      ).ok(),
+    ).toBe(true);
+    return id;
   }
   const old = await create(2034, 5, "2034-05-31");
   test.setTimeout(60_000);
@@ -326,6 +358,17 @@ test("a second tab closing a historical month cancels the pending Close without 
   });
   expect(response.ok()).toBe(true);
   const month = await response.json();
+  expect(
+    (
+      await request.post("/api/cash-balances", {
+        data: {
+          reporting_month_id: month.id,
+          name: "Synthetic recorded cash",
+          amount: { amount: "0.00", currency: "RUB" },
+        },
+      })
+    ).ok(),
+  ).toBe(true);
   let posts = 0;
   page.on("request", (sent) => {
     if (sent.method() === "POST" && sent.url().endsWith(`/api/months/${month.id}/close`))

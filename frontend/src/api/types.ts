@@ -106,6 +106,38 @@ export type CloseReadiness = {
   source: ReportingMonthSource;
   can_close: boolean;
   items: CloseReadinessItem[];
+  intentional_empty_close?: IntentionalEmptyCloseOption | null;
+};
+
+export type EmptyCloseIdentity = {
+  month_id: number;
+  year: number;
+  month: number;
+  snapshot_date: string;
+  expected_identity: string;
+};
+
+export type IntentionalEmptyCloseOption = EmptyCloseIdentity & {
+  command: "close_intentionally_empty_manual_month";
+  policy_version: "intentional_empty_manual_month_v1";
+  eligible: boolean;
+};
+
+export type IntentionalEmptyCloseCommand = EmptyCloseIdentity & {
+  command: "close_intentionally_empty_manual_month";
+  policy_version: "intentional_empty_manual_month_v1";
+  request_id: string;
+  reason: string;
+};
+
+// Historical command outcome; this receipt never asserts the current status
+// after Reopen. Consumers must GET the month/readiness again.
+export type IntentionalEmptyCloseReceipt = EmptyCloseIdentity & {
+  request_id: string;
+  policy_version: "intentional_empty_manual_month_v1";
+  reason: string;
+  closed_at: string;
+  result_status: "closed";
 };
 
 export type BackupSource = {

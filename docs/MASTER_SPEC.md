@@ -18,6 +18,18 @@ Reporting month and snapshot date are separate identities. A month may contain a
 
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
+Ordinary Close of a completely unfilled manual DRAFT is blocked with
+`empty_manual_month`. Saved actual month facts, including an explicit zero, make
+the month nonempty; XML is optional and partial completeness remains advisory.
+Notes, plans, forecasts, copied salary/expense/saving templates and source-only
+Save do not fill a month. Copied templates require explicit amount confirmation,
+including zero; legacy rows without provenance are not silently confirmed. A separate
+intentional-empty command requires a fresh exact-period confirmation and reason,
+retains audit and creates no economic facts. It waives only this empty guard;
+snapshot/source/receipt guards remain mandatory. Reopen/clone require new consent.
+The backend contract is in [C3](ARCHITECTURE_AND_CONTRACTS.md#c3-empty-manual-close);
+the user-facing confirmation and Owner UAT require their separate accepted step.
+
 Data → Files permits source review without selecting a month. Keep every observed position, trade, Money occurrence and unsupported branch visible. The full original is indivisible: hiding one problem row does not turn 12 of 13 into a complete source. A default RUB preference is a proposal with provenance, not denomination proof. An incomplete DRAFT may retain unresolved evidence under its explicit contract; it does not waive financial or Close guards.
 
 After a successful ACK, failed readback is recovered by GET. Never replay a financial POST merely because GET failed. If ACK itself is lost, the outcome is uncertain: resolve the same immutable intent/key and committed state. After mapping changes obtain a fresh full-original Preview. Saved decisions may survive restart; original bytes must be reselected for mutations/reparse. C3–C5 own exact rules.

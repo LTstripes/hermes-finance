@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from _month_close_helpers import close_fixture_month
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -13,7 +14,7 @@ from hermes_finance.persistence import Base
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.deposits import create_deposit_snapshot
 from hermes_finance.services.passive_income_history import passive_income_history
-from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
+from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.settings import update_settings
 
 
@@ -45,12 +46,12 @@ def test_history_keeps_closed_points_and_marks_average_window_after_boundary(
             annual_rate="10.00",
             actual_interest_received="100.00",
         )
-        close_reporting_month(session, before_id)
+        close_fixture_month(session, before_id)
 
         boundary_id = create_reporting_month(
             session, year=2031, month=5, snapshot_date=date(2031, 5, 31)
         ).id
-        close_reporting_month(session, boundary_id)
+        close_fixture_month(session, boundary_id)
         draft_id = create_reporting_month(
             session, year=2031, month=6, snapshot_date=date(2031, 6, 30)
         ).id

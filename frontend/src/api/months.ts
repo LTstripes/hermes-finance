@@ -2,6 +2,8 @@ import { apiRequest } from "./client";
 import type {
   CloseReadiness,
   HealthResponse,
+  IntentionalEmptyCloseCommand,
+  IntentionalEmptyCloseReceipt,
   ReportingMonth,
   ReportingMonthClone,
   ReportingMonthCreate,
@@ -33,6 +35,32 @@ export function closeMonth(monthId: number, signal?: AbortSignal): Promise<Repor
 
 export function reopenMonth(monthId: number, signal?: AbortSignal): Promise<ReportingMonth> {
   return apiRequest<ReportingMonth>(`/api/months/${monthId}/reopen`, { method: "POST", signal });
+}
+
+export function closeIntentionallyEmptyMonth(
+  monthId: number,
+  command: IntentionalEmptyCloseCommand,
+  signal?: AbortSignal,
+): Promise<IntentionalEmptyCloseReceipt> {
+  return apiRequest<IntentionalEmptyCloseReceipt>(
+    `/api/months/${monthId}/close-intentionally-empty`,
+    {
+      method: "POST",
+      body: command,
+      signal,
+    },
+  );
+}
+
+export function getIntentionalEmptyCloseReceipt(
+  monthId: number,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<IntentionalEmptyCloseReceipt> {
+  return apiRequest<IntentionalEmptyCloseReceipt>(
+    `/api/months/${monthId}/intentional-empty-close-receipts/${encodeURIComponent(requestId)}`,
+    { method: "GET", signal },
+  );
 }
 
 export function createMonth(

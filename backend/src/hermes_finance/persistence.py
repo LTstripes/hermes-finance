@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Final
 
 from sqlalchemy import (
+    DDL,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -741,6 +743,56 @@ class ReportingMonth(Base):
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class IntentionalEmptyCloseReceipt(Base):
+    """Successful command audit, retained across Reopen and draft deletion.
+
+    Deliberately no month FK: historical identity is immutable, never inherited
+    by a recreated month or clone. This table contains no economic facts.
+    """
+
+    __tablename__ = "intentional_empty_close_receipts"
+    __table_args__ = (
+        CheckConstraint("length(trim(reason)) BETWEEN 1 AND 2000", name="ck_empty_close_reason"),
+        CheckConstraint(
+            "length(expected_identity) = 64 AND length(intent_digest) = 64",
+            name="ck_empty_close_digests",
+        ),
+        CheckConstraint(
+            "policy_version = 'intentional_empty_manual_month_v1'", name="ck_empty_close_policy"
+        ),
+        CheckConstraint(
+            "month_id > 0 AND year BETWEEN 1 AND 9999 AND month BETWEEN 1 AND 12",
+            name="ck_empty_close_period",
+        ),
+        Index("ix_empty_close_month", "month_id", "id"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    intent_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    month_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expected_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+for _operation in ("UPDATE", "DELETE"):
+    event.listen(
+        IntentionalEmptyCloseReceipt.__table__,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER empty_close_receipt_no_{_operation.lower()} "
+            f"BEFORE {_operation} ON intentional_empty_close_receipts "
+            "BEGIN SELECT RAISE(ABORT, 'intentional empty Close audit is immutable'); END"
+        ).execute_if(dialect="sqlite"),
     )
 
 
@@ -1661,6 +1713,9 @@ class IncomeEntry(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )
@@ -2544,6 +2599,9 @@ class ExpenseEntry(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )
@@ -2563,6 +2621,9 @@ class SavingAllocation(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actual_fact_origin: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="saved_actual_v1"
+    )
     reporting_month_id: Mapped[int] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=False
     )

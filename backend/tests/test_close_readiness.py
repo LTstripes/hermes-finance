@@ -181,13 +181,16 @@ def test_close_hard_guards_only_missing_snapshot_date() -> None:
     )
 
 
-def test_empty_january_draft_has_no_invented_hard_blockers(tmp_path: Path) -> None:
+def test_empty_january_draft_requires_explicit_intentional_close(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
     result = build_close_readiness(session, month.id, today=TODAY)
-    assert result.can_close is True
+    assert result.can_close is False
     assert result.status == "draft"
-    assert CloseReadinessSeverity.HARD_BLOCKER.value not in _severities(result)
+    assert [
+        item.code for item in result.items if item.severity is CloseReadinessSeverity.HARD_BLOCKER
+    ] == ["empty_manual_month"]
+    assert result.intentional_empty_close["eligible"] is True
     assert CloseReadinessCode.SNAPSHOT_DATE_REQUIRED.value not in _codes(result)
     assert CloseReadinessCode.SALARY_TAX_HISTORY_INCOMPLETE.value not in _codes(result)
     assert "positions_required" not in _codes(result)
@@ -204,6 +207,8 @@ def test_empty_january_draft_has_no_invented_hard_blockers(tmp_path: Path) -> No
         CloseReadinessCode.BACKUP_NONE.value,
     }
     for item in result.items:
+        if item.code == "empty_manual_month":
+            continue
         if item.severity is CloseReadinessSeverity.WARNING:
             raise AssertionError(f"empty January must not warn: {item.code}")
         assert item.code in empty_or_absent
@@ -270,7 +275,8 @@ def test_active_capital_account_without_monthly_snapshot_is_warning(tmp_path: Pa
     assert len(missing) == 1
     assert missing[0].severity is CloseReadinessSeverity.WARNING
     assert missing[0].context["account_names"] == ["Synthetic Missing Snapshot"]
-    assert result.can_close is True
+    assert result.can_close is False
+    assert "empty_manual_month" in _codes(result)
 
 
 def test_unassigned_cash_does_not_satisfy_single_real_cash_account_snapshot(
@@ -488,7 +494,8 @@ def test_explicit_count_manual_is_resolved_and_does_not_warn(tmp_path: Path) -> 
 def test_closed_month_is_lifecycle_info_not_financial_blocker(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
-    close_reporting_month(session, month.id)
+    month.status = "closed"  # pre-existing legacy CLOSED remains valid
+    session.commit()
     result = build_close_readiness(session, month.id, today=TODAY)
     closed = _by_code(result, CloseReadinessCode.MONTH_ALREADY_CLOSED.value)
     assert len(closed) == 1
@@ -525,6 +532,7 @@ def test_readiness_is_read_only(tmp_path: Path) -> None:
 def test_api_returns_readiness_and_close_still_succeeds_with_warnings(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     month = create_reporting_month(session, year=2031, month=5, snapshot_date=date(2031, 5, 31))
+    create_cash_balance(session, reporting_month_id=month.id, name="Recorded cash", amount="0.00")
     application = create_app(database)
     application.state.quote_preview_clock = lambda: date(2031, 5, 31)
     client = TestClient(application)
@@ -583,7 +591,8 @@ def test_readiness_does_not_perform_network_calls(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("socket.create_connection", boom)
     monkeypatch.setattr("socket.getaddrinfo", boom)
     result = build_close_readiness(session, month.id, today=TODAY)
-    assert result.can_close is True
+    assert result.can_close is False
+    assert "empty_manual_month" in _codes(result)
 
 
 def test_workflow_state_table_observes_normative_precedence() -> None:
@@ -666,7 +675,7 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
         "snapshot_date": "2031-05-31",
         "source": "manual",
     }
-    assert body["recommended_step_id"] == "alfa_baseline"
+    assert body["recommended_step_id"] == "readiness"
     assert [step["order"] for step in body["steps"]] == list(range(1, 10))
     draft_step_ids = [step["id"] for step in body["steps"]]
     assert draft_step_ids == EXPECTED_WORKFLOW_STEP_IDS
@@ -674,7 +683,8 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
     assert body["steps"][0]["state"] == "completed"
     assert body["steps"][0]["completion_basis"] == "domain_fact"
     assert body["steps"][1]["evidence_summary"]["available"] is False
-    assert body["readiness"]["can_close"] is True
+    assert body["readiness"]["can_close"] is False
+    assert "empty_manual_month" in body["readiness"]["reason_codes"]
     assert body["readiness"]["warning_count"] == 1
     assert body["freshness"]["available"] is True
     assert body["final_review"]["available"] is True
@@ -772,7 +782,8 @@ def test_workflow_keeps_salary_tax_history_warning_advisory(tmp_path: Path) -> N
 def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
-    close_reporting_month(session, month.id)
+    month.status = "closed"  # retained historical empty CLOSED
+    session.commit()
     application = create_app(database)
     application.state.quote_preview_clock = lambda: TODAY
     client = TestClient(application)
@@ -801,7 +812,7 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     reopened = client.get(f"/api/months/{month.id}/close-workflow").json()
     assert reopened["month"]["status"] == "draft"
     assert reopened["month"]["id"] == month.id
-    assert reopened["recommended_step_id"] == "alfa_baseline"
+    assert reopened["recommended_step_id"] == "readiness"
     assert reopened["outlook"] is None
 
 
@@ -1330,6 +1341,7 @@ def test_closed_outlook_uses_next_calendar_month_and_separates_redemption_princi
         forecast_version="v1",
     )
     session.commit()
+    create_cash_balance(session, reporting_month_id=month.id, name="Recorded cash", amount="0.00")
     close_reporting_month(session, month.id)
     before_month_count = session.scalar(select(func.count()).select_from(type(month)))
     before_flow_count = session.scalar(select(func.count()).select_from(ExpectedCashFlow))

@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -50,7 +51,6 @@ from hermes_finance.services.portfolio_xirr import (
 )
 from hermes_finance.services.positions import create_position_snapshot
 from hermes_finance.services.reporting_months import (
-    close_reporting_month,
     create_reporting_month,
     reopen_reporting_month,
 )
@@ -150,8 +150,8 @@ def _history(
         )
 
     if close_months:
-        close_reporting_month(session, opening_month.id)
-        close_reporting_month(session, closing_month.id)
+        close_fixture_month(session, opening_month.id)
+        close_fixture_month(session, closing_month.id)
     return session, database, opening_month.id, closing_month.id, account.id
 
 
@@ -195,7 +195,7 @@ def test_xirr_uses_one_snapshot_when_new_flow_invalidates_coverage_mid_read(
         month=1,
         snapshot_date=MID,
     )
-    close_reporting_month(session, middle.id)
+    close_fixture_month(session, middle.id)
     with database.engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
     real_cash_boundary_coverage = availability_service.cash_boundary_coverage_for_interval
@@ -218,7 +218,7 @@ def test_xirr_uses_one_snapshot_when_new_flow_invalidates_coverage_mid_read(
                     kind="external_contribution",
                     scope_membership="stable_in_scope",
                 )
-                close_reporting_month(writer, middle.id)
+                close_fixture_month(writer, middle.id)
         return result
 
     monkeypatch.setattr(
@@ -346,8 +346,8 @@ def test_portfolio_xirr_applies_contribution_and_withdrawal_signs(tmp_path: Path
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = portfolio_xirr_for_interval(
             session,
             start_date=START,
@@ -379,8 +379,8 @@ def test_portfolio_xirr_withdrawal_is_positive_investor_receipt(tmp_path: Path) 
         attest_cash_boundary_history(
             session, account_id=account_id, covered_from=START, covered_to=END
         )
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = portfolio_xirr_for_interval(
             session,
             start_date=START,
@@ -589,8 +589,8 @@ def _multi_account_history(
             )
 
     if close_months:
-        close_reporting_month(session, opening_month.id)
-        close_reporting_month(session, closing_month.id)
+        close_fixture_month(session, opening_month.id)
+        close_fixture_month(session, closing_month.id)
     return (
         session,
         database,
@@ -644,8 +644,8 @@ def test_account_xirr_contribution_is_negative_investor_outflow(tmp_path: Path) 
             scope_membership="stable_in_scope",
         )
         _reattest_cash_boundary_evidence(session, account_id)
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = xirr_for_interval(
             session,
             start_date=START,
@@ -682,8 +682,8 @@ def test_account_xirr_withdrawal_is_positive_investor_receipt(tmp_path: Path) ->
             scope_membership="stable_in_scope",
         )
         _reattest_cash_boundary_evidence(session, account_id)
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = xirr_for_interval(
             session,
             start_date=START,
@@ -738,8 +738,8 @@ def test_linked_transfer_is_withdrawal_for_source_and_contribution_for_target(
         )
         _reattest_cash_boundary_evidence(session, source_id)
         _reattest_cash_boundary_evidence(session, target_id)
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
 
         source = xirr_for_interval(
             session,
@@ -823,8 +823,8 @@ def test_foreign_account_flow_is_excluded_from_account_xirr(tmp_path: Path) -> N
             scope_membership="stable_in_scope",
         )
         _reattest_cash_boundary_evidence(session, other_id)
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
 
         account_result = xirr_for_interval(
             session,
@@ -943,8 +943,8 @@ def test_account_xirr_keeps_non_authoritative_flow_reason(tmp_path: Path) -> Non
             kind="external_contribution",
         )
         _reattest_cash_boundary_evidence(session, account_id)
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = xirr_for_interval(
             session,
             start_date=START,
@@ -985,8 +985,8 @@ def test_account_xirr_fails_closed_on_legacy_account_boundary_rows(tmp_path: Pat
             )
         )
         session.commit()
-        close_reporting_month(session, opening_month_id)
-        close_reporting_month(session, closing_month_id)
+        close_fixture_month(session, opening_month_id)
+        close_fixture_month(session, closing_month_id)
         result = xirr_for_interval(
             session,
             start_date=START,
@@ -1199,8 +1199,8 @@ def test_boundary_flow_inclusion_is_known_and_counted_once(
                 relation=relation,
                 external_flow_id=flow.id,
             )
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         availability = performance_availability_for_interval(
             session, start_date=START, end_date=END, scope=scope, account_id=selected_account
         )
@@ -1281,8 +1281,8 @@ def test_boundary_flow_needs_current_unambiguous_evidence_for_consumed_value(
                 relation="pre_external_flow",
                 external_flow_id=flow.id,
             )
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         result = xirr_for_interval(
             session, start_date=START, end_date=END, scope="account", account_id=account_id
         )
@@ -1331,8 +1331,8 @@ def test_boundary_conflict_is_checked_before_matching_endpoint(tmp_path, scope, 
                 relation=relation,
                 external_flow_id=flow.id,
             )
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         availability = performance_availability_for_interval(
             session,
             start_date=START,
@@ -1403,8 +1403,8 @@ def test_grouped_opening_post_flows_are_excluded_together(tmp_path):
             relation="post_external_flow",
             boundary_group_id=group.id,
         )
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         availability = performance_availability_for_interval(
             session, start_date=START, end_date=MID
         )
@@ -1451,8 +1451,8 @@ def test_account_only_boundary_evidence_does_not_prove_portfolio_inclusion(tmp_p
             relation="post_external_flow",
             external_flow_id=flow.id,
         )
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         _assert_rate(
             xirr_for_interval(
                 session,
@@ -1512,8 +1512,8 @@ def test_noncurrent_or_inexact_conflict_cannot_override_current_boundary(tmp_pat
         else:
             point.coverage_status = "unknown"
         session.commit()
-        close_reporting_month(session, opening_id)
-        close_reporting_month(session, closing_id)
+        close_fixture_month(session, opening_id)
+        close_fixture_month(session, closing_id)
         _assert_rate(
             xirr_for_interval(
                 session,

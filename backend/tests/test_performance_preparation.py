@@ -3,11 +3,11 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from _month_close_helpers import close_fixture_month
 from fastapi.testclient import TestClient
 from test_r08_01a_external_flows import _environment
 
 from hermes_finance.main import create_app
-from hermes_finance.services.reporting_months import close_reporting_month
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ def test_move_flow_between_accounts_rereads_both_ledgers_and_rejects_old_token(e
     assert client.patch(path, json={"account_id": account}, headers=old).status_code == 409
     assert read(env, partner)["flows"][0]["account_id"] == partner
     assert list(session.scalars(select(AccountPerformanceScopeMembership))) == []
-    close_reporting_month(session, month)
+    close_fixture_month(session, month)
     blocked = client.patch(path, json={"account_id": account}, headers=headers(env))
     assert blocked.status_code == 409, blocked.text
     assert read(env)["flows"] == []
@@ -140,7 +140,7 @@ def test_coverage_explicit_and_closed_guard_even_with_fresh_token(env, kind):
     client, session, _, month, _, _ = env
     path = f"/api/{kind}-boundary-coverages"
     stale = headers(env)
-    close_reporting_month(session, month)
+    close_fixture_month(session, month)
     assert client.post(path, json=coverage(env), headers=stale).status_code == 409
     response = client.post(path, json=coverage(env), headers=headers(env))
     assert response.status_code == 409, response.text
@@ -243,8 +243,8 @@ def test_explicit_zero_history_then_reclose_rereads_available_metrics(tmp_path):
         session.commit()
         with TestClient(create_app(database=database)) as client:
             params = {"start_date": str(START), "end_date": str(END)}
-            close_reporting_month(session, opening)
-            close_reporting_month(session, closing)
+            close_fixture_month(session, opening)
+            close_fixture_month(session, closing)
             initial = client.get("/api/performance/readiness", params=params).json()
             assert initial["xirr"]["availability"] != "available"
             # Owner explicitly reopens; preparation itself never changes month status.

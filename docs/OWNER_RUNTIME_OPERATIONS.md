@@ -617,6 +617,40 @@ Historical notes before 1.3.0 are organized under `docs/release-notes/` on main;
 
 Runtime update is backup-first, published immutable release-pinned and separate from Start. Explicitly bind the existing physical production DB and disjoint backup destination. Preserve the matching old code/database recovery pair; old code must not open an unsupported newer schema. `backend/migrations/README` and released migrations remain byte-stable. Current installed/released identity belongs only in S.
 
+<a id="o3-empty-close-recovery"></a>
+### Intentional-empty Close audit schema recovery (#952)
+
+Schema `0064_month_template_provenance` adds nullable origin columns to income,
+expense and saving tables without modifying old values. NULL remains unknown;
+MANUAL DRAFT rows require explicit amount confirmation to count for the empty
+guard. Backup/restore preserves origins. Downgrade refuses before mutation if any
+origin is populated: old code would accept copied templates as facts. Preserve
+the code/schema pair and use reviewed forward recovery. An isolated old backup
+upgraded to 0064 retains unknown origins, never invented acceptance. These checks
+authorize no production migration or runtime operation.
+
+Schema `0063_intentional_empty_close` is additive over 0062: one initially empty
+audit table/index and immutable UPDATE/DELETE guards, no changed historical month
+or economic rows. Before any separately authorized deployment, verify a fresh
+backup and code/schema pairing using the existing O2/O4 procedures. This backend
+Worker change does not authorize Test/Stable/Owner migration, Start or actual Close.
+
+Downgrade to 0062 is allowed only while the new audit is empty. A populated audit
+fails before schema mutation; never drop triggers, delete receipts or rewrite
+status/history to get past that refusal. Preserve the current code/database pair
+and use a reviewed forward fix. An older binary also lacks the new Close policy,
+so merely opening a newer database with old code is not an accepted rollback.
+
+Stock in-app restore still rejects a cross-schema backup. Retain a verified 0062
+backup with its producing code as an old recovery pair. Supported forward recovery
+copies that verified artifact to a fresh isolated target and upgrades it to 0063;
+it does not replace the live database or invent post-backup audit. After any real
+successful Close, recovery must preserve that decision and its receipt; a pre-Close
+backup cannot stand in for current financial history. A same-0063 backup preserves
+audit and triggers. Synthetic Windows evidence covers populated table preservation,
+empty downgrade/re-upgrade, populated downgrade refusal, backup readback and an
+isolated 0062→0063 forward target; actual Owner recovery remains separately gated.
+
 <a id="o3-owner_runtime_operations-100"></a>
 ### Backup-first immutable release update
 

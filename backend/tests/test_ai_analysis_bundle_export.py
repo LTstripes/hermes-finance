@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month_http
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker
 from sqlalchemy import event, func, select
@@ -131,7 +132,7 @@ def _create_month(client: TestClient, year: int, month: int, *, source: str = "m
 
 
 def _close(client: TestClient, month_id: int) -> None:
-    _ok(client.post(f"/api/months/{month_id}/close"), status=200)
+    _ok(close_fixture_month_http(client, month_id), status=200)
 
 
 def _table_counts(database: Database) -> dict[str, int]:

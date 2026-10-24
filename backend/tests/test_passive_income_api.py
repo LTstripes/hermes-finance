@@ -6,6 +6,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from _month_close_helpers import close_fixture_month_http
 from fastapi.testclient import TestClient
 
 from hermes_finance.database import create_database
@@ -159,7 +160,7 @@ def test_passive_income_history_is_closed_only_and_exposes_selected_buckets(
         flow_type="redemption",
         net_amount="10000.00",
     )
-    close = client.post(f"/api/months/{closed_id}/close")
+    close = close_fixture_month_http(client, closed_id)
     assert close.status_code == 200, close.text
 
     draft_id = _month(client, year=2031, month=7)
@@ -214,7 +215,7 @@ def test_passive_income_history_distinguishes_empty_from_closed_zero(client: Tes
     assert empty.json()["average"]["count_months"] == 0
 
     zero_id = _month(client, year=2031, month=5)
-    close = client.post(f"/api/months/{zero_id}/close")
+    close = close_fixture_month_http(client, zero_id)
     assert close.status_code == 200, close.text
 
     zero = client.get("/api/analytics/passive-income")

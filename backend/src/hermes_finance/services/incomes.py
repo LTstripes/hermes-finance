@@ -188,6 +188,7 @@ def replace_salary_entry(
         canonical.is_recurring = True
         canonical.include_in_cash_flow = True
         canonical.include_in_passive_income = False
+        canonical.actual_fact_origin = "saved_actual_v1"
 
         for duplicate in rows[1:]:
             session.delete(duplicate)
@@ -254,6 +255,8 @@ def update_income_entry(
         )
     if notes is not None:
         entry.notes = notes
+    if any(value is not None for value in (gross_amount, tax_amount, net_amount)):
+        entry.actual_fact_origin = "saved_actual_v1"
     session.commit()
     session.refresh(entry)
     return entry

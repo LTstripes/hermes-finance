@@ -423,7 +423,10 @@ def test_close_and_membership_serialize_under_writer_reservation(env, first):
 
     from sqlalchemy import text
 
+    from hermes_finance.services.cash import create_cash_balance
     from hermes_finance.services.reporting_months import close_reporting_month
+
+    create_cash_balance(env[1], reporting_month_id=env[3], name="Recorded cash", amount="0.00")
 
     ready, release, attempting = Event(), Event(), Event()
     expected = state_identity(env[1])
