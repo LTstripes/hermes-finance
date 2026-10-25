@@ -48,6 +48,10 @@ workspace, including immediately after create/copy and list readback. **Реда
 месяца** remains a separate action. The workspace starts with **XML и исключения**:
 saved originals for the selected period/account, explicit source-only versus
 financial DRAFT/CLOSED status, upload, and direct links to exceptions/instruments.
+Full calendar originals and historical/partial overlaps are counted separately;
+an overlap never hides the missing full-month original/closing EOD. The separate
+strict original control is disclosed through source review or final financial
+review, keeping the ordinary entry focused on one multi-file upload.
 Accounts from earlier saved originals remain selectable for inspection. Those
 originals do not count as current-month sources or supply a different closing EOD.
 Monthly results require the exact calendar boundaries; absent results name the

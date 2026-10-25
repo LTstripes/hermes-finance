@@ -10,6 +10,7 @@ import { useBrokerOriginalSession } from "../components/month-close/brokerOrigin
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
 import { formatDate } from "../lib/format";
+import { lastDayOfMonth } from "../lib/period";
 import { brokerSourceTitle } from "../lib/ownerCopy";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import { monthWorkspacePath } from "./monthSelection";
@@ -34,6 +35,7 @@ export function UiV2MonthSources({
 }) {
   const [params, setParams] = useSearchParams();
   const { session, original } = useBrokerOriginalSession();
+  const [reviewExpanded, setReviewExpanded] = useState(Boolean(original.file));
   const { command: journalCommand } = useSourceIntakeRecovery();
   // Raw URL values distinguish invalid/duplicate scopes, including A→invalid→A.
   const scope = JSON.stringify(params.getAll("source_account"));
@@ -65,7 +67,7 @@ export function UiV2MonthSources({
     }));
   }, [changingScope, unresolved, scope, month.id, session]);
   const list = useQuery({
-    queryKey: ["source-intakes", "month-overview", month.id],
+    queryKey: ["source-intakes", month.id, "month-overview"],
     queryFn: ({ signal }) => listAllSourceIntakes(signal),
     refetchOnWindowFocus: true,
   });
@@ -87,6 +89,11 @@ export function UiV2MonthSources({
   const visible = invalidAccount
     ? []
     : sources.filter((item) => !account || sourceAccounts(item).includes(account));
+  const closing = lastDayOfMonth(month.year, month.month);
+  const fullMonthSources = visible.filter(
+    (item) => item.covered_from === `${period}-01` && item.covered_to === closing,
+  );
+  const overlappingSources = visible.length - fullMonthSources.length;
 
   return (
     <>
@@ -113,13 +120,21 @@ export function UiV2MonthSources({
                 <p>
                   {period} · счёт источника:{" "}
                   {invalidAccount ? "не подтверждён" : account || "выбери один счёт"}.
-                  {invalidAccount ? "" : ` Сохранённых выписок этого периода: ${visible.length}.`}
+                  {invalidAccount
+                    ? ""
+                    : ` Полных месячных оригиналов: ${fullMonthSources.length}. Исторических или частичных пересечений: ${overlappingSources}.`}
                 </p>
                 {!sources.length && (
                   <p>
                     Выписок за отчётный месяц пока нет. Добавь XML ниже; ручные данные сохраняются
                     отдельно. Историческое количество можно проверить по выбранному счёту, но оно не
                     доказывает доходность этого месяца.
+                  </p>
+                )}
+                {!invalidAccount && fullMonthSources.length === 0 && (
+                  <p>
+                    Полного месячного оригинала пока нет. Нужны границы {period}-01 — {closing} и
+                    закрывающий EOD {closing}. Историческое пересечение не доказывает конец месяца.
                   </p>
                 )}
                 <nav className={styles.sourceNav} aria-label="Действия с источниками месяца">
@@ -221,6 +236,11 @@ export function UiV2MonthSources({
                           наблюдений: {intake.observations.length}
                         </p>
                         <p>
+                          {intake.covered_from === `${period}-01` && intake.covered_to === closing
+                            ? "Полный календарный период по датам; достаточность доказательств проверяется отдельно."
+                            : "Историческое или частичное пересечение; не полный месячный оригинал."}
+                        </p>
+                        <p>
                           {intake.state.reporting_month_id === null
                             ? "Без финансовой привязки"
                             : "Привязан к месяцу"}{" "}
@@ -246,6 +266,7 @@ export function UiV2MonthSources({
                           type="button"
                           disabled={changingScope || unresolved}
                           onClick={() => {
+                            setReviewExpanded(true);
                             setReview((previous) => ({
                               ...previous,
                               selection: { id: intake.id },
@@ -303,28 +324,43 @@ export function UiV2MonthSources({
         </p>
       ) : null}
       <div id="month-source-review" tabIndex={-1}>
-        {changingScope && unresolved && (
-          <p role="alert">
-            Переключение счёта отложено. Разбор остаётся в прежнем контексте:{" "}
-            {original.pending?.preview.document.filename_account ||
-              JSON.parse(review.scope).join(" / ") ||
-              "Все счета"}{" "}
-            · месяц #{review.monthId}. Заверши чтение результата исходного запроса. Изменения
-            заблокированы; новый POST не выполняется.
-          </p>
-        )}
-        {(!changingScope || unresolved) && (
-          <BrokerMonthReview
-            key={review.generation}
-            monthId={review.monthId}
-            closed={month.status === "closed"}
-            scopeBlocked={changingScope}
-            sourceAccount={
-              changingScope ? (JSON.parse(review.scope)[0] ?? "") : invalidAccount ? null : account
-            }
-            intakeSelection={review.selection}
-          />
-        )}
+        <details open={reviewExpanded || unresolved || params.get("step") === "final_review_close"}>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: native summary supports keyboard activation; controlled click avoids delayed toggle events hiding GET recovery. */}
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              setReviewExpanded((value) => !value);
+            }}
+          >
+            Разбор сохранённой выписки и финансовый DRAFT
+          </summary>
+          {changingScope && unresolved && (
+            <p role="alert">
+              Переключение счёта отложено. Разбор остаётся в прежнем контексте:{" "}
+              {original.pending?.preview.document.filename_account ||
+                JSON.parse(review.scope).join(" / ") ||
+                "Все счета"}{" "}
+              · месяц #{review.monthId}. Заверши чтение результата исходного запроса. Изменения
+              заблокированы; новый POST не выполняется.
+            </p>
+          )}
+          {(!changingScope || unresolved) && (
+            <BrokerMonthReview
+              key={review.generation}
+              monthId={review.monthId}
+              closed={month.status === "closed"}
+              scopeBlocked={changingScope}
+              sourceAccount={
+                changingScope
+                  ? (JSON.parse(review.scope)[0] ?? "")
+                  : invalidAccount
+                    ? null
+                    : account
+              }
+              intakeSelection={review.selection}
+            />
+          )}
+        </details>
       </div>
     </>
   );

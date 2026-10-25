@@ -229,11 +229,15 @@ it("A→B→A and Back retire original, Preview, overrides and public consent be
   expect(session.snapshot().lookupConsent).toBe(false);
   expect(session.snapshot().decisions).toEqual([]);
   expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).toBeNull();
-  expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("2");
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("2"),
+  );
   expect(within(journal()).queryByRole("option", { name: /#1/ })).toBeNull();
   fireEvent.click(screen.getByText("Back", { exact: true }));
   await waitFor(() => expect(picker()).toHaveValue("A"));
-  expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue("");
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue(""),
+  );
   expect(screen.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -414,7 +418,9 @@ it("late non-economic Preview cannot restore A overrides or confirmation after A
   fireEvent.change(picker(), { target: { value: "B" } });
   fireEvent.change(picker(), { target: { value: "A" } });
   await act(async () => late.resolve({ confirmation_digest: "x", financial_effects: 0 }));
-  expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue("");
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue(""),
+  );
   expect(screen.queryByRole("button", { name: "Подтвердить сохранение разбора" })).toBeNull();
   expect(confirmIntakeReview).not.toHaveBeenCalled();
 });

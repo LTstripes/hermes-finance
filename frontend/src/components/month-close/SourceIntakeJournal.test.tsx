@@ -98,8 +98,13 @@ beforeEach(() => {
   });
 });
 
-function setup(file: File | null = original, intakeSelection?: { id: number }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function setup(
+  file: File | null = original,
+  intakeSelection?: { id: number },
+  existingClient?: QueryClient,
+) {
+  const client =
+    existingClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   brokerOriginalSession(client).select(file, 1, "7");
   const changed = vi.fn();
   const content = (
@@ -118,6 +123,26 @@ function setup(file: File | null = original, intakeSelection?: { id: number }) {
   );
   return { ...render(content), client, changed };
 }
+
+it("retains only the selected ID across workflow remount and rereads a current row among multiple originals", async () => {
+  const user = userEvent.setup();
+  const second = { ...structuredClone(stored), id: 2, head_seq: 7 };
+  vi.mocked(listSourceIntakes).mockResolvedValue([structuredClone(stored), second]);
+  const first = setup(null);
+  await user.selectOptions(await screen.findByLabelText("Сохранённый разбор"), "2");
+  await screen.findByText(/Версия: 7/);
+  first.unmount();
+  vi.mocked(listSourceIntakes).mockResolvedValue([
+    structuredClone(stored),
+    { ...second, head_seq: 8 },
+  ]);
+  setup(null, undefined, first.client);
+  await screen.findByText(/Версия: 8/);
+  expect(screen.getByLabelText("Сохранённый разбор")).toHaveValue("2");
+  expect(screen.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
 
 it("retains the grouped queue after reload without bytes; no browser storage or financial command", async () => {
   const user = userEvent.setup();

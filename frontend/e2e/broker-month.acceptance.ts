@@ -38,6 +38,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await expect(page).toHaveURL(new RegExp(`/v2/close\\?month=${month.id}$`));
   const sources = page.getByRole("region", { name: "XML и исключения" });
   await expect(sources.getByRole("heading", { name: "XML и исключения" })).toBeVisible();
+  await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toBeHidden();
   await expect(sources.getByText(/Выписок за отчётный месяц пока нет/)).toBeVisible();
   const manual = async () =>
     Promise.all(
@@ -62,7 +63,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await picker.selectOption("7113501");
   await expect(sources.getByText(/нет доказанных границ этого месяца/)).toContainText("2035-10-31");
   await expect(sources.getByRole("region", { name: "Состояние источников месяца" })).toContainText(
-    "Сохранённых выписок этого периода: 0",
+    "Полных месячных оригиналов: 0",
   );
   const instruments = page.getByRole("region", { name: "Инструменты и выплаты месяца" });
   await expect(instruments.getByText("RU000A000000 · Акция")).toBeVisible();
@@ -1600,6 +1601,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(picker).toHaveValue("7452034");
   await page.reload();
   await expect(picker).toHaveValue("7452034");
+  await page.getByText("Разбор сохранённой выписки и финансовый DRAFT", { exact: true }).click();
   await expect(journal.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
   await picker.selectOption("8562034");
   const sourceB = (await currentIntakes()).find(

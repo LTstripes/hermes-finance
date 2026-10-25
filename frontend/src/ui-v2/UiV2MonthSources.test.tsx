@@ -24,7 +24,11 @@ function Location() {
   const location = useLocation();
   return <output data-testid="location">{location.search}</output>;
 }
-function mount(path = "/v2/close?month=12&step=readiness", closed = false) {
+function mount(
+  path = "/v2/close?month=12&step=readiness",
+  closed = false,
+  extras: ReturnType<typeof intake>[] = [],
+) {
   const onReview = vi.fn();
   const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
     String(input).startsWith("/api/source-returns/monthly")
@@ -39,6 +43,7 @@ function mount(path = "/v2/close?month=12&step=readiness", closed = false) {
             intake(4, "OTHER-MONTH", {
               state: { reporting_month_id: 91 },
             } as Partial<SourceIntake>),
+            ...extras,
           ]),
           { headers: { "Content-Type": "application/json" } },
         ),
@@ -59,6 +64,28 @@ function mount(path = "/v2/close?month=12&step=readiness", closed = false) {
   return { onReview, fetcher };
 }
 afterEach(() => vi.unstubAllGlobals());
+
+it("distinguishes long historical overlap from a complete month and names the absent closing EOD", async () => {
+  mount("/v2/close?month=12&source_account=LONG", false, [
+    intake(5, "LONG", { covered_from: "2024-01-01", covered_to: "2031-08-04" }),
+  ]);
+  const status = await screen.findByRole("region", { name: "Состояние источников месяца" });
+  await screen.findByRole("list", { name: "Источники и исключения месяца" });
+  expect(status).toHaveTextContent(
+    "Полных месячных оригиналов: 0. Исторических или частичных пересечений: 1",
+  );
+  expect(status).toHaveTextContent("закрывающий EOD 2031-08-31");
+  expect(screen.getByRole("list", { name: "Источники и исключения месяца" })).toHaveTextContent(
+    "Историческое или частичное пересечение",
+  );
+  expect(
+    screen.getByText("Разбор сохранённой выписки и финансовый DRAFT").closest("details"),
+  ).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #5" }));
+  expect(
+    screen.getByText("Разбор сохранённой выписки и финансовый DRAFT").closest("details"),
+  ).toHaveAttribute("open");
+});
 
 it("keeps both accounts, calendar scope, precise review and the accepted bond link", async () => {
   const { onReview, fetcher } = mount();
@@ -108,7 +135,7 @@ it("retains historical source-account selection without treating its original as
   expect(await screen.findByRole("region", { name: "Состояние источников месяца" })).toBeVisible();
   expect(await screen.findByText(/Для выбранного счёта выписок этого периода нет/)).toBeVisible();
   expect(screen.getByRole("region", { name: "Состояние источников месяца" })).toHaveTextContent(
-    "Сохранённых выписок этого периода: 0",
+    "Полных месячных оригиналов: 0",
   );
   expect(screen.getByRole("link", { name: "Инструменты, сделки и выплаты" })).toHaveAttribute(
     "href",

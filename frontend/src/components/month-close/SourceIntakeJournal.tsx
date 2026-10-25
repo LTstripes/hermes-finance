@@ -148,16 +148,22 @@ export function SourceIntakeJournal({
     };
   }, [monthId, original.epoch]);
 
-  const choose = useCallback((value: SourceIntake) => {
-    epoch.current++;
-    setSelected(value);
-    setOverrides(value.state.overrides);
-    setAccountCurrency(value.state.account_currency ?? "");
-    setDefaultEnabled(value.state.default_enabled);
-    setReviewed(null);
-    setError(null);
-    requestId.current = null;
-  }, []);
+  const choose = useCallback(
+    (value: SourceIntake) => {
+      epoch.current++;
+      // Keep only the selected ID across workflow readback/remount. The row must
+      // still be read from this account's current source list; no intent is cached.
+      client.setQueryData(["source-intake-selection", monthId, sourceAccount], value.id);
+      setSelected(value);
+      setOverrides(value.state.overrides);
+      setAccountCurrency(value.state.account_currency ?? "");
+      setDefaultEnabled(value.state.default_enabled);
+      setReviewed(null);
+      setError(null);
+      requestId.current = null;
+    },
+    [client, monthId, sourceAccount],
+  );
   const openedIntake = useRef<typeof intakeSelection>(null);
   useEffect(() => {
     if (
@@ -178,8 +184,27 @@ export function SourceIntakeJournal({
     }
   }, [intakeSelection, sources, busy, pendingCommand, disabled, session, monthId, choose]);
   useEffect(() => {
-    if (!selected && !pendingCommand && !busy && sources.length === 1) choose(sources[0]);
-  }, [selected, pendingCommand, busy, sources, choose]);
+    if (selected || pendingCommand || busy || list.isFetching || list.isError) return;
+    const id = client.getQueryData<number>(["source-intake-selection", monthId, sourceAccount]);
+    const value =
+      id !== undefined
+        ? sources.find((item) => item.id === id)
+        : sources.length === 1
+          ? sources[0]
+          : null;
+    if (value) choose(value);
+  }, [
+    selected,
+    pendingCommand,
+    busy,
+    sources,
+    choose,
+    client,
+    monthId,
+    sourceAccount,
+    list.isFetching,
+    list.isError,
+  ]);
   async function readAck(value: IntakeAck, version: number) {
     const command = pendingSnapshot();
     if (
@@ -200,6 +225,7 @@ export function SourceIntakeJournal({
     )
       throw new Error("Текущая версия разбора изменилась. Обнови очередь.");
     setSelected(current);
+    client.setQueryData(["source-intake-selection", monthId, sourceAccount], current.id);
     setOverrides(current.state.overrides);
     setAccountCurrency(current.state.account_currency ?? "");
     setDefaultEnabled(current.state.default_enabled);
