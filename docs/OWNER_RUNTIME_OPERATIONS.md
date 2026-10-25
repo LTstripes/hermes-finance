@@ -613,9 +613,54 @@ CI claims real Owner UAT or a Stable update.
 
 Publish only an Owner-selected accepted canonical candidate through the guarded release route. Distinguish application version, release commit/tag, prepared code and database schema. Keep release-note family paths `docs/release-notes-{Version}.md`. Do not mutate historical tag content or published assets to repair main's links.
 
-Historical notes before 1.3.0 are organized under `docs/release-notes/` on main; their original paths remain in the published tags. The current `docs/release-notes-1.3.0.md` is the sole auxiliary docs-root exception: release identity checks require it, and the published v1.3.0 `Assert-HermesStableTargetCodeIdentity` checks `docs/release-notes-{Version}.md` in the target commit before updating. Moving the active release-note family requires a separately accepted compatible updater transition; changing only main's reader cannot update already installed readers. Keep the current note and future publication paths compatible until then, without root redirects or weaker release gates.
+Historical notes before 1.3.0 are organized under `docs/release-notes/` on main; their original paths remain in the published tags. The active release-note family remains at `docs/release-notes-{Version}.md`: release identity checks and installed immutable updaters read that target-commit path before updating. Moving the active release-note family requires a separately accepted compatible updater transition; changing only main's reader cannot update already installed readers. Keep the current note and future publication paths compatible until then, without root redirects or weaker release gates.
 
 Runtime update is backup-first, published immutable release-pinned and separate from Start. Explicitly bind the existing physical production DB and disjoint backup destination. Preserve the matching old code/database recovery pair; old code must not open an unsupported newer schema. `backend/migrations/README` and released migrations remain byte-stable. Current installed/released identity belongs only in S.
+
+<a id="o3-source-proof-recovery"></a>
+### Source-only proof schema 0065: preservation and recovery
+
+`0065_source_return_proofs` adds two empty source-only tables and 13 guards over
+0064. Migration advances alembic_version only; all historical table rows, CLOSED
+states, sources, mappings and financial facts must match. Verify exact candidate,
+physical DB/profile/process binding, fresh stock backup with independent full-table
+and schema readback, empty new tables and actual trigger SQL before UAT. Prepare
+through OPS03 and Start remain separate; neither imports originals or confirms
+proof automatically. Never rewrite released migration sources/README.
+
+Proof Preview uses all exactly required current originals for one native account.
+It is zero-write. Attested Confirm appends source provenance only; independent
+ACK→GET, ordinary Month/Monthly Returns, Back/Reload and normal restart verify
+the result. Unknown-flow/cancellation principal and unsupported bond valuation/NKD
+remain NULL. Do not simulate lost ACK, ABA, classification changes or restores on
+protected data merely to repeat accepted synthetic evidence.
+
+Payout relink is a separate protected metadata operation. Under 0065 it can append
+one retirement nonce per changed classification row. A 0064 Preview claiming no
+other-table effects is stale. Capture exact proposed row/column and trigger/nonce
+footprints, CLOSED eligibility, unchanged financial/source tables and currentness;
+obtain separate Owner GO and fresh backup/readback. Recognized text is not an
+instrument mapping or a new payment. If relink and proof are approved together,
+relink first, refresh the exact proof Preview and confirm proof last. Actual random
+nonce bytes are read back after execution, never predicted or fabricated.
+
+Before Stable rollout, rehearse 0064→0065 on a verified production-compatible copy
+at the **published SHA**, isolated from Test/Stable. Preserve all historical
+fingerprints and the producing code/backup pair; obtain the Owner's separate
+recovery/cutoff/RPO/outage decision. Code/Test acceptance does not waive this gate.
+Use owned Stop, fresh independently verified backup, OPS02 with explicit existing
+physical DatabasePath and disjoint BackupDirectory, target Prepare/Validate and
+separately authorized Start. Stable proof/relink then require new local Previews,
+backups/currentness and their own Owner GO. No Test DB, rows or proofs are promoted.
+
+Populated proof history, even stale, refuses downgrade before DDL. Exact-schema
+restore, older-version OPS02 refusal and isolated-only O4 do not provide an
+in-place 0065→0064 rollback. Preserve the matching code/database pair and follow an
+accepted compatible recovery or forward-fix route; no raw overwrite, old binary
+on 0065, guard removal or unapproved restore. A recovered physical DB retires saved
+proof even with matching contents; preserve its append-only history and obtain a
+new exact-original confirmation. Do not promise rollback from a retained 0064
+backup. Current installed/released/UAT state belongs only in S.
 
 <a id="o3-empty-close-recovery"></a>
 ### Intentional-empty Close audit schema recovery (#952)
