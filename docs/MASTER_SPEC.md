@@ -315,7 +315,31 @@ Performance separates capability from data readiness and separates portfolio, ac
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
 
-The source-backed bond block on `/v2/capital/monthly-returns` shows each native
+### Returns workspace
+
+`/v2/returns` is the ordinary **Доходность** entry in the left navigation. It
+defaults to the latest CLOSED month, even when a newer DRAFT exists, and pins
+the account and EOD dates in the URL. Four compact cards show the selected
+result/rate, the whole-history result with dates, credited coupons and credited
+dividends. Missing values are `—` with keyboard-accessible details. Statements
+and accepted reporting scopes are explicitly separate choices; source aliases
+never imply a financial-account mapping or portfolio aggregation.
+
+Monthly bars select the same period used by instruments and both top-five lists;
+their paged table alternative preserves gaps, signs and zero. Instrument search,
+type filters, exact sorting and on-demand trades include sold securities. Tops
+compare only full instrument-v2 results with the same dates, method and basis;
+positive/negative rows alone qualify, defaulting to RUB P&L with a percent toggle.
+Conditional bond estimates remain in details. The overview never replaces a
+whole-period result with available fragments or calculates financial returns.
+Custom intervals keep unavailable account rates explicit while retaining any
+independently supported dated instrument results.
+
+Old `/v2/capital/monthly-returns` links enter the same Returns screen, preserving
+source account and bond-month selection. Explicit `diagnostics=1` retains the
+existing technical workspace; it is accessed through “Подробнее о данных”.
+
+The diagnostic bond block on `/v2/capital/monthly-returns?diagnostics=1` shows each native
 account separately: reported quantity/value and their EOD boundary, dated trades
 with source price units/NKD/commission, actual coupon rows and source references.
 Account, bond and month selection travel in the page URL for Back/Reload. Missing

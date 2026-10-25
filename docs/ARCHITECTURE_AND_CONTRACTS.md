@@ -6287,6 +6287,33 @@ When a continuous long report supplies only the outer endpoints and no complete
 monthly group exists, it retains one `partial_segment` with the outer-period
 totals; its monthly chain remains unavailable.
 
+<a id="c7-returns-presentation"></a>
+### Returns presentation adapter
+
+`GET /api/returns/context`, `/overview?scope=...&start=...&end=...`, and
+`/instrument?...&isin=...` compose existing readers in a coherent read snapshot.
+The adapter performs no DML, provider request, relink, receipt or financial
+calculation. `source:<native-or-filename-alias>` selects the existing source
+readers; `account:<id>` and `portfolio` select PERF04A and exact TWRR. A source
+alias is never converted to accepted account authority. Unknown scopes, repeated
+selection parameters, and invalid dates fail closed; responses are no-store.
+
+The allowlisted DTO carries money as integer-kopeck **strings**, and rates as
+Decimal strings with explicit fraction/percentage-point units and method. It
+omits journals, hashes, source references and native transaction identifiers.
+Summary instrument metrics require supported/provisional full-result status;
+partial subtotals and conditional statement values cannot fill P&L/rate cells.
+Details separately expose conditional metrics and dated trades/credited payments.
+
+Monthly, segment and whole-history account results come directly from the
+monthly reader. Other date ranges may reuse the dated account reconciliation
+growth; an unsupported account rate stays NULL. Whole history never uses the
+sum of available months. Only credited coupon/dividend amounts are added across
+adjacent, fully represented months, with any missing amount withholding the
+entire interval income. Accepted scopes retain their existing prerequisites;
+unsupported payout/instrument breakdowns stay NULL/empty with reasons. Browser
+comparison uses exact Decimal/BigInt ordering; Number is confined to bar geometry.
+
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
