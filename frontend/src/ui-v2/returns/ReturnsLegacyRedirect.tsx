@@ -16,7 +16,7 @@ export function ReturnsLegacyRedirect() {
   const params = new URLSearchParams(location.search);
   const account = params.get("source_account");
   if (account) params.set("scope", `source:${account}`);
-  const oldPeriod = params.get("bond_period");
+  const oldPeriod = params.get("bond_period") ?? "history";
   if (oldPeriod === "history") params.set("period", "history");
   const isin = params.get("bond_isin");
   if (isin) params.set("isin", isin);

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { UiV2Shell } from "./UiV2Shell";
 import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
@@ -223,6 +223,8 @@ function Instruments({
 
 export default function UiV2ReturnsPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { hash } = useLocation();
   const queryClient = useQueryClient();
   const context = useQuery({
     queryKey: ["returns", "context"],
@@ -250,8 +252,9 @@ export default function UiV2ReturnsPage() {
       next.set("end", defaultPeriod.end);
       next.delete("period");
     }
-    if (next.toString() !== params.toString()) setParams(next, { replace: true });
-  }, [context.data, context.isError, context.isFetching, params, setParams]);
+    if (next.toString() !== params.toString())
+      navigate({ search: next.toString(), hash }, { replace: true });
+  }, [context.data, context.isError, context.isFetching, params, navigate, hash]);
   const overview = useQuery({
     queryKey: ["returns", "overview", scope, period.start, period.end],
     queryFn: ({ signal }) => getOverview(scope, period, signal),
@@ -442,7 +445,12 @@ export default function UiV2ReturnsPage() {
                 <small>За выбранный период</small>
               </section>
             </div>
-            <ReturnsHistory key={scope} rows={data.history} selected={period} choose={choose} />
+            <ReturnsHistory
+              key={`${scope}/${periodKey(period)}`}
+              rows={data.history}
+              selected={period}
+              choose={choose}
+            />
             <Instruments
               key={`${scope}/${periodKey(period)}/${overview.dataUpdatedAt}`}
               scope={scope}

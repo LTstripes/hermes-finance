@@ -118,3 +118,57 @@ export function detailFixture(
     ],
   };
 }
+
+/** Two fabricated calendar years for selection/pagination regressions. */
+export const longHistoryPeriods: Period[] = Array.from({ length: 24 }, (_, index) => {
+  const year = 2029 + Math.floor(index / 12);
+  const month = index % 12;
+  const dayBefore = (value: Date) =>
+    new Date(value.getTime() - 86400000).toISOString().slice(0, 10);
+  return {
+    start: dayBefore(new Date(Date.UTC(year, month, 1))),
+    end: dayBefore(new Date(Date.UTC(year, month + 1, 1))),
+  };
+});
+export const longHistoryContext: Context = {
+  ...contextFixture,
+  default_period: longHistoryPeriods[23],
+  closed_periods: longHistoryPeriods,
+  source_periods: Object.fromEntries(
+    ["source:SYNTH-A", "source:SYNTH-B"].map((scope) => [
+      scope,
+      [
+        ...longHistoryPeriods,
+        { start: longHistoryPeriods[0].start, end: longHistoryPeriods[23].end },
+      ],
+    ]),
+  ),
+};
+export function longHistoryOverview(scope: string, period: Period): Overview {
+  const base = overviewFixture(scope, period);
+  const selectedResult = (p: Period): Result => {
+    const ordinal = longHistoryPeriods.findIndex((r) => r.start === p.start && r.end === p.end) + 1;
+    return {
+      ...base.selected,
+      period: p,
+      pnl: m(String(ordinal * 10000), "kopecks", "source_monthly"),
+      coupons: m(String(ordinal * 100), "kopecks", "credited_payments"),
+      dividends: m(String(ordinal * 200), "kopecks", "credited_payments"),
+    };
+  };
+  const selected = selectedResult(period);
+  return {
+    ...base,
+    selected,
+    all_history: base.all_history && {
+      ...base.all_history,
+      period: { start: longHistoryPeriods[0].start, end: longHistoryPeriods[23].end },
+    },
+    history: longHistoryPeriods.map(selectedResult),
+    periods: longHistoryPeriods,
+    instruments: [
+      { ...base.instruments[0], pnl: { ...base.instruments[0].pnl, value: selected.pnl.value } },
+      { ...base.instruments[2], pnl: m(String(-BigInt(selected.pnl.value ?? "0") / 2n)) },
+    ],
+  };
+}

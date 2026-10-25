@@ -19,7 +19,10 @@ export function ReturnsHistory({
   selected: Period;
   choose: (p: Period) => void;
 }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => {
+    const selectedIndex = rows.findIndex((row) => samePeriod(row.period, selected));
+    return selectedIndex < 0 ? 0 : Math.floor((rows.length - 1 - selectedIndex) / 12);
+  });
   const end = Math.max(0, rows.length - page * 12);
   const visible = rows.slice(Math.max(0, end - 12), end);
   const values = visible.map((r) =>

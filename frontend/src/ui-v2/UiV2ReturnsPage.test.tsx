@@ -4,10 +4,24 @@ import { afterEach, expect, test, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import UiV2ReturnsPage from "./UiV2ReturnsPage";
 import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
-import { contextFixture, detailFixture, may, overviewFixture } from "./returns/fixtures";
+import {
+  contextFixture,
+  detailFixture,
+  longHistoryContext,
+  longHistoryOverview,
+  longHistoryPeriods,
+  may,
+  overviewFixture,
+} from "./returns/fixtures";
 
 function Location() {
-  return <output data-testid="location">{useLocation().search}</output>;
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.search}
+      {location.hash}
+    </output>
+  );
 }
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -126,14 +140,57 @@ test("mismatched server account/period is an error, never a numeric fallback", a
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
 });
 
-test("legacy history and ISIN select the full dated interval and expand only that paper", async () => {
-  install();
-  setup(
-    "/v2/capital/monthly-returns?source_account=SYNTH-A&bond_period=history&bond_isin=RU000A000002#bond-slice",
+test.each(["&bond_period=history", ""])(
+  "legacy history link '%s' retains full dates and ISIN",
+  async (selection) => {
+    install();
+    setup(
+      `/v2/capital/monthly-returns?source_account=SYNTH-A${selection}&bond_isin=RU000A000002#bond-slice`,
+    );
+    await screen.findByText("Продажа");
+    expect(screen.getByTestId("location")).toHaveTextContent("isin=RU000A000002");
+    expect(screen.getByTestId("location")).toHaveTextContent("start=2030-03-31&end=2030-05-31");
+    expect(screen.getByTestId("location")).toHaveTextContent("#returns-instruments");
+  },
+);
+
+test("24 months keep an earlier selection visible after loading and period changes", async () => {
+  install((url) => {
+    if (url.pathname.endsWith("context")) return Promise.resolve(response(longHistoryContext));
+    if (url.pathname.endsWith("overview"))
+      return Promise.resolve(
+        response(
+          longHistoryOverview(url.searchParams.get("scope") ?? "", {
+            start: url.searchParams.get("start") ?? "",
+            end: url.searchParams.get("end") ?? "",
+          }),
+        ),
+      );
+  });
+  setup();
+  await screen.findByRole("region", { name: "Результат периода" });
+  fireEvent.click(screen.getByRole("button", { name: "Более ранние месяцы" }));
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "История результата в рублях" })).getByRole("button", {
+      name: /янв.*2029/,
+    }),
   );
-  await screen.findByText("Продажа");
-  expect(screen.getByTestId("location")).toHaveTextContent("isin=RU000A000002");
-  expect(screen.getByTestId("location")).toHaveTextContent("start=2030-03-31&end=2030-05-31");
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("end=2029-01-31"));
+  await screen.findByRole("region", { name: "Результат периода" });
+  const selectedBar = () =>
+    within(screen.getByRole("group", { name: "История результата в рублях" })).getByRole("button", {
+      name: /янв.*2029/,
+    });
+  expect(selectedBar()).toHaveAttribute("aria-pressed", "true");
+  fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
+    target: { value: `${longHistoryPeriods[12].start}/${longHistoryPeriods[12].end}` },
+  });
+  await screen.findByRole("region", { name: "Результат периода" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
+    target: { value: `${longHistoryPeriods[0].start}/${longHistoryPeriods[0].end}` },
+  });
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(selectedBar()).toHaveAttribute("aria-pressed", "true");
 });
 
 test("without CLOSED months source intervals remain selectable without silently selecting DRAFT", async () => {
