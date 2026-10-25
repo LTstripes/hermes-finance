@@ -33,10 +33,14 @@ test("API Decimal boundary rates render identically in Month and Monthly Returns
     const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
     await expect(card).toContainText(expected);
     await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
+    await page.getByText("Подробнее о данных", { exact: true }).click();
+    await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
     const monthly = page.getByTestId("returns-monthly-table");
     await expect(monthly).toContainText(expected);
     await page.reload();
     await expect(monthly).toContainText(expected);
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
     await page.goBack();
     await expect(card).toContainText(expected);
   }
@@ -57,7 +61,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   page.on("request", (item) => {
     if (item.method() === "POST") writes.push(new URL(item.url()).pathname);
   });
-  await page.goto("/v2/capital/monthly-returns?source_account=1234567");
+  await page.goto("/v2/capital/monthly-returns?diagnostics=1&source_account=1234567");
   const proof = page.getByRole("region", {
     name: "Подтверждение источников доходности",
     exact: true,
@@ -98,7 +102,11 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(summary).toContainText("Modified Dietz");
   await summary.screenshot({ path: info.outputPath("source-proof-current-month.png") });
   await summary.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
+  await page.getByText("Подробнее о данных", { exact: true }).click();
+  await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
   await page.goBack();
   await expect(summary).toContainText("600 ₽");
   await page.reload();
@@ -127,7 +135,7 @@ test("explicit stale bond ISIN stays unavailable on reload; account switch reset
     if (!["GET", "HEAD"].includes(r.method())) mutations.push(r.method());
   });
   await page.goto(
-    "/v2/capital/monthly-returns?source_account=7654321&bond_period=2030-05-01&bond_isin=RU000STALE01#bond-slice",
+    "/v2/capital/monthly-returns?diagnostics=1&source_account=7654321&bond_period=2030-05-01&bond_isin=RU000STALE01#bond-slice",
   );
   const panel = page.getByRole("region", { name: "Облигации: позиции, сделки и купоны" });
   await expect(panel.getByText("Выбранная облигация недоступна", { exact: true })).toBeVisible();
@@ -178,7 +186,7 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
     if (!["GET", "HEAD"].includes(r.method())) mutations.push(`${r.method()} ${r.url()}`);
   });
   await page.goto(
-    "/v2/capital/monthly-returns?source_account=7654321&bond_period=2030-05-01#bond-slice",
+    "/v2/capital/monthly-returns?diagnostics=1&source_account=7654321&bond_period=2030-05-01#bond-slice",
   );
   const panel = page.getByRole("region", { name: "Облигации: позиции, сделки и купоны" });
   await expect(panel.getByText("7654321-000", { exact: true })).toBeVisible();

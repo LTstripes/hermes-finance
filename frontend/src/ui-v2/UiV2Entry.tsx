@@ -1,5 +1,6 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
 
 import type { DataAppSection } from "./monthSelection";
 
@@ -12,6 +13,7 @@ const UiV2CapitalAllocationPage = lazy(() => import("./UiV2CapitalAllocationPage
 const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
 const UiV2CapitalPerformanceDetail = lazy(() => import("./UiV2CapitalPerformanceDetail"));
 const UiV2MonthlyReturnsPage = lazy(() => import("./UiV2MonthlyReturnsPage"));
+const UiV2ReturnsPage = lazy(() => import("./UiV2ReturnsPage"));
 const UiV2ReportsPage = lazy(() => import("./UiV2ReportsPage"));
 const UiV2ReportPage = lazy(() => import("./UiV2ReportPage"));
 const UiV2ClosePage = lazy(() => import("./UiV2ClosePage"));
@@ -126,9 +128,19 @@ export function UiV2CapitalPerformanceEntry() {
 }
 
 export function UiV2MonthlyReturnsEntry() {
+  const [params] = useSearchParams();
+  if (params.get("diagnostics") !== "1") return <ReturnsLegacyRedirect />;
   return (
     <SuspenseFrame>
       <UiV2MonthlyReturnsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2ReturnsEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2ReturnsPage />
     </SuspenseFrame>
   );
 }

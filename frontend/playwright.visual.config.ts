@@ -36,6 +36,7 @@ export default defineConfig({
   testMatch: [
     "visual-audit.spec.ts",
     "ui-v2.visual.spec.ts",
+    "ui-v2-returns.spec.ts",
     "ui-v2-data.visual.spec.ts",
     "ui-v2-income.visual.spec.ts",
     "ui-v2-default-switch.spec.ts",

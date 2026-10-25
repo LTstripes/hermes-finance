@@ -140,7 +140,7 @@ test("renamed XML and second account upload, reload and blocked provisional resu
   if (!account) throw new Error("Synthetic account missing from fixture");
   const second = first.replaceAll(account, "7654321");
   const stateBefore = await (await request.get("/api/synthetic-provisional-state")).json();
-  await page.goto("/v2/capital/monthly-returns");
+  await page.goto("/v2/capital/monthly-returns?diagnostics=1");
   await page.getByLabel("XML-файлы", { exact: true }).setInputFiles([
     { name: "renamed.xml", mimeType: "application/xml", buffer: Buffer.from(first) },
     {
