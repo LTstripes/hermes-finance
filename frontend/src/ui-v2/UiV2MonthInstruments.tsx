@@ -103,7 +103,7 @@ export function UiV2MonthInstruments({
   return (
     <UiV2Panel
       eyebrow="Из сохранённых источников · только чтение"
-      title="Инструменты и выплаты месяца"
+      title="Бумаги и выплаты"
       id="month-instruments"
       testIdPrefix="month"
       wide
@@ -205,11 +205,14 @@ export function UiV2MonthInstruments({
                 }
                 . Это доступные события источника; полнота и исключения показаны ниже.
               </p>
-              <SourceInstrumentDetail
-                analysis={instrument.analysis}
-                instrumentType={instrument.instrument_type}
-                payoutPreviewHere
-              />
+              <details>
+                <summary>Сделки, выплаты и расчёт инструмента</summary>
+                <SourceInstrumentDetail
+                  analysis={instrument.analysis}
+                  instrumentType={instrument.instrument_type}
+                  payoutPreviewHere
+                />
+              </details>
               <MonthInstrumentPayouts
                 key={`${data.native_source_account}:${instrument.isin}:${JSON.stringify(instrument.analysis)}`}
                 account={account}

@@ -12384,6 +12384,41 @@ If a position disappears after an earlier apply, the event is not auto-deleted. 
 Closed-month applied data is never rewritten by refresh of another month.
 
 <a id="c9-source-payout-preview"></a>
+#### Month workspace presentation and recovery
+
+`/v2/close?month=id&panel=...` mounts one existing manual leaf, source workspace or
+final review. `panel` is presentation state, never a financial instruction.
+Manual leaves reuse `MonthEditorContext`, their existing endpoints and independent
+readback; there is no global Save transaction. Dirty and pending state flows to
+one navigation guard. Source journal currency/default/override/identity edits
+count as dirty even without File or after a previous financial receipt. An
+unresolved mutation cannot be discarded by tile, Back or link navigation.
+
+The shared multi-XML intake verifies each ACK against independent source history.
+Only then may its exact in-memory File be reused by the selected strict review.
+Files never enter query cache, URL or browser storage. After Reload an exact
+original must be reselected through the same input. The existing source list plus
+client SHA-256 supplies only a hint to preserve that original's existing binding;
+backend Save and history GET remain authoritative. Save cannot rebind an existing
+original. The existing explicit review-preview/decisions may classify an unbound
+source to a reviewed account/month with zero financial effects; this creates no
+accepted financial facts. An uncertain source Save recovers by request-key
+history GET, never a blind upload replay; independent files remain uploadable.
+Selecting an existing exact original can supply missing bytes without replacing
+unsaved currency edits. Account/scope changes still retire Preview and consent.
+Unchanged background reads do not erase a freshly reviewed summary merely for a
+new `generated_at`; explicit invalidation, manual cache changes and changed facts
+(including ABA) still retire it, and backend Apply revalidates the exact digest.
+
+
+Close/Reopen retains authoritative identity/readiness checks before confirmation
+and command. A matching independent workflow GET proves the resulting status;
+only then are dependent Home/Capital/Returns/chart queries invalidated. Unknown
+ACK plus failed/nonterminal GET keeps explicit recovery pending, blocks another
+command/navigation and offers GET-only retry. Cached totals never prove success.
+The compact final tile reads the same `final_review` amounts and readiness as the
+extended review. Source estimates and payout preview remain financially inert.
+
 #### Saved-statement quantity preview (#711 / #889)
 
 `GET /api/source-returns/quantity-bases` discovers saved closing dates for exact

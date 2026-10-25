@@ -120,12 +120,38 @@ function availabilityLabel(card: ManualReviewCard): string {
   return isOptionalEmpty(card) ? reasonLabel("optional_empty") : "Есть данные";
 }
 
+/** Compact Month view uses the same availability/optional-empty rules as full review. */
+export function MonthCompletionSummary({
+  cards,
+  className,
+}: {
+  cards: ManualReviewCard[];
+  className?: string;
+}) {
+  return (
+    <ul aria-label="Заполнение месяца" className={className}>
+      {cards.map((card) => (
+        <li key={card.id}>
+          <span>{card.title}</span>
+          <strong>{availabilityLabel(card)}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
   if (!card.available) return "unknown";
   return isOptionalEmpty(card) ? "info" : "ok";
 }
 
-function editPath(monthId: number, section: string, origin: MonthlyCloseOrigin): string {
+function editPath(
+  monthId: number,
+  section: string,
+  origin: MonthlyCloseOrigin,
+  workspace = false,
+): string {
+  if (workspace) return `/v2/close?month=${monthId}&panel=${section}`;
   return withMonthlyCloseReturn(
     `/v2/data/months/${monthId}?section=${section}`,
     monthId,
@@ -134,9 +160,18 @@ function editPath(monthId: number, section: string, origin: MonthlyCloseOrigin):
   );
 }
 
-function editLinks(card: ManualReviewCard, month: WorkflowMonth, origin: MonthlyCloseOrigin) {
+function editLinks(
+  card: ManualReviewCard,
+  month: WorkflowMonth,
+  origin: MonthlyCloseOrigin,
+  workspace = false,
+) {
   return (CARD_SECTIONS[card.id] ?? []).map((section) => (
-    <Link className="btn btn--ghost btn--sm" key={section} to={editPath(month.id, section, origin)}>
+    <Link
+      className="btn btn--ghost btn--sm"
+      key={section}
+      to={editPath(month.id, section, origin, workspace)}
+    >
       {card.id === "income_budget" ? (section === "income" ? "Доходы" : "Бюджет") : "Изменить"}
     </Link>
   ));
@@ -247,9 +282,11 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
 function ReadinessDetails({
   review,
   origin,
+  workspace,
 }: {
   review: FinalMonthReviewModel;
   origin: MonthlyCloseOrigin;
+  workspace?: boolean;
 }) {
   const itemsBySeverity = (severity: CloseReadinessItem["severity"]) =>
     review.close_readiness.items.filter((item) => item.severity === severity);
@@ -301,7 +338,7 @@ function ReadinessDetails({
                     <span>{item.message}</span>
                     {item.code === "active_account_snapshot_missing" &&
                     review.month_header.status === "draft" ? (
-                      <Link to={editPath(review.month_header.id, "assets", origin)}>
+                      <Link to={editPath(review.month_header.id, "assets", origin, workspace)}>
                         Заполнить остатки этого месяца
                       </Link>
                     ) : null}
@@ -421,11 +458,13 @@ function Attention({
   review,
   month,
   origin,
+  workspace,
   editable,
 }: {
   review: FinalMonthReviewModel;
   month: WorkflowMonth;
   origin: MonthlyCloseOrigin;
+  workspace?: boolean;
   editable: boolean;
 }) {
   return (
@@ -445,7 +484,7 @@ function Attention({
                 {editable && card && CARD_SECTIONS[card.id]?.[0] ? (
                   <Link
                     className="btn btn--ghost btn--sm"
-                    to={editPath(month.id, CARD_SECTIONS[card.id][0], origin)}
+                    to={editPath(month.id, CARD_SECTIONS[card.id][0], origin, workspace)}
                   >
                     Открыть {card.title.toLocaleLowerCase()}
                   </Link>
@@ -469,11 +508,13 @@ function ManualCards({
   review,
   month,
   origin,
+  workspace,
   editable,
 }: {
   review: FinalMonthReviewModel;
   month: WorkflowMonth;
   origin: MonthlyCloseOrigin;
+  workspace?: boolean;
   editable: boolean;
 }) {
   const cardsById = new Map(review.manual_review_cards.map((card) => [card.id, card]));
@@ -497,7 +538,9 @@ function ManualCards({
             <div className="final-review__card-grid">{cardSummary(card)}</div>
             {!card.available ? <p className="muted tiny">{reasonLabel(card.reason_code)}</p> : null}
             {editable ? (
-              <div className="final-review__card-actions">{editLinks(card, month, origin)}</div>
+              <div className="final-review__card-actions">
+                {editLinks(card, month, origin, workspace)}
+              </div>
             ) : null}
           </article>
         ))}
@@ -509,9 +552,11 @@ function ManualCards({
 export function FinalMonthReview({
   review,
   origin = "monthly-close-v2",
+  workspace = false,
 }: {
   review: FinalMonthReviewModel | FinalMonthReviewUnavailable;
   origin?: MonthlyCloseOrigin;
+  workspace?: boolean;
 }) {
   if (!review.available) {
     return (
@@ -594,15 +639,17 @@ export function FinalMonthReview({
         editable={review.month_header.status === "draft"}
         month={review.month_header}
         origin={origin}
+        workspace={workspace}
         review={review}
       />
       <ManualCards
         editable={review.month_header.status === "draft"}
         month={review.month_header}
         origin={origin}
+        workspace={workspace}
         review={review}
       />
-      <ReadinessDetails origin={origin} review={review} />
+      <ReadinessDetails origin={origin} workspace={workspace} review={review} />
       <FutureEvents review={review} />
     </section>
   );

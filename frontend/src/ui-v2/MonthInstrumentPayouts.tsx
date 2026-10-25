@@ -239,10 +239,13 @@ export function MonthInstrumentPayouts({
   return (
     <section className={styles.preview} aria-label={`Предварительные выплаты ${isin}`}>
       <h3>Предварительные выплаты · T-Invest</h3>
-      <p className={styles.note}>
-        Только по явному запросу. Сохранённое количество — сценарий, а не доказательство права на
-        будущую выплату. Прогноз не включается в P&amp;L или фактический доход.
-      </p>
+      <details>
+        <summary>О предварительных выплатах</summary>
+        <p className={styles.note}>
+          Только по явному запросу. Сохранённое количество — сценарий, а не доказательство права на
+          будущую выплату. Прогноз не включается в P&amp;L или фактический доход.
+        </p>
+      </details>
       {bases.isFetching || bases.isPending ? (
         <p>Читаем даты количества из сохранённых выписок…</p>
       ) : bases.isError ? (

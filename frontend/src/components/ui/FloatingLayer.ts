@@ -27,6 +27,9 @@ export function useFloatingPosition(
 
       const anchorRect = anchor.getBoundingClientRect();
       const layerRect = layer.getBoundingClientRect();
+      // DOMRects include CSS zoom; fixed left/top are expressed before zoom.
+      // Native browser zoom already uses CSS viewport units and needs no adjustment.
+      const layerZoom = layer.offsetWidth > 0 ? layerRect.width / layer.offsetWidth : 1;
       const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
       const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
       const maxLeft = Math.max(VIEWPORT_GUTTER, viewportWidth - layerRect.width - VIEWPORT_GUTTER);
@@ -40,11 +43,11 @@ export function useFloatingPosition(
 
       setStyle({
         bottom: "auto",
-        left: Math.min(Math.max(left, VIEWPORT_GUTTER), maxLeft),
-        maxHeight: `calc(100dvh - ${VIEWPORT_GUTTER * 2}px)`,
+        left: Math.min(Math.max(left, VIEWPORT_GUTTER), maxLeft) / layerZoom,
+        maxHeight: (viewportHeight - VIEWPORT_GUTTER * 2) / layerZoom,
         position: "fixed",
         right: "auto",
-        top: Math.min(Math.max(top, VIEWPORT_GUTTER), maxTop),
+        top: Math.min(Math.max(top, VIEWPORT_GUTTER), maxTop) / layerZoom,
         visibility: "visible",
       });
     };

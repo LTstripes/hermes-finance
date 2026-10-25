@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { formatApiError } from "../api/client";
 import { cloneMonth, createMonth, deleteMonth, listMonths } from "../api/months";
@@ -10,7 +10,7 @@ import {
   parseMonthlyCloseReturnContext,
   withMonthlyCloseReturn,
 } from "../components/month-close/navigation";
-import { ConfirmDialog } from "../components/ui";
+import { ConfirmDialog, OverflowMenu, OverflowMenuItem } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { lastDayOfMonth, nextPeriod } from "../lib/period";
 import { queryKeys } from "../queryClient";
@@ -62,6 +62,7 @@ function isConfirmedMonth(value: ReportingMonth, target: Target): boolean {
 
 export default function UiV2MonthsPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
@@ -374,72 +375,47 @@ export default function UiV2MonthsPage() {
                   <small>Снимок {formatDate(month.snapshot_date)}</small>
                 </div>
                 <div className={styles.actions}>
-                  <Link
-                    className={styles.primary}
-                    to={
-                      month.status === "draft"
-                        ? monthWorkspacePath(month.id)
-                        : closeContext?.monthId === month.id
-                          ? withMonthlyCloseReturn(
-                              `/v2/data/months/${month.id}`,
-                              month.id,
-                              closeContext.step,
-                              closeContext.origin,
-                            )
-                          : `/v2/data/months/${month.id}`
-                    }
-                  >
+                  <Link className={styles.primary} to={monthWorkspacePath(month.id)}>
                     Открыть месяц
                   </Link>
-                  {month.status === "draft" ? (
-                    <Link
-                      className={styles.primary}
-                      to={monthWorkspacePath(month.id, "final_review_close")}
-                    >
-                      Проверить и закрыть
-                    </Link>
-                  ) : null}
-                  <div className={styles.secondaryActions}>
-                    {month.status === "closed" ? (
-                      latestClosed?.id === month.id ? (
-                        <Link to="/v2">{CURRENT_ROW_ACTION}</Link>
-                      ) : (
-                        <Link to={reportPath(month.id)}>Посмотреть отчёт</Link>
-                      )
-                    ) : null}
-                    <button
-                      className={styles.secondary}
-                      disabled={busy}
-                      onClick={() => startClone(month)}
-                      type="button"
-                    >
+                  <OverflowMenu label={`Действия месяца ${formatMonth(month.year, month.month)}`}>
+                    <OverflowMenuItem disabled={busy} onClick={() => startClone(month)}>
                       Копировать
-                    </button>
-                    <Link
-                      to={
-                        closeContext?.monthId === month.id
-                          ? withMonthlyCloseReturn(
-                              `/v2/data/months/${month.id}`,
-                              month.id,
-                              closeContext.step,
-                              closeContext.origin,
-                            )
-                          : `/v2/data/months/${month.id}`
+                    </OverflowMenuItem>
+                    <OverflowMenuItem
+                      onClick={() =>
+                        navigate(
+                          closeContext?.monthId === month.id
+                            ? withMonthlyCloseReturn(
+                                `/v2/data/months/${month.id}`,
+                                month.id,
+                                closeContext.step,
+                                closeContext.origin,
+                              )
+                            : `/v2/data/months/${month.id}`,
+                        )
                       }
                     >
-                      Редактор месяца →
-                    </Link>
-                    {month.status === "draft" ? (
-                      <button
-                        className={styles.danger}
+                      Редактор
+                    </OverflowMenuItem>
+                    {month.status === "closed" ? (
+                      <OverflowMenuItem
+                        onClick={() =>
+                          navigate(latestClosed?.id === month.id ? "/v2" : reportPath(month.id))
+                        }
+                      >
+                        {latestClosed?.id === month.id ? CURRENT_ROW_ACTION : "Посмотреть отчёт"}
+                      </OverflowMenuItem>
+                    ) : (
+                      <OverflowMenuItem
+                        danger
                         disabled={busy}
                         onClick={() => setPendingDelete(month)}
-                        type="button"
                       >
                         Удалить черновик
-                      </button>
-                    ) : null}
-                  </div>
+                      </OverflowMenuItem>
+                    )}
+                  </OverflowMenu>
                 </div>
               </li>
             ))}

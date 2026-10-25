@@ -15,6 +15,7 @@ export function SourceIdentityInbox({
   preview,
   disabled,
   onReview,
+  onDirtyChange,
   assessments,
   overrides,
   onCurrency,
@@ -22,6 +23,7 @@ export function SourceIdentityInbox({
   preview: Pick<BrokerMonthPreview, "identity" | "exceptions" | "instrument_decisions">;
   disabled: boolean;
   onReview: (decisions: InstrumentDecision[]) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   assessments?: SourceIntake["proposals"];
   overrides?: Record<string, string>;
   onCurrency?: (isin: string, currency: string) => void;
@@ -36,6 +38,14 @@ export function SourceIdentityInbox({
     ),
   );
   const [error, setError] = useState<string | null>(null);
+  const initialChoices = useRef(choices);
+  const dirty =
+    JSON.stringify(Object.entries(choices).sort()) !==
+    JSON.stringify(Object.entries(initialChoices.current).sort());
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   const [looking, setLooking] = useState(false);
   const request = useRef(0);
   const instruments = preview.identity?.instruments ?? [];

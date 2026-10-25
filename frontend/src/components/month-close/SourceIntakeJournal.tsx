@@ -81,6 +81,7 @@ export function SourceIntakeJournal({
   onChanged,
   intakeSelection,
   sourceAccount,
+  onDirtyChange,
 }: {
   monthId: number;
   closed: boolean;
@@ -89,8 +90,14 @@ export function SourceIntakeJournal({
   receipts: BrokerMonthReadback[];
   onReview: (decisions: InstrumentDecision[]) => void;
   onChanged: () => void;
-  intakeSelection?: { id: number } | null;
+  intakeSelection?: {
+    id: number;
+    file?: File;
+    snapshot?: SourceIntake;
+    preserveDraft?: boolean;
+  } | null;
   sourceAccount?: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { session, original } = useBrokerOriginalSession();
   const client = useQueryClient();
@@ -102,6 +109,19 @@ export function SourceIntakeJournal({
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [accountCurrency, setAccountCurrency] = useState("");
   const [defaultEnabled, setDefaultEnabled] = useState(true);
+  const [identityDirty, setIdentityDirty] = useState(false);
+  const dirty = Boolean(
+    identityDirty ||
+      (selected &&
+        (accountCurrency !== (selected.state.account_currency ?? "") ||
+          defaultEnabled !== selected.state.default_enabled ||
+          JSON.stringify(Object.entries(overrides).sort()) !==
+            JSON.stringify(Object.entries(selected.state.overrides).sort()))),
+  );
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const {
@@ -174,15 +194,67 @@ export function SourceIntakeJournal({
       disabled
     )
       return;
-    const value = sources.find((item) => item.id === intakeSelection.id);
+    const value =
+      intakeSelection.snapshot ?? sources.find((item) => item.id === intakeSelection.id);
+    if (
+      value &&
+      (value.id !== intakeSelection.id ||
+        (value.state.reporting_month_id !== null && value.state.reporting_month_id !== monthId) ||
+        (sourceAccount &&
+          ![value.document.filename_account, ...(value.document.source_accounts ?? [])].includes(
+            sourceAccount,
+          )))
+    ) {
+      openedIntake.current = intakeSelection;
+      setError("Сохранённый источник не подтвердил текущий месяц и счёт. Выбери разбор явно.");
+      return;
+    }
     if (value) {
       openedIntake.current = intakeSelection;
+      if (
+        intakeSelection.preserveDraft &&
+        selected?.id === value.id &&
+        (identityDirty || original.decisions.length > 0)
+      ) {
+        setError(
+          "Сначала сохрани решения по бумагам или явно выбери разбор заново. Твой выбор сохранён в форме.",
+        );
+        return;
+      }
+      if (intakeSelection.preserveDraft && selected?.id === value.id && dirty) {
+        if (JSON.stringify(selected.state) !== JSON.stringify(value.state)) {
+          setError(
+            "Сохранённая версия разбора изменилась. Сверь её перед сохранением; твой ввод сохранён в форме.",
+          );
+          return;
+        }
+        setSelected(value);
+        setReviewed(null);
+        requestId.current = null;
+        session.select(intakeSelection.file ?? null, monthId, original.accountId);
+        return;
+      }
       // An explicit saved-source selection retires another original's Preview,
       // decisions and public-search consent, after any pending result is resolved.
-      session.select(null, monthId, "");
+      session.select(intakeSelection.file ?? null, monthId, "");
       choose(value);
     }
-  }, [intakeSelection, sources, busy, pendingCommand, disabled, session, monthId, choose]);
+  }, [
+    intakeSelection,
+    sources,
+    busy,
+    pendingCommand,
+    disabled,
+    session,
+    monthId,
+    choose,
+    sourceAccount,
+    selected,
+    dirty,
+    identityDirty,
+    original.decisions.length,
+    original.accountId,
+  ]);
   useEffect(() => {
     if (selected || pendingCommand || busy || list.isFetching || list.isError) return;
     const id = client.getQueryData<number>(["source-intake-selection", monthId, sourceAccount]);
@@ -285,25 +357,27 @@ export function SourceIntakeJournal({
     const version = epoch.current;
     requestId.current ??= crypto.randomUUID();
     const commandId = requestId.current;
+    // Existing source-only observations retain their original binding. Choosing
+    // a strict financial target is not permission to rebind the source journal.
+    const sourceAccountId = selected
+      ? selected.state.account_id
+      : accountId
+        ? Number(accountId)
+        : null;
     pending({
       id: commandId,
       intakeId: null,
       monthId,
       sourceAccount: sourceAccount ?? "",
       file,
-      accountId: accountId ? Number(accountId) : null,
+      accountId: sourceAccountId,
       intent: null,
       digest: null,
       ack: null,
     });
     let acknowledged = false;
     try {
-      const saved = await saveSourceIntake(
-        file,
-        commandId,
-        monthId,
-        accountId ? Number(accountId) : null,
-      );
+      const saved = await saveSourceIntake(file, commandId, monthId, sourceAccountId);
       if (version !== epoch.current) return;
       acknowledged = true;
       setAck(saved);
@@ -464,7 +538,7 @@ export function SourceIntakeJournal({
           <select
             aria-label="Сохранённый разбор"
             value={selected?.id ?? ""}
-            disabled={blocked}
+            disabled={blocked || dirty}
             onChange={(e) => {
               const value = sources.find((v) => v.id === Number(e.target.value));
               if (value) choose(value);
@@ -586,6 +660,7 @@ export function SourceIntakeJournal({
       )}
       {queue && (
         <SourceIdentityInbox
+          onDirtyChange={setIdentityDirty}
           key={`${data?.id ?? "session"}:${data?.head_seq ?? 0}:${original.epoch}`}
           preview={queue}
           disabled={blocked || !file}

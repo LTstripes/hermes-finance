@@ -177,6 +177,10 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
     operation.current += 1;
   }
 
+  useEffect(() => {
+    context.setPending?.("income", saving || retryBlocked);
+    return () => context.setPending?.("income", false);
+  }, [context.setPending, saving, retryBlocked]);
   useEffect(() => setDirty("income", dirty), [dirty, setDirty]);
   useEffect(
     () => () => {
@@ -327,11 +331,14 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
   return (
     <section aria-label="Зарплата и прочее" className={styles.panel}>
       <h2>Зарплата и прочее</h2>
-      <p>
-        {readOnly
-          ? "Закрытый месяц доступен только для чтения."
-          : "Изменения этого раздела сохраняются отдельно от других разделов."}
-      </p>
+      <details open={!context.workspace}>
+        <summary>Подробнее</summary>{" "}
+        <p>
+          {readOnly
+            ? "Закрытый месяц доступен только для чтения."
+            : "Изменения этого раздела сохраняются отдельно от других разделов."}
+        </p>
+      </details>
       {loading ? <p role="status">Загружаем доходы месяца…</p> : null}
       {loadFailed ? (
         <div className={styles.warning} role="alert">
@@ -438,7 +445,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
           </details>
           {!readOnly ? (
             <button disabled={!dirty || saving || retryBlocked} type="submit">
-              {saving ? "Сохраняем…" : "Сохранить доходы"}
+              {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
             </button>
           ) : null}
         </form>
@@ -467,7 +474,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
           </button>
         </div>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? <p role="status">{context.workspace ? "Сохранено" : notice}</p> : null}
     </section>
   );
 }

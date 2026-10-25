@@ -41,12 +41,8 @@ def main():
         Base.metadata.create_all(database.engine)
         with database.session_factory() as session:
             create_account(session, name="Synthetic broker", account_type="brokerage")
-            create_account(
-                session, name="Unrelated synthetic deposit", account_type="deposit"
-            )
-            create_account(
-                session, name="Synthetic structural broker", account_type="brokerage"
-            )
+            create_account(session, name="Unrelated synthetic deposit", account_type="deposit")
+            create_account(session, name="Synthetic structural broker", account_type="brokerage")
             create_instrument(
                 session,
                 name="Synthetic stock",
@@ -112,9 +108,7 @@ def main():
             inbox_account = create_account(
                 session, name="Synthetic identity inbox", account_type="brokerage"
             )
-            create_reporting_month(
-                session, year=2031, month=1, snapshot_date=date(2031, 1, 31)
-            )
+            create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
             for alias in ("8860000", "886-ROW"):
                 confirm_mapping(
                     session,
@@ -195,12 +189,24 @@ def main():
             )
 
         def mocked_lookup(isins, *, consent):
-            with httpx2.Client(
-                transport=httpx2.MockTransport(public_transport)
-            ) as client:
+            with httpx2.Client(transport=httpx2.MockTransport(public_transport)) as client:
                 return actual_lookup(isins, consent=consent, client=client)
 
         registry.lookup_public = mocked_lookup
+        with database.session_factory() as session:
+            for alias, kind in (("7114001", "brokerage"), ("7114002", "iis")):
+                account = create_account(
+                    session, name=f"Workspace synthetic {alias}", account_type=kind
+                )
+                for identity in (alias, alias + "-000"):
+                    confirm_mapping(
+                        session,
+                        provider="alfa_mybroker",
+                        subject_kind="account",
+                        provider_identity=identity,
+                        hermes_target_id=account.id,
+                    )
+
         # Build the accepted return proof after all catalogue/account dependencies.
         seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
@@ -212,9 +218,7 @@ def main():
 
         with database.session_factory() as session:
             for instrument in session.scalars(
-                select(Instrument).where(
-                    Instrument.isin.in_(["RU000A000000", "RU000A000001"])
-                )
+                select(Instrument).where(Instrument.isin.in_(["RU000A000000", "RU000A000001"]))
             ):
                 accept_t_invest_mapping(
                     session,
@@ -235,6 +239,16 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind in {"workspace-october-a", "workspace-october-b"}:
+                alias = b"7114001" if kind.endswith("a") else b"7114002"
+                raw = (
+                    broker_month_xml(bond=True, unsupported=False)
+                    .replace(b"1234567", alias)
+                    .replace(b"31.12.2029", b"30.09.2040")
+                    .replace(b".01.2030", b".10.2040")
+                    .replace(b"2030-01-", b"2040-10-")
+                )
+                return Response(raw, media_type="application/xml")
             if kind in {"month-entry-a", "month-entry-b"}:
                 from test_statement_import_broker_statement_provisional import (
                     provisional_xml,
@@ -254,9 +268,7 @@ def main():
                     nominal="1000",
                 )
                 tree.find(".//{MyBroker}Details_Collection").append(bond)
-                trade_collection = tree.find(
-                    ".//{MyBroker}Trades//{MyBroker}Details_Collection"
-                )
+                trade_collection = tree.find(".//{MyBroker}Trades//{MyBroker}Details_Collection")
                 for row in list(trade_collection):
                     trade_collection.remove(row)
                 alias = b"7113501" if kind.endswith("a") else b"7113502"
@@ -365,27 +377,29 @@ def main():
             with database.engine.connect() as connection:
                 rows = {
                     table.name: sorted(
-                        [
-                            list(map(str, row))
-                            for row in connection.execute(select(table))
-                        ]
+                        [list(map(str, row)) for row in connection.execute(select(table))]
                     )
                     for table in Base.metadata.sorted_tables
                 }
             return {
                 "counts": {name: len(items) for name, items in rows.items()},
-                "digest": hashlib.sha256(
-                    json.dumps(rows, sort_keys=True).encode()
-                ).hexdigest(),
+                "digest": hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest(),
+                "table_digests": {
+                    name: hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
+                    for name, items in rows.items()
+                },
             }
 
         app.router.routes.insert(0, app.router.routes.pop())
-        uvicorn.run(
-            app,
-            host="127.0.0.1",
-            port=int(os.environ.get("HERMES_BROKER_MONTH_TEST_PORT", "18773")),
-            access_log=False,
-        )
+        from hermes_finance.services.database_admission import database_admission
+
+        with database_admission(database.database_path):
+            uvicorn.run(
+                app,
+                host="127.0.0.1",
+                port=int(os.environ.get("HERMES_BROKER_MONTH_TEST_PORT", "18773")),
+                access_log=False,
+            )
         database.engine.dispose()
 
 

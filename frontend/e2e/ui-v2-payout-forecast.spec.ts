@@ -358,6 +358,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installPayoutApi(page);
     await page.goto("/v2/close?month=12&step=future_payouts");
+    await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
     const openCalendar = page.getByRole("link", { name: "Открыть календарь выплат" });
     await expect(openCalendar).toHaveAttribute(
       "href",

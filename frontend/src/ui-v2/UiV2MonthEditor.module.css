@@ -109,3 +109,9 @@
     align-items: stretch;
   }
 }
+.embedded {
+  min-width: 0;
+}
+.embedded > fieldset {
+  min-width: 0;
+}

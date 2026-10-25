@@ -189,6 +189,8 @@ test("selects a saved historical quantity without substituting the month's closi
 
 test("Month reuses #949 detail, separates full/conditional/NULL and never starts the provider automatically", async () => {
   const { fetcher } = setup();
+  await screen.findByText("Сделки, выплаты и расчёт инструмента");
+  fireEvent.click(screen.getByText("Сделки, выплаты и расчёт инструмента"));
   await screen.findByRole("region", { name: `Инструмент ${ISIN}` });
   expect(
     within(
@@ -326,6 +328,8 @@ test.each(["account", "period"])(
   "wrong instrument API %s hides dependent metrics/actions",
   async (kind) => {
     const { state, fetcher } = setup();
+    await screen.findByText("Сделки, выплаты и расчёт инструмента");
+    fireEvent.click(screen.getByText("Сделки, выплаты и расчёт инструмента"));
     await screen.findByRole("region", { name: `Инструмент ${ISIN}` });
     state.readReply = () => {
       const value = instruments();

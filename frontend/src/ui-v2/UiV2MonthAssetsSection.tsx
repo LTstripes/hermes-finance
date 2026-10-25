@@ -287,6 +287,10 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
 
   const localDirty = depositDraftTouched || cashDraftTouched || editingDepositId !== null;
 
+  useEffect(() => {
+    context.setPending?.(DIRTY_SECTION, busy || pendingCreated !== null);
+    return () => context.setPending?.(DIRTY_SECTION, false);
+  }, [context.setPending, busy, pendingCreated]);
   useEffect(() => setDirty(DIRTY_SECTION, localDirty), [localDirty, setDirty]);
   useEffect(
     () => () => {
@@ -777,27 +781,31 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
 
   return (
     <div className="stack-18">
-      <section
-        aria-label="Источник и снимок месяца"
-        className={styles.meta}
-        data-testid="month-assets-meta"
-      >
-        <p>
-          Источник: <strong>{labelOf(SOURCE_LABELS, month.source)}</strong> · Снимок:{" "}
-          <strong>{formatDate(month.snapshot_date)}</strong> · Период:{" "}
-          <strong>{formatMonth(month.year, month.month)}</strong> ·{" "}
-          {month.status === "closed" ? "Закрыт" : "Черновик"}
-        </p>
-        <p className={styles.hint}>
-          Суммы показываются так, как их возвращает API выбранного месяца. Раздел не рассчитывает
-          полноту капитала и не подменяет отсутствующий снимок нулём.
-        </p>
-        {readOnly ? (
-          <p className={styles.hint}>
-            Месяц закрыт: создание, изменение и удаление активов недоступны до повторного открытия.
+      <details open={!context.workspace}>
+        <summary>Подробнее об источнике и снимке</summary>
+        <section
+          aria-label="Источник и снимок месяца"
+          className={styles.meta}
+          data-testid="month-assets-meta"
+        >
+          <p>
+            Источник: <strong>{labelOf(SOURCE_LABELS, month.source)}</strong> · Снимок:{" "}
+            <strong>{formatDate(month.snapshot_date)}</strong> · Период:{" "}
+            <strong>{formatMonth(month.year, month.month)}</strong> ·{" "}
+            {month.status === "closed" ? "Закрыт" : "Черновик"}
           </p>
-        ) : null}
-      </section>
+          <p className={styles.hint}>
+            Суммы показываются так, как их возвращает API выбранного месяца. Раздел не рассчитывает
+            полноту капитала и не подменяет отсутствующий снимок нулём.
+          </p>
+          {readOnly ? (
+            <p className={styles.hint}>
+              Месяц закрыт: создание, изменение и удаление активов недоступны до повторного
+              открытия.
+            </p>
+          ) : null}
+        </section>
+      </details>
 
       {actionError ? (
         <div className="inline-alert inline-alert--error" role="alert">
@@ -806,7 +814,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       ) : null}
       {notice ? (
         <div className="inline-alert inline-alert--ok" role="status">
-          {notice}
+          {context.workspace ? "Сохранено" : notice}
         </div>
       ) : null}
 
@@ -864,7 +872,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                     const editing = editingDepositId === row.id && editDeposit;
                     return (
                       <tr key={row.id}>
-                        <Td>
+                        <Td data-label="Название">
                           {editing ? (
                             <Input
                               disabled={busy || readOnly}
@@ -877,7 +885,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             row.name
                           )}
                         </Td>
-                        <Td>
+                        <Td data-label="Тип">
                           {editing ? (
                             <Select
                               disabled={busy || readOnly}
@@ -893,7 +901,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)
                           )}
                         </Td>
-                        <Td numeric>
+                        <Td numeric data-label="Баланс">
                           {editing ? (
                             <Input
                               className="input--money"
@@ -909,7 +917,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             })
                           )}
                         </Td>
-                        <Td numeric>
+                        <Td numeric data-label="Ставка %">
                           {editing ? (
                             <Input
                               className="input--money"
@@ -923,14 +931,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             row.annual_rate
                           )}
                         </Td>
-                        <Td numeric>
+                        <Td numeric data-label="Прогноз / мес">
                           <span className="muted">
                             {formatMoney(moneyAmount(row.expected_monthly_interest), {
                               currency: currencySuffix(row.expected_monthly_interest.currency),
                             })}
                           </span>
                         </Td>
-                        <Td numeric>
+                        <Td numeric data-label="Получено">
                           {editing ? (
                             <Input
                               className="input--money"
@@ -949,7 +957,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             })
                           )}
                         </Td>
-                        <Td className="month-deposits-table__actions">
+                        <Td className="month-deposits-table__actions" data-label="Действия">
                           <div className="row-actions">
                             {editing ? (
                               <>

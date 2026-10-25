@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { formatSourceReturnRate as sourceReturnRate } from "../lib/sourceReturnFormat";
@@ -71,6 +71,7 @@ it("keeps a supported zero separate from NULL and states the missing evidence", 
   ]);
   expect(await screen.findByText(/0.*₽.*Доходность недоступна/)).toBeVisible();
   expect(screen.getByText(/Нужны подтверждённые EOD/)).toHaveTextContent("2030-10-31");
+  fireEvent.click(screen.getByText("Подробнее о предварительном расчёте"));
   expect(screen.getByText("Есть нераспознанная денежная операция.")).toBeVisible();
 });
 

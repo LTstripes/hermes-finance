@@ -49,7 +49,7 @@ const suites: Record<string, PlaywrightTestConfig> = {
   },
   "broker-month": {
     testDir: "./e2e",
-    testMatch: "broker-month.acceptance.ts",
+    testMatch: ["broker-month.acceptance.ts", "month-workspace.acceptance.ts"],
     outputDir: path.join(os.tmpdir(), "hermes-broker-month-playwright"),
     workers: 1,
     retries: 0,

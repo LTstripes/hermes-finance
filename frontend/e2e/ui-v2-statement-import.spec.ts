@@ -540,6 +540,7 @@ test("v2 Close actual_payouts routes to the native statement-import anchor and b
 }) => {
   const api = await installStatementApi(page);
   await page.goto("/v2/close?month=12&step=actual_payouts");
+  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
   const chooseFile = page.getByRole("link", { name: "Выбрать выписку с выплатами" });
   await expect(chooseFile).toHaveAttribute(
     "href",

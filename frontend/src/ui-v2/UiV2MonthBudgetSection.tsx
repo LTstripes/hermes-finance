@@ -179,6 +179,10 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     editingPlanId !== null;
 
   useEffect(() => {
+    context.setPending?.(MONTH_BUDGET_SECTION_ID, busy);
+    return () => context.setPending?.(MONTH_BUDGET_SECTION_ID, false);
+  }, [context.setPending, busy]);
+  useEffect(() => {
     setDirty(MONTH_BUDGET_SECTION_ID, localDirty);
   }, [localDirty, setDirty]);
 
@@ -742,7 +746,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
           {actionError}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? <p role="status">{context.workspace ? "Сохранено" : notice}</p> : null}
 
       <section aria-label="Расходы месяца" className={styles.panel}>
         <h2>Расходы</h2>
@@ -944,10 +948,13 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
             </>
           )}
         </p>
-        <p className={styles.hint}>
-          Отдельный план показывается только когда он действительно введён. Отсутствующий план — это
-          прочерк, а не ноль; введённый ноль остаётся нулём.
-        </p>
+        <details open={!context.workspace}>
+          <summary>Подробнее</summary>{" "}
+          <p className={styles.hint}>
+            Отдельный план показывается только когда он действительно введён. Отсутствующий план —
+            это прочерк, а не ноль; введённый ноль остаётся нулём.
+          </p>
+        </details>
         {plan.length === 0 ? (
           <p>План пока не введён.</p>
         ) : (

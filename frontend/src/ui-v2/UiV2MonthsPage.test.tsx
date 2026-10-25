@@ -62,7 +62,7 @@ function renderPage(path = "/v2/data/months") {
 }
 
 async function ready() {
-  return screen.findByRole("button", { name: "Удалить черновик" });
+  return screen.findAllByRole("link", { name: "Открыть месяц" });
 }
 
 describe("native month management", () => {
@@ -76,94 +76,61 @@ describe("native month management", () => {
     vi.mocked(deleteMonth).mockReset();
   });
 
-  it("lists both statuses and preserves an invalid explicit selection", async () => {
+  it("keeps one primary action and puts secondary actions in an accessible keyboard menu", async () => {
+    const user = userEvent.setup();
     renderPage("/v2/data/months?month=999&from=close");
     await ready();
     expect(
       await screen.findByText("Запрошенный месяц не найден. Выбери другой период явно."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Закрыт")).toBeInTheDocument();
-    expect(screen.getByText("Черновик")).toBeInTheDocument();
-    expect(screen.getByTestId("location")).toHaveTextContent("month=999");
-    expect(screen.getAllByRole("link", { name: /Редактор месяца/ })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Удалить черновик" })).toHaveLength(1);
-  });
-
-  it("offers one exact-month entry with status-specific primary actions", async () => {
-    rows.push({ ...draft, id: 9, year: 2029, month: 1 });
-    renderPage();
-    await screen.findByText("Январь 2029");
-    const older = screen.getByText("Январь 2029").closest("li");
-    if (!older) throw new Error("Historical draft row missing");
-    expect(within(older).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
-      "href",
-      "/v2/close?month=9",
-    );
-    expect(within(older).getByRole("link", { name: "Проверить и закрыть" })).toHaveAttribute(
-      "href",
-      "/v2/close?month=9&step=final_review_close",
-    );
-    const saved = screen.getByText("Май 2030").closest("li");
-    if (!saved) throw new Error("Closed row missing");
-    expect(within(saved).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
-      "href",
-      "/v2/data/months/1",
-    );
-    expect(within(saved).getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
-      "href",
-      "/v2",
-    );
-    expect(within(saved).queryByRole("link", { name: "Посмотреть отчёт" })).not.toBeInTheDocument();
+    expect(screen.getByText("Закрыт")).toBeVisible();
+    expect(screen.getByText("Черновик")).toBeVisible();
     expect(
-      within(saved).queryByRole("link", { name: "Открыть для редактирования" }),
-    ).not.toBeInTheDocument();
-    expect(createMonth).not.toHaveBeenCalled();
+      screen
+        .getAllByRole("link", { name: "Открыть месяц" })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/v2/close?month=2", "/v2/close?month=1"]);
+    expect(screen.queryByRole("link", { name: "Проверить и закрыть" })).toBeNull();
+    const trigger = screen.getByRole("button", { name: /Действия месяца Июнь/ });
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "Копировать" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Редактор" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(deleteMonth).not.toHaveBeenCalled();
   });
 
-  it("routes the latest CLOSED month to the current report and older CLOSED months to the archive", async () => {
-    rows = [
-      { ...closed, id: 5, year: 2031, month: 2, snapshot_date: "2031-02-28" },
-      { ...closed, id: 4, year: 2031, month: 1, snapshot_date: "2031-01-31" },
-    ];
+  it.each([
+    [1, "/v2"],
+    [4, "/v2/reports/4"],
+  ])("keeps status-specific report action in the CLOSED row menu %i", async (id, expected) => {
+    rows = [draft, closed, { ...closed, id: 4, month: 4, snapshot_date: "2030-04-30" }];
     renderPage();
-    await screen.findByText("Февраль 2031");
-    const latestRow = screen.getByText("Февраль 2031").closest("li");
-    const olderRow = screen.getByText("Январь 2031").closest("li");
-    if (!latestRow || !olderRow) throw new Error("Closed rows missing");
-    expect(
-      within(latestRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
-    ).toHaveAttribute("href", "/v2");
-    expect(
-      within(latestRow).queryByRole("link", { name: "Посмотреть отчёт" }),
-    ).not.toBeInTheDocument();
-    expect(within(olderRow).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
-      "href",
-      "/v2/reports/4",
+    await ready();
+    const row = screen
+      .getAllByRole("link", { name: "Открыть месяц" })
+      .find((link) => link.getAttribute("href") === `/v2/close?month=${id}`)
+      ?.closest("li");
+    if (!row) throw new Error("Missing closed row");
+    fireEvent.click(within(row).getByRole("button", { name: /Действия месяца/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", {
+        name: id === 1 ? "Открыть в «Мои финансы»" : "Посмотреть отчёт",
+      }),
     );
+    expect(screen.getByTestId("location")).toHaveTextContent(expected);
   });
 
-  it("re-maps the current report action when a newer CLOSED month appears", async () => {
-    const { client } = renderPage();
+  it("retains exact-month editor return context in the menu", async () => {
+    renderPage("/v2/data/months?from=monthly-close-v2&step=readiness&monthId=2");
     await ready();
-    const before = screen.getByText("Май 2030").closest("li");
-    if (!before) throw new Error("Closed row missing");
-    expect(within(before).getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
-      "href",
-      "/v2",
-    );
-    const newerClosed = { ...closed, id: 6, year: 2030, month: 7, snapshot_date: "2030-07-31" };
-    client.setQueryData(queryKeys.months, [newerClosed, ...rows]);
-    const remapped = await screen.findByText("Июль 2030");
-    const previousLatest = screen.getByText("Май 2030").closest("li");
-    const remappedRow = remapped.closest("li");
-    if (!previousLatest || !remappedRow) throw new Error("Rows missing after refresh");
-    expect(
-      within(remappedRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
-    ).toHaveAttribute("href", "/v2");
-    expect(within(previousLatest).getByRole("link", { name: "Посмотреть отчёт" })).toHaveAttribute(
-      "href",
-      "/v2/reports/1",
+    fireEvent.click(screen.getByRole("button", { name: /Действия месяца Июнь/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Редактор" }));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/v2/data/months/2?from=monthly-close-v2&step=readiness&monthId=2",
     );
   });
 
@@ -175,21 +142,6 @@ describe("native month management", () => {
     expect(screen.getByRole("link", { name: "Источники и актуальность" })).toHaveAttribute(
       "href",
       "/v2/data?month=2",
-    );
-  });
-
-  it("carries Close return context into the exact-month entry", async () => {
-    renderPage("/v2/data/months?from=monthly-close-v2&step=readiness&monthId=2");
-    await ready();
-    const row = screen.getByText("Июнь 2030").closest("li");
-    if (!row) throw new Error("Draft row missing");
-    expect(within(row).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
-      "href",
-      "/v2/close?month=2",
-    );
-    expect(within(row).getByRole("link", { name: /Редактор месяца/ })).toHaveAttribute(
-      "href",
-      "/v2/data/months/2?from=monthly-close-v2&step=readiness&monthId=2",
     );
   });
 
@@ -335,11 +287,13 @@ describe("native month management", () => {
     });
     renderPage("/v2/data/months?month=2&from=close");
     await ready();
-    await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
+    await user.click(screen.getByRole("button", { name: /Действия месяца Июнь/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить черновик" }));
     const dialog = screen.getByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
     expect(deleteMonth).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
+    await user.click(screen.getByRole("button", { name: /Действия месяца Июнь/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить черновик" }));
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить черновик" }),
     );
@@ -355,7 +309,8 @@ describe("native month management", () => {
     const { client } = renderPage("/v2/data/months?month=2");
     client.setQueryData(queryKeys.monthCloseWorkflow(2), { status: "stale-synthetic" });
     await ready();
-    await user.click(screen.getByRole("button", { name: "Удалить черновик" }));
+    await user.click(screen.getByRole("button", { name: /Действия месяца Июнь/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить черновик" }));
     await user.click(
       within(screen.getByRole("alertdialog")).getByRole("button", { name: "Удалить черновик" }),
     );

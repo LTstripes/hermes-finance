@@ -296,8 +296,7 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
       const url = new URL(response.url());
       return (
         response.request().method() === "GET" &&
-        url.pathname === "/api/broker-months" &&
-        url.search === "?reporting_month_id=12" &&
+        url.pathname === "/api/months/12/close-workflow" &&
         response.status() === 200
       );
     }),

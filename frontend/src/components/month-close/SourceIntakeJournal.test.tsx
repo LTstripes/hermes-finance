@@ -107,6 +107,7 @@ function setup(
     existingClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   brokerOriginalSession(client).select(file, 1, "7");
   const changed = vi.fn();
+  const dirty = vi.fn();
   const content = (
     <QueryClientProvider client={client}>
       <SourceIntakeJournal
@@ -118,11 +119,132 @@ function setup(
         receipts={[]}
         onReview={vi.fn()}
         onChanged={changed}
+        onDirtyChange={dirty}
       />
     </QueryClientProvider>
   );
-  return { ...render(content), client, changed };
+  return { ...render(content), client, changed, dirty };
 }
+
+it("reports unsaved currency/default changes even after Reload without File", async () => {
+  const user = userEvent.setup();
+  const { dirty } = setup(null);
+  await screen.findByLabelText("Валюта предложения счёта");
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
+  await user.type(screen.getByLabelText("Валюта предложения счёта"), "USD");
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(true));
+  expect(screen.getByLabelText("Сохранённый разбор")).toBeDisabled();
+  await user.clear(screen.getByLabelText("Валюта предложения счёта"));
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
+  await user.click(screen.getByRole("checkbox", { name: /RUB по умолчанию/ }));
+  await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(true));
+  await user.click(screen.getByRole("checkbox", { name: /RUB по умолчанию/ }));
+  expect(screen.getByLabelText("Валюта предложения RU000A000001")).toBeDisabled();
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
+
+it("keeps Save binding unchanged while explicit source review can propose account classification", async () => {
+  const user = userEvent.setup();
+  const unbound = {
+    ...structuredClone(stored),
+    state: { ...stored.state, account_id: null, reporting_month_id: null },
+  };
+  vi.mocked(listSourceIntakes).mockResolvedValue([unbound]);
+  setup();
+  await screen.findByLabelText("Валюта предложения счёта");
+  await user.type(screen.getByLabelText("Валюта предложения счёта"), "USD");
+  await user.click(screen.getByRole("button", { name: "Проверить изменения разбора" }));
+  await waitFor(() => expect(previewIntakeReview).toHaveBeenCalled());
+  expect(vi.mocked(previewIntakeReview).mock.calls[0][2]).toMatchObject({
+    account_id: 7,
+    reporting_month_id: 1,
+    account_currency: "USD",
+  });
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Сохранить разбор" }));
+  await waitFor(() => expect(saveSourceIntake).toHaveBeenCalled());
+  expect(vi.mocked(saveSourceIntake).mock.calls[0][3]).toBeNull();
+});
+
+it("reattaches an exact original after Reload without losing dirty currency or using an old journal head", async () => {
+  const user = userEvent.setup();
+  const view = setup(null);
+  await user.type(await screen.findByLabelText("Валюта предложения счёта"), "USD");
+  const snapshot = { ...structuredClone(stored), head_seq: 3 };
+  view.rerender(
+    <QueryClientProvider client={view.client}>
+      <SourceIntakeJournal
+        monthId={1}
+        closed={false}
+        disabled={false}
+        preview={null}
+        receipts={[]}
+        onChanged={view.changed}
+        onReview={vi.fn()}
+        onDirtyChange={view.dirty}
+        intakeSelection={{ id: 1, file: original, snapshot, preserveDraft: true }}
+      />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(screen.getByLabelText("Валюта предложения счёта")).toHaveValue("USD"));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Проверить изменения разбора" })).toBeEnabled(),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить изменения разбора" }));
+  await waitFor(() => expect(previewIntakeReview).toHaveBeenCalled());
+  expect(vi.mocked(previewIntakeReview).mock.calls[0][2]).toMatchObject({
+    expected_head_seq: 3,
+    account_currency: "USD",
+  });
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+});
+
+it("does not replace an unsaved identity choice when the same XML is supplied again", async () => {
+  const user = userEvent.setup();
+  const source = structuredClone(stored);
+  source.proposals[0].candidates = [
+    {
+      hermes_id: 4,
+      name: "Synthetic bond",
+      isin: "RU000A000001",
+      currency: "RUB",
+      instrument_type: "bond",
+      reasons: [],
+    },
+  ];
+  vi.mocked(listSourceIntakes).mockResolvedValue([source]);
+  const view = setup();
+  const choice = await screen.findByLabelText("Решение для RU000A000001");
+  await user.selectOptions(choice, "card:4");
+  await waitFor(() => expect(view.dirty).toHaveBeenLastCalledWith(true));
+  const before = brokerOriginalSession(view.client).snapshot().epoch;
+  view.rerender(
+    <QueryClientProvider client={view.client}>
+      <SourceIntakeJournal
+        monthId={1}
+        closed={false}
+        disabled={false}
+        preview={null}
+        receipts={[]}
+        onChanged={view.changed}
+        onReview={vi.fn()}
+        onDirtyChange={view.dirty}
+        intakeSelection={{
+          id: 1,
+          file: original,
+          snapshot: { ...source, head_seq: 3 },
+          preserveDraft: true,
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent("Твой выбор сохранён в форме");
+  expect(choice).toHaveValue("card:4");
+  expect(brokerOriginalSession(view.client).snapshot().epoch).toBe(before);
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
 
 it("retains only the selected ID across workflow remount and rereads a current row among multiple originals", async () => {
   const user = userEvent.setup();

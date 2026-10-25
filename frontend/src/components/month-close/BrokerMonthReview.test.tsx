@@ -416,6 +416,33 @@ function mounted() {
     change: (id: number, closed = false) => view.rerender(node(id, closed)),
   };
 }
+it("keeps Preview through unchanged background reads but retires it when month facts change", async () => {
+  const { query, user } = mounted();
+  const key = ["month-close-workflow", 1];
+  await query.fetchQuery({
+    queryKey: key,
+    queryFn: async () => ({ generated_at: "old", evidence: "A" }),
+  });
+  await inspect(user);
+  const save = () =>
+    screen.queryByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" });
+  expect(save()).toBeEnabled();
+  await act(async () => {
+    await query.fetchQuery({
+      queryKey: key,
+      queryFn: async () => ({ generated_at: "new", evidence: "A" }),
+    });
+  });
+  expect(save()).toBeEnabled();
+  await act(async () => {
+    await query.fetchQuery({
+      queryKey: key,
+      queryFn: async () => ({ generated_at: "newer", evidence: "B" }),
+    });
+  });
+  expect(save()).toBeNull();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+});
 const original = (name = "synthetic.xml") =>
   new File([`<${name}/>`], name, { type: "application/xml" });
 function known() {

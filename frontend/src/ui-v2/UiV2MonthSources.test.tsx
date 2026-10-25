@@ -74,17 +74,17 @@ it("distinguishes long historical overlap from a complete month and names the ab
   expect(status).toHaveTextContent(
     "Полных месячных оригиналов: 0. Исторических или частичных пересечений: 1",
   );
-  expect(status).toHaveTextContent("закрывающий EOD 2031-08-31");
+  expect(status).toHaveTextContent("остатки на 2031-08-31");
   expect(screen.getByRole("list", { name: "Источники и исключения месяца" })).toHaveTextContent(
     "Историческое или частичное пересечение",
   );
   expect(
-    screen.getByText("Разбор сохранённой выписки и финансовый DRAFT").closest("details"),
+    screen.getByText("Исправления и сохранение месяца").closest("details"),
   ).not.toHaveAttribute("open");
   fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #5" }));
-  expect(
-    screen.getByText("Разбор сохранённой выписки и финансовый DRAFT").closest("details"),
-  ).toHaveAttribute("open");
+  expect(screen.getByText("Исправления и сохранение месяца").closest("details")).toHaveAttribute(
+    "open",
+  );
 });
 
 it("keeps both accounts, calendar scope, precise review and the accepted bond link", async () => {
@@ -92,7 +92,7 @@ it("keeps both accounts, calendar scope, precise review and the accepted bond li
   const list = await screen.findByRole("list", { name: "Источники и исключения месяца" });
   expect(list.children).toHaveLength(2);
   expect(list).not.toHaveTextContent("OTHER");
-  expect(list).toHaveTextContent("Save не разрешает Close");
+  expect(list).toHaveTextContent("Без финансовой привязки");
   fireEvent.change(screen.getByLabelText("Счёт источника месяца"), {
     target: { value: "ACCOUNT-B" },
   });

@@ -1,6 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ComponentProps,
+} from "react";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
 import { ApiClientError, formatApiError } from "../api/client";
 import { createComment, deleteComment, listComments, moveComment } from "../api/comments";
@@ -14,8 +21,10 @@ import {
 import { ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { SOURCE_LABELS, labelOf } from "../lib/labels";
+import { queryKeys } from "../queryClient";
 import { UiV2DataFrame, DataMonthContext } from "./UiV2DataShell";
 import styles from "./UiV2MonthEditor.module.css";
+import { MonthNavigationGuard } from "./MonthNavigationGuard";
 import { MonthIncomeSection } from "./MonthIncomeSection";
 import { UiV2MonthAssetsSection } from "./UiV2MonthAssetsSection";
 import { UiV2MonthPositionsSection } from "./UiV2MonthPositionsSection";
@@ -33,7 +42,7 @@ const EDITOR_SECTIONS = {
   liabilities: "Долги и недвижимость",
   note: "Заметки",
 } as const;
-type EditorSection = keyof typeof EDITOR_SECTIONS;
+export type EditorSection = keyof typeof EDITOR_SECTIONS;
 
 /** Leaf sections #559–#564 receive this exact-month contract, not a global save action. */
 export type MonthEditorContext = {
@@ -42,6 +51,8 @@ export type MonthEditorContext = {
   refresh: () => Promise<ReportingMonth>;
   setDirty: (section: string, dirty: boolean) => void;
   returnToClose: string | null;
+  workspace?: boolean;
+  setPending?: (section: string, value: boolean) => void;
 };
 
 function validMonthId(value: string | undefined): number | null {
@@ -58,13 +69,20 @@ function selectedSection(params: URLSearchParams): EditorSection | null {
   return null;
 }
 
-export default function UiV2MonthEditorPage() {
+export default function UiV2MonthEditorPage({
+  embeddedMonthId,
+  embeddedSection,
+}: {
+  embeddedMonthId?: number;
+  embeddedSection?: EditorSection;
+} = {}) {
+  const queryClient = useQueryClient();
   const { monthId: rawMonthId } = useParams();
-  const monthId = validMonthId(rawMonthId);
+  const embedded = embeddedMonthId !== undefined;
+  const monthId = embeddedMonthId ?? validMonthId(rawMonthId);
   const [params] = useSearchParams();
   const location = useLocation();
-  const navigate = useNavigate();
-  const section = selectedSection(params);
+  const section = embeddedSection ?? selectedSection(params);
   const monthQuery = useQuery({
     queryKey: ["month-editor", monthId],
     queryFn: ({ signal }) => getMonth(monthId as number, signal),
@@ -84,7 +102,13 @@ export default function UiV2MonthEditorPage() {
       ? fetchedMonth
       : null;
   const [dirtySections, setDirtySections] = useState<Record<string, boolean>>({});
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [pendingSections, setPendingSections] = useState<Record<string, boolean>>({});
+  const setPending = useCallback(
+    (name: string, value: boolean) =>
+      setPendingSections((old) => (old[name] === value ? old : { ...old, [name]: value })),
+    [],
+  );
+  const pending = Object.values(pendingSections).some(Boolean);
   const [rereadNotice, setRereadNotice] = useState<string | null>(null);
   const [rereadVersion, setRereadVersion] = useState(0);
   const [rereading, setRereading] = useState(false);
@@ -99,8 +123,6 @@ export default function UiV2MonthEditorPage() {
       rereadOperation.current += 1;
     };
   }, [location.key]);
-  const historyGuard = useRef(false);
-  const allowHistoryPop = useRef(false);
   const setDirty = useCallback(
     (name: string, value: boolean) =>
       setDirtySections((previous) =>
@@ -110,76 +132,10 @@ export default function UiV2MonthEditorPage() {
   );
   const dirty = Object.values(dirtySections).some(Boolean);
 
-  useEffect(() => {
-    if (!dirty || monthId === null) return;
-    if (!historyGuard.current) {
-      allowHistoryPop.current = false;
-      historyGuard.current = true;
-      window.history.pushState(
-        { ...window.history.state, monthEditorDirtyGuard: monthId },
-        "",
-        window.location.href,
-      );
-    }
-    const onPopState = () => {
-      if (allowHistoryPop.current) return;
-      if (window.confirm("Есть несохранённые изменения. Перейти и потерять их?")) {
-        allowHistoryPop.current = true;
-        historyGuard.current = false;
-        setDirtySections({});
-        window.setTimeout(() => window.history.back(), 0);
-      } else {
-        window.history.pushState(
-          { ...window.history.state, monthEditorDirtyGuard: monthId },
-          "",
-          window.location.href,
-        );
-      }
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [dirty, monthId]);
-
-  useEffect(() => {
-    if (dirty || !historyGuard.current || window.history.state?.monthEditorDirtyGuard !== monthId)
-      return;
-    allowHistoryPop.current = true;
-    historyGuard.current = false;
-    window.history.back();
-  }, [dirty, monthId]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const guardLinks = (event: MouseEvent) => {
-      if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
-        return;
-      const anchor = (event.target as Element).closest("a[href]");
-      if (!anchor || anchor.getAttribute("target") === "_blank") return;
-      const url = new URL(anchor.getAttribute("href") ?? "", window.location.href);
-      if (url.origin !== window.location.origin) return;
-      const next = `${url.pathname}${url.search}${url.hash}`;
-      if (next === `${location.pathname}${location.search}${location.hash}`) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(next);
-    };
-    document.addEventListener("click", guardLinks, true);
-    return () => document.removeEventListener("click", guardLinks, true);
-  }, [dirty, location.pathname, location.search, location.hash]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
-
   const returnContext = parseMonthlyCloseReturnContext(params);
-  const returnToClose =
-    returnContext && returnContext.monthId === monthId
+  const returnToClose = embedded
+    ? `/v2/close?month=${monthId}`
+    : returnContext && returnContext.monthId === monthId
       ? monthlyCloseReturnPath(returnContext)
       : null;
   const editorContext: MonthEditorContext | null = month
@@ -195,10 +151,20 @@ export default function UiV2MonthEditorPage() {
             result.data.month !== month.month
           )
             throw new Error("Месяц не подтверждён повторной загрузкой.");
+          if (embedded) {
+            queryClient.setQueryData<ReportingMonth[]>(queryKeys.months, (rows) =>
+              rows?.map((row) => (row.id === result.data.id ? result.data : row)),
+            );
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.monthCloseWorkflow(monthId),
+            });
+          }
           return result.data;
         },
         setDirty,
         returnToClose,
+        workspace: embedded,
+        setPending,
       }
     : null;
 
@@ -231,59 +197,52 @@ export default function UiV2MonthEditorPage() {
   }
 
   return (
-    <UiV2DataFrame
+    <MonthEditorFrame
+      embedded={embedded}
       active="months"
       busy={monthQuery.isPending || monthQuery.isFetching}
       monthId={monthId ?? undefined}
       subtitle="Данные выбранного месяца сохраняются по разделам. Автоматического общего сохранения нет."
       title="Редактор месяца"
     >
-      <div className={styles.toolbar}>
-        <Link
-          to={
-            monthId && returnContext?.monthId === monthId
-              ? withMonthlyCloseReturn(
-                  `/v2/data/months?month=${monthId}`,
-                  monthId,
-                  returnContext.step,
-                  returnContext.origin,
-                )
-              : monthId
-                ? `/v2/data/months?month=${monthId}`
-                : "/v2/data/months"
-          }
-        >
-          ← Отчётные месяцы
-        </Link>
-        {returnToClose ? <Link to={returnToClose}>Вернуться к закрытию</Link> : null}
-        {monthId && !returnToClose ? (
-          <Link to={`/v2/close?month=${monthId}&step=final_review_close`}>Проверить и закрыть</Link>
-        ) : null}
-        <button
-          disabled={!month || rereading || monthQuery.isFetching || dirty}
-          onClick={() => void rereadSavedData()}
-          type="button"
-        >
-          {monthQuery.isFetching ? "Перечитываем…" : "Перечитать сохранённые данные"}
-        </button>
-      </div>
+      {!embedded && (
+        <div className={styles.toolbar}>
+          <Link
+            to={
+              monthId && returnContext?.monthId === monthId
+                ? withMonthlyCloseReturn(
+                    `/v2/data/months?month=${monthId}`,
+                    monthId,
+                    returnContext.step,
+                    returnContext.origin,
+                  )
+                : monthId
+                  ? `/v2/data/months?month=${monthId}`
+                  : "/v2/data/months"
+            }
+          >
+            ← Отчётные месяцы
+          </Link>
+          {returnToClose ? <Link to={returnToClose}>Вернуться к закрытию</Link> : null}
+          {monthId && !returnToClose ? (
+            <Link to={`/v2/close?month=${monthId}&step=final_review_close`}>
+              Проверить и закрыть
+            </Link>
+          ) : null}
+          <button
+            disabled={!month || rereading || monthQuery.isFetching || dirty}
+            onClick={() => void rereadSavedData()}
+            type="button"
+          >
+            {monthQuery.isFetching ? "Перечитываем…" : "Перечитать сохранённые данные"}
+          </button>
+        </div>
+      )}
       {rereadNotice ? <p role="status">{rereadNotice}</p> : null}
-      <ConfirmDialog
-        cancelLabel="Остаться"
-        confirmLabel="Перейти без сохранения"
-        description="Есть несохранённые изменения. Перейти и потерять их?"
-        onCancel={() => setPendingHref(null)}
-        onConfirm={() => {
-          if (pendingHref) {
-            allowHistoryPop.current = true;
-            historyGuard.current = false;
-            setDirtySections({});
-            setPendingHref(null);
-            navigate(pendingHref, { replace: true });
-          }
-        }}
-        open={pendingHref !== null}
-        title="Несохранённые изменения"
+      <MonthNavigationGuard
+        dirty={dirty}
+        pending={pending}
+        onDiscard={() => setDirtySections({})}
       />
       {monthId === null ? <p role="alert">Некорректный идентификатор месяца.</p> : null}
       {monthId !== null && monthQuery.isPending ? (
@@ -313,27 +272,31 @@ export default function UiV2MonthEditorPage() {
           key={`${month.id}:${rereadVersion}`}
           style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
         >
-          <DataMonthContext month={month} automatic={false} />
-          <p className={styles.status} role="status">
-            {dirty ? "Есть несохранённые изменения" : "Изменения сохранены или не вносились"}
-          </p>
-          <nav aria-label="Разделы редактора месяца" className={styles.tabs}>
-            {Object.entries(EDITOR_SECTIONS).map(([id, label]) => {
-              const next = new URLSearchParams(params);
-              next.delete("section");
-              if (id !== "general") next.set("section", id);
-              const query = next.toString();
-              return (
-                <Link
-                  key={id}
-                  aria-current={section === id ? "page" : undefined}
-                  to={`${location.pathname}${query ? `?${query}` : ""}${location.hash}`}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
+          {!embedded && <DataMonthContext month={month} automatic={false} />}
+          {!embedded && (
+            <p className={styles.status} role="status">
+              {dirty ? "Есть несохранённые изменения" : "Изменения сохранены или не вносились"}
+            </p>
+          )}
+          {!embedded && (
+            <nav aria-label="Разделы редактора месяца" className={styles.tabs}>
+              {Object.entries(EDITOR_SECTIONS).map(([id, label]) => {
+                const next = new URLSearchParams(params);
+                next.delete("section");
+                if (id !== "general") next.set("section", id);
+                const query = next.toString();
+                return (
+                  <Link
+                    key={id}
+                    aria-current={section === id ? "page" : undefined}
+                    to={`${location.pathname}${query ? `?${query}` : ""}${location.hash}`}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
           {section === null ? (
             <p className={styles.warning} role="alert">
               Неизвестный раздел. Выбери раздел редактора.
@@ -372,7 +335,19 @@ export default function UiV2MonthEditorPage() {
           )}
         </fieldset>
       ) : null}
-    </UiV2DataFrame>
+    </MonthEditorFrame>
+  );
+}
+
+function MonthEditorFrame({
+  embedded,
+  children,
+  ...props
+}: ComponentProps<typeof UiV2DataFrame> & { embedded: boolean }) {
+  return embedded ? (
+    <div className={styles.embedded}>{children}</div>
+  ) : (
+    <UiV2DataFrame {...props}>{children}</UiV2DataFrame>
   );
 }
 
@@ -394,6 +369,10 @@ function GeneralSection({
   const [notice, setNotice] = useState<string | null>(null);
   const operation = useRef(0);
   const dirty = snapshotDate !== baseline;
+  useEffect(() => {
+    context.setPending?.("general", saving || reopening);
+    return () => context.setPending?.("general", false);
+  }, [context.setPending, saving, reopening]);
 
   useEffect(() => setDirty("general", dirty), [dirty, setDirty]);
   useEffect(
@@ -510,7 +489,13 @@ function GeneralSection({
           {error}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status">
+          {context.workspace && notice === "Общие данные сохранены и подтверждены."
+            ? "Сохранено"
+            : notice}
+        </p>
+      ) : null}
       <ConfirmDialog
         busy={reopening}
         cancelLabel="Отмена"
@@ -539,6 +524,10 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MonthlyComment | null>(null);
+  useEffect(() => {
+    context.setPending?.("note", busy);
+    return () => context.setPending?.("note", false);
+  }, [context.setPending, busy]);
   const active = useRef(true);
   useEffect(() => {
     active.current = true;

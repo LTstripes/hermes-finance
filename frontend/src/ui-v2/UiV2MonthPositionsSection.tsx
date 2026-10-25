@@ -196,6 +196,10 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
 
   const localDirty = draftTouched || newInstrumentTouched || editingId !== null;
 
+  useEffect(() => {
+    context.setPending?.("positions", busy || previewApplying || mappingBusy);
+    return () => context.setPending?.("positions", false);
+  }, [context.setPending, busy, previewApplying, mappingBusy]);
   useEffect(() => setDirty("positions", localDirty), [localDirty, setDirty]);
   useEffect(() => {
     active.current = true;

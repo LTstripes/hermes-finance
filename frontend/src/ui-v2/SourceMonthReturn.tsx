@@ -58,37 +58,45 @@ export function SourceMonthReturn({ account, period }: { account: string; period
             {row.modified_dietz_return === null ? "Доходность недоступна" : rate} · Modified Dietz
             за период, приблизительно
           </p>
-          <p>
-            {row.opening_date} — {row.closing_date} · счёт источника {account}. Не финансовый
-            результат.
-          </p>
           {row.missing_endpoint && (
             <p>
               Нужны подтверждённые EOD {opening} и {closing}; отсутствующая граница не равна нулю.
             </p>
           )}
-          <Reasons codes={row.reason_codes} />
-          <p>
-            {row.assumptions_used ? "Потоки с допущениями. " : ""}
-            {row.income_assumptions_used ? "Выплаты с допущениями. " : ""}
-            {row.reason_codes.length
-              ? `Причины NULL: ${row.reason_codes.join(", ")}`
-              : "Состав источников проверен для предварительного расчёта."}
-          </p>
-          {result.data.source_proof?.status === "current" && (
+          <details>
+            <summary>Подробнее о предварительном расчёте</summary>{" "}
             <p>
-              Доказательство источника #{result.data.source_proof.proof_id} ·{" "}
-              {result.data.source_proof.confirmed_at}
+              {row.opening_date} — {row.closing_date} · счёт источника {account}. Не финансовый
+              результат.
             </p>
-          )}
-          {result.data.source_proof?.status === "stale" && (
-            <p>Подтверждение источника устарело; требуется новая проверка оригиналов.</p>
-          )}
+            <Reasons codes={row.reason_codes} />
+            <p>
+              {row.assumptions_used ? "Потоки с допущениями. " : ""}
+              {row.income_assumptions_used ? "Выплаты с допущениями. " : ""}
+              {row.reason_codes.length
+                ? `Причины NULL: ${row.reason_codes.join(", ")}`
+                : "Состав источников проверен для предварительного расчёта."}
+            </p>
+            {result.data.source_proof?.status === "current" && (
+              <p>
+                Доказательство источника #{result.data.source_proof.proof_id} ·{" "}
+                {result.data.source_proof.confirmed_at}
+              </p>
+            )}
+            {result.data.source_proof?.status === "stale" && (
+              <p>Подтверждение источника устарело; требуется новая проверка оригиналов.</p>
+            )}
+          </details>
         </>
       )}
-      <Link to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: account })}`}>
-        Доходность и подтверждение источников
-      </Link>
+      <details>
+        <summary>Источники расчёта</summary>
+        <Link
+          to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: account })}`}
+        >
+          Доходность и подтверждение источников
+        </Link>
+      </details>
     </section>
   );
 }

@@ -937,6 +937,10 @@ a.btn {
 
 /* ——— Table ——— */
 
+.table-wrap:has(.month-deposits-table) {
+  container-type: inline-size;
+}
+
 .table-wrap {
   width: 100%;
   min-width: 0;

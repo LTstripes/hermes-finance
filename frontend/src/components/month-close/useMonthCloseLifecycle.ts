@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { formatApiError } from "../../api/client";
+import { ApiClientError, formatApiError } from "../../api/client";
 import { useMonthCloseWorkflow, type MonthCloseWorkflow } from "../../api/monthCloseWorkflow";
 import { closeMonth, reopenMonth } from "../../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../../api/types";
@@ -74,17 +74,51 @@ export function useMonthCloseLifecycle(
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const [preparingClose, setPreparingClose] = useState(false);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [lifecycleRecovery, setLifecycleRecovery] = useState(false);
   const { refetch } = workflowQuery;
   const identityKey = `${monthId}:${expectedPeriod?.year}:${expectedPeriod?.month}`;
   const currentIdentity = useRef(identityKey);
   const previousIdentity = useRef(identityKey);
+  const expectedReadback = useRef<ReportingMonthStatus | null>(null);
+  const protocolError = useRef<string | null>(null);
   currentIdentity.current = identityKey;
   useEffect(() => {
     if (previousIdentity.current === identityKey) return;
     previousIdentity.current = identityKey;
     setPendingLifecycle(null);
     setLifecycleError(null);
+    expectedReadback.current = null;
+    protocolError.current = null;
+    setLifecycleRecovery(false);
   }, [identityKey]);
+
+  // A lost ACK is resolved by the ordinary workflow GET. No command is replayed.
+  useEffect(() => {
+    const expected = expectedReadback.current;
+    const value = workflowQuery.data;
+    if (!expected || !value || workflowQuery.isFetching || workflowQuery.isError) return;
+    try {
+      assertLifecycleWorkflowIdentity(value, monthId as number, expectedPeriod);
+      if (value.month.status !== expected) return;
+      expectedReadback.current = null;
+      setLifecycleRecovery(false);
+      setLifecycleError(protocolError.current);
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] !== "month-close-workflow",
+        refetchType: "none",
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.months });
+    } catch {
+      /* Another identity is never completion evidence. */
+    }
+  }, [
+    workflowQuery.data,
+    workflowQuery.isFetching,
+    workflowQuery.isError,
+    monthId,
+    expectedPeriod,
+    queryClient,
+  ]);
 
   useEffect(() => {
     function refetchOnFocus() {
@@ -110,7 +144,7 @@ export function useMonthCloseLifecycle(
   }
 
   async function prepareClose() {
-    if (!workflowQuery.data || preparingClose || lifecycleBusy) return;
+    if (!workflowQuery.data || preparingClose || lifecycleBusy || expectedReadback.current) return;
     setPreparingClose(true);
     setLifecycleError(null);
     try {
@@ -132,15 +166,24 @@ export function useMonthCloseLifecycle(
   }
 
   function requestReopen() {
-    if (!workflowQuery.data || lifecycleBusy) return;
+    if (!workflowQuery.data || lifecycleBusy || expectedReadback.current) return;
     setLifecycleError(null);
     setPendingLifecycle("reopen");
   }
 
   async function confirmLifecycle() {
-    if (!pendingLifecycle || !workflowQuery.data || lifecycleBusy || monthId === null) return;
+    if (
+      !pendingLifecycle ||
+      !workflowQuery.data ||
+      lifecycleBusy ||
+      expectedReadback.current ||
+      monthId === null
+    )
+      return;
     setLifecycleBusy(true);
     setLifecycleError(null);
+    protocolError.current = null;
+    let acknowledged = false;
     try {
       const latest = await refetchAuthoritativeWorkflow();
       if (pendingLifecycle === "close" && !closeIsAllowed(latest)) {
@@ -158,10 +201,18 @@ export function useMonthCloseLifecycle(
         return;
       }
 
+      expectedReadback.current = pendingLifecycle === "close" ? "closed" : "draft";
+      setLifecycleRecovery(true);
       const persisted =
         pendingLifecycle === "close" ? await closeMonth(monthId) : await reopenMonth(monthId);
+      acknowledged = true;
       const expectedStatus = pendingLifecycle === "close" ? "closed" : "draft";
-      assertPersistedMonthIdentity(persisted, monthId, expectedStatus, expectedPeriod);
+      try {
+        assertPersistedMonthIdentity(persisted, monthId, expectedStatus, expectedPeriod);
+      } catch (error) {
+        protocolError.current = formatApiError(error);
+        throw error;
+      }
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.months });
       await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });
@@ -173,8 +224,21 @@ export function useMonthCloseLifecycle(
       if (refreshed.month.status !== expectedStatus) {
         throw new Error("Актуальное состояние месяца не совпало с полученными данными.");
       }
+      await queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] !== "month-close-workflow",
+        refetchType: "none",
+      });
       setPendingLifecycle(null);
     } catch (error) {
+      if (
+        !acknowledged &&
+        error instanceof ApiClientError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        expectedReadback.current = null;
+        setLifecycleRecovery(false);
+      }
       setPendingLifecycle(null);
       setLifecycleError(formatApiError(error));
       try {
@@ -192,6 +256,8 @@ export function useMonthCloseLifecycle(
     confirmLifecycle,
     lifecycleBusy,
     lifecycleError,
+    lifecycleRecovery,
+    recoverLifecycle: () => void refetch(),
     pendingLifecycle,
     prepareClose,
     preparingClose,

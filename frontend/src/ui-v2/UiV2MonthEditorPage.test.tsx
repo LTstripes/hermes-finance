@@ -304,7 +304,7 @@ describe("native month editor frame", () => {
     );
     vi.mocked(getMonth).mockImplementation(async (id) =>
       id === 7
-        ? { ...draft }
+        ? { ...current }
         : {
             ...draft,
             id: 8,
@@ -317,10 +317,15 @@ describe("native month editor frame", () => {
     fireEvent.change(screen.getByLabelText("Дата снимка"), { target: { value: "2030-04-29" } });
     await user.click(screen.getByRole("button", { name: "Сохранить общие данные" }));
     await user.click(screen.getByRole("link", { name: "Другой месяц" }));
-    await user.click(screen.getByRole("button", { name: "Перейти без сохранения" }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Сохранение ещё не подтверждено");
+    await user.click(screen.getByRole("button", { name: "Вернуться к форме" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/v2/data/months/7");
+    current = { ...draft, snapshot_date: "2030-04-29" };
+    finishSave(current);
+    await screen.findByText("Общие данные сохранены и подтверждены.");
+    await user.click(screen.getByRole("link", { name: "Другой месяц" }));
     expect(await screen.findByText("Май 2030")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/v2/data/months/8");
-    finishSave({ ...draft, snapshot_date: "2030-04-29" });
     await waitFor(() =>
       expect(screen.queryByText("Общие данные сохранены и подтверждены.")).not.toBeInTheDocument(),
     );
