@@ -44,6 +44,7 @@ export function UiV2MonthSources({
   const [reviewExpanded, setReviewExpanded] = useState(Boolean(original.file));
   const savedFiles = useRef(new Map<number, File>());
   const savedSources = useRef(new Map<number, SourceIntake>());
+  const sourceAfterNavigation = useRef<{ id: number; file?: File; account: string } | null>(null);
   const [nextSource, setNextSource] = useState<{ id: number; file?: File; account: string } | null>(
     null,
   );
@@ -97,11 +98,15 @@ export function UiV2MonthSources({
     if (!changingScope || unresolved) return;
     // Never select/clear while a command's ACK or independent GET is unresolved.
     session.select(null, month.id, "");
+    const target = sourceAfterNavigation.current;
+    const selected =
+      target && scope === JSON.stringify(target.account ? [target.account] : []) ? target : null;
+    sourceAfterNavigation.current = null;
     setReview((previous) => ({
       scope,
       monthId: month.id,
       generation: previous.generation + 1,
-      selection: null,
+      selection: selected ? { id: selected.id, file: selected.file } : null,
     }));
   }, [changingScope, unresolved, scope, month.id, session]);
   const list = useQuery({
@@ -145,14 +150,19 @@ export function UiV2MonthSources({
   }
   function chooseSource(target: { id: number; file?: File; account: string }) {
     session.select(null, month.id, "");
-    setReview((previous) => ({
-      ...previous,
-      scope: JSON.stringify(target.account ? [target.account] : []),
-      monthId: month.id,
-      generation: previous.generation + 1,
-      selection: { id: target.id, file: target.file },
-    }));
-    if (target.account !== account) selectAccount(target.account);
+    if (target.account !== account) {
+      // Router navigation may commit later than local state. Attach the exact
+      // File only after the URL has committed its new account scope.
+      sourceAfterNavigation.current = target;
+      selectAccount(target.account);
+    } else {
+      setReview((previous) => ({
+        ...previous,
+        monthId: month.id,
+        generation: previous.generation + 1,
+        selection: { id: target.id, file: target.file },
+      }));
+    }
     setReviewExpanded(true);
     setReviewError(null);
     onReview?.(target.id);
