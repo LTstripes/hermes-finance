@@ -4,11 +4,12 @@ import { Link } from "react-router";
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import styles from "./UiV2Page.module.css";
 
-export type UiV2Section = "home" | "capital" | "data" | "income";
+export type UiV2Section = "home" | "capital" | "returns" | "data" | "income";
 
 const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to: string }> = [
   { id: "home", label: "Мои финансы", icon: "⌂", to: "/v2" },
   { id: "capital", label: "Капитал", icon: "◧", to: "/v2/capital" },
+  { id: "returns", label: "Доходность", icon: "↗", to: "/v2/returns" },
   { id: "data", label: "Данные", icon: "◫", to: "/v2/data" },
   { id: "income", label: "Доход и планы", icon: "◒", to: "/v2/income" },
 ];

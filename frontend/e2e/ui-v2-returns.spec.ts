@@ -1,0 +1,141 @@
+import fs from "node:fs";
+import path from "node:path";
+import { expect, type Page, test } from "@playwright/test";
+import {
+  april,
+  contextFixture,
+  detailFixture,
+  may,
+  overviewFixture,
+} from "../src/ui-v2/returns/fixtures";
+
+async function install(page: Page) {
+  const calls: string[] = [];
+  const state = { error: false };
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      calls.push(`${request.method()} ${url.pathname}`);
+      expect(request.method()).toBe("GET");
+      const scope = url.searchParams.get("scope") ?? "source:SYNTH-A";
+      const period = {
+        start: url.searchParams.get("start") ?? may.start,
+        end: url.searchParams.get("end") ?? may.end,
+      };
+      if (url.pathname === "/api/returns/context") await route.fulfill({ json: contextFixture });
+      else if (url.pathname === "/api/returns/overview")
+        await route.fulfill({
+          status: state.error ? 503 : 200,
+          json: state.error ? {} : overviewFixture(scope, period),
+        });
+      else if (url.pathname === "/api/returns/instrument")
+        await route.fulfill({
+          json: detailFixture(scope, period, url.searchParams.get("isin") ?? undefined),
+        });
+      else await route.fulfill({ status: 404, json: {} });
+    },
+  );
+  return { calls, state };
+}
+
+test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry @viewport-owned", async ({
+  page,
+}) => {
+  const { calls, state } = await install(page);
+  await page.goto("/v2/returns");
+  await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+  await expect(page).toHaveURL(/start=2030-04-30&end=2030-05-31/);
+  await expect(page.getByRole("link", { name: "Доходность", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(calls.filter((c) => c.endsWith("/instrument"))).toHaveLength(0);
+  const tops = page.getByRole("region", { name: "Лидеры и отстающие" });
+  await expect(tops.locator("ol").nth(0).locator("li")).toHaveCount(2);
+  await expect(tops.locator("ol").nth(1).locator("li")).toHaveCount(1);
+  await tops.getByRole("button", { name: "%", exact: true }).click();
+  await expect(tops.locator("ol").first().locator("li").first()).toContainText("Горизонт");
+  await page.getByRole("button", { name: /Горизонт — проданная бумага/ }).click();
+  await expect(page.getByText("Количество: 10 → 0")).toBeVisible();
+  await expect(page.getByText("Продажа", { exact: true })).toBeVisible();
+  // React's development StrictMode may abort and repeat the first mounted GET.
+  expect(calls.filter((c) => c.endsWith("/instrument")).length).toBeGreaterThanOrEqual(1);
+  await page
+    .getByRole("group", { name: "История результата в рублях" })
+    .getByRole("button", { name: /апр.*2030/ })
+    .click();
+  await expect(page).toHaveURL(/start=2030-03-31&end=2030-04-30/);
+  await expect(page.getByRole("region", { name: "Лидеры и отстающие" })).toContainText(
+    "31.03.2030 — 30.04.2030",
+  );
+  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:SYNTH-B");
+  await expect(page.getByRole("region", { name: "Результат периода" })).toContainText("−1 750,25");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-B");
+  await page.goBack();
+  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A");
+  await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
+    `${april.start}/${april.end}`,
+  );
+  state.error = true;
+  await page.getByRole("button", { name: "Обновить" }).click();
+  await expect(page.getByRole("alert")).toContainText("Не удалось загрузить");
+  await expect(page.getByRole("region", { name: "Результат периода" })).toHaveCount(0);
+  state.error = false;
+  await page.getByRole("button", { name: "Повторить" }).click();
+  await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+  await page.goto(
+    "/v2/capital/monthly-returns?source_account=SYNTH-B&bond_period=2030-04-01#bond-slice",
+  );
+  await expect(page).toHaveURL(
+    /\/v2\/returns\?.*scope=source%3ASYNTH-B.*start=2030-03-31.*#returns-instruments/,
+  );
+  await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+});
+
+test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120000);
+  const directory = path.resolve(".visual-audit", testInfo.project.name);
+  fs.mkdirSync(directory, { recursive: true });
+  for (const width of [1280, 1440, 1920]) {
+    for (const zoom of [1, 1.25, 1.5]) {
+      // Browser zoom equivalent: CSS viewport shrinks, device pixels scale up.
+      // Unlike CSS zoom or pinch zoom, media queries see the scaled viewport.
+      const context = await browser.newContext({
+        viewport: { width: Math.round(width / zoom), height: Math.round(1000 / zoom) },
+        deviceScaleFactor: zoom,
+        locale: "ru-RU",
+        reducedMotion: "reduce",
+      });
+      const page = await context.newPage();
+      await install(page);
+      await page.goto("/v2/returns");
+      await expect(page.getByRole("heading", { name: "По инструментам" })).toBeVisible();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      const overflow = await page
+        .locator("main")
+        .evaluate(
+          (main) =>
+            [...main.querySelectorAll("td, th, section, input, select")].filter(
+              (e) => e.scrollWidth > e.clientWidth + 1,
+            ).length,
+        );
+      expect(overflow).toBe(0);
+      await expect(page.locator("main")).not.toContainText(
+        /financial_authority|source_reference|manifest_digest/,
+      );
+      await page.screenshot({
+        path: path.join(directory, `returns-${width}-${zoom * 100}.png`),
+        fullPage: true,
+        animations: "disabled",
+      });
+      await context.close();
+    }
+  }
+});
