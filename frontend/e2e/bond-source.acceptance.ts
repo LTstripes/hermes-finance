@@ -1,5 +1,122 @@
 import { expect, test } from "@playwright/test";
 
+test("API Decimal boundary rates render identically in Month and Monthly Returns after Back/Reload", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  const inputs = await (await request.get("/api/synthetic-proof-inputs")).json();
+  const before = await (await request.get("/api/synthetic-bond-state")).json();
+  const writes: string[] = [];
+  page.on("request", (item) => {
+    if (!["GET", "HEAD"].includes(item.method())) writes.push(item.method());
+  });
+  let fraction = "0.001259";
+  // Synthetic response at the API/display boundary; do not mutate financial fixtures.
+  await page.route("**/api/source-returns/monthly?**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const row of body.months) {
+      if (row.closing_date === "2030-04-30") row.modified_dietz_return = fraction;
+    }
+    await route.fulfill({ response, json: body });
+  });
+  for (const [value, expected] of [
+    ["0.001259", "0,13%"],
+    ["-0.00125", "−0,13%"],
+    ["0.00009999", "0,01%"],
+    ["-0.00995", "−1,00%"],
+    ["0.99995", "100,00%"],
+  ]) {
+    fraction = value;
+    await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567`);
+    const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
+    await expect(card).toContainText(expected);
+    await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
+    const monthly = page.getByTestId("returns-monthly-table");
+    await expect(monthly).toContainText(expected);
+    await page.reload();
+    await expect(monthly).toContainText(expected);
+    await page.goBack();
+    await expect(card).toContainText(expected);
+  }
+  await page.getByRole("region", { name: "Предварительная доходность месяца" }).screenshot({
+    path: info.outputPath("source-rate-half-up-carry.png"),
+  });
+  expect(writes).toEqual([]);
+  expect(await (await request.get("/api/synthetic-bond-state")).json()).toEqual(before);
+});
+
+test("one-time source proof survives Back/Reload in ordinary Month and monthly GET; ABA retires it", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  const inputs = await (await request.get("/api/synthetic-proof-inputs")).json();
+  const writes: string[] = [];
+  page.on("request", (item) => {
+    if (item.method() === "POST") writes.push(new URL(item.url()).pathname);
+  });
+  await page.goto("/v2/capital/monthly-returns?source_account=1234567");
+  const proof = page.getByRole("region", {
+    name: "Подтверждение источников доходности",
+    exact: true,
+  });
+  await expect(proof.getByText(/Оригиналы можно проверить один раз/)).toBeVisible();
+  await proof.getByLabel("Оригиналы для подтверждения").setInputFiles(inputs.paths);
+  await proof.getByRole("button", { name: "Проверить оригиналы", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const preview = proof.getByRole("region", { name: "Preview подтверждения источника" });
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole("button", { name: "Сохранить подтверждение" })).toBeDisabled();
+  await preview.getByRole("checkbox").focus();
+  await page.keyboard.press("Space");
+  await preview.getByRole("button", { name: "Сохранить подтверждение" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
+  const get = await (
+    await request.get("/api/source-returns/monthly?source_account=1234567")
+  ).json();
+  const april = get.months.find(
+    (row: { closing_date: string }) => row.closing_date === "2030-04-30",
+  );
+  const may = get.months.find((row: { closing_date: string }) => row.closing_date === "2030-05-31");
+  expect(april.growth_kopecks).toBe(60000);
+  expect(may.growth_kopecks).toBeNull();
+  await page.reload();
+  await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Взносы и рост", exact: true })).toContainText(
+    "600,00 ₽",
+  );
+  await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
+  await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567`);
+  const summary = page.getByRole("region", {
+    name: "Предварительная доходность месяца",
+    exact: true,
+  });
+  await expect(summary).toContainText("600 ₽");
+  await expect(summary).toContainText("Modified Dietz");
+  await summary.screenshot({ path: info.outputPath("source-proof-current-month.png") });
+  await summary.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
+  await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
+  await page.goBack();
+  await expect(summary).toContainText("600 ₽");
+  await page.reload();
+  await expect(summary).toContainText("600 ₽");
+  expect(writes).toEqual([
+    "/api/source-returns/proofs/preview",
+    "/api/source-returns/proofs/confirm",
+  ]);
+  expect((await (await request.get("/api/synthetic-proof-inputs")).json()).other_tables).toEqual(
+    inputs.other_tables,
+  );
+  await request.post("/api/synthetic-proof-aba");
+  await page.reload();
+  await expect(summary).not.toContainText("600 ₽");
+  await expect(summary).toContainText("Подтверждение источника устарело");
+  await summary.screenshot({ path: info.outputPath("source-proof-stale-month.png") });
+});
+
 test("explicit stale bond ISIN stays unavailable on reload; account switch resets to its default", async ({
   page,
   request,

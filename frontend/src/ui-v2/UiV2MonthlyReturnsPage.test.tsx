@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { IntakeAck } from "../api/sourceIntake";
+import { SourceMonthReturn } from "./SourceMonthReturn";
 import UiV2MonthlyReturnsPage from "./UiV2MonthlyReturnsPage";
 
 const json = (body: unknown, status = 200) =>
@@ -159,6 +160,97 @@ function setup(fetcher: typeof fetch) {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test.each([
+  ["0.001259", "0,13%"],
+  ["-0.00125", "−0,13%"],
+  ["0.00009999", "0,01%"],
+  ["-0.00995", "−1,00%"],
+  ["0.99995", "100,00%"],
+])("Month and Monthly Returns agree for Decimal boundary %s", async (value, expected) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/source-returns/monthly?")
+        ? json({
+            ...monthly,
+            months: [{ ...monthly.months[0], modified_dietz_return: value }],
+          })
+        : reads(input),
+    ),
+  );
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={["/?source_account=SYNTH-01"]}>
+        <SourceMonthReturn account="SYNTH-01" period="2030-04" />
+        <UiV2MonthlyReturnsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitForReturns();
+  const card = screen.getByRole("region", { name: "Предварительная доходность месяца" });
+  await waitFor(() => expect(card).toHaveTextContent(expected));
+  expect(screen.getByTestId("returns-monthly-table")).toHaveTextContent(expected);
+});
+
+test.each(["monthly", "intakes"])(
+  "failed %s refetch hides retained current proof and disables confirmation",
+  async (failedQuery) => {
+    let fail = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes("/intakes"))
+          return fail && failedQuery === "intakes"
+            ? json({ error: { code: "offline", message: "Synthetic failed source read" } }, 503)
+            : json([intake]);
+        if (path.includes("/monthly?"))
+          return fail && failedQuery === "monthly"
+            ? json({ error: { code: "offline", message: "Synthetic failed read" } }, 503)
+            : json({
+                ...monthly,
+                source_proof: {
+                  status: "current",
+                  proof_id: 3,
+                  version: "source_return_custody_v1",
+                  confirmed_at: "2030-05-01T00:00:00Z",
+                  currentness: "c",
+                  reason_codes: [],
+                  financial_authority: "none",
+                },
+              });
+        return json(instruments);
+      }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <UiV2MonthlyReturnsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText(/Источник подтверждён:/);
+    fail = true;
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey:
+          failedQuery === "monthly" ? ["source-returns", "monthly"] : ["source-intakes", "all"],
+      });
+    });
+    await screen.findByText(/Не удалось проверить актуальность источников/);
+    expect(screen.queryByText(/Источник подтверждён:/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверить оригиналы" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Сохранить подтверждение" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Не удалось проверить актуальность источников/)).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Взносы и рост" })).not.toBeInTheDocument();
+  },
+);
+
 const queryWait = { timeout: 10_000 };
 const testTimeout = 20_000;
 const syntheticFile = (name: string) => new File(["<synthetic/>"], name, { type: "text/xml" });
@@ -260,8 +352,8 @@ test(
     const summary = screen.getByTestId("returns-monthly-total");
     expect(summary).toHaveTextContent("Взносы: 200,00 ₽");
     expect(summary).toHaveTextContent("Рост отдельно: 30,00 ₽");
-    expect(summary).toHaveTextContent("XIRR, годовых: 36 %");
-    expect(summary).toHaveTextContent("Цепной Modified Dietz (≈TWRR, приблизительно): 3 %");
+    expect(summary).toHaveTextContent("XIRR, годовых: 36,00%");
+    expect(summary).toHaveTextContent("Цепной Modified Dietz (≈TWRR, приблизительно): 3,00%");
     expect(within(summary).getByText("приблизительно")).toBeVisible();
     const instrument = screen.getByTestId("returns-instrument-table");
     expect(instrument).toHaveTextContent("Изменение цены");

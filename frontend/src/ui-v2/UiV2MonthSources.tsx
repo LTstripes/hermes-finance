@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
+import { SourceMonthReturn } from "./SourceMonthReturn";
 import { listSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { ReportingMonth } from "../api/types";
 import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
@@ -92,6 +93,14 @@ export function UiV2MonthSources({
         wide
       >
         <div className={styles.stack}>
+          {!!account &&
+            !invalidAccount &&
+            !changingScope &&
+            !list.isPending &&
+            !list.isError &&
+            !list.isFetching && (
+              <SourceMonthReturn key={`${account}:${period}`} account={account} period={period} />
+            )}
           {month.status === "closed" ? (
             <p>
               Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой

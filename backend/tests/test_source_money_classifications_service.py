@@ -156,9 +156,19 @@ def test_alternate_dividend_relink_uses_existing_authority_without_rewriting_dec
     ):
         assert getattr(linked, field) == getattr(original, field)
     after = snapshot(db)
-    assert {k: v for k, v in after.items() if k != "source_intake_money_classifications"} == {
-        k: v for k, v in before.items() if k != "source_intake_money_classifications"
+    # schema0065 retires source-return proof currentness for this derived update.
+    # Preserve #958's equality for proof records and every financial table.
+    changed_tables = {"source_intake_money_classifications", "source_return_proof_dependencies"}
+    assert {k: v for k, v in after.items() if k not in changed_tables} == {
+        k: v for k, v in before.items() if k not in changed_tables
     }
+    before_nonce = before["source_return_proof_dependencies"]
+    after_nonce = after["source_return_proof_dependencies"]
+    assert len(after_nonce) == len(before_nonce) + 1
+    assert after_nonce[:-1] == before_nonce
+    assert after_nonce[-1][0] == before_nonce[-1][0] + 1
+    assert len(after_nonce[-1][1]) == 64
+    assert all(row[1] != after_nonce[-1][1] for row in before_nonce)
     with db.session_factory() as session:
         assert security_reg_isin_mappings.relink(session)["changed"] == 0
     assert snapshot(db) == after

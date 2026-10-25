@@ -221,9 +221,18 @@ def test_relink_updates_only_derived_fields_and_preserves_manual_decisions(db):
     with db.session_factory() as session:
         assert mappings.relink(session) == {"processed": 2, "changed": 1, "skipped_closed": 0}
     after = snapshot(db)
-    assert {k: v for k, v in before.items() if k != "source_intake_money_classifications"} == {
-        k: v for k, v in after.items() if k != "source_intake_money_classifications"
+    # Derived classification changes also retire source-return evidence. Only
+    # its nonce may advance; proof records and all financial tables stay equal.
+    changed_tables = {"source_intake_money_classifications", "source_return_proof_dependencies"}
+    assert {k: v for k, v in before.items() if k not in changed_tables} == {
+        k: v for k, v in after.items() if k not in changed_tables
     }
+    assert (
+        after["source_return_proof_dependencies"][:-1] == before["source_return_proof_dependencies"]
+    )
+    assert len(after["source_return_proof_dependencies"]) == (
+        len(before["source_return_proof_dependencies"]) + 1
+    )
     linked = saved_rows(db, intake)
     assert linked[0].instrument_id == target_id
     for previous, current in zip(original, linked, strict=True):

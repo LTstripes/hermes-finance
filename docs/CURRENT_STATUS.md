@@ -1,8 +1,13 @@
 # Current state, limitations and next actions
 
-**Accepted code (2026-10-24 live readback):** `main@b027bcd90c56c500d271a9ee963485bdfa67ea79`
-and [exact post-main CI 40108612772](https://github.com/LTstripes/hermes-finance/actions/runs/40108612772)
-**SUCCESS**. The backend [#953](https://github.com/LTstripes/hermes-finance/pull/953)
+**Accepted code (post-#958 live readback):** `main@0ddd0b357325a286c26ed2d564b226bd7214785e`
+and [exact post-main CI 40167455400](https://github.com/LTstripes/hermes-finance/actions/runs/40167455400)
+**SUCCESS**. [#958](https://github.com/LTstripes/hermes-finance/pull/958) accepts bounded
+dividend-narrative variants through existing source authority; normal GET never
+relinks saved rows. Its earlier private schema0064 relink Preview is stale after
+any future 0065 rollout: regenerate the exact Preview including retirement nonce
+effects before separate Owner GO and fresh validated backup/readback. No real
+relink is performed by this code integration. The backend [#953](https://github.com/LTstripes/hermes-finance/pull/953)
 and Month UI [#954](https://github.com/LTstripes/hermes-finance/pull/954)
 implement shared `empty_manual_month` Close/readiness, 0063 immutable receipt audit,
 0064 saved-actual versus cloned-template provenance, and explicit reasoned period
@@ -29,15 +34,37 @@ After separate explicit Owner GO, stock Start of the same installed SHA passed
 health, owned process/cwd/DB-selector checks and UI/Reload. All 76 table
 fingerprints remain unchanged. No candidate deployment or Test transfer occurred.
 
-**Pending bounded #891/#769/#889 candidate:** exact-original-bound monthly read
+**Accepted #957 bounded #891/#769/#889 slice:** exact-original-bound monthly read
 localizes only strictly recognized source-booked custody cancellations; GET
 without bytes remains fail-closed. Two priority calendar months become available
 through the candidate reader with all selected originals; the cancellation month
 and unresolved principal remain NULL. Real amounts, native identities and the
 separate five absent historical opening-value operands stay private. This is
-provisional source evidence, not financial acceptance; independent review and
-exact candidate CI belong to its PR before Integrator acceptance. Earlier
+provisional source evidence, not financial acceptance; [#957](https://github.com/LTstripes/hermes-finance/pull/957)
+is merged with independent review and terminal exact-main CI. Earlier
 numerical controls and the private 78/1,539 matrices are reused.
+
+**Pending one-time proof → ordinary GET → desktop slice:** additive schema 0065
+stores server-derived source custody-month provenance only, without XML/rates or
+V1 reinterpretation. Explicit Preview/attested confirmation supports Month and
+Monthly Returns without repeated file selection. Currentness includes complete
+membership, parser/manifest/head, monotonic source/classification/correction/
+mapping revisions and physical DB birth identity; stale/restore/ABA returns NULL
+until fresh confirmation. The cancellation/principal month stays NULL. No real
+proof has been saved and no Test/Stable code/schema operation is part of this task.
+Independent review and exact candidate CI belong to the implementation PR before
+Integrator guarded merge and exact-main CI. Installed Stable remains immutable
+published v1.4.0 `b027bcd9...` / 0064. The next rollout requires explicit Test UAT,
+a new release (target v1.5.0), published-SHA recovery rehearsal and separate Owner
+runtime/write approvals; never a hotpatch or a Test-data transfer. Private Owner
+UAT/release gates and the single unsent principal/custody broker question are
+retained locally. Prior numerical/operational evidence is reused.
+PR [#959](https://github.com/LTstripes/hermes-finance/pull/959) remains Draft pending
+repeat Integrator GO. Its successor incorporates post-#958 main, shares exact
+Decimal ROUND_HALF_UP percentage display between Month/Monthly Returns (no value
+conversion through Number), and retains #958's relink regression with exactly one
+nonce append and unchanged proof/financial tables. Fresh combined-tree PR CI/UI
+and independent pinned-SHA rereview are required; earlier standalone GO is superseded.
 Earlier evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated evidence retains its original scope. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
 
 <a id="s1"></a>
