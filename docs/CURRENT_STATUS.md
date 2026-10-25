@@ -8,13 +8,25 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-**Canonical accepted code:** `main@3ca4780f017e5949aad61e5c888f8bb27af784f6`.
+**Canonical accepted baseline:** `main@f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),
 [#965 Returns source explanations](https://github.com/LTstripes/hermes-finance/pull/965)
 and [#962 Month tiles and guarded Close](https://github.com/LTstripes/hermes-finance/pull/962)
 are guarded-merged in that order, with exact candidate CI/UI GO and a final
-reviewed-tree-equal merge. Latest [post-main CI40215092589](https://github.com/LTstripes/hermes-finance/actions/runs/40215092589):
-**COMPLETED SUCCESS (28 successful jobs, 2 expected skips, terminal ci-ok SUCCESS)** on this exact SHA. Code integration is not an installed release.
+reviewed-tree-equal merge at `3ca4780f017e5949aad61e5c888f8bb27af784f6`.
+#966 reconciled documentation afterward. Exact baseline
+[post-main CI40216203428](https://github.com/LTstripes/hermes-finance/actions/runs/40216203428):
+**COMPLETED SUCCESS (28 successful jobs, 3 expected skips, terminal ci-ok SUCCESS)**.
+Code integration is not an installed release.
+
+**v1.6.0 release preparation:** [#967](https://github.com/LTstripes/hermes-finance/issues/967)
+proposes only version/lock/health expectations, CHANGELOG and
+[canonical release notes](release-notes-1.6.0.md) from that exact accepted baseline.
+**PREPARED / READY FOR INTEGRATOR**, subject to exact PR CI and independent
+release/security/product review; no Worker self-acceptance. v1.6.0 is **not yet
+published or installed**. Guarded integration and exact post-main push CI,
+another specific Owner release GO, #124 publication and published-tag readback
+remain subsequent gates. No Stable/Test/Owner DB operation is part of #967.
 
 **Published and installed Stable:** [v1.5.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.5.0)
 at `f963374ac0b6b6b5c156f013785c78b900004b7c`, schema
@@ -32,10 +44,10 @@ not yet installed in Stable.**
 
 | Layer | Current verified status |
 | --- | --- |
-| GitHub source | `main@3ca4780f...`, #962/#964/#965 merged. #962 [exact PR CI40213852780](https://github.com/LTstripes/hermes-finance/actions/runs/40213852780) 30/30 SUCCESS, [UI40213852100](https://github.com/LTstripes/hermes-finance/actions/runs/40213852100) SUCCESS. #965 [CI40210791959](https://github.com/LTstripes/hermes-finance/actions/runs/40210791959) SUCCESS; #964 [CI40198729519](https://github.com/LTstripes/hermes-finance/actions/runs/40198729519) SUCCESS. Exact integrated-main CI is linked above. |
-| Published | v1.5.0, code `f963374a...`, schema 0065. No new release tag/version approved for the current main. |
+| GitHub source | Accepted baseline `main@f07b20dd...`, #962/#964/#965 merged, #966 docs reconciled. #962 [exact PR CI40213852780](https://github.com/LTstripes/hermes-finance/actions/runs/40213852780) 30/30 SUCCESS, [UI40213852100](https://github.com/LTstripes/hermes-finance/actions/runs/40213852100) SUCCESS. #965 [CI40210791959](https://github.com/LTstripes/hermes-finance/actions/runs/40210791959) SUCCESS; #964 [CI40198729519](https://github.com/LTstripes/hermes-finance/actions/runs/40198729519) SUCCESS. Exact baseline push CI is linked above; #967 release-only candidate is separate. |
+| Published | v1.5.0, code `f963374a...`, schema 0065. v1.6.0 preparation is authorized; publication/tag/#124 trigger is not. |
 | HONOR Stable | Owner Operator reports v1.5.0/0065 installed, old business facts and source journals preserved. The code-only latest main is not a hotpatch to Stable. |
-| Test and actual new UI UAT | #959 source-proof Test/Stable UAT accepted earlier at v1.5.0. **No Owner-real Test walkthrough of #962 + #964/#965 together** yet. Synthetic CI, browser-equivalent CSS zoom, code review and Worker screenshots are not local Owner acceptance. |
+| Test and actual new UI UAT | [Owner UI UAT GO](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6401873080) for Month/Returns on Test `f07b20dd...`, with accepted native desktop evidence gap. [Operator technical PARTIAL](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6401652215): tested routes PASS, nine size/zoom scenarios CSS/viewport emulation only; native Windows browser DPI/zoom NOT TESTED. Real financial Apply/Close/Reopen, real manual Save and live T-Invest remain NOT TESTED and unapproved here. |
 | Protected actions | Financial Apply/Close/Reopen, real October statement import, Test/Stable rollout and provider calls require the applicable explicit Owner scope/approval; none is granted by a GitHub merge. |
 
 The bounded original-bound custody-month source proof is persisted on installed
@@ -60,7 +72,7 @@ August's principal/custody event remains unaccepted; full calendar 2024–26
 investment returns do not appear from long originals alone. Source-only
 Modified Dietz is not accepted portfolio TWRR/XIRR or financial Close.
 
-**Merged code awaiting installed UAT/release:**
+**Merged code with Owner UI UAT GO, awaiting release/Stable installation:**
 - `/v2/close?month=id` is the normal **Month** hub. Compact report-month list,
   reusable manual form tiles, one inline work area, guarded unsaved/pending
   navigation, **Брокерские выписки** with one XML entry/source exceptions,
@@ -105,23 +117,18 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Confirm exact post-main CI40215092589 SUCCESS** on the merged SHA before
-   testing or publishing its combined tree. Documentation-only maintenance is
-   separate from this code gate and must have its own exact review/CI.
-2. **One isolated Test → Owner desktop UAT** of the combined Month + Returns code,
-   pinned to accepted main and real Test/Stable identity. Reuse existing backed-up
-   Test/profile, check physical DB/process binding, schema 0065 and nine CLOSED.
-   Owner scenario: create/open October DRAFT → switch tiles → salary/budget/
-   deposits → guarded XML source review for two accounts → recognized equities/
-   bonds and dated quantities → one explicit read-only payout preview → guarded
-   final review/Close on eligible synthetic/authorized Test cases → Back/Reload
-   → new Returns month/account/top-five and legacy links; verify no duplicate
-   source payments or lost edits. Browser CSS zoom is not a native Windows DPI
-   guarantee. Do not perform real October financial Apply/Close without its
-   separate Owner approval.
-3. If accepted, one **new versioned release candidate** after v1.5.0,
-   release-notes + S + compatible instructions, independent review, exact PR/
-   main CI, explicit #124 release GO, annotated tag and Release readback.
+1. **Baseline exact push CI and Owner UI UAT complete:** CI40216203428 SUCCESS
+   on `f07b20dd...`; Owner Month/Returns GO accepts the native DPI/zoom gap.
+   Operator technical PARTIAL and real financial/live-provider NOT TESTED limits
+   remain explicit. No repeat native-browser capture is required for this
+   release-preparation decision; no real financial operation is authorized.
+2. **#967 v1.6.0 release-only candidate:** Integrator obtains independent
+   release/security/product review and exact PR CI, performs guarded integration
+   if accepted, then verifies exact canonical post-main push CI. No additional
+   #711/#889 functionality or existing Draft PR enters this release branch/cut;
+   separate feature work must not merge to main before candidate publication.
+3. **Separate Owner publication and rollout decisions:** specific release GO
+   after checks → guarded #124 request → annotated tag/peeled SHA/Release readback.
    Then a separately Owner-approved **backup-first published-SHA Stable update**
    with retained 0065 schema/data, rehearsal as applicable, OPS02
    Prepare/Validate and separate Start; verify source journals, nine CLOSED,
