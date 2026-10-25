@@ -69,6 +69,61 @@ function setup(path = "/v2/returns") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("source seam context stays behind each metric's details while values remain visible", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    for (const [key, value] of Object.entries({
+      pnl: "2700",
+      rate: "0.027",
+      coupons: "300",
+      dividends: "200",
+    })) {
+      const metric = data.selected[key as "pnl" | "rate" | "coupons" | "dividends"];
+      metric.value = value;
+      metric.reason_codes = ["seam_mismatch"];
+    }
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const result = await screen.findByRole("region", { name: "Результат периода" });
+  expect(result).toHaveTextContent("+27 ₽");
+  expect(result).toHaveTextContent("2,70%");
+  for (const name of ["Результат периода", "Полученные купоны", "Полученные дивиденды"]) {
+    const card = screen.getByRole("region", { name });
+    const info = within(card).getAllByText("Остатки соседних периодов расходятся.");
+    for (const explanation of info) expect(explanation).not.toBeVisible();
+    for (const control of within(card).getAllByLabelText(/^Подробнее:/)) {
+      expect(control).toHaveTextContent("ⓘ");
+      fireEvent.click(control);
+    }
+    for (const explanation of info) expect(explanation).toBeVisible();
+  }
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("account reconciliation explains the whole account in metric details", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.selected.pnl = {
+      ...data.selected.pnl,
+      value: "12345",
+      method: "source_account_reconciliation",
+    };
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const card = await screen.findByRole("region", { name: "Результат периода" });
+  expect(card).toHaveTextContent("+123,45");
+  const explanation = within(card).getByText(/Результат всего счёта за указанные даты/);
+  expect(explanation).not.toBeVisible();
+  fireEvent.click(within(card).getByLabelText("Подробнее: Результат периода"));
+  expect(explanation).toBeVisible();
+  expect(explanation).toHaveTextContent("денежный остаток и операции счёта");
+  expect(within(card).queryByText(/Результат бумаги/)).not.toBeInTheDocument();
+});
+
 test("pins CLOSED default in URL and loads trades only on expansion", async () => {
   const calls = install();
   setup();

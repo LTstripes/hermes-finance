@@ -129,12 +129,13 @@ def _instrument(row, start, end):
 
 def _monthly(row):
     result = row.result
+    reasons = (*result.reason_codes, *row.flags)
     return {
         "period": bounds(result.opening_date, result.closing_date),
-        "pnl": metric(result.growth_kopecks, reasons=result.reason_codes, method="source_monthly"),
+        "pnl": metric(result.growth_kopecks, reasons=reasons, method="source_monthly"),
         "rate": metric(
             result.modified_dietz_return,
-            reasons=result.reason_codes,
+            reasons=reasons,
             method="modified_dietz",
             unit="fraction",
         ),
@@ -143,15 +144,30 @@ def _monthly(row):
     }
 
 
-def _period_result(period, start, end):
+def _period_flags(months, start, end):
+    # Monthly calculation blockers already have period-specific counterparts.
+    # Only additional source advisories (e.g. seams) also apply to outer results.
+    return tuple(
+        flag
+        for row in months
+        if start <= row.result.opening_date and row.result.closing_date <= end
+        for flag in row.flags
+        if flag not in row.result.reason_codes
+    )
+
+
+def _period_result(period, start, end, months):
+    flags = _period_flags(months, start, end)
     return {
         "period": bounds(start, end),
         "pnl": metric(
-            period.growth_kopecks, reasons=period.growth_reason_codes, method="source_period"
+            period.growth_kopecks,
+            reasons=(*period.growth_reason_codes, *flags),
+            method="source_period",
         ),
         "rate": metric(
             period.chained_return,
-            reasons=period.chain_reason_codes,
+            reasons=(*period.chain_reason_codes, *flags),
             method="chained_modified_dietz",
             unit="fraction",
         ),
@@ -171,11 +187,11 @@ def _period_income(result, months, start, end):
     )
     for name in ("coupons", "dividends"):
         values = [getattr(r, f"{name}_kopecks") for r in rows]
+        available = complete and all(v is not None for v in values)
+        reasons = tuple(flag for row in rows for flag in row.flags)
         result[name] = metric(
-            sum(values) if complete and all(v is not None for v in values) else None,
-            reasons=()
-            if complete and all(v is not None for v in values)
-            else ("income_interval_unavailable",),
+            sum(values) if available else None,
+            reasons=reasons if available else (*reasons, "income_interval_unavailable"),
             method="credited_payments",
         )
 
@@ -190,14 +206,14 @@ def _source_view(session, account, start, end):
     periods = [r["period"] for r in history]
     if monthly.months:
         first, last = monthly.months[0].result.opening_date, monthly.months[-1].result.closing_date
-        whole = _period_result(monthly.period, first, last)
+        whole = _period_result(monthly.period, first, last, monthly.months)
         _period_income(whole, monthly.months, first, last)
         periods.append(whole["period"])
     selected = next((r for r in history if r["period"] == bounds(start, end)), None)
     for segment in monthly.segments:
         periods.append(bounds(segment.start, segment.end))
         if selected is None and (start, end) == (segment.start, segment.end):
-            selected = _period_result(segment, start, end)
+            selected = _period_result(segment, start, end, monthly.months)
     if selected is None and whole and whole["period"] == bounds(start, end):
         selected = whole.copy()
     if selected is None:
@@ -206,7 +222,16 @@ def _source_view(session, account, start, end):
         reconciliation = instruments.reconciliation
         selected = {
             "period": bounds(start, end),
-            "pnl": _instrument_metric(reconciliation.account_growth)
+            "pnl": metric(
+                reconciliation.account_growth.value
+                if reconciliation.account_growth.status in {"supported", "provisional"}
+                else None,
+                reasons=(
+                    *reconciliation.account_growth.reason_codes,
+                    *_period_flags(monthly.months, start, end),
+                ),
+                method="source_account_reconciliation",
+            )
             if reconciliation
             else metric(reasons=("interval_unavailable",)),
             "rate": metric(reasons=("interval_rate_unavailable",), unit="fraction"),
