@@ -8,7 +8,7 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-**Canonical accepted baseline:** `main@f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
+**Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),
 [#965 Returns source explanations](https://github.com/LTstripes/hermes-finance/pull/965)
 and [#962 Month tiles and guarded Close](https://github.com/LTstripes/hermes-finance/pull/962)
@@ -19,14 +19,16 @@ reviewed-tree-equal merge at `3ca4780f017e5949aad61e5c888f8bb27af784f6`.
 **COMPLETED SUCCESS (28 successful jobs, 3 expected skips, terminal ci-ok SUCCESS)**.
 Code integration is not an installed release.
 
-**v1.6.0 release preparation:** [#967](https://github.com/LTstripes/hermes-finance/issues/967)
-proposes only version/lock/health expectations, CHANGELOG and
-[canonical release notes](release-notes-1.6.0.md) from that exact accepted baseline.
-**PREPARED / READY FOR INTEGRATOR**, subject to exact PR CI and independent
-release/security/product review; no Worker self-acceptance. v1.6.0 is **not yet
-published or installed**. Guarded integration and exact post-main push CI,
-another specific Owner release GO, #124 publication and published-tag readback
-remain subsequent gates. No Stable/Test/Owner DB operation is part of #967.
+**v1.6.0 release-only candidate:** [PR #968](https://github.com/LTstripes/hermes-finance/pull/968)
+under [#967](https://github.com/LTstripes/hermes-finance/issues/967) packages only
+version/lock/health test expectations, CHANGELOG and
+[canonical release notes](release-notes-1.6.0.md) from that accepted baseline.
+The PR's exact reviewed HEAD, candidate CI, guarded integration and canonical
+post-main push CI are verified through its latest GitHub receipts; none is inferred
+from a prepared document. Worker self-acceptance is not sufficient. v1.6.0 is
+**not yet published or installed**. A separate specific Owner release GO, guarded
+#124 publication, tagged-release readback and another Owner-approved Stable
+transition remain distinct gates. No Stable/Test/Owner DB operation is authorized.
 
 **Published and installed Stable:** [v1.5.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.5.0)
 at `f963374ac0b6b6b5c156f013785c78b900004b7c`, schema
@@ -44,7 +46,7 @@ not yet installed in Stable.**
 
 | Layer | Current verified status |
 | --- | --- |
-| GitHub source | Accepted baseline `main@f07b20dd...`, #962/#964/#965 merged, #966 docs reconciled. #962 [exact PR CI40213852780](https://github.com/LTstripes/hermes-finance/actions/runs/40213852780) 30/30 SUCCESS, [UI40213852100](https://github.com/LTstripes/hermes-finance/actions/runs/40213852100) SUCCESS. #965 [CI40210791959](https://github.com/LTstripes/hermes-finance/actions/runs/40210791959) SUCCESS; #964 [CI40198729519](https://github.com/LTstripes/hermes-finance/actions/runs/40198729519) SUCCESS. Exact baseline push CI is linked above; #967 release-only candidate is separate. |
+| GitHub source | Accepted pre-release UI baseline `f07b20dd...`, #962/#964/#965 merged, #966 docs reconciled; #968 tracks exact release merge SHA and CI. #962 [exact PR CI40213852780](https://github.com/LTstripes/hermes-finance/actions/runs/40213852780) 30/30 SUCCESS, [UI40213852100](https://github.com/LTstripes/hermes-finance/actions/runs/40213852100) SUCCESS. #965 [CI40210791959](https://github.com/LTstripes/hermes-finance/actions/runs/40210791959) SUCCESS; #964 [CI40198729519](https://github.com/LTstripes/hermes-finance/actions/runs/40198729519) SUCCESS. Exact baseline push CI is linked above; #967 release-only candidate is separate. |
 | Published | v1.5.0, code `f963374a...`, schema 0065. v1.6.0 preparation is authorized; publication/tag/#124 trigger is not. |
 | HONOR Stable | Owner Operator reports v1.5.0/0065 installed, old business facts and source journals preserved. The code-only latest main is not a hotpatch to Stable. |
 | Test and actual new UI UAT | [Owner UI UAT GO](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6401873080) for Month/Returns on Test `f07b20dd...`, with accepted native desktop evidence gap. [Operator technical PARTIAL](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6401652215): tested routes PASS, nine size/zoom scenarios CSS/viewport emulation only; native Windows browser DPI/zoom NOT TESTED. Real financial Apply/Close/Reopen, real manual Save and live T-Invest remain NOT TESTED and unapproved here. |
@@ -122,9 +124,9 @@ observations across overlapping statements for distinct payments.
    Operator technical PARTIAL and real financial/live-provider NOT TESTED limits
    remain explicit. No repeat native-browser capture is required for this
    release-preparation decision; no real financial operation is authorized.
-2. **#967 v1.6.0 release-only candidate:** Integrator obtains independent
-   release/security/product review and exact PR CI, performs guarded integration
-   if accepted, then verifies exact canonical post-main push CI. No additional
+2. **#968 v1.6.0 release-only candidate:** before publication, verify the final
+   independent release/security/product review, exact candidate PR CI,
+   guarded integration and exact canonical post-main push CI in #968. No additional
    #711/#889 functionality or existing Draft PR enters this release branch/cut;
    separate feature work must not merge to main before candidate publication.
 3. **Separate Owner publication and rollout decisions:** specific release GO
