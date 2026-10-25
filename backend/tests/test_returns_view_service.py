@@ -3,14 +3,19 @@
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import event
 from test_source_instrument_returns_service import BOND, save
 from test_source_monthly_returns_service import snapshot
 from test_statement_import_mybroker import ACCOUNT, ISIN
 
 from hermes_finance.api.returns_view import Context, Detail, Overview
+from hermes_finance.api.returns_view import router as returns_router
+from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import Metric
 from hermes_finance.services import returns_view as view
 from hermes_finance.services.reporting_months import create_reporting_month
@@ -33,6 +38,141 @@ def overview(db, start=START, end=END, scope=SCOPE):
         return Overview.model_validate(
             view.read_overview(session, scope=scope, start=start, end=end)
         )
+
+
+def api_overview(db, start=START, end=END):
+    app = FastAPI()
+    app.include_router(returns_router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/returns/overview", params={"scope": SCOPE, "start": start, "end": end}
+        )
+    assert response.status_code == 200, response.text
+    return Overview.model_validate(response.json())
+
+
+def test_api_monthly_advisory_survives_income_recomposition_without_changing_values(
+    db, monkeypatch
+):
+    save(db, trades=(), bond=None)
+    with db.session_factory() as session:
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+    row = replace(
+        monthly.months[0],
+        result=replace(
+            monthly.months[0].result,
+            growth_kopecks=2700,
+            modified_dietz_return=Decimal("0.027"),
+            reason_codes=(),
+        ),
+        flags=("seam_mismatch",),
+        coupons_kopecks=300,
+        dividends_kopecks=200,
+    )
+    monkeypatch.setattr(
+        view, "read_monthly_returns", lambda *a, **k: replace(monthly, months=(row,))
+    )
+    before = snapshot(db)
+    result = api_overview(db)
+    for projected in (result.selected, result.history[0]):
+        assert [
+            getattr(projected, key).value for key in ("pnl", "rate", "coupons", "dividends")
+        ] == ["2700", "0.027", "300", "200"]
+        for key in ("pnl", "rate", "coupons", "dividends"):
+            assert getattr(projected, key).reason_codes == ["seam_mismatch"]
+    assert snapshot(db) == before
+
+
+def test_api_intervals_keep_scoped_advisories_and_income_missingness(db, monkeypatch):
+    for month in (4, 5, 6):
+        save(db, month, trades=(), bond=None)
+    with db.session_factory() as session:
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+    rows = tuple(
+        replace(
+            row,
+            flags=flags,
+            coupons_kopecks=coupons,
+            dividends_kopecks=200,
+            result=replace(
+                row.result, reason_codes=("missing_endpoint",) if coupons is None else ()
+            ),
+        )
+        for row, flags, coupons in zip(
+            monthly.months,
+            (
+                ("seam_mismatch",),
+                ("seam_mismatch", "missing_endpoint"),
+                ("outside_period_advisory",),
+            ),
+            (300, None, 500),
+        )
+    )
+    totals = dict(
+        growth_kopecks=5400,
+        chained_return=Decimal("0.054729"),
+        growth_reason_codes=(),
+        chain_reason_codes=(),
+    )
+    segment = SimpleNamespace(start=START, end=date(2030, 5, 31), **totals)
+    monkeypatch.setattr(
+        view,
+        "read_monthly_returns",
+        lambda *a, **k: replace(
+            monthly, months=rows, period=SimpleNamespace(**totals), segments=[segment]
+        ),
+    )
+    result = api_overview(db, end=segment.end)
+    assert result.selected.pnl.value == result.all_history.pnl.value == "5400"
+    assert result.selected.rate.value == result.all_history.rate.value == "0.054729"
+    assert (
+        result.selected.pnl.reason_codes == result.selected.rate.reason_codes == ["seam_mismatch"]
+    )
+    assert "outside_period_advisory" in result.all_history.pnl.reason_codes
+    assert result.selected.coupons.value is None
+    assert result.selected.coupons.reason_codes == [
+        "seam_mismatch",
+        "missing_endpoint",
+        "income_interval_unavailable",
+    ]
+    assert result.selected.dividends.value == "400"
+    assert result.selected.dividends.reason_codes == ["seam_mismatch", "missing_endpoint"]
+
+
+@pytest.mark.parametrize(
+    "status, expected", [("supported", "12345"), ("provisional", "12345"), ("partial", None)]
+)
+def test_api_fallback_is_account_reconciliation_and_instrument_method_is_unchanged(
+    db, monkeypatch, status, expected
+):
+    save(db, trades=(), bond=None)
+    direct_read = view.read_instrument_returns
+
+    def reconcile(*args, **kwargs):
+        direct = direct_read(*args, **kwargs)
+        return replace(
+            direct,
+            reconciliation=SimpleNamespace(
+                account_growth=Metric(12345, status, ("seam_mismatch",))
+            ),
+        )
+
+    monkeypatch.setattr(view, "read_instrument_returns", reconcile)
+    result = api_overview(db, start=date(2030, 4, 15))
+    assert result.selected.pnl.value == expected
+    assert result.selected.pnl.method == "source_account_reconciliation"
+    assert result.selected.pnl.reason_codes == ["seam_mismatch"]
+    assert result.selected.pnl.estimate and result.selected.pnl.unit == "kopecks"
+    assert result.selected.period.start == date(2030, 4, 15)
+    assert result.selected.rate.value is None
+    assert result.selected.rate.reason_codes == ["interval_rate_unavailable"]
+    assert result.instruments[0].pnl.method == "instrument_return_v2"
 
 
 def test_closed_default_ignores_new_draft_and_no_closed_is_explicit(db):
