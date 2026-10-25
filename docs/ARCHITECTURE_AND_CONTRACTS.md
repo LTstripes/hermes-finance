@@ -6306,13 +6306,25 @@ partial subtotals and conditional statement values cannot fill P&L/rate cells.
 Details separately expose conditional metrics and dated trades/credited payments.
 
 Monthly, segment and whole-history account results come directly from the
-monthly reader. Other date ranges may reuse the dated account reconciliation
-growth; an unsupported account rate stays NULL. Whole history never uses the
-sum of available months. Only credited coupon/dividend amounts are added across
-adjacent, fully represented months, with any missing amount withholding the
-entire interval income. Accepted scopes retain their existing prerequisites;
-unsupported payout/instrument breakdowns stay NULL/empty with reasons. Browser
-comparison uses exact Decimal/BigInt ordering; Number is confined to bar geometry.
+monthly reader. Their presentation metrics retain applicable `row.flags` and
+the original financial availability reasons separately. In particular,
+`seam_mismatch` warns of discordant adjacent source boundaries without
+removing a supported numeric result. The interval projection preserves only
+flags relevant to its dates; recomposition of credited coupon/dividend totals
+retains those flags and concrete missing-income causes rather than replacing
+them with a generic empty explanation. Unknown values stay NULL, but no new
+monetary/Modified Dietz calculation or financial authority is inferred.
+
+Other date ranges may reuse the dated **whole-account** reconciliation
+growth with `method=source_account_reconciliation`, not the per-security
+`instrument_return_v2` method; its unsupported account rate stays NULL.
+Source security rows retain their own instrument method. Whole history never
+uses the sum of available months. Only credited coupon/dividend amounts are
+added across adjacent, fully represented months, with any missing amount
+withholding the entire interval income. Accepted scopes retain their existing
+prerequisites; unsupported payout/instrument breakdowns stay NULL/empty with
+reasons. Browser comparison uses exact Decimal/BigInt ordering; Number is
+confined to bar geometry.
 
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates

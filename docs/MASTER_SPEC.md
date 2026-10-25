@@ -336,8 +336,12 @@ Custom intervals keep unavailable account rates explicit while retaining any
 independently supported dated instrument results.
 
 Old `/v2/capital/monthly-returns` links enter the same Returns screen, preserving
-source account and bond-month selection. Explicit `diagnostics=1` retains the
-existing technical workspace; it is accessed through “Подробнее о данных”.
+source account, ISIN and selected bond interval. A legacy bond-slice URL with no
+`bond_period` means **full source history**, not the latest CLOSED month.
+For a history longer than 12 months, the selected past month remains visible
+in the chart/table after period changes, Back and Reload; cards and top five
+use that exact same period. Explicit `diagnostics=1` retains the existing
+technical workspace, opened through “Подробнее о данных”.
 
 The diagnostic bond block on `/v2/capital/monthly-returns?diagnostics=1` shows each native
 account separately: reported quantity/value and their EOD boundary, dated trades

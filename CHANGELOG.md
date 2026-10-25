@@ -1,21 +1,52 @@
 # Changelog
 
 Все заметные изменения Hermes Finance фиксируются в этом файле.
+Точное состояние установленной версии и UAT — только в
+[CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
-## [Unreleased]
+## [Unreleased] — после v1.5.0, код в main, ещё не установлен в Stable
 
-Current integration, runtime and next-action evidence is maintained only in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
+- [#964](https://github.com/LTstripes/hermes-finance/pull/964):
+  отдельная понятная «Доходность»: выбор счёта/периода, карточки ₽/%,
+  график месячной истории, инструментальная детализация, топ-5 плюса/минуса;
+  совместимые старые ссылки, точный выбор истории и Back/Reload.
+- [#965](https://github.com/LTstripes/hermes-finance/pull/965):
+  сохраняются применимые признаки несогласованных границ и причины выплат
+  через ⓘ; результат всего счёта подписан как результат счёта, а не бумаги.
+  Числа и финансовая методика не изменены.
+- [#962](https://github.com/LTstripes/hermes-finance/pull/962):
+  компактные отчётные месяцы, один рабочий Month с плитками и встроенными
+  разделами, брокерский XML/исключения/количества/T-Invest preview,
+  финальный строгий Close с подтверждённым GET и восстановлением ACK;
+  исправлены desktop таблицы и ложное «источники проверены».
 
-1.5.0 release preparation packages accepted #957/#958/#959 at
-`f9290d7df218c3a46097a674b4d9492826980eff`: exact-original custody proof,
-durable source-only Month/Monthly Returns, bounded dividend narrative recognition
-and schema 0064→0065. Backend/frontend manifests, locks and current health identity
-align at 1.5.0. See [compatible release notes](docs/release-notes-1.5.0.md) and the
-[0065 operating boundary](docs/OWNER_RUNTIME_OPERATIONS.md#o3-source-proof-recovery).
-Published v1.4.0, all released migration bytes and financial/source contracts are
-unchanged. This is not publication or Stable rollout; independent release review,
-Owner UAT/release decisions and the published-SHA production-compatible rehearsal
-remain required.
+Exact source-merge checkpoint:
+`main@3ca4780f017e5949aad61e5c888f8bb27af784f6`; [post-main
+CI40215092589](https://github.com/LTstripes/hermes-finance/actions/runs/40215092589)
+COMPLETED SUCCESS (28 successful jobs, 2 expected skips, terminal ci-ok SUCCESS). Release/tag/installed Stable still v1.5.0; nothing above
+is a deployed v1.5.0 hotpatch.
+
+## [1.5.0] — 2026-10-25
+
+[Published v1.5.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.5.0),
+exact `f963374ac0b6b6b5c156f013785c78b900004b7c`, schema 0065.
+Guarded source custody-proof #957/#959 allows one independently attested
+source-only confirmation to supply two supported June/July source account
+months in ordinary Month/Monthly Returns after Reload, without storing
+original XML or money/rates. #958 adds bounded dividend narrative recognition
+without creating duplicate economic payments. Windows Owner-local rollout
+was separately authorized, backed up and accepted with all historical
+financial rows and nine CLOSED retained. New #962/#964/#965 screens are
+outside this immutable release. See
+[1.5.0 release notes](docs/release-notes-1.5.0.md).
+
+## [1.4.0] — 2026-10-24
+
+[Published v1.4.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.4.0),
+commit `b027bcd90c56c500d271a9ee963485bdfa67ea79`, schema 0064.
+One-time source-only historical intake, native source account/month and
+instrument evidence and corresponding provisional readers. Its detailed
+changes and preserved regression notes follow.
 
 ### Added
 
@@ -47,6 +78,7 @@ remain required.
 ### Known limitations
 
 - The source-return tests use synthetic data only; CI success does not establish Owner-real numerical UAT or financial authority. The #917 page is synthetic-tested UI under the same limit. Known limitation: non-dict proof claims raise `AttributeError`.
+
 
 ## [1.3.0] — 2026-10-16
 
