@@ -14,7 +14,7 @@ New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),
 and [#962 Month tiles and guarded Close](https://github.com/LTstripes/hermes-finance/pull/962)
 are guarded-merged in that order, with exact candidate CI/UI GO and a final
 reviewed-tree-equal merge. Latest [post-main CI40215092589](https://github.com/LTstripes/hermes-finance/actions/runs/40215092589):
-**RUNNING at this documentation checkpoint; verify terminal exact-SHA result before Test** on this exact SHA. Code integration is not an installed release.
+**COMPLETED SUCCESS (28 successful jobs, 2 expected skips, terminal ci-ok SUCCESS)** on this exact SHA. Code integration is not an installed release.
 
 **Published and installed Stable:** [v1.5.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.5.0)
 at `f963374ac0b6b6b5c156f013785c78b900004b7c`, schema

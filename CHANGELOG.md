@@ -23,7 +23,7 @@
 Exact source-merge checkpoint:
 `main@3ca4780f017e5949aad61e5c888f8bb27af784f6`; [post-main
 CI40215092589](https://github.com/LTstripes/hermes-finance/actions/runs/40215092589)
-RUNNING at this documentation checkpoint; verify terminal exact-SHA result before Test. Release/tag/installed Stable still v1.5.0; nothing above
+COMPLETED SUCCESS (28 successful jobs, 2 expected skips, terminal ci-ok SUCCESS). Release/tag/installed Stable still v1.5.0; nothing above
 is a deployed v1.5.0 hotpatch.
 
 ## [1.5.0] — 2026-10-25
