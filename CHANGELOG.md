@@ -4,7 +4,7 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
-## [Unreleased] — после v1.5.0, код в main, ещё не установлен в Stable
+## [1.6.0] — 2026-10-25
 
 - [#964](https://github.com/LTstripes/hermes-finance/pull/964):
   отдельная понятная «Доходность»: выбор счёта/периода, карточки ₽/%,
@@ -20,11 +20,11 @@
   финальный строгий Close с подтверждённым GET и восстановлением ACK;
   исправлены desktop таблицы и ложное «источники проверены».
 
-Exact source-merge checkpoint:
-`main@3ca4780f017e5949aad61e5c888f8bb27af784f6`; [post-main
-CI40215092589](https://github.com/LTstripes/hermes-finance/actions/runs/40215092589)
-COMPLETED SUCCESS (28 successful jobs, 2 expected skips, terminal ci-ok SUCCESS). Release/tag/installed Stable still v1.5.0; nothing above
-is a deployed v1.5.0 hotpatch.
+[Release notes 1.6.0](docs/release-notes-1.6.0.md): обновление представления
+Month/Returns и source-only review. Финансовые контракты и schema 0065
+не изменены; недоказанные периоды остаются NULL. Ограничения native DPI/zoom,
+реальных финансовых действий и live provider UAT сохранены. Текущее состояние
+публикации, установки и приёмки — в [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
 ## [1.5.0] — 2026-10-25
 
