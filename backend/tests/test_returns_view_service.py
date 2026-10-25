@@ -152,6 +152,31 @@ def test_invalid_scope_never_falls_back_and_accepted_reader_keeps_null(db):
     assert result.selected.rate.unit == "percentage_points"
 
 
+@pytest.mark.parametrize("draft_between", [False, True])
+def test_accepted_history_preserves_missing_or_draft_calendar_month(db, draft_between):
+    with db.session_factory() as session:
+        for month, day in ((1, 31), (3, 31)):
+            row = create_reporting_month(
+                session, year=2030, month=month, snapshot_date=date(2030, month, day)
+            )
+            row.status = "closed"
+            session.commit()
+        if draft_between:
+            create_reporting_month(session, year=2030, month=2, snapshot_date=date(2030, 2, 28))
+    before = snapshot(db)
+    result = overview(db, scope="portfolio")
+    assert [r.period.end for r in result.history] == [
+        date(2030, 1, 31),
+        date(2030, 2, 28),
+        date(2030, 3, 31),
+    ]
+    missing = result.history[1]
+    assert missing.period.start == date(2030, 1, 31)
+    assert missing.pnl.value is missing.rate.value is None
+    assert missing.pnl.reason_codes == ["calendar_month_not_closed"]
+    assert snapshot(db) == before
+
+
 def test_currentness_is_reread_no_summary_cache(db):
     save(db, trades=(), bond=None)
     before = overview(db)

@@ -11,7 +11,7 @@ import {
 
 async function install(page: Page) {
   const calls: string[] = [];
-  const state = { error: false };
+  const state = { error: false, unavailable: false };
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {
@@ -25,12 +25,17 @@ async function install(page: Page) {
         end: url.searchParams.get("end") ?? may.end,
       };
       if (url.pathname === "/api/returns/context") await route.fulfill({ json: contextFixture });
-      else if (url.pathname === "/api/returns/overview")
+      else if (url.pathname === "/api/returns/overview") {
+        const body = overviewFixture(scope, period);
+        if (state.unavailable) {
+          body.selected.pnl.value = null;
+          body.selected.pnl.reason_codes = ["missing_endpoint"];
+        }
         await route.fulfill({
           status: state.error ? 503 : 200,
-          json: state.error ? {} : overviewFixture(scope, period),
+          json: state.error ? {} : body,
         });
-      else if (url.pathname === "/api/returns/instrument")
+      } else if (url.pathname === "/api/returns/instrument")
         await route.fulfill({
           json: detailFixture(scope, period, url.searchParams.get("isin") ?? undefined),
         });
@@ -112,7 +117,7 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
         reducedMotion: "reduce",
       });
       const page = await context.newPage();
-      await install(page);
+      const { state } = await install(page);
       await page.goto("/v2/returns");
       await expect(page.getByRole("heading", { name: "По инструментам" })).toBeVisible();
       expect(
@@ -135,6 +140,21 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
         fullPage: true,
         animations: "disabled",
       });
+      if (width === 1280 && zoom === 1.5) {
+        state.unavailable = true;
+        await page.getByRole("button", { name: "Обновить" }).click();
+        const info = page.getByLabel("Подробнее: Результат периода", { exact: true });
+        await info.focus();
+        await page.keyboard.press("Enter");
+        const explanation = info.locator("..").locator("div").first();
+        await expect(explanation).toContainText("Не хватает стоимости на границе периода");
+        await page.screenshot({ path: path.join(directory, "returns-null-info-1280-150.png") });
+        const box = await explanation.boundingBox();
+        const main = await page.locator("main").boundingBox();
+        expect(box).not.toBeNull();
+        expect(box?.x).toBeGreaterThanOrEqual(main?.x ?? 0);
+        expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(Math.round(width / zoom));
+      }
       await context.close();
     }
   }

@@ -159,11 +159,11 @@
   display: none;
 }
 .info > div {
-  position: absolute;
-  z-index: 5;
-  right: 0;
-  top: 24px;
+  position: fixed;
+  z-index: 50;
   width: min(310px, 65vw);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: white;
   border: 1px solid #c5d0dc;
   border-radius: 8px;

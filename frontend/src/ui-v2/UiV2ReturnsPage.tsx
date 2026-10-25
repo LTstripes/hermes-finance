@@ -452,25 +452,25 @@ export default function UiV2ReturnsPage() {
               reasonCodes={data.instrument_reason_codes}
               initialIsin={params.get("isin")}
             />
-            <details className={styles.diagnostics}>
-              <summary>Подробнее о данных</summary>
-              <p>
-                Результаты используют существующие расчёты; неизвестные значения остаются пустыми.
-              </p>
-              {data.proof_status === "stale" && (
-                <p>
-                  Подтверждение выписок устарело. Зависимые значения требуют повторной проверки.
-                </p>
-              )}
-              {scope.startsWith("source:") && (
-                <Link
-                  to={`/v2/capital/monthly-returns?diagnostics=1&source_account=${encodeURIComponent(scope.slice(7))}`}
-                >
-                  Открыть диагностику выписок
-                </Link>
-              )}
-            </details>
           </>
+        )}
+        {context.data?.accounts.some((a) => a.id === scope) && (
+          <details className={styles.diagnostics}>
+            <summary>Подробнее о данных</summary>
+            <p>
+              Результаты используют существующие расчёты; неизвестные значения остаются пустыми.
+            </p>
+            {data?.proof_status === "stale" && (
+              <p>Подтверждение выписок устарело. Зависимые значения требуют повторной проверки.</p>
+            )}
+            {scope.startsWith("source:") && (
+              <Link
+                to={`/v2/capital/monthly-returns?diagnostics=1&source_account=${encodeURIComponent(scope.slice(7))}`}
+              >
+                Открыть диагностику выписок
+              </Link>
+            )}
+          </details>
         )}
       </UiV2Shell>
     </div>

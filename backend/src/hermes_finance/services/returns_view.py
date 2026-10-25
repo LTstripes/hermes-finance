@@ -5,7 +5,7 @@ Money crosses this boundary as integer-minor-unit strings, including large value
 """
 
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 
@@ -252,6 +252,33 @@ def _accepted_result(session, scope, start, end):
     }
 
 
+def _accepted_history(session, scope, closed):
+    if not closed:
+        return []
+    by_start = {m.period_start: m for m in closed}
+    cursor = closed[0].period_start
+    history = []
+    while cursor <= closed[-1].period_start:
+        following = date(cursor.year + cursor.month // 12, cursor.month % 12 + 1, 1)
+        start, end = cursor - timedelta(days=1), following - timedelta(days=1)
+        if cursor in by_start:
+            history.append(_accepted_result(session, scope, start, end))
+        else:
+            # A missing or DRAFT month is a visible gap, never a calculated zero.
+            missing = dict(reasons=("calendar_month_not_closed",), estimate=False)
+            history.append(
+                {
+                    "period": bounds(start, end),
+                    "pnl": metric(method="PERF04A", **missing),
+                    "rate": metric(method="twrr", unit="percentage_points", **missing),
+                    "coupons": metric(**missing),
+                    "dividends": metric(**missing),
+                }
+            )
+        cursor = following
+    return history
+
+
 def read_overview(session, *, scope, start, end):
     with coherent_read_snapshot(session):
         _validate_scope(session, scope)
@@ -259,10 +286,7 @@ def read_overview(session, *, scope, start, end):
             view = _source_view(session, scope.removeprefix("source:"), start, end)
         else:
             closed = [m for m in _months(session) if m.status == "closed"]
-            history = [
-                _accepted_result(session, scope, m.period_start - timedelta(days=1), m.period_end)
-                for m in closed
-            ]
+            history = _accepted_history(session, scope, closed)
             first = closed[0].snapshot_date if closed else None
             last = closed[-1].snapshot_date if closed else None
             whole = (

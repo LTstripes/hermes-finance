@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
@@ -21,6 +21,7 @@ const reasons: Record<string, string> = {
   payout_link_stale: "Связь выплаты с бумагой требует повторной проверки.",
   source_period_inferred: "Даты остатков в выписке не подтверждены.",
   seam_mismatch: "Остатки соседних периодов расходятся.",
+  calendar_month_not_closed: "За этот месяц пока нет закрытого отчёта.",
 };
 const methods: Record<string, string> = {
   modified_dietz: "Процент — оценка Modified Dietz за указанные даты, без пересчёта на год.",
@@ -55,8 +56,31 @@ export function Explanation({ codes }: { codes: string[] }) {
   );
 }
 export function Info({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const details = ref.current;
+      const panel = details?.querySelector("div");
+      if (!details || !panel) return;
+      const anchor = details.getBoundingClientRect();
+      const left = Math.max(16, (details.closest("main")?.getBoundingClientRect().left ?? 0) + 16);
+      const width = Math.min(310, window.innerWidth - left - 16);
+      panel.style.width = `${width}px`;
+      panel.style.left = `${Math.max(left, Math.min(anchor.left, window.innerWidth - width - 16))}px`;
+      panel.style.top = `${Math.max(16, Math.min(anchor.bottom + 8, window.innerHeight - panel.offsetHeight - 16))}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
   return (
-    <details className={styles.info}>
+    <details ref={ref} className={styles.info} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary aria-label={`Подробнее: ${label}`}>ⓘ</summary>
       <div>{children}</div>
     </details>
