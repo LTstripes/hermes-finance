@@ -1,4 +1,28 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function tile(page: Page, name: RegExp) {
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name })
+    .click();
+}
+async function fullReview(page: Page) {
+  const summary = page.getByText("Подробнее об итогах и проверках", { exact: true });
+  await expect(summary).toBeVisible();
+  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
+    await summary.click();
+}
+async function advanced(page: Page) {
+  const summary = page.getByText("Дополнительные интеграции и проверки", { exact: true });
+  await expect(summary).toBeVisible();
+  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
+    await summary.click();
+}
+test.beforeEach(async ({ page }) => {
+  page.on("dialog", (dialog) =>
+    dialog.type() === "beforeunload" ? dialog.accept() : dialog.dismiss(),
+  );
+});
 
 test("intentional empty UI: Clone, zero, guards, stale consent, lost ACK and GET-only Back/Reload", async ({
   page,
@@ -85,7 +109,11 @@ test("intentional empty UI: Clone, zero, guards, stale consent, lost ACK and GET
   expect(posts).toBe(1);
   expect((await (await request.get(`/api/months/${cloned.id}`)).json()).status).toBe("closed");
   await page.getByRole("link", { name: "Отчётные месяцы →", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Сохранение ещё не подтверждено");
+  await page.getByRole("button", { name: "Вернуться к форме", exact: true }).click();
   await page.goBack();
+  await expect(page.getByRole("alertdialog")).toContainText("Сохранение ещё не подтверждено");
+  await page.getByRole("button", { name: "Вернуться к форме", exact: true }).click();
   await expect(page.getByRole("button", { name: "Проверить результат закрытия" })).toBeEnabled();
   await page.reload();
   await expect(page.getByRole("button", { name: "Проверить результат закрытия" })).toBeEnabled();
@@ -138,23 +166,13 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
-  const budget = page.getByRole("link", { name: "Бюджет", exact: true });
-  await expect(budget).toHaveAttribute(
-    "href",
-    "/v2/data/months/1?section=budget&from=monthly-close-v2&step=final_review_close&monthId=1",
-  );
-  await budget.click();
-  await expect(page.getByRole("heading", { name: "Редактор месяца" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=1&step=final_review_close",
-  );
-
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await tile(page, /Расходы и план/);
+  await expect(page.getByRole("region", { name: "Рабочая область: Расходы и план" })).toBeVisible();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
   await page.getByLabel("Сумма расхода", { exact: true }).fill("123.45");
   await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
-  await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
+  await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
   expect(expenseWrites).toBe(1);
   const afterSave = await (await request.get(workflowPath)).json();
   expect(afterSave.readiness.can_close).toBe(true);
@@ -165,25 +183,41 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   ).toBe(1);
 
   const readsBeforeReturn = workflowReads;
-  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
-  await expect(page).toHaveURL(/\/v2\/close\?month=1&step=final_review_close$/);
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Закрыть месяц/ })
+    .click();
+  await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   await expect.poll(() => workflowReads).toBeGreaterThan(readsBeforeReturn);
+  await fullReview(page);
   await expect(page.getByTestId("final-review-card-income_budget")).toContainText("Есть данные");
 
   // An unconfirmed edit stays out of the authoritative read model.
-  await page.getByRole("link", { name: "Бюджет", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Расходы и план/ })
+    .click();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Несохранённое");
   await page.getByLabel("Сумма расхода", { exact: true }).fill("9.99");
-  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Закрыть месяц/ })
+    .click();
   await page.getByRole("button", { name: "Остаться", exact: true }).click();
   await expect(page.getByLabel("Категория расхода", { exact: true })).toHaveValue("Несохранённое");
-  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Закрыть месяц/ })
+    .click();
   await page.getByRole("button", { name: "Перейти без сохранения" }).click();
-  await expect(page).toHaveURL(/\/v2\/close\?month=1&step=final_review_close$/);
+  await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
   expect(expenseWrites).toBe(1);
 
-  await page.getByRole("link", { name: "Бюджет", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Расходы и план/ })
+    .click();
   await page.route("**/api/expenses", (route) =>
     route.request().method() === "POST" ? route.abort() : route.continue(),
   );
@@ -197,9 +231,12 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     ).summary.expense_row_count,
   ).toBe(1);
   await page.unroute("**/api/expenses");
-  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Закрыть месяц/ })
+    .click();
   await page.getByRole("button", { name: "Перейти без сохранения" }).click();
-  await expect(page).toHaveURL(/\/v2\/close\?month=1&step=final_review_close$/);
+  await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
 
   await page.route(`**${workflowPath}`, async (route) => {
     const response = await route.fetch();
@@ -221,8 +258,8 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   expect((await (await request.get("/api/months/1")).json()).status).toBe("draft");
   await page.getByRole("button", { name: "Закрыть месяц" }).click();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Изменить" })).toHaveCount(0);
   expect((await (await request.get("/api/months/1")).json()).status).toBe("closed");
   await page.screenshot({ path: info.outputPath("closed-desktop.png"), fullPage: true });
@@ -262,6 +299,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await page.screenshot({ path: info.outputPath("archive-desktop.png"), fullPage: true });
 
   await page.goto("/v2/close?month=1&step=next_month_outlook");
+  await advanced(page);
   await expect(page.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
     "href",
     "/v2/data/payouts?month=1&from=monthly-close-v2&step=next_month_outlook&monthId=1",
@@ -279,8 +317,8 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
-  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
@@ -310,13 +348,16 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     ).restored_backup.id,
   ).toBe(backup.id);
   await page.reload();
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   expect((await (await request.get(workflowPath)).json()).month.status).toBe("draft");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
 
-  await page.getByRole("link", { name: "Бюджет", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: /Расходы и план/ })
+    .click();
   await page.goBack();
   await expect(page).toHaveURL(/\/v2\/close\?month=1&step=final_review_close$/);
   await page.goto("/v2/close?month=999&step=final_review_close");
@@ -372,12 +413,10 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
       .getByRole("listitem")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
     await oldRow.getByRole("link", { name: "Открыть месяц", exact: true }).click();
-    await expect(page).toHaveURL(`/v2/data/months/${old}`);
+    await expect(page).toHaveURL(`/v2/close?month=${old}`);
+    await tile(page, /Снимок и общие данные/);
     await expect(page.getByLabel("Дата снимка")).toBeDisabled();
-    await expect(page.getByRole("link", { name: "Источники и актуальность" })).toHaveAttribute(
-      "href",
-      `/v2/data?month=${old}`,
-    );
+
     await page.getByRole("button", { name: "Открыть для редактирования", exact: true }).click();
     await expect(
       page.getByRole("alertdialog", { name: "Открыть месяц для редактирования?" }),
@@ -392,13 +431,13 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await page
       .getByLabel("Дата снимка", { exact: true })
       .fill(width === 1440 ? "2034-05-30" : "2034-05-31");
-    await page.getByRole("link", { name: "Проверить и закрыть", exact: true }).click();
+    await tile(page, /Закрыть месяц/);
     await page.getByRole("button", { name: "Остаться", exact: true }).click();
     await page.getByRole("button", { name: "Сохранить общие данные" }).click();
-    await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
-    await page.getByRole("link", { name: "Проверить и закрыть", exact: true }).click();
-    await expect(page).toHaveURL(`/v2/close?month=${old}&step=final_review_close`);
-    await expect(page.locator("#v2-close-current-step")).toBeFocused();
+    await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+    await tile(page, /Закрыть месяц/);
+    await expect(page).toHaveURL(/panel=close/);
+    await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeInViewport();
     expect(closePosts).toBe(width === 1440 ? 0 : 1);
     await page.screenshot({
@@ -408,6 +447,7 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
 
     // Quotes are a focused handoff; only its explicit button requests the provider.
     await page.goto(`/v2/close?month=${old}&step=market_quotes`);
+    await advanced(page);
     await page.getByRole("link", { name: "Открыть котировки", exact: true }).click();
     const quotes = page.getByRole("button", { name: "Обновить котировки", exact: true });
     await expect(quotes).toBeFocused();
@@ -420,7 +460,7 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
       .getByRole("listitem")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
     const reopenedPrimary = reopened.getByRole("link", {
-      name: "Проверить и закрыть",
+      name: "Открыть месяц",
       exact: true,
     });
     await expect(reopenedPrimary).toBeVisible();
@@ -442,6 +482,8 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
     expect(reopenedContrast).toBeGreaterThanOrEqual(4.5);
     await reopenedPrimary.click();
+    await tile(page, /Закрыть месяц/);
+    await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Закрыть месяц", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
@@ -453,11 +495,12 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
     expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
     expect((await (await request.get(`/api/months/${newestDraft}`)).json()).status).toBe("draft");
-    await page.getByRole("link", { name: "Выбрать другой отчётный месяц" }).click();
+    await page.getByRole("link", { name: "Отчётные месяцы →", exact: true }).click();
     const otherRow = page
       .getByRole("listitem")
       .filter({ has: page.getByText(/Май.*2035/, { exact: true }) });
-    await otherRow.getByRole("link", { name: "Посмотреть отчёт", exact: true }).click();
+    await otherRow.getByRole("button", { name: /Действия месяца/ }).click();
+    await page.getByRole("menuitem", { name: "Посмотреть отчёт", exact: true }).click();
     await expect(page).toHaveURL(`/v2/reports/${other}`);
     await page.goto("/v2");
     await expect(page.getByTestId("v2-report-context")).toContainText(/2036/);

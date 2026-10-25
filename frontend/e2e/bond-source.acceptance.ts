@@ -29,9 +29,10 @@ test("API Decimal boundary rates render identically in Month and Monthly Returns
     ["0.99995", "100,00%"],
   ]) {
     fraction = value;
-    await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567`);
+    await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
     const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
     await expect(card).toContainText(expected);
+    await card.getByText("Источники расчёта", { exact: true }).click();
     await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
     await page.getByText("Подробнее о данных", { exact: true }).click();
     await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
@@ -93,7 +94,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
     "600,00 ₽",
   );
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
-  await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567`);
+  await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   const summary = page.getByRole("region", {
     name: "Предварительная доходность месяца",
     exact: true,
@@ -101,6 +102,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(summary).toContainText("600 ₽");
   await expect(summary).toContainText("Modified Dietz");
   await summary.screenshot({ path: info.outputPath("source-proof-current-month.png") });
+  await summary.getByText("Источники расчёта", { exact: true }).click();
   await summary.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
   await page.getByText("Подробнее о данных", { exact: true }).click();
   await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
@@ -121,6 +123,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await request.post("/api/synthetic-proof-aba");
   await page.reload();
   await expect(summary).not.toContainText("600 ₽");
+  await summary.getByText("Подробнее о предварительном расчёте", { exact: true }).click();
   await expect(summary).toContainText("Подтверждение источника устарело");
   await summary.screenshot({ path: info.outputPath("source-proof-stale-month.png") });
 });
@@ -263,8 +266,10 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   );
   const stock = "RU000MONTH02";
   const bond = "RU000A000001";
-  await page.goto(`/v2/close?month=${month.id}&source_account=2222222&instrument_isin=${stock}`);
-  const panel = page.getByRole("region", { name: "Инструменты и выплаты месяца" });
+  await page.goto(
+    `/v2/close?month=${month.id}&source_account=2222222&instrument_isin=${stock}&panel=brokers`,
+  );
+  const panel = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(panel.getByRole("region", { name: `Инструмент ${stock}` })).toBeVisible();
   await expect(page.getByText(/Снимок 01.06.2030/)).toBeVisible();
   await expect(panel.getByText(/Интервал результата: \(2030-04-30, 2030-05-31\]/)).toBeVisible();
@@ -273,6 +278,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
       "/api/source-returns/instruments?source_account=2222222&opening_date=2030-04-30&closing_date=2030-05-31",
     )
   ).json();
+  await panel.getByText("Сделки, выплаты и расчёт инструмента", { exact: true }).click();
   const stockData = native.instruments.find((row: { isin: string }) => row.isin === stock);
   expect(stockData.analysis.pnl.value).toBe(10000);
   expect(stockData.analysis.modified_dietz.value).toBe("0.1");
@@ -332,8 +338,13 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   ).toHaveLength(requestsAfterA);
 
   await page.getByLabel("Счёт источника месяца").selectOption("3333333");
+  await expect(panel.getByText(/Выбранный счёт: 3333333 · нативный: 3333333-000/)).toBeVisible();
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
   await expect(panel.getByLabel("Дата количества из выписки")).toHaveValue("2030-05-31");
+  await expect(panel.getByText(/Наблюдаемое количество: 5 на 2030-05-31/)).toBeVisible();
+  // Let the explicit account change settle its independent current reads before
+  // requesting a preview that those reads are required to retire.
+  await page.waitForLoadState("networkidle");
   await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
   const responseB = page.waitForResponse((response) =>
     response.url().endsWith("/api/source-returns/payout-preview"),
@@ -370,6 +381,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   await panel.screenshot({ path: info.outputPath("month-stock-actual-possible-paid-1440.png") });
 
   await panel.getByRole("button", { name: "Синтетическая облигация", exact: true }).click();
+  await panel.getByText("Сделки, выплаты и расчёт инструмента", { exact: true }).click();
   await expect(panel.getByRole("heading", { name: "Полный P&L, ₽" }).locator("..")).toContainText(
     "Недоступен",
   );

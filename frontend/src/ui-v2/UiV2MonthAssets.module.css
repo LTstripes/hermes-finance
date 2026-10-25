@@ -26,14 +26,100 @@
   }
 }
 
-/*
- * The deposits table has seven fixed columns; below 700px the shared
- * `table-layout: fixed` would squeeze the name cell to ~0px (the legacy
- * section does exactly that). Keep the table's real width and let the shared
- * `.table-wrap` scroll it horizontally instead — no shared CSS touched.
- */
-@media (max-width: 700px) {
-  .depositsTable {
-    min-width: 56rem;
+/* Fixed money/type widths previously consumed the entire desktop work area. */
+.depositsTable {
+  table-layout: auto;
+}
+.depositsTable th:first-child {
+  width: 28%;
+}
+.depositsTable th:nth-child(2) {
+  width: auto;
+}
+.depositsTable :global(th.num),
+.depositsTable :global(td.num) {
+  width: auto;
+}
+.depositsTable:has(:global(.input)) thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+}
+.depositsTable:has(:global(.input)) tbody {
+  display: block;
+}
+.depositsTable:has(:global(.input)) tr {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.depositsTable:has(:global(.input)) td,
+.depositsTable:has(:global(.input)) :global(td.num),
+.depositsTable:has(:global(.input)) :global(td.month-deposits-table__actions) {
+  display: grid;
+  min-width: 0;
+  width: auto;
+  padding: 6px 0;
+  text-align: start;
+  border: 0;
+  white-space: normal;
+}
+.depositsTable:has(:global(.input)) td::before {
+  content: attr(data-label);
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.depositsTable:has(:global(.input)) td:first-child {
+  grid-column: 1 / -1;
+}
+.depositsTable:has(:global(.input)) :global(.row-actions) {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+@container (max-width: 760px) {
+  .depositsTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+  .depositsTable tbody {
+    display: block;
+  }
+  .depositsTable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .depositsTable td,
+  .depositsTable :global(td.num),
+  .depositsTable :global(td.month-deposits-table__actions) {
+    display: grid;
+    min-width: 0;
+    width: auto;
+    padding: 6px 0;
+    text-align: start;
+    border: 0;
+    white-space: normal;
+  }
+  .depositsTable td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .depositsTable td:first-child {
+    grid-column: 1 / -1;
+  }
+  .depositsTable :global(.row-actions) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }

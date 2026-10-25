@@ -185,6 +185,10 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   }
 
   useEffect(() => {
+    context.setPending?.("payouts", busy);
+    return () => context.setPending?.("payouts", false);
+  }, [context.setPending, busy]);
+  useEffect(() => {
     setDirty("payouts", localDirty);
   }, [localDirty, setDirty]);
 
@@ -666,7 +670,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           {actionError}
         </div>
       ) : null}
-      {actionNotice ? <p role="status">{actionNotice}</p> : null}
+      {actionNotice ? <p role="status">{context.workspace ? "Сохранено" : actionNotice}</p> : null}
 
       <Panel
         action={

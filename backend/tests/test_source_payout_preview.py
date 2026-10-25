@@ -22,6 +22,80 @@ from hermes_finance.services.instruments import create_instrument
 UID = "44444444-4444-4444-4444-444444444444"
 PATH = "/api/source-returns/payout-preview"
 PAYLOAD = {"source_account": ACCOUNT, "isin": ISIN, "as_of": "2030-04-30"}
+BASES = "/api/source-returns/quantity-bases"
+
+
+def quantity_bases(client, **patch):
+    return client.get(
+        BASES,
+        params={"source_account": ACCOUNT, "isin": ISIN, "on_or_before": "2030-10-31", **patch},
+    )
+
+
+def test_quantity_discovery_is_local_read_only_and_does_not_invent_october_eod(db):
+    client, provider = environment(db, quantity="2.500000000000000001")
+    save(db, month=9, stock=("3", "3", "300", "300"), bond=None, trades=())
+    save(db, month=11, stock=("4", "4", "400", "400"), bond=None, trades=())
+    before = snapshot(db)
+    writes = []
+
+    def inspect(conn, cursor, sql, *args):
+        if sql.lstrip().split()[0].upper() in {"INSERT", "UPDATE", "DELETE", "REPLACE"}:
+            writes.append(sql)
+
+    event.listen(db.engine, "before_cursor_execute", inspect)
+    try:
+        response = quantity_bases(client)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert response.headers["cache-control"] == "no-store"
+        assert data["financial_authority"] == "none"
+        assert data["native_source_account"] == ACCOUNT
+        assert [(b["as_of"], b["quantity"]) for b in data["bases"]] == [
+            ("2030-09-30", "3"),
+            ("2030-04-30", "2.500000000000000001"),
+        ]
+        assert all(b["quantity_references"] for b in data["bases"])
+        assert quantity_bases(client).json() == data
+        assert snapshot(db) == before and writes == []
+        assert provider.requests == []
+        october = client.post(PATH, json={**PAYLOAD, "as_of": "2030-10-31"}).json()
+        assert october["quantity"] is None and october["rows"] == []
+        assert provider.requests == []
+    finally:
+        event.remove(db.engine, "before_cursor_execute", inspect)
+
+
+def test_quantity_discovery_keeps_scope_conflicts_mapping_and_zero(db):
+    client, provider = environment(db, quantity="0", mapping=False)
+    data = quantity_bases(client).json()
+    assert data["bases"][0]["quantity"] == "0"
+    assert "exact_t_invest_mapping_required" in data["bases"][0]["reason_codes"]
+    assert quantity_bases(client, source_account="other-native").json()["bases"] == []
+    assert quantity_bases(client, isin="RU000A000001").json()["bases"] == []
+    save(db, stock=("1", "1", "100", "100"), bond=None, trades=(), marker="conflict")
+    basis = quantity_bases(client).json()["bases"][0]
+    assert basis["quantity"] is None
+    assert "overlapping_quantity_conflict" in basis["reason_codes"]
+    assert provider.requests == []
+
+
+def test_quantity_discovery_bonds_reuses_guarded_preview_quantity(db):
+    from test_source_instrument_returns_service import BOND
+
+    save(db, stock=None, bond=("2.5", "2.5", "2000", "2000"), trades=())
+    with db.session_factory() as session:
+        bond = create_instrument(session, name="Synthetic bond", instrument_type="bond", isin=BOND)
+        accept_t_invest_mapping(session, bond.id, UID, isin=BOND)
+    app = create_app(database=db)
+    app.state.payout_provider = Provider()
+    client = TestClient(app)
+    basis = quantity_bases(client, isin=BOND).json()["bases"][0]
+    assert app.state.payout_provider.requests == []
+    preview = client.post(PATH, json={**PAYLOAD, "isin": BOND}).json()
+    assert basis["quantity"] == preview["quantity"] == "2.5"
+    assert basis["reason_codes"] == preview["reason_codes"]
+    assert len(app.state.payout_provider.requests) == 1
 
 
 def payout(day=date(2030, 5, 20), key="dividend:1", amount="1.2345"):

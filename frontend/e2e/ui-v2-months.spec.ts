@@ -70,7 +70,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(page.getByRole("heading", { level: 1, name: "Отчётные месяцы" })).toBeVisible();
     await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Открыть месяц", exact: true })).toHaveCount(2);
-    const primaryClose = page.getByRole("link", { name: "Проверить и закрыть", exact: true });
+    const primaryClose = page.getByRole("link", { name: "Открыть месяц", exact: true }).first();
     await expect(primaryClose).toBeVisible();
     const normal = await primaryContrast(primaryClose);
     expect(normal.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
@@ -78,10 +78,9 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await primaryClose.focus();
     const focused = await primaryContrast(primaryClose);
     expect(focused.ratio).toBeGreaterThanOrEqual(4.5);
-    await expect(page.getByRole("link", { name: "Открыть в «Мои финансы»" })).toHaveAttribute(
-      "href",
-      "/v2",
-    );
+    await page.getByRole("button", { name: /Действия месяца Май/ }).click();
+    await expect(page.getByRole("menuitem", { name: "Открыть в «Мои финансы»" })).toBeVisible();
+    await page.keyboard.press("Escape");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -106,7 +105,8 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
 
     await page.reload();
     await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Удалить черновик" }).first().click();
+    await page.getByRole("button", { name: /Действия месяца Июль/ }).click();
+    await page.getByRole("menuitem", { name: "Удалить черновик" }).click();
     await expect(page.getByRole("alertdialog")).toContainText("Июль 2030");
     await page.getByRole("alertdialog").getByRole("button", { name: "Удалить черновик" }).click();
     await expect(page).not.toHaveURL(/month=3/);

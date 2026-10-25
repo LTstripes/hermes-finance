@@ -170,6 +170,23 @@ function review(): FinalMonthReview {
 }
 
 describe("FinalMonthReview", () => {
+  it("keeps draft correction links inside the selected Month workspace", () => {
+    render(
+      <MemoryRouter>
+        <FinalMonthReviewView workspace review={review()} />
+      </MemoryRouter>,
+    );
+    const links = screen
+      .getAllByRole("link")
+      .filter((item) => item.textContent?.includes("Изменить"));
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toMatch(
+        /^\/v2\/close\?month=\d+&panel=(assets|income|budget|liabilities|positions|note)$/,
+      );
+    }
+  });
+
   it("renders backend KPIs, all manual cards, unavailable data and separated future cash flows", () => {
     render(
       <MemoryRouter>

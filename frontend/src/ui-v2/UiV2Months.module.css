@@ -105,20 +105,26 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 12px;
-  padding: 14px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
 .row > div:first-child {
   display: grid;
+  min-width: 0;
   gap: 4px;
+}
+.row > .actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+.row > .actions > a {
+  min-width: 148px;
 }
 .row small {
   color: var(--muted);
-}
-.secondaryActions a {
-  font-size: 12px;
 }
 .status,
 .selected {

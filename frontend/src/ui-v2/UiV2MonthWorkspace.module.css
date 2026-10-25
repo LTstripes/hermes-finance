@@ -3,6 +3,11 @@
   gap: 16px;
   min-width: 0;
 }
+.sourceNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
 .manual {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -17,6 +22,79 @@
 }
 .manual a:hover {
   background: #f0f6fa;
+}
+.manual a[aria-current="page"] {
+  border-color: var(--accent);
+  background: #edf4fb;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.manual {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.manual a {
+  min-width: 0;
+}
+.workArea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  background: white;
+}
+.workHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.workHeader h2 {
+  margin: 0;
+}
+.workFooter {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.totals {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 16px;
+}
+.totals > div {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+}
+.totals > div > span:first-child {
+  color: var(--muted);
+}
+.completion {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 20px;
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.completion li {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.completion strong {
+  font-size: 13px;
+  color: var(--muted);
 }
 .manual span {
   display: block;

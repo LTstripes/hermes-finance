@@ -17,6 +17,7 @@ import { previewOriginalContext } from "../api/mybrokerPreflight";
 import {
   confirmIntakeReview,
   listSourceIntakes,
+  listAllSourceIntakes,
   previewIntakeReview,
   readSourceIntake,
   type SourceIntake,
@@ -35,6 +36,7 @@ vi.mock("../api/brokerMonths", () => ({
 }));
 vi.mock("../api/sourceIntake", () => ({
   listSourceIntakes: vi.fn(),
+  listAllSourceIntakes: vi.fn(),
   readSourceIntake: vi.fn(),
   previewIntakeReview: vi.fn(),
   confirmIntakeReview: vi.fn(),
@@ -149,6 +151,7 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listSourceIntakes).mockResolvedValue([structuredClone(a), structuredClone(b)]);
+  vi.mocked(listAllSourceIntakes).mockResolvedValue([structuredClone(a), structuredClone(b)]);
   vi.mocked(listAccounts).mockResolvedValue([
     { id: 7, name: "Broker A", status: "active", account_type: "brokerage" },
   ] as Awaited<ReturnType<typeof listAccounts>>);
@@ -181,10 +184,12 @@ function Navigation() {
     </>
   );
 }
+let activeSession: ReturnType<typeof brokerOriginalSession>;
 function mount(closed = false, existingClient?: QueryClient, path = "/v2/close?source_account=A") {
   const client =
     existingClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const session = brokerOriginalSession(client);
+  activeSession = session;
   session.context(1, false);
   const content = (
     <QueryClientProvider client={client}>
@@ -204,13 +209,20 @@ async function openA() {
     expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("1"),
   );
 }
+function chooseAccount(value: string) {
+  fireEvent.change(picker(), { target: { value } });
+  const confirm = screen.queryByRole("button", { name: "Сменить счёт" });
+  if (confirm) fireEvent.click(confirm);
+}
+async function selectOriginalA() {
+  act(() =>
+    activeSession.select(new File(["<synthetic/>"], "A.xml", { type: "application/xml" }), 1, "7"),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Проверить изменения" }));
+}
 async function originalA() {
-  fireEvent.change(screen.getByLabelText("Оригинальный XML MyBroker"), {
-    target: { files: [new File(["<synthetic/>"], "A.xml", { type: "application/xml" })] },
-  });
-  await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
-  });
+  await selectOriginalA();
+  await screen.findByRole("button", { name: "Сохранить данные месяца" });
 }
 it("A→B→A and Back retire original, Preview, overrides and public consent before showing B reads", async () => {
   const { session } = mount();
@@ -220,17 +232,21 @@ it("A→B→A and Back retire original, Preview, overrides and public consent be
     target: { value: "USD" },
   });
   act(() => session.consent(true));
-  fireEvent.change(picker(), { target: { value: "B" } });
+  chooseAccount("B");
   await waitFor(() => expect(screen.getByLabelText("Доходность счёта")).toHaveTextContent("B"));
   expect(session.snapshot().file).toBeNull();
   expect(session.snapshot().lookupConsent).toBe(false);
   expect(session.snapshot().decisions).toEqual([]);
-  expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).toBeNull();
-  expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("2");
+  expect(screen.queryByRole("button", { name: /Сохранить данные месяца/ })).toBeNull();
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("2"),
+  );
   expect(within(journal()).queryByRole("option", { name: /#1/ })).toBeNull();
   fireEvent.click(screen.getByText("Back", { exact: true }));
   await waitFor(() => expect(picker()).toHaveValue("A"));
-  expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue("");
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue(""),
+  );
   expect(screen.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -240,11 +256,11 @@ it.each(["All", "Invalid", "Duplicate"])(
     const { session } = mount();
     await openA();
     await originalA();
-    if (target === "All") fireEvent.change(picker(), { target: { value: "" } });
+    if (target === "All") chooseAccount("");
     else fireEvent.click(screen.getByText(target, { exact: true }));
     await waitFor(() => expect(session.snapshot().file).toBeNull());
     expect(screen.queryByLabelText("Доходность счёта")).toBeNull();
-    expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Сохранить данные месяца/ })).toBeNull();
     if (target !== "All") expect(screen.queryByLabelText("Оригинальный XML MyBroker")).toBeNull();
   },
 );
@@ -253,15 +269,13 @@ it("late Preview from A cannot revive after B→A", async () => {
   vi.mocked(previewBrokerMonth).mockReturnValue(late.promise);
   mount();
   await openA();
-  fireEvent.change(screen.getByLabelText("Оригинальный XML MyBroker"), {
-    target: { files: [new File(["x"], "A.xml")] },
-  });
+  await selectOriginalA();
   await waitFor(() => expect(previewBrokerMonth).toHaveBeenCalledTimes(1));
-  fireEvent.change(picker(), { target: { value: "B" } });
-  fireEvent.change(picker(), { target: { value: "A" } });
+  chooseAccount("B");
+  chooseAccount("A");
   await act(async () => late.resolve(preview));
-  expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "Проверить MyBroker" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: /Сохранить данные месяца/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "Проверить изменения" })).toBeDisabled();
 });
 it.each([false, true])(
   "pending Apply / lost ACK (%s) retains same intent and GET recovers before B is exposed",
@@ -279,10 +293,10 @@ it.each([false, true])(
     const { session } = mount();
     await openA();
     await originalA();
-    fireEvent.click(screen.getByRole("button", { name: /Подтвердить сводку/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Сохранить данные месяца/ }));
     await waitFor(() => expect(applyBrokerMonth).toHaveBeenCalledTimes(1));
     const intent = session.snapshot().pending;
-    fireEvent.change(picker(), { target: { value: "B" } });
+    chooseAccount("B");
     expect(screen.getByText(/Переключение счёта отложено/)).toHaveTextContent("A");
     expect(screen.queryByLabelText("Доходность счёта")).toBeNull();
     expect(session.snapshot().pending?.id).toBe(intent?.id);
@@ -320,7 +334,7 @@ it.each([false, true])(
     fireEvent.click(screen.getByRole("button", { name: "Проверить изменения разбора" }));
     fireEvent.click(await screen.findByRole("button", { name: "Подтвердить сохранение разбора" }));
     await waitFor(() => expect(confirmIntakeReview).toHaveBeenCalledTimes(1));
-    fireEvent.change(picker(), { target: { value: "B" } });
+    chooseAccount("B");
     expect(screen.getByText(/Переключение счёта отложено/)).toHaveTextContent("A");
     if (!lostAck)
       await act(async () =>
@@ -343,7 +357,7 @@ it.each([false, true])(
 it("CLOSED remains read-only across account switch", async () => {
   mount(true);
   await screen.findByRole("button", { name: "Просмотреть разбор #1" });
-  fireEvent.change(picker(), { target: { value: "B" } });
+  chooseAccount("B");
   await waitFor(() =>
     expect(within(journal()).getByLabelText("Сохранённый разбор")).toHaveValue("2"),
   );
@@ -391,7 +405,7 @@ it("a definite pre-ACK 409 refusal does not invent a pending commit or trap the 
   fireEvent.click(screen.getByRole("button", { name: "Проверить изменения разбора" }));
   fireEvent.click(await screen.findByRole("button", { name: "Подтвердить сохранение разбора" }));
   await screen.findByText("synthetic stale intent");
-  fireEvent.change(picker(), { target: { value: "B" } });
+  chooseAccount("B");
   await waitFor(() => expect(screen.getByLabelText("Доходность счёта")).toHaveTextContent("B"));
   expect(screen.queryByRole("button", { name: "Повторить чтение журнала" })).toBeNull();
   expect(readSourceIntake).not.toHaveBeenCalled();
@@ -408,10 +422,12 @@ it("late non-economic Preview cannot restore A overrides or confirmation after A
   });
   fireEvent.click(screen.getByRole("button", { name: "Проверить изменения разбора" }));
   await waitFor(() => expect(previewIntakeReview).toHaveBeenCalledTimes(1));
-  fireEvent.change(picker(), { target: { value: "B" } });
-  fireEvent.change(picker(), { target: { value: "A" } });
+  chooseAccount("B");
+  chooseAccount("A");
   await act(async () => late.resolve({ confirmation_digest: "x", financial_effects: 0 }));
-  expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue("");
+  await waitFor(() =>
+    expect(within(journal()).getByLabelText("Валюта предложения счёта")).toHaveValue(""),
+  );
   expect(screen.queryByRole("button", { name: "Подтвердить сохранение разбора" })).toBeNull();
   expect(confirmIntakeReview).not.toHaveBeenCalled();
 });
@@ -472,7 +488,7 @@ it("a late old GET/refetch continuation cannot clear a newer journal command aft
   const secondKey = vi.mocked(confirmIntakeReview).mock.calls[1][4];
   expect(secondKey).not.toBe(firstKey);
   await act(async () => refresh.resolve());
-  fireEvent.change(picker(), { target: { value: "B" } });
+  chooseAccount("B");
   expect(screen.getByText(/Переключение счёта отложено/)).toHaveTextContent("A");
   expect(screen.queryByLabelText("Доходность счёта")).toBeNull();
   expect(confirmIntakeReview).toHaveBeenCalledTimes(2);

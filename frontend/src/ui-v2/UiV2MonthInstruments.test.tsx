@@ -128,6 +128,23 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
   };
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/api/source-returns/quantity-bases")
+      return json({
+        source_account: url.searchParams.get("source_account"),
+        native_source_account: `${url.searchParams.get("source_account")}-000`,
+        isin: url.searchParams.get("isin"),
+        on_or_before: url.searchParams.get("on_or_before"),
+        authority: "provisional",
+        financial_authority: "none",
+        bases: [
+          {
+            as_of: "2030-04-30",
+            quantity: "2.5",
+            quantity_references: ["position:1:0:closing"],
+            reason_codes: [],
+          },
+        ],
+      });
     if (url.pathname === "/api/source-returns/instruments")
       return state.readReply?.() ?? json(instruments(url.searchParams.get("source_account") ?? ""));
     if (url.pathname.endsWith("/payout-preview")) {
@@ -153,8 +170,27 @@ const posts = (fetcher: ReturnType<typeof setup>["fetcher"]) =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
 afterEach(() => vi.unstubAllGlobals());
 
+test("selects a saved historical quantity without substituting the month's closing EOD or calling the provider", async () => {
+  const { fetcher } = setup();
+  const dates = await screen.findByRole("combobox", { name: "Сохранённая дата количества" });
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
+  expect(screen.getByText(/На 2030-05-31 сохранённое количество не подтверждено/)).toBeVisible();
+  fireEvent.change(dates, { target: { value: "2030-04-30" } });
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-04-30");
+  expect(screen.getByText(/Наблюдаемое количество: 2.5 на 2030-04-30/)).toBeVisible();
+  expect(screen.getByText(/не заменяет закрывающий EOD 2030-05-31/)).toBeVisible();
+  expect(posts(fetcher)).toHaveLength(0);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  );
+  await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
+  expect(JSON.parse(String(posts(fetcher)[0][1]?.body)).as_of).toBe("2030-04-30");
+});
+
 test("Month reuses #949 detail, separates full/conditional/NULL and never starts the provider automatically", async () => {
   const { fetcher } = setup();
+  await screen.findByText("Сделки, выплаты и расчёт инструмента");
+  fireEvent.click(screen.getByText("Сделки, выплаты и расчёт инструмента"));
   await screen.findByRole("region", { name: `Инструмент ${ISIN}` });
   expect(
     within(
@@ -292,6 +328,8 @@ test.each(["account", "period"])(
   "wrong instrument API %s hides dependent metrics/actions",
   async (kind) => {
     const { state, fetcher } = setup();
+    await screen.findByText("Сделки, выплаты и расчёт инструмента");
+    fireEvent.click(screen.getByText("Сделки, выплаты и расчёт инструмента"));
     await screen.findByRole("region", { name: `Инструмент ${ISIN}` });
     state.readReply = () => {
       const value = instruments();

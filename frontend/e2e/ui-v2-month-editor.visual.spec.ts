@@ -61,15 +61,19 @@ test("ui-v2 final review keeps broker blockers, evidence and keyboard details @v
 
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/v2/data/months/7");
-    await page.getByRole("link", { name: "Проверить и закрыть" }).click();
-    await expect(page).toHaveURL(/\/v2\/close\?month=7&step=final_review_close$/);
-    await expect(page.getByRole("region", { name: "Готовность к закрытию" })).toContainText(
-      `Блокеров: ${items.length}`,
-    );
+    await page.goto("/v2/close?month=7");
+    await page
+      .getByRole("navigation", { name: "Разделы месяца" })
+      .getByRole("link", { name: /Закрыть месяц/ })
+      .click();
+    await page.getByText("Подробнее об итогах и проверках", { exact: true }).click();
+    await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
+    await expect(
+      page.getByRole("region", { name: "Рабочая область: Закрыть месяц" }),
+    ).toContainText(`Требует внимания: ${items.length}`);
     await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
     const summary = page.getByText("Показать причины и диагностику", { exact: true });
-    const details = page.locator("details").filter({ has: summary });
+    const details = summary.locator("..");
     await summary.focus();
     await expect(summary).toBeFocused();
     await page.keyboard.press("Enter");

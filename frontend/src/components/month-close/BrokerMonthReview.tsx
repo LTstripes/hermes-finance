@@ -10,6 +10,7 @@ import {
   previewBrokerMonth,
 } from "../../api/brokerMonths";
 import { formatApiError } from "../../api/client";
+import type { SourceIntake } from "../../api/sourceIntake";
 import { getMonth } from "../../api/months";
 import type { MyBrokerDocument } from "../../api/mybrokerImport";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
@@ -196,10 +197,19 @@ export function BrokerMonthReview({
   intakeSelection,
   scopeBlocked = false,
   sourceAccount,
+  workspace = false,
+  onDirtyChange,
 }: {
   monthId: number;
   closed: boolean;
-  intakeSelection?: { id: number } | null;
+  intakeSelection?: {
+    id: number;
+    file?: File;
+    snapshot?: SourceIntake;
+    preserveDraft?: boolean;
+  } | null;
+  workspace?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
   scopeBlocked?: boolean;
   sourceAccount?: string | null;
 }) {
@@ -263,28 +273,43 @@ export function BrokerMonthReview({
       controller.current?.abort();
     };
   }, [monthId, closed, session, invalidateReview]);
-  useEffect(
-    () =>
-      queryClient.getQueryCache().subscribe((event) => {
-        const key = String(event.query.queryKey[0]);
-        if (
-          event.type === "updated" &&
-          (event.action.type === "invalidate" ||
-            (event.action.type === "success" &&
-              (event.action.manual || event.query.state.dataUpdateCount > 1))) &&
-          [
-            "accounts",
-            "instruments",
-            "broker-identity-mappings",
-            "months",
-            "month-close-workflow",
-          ].includes(key)
-        ) {
-          invalidateReview();
-        }
-      }),
-    [queryClient, invalidateReview],
-  );
+  useEffect(() => {
+    const keys = [
+      "accounts",
+      "instruments",
+      "broker-identity-mappings",
+      "months",
+      "month-close-workflow",
+    ];
+    const fingerprint = (data: unknown) => {
+      if (data && typeof data === "object" && !Array.isArray(data) && "generated_at" in data) {
+        const { generated_at: _readTime, ...facts } = data;
+        return JSON.stringify(facts);
+      }
+      return JSON.stringify(data);
+    };
+    const fingerprints = new Map(
+      queryClient
+        .getQueryCache()
+        .getAll()
+        .filter((query) => keys.includes(String(query.queryKey[0])))
+        .map((query) => [query.queryHash, fingerprint(query.state.data)]),
+    );
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || !keys.includes(String(event.query.queryKey[0]))) return;
+      if (event.action.type === "invalidate") {
+        invalidateReview();
+        return;
+      }
+      if (event.action.type !== "success") return;
+      const before = fingerprints.get(event.query.queryHash);
+      const after = fingerprint(event.query.state.data);
+      fingerprints.set(event.query.queryHash, after);
+      // Identical background GETs (including only a new read timestamp) do not
+      // erase a just-reviewed summary. Mutations, changed facts and ABA do.
+      if (event.action.manual || (before !== undefined && before !== after)) invalidateReview();
+    });
+  }, [queryClient, invalidateReview]);
 
   async function inspect(
     original = file,
@@ -426,33 +451,38 @@ export function BrokerMonthReview({
   return (
     <Panel title="Месяц из MyBroker" label="Исходный отчёт">
       <div className={styles.stack}>
-        <p>
-          Выбери оригинальный XML: для известного счёта и точного месяца Preview появится
-          автоматически. Проверь сводку и явно сохрани source-DRAFT. После независимого чтения
-          используй общую итоговую проверку и закрытие месяца.
-        </p>
-        <p>
-          Полнота всего портфеля этим отчётом не подтверждается. Неразобранные движения остаются
-          видимыми.
-        </p>
+        <details open={!workspace}>
+          <summary>Подробнее о проверке выписки</summary>
+          <p>
+            Выбери оригинальный XML: для известного счёта и точного месяца Preview появится
+            автоматически. Проверь сводку и явно сохрани source-DRAFT. После независимого чтения
+            используй общую итоговую проверку и закрытие месяца.
+          </p>
+          <p>
+            Полнота всего портфеля этим отчётом не подтверждается. Неразобранные движения остаются
+            видимыми.
+          </p>
+        </details>
         {!readOnly ? (
           <>
-            <label className={styles.field}>
-              Оригинальный XML MyBroker{" "}
-              <input
-                aria-label="Оригинальный XML MyBroker"
-                type="file"
-                accept=".xml"
-                key={`${monthId}:${original.epoch}`}
-                disabled={original.busy || Boolean(original.pending) || journalPending}
-                onChange={(e) => {
-                  const original = e.target.files?.[0] ?? null;
-                  session.select(original, monthId, "");
-                  invalidateReview();
-                  if (original) void inspect(original, "");
-                }}
-              />
-            </label>
+            {!workspace && (
+              <label className={styles.field}>
+                Оригинальный XML MyBroker{" "}
+                <input
+                  aria-label="Оригинальный XML MyBroker"
+                  type="file"
+                  accept=".xml"
+                  key={`${monthId}:${original.epoch}`}
+                  disabled={original.busy || Boolean(original.pending) || journalPending}
+                  onChange={(e) => {
+                    const original = e.target.files?.[0] ?? null;
+                    session.select(original, monthId, "");
+                    invalidateReview();
+                    if (original) void inspect(original, "");
+                  }}
+                />
+              </label>
+            )}
             <label className={styles.field}>
               Брокерский счёт{" "}
               <select
@@ -483,7 +513,7 @@ export function BrokerMonthReview({
               onClick={() => void inspect()}
               disabled={!file || busy || original.pending != null || journalPending}
             >
-              {busy ? "Проверяем…" : "Проверить MyBroker"}
+              {busy ? "Проверяем…" : workspace ? "Проверить изменения" : "Проверить MyBroker"}
             </Button>
           </>
         ) : (
@@ -528,6 +558,7 @@ export function BrokerMonthReview({
         ) : null}
         {notice ? <p role="status">{notice}</p> : null}
         <SourceIntakeJournal
+          onDirtyChange={onDirtyChange}
           intakeSelection={intakeSelection}
           sourceAccount={sourceAccount}
           monthId={monthId}
@@ -540,6 +571,7 @@ export function BrokerMonthReview({
             session.invalidate();
           }}
           onReview={(decisions) => {
+            session.invalidate();
             session.decide(decisions);
             void inspect(file, accountId, decisions);
           }}
@@ -580,8 +612,12 @@ export function BrokerMonthReview({
               }
             >
               {preview.bookkeeping_ready
-                ? "Подтвердить сводку и сохранить source-DRAFT"
-                : "Подтвердить сводку и сохранить неполный source-DRAFT"}
+                ? workspace
+                  ? "Сохранить данные месяца"
+                  : "Подтвердить сводку и сохранить source-DRAFT"
+                : workspace
+                  ? "Сохранить данные месяца"
+                  : "Подтвердить сводку и сохранить неполный source-DRAFT"}
             </Button>
             <details>
               <summary>Полный состав источника и привязки</summary>

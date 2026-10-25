@@ -63,6 +63,48 @@ class SourcePayoutContext:
 
 
 @coherent_read_operation
+def source_quantity_bases(session, source_account: str, isin: str, on_or_before: date):
+    """Discover saved closing dates, using the preview's exact quantity guards.
+
+    This reader neither constructs a provider nor creates financial positions.
+    A historical quantity is a scenario basis, never the requested month's EOD.
+    """
+    selected, native = _selected_sources(session, source_account)
+    dates = sorted(
+        {
+            original.covered_to
+            for original, view, error in selected
+            if not error
+            and native is not None
+            and _native_scope(view["document"]) == native
+            and original.covered_to <= on_or_before
+            and any(p["isin"] == isin for p in view["document"].get("positions", []))
+        },
+        reverse=True,
+    )
+    bases = []
+    for day in dates:
+        context = source_payout_context(session, source_account, isin, day)
+        bases.append(
+            {
+                "as_of": day,
+                "quantity": context.quantity,
+                "quantity_references": context.quantity_references,
+                "reason_codes": context.reason_codes,
+            }
+        )
+    return {
+        "source_account": source_account,
+        "native_source_account": next(iter(native)) if native else None,
+        "isin": isin,
+        "on_or_before": on_or_before,
+        "bases": bases,
+        "authority": "provisional",
+        "financial_authority": "none",
+    }
+
+
+@coherent_read_operation
 def source_payout_context(session, source_account: str, isin: str, as_of: date):
     selected, native = _selected_sources(session, source_account)
     reasons, views = set(), []

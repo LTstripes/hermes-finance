@@ -43,9 +43,47 @@ The monthly workflow derives progress from authoritative read models, not a seco
 
 `/v2/close` is the normal **Month** entry: reporting month and snapshot date, links to the existing manual editor sections, shared multi-file source-intake upload and a concise saved-source/exception list. Each XML has its own Save/readback result; a broken file does not discard valid siblings. Month displays sources bound to that month and unbound sources overlapping its calendar period, with an explicit source-account filter; this display never binds or financially accepts an original. Source review reuses the existing identity/journal/strict-DRAFT controls, with exact originals reselected after reload. Unknown ISINs require explicit review. Account-and-period links open the existing read-only bond/monthly-return reader; source estimates do not establish financial readiness. The backend-owned DRAFT/Close/Reopen workflow and existing routes remain available.
 
+In the period list, every compact row has the same primary **Открыть месяц** action
+to `/v2/close?month=id`, including immediately after create/copy and list readback.
+Copy, the separate manual editor, reports and eligible draft deletion live in the
+accessible **⋯** menu. There is no duplicate **Проверить и закрыть** action.
+The workspace initially shows the existing manual tiles, **Брокерские выписки**
+and **Закрыть месяц**, with no work area below them. Choosing a tile opens one
+inline work area; another tile replaces it. The active tile and `panel` URL agree;
+Back/Reload and **← К месяцу** preserve the exact month. Existing leaf forms keep
+their own Save/readback actions and APIs. Dirty changes require explicit discard;
+pending writes and uncertain ACK/readback require recovery before navigation.
+The statements tile provides one multi-file XML input, saved originals for the
+selected period/account, exceptions, recognized instruments and quantities,
+corrections, explicit T-Invest preview and the available preliminary result.
+Source-only Save and strict financial Preview/Apply remain distinct internal
+stages. Verified saved uploads can supply the same in-memory original to strict
+review; a fresh exact original is required again after Reload.
+Full calendar originals and historical/partial overlaps are counted separately;
+an overlap never hides the missing full-month original/closing EOD. Accounts from
+earlier saved originals remain selectable for inspection; they do not supply this
+month's closing EOD. Monthly results require exact calendar boundaries; absent
+results name the required EOD dates instead of displaying zero.
+
+The final tile composes the existing month totals, filling/readiness status and
+visible blockers with explicit guarded Close. Technical provenance and extended
+checks remain in **Подробнее**. A confirmed lifecycle change requires independent
+workflow GET and invalidates Home/Capital/Returns/chart reads. Unknown Close ACK
+keeps commands/navigation blocked with GET-only recovery. No second calculation
+or progress/financial ledger is introduced. Desktop deposit rows allocate space
+to names, exact amounts and actions; narrower work areas use labelled fields
+without hiding data or clipping overflow.
+
 The Month source-account filter also selects the read-only instrument list for that calendar month's EOD interval. Stocks and bonds reuse the same dated detail as the bond reader: full P&L/Modified Dietz, known partial components and conditional statement estimates remain separate, with NULL and evidence reasons preserved. An explicit missing ISIN never substitutes another instrument. The reporting snapshot date remains separate from the selected result interval and payout quantity date.
 
 T-Invest source payout preview runs only after an explicit action for the displayed account, ISIN and quantity date. It keeps saved actuals (including later known payments), `possible_paid` candidates, countable future candidates and other unresolved rows separate, with no combined actual/forecast total or automatic paid-state mutation. It shows announced amounts with unknown personal tax, source-observed quantity and source/revision provenance. Account/ISIN/date/source changes retire the ephemeral result; Reload requires another explicit request. This read-only slice changes no Close or financial writer. See [instrument analysis](ARCHITECTURE_AND_CONTRACTS.md#c7-instrument-return-v2) and [source payout preview](ARCHITECTURE_AND_CONTRACTS.md#c9-source-payout-preview).
+
+Month offers saved closing dates and guarded source quantities for the selected
+account/ISIN, with concrete identity, settlement or conflicting-source reasons.
+The default date remains the selected month's closing date: an earlier quantity
+requires explicit selection and is labelled a payout scenario. Local discovery
+never calls T-Invest. Selecting a historical quantity neither fabricates a monthly
+return nor persists a forecast or accepted position.
 
 <a id="p2-statement-led-target"></a>
 ### Statement-led monthly workflow — Owner target

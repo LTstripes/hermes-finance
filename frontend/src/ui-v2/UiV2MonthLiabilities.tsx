@@ -290,6 +290,10 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
   }, [monthId]);
 
   useEffect(() => {
+    context.setPending?.(MONTH_LIABILITIES_SECTION_ID, busy);
+    return () => context.setPending?.(MONTH_LIABILITIES_SECTION_ID, false);
+  }, [context.setPending, busy]);
+  useEffect(() => {
     setDirty(MONTH_LIABILITIES_SECTION_ID, debtsDirty || propertiesDirty);
   }, [debtsDirty, propertiesDirty, setDirty]);
 

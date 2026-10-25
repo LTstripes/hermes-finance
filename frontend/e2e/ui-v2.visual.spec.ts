@@ -443,7 +443,7 @@ async function installCloseApi(page: Page) {
       json = [];
     } else if (
       url.pathname === "/api/broker-months/intakes" &&
-      url.search === "?reporting_month_id=12&include_unbound=true"
+      ["?reporting_month_id=12&include_unbound=true", "?include_unbound=true"].includes(url.search)
     ) {
       json = [];
     } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
@@ -479,7 +479,10 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   await page.goto("/v2");
   await page.getByTestId("v2-draft-action").click();
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=alfa_baseline$/);
-  await expect(page.getByRole("heading", { name: "Сверить состав портфеля" })).toBeVisible();
+  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Сверить состав портфеля", exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "Открыть предпросмотр Alfa" }).click();
   await expect(page).toHaveURL(
@@ -496,17 +499,17 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   );
   await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
 
-  await page.getByText("Шаги закрытия · до закрытия и после него", { exact: true }).click();
+  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
   await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
-  await expect(page.getByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть месяц" }).click();
   await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Месяц зафиксирован" })).toBeVisible();
+  await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/из 8 шагов/)).toHaveCount(0);
   await capture(page, testInfo, "ui-v2-close-closed-desktop");
 
-  await page.getByRole("link", { name: "Вернуться в «Мои финансы»" }).click();
+  await page.getByRole("link", { name: "Открыть «Мои финансы»" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Мои финансы" })).toBeVisible();
   expect(
     evidence.requests.filter((request) => request === "POST /api/months/12/close"),
@@ -515,17 +518,22 @@ test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Hom
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Monthly Close desktop payout step: current action and collapsed step list stay bounded", async ({
+test("ui-v2 Monthly Close desktop payout step: explicit additional checks and provider handoff stay bounded", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
   const evidence = await installCloseApi(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=12&step=actual_payouts");
-  await expect(page.getByRole("heading", { name: "Проверить полученные выплаты" })).toBeVisible();
+  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Проверить полученные выплаты", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toBeVisible();
-  const steps = page.locator("details").filter({ hasText: "Шаги закрытия" });
-  await expect(steps).not.toHaveAttribute("open", "");
+  const steps = page
+    .getByText("Дополнительные интеграции и проверки", { exact: true })
+    .locator("..");
+  await expect(steps).toHaveAttribute("open", "");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-close-desktop-payout-step");
   expect(evidence.unexpected).toEqual([]);
