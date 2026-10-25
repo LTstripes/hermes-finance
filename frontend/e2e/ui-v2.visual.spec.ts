@@ -443,7 +443,7 @@ async function installCloseApi(page: Page) {
       json = [];
     } else if (
       url.pathname === "/api/broker-months/intakes" &&
-      url.search === "?reporting_month_id=12&include_unbound=true"
+      ["?reporting_month_id=12&include_unbound=true", "?include_unbound=true"].includes(url.search)
     ) {
       json = [];
     } else if (url.pathname === "/api/accounts" || url.pathname === "/api/instruments") {
