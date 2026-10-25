@@ -114,6 +114,11 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await page.getByLabel("Годовая ставка %", { exact: true }).fill("12");
   await page.getByRole("button", { name: "Добавить вклад", exact: true }).click();
   await expect(page.getByRole("cell", { name: /^Синтетический длинный вклад/ })).toBeVisible();
+  await expect(page.getByLabel("Название вклада", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("status").filter({ hasText: /^Сохранено$/ })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
+    .toBeUndefined();
   await fits(page);
   await page.reload();
   await expect(page.locator('[aria-current="page"]').filter({ hasText: /Депозиты/ })).toBeVisible();
