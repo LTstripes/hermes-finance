@@ -41,8 +41,41 @@ const monthly = {
   growth_kopecks: 0,
   modified_dietz_return: "0",
   reason_codes: [],
+  flags: [],
   missing_endpoint: false,
 };
+
+it("discloses seam mismatch only in Details while keeping available nonzero P&L and MD", async () => {
+  renderReturn([
+    { ...monthly, growth_kopecks: 3000, modified_dietz_return: "0.027", flags: ["seam_mismatch"] },
+  ]);
+  const result = await screen.findByText(/30.*₽.*2,70%.*Modified Dietz/);
+  const before = result.textContent;
+  expect(result).toBeVisible();
+  const warning = screen.getByText("Остатки соседних месяцев различаются");
+  expect(warning).not.toBeVisible();
+  expect(screen.queryByText(/Состав источников проверен/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Дополнительных предупреждений нет.")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Подробнее о предварительном расчёте"));
+  expect(warning).toBeVisible();
+  expect(result).toBeVisible();
+  expect(result.textContent).toBe(before);
+});
+
+it("uses neutral Details copy without warnings while keeping nonzero P&L and MD", async () => {
+  renderReturn([{ ...monthly, growth_kopecks: 3000, modified_dietz_return: "0.027" }]);
+  const result = await screen.findByText(/30.*₽.*2,70%.*Modified Dietz/);
+  const before = result.textContent;
+  expect(result).toBeVisible();
+  const note = screen.getByText("Дополнительных предупреждений нет.");
+  expect(note).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее о предварительном расчёте"));
+  expect(note).toBeVisible();
+  expect(screen.queryByText("Остатки соседних месяцев различаются")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Состав источников проверен/)).not.toBeInTheDocument();
+  expect(result).toBeVisible();
+  expect(result.textContent).toBe(before);
+});
 
 it.each([
   { months: [] },

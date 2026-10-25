@@ -39,6 +39,7 @@ export function SourceMonthReturn({ account, period }: { account: string; period
   );
   const value = sourceReturnMoney(row?.growth_kopecks);
   const rate = formatSourceReturnRate(row?.modified_dietz_return);
+  const qualityCodes = [...new Set([...(row?.reason_codes ?? []), ...(row?.flags ?? [])])];
   return (
     <section aria-label="Предварительная доходность месяца">
       <h3>Предварительная доходность месяца</h3>
@@ -69,14 +70,22 @@ export function SourceMonthReturn({ account, period }: { account: string; period
               {row.opening_date} — {row.closing_date} · счёт источника {account}. Не финансовый
               результат.
             </p>
-            <Reasons codes={row.reason_codes} />
-            <p>
-              {row.assumptions_used ? "Потоки с допущениями. " : ""}
-              {row.income_assumptions_used ? "Выплаты с допущениями. " : ""}
-              {row.reason_codes.length
-                ? `Причины NULL: ${row.reason_codes.join(", ")}`
-                : "Состав источников проверен для предварительного расчёта."}
-            </p>
+            {qualityCodes.length ? (
+              <>
+                {qualityCodes.includes("seam_mismatch") && (
+                  <p>Остатки соседних месяцев различаются</p>
+                )}
+                <Reasons codes={qualityCodes.filter((code) => code !== "seam_mismatch")} />
+              </>
+            ) : (
+              <p>Дополнительных предупреждений нет.</p>
+            )}
+            {(row.assumptions_used || row.income_assumptions_used) && (
+              <p>
+                {row.assumptions_used ? "Потоки с допущениями. " : ""}
+                {row.income_assumptions_used ? "Выплаты с допущениями. " : ""}
+              </p>
+            )}
             {result.data.source_proof?.status === "current" && (
               <p>
                 Доказательство источника #{result.data.source_proof.proof_id} ·{" "}
