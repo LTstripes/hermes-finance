@@ -56,6 +56,114 @@ def test_money_security_parser_strict_shapes(text, expected):
     assert parse_money_security(text) == expected
 
 
+@pytest.mark.parametrize("year_label", ["г.", "год"])
+@pytest.mark.parametrize("delimiter", [" ", ".  "])
+def test_money_security_dividend_year_and_issuer_punctuation(year_label, delimiter):
+    from hermes_finance.domain.money_security import parse_money_security
+
+    narrative = DIVIDEND_SECURITY.replace("2029 г.", f"2029 {year_label}").replace(
+        'Ландыш" (', f'Ландыш"{delimiter}('
+    )
+    assert parse_money_security(narrative) == (
+        "1-01-99999-Z",
+        'ПАО "Синтетический Ландыш"',
+        "dividend",
+    )
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        " возврат",
+        " НКД",
+        " погашение номинала",
+        " комиссия 2 руб.",
+        " пополнение счета",
+        "\r",
+        " hash:truncated",
+    ],
+)
+def test_money_security_alternate_dividend_rejects_extra_meaning(suffix):
+    from hermes_finance.domain.money_security import parse_money_security
+
+    narrative = DIVIDEND_SECURITY.replace("2029 г.", "2029 год").replace('Ландыш" (', 'Ландыш".  (')
+    assert parse_money_security(narrative + suffix) is None
+    assert parse_money_security("Прогноз " + narrative) is None
+    assert parse_money_security("Возврат " + narrative) is None
+    assert parse_money_security(narrative.replace("100 руб.", "-100 руб.")) is None
+    assert parse_money_security(narrative.replace("1-01-99999-Z", "UNKNOWN")) is None
+
+
+def test_alternate_dividend_relink_uses_existing_authority_without_rewriting_decisions(
+    db, monkeypatch
+):
+    from hermes_finance.services import money_instrument_links, security_reg_isin_mappings
+    from hermes_finance.services.source_instrument_events import payout_attribution
+
+    narrative = DIVIDEND_SECURITY.replace("2029 г.", "2029 год").replace('Ландыш" (', 'Ландыш".  (')
+    with db.session_factory() as session:
+        instrument = _security_instrument(session, isin="RU000A099991")
+        instrument_id = instrument.id
+        session.commit()
+        security_reg_isin_mappings.set_mapping(session, "1-01-99999-Z", "RU000A099991")
+    # Simulate the previously unsupported syntax without altering the saved source.
+    with monkeypatch.context() as patch:
+        patch.setattr(money_instrument_links, "parse_money_security", lambda _: None)
+        intake, _ = save_month(db, candidate_count=0, extra=(("Перевод", narrative, "12.34"),))
+    original = saved_rows(db, intake)[0]
+    assert original.instrument_link_status == "not_parsed"
+    before = snapshot(db)
+    with db.session_factory() as session:
+        resolver = money_instrument_links.MoneyInstrumentResolver(session)
+        saved = {
+            key: getattr(original, key)
+            for key in (
+                "classification",
+                "narrative",
+                "operation",
+                "instrument_link_status",
+                "instrument_id",
+            )
+        }
+        # Parser availability must never silently promote the saved legacy row on GET.
+        assert payout_attribution(saved, resolver, {}) == (
+            None,
+            "persisted_link",
+            ("payout_link_missing",),
+        )
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        assert security_reg_isin_mappings.relink(session) == {
+            "processed": 1,
+            "changed": 1,
+            "skipped_closed": 0,
+        }
+    linked = saved_rows(db, intake)[0]
+    assert (linked.instrument_id, linked.instrument_link_status) == (instrument_id, "linked")
+    for field in (
+        "id",
+        "observation_id",
+        "source_reference",
+        "narrative",
+        "date",
+        "currency",
+        "amount_kopecks",
+        "classification",
+        "origin",
+        "status",
+        "created_at",
+        "updated_at",
+    ):
+        assert getattr(linked, field) == getattr(original, field)
+    after = snapshot(db)
+    assert {k: v for k, v in after.items() if k != "source_intake_money_classifications"} == {
+        k: v for k, v in before.items() if k != "source_intake_money_classifications"
+    }
+    with db.session_factory() as session:
+        assert security_reg_isin_mappings.relink(session)["changed"] == 0
+    assert snapshot(db) == after
+
+
 def _security_instrument(session, *, name='ПАО "Синтетический Ландыш"', isin=None):
     from hermes_finance.persistence import Instrument
 

@@ -29,7 +29,8 @@ _COUPON = re.compile(
     re.IGNORECASE,
 )
 _DIVIDEND = re.compile(
-    rf"Дивиденды за [0-9]{{4}} г\. по акциям (?P<issuer>{_ISSUER}) \((?P<reg>{_REG})\)\."
+    rf"Дивиденды за [0-9]{{4}} (?:г\.|год) по акциям (?P<issuer>{_ISSUER})"
+    rf"(?: |\.  )\((?P<reg>{_REG})\)\."
     r" \(Удержан налог [0-9]+(?:[.,][0-9]{1,2})? руб\.\)\."
     r"(?: Эмитентом уменьшена НОБ)?",
     re.IGNORECASE,
