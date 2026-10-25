@@ -45,8 +45,9 @@ Modified Dietz without selecting XML again. Back/Reload/service restart preserve
 the current proof and numbers; August remained NULL with unknown-flow and
 custody-cancellation reasons. The other account's five existing monthly source
 estimates were unchanged. Financial values, originals, manifests, backup paths,
-nonce bytes and receipts remain private. These are Operator checks; **Owner UAT
-acceptance and independent Integrator release review are still pending**.
+nonce bytes and receipts remain private. The Owner explicitly **accepted this
+Test UAT on 2026-10-25** in the same local assignment and authorized the release-only
+PR. Independent Integrator release review and exact candidate/main CI remain pending.
 
 **Source-proof contract:** #959's additive 0065 tables store provenance only, not
 XML, calculated money/rates, accepted positions or financial acceptance. Complete
@@ -58,8 +59,8 @@ exact Decimal ROUND_HALF_UP rate display. A 0064 relink Preview is invalid under
 every environment. If relink and proof are both approved, relink first and refresh
 proof Preview/confirm last. Stable receives neither Test rows nor Test proofs.
 
-**Next gates in the same #940 assignment:** Owner acceptance of Test UAT; one
-release-only v1.5.0 PR and independent review, Integrator guarded merge/exact-main
+**Next gates in the same #940 assignment:** one release-only v1.5.0 PR and
+independent review, Integrator guarded merge/exact-main
 push CI; separate Owner release GO/exact #124 trigger and tag/peeled-SHA/Release
 readback; mandatory isolated production-compatible 0064→0065 rehearsal at the
 published SHA and accepted recovery/RPO/outage boundary; separate Stable rollout
@@ -85,7 +86,7 @@ dated receipts below are history, not current installation instructions.
 | Main schema | Through `0065_source_return_proofs` after `0064_month_template_provenance`; two initially empty source-proof tables and 13 guards. Installed DB schema is verified separately. |
 | Published release | [v1.4.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.4.0), release commit `b027bcd90c56c500d271a9ee963485bdfa67ea79`, schema `0064_month_template_provenance`. Publication and installed acceptance are recorded separately in #940; candidate merges do not authorize rollout. |
 | Installed HONOR Stable | Clean published `b027bcd90c56c500d271a9ee963485bdfa67ea79` / v1.4.0 / 0064; original physical DB/binding, 76 tables, nine CLOSED and ten originals retained. Current local readback: stopped while Test owns the loopback runtime; no Stable action in this operation. |
-| Owner-local Test | Exact accepted application `f9290d7df218c3a46097a674b4d9492826980eff`, package 1.4.0 / schema 0065, stock OPS03→separate Start; preserved original history and independently checked backups. Separate Owner-approved relink then one proof Confirm/ACK/GET; Month/Monthly Returns Back/Reload/restart PASS. Operator evidence is private and Owner UAT acceptance remains pending; this does not authorize Stable. |
+| Owner-local Test | Exact accepted application `f9290d7df218c3a46097a674b4d9492826980eff`, package 1.4.0 / schema 0065, stock OPS03→separate Start; preserved original history and independently checked backups. Separate Owner-approved relink then one proof Confirm/ACK/GET; Month/Monthly Returns Back/Reload/restart PASS. Owner UAT ACCEPT received 2026-10-25; evidence stays private and acceptance does not authorize Stable. |
 | Workspace operations | Accepted code implements recoverable retirement (#864), not legacy permanent Apply. [#892 checkpoint](https://github.com/LTstripes/hermes-finance/issues/554#issuecomment-6255463423) preserved its PAUSED Worker workspace. No scheduler/installation change or future outcome is inferred from that record. |
 
 The earlier [#836 freeze removal](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6225429633) allowed main development after v1.3.0. The 2026-10-22 UI freeze is now bounded by the Owner's [2026-10-24 Month authorization](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6375180628) and [useful-bond decision](https://github.com/LTstripes/hermes-finance/issues/891#issuecomment-6375176825). The assigned first read-only bond presentation reuses instrument v2 on the existing monthly-returns route, including conditional statement estimates without inventing NKD or complete economic return. Acceptance/desktop/CI evidence belongs to its Draft PR; this is not general route retirement, financial UAT, or permission for protected runtime changes. Published release, Stable and Test gates remain distinct.
