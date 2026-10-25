@@ -1,8 +1,12 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { ApiClientError, formatApiError } from "../api/client";
-import { previewSourcePayouts, type SourcePayoutPreview } from "../api/sourcePayoutPreview";
+import {
+  getSourceQuantityBases,
+  previewSourcePayouts,
+  type SourcePayoutPreview,
+} from "../api/sourcePayoutPreview";
 import { Button } from "../components/ui";
 import { money, Reasons, References } from "./SourceInstrumentDetail";
 import styles from "./UiV2BondSlice.module.css";
@@ -92,6 +96,26 @@ export function MonthInstrumentPayouts({
 }) {
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
+  const bases = useQuery({
+    queryKey: ["source-returns", "quantity-bases", account, isin, closingDate],
+    queryFn: async ({ signal }) => {
+      const value = await getSourceQuantityBases(account, isin, closingDate, signal);
+      if (
+        value.source_account !== account ||
+        value.native_source_account !== nativeAccount ||
+        value.isin !== isin ||
+        value.on_or_before !== closingDate ||
+        value.authority !== "provisional" ||
+        value.financial_authority !== "none" ||
+        !Array.isArray(value.bases) ||
+        value.bases.some((basis) => basis.as_of > closingDate)
+      )
+        throw new Error("Счёт, ISIN или граница сохранённого количества не подтверждены.");
+      return value;
+    },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
   const dates = params.getAll("payout_as_of");
   const asOf = dates.length === 0 ? closingDate : dates.length === 1 ? dates[0] : "";
   const parsedDate = Date.parse(`${asOf}T00:00:00Z`);
@@ -99,6 +123,7 @@ export function MonthInstrumentPayouts({
     /^\d{4}-\d{2}-\d{2}$/.test(asOf) &&
     !Number.isNaN(parsedDate) &&
     new Date(parsedDate).toISOString().slice(0, 10) === asOf;
+  const selectedBasis = bases.data?.bases.find((basis) => basis.as_of === asOf);
   const [result, setResult] = useState<SourcePayoutPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +243,59 @@ export function MonthInstrumentPayouts({
         Только по явному запросу. Сохранённое количество — сценарий, а не доказательство права на
         будущую выплату. Прогноз не включается в P&amp;L или фактический доход.
       </p>
+      {bases.isFetching || bases.isPending ? (
+        <p>Читаем даты количества из сохранённых выписок…</p>
+      ) : bases.isError ? (
+        <p role="status">
+          Не удалось подтвердить сохранённые даты количества: {formatApiError(bases.error)}
+        </p>
+      ) : (
+        <>
+          <label>
+            Сохранённая дата количества{" "}
+            <select
+              aria-label="Сохранённая дата количества"
+              value={selectedBasis ? asOf : ""}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                retire();
+                setParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set("payout_as_of", event.target.value);
+                  return next;
+                });
+              }}
+            >
+              <option value="">Выбери доказанную дату из выписки</option>
+              {bases.data?.bases.map((basis) => (
+                <option key={basis.as_of} value={basis.as_of}>
+                  {basis.as_of} · количество {basis.quantity ?? "не подтверждено"}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedBasis ? (
+            <>
+              <p>
+                Наблюдаемое количество: {selectedBasis.quantity ?? "не подтверждено"} на{" "}
+                {selectedBasis.as_of}. Не финансовая позиция.
+              </p>
+              <Reasons codes={selectedBasis.reason_codes} />
+            </>
+          ) : (
+            <p>
+              На {asOf || closingDate} сохранённое количество не подтверждено. Выбери доступную дату
+              или добавь точную выписку с EOD этой даты.
+            </p>
+          )}
+          {asOf !== closingDate && (
+            <p>
+              Количество другой даты — только сценарий выплат. Оно не заменяет закрывающий EOD{" "}
+              {closingDate} для доходности месяца.
+            </p>
+          )}
+        </>
+      )}
       <label>
         Дата количества из выписки{" "}
         <input

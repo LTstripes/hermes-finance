@@ -205,8 +205,68 @@ def main():
         seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
+        # All payout I/O in this disposable fixture stays in process.
+        from hermes_finance.market_data.payout_protocol import PayoutFetchResult
+        from hermes_finance.persistence import Instrument
+        from t_invest_mapping_fixtures import accept_t_invest_mapping
+
+        with database.session_factory() as session:
+            for instrument in session.scalars(
+                select(Instrument).where(
+                    Instrument.isin.in_(["RU000A000000", "RU000A000001"])
+                )
+            ):
+                accept_t_invest_mapping(
+                    session,
+                    instrument.id,
+                    f"71100000-0000-0000-0000-{instrument.id:012d}",
+                    isin=instrument.isin,
+                )
+
+        class LocalPayoutProvider:
+            def fetch_payouts(self, request):
+                return PayoutFetchResult(
+                    provider="t_invest",
+                    instrument_uid=request.instrument_uid,
+                    events=(),
+                )
+
+        app.state.payout_provider = LocalPayoutProvider()
+
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind in {"month-entry-a", "month-entry-b"}:
+                from test_statement_import_broker_statement_provisional import (
+                    provisional_xml,
+                )
+
+                tree = ET.fromstring(provisional_xml(candidate_count=0))
+                position = tree.find(".//{MyBroker}Details[@ISIN1]")
+                position.set("real_rest", "10" if kind.endswith("a") else "25")
+                position.set("forward_rest", position.get("real_rest"))
+                bond = deepcopy(position)
+                bond.attrib.update(
+                    ISIN1="RU000A000001",
+                    active_name="Synthetic entry bond",
+                    active_type="Облигации",
+                    real_rest="2",
+                    forward_rest="2",
+                    nominal="1000",
+                )
+                tree.find(".//{MyBroker}Details_Collection").append(bond)
+                trade_collection = tree.find(
+                    ".//{MyBroker}Trades//{MyBroker}Details_Collection"
+                )
+                for row in list(trade_collection):
+                    trade_collection.remove(row)
+                alias = b"7113501" if kind.endswith("a") else b"7113502"
+                raw = (
+                    ET.tostring(tree, encoding="utf-8")
+                    .replace(b"1234567", alias)
+                    .replace(b"2030-04-", b"2035-09-")
+                    .replace(b".04.2030", b".09.2035")
+                )
+                return Response(raw, media_type="application/xml")
             if kind in {"month-ui-a", "month-ui-b"}:
                 from bond_source_fixture import original
 

@@ -85,7 +85,7 @@ describe("native month management", () => {
     expect(screen.getByText("Закрыт")).toBeInTheDocument();
     expect(screen.getByText("Черновик")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("month=999");
-    expect(screen.getAllByRole("link", { name: /Открыть редактор/ })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /Редактор месяца/ })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Удалить черновик" })).toHaveLength(1);
   });
 
@@ -97,7 +97,7 @@ describe("native month management", () => {
     if (!older) throw new Error("Historical draft row missing");
     expect(within(older).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
       "href",
-      "/v2/data/months/9",
+      "/v2/close?month=9",
     );
     expect(within(older).getByRole("link", { name: "Проверить и закрыть" })).toHaveAttribute(
       "href",
@@ -185,6 +185,10 @@ describe("native month management", () => {
     if (!row) throw new Error("Draft row missing");
     expect(within(row).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
       "href",
+      "/v2/close?month=2",
+    );
+    expect(within(row).getByRole("link", { name: /Редактор месяца/ })).toHaveAttribute(
+      "href",
       "/v2/data/months/2?from=monthly-close-v2&step=readiness&monthId=2",
     );
   });
@@ -215,6 +219,12 @@ describe("native month management", () => {
     });
     expect(listMonths).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/Черновик Июль 2030 подтверждён/)).toBeInTheDocument();
+    const createdRow = screen.getByText("Июль 2030", { exact: true }).closest("li");
+    if (!createdRow) throw new Error("Created draft row missing");
+    expect(within(createdRow).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=3",
+    );
   });
 
   it("clones from an exact source to a shown target and keeps failed conflict visible", async () => {

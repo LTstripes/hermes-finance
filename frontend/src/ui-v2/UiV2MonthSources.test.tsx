@@ -102,3 +102,22 @@ it("offers read-only review and no upload for CLOSED", async () => {
   expect(onReview).toHaveBeenCalledWith(1);
   expect(screen.queryByLabelText("XML-файлы")).not.toBeInTheDocument();
 });
+
+it("retains historical source-account selection without treating its original as this month's EOD", async () => {
+  const { fetcher } = mount("/v2/close?month=12&source_account=OTHER-PERIOD");
+  expect(await screen.findByRole("region", { name: "Состояние источников месяца" })).toBeVisible();
+  expect(await screen.findByText(/Для выбранного счёта выписок этого периода нет/)).toBeVisible();
+  expect(screen.getByRole("region", { name: "Состояние источников месяца" })).toHaveTextContent(
+    "Сохранённых выписок этого периода: 0",
+  );
+  expect(screen.getByRole("link", { name: "Инструменты, сделки и выплаты" })).toHaveAttribute(
+    "href",
+    "#month-instruments",
+  );
+  expect(
+    fetcher.mock.calls.some(([url]) =>
+      String(url).includes("/api/source-returns/monthly?source_account=OTHER-PERIOD"),
+    ),
+  ).toBe(true);
+  expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});

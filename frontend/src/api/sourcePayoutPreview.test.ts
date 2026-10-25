@@ -1,7 +1,26 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { previewSourcePayouts, type SourcePayoutPreview } from "./sourcePayoutPreview";
+import {
+  getSourceQuantityBases,
+  previewSourcePayouts,
+  type SourcePayoutPreview,
+} from "./sourcePayoutPreview";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("reads quantity candidates by exact account, ISIN and upper date without provider POST", async () => {
+  const data = {
+    bases: [{ as_of: "2030-09-30", quantity: "9007199254740993.001", reason_codes: [] }],
+  };
+  const fetcher = vi.fn(
+    async (_input: RequestInfo | URL) =>
+      new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  expect(await getSourceQuantityBases("SYN/A", "RU000A000001", "2030-10-31")).toEqual(data);
+  expect(fetcher.mock.calls[0][0]).toBe(
+    "/api/source-returns/quantity-bases?source_account=SYN%2FA&isin=RU000A000001&on_or_before=2030-10-31",
+  );
+});
 
 it("sends exact native scope and preserves Decimal, UNKNOWN, provenance and reconciliation", async () => {
   const payload = { source_account: "native-account", isin: "ZZ0000000011", as_of: "2030-04-30" };

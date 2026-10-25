@@ -330,6 +330,12 @@ export default function UiV2ClosePage() {
           )}
         </div>
 
+        <UiV2MonthSources
+          key={workflow.month.id}
+          month={workflow.month}
+          canClose={workflow.readiness.can_close}
+        />
+
         <UiV2Panel
           eyebrow={closed ? "Сохранённые факты" : "Личные данные"}
           title="Ручные разделы"
@@ -353,8 +359,6 @@ export default function UiV2ClosePage() {
             ))}
           </nav>
         </UiV2Panel>
-
-        <UiV2MonthSources key={workflow.month.id} month={workflow.month} />
 
         {statementOutcome ? (
           <section className={styles.closeOutcome} role="status">

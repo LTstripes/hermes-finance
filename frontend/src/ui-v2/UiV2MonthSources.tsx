@@ -3,7 +3,7 @@ import { useLayoutEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { SourceMonthReturn } from "./SourceMonthReturn";
-import { listSourceIntakes, type SourceIntake } from "../api/sourceIntake";
+import { listAllSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { ReportingMonth } from "../api/types";
 import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
@@ -12,6 +12,7 @@ import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
+import { monthWorkspacePath } from "./monthSelection";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
@@ -25,9 +26,11 @@ function sourceAccounts(intake: SourceIntake): string[] {
 export function UiV2MonthSources({
   month,
   onReview,
+  canClose,
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
   onReview?: (id: number) => void;
+  canClose?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const { session, original } = useBrokerOriginalSession();
@@ -62,8 +65,8 @@ export function UiV2MonthSources({
     }));
   }, [changingScope, unresolved, scope, month.id, session]);
   const list = useQuery({
-    queryKey: ["source-intakes", month.id],
-    queryFn: ({ signal }) => listSourceIntakes(month.id, signal),
+    queryKey: ["source-intakes", "month-overview", month.id],
+    queryFn: ({ signal }) => listAllSourceIntakes(signal),
     refetchOnWindowFocus: true,
   });
   const period = `${month.year}-${String(month.month).padStart(2, "0")}`;
@@ -75,7 +78,9 @@ export function UiV2MonthSources({
         item.covered_from.slice(0, 7) <= period &&
         item.covered_to.slice(0, 7) >= period),
   );
-  const accounts = [...new Set(sources.flatMap(sourceAccounts))].sort();
+  // Prior originals can supply a quantity scenario, never this month's closing EOD.
+  const history = (list.data ?? []).filter((item) => item.covered_from.slice(0, 7) <= period);
+  const accounts = [...new Set(history.flatMap(sourceAccounts))].sort();
   const accountValues = params.getAll("source_account");
   const account = accountValues[0] ?? "";
   const invalidAccount = accountValues.length > 1 || (!!account && !accounts.includes(account));
@@ -93,6 +98,50 @@ export function UiV2MonthSources({
         wide
       >
         <div className={styles.stack}>
+          <p>
+            Сохрани выписки → выбери счёт → проверь инструменты, сделки и выплаты → исправь
+            исключения. Доступный расчёт и недостающие доказательства показаны для выбранного
+            месяца.
+          </p>
+          <section aria-label="Состояние источников месяца">
+            {list.isPending || list.isFetching ? (
+              <p>Проверяем сохранённые выписки…</p>
+            ) : list.isError ? (
+              <p>Число сохранённых выписок не подтверждено.</p>
+            ) : (
+              <>
+                <p>
+                  {period} · счёт источника:{" "}
+                  {invalidAccount ? "не подтверждён" : account || "выбери один счёт"}.
+                  {invalidAccount ? "" : ` Сохранённых выписок этого периода: ${visible.length}.`}
+                </p>
+                {!sources.length && (
+                  <p>
+                    Выписок за отчётный месяц пока нет. Добавь XML ниже; ручные данные сохраняются
+                    отдельно. Историческое количество можно проверить по выбранному счёту, но оно не
+                    доказывает доходность этого месяца.
+                  </p>
+                )}
+                <nav className={styles.sourceNav} aria-label="Действия с источниками месяца">
+                  <a href="#month-source-list">Сохранённые выписки и исключения</a>
+                  {!invalidAccount && account && (
+                    <a href="#month-instruments">Инструменты, сделки и выплаты</a>
+                  )}
+                </nav>
+              </>
+            )}
+            <p>
+              {month.status === "closed"
+                ? "Финансовый месяц CLOSED · только чтение."
+                : canClose === true
+                  ? "Финансовый DRAFT · серверная проверка допускает явное закрытие."
+                  : "Финансовый DRAFT · готовность к закрытию проверяется отдельно."}{" "}
+              Сохранение выписки и предварительная доходность не означают финансового принятия.{" "}
+              <Link to={monthWorkspacePath(month.id, "final_review_close")}>
+                Проверка финансового месяца
+              </Link>
+            </p>
+          </section>
           {!!account &&
             !invalidAccount &&
             !changingScope &&
@@ -123,7 +172,7 @@ export function UiV2MonthSources({
             </UiV2Notice>
           ) : (
             <>
-              <label className={styles.field}>
+              <label className={styles.field} id="month-source-list">
                 Счёт источника месяца
                 <select
                   aria-label="Счёт источника месяца"
@@ -153,10 +202,10 @@ export function UiV2MonthSources({
                 <p role="alert">
                   Выбранный счёт источника не подтверждён для этого месяца. Выбери счёт явно.
                 </p>
-              ) : !sources.length ? (
+              ) : !visible.length ? (
                 <p>
-                  Выписок за отчётный месяц пока нет. Добавь XML выше; ручные данные сохраняются
-                  отдельно.
+                  Для выбранного счёта выписок этого периода нет. Нужен оригинал с границами
+                  отчётного месяца; выписки других периодов не становятся его EOD.
                 </p>
               ) : (
                 <ul className={styles.sources} aria-label="Источники и исключения месяца">
@@ -244,7 +293,7 @@ export function UiV2MonthSources({
           month={month.month}
           account={account}
           sourceVersion={JSON.stringify(
-            sources.map((source) => [source.id, source.head_seq, source.manifest_digest]),
+            history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
           )}
         />
       ) : !invalidAccount && !account && sources.length > 0 ? (

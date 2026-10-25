@@ -94,6 +94,11 @@ export function UiV2MonthInstruments({
       : explicit
         ? data?.instruments.find((row) => row.isin === values[0])
         : data?.instruments[0];
+  const events =
+    instrument?.analysis.events.filter(
+      (event) =>
+        event.event_date !== null && event.event_date > opening && event.event_date <= closing,
+    ) ?? [];
 
   return (
     <UiV2Panel
@@ -188,6 +193,17 @@ export function UiV2MonthInstruments({
               <p>
                 {data.native_source_account} × {instrument.isin} · {opening} — {closing}. Источник
                 не является принятой финансовой позицией.
+              </p>
+              <p>
+                Распознано за выбранный период: сделок{" "}
+                {events.filter((event) => event.kind === "BUY" || event.kind === "SELL").length},
+                выплат{" "}
+                {
+                  events.filter((event) =>
+                    ["COUPON", "DIVIDEND", "REDEMPTION"].includes(event.kind),
+                  ).length
+                }
+                . Это доступные события источника; полнота и исключения показаны ниже.
               </p>
               <SourceInstrumentDetail
                 analysis={instrument.analysis}

@@ -1,6 +1,116 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
+test("October primary entry exposes saved sources and historical stock/bond quantity without inventing monthly return", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(120000);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const forbidden: string[] = [];
+  const previews: unknown[] = [];
+  page.on("request", (sent) => {
+    const path = new URL(sent.url()).pathname;
+    if (sent.method() === "POST" && /\/(apply|close|reopen|finance-link)$/.test(path))
+      forbidden.push(path);
+    if (sent.method() === "POST" && path.endsWith("/payout-preview"))
+      previews.push(sent.postDataJSON());
+  });
+  await page.goto("/v2/data/months");
+  await page.getByRole("button", { name: "Создать другой период" }).click();
+  const form = page.getByRole("region", { name: "Создание месяца" });
+  await form.getByLabel("Целевой год").fill("2035");
+  await form.getByLabel("Целевой месяц").selectOption("10");
+  await form.getByRole("button", { name: "Создать месяц", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Черновик Октябрь 2035 подтверждён" }),
+  ).toBeVisible({ timeout: 15000 });
+  const month = (await (await request.get("/api/months")).json()).find(
+    (row: { year: number; month: number }) => row.year === 2035 && row.month === 10,
+  );
+  const row = page.getByText("Октябрь 2035", { exact: true }).locator("xpath=ancestor::li");
+  await expect(row.getByRole("link", { name: /Редактор месяца/ })).toHaveAttribute(
+    "href",
+    `/v2/data/months/${month.id}`,
+  );
+  await row.getByRole("link", { name: "Открыть месяц", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/v2/close\\?month=${month.id}$`));
+  const sources = page.getByRole("region", { name: "XML и исключения" });
+  await expect(sources.getByRole("heading", { name: "XML и исключения" })).toBeVisible();
+  await expect(sources.getByText(/Выписок за отчётный месяц пока нет/)).toBeVisible();
+  const manual = async () =>
+    Promise.all(
+      ["incomes", "deposits", "positions", "debts", "comments"].map(async (name) =>
+        (await request.get(`/api/${name}?month_id=${month.id}`)).json(),
+      ),
+    );
+  const before = await manual();
+  const files = await Promise.all(
+    ["a", "b"].map(async (suffix, index) => ({
+      name: `Брокерский 711350${index + 1} (01.09.35-30.09.35).xml`,
+      mimeType: "application/xml",
+      buffer: await (
+        await request.get(`/api/synthetic-broker-source/month-entry-${suffix}`)
+      ).body(),
+    })),
+  );
+  await sources.getByLabel("XML-файлы").setInputFiles(files);
+  for (const file of files)
+    await expect(sources.getByText(`${file.name}: Сохранен`, { exact: true })).toBeVisible();
+  const picker = sources.getByLabel("Счёт источника месяца");
+  await picker.selectOption("7113501");
+  await expect(sources.getByText(/нет доказанных границ этого месяца/)).toContainText("2035-10-31");
+  await expect(sources.getByRole("region", { name: "Состояние источников месяца" })).toContainText(
+    "Сохранённых выписок этого периода: 0",
+  );
+  const instruments = page.getByRole("region", { name: "Инструменты и выплаты месяца" });
+  await expect(instruments.getByText("RU000A000000 · Акция")).toBeVisible();
+  await expect(instruments.getByText("RU000A000001 · Облигация")).toBeVisible();
+  const dates = instruments.getByLabel("Сохранённая дата количества");
+  await dates.selectOption("2035-09-30");
+  await expect(instruments.getByText(/Наблюдаемое количество: 10 на 2035-09-30/)).toBeVisible();
+  expect(previews).toHaveLength(0);
+  await instruments
+    .getByRole("button", { name: "Запросить предварительные выплаты T-Invest" })
+    .click();
+  await expect(
+    instruments.getByRole("heading", { name: /Фактические строки источника/ }),
+  ).toBeVisible();
+  await expect(
+    instruments.getByRole("heading", { name: "Возможно уже выплачено (possible_paid)" }),
+  ).toBeVisible();
+  await expect(
+    instruments.getByRole("heading", { name: "Будущие кандидаты (future)" }),
+  ).toBeVisible();
+  await expect(instruments.getByText(/^Источник:.*количество: 10 на 2035-09-30/)).toBeVisible();
+  await picker.selectOption("7113502");
+  await dates.selectOption("2035-09-30");
+  await expect(instruments.getByText(/Наблюдаемое количество: 25 на 2035-09-30/)).toBeVisible();
+  await page.goBack();
+  await expect(picker).toHaveValue("7113502");
+  await page.goBack();
+  await expect(picker).toHaveValue("7113501");
+  await page.reload();
+  await expect(picker).toHaveValue("7113501");
+  await expect(dates).toHaveValue("2035-09-30");
+  await expect(
+    instruments.getByRole("heading", { name: /Фактические строки источника/ }),
+  ).toHaveCount(0);
+  await instruments.getByRole("button", { name: "Synthetic entry bond", exact: true }).click();
+  await dates.selectOption("2035-09-30");
+  await expect(instruments.getByText(/Наблюдаемое количество: 2 на 2035-09-30/)).toBeVisible();
+  await expect(instruments.getByText(/не заменяет закрывающий EOD 2035-10-31/)).toBeVisible();
+  expect(await manual()).toEqual(before);
+  expect(forbidden).toEqual([]);
+  expect(previews).toHaveLength(1);
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await sources.screenshot({ path: info.outputPath("october-entry-source-status-1280-125.png") });
+});
+
 test("statement returns show native EOD facts, NKD caveat, exact export and stale/null account isolation on desktop", async ({
   page,
   request,

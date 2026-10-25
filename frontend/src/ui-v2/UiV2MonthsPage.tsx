@@ -377,14 +377,16 @@ export default function UiV2MonthsPage() {
                   <Link
                     className={styles.primary}
                     to={
-                      closeContext?.monthId === month.id
-                        ? withMonthlyCloseReturn(
-                            `/v2/data/months/${month.id}`,
-                            month.id,
-                            closeContext.step,
-                            closeContext.origin,
-                          )
-                        : `/v2/data/months/${month.id}`
+                      month.status === "draft"
+                        ? monthWorkspacePath(month.id)
+                        : closeContext?.monthId === month.id
+                          ? withMonthlyCloseReturn(
+                              `/v2/data/months/${month.id}`,
+                              month.id,
+                              closeContext.step,
+                              closeContext.origin,
+                            )
+                          : `/v2/data/months/${month.id}`
                     }
                   >
                     Открыть месяц
@@ -413,7 +415,20 @@ export default function UiV2MonthsPage() {
                     >
                       Копировать
                     </button>
-                    <Link to={`/v2/data/months/${month.id}`}>Открыть редактор →</Link>
+                    <Link
+                      to={
+                        closeContext?.monthId === month.id
+                          ? withMonthlyCloseReturn(
+                              `/v2/data/months/${month.id}`,
+                              month.id,
+                              closeContext.step,
+                              closeContext.origin,
+                            )
+                          : `/v2/data/months/${month.id}`
+                      }
+                    >
+                      Редактор месяца →
+                    </Link>
                     {month.status === "draft" ? (
                       <button
                         className={styles.danger}
@@ -431,8 +446,8 @@ export default function UiV2MonthsPage() {
           </ul>
         ) : null}
         <p className={styles.hint}>
-          В редакторе доступны данные и заметки выбранного месяца. Архив подтверждённых отчётов
-          остаётся отдельным разделом.
+          Открыть месяц — личные данные, XML и исключения, инструменты и предварительные выплаты.
+          Ручной редактор и архив подтверждённых отчётов доступны отдельно.
         </p>
       </section>
       <ConfirmDialog

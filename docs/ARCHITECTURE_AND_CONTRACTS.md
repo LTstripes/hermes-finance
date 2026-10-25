@@ -12386,6 +12386,16 @@ Closed-month applied data is never rewritten by refresh of another month.
 <a id="c9-source-payout-preview"></a>
 #### Saved-statement quantity preview (#711 / #889)
 
+`GET /api/source-returns/quantity-bases` discovers saved closing dates for exact
+`source_account` and `isin`, bounded by `on_or_before`. It returns Decimal-string
+quantities (including explicit zero), quantity references and the existing
+preview context's identity/settlement/conflict reasons, under one coherent local
+read. It constructs no provider and performs no DML. Repeated/overlapping originals
+do not sum quantities; conflicts remain NULL under the same preview guards.
+Its dates are scenario candidates, not an assertion of complete month coverage
+or accepted financial positions. The response is provisional, financial authority
+none and `Cache-Control: no-store`. The explicit POST below revalidates its own
+context and provenance; discovery does not authorize or persist a forecast.
 `POST /api/source-returns/payout-preview` takes exact `source_account`, `isin` and
 `as_of` (native closing EOD). It reuses effective durable intake views, the dated
 source-event reader and accepted catalogue/T-Invest crosswalk. A filename alias

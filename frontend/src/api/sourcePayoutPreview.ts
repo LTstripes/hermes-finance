@@ -7,6 +7,34 @@ export type SourcePayoutRequest = {
   as_of: string;
 };
 
+export type SourceQuantityBases = {
+  source_account: string;
+  native_source_account: string | null;
+  isin: string;
+  on_or_before: string;
+  authority: "provisional";
+  financial_authority: "none";
+  bases: Array<{
+    as_of: string;
+    quantity: string | null;
+    quantity_references: string[];
+    reason_codes: string[];
+  }>;
+};
+
+/** Local discovery only: no provider I/O and no financial writer. */
+export function getSourceQuantityBases(
+  account: string,
+  isin: string,
+  closing: string,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ source_account: account, isin, on_or_before: closing });
+  return apiRequest<SourceQuantityBases>(`/api/source-returns/quantity-bases?${params}`, {
+    signal,
+  });
+}
+
 export type SourcePayoutActual = Pick<
   InstrumentEvent,
   | "event_key"

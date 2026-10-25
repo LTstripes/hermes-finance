@@ -5,6 +5,7 @@ import { getSourceMonthlyReturns } from "../api/sourceReturns";
 import { formatMoney } from "../lib/format";
 import { fromKopecks } from "../lib/money";
 import { formatSourceReturnRate } from "../lib/sourceReturnFormat";
+import { Reasons } from "./SourceInstrumentDetail";
 
 export function sourceReturnMoney(amount: number | null | undefined) {
   return amount == null
@@ -15,12 +16,27 @@ export function sourceReturnMoney(amount: number | null | undefined) {
 }
 
 export function SourceMonthReturn({ account, period }: { account: string; period: string }) {
+  const [year, month] = period.split("-").map(Number);
+  const opening = new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
+  const closing = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   const result = useQuery({
     queryKey: ["source-returns", "monthly", account],
-    queryFn: ({ signal }) => getSourceMonthlyReturns(account, signal),
+    queryFn: async ({ signal }) => {
+      const value = await getSourceMonthlyReturns(account, signal);
+      if (
+        value.source_account !== account ||
+        value.authority !== "provisional" ||
+        value.financial_authority !== "none"
+      )
+        throw new Error("Счёт или полномочия предварительного расчёта не подтверждены.");
+      return value;
+    },
     refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
-  const row = result.data?.months.find((value) => value.closing_date.startsWith(period));
+  const row = result.data?.months.find(
+    (value) => value.opening_date === opening && value.closing_date === closing,
+  );
   const value = sourceReturnMoney(row?.growth_kopecks);
   const rate = formatSourceReturnRate(row?.modified_dietz_return);
   return (
@@ -31,16 +47,27 @@ export function SourceMonthReturn({ account, period }: { account: string; period
       ) : result.isError ? (
         <p role="status">{formatApiError(result.error)}</p>
       ) : !row ? (
-        <p>Нет доказанных границ этого месяца.</p>
+        <p>
+          Доходность недоступна: нет доказанных границ этого месяца — EOD {opening} и {closing}.
+          Нужен полный месячный оригинал; историческая или промежуточная выписка его не заменяет.
+        </p>
       ) : (
         <>
           <p>
-            {value} · {rate} · Modified Dietz за период, приблизительно
+            {row.growth_kopecks === null ? "Результат недоступен" : value} ·{" "}
+            {row.modified_dietz_return === null ? "Доходность недоступна" : rate} · Modified Dietz
+            за период, приблизительно
           </p>
           <p>
             {row.opening_date} — {row.closing_date} · счёт источника {account}. Не финансовый
             результат.
           </p>
+          {row.missing_endpoint && (
+            <p>
+              Нужны подтверждённые EOD {opening} и {closing}; отсутствующая граница не равна нулю.
+            </p>
+          )}
+          <Reasons codes={row.reason_codes} />
           <p>
             {row.assumptions_used ? "Потоки с допущениями. " : ""}
             {row.income_assumptions_used ? "Выплаты с допущениями. " : ""}

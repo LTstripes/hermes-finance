@@ -17,6 +17,7 @@ import { previewOriginalContext } from "../api/mybrokerPreflight";
 import {
   confirmIntakeReview,
   listSourceIntakes,
+  listAllSourceIntakes,
   previewIntakeReview,
   readSourceIntake,
   type SourceIntake,
@@ -35,6 +36,7 @@ vi.mock("../api/brokerMonths", () => ({
 }));
 vi.mock("../api/sourceIntake", () => ({
   listSourceIntakes: vi.fn(),
+  listAllSourceIntakes: vi.fn(),
   readSourceIntake: vi.fn(),
   previewIntakeReview: vi.fn(),
   confirmIntakeReview: vi.fn(),
@@ -149,6 +151,7 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listSourceIntakes).mockResolvedValue([structuredClone(a), structuredClone(b)]);
+  vi.mocked(listAllSourceIntakes).mockResolvedValue([structuredClone(a), structuredClone(b)]);
   vi.mocked(listAccounts).mockResolvedValue([
     { id: 7, name: "Broker A", status: "active", account_type: "brokerage" },
   ] as Awaited<ReturnType<typeof listAccounts>>);

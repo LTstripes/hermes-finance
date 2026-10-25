@@ -2,9 +2,9 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from hermes_finance.market_data.payout_protocol import PayoutFailure, PayoutFetc
 from hermes_finance.services.source_payout_preview import (
     reconcile_source_payouts,
     source_payout_context,
+    source_quantity_bases,
 )
 
 router = APIRouter(tags=["source-returns"])
@@ -90,6 +91,35 @@ class SourcePayoutResponse(BaseModel):
     reconciliation_reasons: tuple[str, ...]
     rows: list[SourcePayoutRow]
     failures: list[str]
+
+
+class SourceQuantityBasis(BaseModel):
+    as_of: date
+    quantity: Decimal | None
+    quantity_references: tuple[str, ...]
+    reason_codes: tuple[str, ...]
+
+
+class SourceQuantityBasesResponse(BaseModel):
+    source_account: str
+    native_source_account: str | None
+    isin: str
+    on_or_before: date
+    bases: list[SourceQuantityBasis]
+    authority: Literal["provisional"]
+    financial_authority: Literal["none"]
+
+
+@router.get("/api/source-returns/quantity-bases", response_model=SourceQuantityBasesResponse)
+def quantity_bases(
+    response: Response,
+    source_account: Annotated[str, Query(min_length=1, max_length=256, pattern=r"^\S+$")],
+    isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
+    on_or_before: date,
+    session: Session = Depends(session_for_request),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return source_quantity_bases(session, source_account, isin, on_or_before)
 
 
 @router.post("/api/source-returns/payout-preview", response_model=SourcePayoutResponse)
