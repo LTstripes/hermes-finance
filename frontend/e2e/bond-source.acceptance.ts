@@ -1,5 +1,52 @@
 import { expect, test } from "@playwright/test";
 
+test("API Decimal boundary rates render identically in Month and Monthly Returns after Back/Reload", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(90000);
+  const inputs = await (await request.get("/api/synthetic-proof-inputs")).json();
+  const before = await (await request.get("/api/synthetic-bond-state")).json();
+  const writes: string[] = [];
+  page.on("request", (item) => {
+    if (!["GET", "HEAD"].includes(item.method())) writes.push(item.method());
+  });
+  let fraction = "0.001259";
+  // Synthetic response at the API/display boundary; do not mutate financial fixtures.
+  await page.route("**/api/source-returns/monthly?**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const row of body.months) {
+      if (row.closing_date === "2030-04-30") row.modified_dietz_return = fraction;
+    }
+    await route.fulfill({ response, json: body });
+  });
+  for (const [value, expected] of [
+    ["0.001259", "0,13%"],
+    ["-0.00125", "−0,13%"],
+    ["0.00009999", "0,01%"],
+    ["-0.00995", "−1,00%"],
+    ["0.99995", "100,00%"],
+  ]) {
+    fraction = value;
+    await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567`);
+    const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
+    await expect(card).toContainText(expected);
+    await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
+    const monthly = page.getByTestId("returns-monthly-table");
+    await expect(monthly).toContainText(expected);
+    await page.reload();
+    await expect(monthly).toContainText(expected);
+    await page.goBack();
+    await expect(card).toContainText(expected);
+  }
+  await page.getByRole("region", { name: "Предварительная доходность месяца" }).screenshot({
+    path: info.outputPath("source-rate-half-up-carry.png"),
+  });
+  expect(writes).toEqual([]);
+  expect(await (await request.get("/api/synthetic-bond-state")).json()).toEqual(before);
+});
+
 test("one-time source proof survives Back/Reload in ordinary Month and monthly GET; ABA retires it", async ({
   page,
   request,

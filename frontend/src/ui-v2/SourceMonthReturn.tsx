@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { formatApiError } from "../api/client";
 import { getSourceMonthlyReturns } from "../api/sourceReturns";
-import { formatMoney, formatPercent } from "../lib/format";
+import { formatMoney } from "../lib/format";
 import { fromKopecks } from "../lib/money";
+import { formatSourceReturnRate } from "../lib/sourceReturnFormat";
 
 export function sourceReturnMoney(amount: number | null | undefined) {
   return amount == null
@@ -11,21 +12,6 @@ export function sourceReturnMoney(amount: number | null | undefined) {
     : Number.isSafeInteger(amount)
       ? formatMoney(fromKopecks(BigInt(amount)))
       : "Сумма вне точного диапазона отображения";
-}
-
-export function sourceReturnRate(fraction: string | null | undefined) {
-  if (fraction == null) return "—";
-  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d{1,3}))?$/.exec(fraction);
-  if (!match) return "—";
-  const digits = match[2] + (match[3] ?? "");
-  const point = match[2].length + 2 + Number(match[4] ?? 0);
-  const percentage =
-    point <= 0
-      ? `0.${"0".repeat(-point)}${digits}`
-      : point >= digits.length
-        ? digits + "0".repeat(point - digits.length)
-        : `${digits.slice(0, point)}.${digits.slice(point)}`;
-  return formatPercent(match[1] + percentage.replace(/^0+(?=\d)/, ""), { digits: 2 });
 }
 
 export function SourceMonthReturn({ account, period }: { account: string; period: string }) {
@@ -36,7 +22,7 @@ export function SourceMonthReturn({ account, period }: { account: string; period
   });
   const row = result.data?.months.find((value) => value.closing_date.startsWith(period));
   const value = sourceReturnMoney(row?.growth_kopecks);
-  const rate = sourceReturnRate(row?.modified_dietz_return);
+  const rate = formatSourceReturnRate(row?.modified_dietz_return);
   return (
     <section aria-label="Предварительная доходность месяца">
       <h3>Предварительная доходность месяца</h3>

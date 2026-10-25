@@ -6038,6 +6038,10 @@ frozen S1 facts, DRAFT/Apply/Close guards, persisted classifications, receipts,
 instrument-return eligibility and financial authority remain unchanged.
 
 The existing Month source view and Monthly Returns use the same ordinary GET.
+Both render Decimal rate strings through one exact ROUND_HALF_UP display path
+with two percentage decimals (fraction × 100, percentage-point inputs unchanged).
+Signed ties round away from zero, carry is retained, and negative zero keeps its
+sign. Financial values are never converted through Number; NULL stays unavailable.
 After explicit proof confirmation they display period RUB growth, approximate
 period Modified Dietz, native boundary dates, source-only quality, persisted flow
 assumptions, proof version/time and NULL reasons without reselecting XML on

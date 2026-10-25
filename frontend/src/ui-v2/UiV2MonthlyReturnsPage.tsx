@@ -10,22 +10,19 @@ import {
   type ReturnGap,
 } from "../api/sourceReturns";
 import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
+import { formatSourceReturnRate as rate } from "../lib/sourceReturnFormat";
+import { SourceReturnProofPanel } from "./SourceReturnProofPanel";
 import { UiV2BondSlice } from "./UiV2BondSlice";
 import styles from "./UiV2MonthlyReturnsPage.module.css";
 import pageStyles from "./UiV2Page.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
-import { SourceReturnProofPanel } from "./SourceReturnProofPanel";
 
 const money = (value: number | null) =>
   value === null
     ? "—"
     : `${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(value / 100)} ₽`;
-const rate = (value: string | null, fraction = true) =>
-  value === null
-    ? "—"
-    : `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value) * (fraction ? 100 : 1))} %`;
 const month = (value: string) =>
   new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(`${value.slice(0, 10)}T00:00:00Z`),

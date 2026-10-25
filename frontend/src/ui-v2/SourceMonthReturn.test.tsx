@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { sourceReturnMoney, sourceReturnRate } from "./SourceMonthReturn";
+import { formatSourceReturnRate as sourceReturnRate } from "../lib/sourceReturnFormat";
+import { sourceReturnMoney } from "./SourceMonthReturn";
 
 it("keeps exact kopecks at MAX_SAFE_INTEGER and refuses an already imprecise JSON integer", () => {
   expect(sourceReturnMoney(Number.MAX_SAFE_INTEGER)).toBe(
