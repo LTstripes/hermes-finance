@@ -6,12 +6,16 @@
 
 Current integration, runtime and next-action evidence is maintained only in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
-1.4.0 preparation after #935 aligns backend/frontend versions and locks, current identity/health
-checks and the compatible [release notes](docs/release-notes-1.4.0.md). The selected migration
-path is 0058→0059→0060→0061→0062. Synthetic release verification adds preservation of every
-pre-existing row and an isolated forward recovery from a consistent 0058 snapshot. The
-[recovery disposition](docs/releases/1.4.0-rollback.md) removes the unsupported OPS02 downgrade
-recipe; this entry does not imply publication or a Stable update.
+1.5.0 release preparation packages accepted #957/#958/#959 at
+`f9290d7df218c3a46097a674b4d9492826980eff`: exact-original custody proof,
+durable source-only Month/Monthly Returns, bounded dividend narrative recognition
+and schema 0064→0065. Backend/frontend manifests, locks and current health identity
+align at 1.5.0. See [compatible release notes](docs/release-notes-1.5.0.md) and the
+[0065 operating boundary](docs/OWNER_RUNTIME_OPERATIONS.md#o3-source-proof-recovery).
+Published v1.4.0, all released migration bytes and financial/source contracts are
+unchanged. This is not publication or Stable rollout; independent release review,
+Owner UAT/release decisions and the published-SHA production-compatible rehearsal
+remain required.
 
 ### Added
 

@@ -1,71 +1,79 @@
 # Current state, limitations and next actions
 
-**Accepted code (post-#958 live readback):** `main@0ddd0b357325a286c26ed2d564b226bd7214785e`
-and [exact post-main CI 40167455400](https://github.com/LTstripes/hermes-finance/actions/runs/40167455400)
-**SUCCESS**. [#958](https://github.com/LTstripes/hermes-finance/pull/958) accepts bounded
-dividend-narrative variants through existing source authority; normal GET never
-relinks saved rows. Its earlier private schema0064 relink Preview is stale after
-any future 0065 rollout: regenerate the exact Preview including retirement nonce
-effects before separate Owner GO and fresh validated backup/readback. No real
-relink is performed by this code integration. The backend [#953](https://github.com/LTstripes/hermes-finance/pull/953)
-and Month UI [#954](https://github.com/LTstripes/hermes-finance/pull/954)
-implement shared `empty_manual_month` Close/readiness, 0063 immutable receipt audit,
-0064 saved-actual versus cloned-template provenance, and explicit reasoned period
-confirmation with GET-only lost-ACK/Back/Reload recovery. No real Close was done.
+**Accepted application code (2026-10-25 live readback):**
+`main@f9290d7df218c3a46097a674b4d9492826980eff`, accepted #957/#958/#959,
+[exact post-main push CI40170329244](https://github.com/LTstripes/hermes-finance/actions/runs/40170329244)
+**COMPLETED SUCCESS**: 28 jobs SUCCESS, two intentional SKIPPED, terminal ci-ok
+SUCCESS. The current **v1.5.0 release-only candidate** aligns manifests/locks/health
+and compatible release notes; independent review, Integrator acceptance/guarded
+merge and exact candidate/main CI remain required. It is not a publication.
 
-**Installed Test and managed O4 (Owner-local attributed evidence):** Test runs
-the accepted application baseline `e487d570...` at schema **0064**, with preserved ten broker originals,
-mappings/manual/history and one stock O2/OPS03 upgrade plus Month UAT **PASS**.
-The Owner-selected plaintext synced managed backup was independently downloaded
-from cloud with matching full SHA256; fresh isolated **0064→0064** restore,
-Prepare/Validate/readiness and all **76 table fingerprints** PASS. See the
-[single sanitized #954 receipt](https://github.com/LTstripes/hermes-finance/pull/954#issuecomment-6385205231).
-The Integrator verified GitHub records, not private DB bytes. Financial source-only
-authority and unsupported bond/NKD/coverage returns remain honest PARTIAL/NULL.
-No actual October Apply/Close, history reimport, live T-Invest or Stable write.
+**Published / installed Stable:** immutable published **v1.4.0**, release/installed
+SHA `b027bcd90c56c500d271a9ee963485bdfa67ea79`, schema 0064, original production
+physical DB/binding retained. Current Operator readback found Stable stopped,
+with 76 historical tables, nine CLOSED and ten saved originals across two native
+account families, integrity/FK PASS. No Stable action or Test transfer occurred in
+this v1.5.0 Test operation. Historical serving-health evidence below retains its
+dated scope. The latest old Stable backup differs from current data; rollout
+requires a fresh verified snapshot, not an assumed reusable checkpoint.
 
-**Published / Stable (2026-10-24 Operator-attributed readback):** installed clean
-**v1.4.0 / 0064**, HEAD/prepared marker at `b027bcd9...`, production binding and
-physical DB continuity verified. The accepted release/update evidence is retained
-in [#940](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6388752474).
-The later missing HTTP listener was confirmed; existing logs/limited crash and
-shutdown events did not establish its termination cause or an intentional stop.
-After separate explicit Owner GO, stock Start of the same installed SHA passed
-health, owned process/cwd/DB-selector checks and UI/Reload. All 76 table
-fingerprints remain unchanged. No candidate deployment or Test transfer occurred.
+**Owner-local Test (Operator-attributed 2026-10-25):** separate Owner GO authorized
+stock OPS03 and separate Start at exact `f9290d7...`; HEAD/prepared marker and
+process/cwd/physical DB selector agree. Test package identity is still 1.4.0 at the
+accepted application SHA; schema is now 0065. All 76 existing tables/schema objects
+were preserved; the sole old-row migration change was alembic_version. Two new
+tables were initially empty and exactly 13 triggers were added. All 75 historical
+data tables, nine CLOSED, ten original digests/coverage and manual/financial rows
+matched before/after. Fresh stock 0064 and 0065 backups passed independent full-table
+and schema readback. Stable code/data remained unchanged. This is actual Test
+transition evidence; it is not the mandatory future published-SHA Stable rehearsal.
 
-**Accepted #957 bounded #891/#769/#889 slice:** exact-original-bound monthly read
-localizes only strictly recognized source-booked custody cancellations; GET
-without bytes remains fail-closed. Two priority calendar months become available
-through the candidate reader with all selected originals; the cancellation month
-and unresolved principal remain NULL. Real amounts, native identities and the
-separate five absent historical opening-value operands stay private. This is
-provisional source evidence, not financial acceptance; [#957](https://github.com/LTstripes/hermes-finance/pull/957)
-is merged with independent review and terminal exact-main CI. Earlier
-numerical controls and the private 78/1,539 matrices are reused.
+**Separately approved Test metadata operations:** a fresh 0065 zero-write relink
+Preview accounted for two derived metadata row updates and two generated
+retirement nonce inserts. The Operator ran one stock relink first and read back
+exactly those effects. The two observations represent one dividend event;
+registration/issuer recognition still leaves instrument_id NULL and
+unresolved_no_match without a proven catalogue/identity target. No mapping,
+classification decision, source journal or financial payment was created.
 
-**Pending one-time proof → ordinary GET → desktop slice:** additive schema 0065
-stores server-derived source custody-month provenance only, without XML/rates or
-V1 reinterpretation. Explicit Preview/attested confirmation supports Month and
-Monthly Returns without repeated file selection. Currentness includes complete
-membership, parser/manifest/head, monotonic source/classification/correction/
-mapping revisions and physical DB birth identity; stale/restore/ABA returns NULL
-until fresh confirmation. The cancellation/principal month stays NULL. No real
-proof has been saved and no Test/Stable code/schema operation is part of this task.
-Independent review and exact candidate CI belong to the implementation PR before
-Integrator guarded merge and exact-main CI. Installed Stable remains immutable
-published v1.4.0 `b027bcd9...` / 0064. The next rollout requires explicit Test UAT,
-a new release (target v1.5.0), published-SHA recovery rehearsal and separate Owner
-runtime/write approvals; never a hotpatch or a Test-data transfer. Private Owner
-UAT/release gates and the single unsent principal/custody broker question are
-retained locally. Prior numerical/operational evidence is reused.
-PR [#959](https://github.com/LTstripes/hermes-finance/pull/959) remains Draft pending
-repeat Integrator GO. Its successor incorporates post-#958 main, shares exact
-Decimal ROUND_HALF_UP percentage display between Month/Monthly Returns (no value
-conversion through Number), and retains #958's relink regression with exactly one
-nonce append and unchanged proof/financial tables. Fresh combined-tree PR CI/UI
-and independent pinned-SHA rereview are required; earlier standalone GO is superseded.
-Earlier evidence cut: 2026-10-24 for the bounded bond presentation; earlier dated evidence retains its original scope. This is the only maintained status book. Live GitHub evidence, the #891 Worker's isolated synthetic Windows checks, attributed Owner/Test observations and the #940 Worker's read-only binding/database inspection below retain their distinct scope. This Integrator review inspected source, diff and CI; it did not inspect private originals, mapping seeds or runtime databases. Dated receipts retain their original scope.
+After another fresh original-set Preview and backup/currentness check, one
+Owner-attested UI Confirm received ACK and independent request-status/ordinary
+GET readback. Exactly one source-only proof row was added; all other table
+contents and both prior nonces matched. Ordinary Month and Monthly Returns show
+the two supported priority months' provisional RUB and approximate period
+Modified Dietz without selecting XML again. Back/Reload/service restart preserved
+the current proof and numbers; August remained NULL with unknown-flow and
+custody-cancellation reasons. The other account's five existing monthly source
+estimates were unchanged. Financial values, originals, manifests, backup paths,
+nonce bytes and receipts remain private. These are Operator checks; **Owner UAT
+acceptance and independent Integrator release review are still pending**.
+
+**Source-proof contract:** #959's additive 0065 tables store provenance only, not
+XML, calculated money/rates, accepted positions or financial acceptance. Complete
+source membership, parser/manifest/head, revisions, monotonic retirement tokens
+and physical DB birth identity determine currentness. A stale/ABA/restored proof
+fails closed until fresh explicit confirmation. Month and Monthly Returns share
+exact Decimal ROUND_HALF_UP rate display. A 0064 relink Preview is invalid under
+0065; fresh dependency-trigger effects and separate consent are mandatory in
+every environment. If relink and proof are both approved, relink first and refresh
+proof Preview/confirm last. Stable receives neither Test rows nor Test proofs.
+
+**Next gates in the same #940 assignment:** Owner acceptance of Test UAT; one
+release-only v1.5.0 PR and independent review, Integrator guarded merge/exact-main
+push CI; separate Owner release GO/exact #124 trigger and tag/peeled-SHA/Release
+readback; mandatory isolated production-compatible 0064→0065 rehearsal at the
+published SHA and accepted recovery/RPO/outage boundary; separate Stable rollout
+and Start decisions. After installation, real Stable proof/relink require their
+own fresh Previews, backups/currentness and Owner decisions. See the
+[single authorized scope](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6394683187)
+and [1.5.0 release notes](release-notes-1.5.0.md). No publication, Stable migration,
+financial Apply/Close/Reopen or source reimport is implied.
+
+Missing intermediate calendar EOD/early opening values and unsupported
+principal/settlement/NKD/ownership economics remain exact NULL reasons. Supported
+native intervals, source estimates and conditional WHAT-IF remain distinct;
+there is no claim of complete calendar-month performance for 2024–2026. Earlier
+dated receipts below are history, not current installation instructions.
 
 <a id="s1"></a>
 ## 1. Code, published release, installed runtime and UAT are separate
@@ -74,10 +82,10 @@ Earlier evidence cut: 2026-10-24 for the bounded bond presentation; earlier date
 | --- | --- |
 | #891 original implementation base | Main `418b88a8c9a1b9b8e5f2d72e6112426282f3d285`, after [#935 acceptance/integration](https://github.com/LTstripes/hermes-finance/pull/935#issuecomment-6369982626); exact [main push CI 39988134177](https://github.com/LTstripes/hermes-finance/actions/runs/39988134177) SUCCESS. The current acceptance and integration evidence is linked below; the baseline does not identify an installed runtime. |
 | Finance-code checkpoint before #935 | `31e7b41d444945ed5ae5c4e4a813997329c3a354`, [PR #939](https://github.com/LTstripes/hermes-finance/pull/939). Exact [main push CI 39956697053](https://github.com/LTstripes/hermes-finance/actions/runs/39956697053) SUCCESS. This is the earlier code checkpoint reconciled by #941. The subsequent #935 behavior and its exact verification/integration evidence are linked below. |
-| Main schema | Through `0064_month_template_provenance`, after `0063_intentional_empty_close` and `0062_security_reg_isin_mappings`; these are merged code. This does not identify the schema of every installed database. |
+| Main schema | Through `0065_source_return_proofs` after `0064_month_template_provenance`; two initially empty source-proof tables and 13 guards. Installed DB schema is verified separately. |
 | Published release | [v1.4.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.4.0), release commit `b027bcd90c56c500d271a9ee963485bdfa67ea79`, schema `0064_month_template_provenance`. Publication and installed acceptance are recorded separately in #940; candidate merges do not authorize rollout. |
-| Installed HONOR Stable | Operator-attributed current readback: clean published `b027bcd9...` / v1.4.0 / 0064, original physical DB and binding preserved. Separate Owner-authorized stock Start restored HTTP; health/UI/Reload PASS, 76-table equality PASS. Prior #836/0058 evidence below remains historical. |
-| Owner's 1.4.0 Test | [Final one-task Test/O4 receipt](https://github.com/LTstripes/hermes-finance/pull/954#issuecomment-6385205231): accepted `e487d570...` / 0064, 10 originals/mappings/manual data retained, O2/OPS03/Validate/Start, bounded Month UAT PASS; managed plaintext cloud SHA256 readback and isolated 0064 recovery with 76-table equality PASS. Private-data evidence is attributed to the local Operator; not proof of Stable 0058→0064 or complete financial returns. |
+| Installed HONOR Stable | Clean published `b027bcd90c56c500d271a9ee963485bdfa67ea79` / v1.4.0 / 0064; original physical DB/binding, 76 tables, nine CLOSED and ten originals retained. Current local readback: stopped while Test owns the loopback runtime; no Stable action in this operation. |
+| Owner-local Test | Exact accepted application `f9290d7df218c3a46097a674b4d9492826980eff`, package 1.4.0 / schema 0065, stock OPS03→separate Start; preserved original history and independently checked backups. Separate Owner-approved relink then one proof Confirm/ACK/GET; Month/Monthly Returns Back/Reload/restart PASS. Operator evidence is private and Owner UAT acceptance remains pending; this does not authorize Stable. |
 | Workspace operations | Accepted code implements recoverable retirement (#864), not legacy permanent Apply. [#892 checkpoint](https://github.com/LTstripes/hermes-finance/issues/554#issuecomment-6255463423) preserved its PAUSED Worker workspace. No scheduler/installation change or future outcome is inferred from that record. |
 
 The earlier [#836 freeze removal](https://github.com/LTstripes/hermes-finance/issues/836#issuecomment-6225429633) allowed main development after v1.3.0. The 2026-10-22 UI freeze is now bounded by the Owner's [2026-10-24 Month authorization](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6375180628) and [useful-bond decision](https://github.com/LTstripes/hermes-finance/issues/891#issuecomment-6375176825). The assigned first read-only bond presentation reuses instrument v2 on the existing monthly-returns route, including conditional statement estimates without inventing NKD or complete economic return. Acceptance/desktop/CI evidence belongs to its Draft PR; this is not general route retirement, financial UAT, or permission for protected runtime changes. Published release, Stable and Test gates remain distinct.
@@ -165,7 +173,7 @@ The Owner authorized updating Stable on 2026-10-23, with timing assigned to Inte
 The [#944 preparation](https://github.com/LTstripes/hermes-finance/pull/944) was accepted
 and merged as `531fd6e98a764a0e7a33c8d6d70366f61c5cf5f3`; its receipt remains dated
 preparation evidence. The later [#954 Test/O4 receipt](https://github.com/LTstripes/hermes-finance/pull/954#issuecomment-6385205231)
-completes the bounded Test/0064 gate. The current release sequence at the top of this
+completes the bounded Test/ 0064 gate. The current release sequence at the top of this
 file and in the [recovery disposition](releases/1.4.0-rollback.md) supersedes the old
 blanket publication/Test hold. The exact Owner-approved publication follows the
 verified managed Stable 0058 checkpoint and precedes its published-code isolated
