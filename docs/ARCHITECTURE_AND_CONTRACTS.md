@@ -1447,6 +1447,29 @@ An intact original, S1 source acceptance, journal capture, financial DRAFT, inde
 
 Close classification is precise: required month/snapshot geometry and date rules, existing financial conflicts and applicable unresolved source/intake/receipt guards are blocking. An ordinary active-account snapshot absence is a nonblocking warning with a partial known subtotal. Stale valuation is freshness, not missing source coverage. Cash-boundary/in-kind/performance prerequisites remain separate; Close does not attest them. Bound intake obligations survive defer/unbind/rebind and forbid delete→recreate erasure. Unknown section economics never becomes a zero movement.
 
+### Source-owned payout Close boundary (#711)
+
+The [0066 contract](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6408677266),
+[qualification](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6408766906)
+and [retirement amendment](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6409530686)
+add a pure predicate to the existing shared broker-month Close guard. Only an
+accepted source economic DRAFT with a current Money coupon/dividend and unresolved
+persisted competing future forecast creates this obligation. All forecast versions
+are examined. UI flags, a manual source label and journal unbinding cannot bypass it.
+Existing stale-source guards retain their authority.
+
+New reasons are `source_payout_identity_unresolved`,
+`source_payout_settlement_stale` and `source_payout_duplicate_claim`.
+Manual-only, source-only/provisional, unrelated and CLOSED scopes, absent forecasts
+and missing provider responses do not acquire this additional hard blocker.
+Readiness and reserved authoritative Close use the same coherent offline predicate.
+Normal Close preserves settlement; Reopen changes the dependency generation.
+
+The Month panel uses offline `payout-obligations`, `payout-preview`,
+`payout-apply` and existing receipt GET. Evidence-bound review precedes Confirm.
+The pending request/digest survives Back/Reload; an unknown ACK permits only GET
+recovery. An explicit stale 409 discards the old review.
+
 <a id="c3-empty-manual-close"></a>
 ### Empty manual month and intentional-empty Close (#952)
 
@@ -3522,6 +3545,24 @@ guards are unchanged. The standalone inventory reports
 `financial_apply_available=false`; recognition cannot complete source-account
 bookkeeping. The separate financial contract/writer and later Owner UAT remain
 outside this adapter.
+
+### Strict dividend Money v2 (#711)
+
+`broker_money_v2` is a separate typed envelope; default Money v1 adapter, DTO
+dumps and historical fingerprints stay frozen. The v2 adapter uses the existing
+full dividend/registration/issuer grammar and S1 precedence. Only positive exact
+RUB minor units and a current unambiguous registration-to-ISIN stock identity
+qualify. Provisional journal linkage or issuer-name tie-break is insufficient.
+API minor-unit observations are strings.
+
+The complete original/occurrence union and independent final-net basis bind the
+review. Indistinguishable multiplicity, missing originals, tax/reversal cash legs
+and unsupported text block acceptance. Distinguishable events may share dates and
+amounts. Each event uses the existing native-net ICF writer and occurrence owner;
+cash and H2/ExternalFlow are not incremented. Gross, tax and commission stay NULL;
+the narrative tax is annotation only. Initial ownership of legacy manual/PDF/gross
+dividends is outside this contract; only already source-owned native-net dividends
+can be reused. Existing coupon/PDF behavior and financial formulas are unchanged.
 
 <a id="c5-mybroker_s2_a-12"></a>
 ### Executed trades, settlement, commission and paid NKD
@@ -11396,6 +11437,39 @@ Selective quote Apply reuses its immutable reviewed Preview, exact target snapsh
 ## 9. Providers, freshness, reconciliation and source units
 
 T-Invest market data, Alfa current snapshots, MyBroker historical originals, PDF realised payouts and MOEX identity/reference data have separate authority. No provider omission or empty/error result silently deletes facts or proves zero. Reconciliation preview is not Apply eligibility. Retain immutable source/quote provenance, exact Decimal parsing and version-specific typed diagnostics; never invent fallback protocol behavior.
+
+### Durable actual payout settlement (#711)
+
+ICF remains the sole actual net fact; APP/ECF remain forecasts. The existing
+reconciliation table stores immutable `count_actual` provenance to exact ICF,
+Money receipt, APP revision and/or ECF revision, canonical event key and settlement
+receipt. No amount enters a second ledger and no paid APP lifecycle is introduced.
+
+Full-settlement evidence binds exact account/instrument/kind/RUB, accepted active
+provider identity or exact manual row/version, complete source dependencies and
+physical database incarnation. All involved months must be editable. Proximity
+within three calendar days creates an unresolved candidate only; amount/date
+equality never recognizes payment. Current links and identical DRAFT APP copies
+of the same canonical event are excluded from eligible future rows. Unresolved
+competitors retain unknown coverage and a known-subtotal warning through forecast,
+ladder, dashboard, analysis and scenario consumers. A current distinct receipt
+resolves only its exact pair. Historical out-of-horizon forecasts and cancelled
+rows do not create a new obligation on their own. CLOSED views stay historical.
+The immutable receipt records which DRAFT future projections it covered. Normal
+Close preserves those projections; an already CLOSED copy gains no new paid
+authority. Retirement requires every covered historical scope to be editable.
+Reopen changes the reviewed forecast-month generation, even before a first link;
+generation changes in months outside the reviewed candidate set do not stale it.
+
+R1 acceptance → R2 retirement → R3 reaffirmation preserves R1.retired_request_id=R2;
+R3 binds that exact terminal predecessor and retirement. LIVE replacement stamps
+R1 with R3 before inserting its unique successor atomically. Increasing revisions,
+partial unique slots, FK/SQL guards and reserved rereads prevent forks, ABA, revival
+and duplicate active links. Receipts are never rewritten. Same-request replay
+reads the original receipt/current state, including after Close; changed payload
+returns 409. Material writers retire affected links transactionally and append
+scoped generations, including before a first link. ECF A→B→A advances a monotone
+counter; notes do not. Legacy conversion preserves both forecast sides.
 
 <a id="c9-freshness_provenance-1"></a>
 ### Independent freshness clocks and provenance

@@ -281,6 +281,7 @@ def coherent_read_operation(
 
 
 def create_database(database_path: Path) -> Database:
+    from hermes_finance.actual_payout_schema import install_hooks as actual_payout_hooks
     from hermes_finance.services.broker_money_lifecycle import install_hooks as money_hooks
     from hermes_finance.services.database_admission import database_admission
     from hermes_finance.services.historical_endpoint_lifecycle import install_hooks
@@ -289,6 +290,7 @@ def create_database(database_path: Path) -> Database:
         install_hooks as portfolio_hooks,
     )
     from hermes_finance.services.mybroker_dispositions import install_hooks as skip_hooks
+    from hermes_finance.services.payout_link_lifecycle import install_hooks as payout_link_hooks
     from hermes_finance.services.source_cash_coverage_lifecycle import install_hooks as cash_hooks
     from hermes_finance.services.source_intake import install_hooks as intake_hooks
     from hermes_finance.source_proof_file import file_incarnation
@@ -302,6 +304,8 @@ def create_database(database_path: Path) -> Database:
     portfolio_hooks()
     money_hooks()
     proof_hooks()
+    actual_payout_hooks()
+    payout_link_hooks()
     resolved_path = database_path.expanduser().resolve()
     with database_admission(resolved_path):
         resolved_path.parent.mkdir(parents=True, exist_ok=True)

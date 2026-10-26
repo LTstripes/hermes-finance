@@ -1618,12 +1618,17 @@ def assemble_ai_analysis_bundle(
         )
     )
     unresolved_scopes: set[tuple[int, int, str]] = set()
+    from hermes_finance.services.actual_payouts import future_states
+
+    actual_states = future_states(session, current.id)
     for payout in skipped_providers:
-        if payout.id in calendar_provider_ids:
+        if payout.id in calendar_provider_ids or ("app", payout.id) in actual_states:
             continue
         reconciliation = session.scalar(
             select(AppliedPayoutReconciliation).where(
-                AppliedPayoutReconciliation.applied_payout_id == payout.id
+                AppliedPayoutReconciliation.applied_payout_id == payout.id,
+                AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+                AppliedPayoutReconciliation.retired_request_id.is_(None),
             )
         )
         if (
@@ -1646,6 +1651,14 @@ def assemble_ai_analysis_bundle(
     flow_items.sort(key=lambda item: (item["expected_date"], item["event_ref"]))
 
     payout_warnings: list[str] = []
+    if any(bucket.actual_attribution_coverage == "unknown" for bucket in calendar):
+        payout_warnings.append("source_payout_attribution_unknown")
+        add_warning(
+            "source_payout_attribution_unknown",
+            "warning",
+            "upcoming_cash_flows",
+            "Only the known future subtotal is shown; unresolved actual attribution is not zero.",
+        )
     if any(item["duplicate_resolution"] == "unresolved_manual_only" for item in flow_items):
         payout_warnings.append("unresolved_provider_mapping")
         add_warning(

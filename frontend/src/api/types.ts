@@ -1174,6 +1174,7 @@ export type ExpectedCalendarItem = {
 
 /** Aggregated expected payouts for one calendar month (E16). */
 export type ExpectedCalendarMonth = {
+  actual_attribution_coverage?: "complete" | "unknown";
   year: number;
   month: number;
   coupon: MoneyValue;

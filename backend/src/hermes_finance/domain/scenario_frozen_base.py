@@ -178,6 +178,7 @@ class FrozenScenarioBase:
     forecast: FrozenForecastInputs
     ladder: FrozenLadder
     base_fingerprint: str
+    payout_warnings: tuple[str, ...] = ()
 
     def deposit_by_id(self, deposit_id: int) -> FrozenDeposit | None:
         for deposit in self.deposits:

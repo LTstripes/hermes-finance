@@ -208,6 +208,32 @@ def main():
                     )
 
         # Build the accepted return proof after all catalogue/account dependencies.
+        from datetime import UTC, datetime
+
+        from hermes_finance.persistence import SecurityRegIsinMapping
+
+        with database.session_factory() as session:
+            payout_account = create_account(
+                session, name="Synthetic payout settlement", account_type="brokerage"
+            )
+            for alias in ("7116600", "7116600-000"):
+                confirm_mapping(
+                    session,
+                    provider="alfa_mybroker",
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_target_id=payout_account.id,
+                )
+            create_reporting_month(session, year=2036, month=1, snapshot_date=date(2036, 1, 31))
+            session.add(
+                SecurityRegIsinMapping(
+                    reg_number="1-01-00000-A",
+                    isin="RU000A000000",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
         seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
@@ -239,6 +265,22 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "dividend-settlement":
+                from test_statement_import_payout_reconciliation import (
+                    dividend_xml,
+                    move_payout_posted_date,
+                )
+
+                raw = (
+                    dividend_xml()
+                    .replace(b"1234567", b"7116600")
+                    .replace(b"31.12.2029", b"31.12.2035")
+                    .replace(b".01.2030", b".01.2036")
+                    .replace(b"2030-01-", b"2036-01-")
+                )
+                return Response(
+                    move_payout_posted_date(raw, "2036-01-31"), media_type="application/xml"
+                )
             if kind in {"workspace-october-a", "workspace-october-b"}:
                 alias = b"7114001" if kind.endswith("a") else b"7114002"
                 raw = (

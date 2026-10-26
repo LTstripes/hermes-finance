@@ -339,7 +339,11 @@ def _load_reconciliation(
     return list(
         session.scalars(
             select(AppliedPayoutReconciliation)
-            .where(AppliedPayoutReconciliation.applied_payout_id.in_(ids))
+            .where(
+                AppliedPayoutReconciliation.applied_payout_id.in_(ids),
+                AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+                AppliedPayoutReconciliation.retired_request_id.is_(None),
+            )
             .order_by(AppliedPayoutReconciliation.id)
         )
     )

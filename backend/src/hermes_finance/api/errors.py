@@ -27,6 +27,7 @@ from hermes_finance.diagnostics import request_route
 from hermes_finance.services.backups import RestoreOutcomeAmbiguousError
 from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.debts import DebtAccountLinkConflictError
+from hermes_finance.services.expected_cash_flows import ExpectedCashFlowRetainedByActualError
 from hermes_finance.services.instruments import InstrumentDeletionBlockedError
 from hermes_finance.services.linked_pairs import (
     LinkedPairBalanceEvidenceConflictError,
@@ -231,6 +232,16 @@ def _validation_message(error: dict) -> str:
 
 def register_error_handlers(application: FastAPI) -> None:
     """Register unified exception handlers on *application*."""
+
+    @application.exception_handler(ExpectedCashFlowRetainedByActualError)
+    async def _retained_forecast_handler(
+        request: Request, exc: ExpectedCashFlowRetainedByActualError
+    ) -> JSONResponse:
+        return _error_response(
+            409,
+            "retained_by_actual_reconciliation",
+            "Прогноз сохранён в истории сверки фактической выплаты. Удаление недоступно.",
+        )
 
     @application.exception_handler(StarletteHTTPException)
     async def _http_exception_handler(

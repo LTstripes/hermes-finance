@@ -2,7 +2,7 @@ import { apiMultipart, apiRequest } from "./client";
 
 export type MoneyOccurrence = { import_id: number; section: "money"; ordinal: number };
 export type MoneyDecision = {
-  role: "coupon" | "account_funding" | "trade";
+  role: "coupon" | "dividend" | "account_funding" | "trade";
   seed: MoneyOccurrence;
   operation?: "accept" | "corroborate" | "reaffirm";
   instrument_id?: number;
@@ -13,6 +13,17 @@ export type MoneyDecision = {
     actual_coupon_payment: boolean;
     exact_row_instrument_link: boolean;
     complete_occurrence_set_is_one_event: boolean;
+    existing_target_is_same_payment: boolean;
+  };
+  dividend_claims?: {
+    reference: string;
+    independent_net_basis_reference: string;
+    review_context_digest: string;
+    actual_ordinary_stock_dividend: boolean;
+    exact_row_stock_link: boolean;
+    complete_occurrence_set_is_one_event: boolean;
+    posted_amount_is_final_net_credit: boolean;
+    withholding_is_embedded_not_additional_cash_leg: boolean;
     existing_target_is_same_payment: boolean;
   };
   owner_flow_intent?: Record<string, unknown>;
@@ -42,14 +53,14 @@ export type MoneyDecision = {
       };
 };
 export type MoneyIntent = {
-  contract_version: "broker_money_v1";
+  contract_version: "broker_money_v1" | "broker_money_v2";
   base_request_id: string;
   reporting_month_id: number;
   account_id: number;
   money_decisions: MoneyDecision[];
 };
 export type MoneyPreview = {
-  contract_version: "broker_money_v1";
+  contract_version: "broker_money_v1" | "broker_money_v2";
   confirmation_digest: string;
   account_id: number;
   reporting_month_id: number;
@@ -59,6 +70,8 @@ export type MoneyPreview = {
     new_coupon_facts: number;
     new_account_flow_facts: number;
     selected_coupon_net_minor: string | null;
+    new_dividend_facts?: number;
+    selected_dividend_net_minor?: string | null;
   };
   blockers: string[];
   exceptions: string[];
@@ -99,7 +112,7 @@ export type MoneyPreview = {
   }[];
 };
 export type MoneyTarget = {
-  role: "coupon" | "account_funding" | "trade";
+  role: "coupon" | "dividend" | "account_funding" | "trade";
   target_id: string | number;
   facts: Record<string, string | null> | null;
   components?: Record<string, string | null>;
@@ -114,7 +127,7 @@ export type MoneyTarget = {
   };
 };
 export type MoneyReadback = {
-  contract_version: "broker_money_v1";
+  contract_version: "broker_money_v1" | "broker_money_v2";
   request_id: string;
   confirmation_digest: string;
   base_request_id: string;

@@ -345,12 +345,17 @@ def _unresolved_payout_items(session: Session, month) -> list[CloseReadinessItem
         )
     )
     unresolved_ids: list[int] = []
+    from hermes_finance.services.actual_payouts import future_states
+
+    actual_states = future_states(session, month.id)
     for payout in payouts:
-        if payout.id in calendar_provider_ids:
+        if payout.id in calendar_provider_ids or ("app", payout.id) in actual_states:
             continue
         reconciliation = session.scalar(
             select(AppliedPayoutReconciliation).where(
-                AppliedPayoutReconciliation.applied_payout_id == payout.id
+                AppliedPayoutReconciliation.applied_payout_id == payout.id,
+                AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+                AppliedPayoutReconciliation.retired_request_id.is_(None),
             )
         )
         if (

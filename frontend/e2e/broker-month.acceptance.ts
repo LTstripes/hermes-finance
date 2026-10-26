@@ -1791,3 +1791,194 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     fullPage: true,
   });
 });
+
+test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, retirement reaffirmation", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(150000);
+  page.setDefaultTimeout(15000);
+  const months = await (await request.get("/api/months")).json();
+  const month = months.find(
+    (row: { year: number; month: number }) => row.year === 2036 && row.month === 1,
+  );
+  const accounts = await (await request.get("/api/accounts")).json();
+  const account = accounts.find(
+    (row: { name: string }) => row.name === "Synthetic payout settlement",
+  );
+  const instruments = await (await request.get("/api/instruments")).json();
+  const stock = instruments.find((row: { isin: string }) => row.isin === "RU000A000000");
+  const scope = { reporting_month_id: month.id, account_id: account.id };
+  const xml = await (await request.get("/api/synthetic-broker-source/dividend-settlement")).body();
+  const original = {
+    name: "Брокерский 7116600 (01.01.36-31.01.36).xml",
+    mimeType: "application/xml",
+    buffer: xml,
+  };
+  const sourcePreview = await request.post("/api/broker-months/preview", {
+    multipart: { file: original, intent: JSON.stringify(scope) },
+  });
+  expect(sourcePreview.ok(), await sourcePreview.text()).toBe(true);
+  const plan = await sourcePreview.json();
+  const source = await request.post("/api/broker-months/apply", {
+    multipart: {
+      file: original,
+      confirmation: JSON.stringify({
+        ...scope,
+        request_id: "desktop-dividend-base",
+        confirmation_digest: plan.confirmation_digest,
+        reviewed_account_bindings: plan.account_bindings,
+      }),
+    },
+  });
+  expect(source.ok(), await source.text()).toBe(true);
+  const ecf = await request.post("/api/expected-flows", {
+    data: {
+      ...scope,
+      instrument_id: stock.id,
+      flow_type: "dividend",
+      expected_date: "2036-02-01",
+      gross_amount: { amount: "1130.00", currency: "RUB" },
+      expected_tax_amount: { amount: "130.00", currency: "RUB" },
+      source: "synthetic-independent-forecast",
+      source_as_of_date: "2036-01-31",
+      forecast_version: "v1",
+    },
+  });
+  expect(ecf.ok(), await ecf.text()).toBe(true);
+  const manual = await ecf.json();
+  await page.goto(`/v2/close?month=${month.id}&panel=brokers`);
+  await showSourceReview(page);
+  await page.getByText("Принять Money в этот черновик", { exact: true }).click();
+  await page.getByLabel(/Оригинальные XML для Money/).setInputFiles(original);
+  await page.getByLabel("Проверять также строгие net-дивиденды").check();
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  const inventory = page.getByRole("table", { name: "Все наблюдения Money" });
+  await expect(inventory).toContainText("dividend_paid_candidate");
+  await inventory
+    .getByRole("row")
+    .filter({ hasText: "dividend_paid_candidate" })
+    .getByRole("checkbox")
+    .check();
+  await inventory
+    .getByRole("row")
+    .filter({ hasText: "account_cash_in_candidate" })
+    .getByRole("checkbox")
+    .check();
+  await page.getByLabel(/Подтверждённая акция для строки/).selectOption(String(stock.id));
+  await page
+    .getByLabel("Независимое основание окончательного net-зачисления")
+    .fill("synthetic-final-net");
+  await page.getByRole("button", { name: "Проверить Money", exact: true }).click();
+  await page
+    .getByRole("checkbox", { name: /Я подтверждаю перечисленные конкретные решения Money/ })
+    .check();
+  await page.getByRole("button", { name: "Принять один Money batch", exact: true }).click();
+  const stored = page.getByRole("table", { name: "Сохранённые Money и доказательства покупки" });
+  await expect(stored).toContainText("Дивиденд", { timeout: 30000 });
+  await expect(stored).toContainText("Неизвестно");
+  const sourceRead = await (await request.get("/api/broker-months/desktop-dividend-base")).json();
+  const moneyId = sourceRead.money_acceptance.request_id;
+  expect(sourceRead.money_acceptance.contract_version).toBe("broker_money_v2");
+  const moneyReceipt = await (await request.get(`/api/broker-months/${moneyId}`)).json();
+  const actual = moneyReceipt.targets.find(
+    (target: { role: string }) => target.role === "dividend",
+  );
+  expect(actual.facts.net_amount_kopecks).toBe("100000");
+  expect(actual.facts.tax_amount_kopecks).toBeNull();
+  const obligationUrl = `/api/broker-months/payout-obligations?reporting_month_id=${month.id}&account_id=${account.id}`;
+  expect((await (await request.get(obligationUrl)).json())[0].coverage_state).toBe("unknown");
+  const before = await (await request.get("/api/synthetic-broker-inventory")).json();
+  const review = page.getByRole("region", { name: "Сверка фактических выплат", exact: true });
+  async function prepareSettlement(operation: string, state: string) {
+    await review.getByText(`Выплата #${actual.target_id}: ${state}`, { exact: true }).click();
+    if (operation !== "link")
+      await review.getByRole("combobox", { name: "Решение", exact: true }).selectOption(operation);
+    else
+      await review
+        .getByRole("combobox", { name: "Ручной прогноз", exact: true })
+        .selectOption(String(manual.id));
+    for (const label of [
+      "Ссылка на проверенный источник",
+      "Основание точной связи события",
+      "Основание полного исполнения или отзыва",
+    ])
+      await review.getByLabel(label, { exact: true }).fill("synthetic-reviewed-event");
+    await review.getByRole("button", { name: "Проверить связь выплаты", exact: true }).click();
+    await review.getByRole("checkbox", { name: /Подтверждаю это конкретное решение/ }).check();
+  }
+  await prepareSettlement("link", "требуется сверка");
+  let r1 = "";
+  let payoutWrites = 0;
+  page.on("request", (sent) => {
+    if (sent.url().endsWith("/api/broker-months/payout-apply")) payoutWrites++;
+  });
+  await page.route(
+    "**/api/broker-months/payout-apply",
+    async (route) => {
+      r1 = route.request().postDataJSON().request_id;
+      const response = await route.fetch();
+      expect(response.ok(), await response.text()).toBe(true);
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
+  await expect(review.getByRole("button", { name: "Повторить GET связи" })).toBeVisible();
+  await page.goto(`/v2/returns?month=${month.id}`);
+  await page.goBack();
+  await page.reload();
+  await showSourceReview(page);
+  await review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }).click();
+  await expect(review.getByRole("button", { name: "Проверить связь выплаты" })).toBeDisabled();
+  await review.getByRole("button", { name: "Повторить GET связи" }).click();
+  await expect(review.getByRole("button", { name: "Повторить GET связи" })).toHaveCount(0);
+  expect(payoutWrites).toBe(1);
+  const first = await (await request.get(`/api/broker-months/${r1}`)).json();
+  expect(first.relations[0].state).toBe("paid");
+  const calendar = await (
+    await request.get(`/api/payouts/calendar?month_id=${month.id}&forecast_version=v1`)
+  ).json();
+  expect(calendar).toEqual([]);
+  await page.screenshot({
+    path: info.outputPath("payout-independent-get-after-reload.png"),
+    fullPage: true,
+  });
+  await prepareSettlement("retire", "исполнено");
+  const retirement = page.waitForRequest((sent) =>
+    sent.url().endsWith("/api/broker-months/payout-apply"),
+  );
+  await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
+  const r2 = (await retirement).postDataJSON().request_id;
+  await expect(
+    review.getByText(`Выплата #${actual.target_id}: доказательство отозвано`, { exact: true }),
+  ).toBeVisible();
+  await prepareSettlement("reaffirm", "доказательство отозвано");
+  await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
+  await expect(
+    review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }),
+  ).toBeVisible();
+  const old = await (await request.get(`/api/broker-months/${r1}`)).json();
+  expect(old.accepted).toEqual(first.accepted);
+  expect(old.relations[0].retired_request_id).toBe(r2);
+  const after = await (await request.get("/api/synthetic-broker-inventory")).json();
+  for (const [table, digest] of Object.entries(before.table_digests)) {
+    if (!["broker_month_applies", "applied_payout_reconciliations"].includes(table))
+      expect(after.table_digests[table], table).toBe(digest);
+  }
+  expect((await (await request.get(`/api/broker-months/${moneyId}`)).json()).accepted).toEqual(
+    moneyReceipt.accepted,
+  );
+  const [workflowAfterReload] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      { timeout: 30000 },
+    ),
+    page.reload(),
+  ]);
+  expect(workflowAfterReload.status()).toBe(200);
+  await showSourceReview(page);
+  await expect(
+    review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }),
+  ).toBeVisible();
+});

@@ -253,10 +253,13 @@ def list_applied_payout_revisions(
 def get_applied_payout_reconciliation(
     session: Session, applied_payout_id: int
 ) -> AppliedPayoutReconciliation | None:
+    """Read the legacy APP/ECF decision; actual links have their own receipt reader."""
     get_applied_payout(session, applied_payout_id)
     return session.scalar(
         select(AppliedPayoutReconciliation).where(
-            AppliedPayoutReconciliation.applied_payout_id == applied_payout_id
+            AppliedPayoutReconciliation.applied_payout_id == applied_payout_id,
+            AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+            AppliedPayoutReconciliation.retired_request_id.is_(None),
         )
     )
 
@@ -526,6 +529,7 @@ def set_applied_payout_reconciliation(
     counting_decision: PayoutCountingDecision | str,
 ) -> AppliedPayoutReconciliation:
     payout = get_applied_payout(session, applied_payout_id)
+    _require_forecast_only_history(session, applied_payout_id)
     require_editable_reporting_month(session, payout.reporting_month_id)
     flow = session.get(ExpectedCashFlow, expected_cash_flow_id)
     if flow is None:
@@ -558,12 +562,26 @@ def set_applied_payout_reconciliation(
 
 def clear_applied_payout_reconciliation(session: Session, applied_payout_id: int) -> None:
     payout = get_applied_payout(session, applied_payout_id)
+    _require_forecast_only_history(session, applied_payout_id)
     require_editable_reporting_month(session, payout.reporting_month_id)
     link = get_applied_payout_reconciliation(session, applied_payout_id)
     if link is None:
         return
     session.delete(link)
     session.flush()
+
+
+def _require_forecast_only_history(session, payout_id):
+    links = session.scalars(
+        select(AppliedPayoutReconciliation).where(
+            AppliedPayoutReconciliation.applied_payout_id == payout_id
+        )
+    )
+    if any(
+        link.investment_cash_flow_id is not None or link.retired_request_id is not None
+        for link in links
+    ):
+        raise ValueError("actual_reconciliation_requires_review")
 
 
 def assert_no_raw_provider_payload_columns() -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -103,6 +104,7 @@ class CalendarMonthOut(BaseModel):
     passive_net: MoneyValue
     total_net: MoneyValue
     items: list[CalendarItemOut]
+    actual_attribution_coverage: Literal["complete", "unknown"] = "complete"
 
 
 def _validate_flow_type(value: str) -> str:
@@ -165,6 +167,7 @@ def calendar_flows(
     return [
         CalendarMonthOut(
             year=month.year,
+            actual_attribution_coverage=month.actual_attribution_coverage,
             month=month.month,
             coupon=_money_amount(month.coupon),
             dividend=_money_amount(month.dividend),

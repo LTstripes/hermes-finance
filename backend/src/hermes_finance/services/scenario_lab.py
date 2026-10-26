@@ -1039,7 +1039,7 @@ def evaluate_scenario_lab(
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),
         generated_at=gen_str,
-        warnings=(),
+        warnings=frozen.payout_warnings,
         presentation_metadata=presentation_metadata,
     )
 
@@ -1594,7 +1594,7 @@ def _evaluate_deposit_rate_assumption(
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),
         generated_at=gen_str,
-        warnings=(),
+        warnings=frozen.payout_warnings,
         presentation_metadata=presentation_metadata,
     )
 
@@ -2049,7 +2049,7 @@ def _evaluate_inflation_real_value(
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),
         generated_at=gen_str,
-        warnings=(),
+        warnings=frozen.payout_warnings,
         presentation_metadata=presentation_metadata,
     )
 
@@ -2414,6 +2414,6 @@ def _evaluate_fx_translation_shock(
         coverage=coverage,
         affected_canonical_refs=dict(sorted(affected_refs.items())),
         generated_at=gen_str,
-        warnings=(),
+        warnings=frozen.payout_warnings,
         presentation_metadata=presentation_metadata,
     )

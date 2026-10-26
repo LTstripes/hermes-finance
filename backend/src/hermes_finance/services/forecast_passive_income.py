@@ -26,6 +26,8 @@ Key invariants (wiki §7):
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -46,7 +48,10 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.passive_income import passive_income_for_months
-from hermes_finance.services.payout_calendar import merged_payout_calendar
+from hermes_finance.services.payout_calendar import (
+    INCOMPLETE_PAYOUT_WARNING,
+    merged_payout_calendar,
+)
 from hermes_finance.services.reporting_months import get_reporting_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
@@ -143,7 +148,7 @@ def forecast_passive_income(
     history_start_month = parse_passive_income_history_start_month(
         settings.passive_income_history_start_month if settings is not None else None
     )
-    return calculate_forecast_passive_income(
+    result = calculate_forecast_passive_income(
         ForecastPassiveIncomeInput(
             expected_flows=tuple(expected_flows),
             dividend_months=tuple(dividend_months),
@@ -151,3 +156,6 @@ def forecast_passive_income(
             deposit_snapshot_monthly_interest_kopecks=deposit_snapshot_monthly_interest_kopecks,
         )
     )
+    if any(month.actual_attribution_coverage == "unknown" for month in merged_months):
+        result = replace(result, warnings=(*result.warnings, INCOMPLETE_PAYOUT_WARNING))
+    return result

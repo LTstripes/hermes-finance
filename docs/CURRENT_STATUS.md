@@ -1,12 +1,21 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-25**. This is the sole changing project status book. Current source
+Updated **2026-10-26**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
 are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
+
+**Worker candidate, not integrated:** #711 source-owned payout settlement,
+strict dividend Money v2 and scoped Close on branch `worker/711-financial-0066`,
+based on live main `b03681b9bec1474a6bb6c8cf37ca30093df7447f` (test-only #969).
+The retirement amendment is implemented for separate R2 and atomic LIVE replacement;
+the candidate adds `0066_actual_payout_links`. Its draft PR must carry exact-HEAD
+CI and synthetic migration/API/UI evidence for independent financial/migration
+review. No acceptance, release, installation, real migration or runtime operation
+is implied. Integration remains with ChatGPT Integrator.
 
 **Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),
