@@ -15,6 +15,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "backend/tests"))
     from hermes_finance.main import create_app
+    from hermes_finance.persistence import Instrument
     from hermes_finance.services.reporting_months import create_reporting_month
     from hermes_finance.services.source_intake import save_intake
     from hermes_finance.statement_import.mybroker import NS
@@ -23,11 +24,16 @@ def main():
         _free_database,
         provisional_xml,
     )
-    from test_statement_import_mybroker import ACCOUNT
+    from test_statement_import_mybroker import ACCOUNT, ISIN
 
     with TemporaryDirectory(prefix="returns-synthetic-") as temporary:
         db = _free_database(Path(temporary))
         with db.session_factory() as session:
+            session.add(
+                Instrument(
+                    isin=ISIN, name="Учебная акция из каталога", instrument_type="stock"
+                )
+            )
             closed = create_reporting_month(
                 session, year=2030, month=4, snapshot_date=date(2030, 4, 30)
             )
@@ -41,6 +47,7 @@ def main():
             tree = ET.fromstring(raw)
             pos = tree.find(".//m:Details[@ISIN1]", NS)
             pos.attrib.update(
+                active_name=ISIN,
                 income_rest="10",
                 real_rest="10",
                 forward_rest="10",

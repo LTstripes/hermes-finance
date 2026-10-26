@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import PerformanceScope
-from hermes_finance.persistence import Account, ReportingMonth, SourceIntakeOriginal
+from hermes_finance.persistence import Account, Instrument, ReportingMonth, SourceIntakeOriginal
 from hermes_finance.services.performance_attribution import performance_attribution_for_interval
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
@@ -106,7 +106,26 @@ def _instrument_metric(item, *, unit="kopecks"):
     )
 
 
-def _instrument(row, start, end):
+def _display_name(name, isin):
+    name = (name or "").strip()
+    return name if name and name.upper() != isin.upper() else None
+
+
+def _catalogue_names(session, rows):
+    # Exact stored ISIN only. Aliases, tickers and broker mappings cannot establish
+    # identity here. This metadata does not change the source reader's authority.
+    isins = {row.isin for row in rows if not _display_name(row.source_name, row.isin)}
+    if not isins:
+        return {}
+    return {
+        isin: _display_name(name, isin)
+        for isin, name in session.execute(
+            select(Instrument.isin, Instrument.name).where(Instrument.isin.in_(isins))
+        )
+    }
+
+
+def _instrument(row, start, end, catalogue_names):
     analysis = row.analysis
     if (analysis.opening_date, analysis.closing_date, analysis.contract_version) != (
         start,
@@ -116,7 +135,9 @@ def _instrument(row, start, end):
         raise ValueError("returns_period_mismatch")
     return {
         "isin": row.isin,
-        "name": row.source_name or row.isin,
+        "name": _display_name(row.source_name, row.isin)
+        or catalogue_names.get(row.isin)
+        or row.isin,
         "kind": row.instrument_type,
         "period": bounds(start, end),
         "pnl": _instrument_metric(analysis.pnl),
@@ -240,12 +261,13 @@ def _source_view(session, account, start, end):
     if instruments.instruments:
         analysis = instruments.instruments[0].analysis
         periods.append(bounds(analysis.history_start, analysis.history_end))
+    names = _catalogue_names(session, instruments.instruments)
     return {
         "selected": selected,
         "all_history": whole,
         "history": history,
         "periods": periods,
-        "instruments": [_instrument(row, start, end) for row in instruments.instruments],
+        "instruments": [_instrument(row, start, end, names) for row in instruments.instruments],
         "instrument_reason_codes": [],
         "proof_status": (monthly.source_proof or {}).get("status", "absent"),
     }
@@ -347,7 +369,7 @@ def read_detail(session, *, scope, start, end, isin):
         analysis = row.analysis
         return {
             "scope": scope,
-            **_instrument(row, start, end),
+            **_instrument(row, start, end, _catalogue_names(session, (row,))),
             "opening_quantity": None
             if analysis.opening.quantity is None
             else str(analysis.opening.quantity),

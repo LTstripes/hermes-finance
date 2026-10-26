@@ -298,7 +298,8 @@
 .instruments td {
   font-variant-numeric: tabular-nums;
 }
-.instruments small {
+.instruments small,
+.tops small {
   display: block;
   color: #607084;
   font-size: 10px;
