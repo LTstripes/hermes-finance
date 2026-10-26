@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 async function monthPanel(page: Page, panel: "brokers" | "close") {
   await page
@@ -1927,7 +1927,14 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
   await expect(review.getByRole("button", { name: "Повторить GET связи" })).toBeVisible();
   await page.goto(`/v2/returns?month=${month.id}`);
   await page.goBack();
-  await page.reload();
+  const [workflowAfterBackReload] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      { timeout: 30000 },
+    ),
+    page.reload(),
+  ]);
+  expect(workflowAfterBackReload.status()).toBe(200);
   await showSourceReview(page);
   await review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }).click();
   await expect(review.getByRole("button", { name: "Проверить связь выплаты" })).toBeDisabled();
