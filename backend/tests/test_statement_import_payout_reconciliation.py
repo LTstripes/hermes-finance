@@ -579,7 +579,13 @@ def test_two_accounts_same_provider_event_independent_legacy_conversion_and_live
         instrument_id = actual_a.instrument_id
     r1, _ = accept(client, intent_a, "A-R1", provider_key="n:1")
     assert r1["relations"][0]["state"] == "paid"
+    from test_close_readiness import _workflow_step
+
+    step = _workflow_step(client, intent_a["reporting_month_id"], "future_payouts")
+    assert step["state"] == "completed"
+    assert "payout_reconciliation_changed" not in step["reason_codes"]
     with database.session_factory() as session:
+        assert session.get(AppliedPayoutReconciliation, legacy.id).retired_request_id == "A-R1"
         account_b = create_account(session, name="Synthetic broker B", account_type="brokerage")
         for alias in ("7654321", "7654321-000"):
             confirm_mapping(
@@ -1259,3 +1265,152 @@ def test_future_and_close_without_competitors_do_not_scan_unrelated_economic_pro
         assert actual_payouts.future_states(session, manual.id) == {}
         assert actual_payouts.future_states(session, intent["reporting_month_id"]) == {}
         assert actual_payouts.close_blockers(session, intent["reporting_month_id"]) == ()
+
+
+@pytest.mark.parametrize("settlement", ["near"], indirect=True)
+def test_cross_month_reclose_never_revives_stale_paid_projection(database, settlement):
+    from hermes_finance.persistence import ReportingMonth
+    from hermes_finance.services.actual_payouts import future_states
+    from hermes_finance.services.reporting_months import (
+        close_hard_guards,
+        close_reporting_month,
+        reopen_reporting_month,
+    )
+
+    client, intent = settlement
+    with database.session_factory() as session:
+        session.delete(session.get(ExpectedCashFlow, intent["expected_cash_flow_id"]))
+        session.commit()
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        forecast_scope = forecast_month(
+            session, actual, year=2029, month=12, snapshot_date=date(2029, 12, 31)
+        )
+        app_id = create_provider_forecast(session, forecast_scope)
+    month_b = forecast_scope.reporting_month_id
+    intent = {**intent, "applied_payout_id": app_id, "expected_cash_flow_id": None}
+    r1, _ = accept(client, intent, "cross-R1", provider_key="n:1")
+    calendar_url = f"/api/payouts/calendar?month_id={month_b}&forecast_version=synthetic-v1"
+
+    def check(expected):
+        before = database_bytes(database)
+        get = client.get("/api/broker-months/cross-R1").json()
+        assert get["relations"][0]["state"] == ("paid" if expected == "paid" else "stale")
+        assert get["accepted"] == r1["accepted"]
+        with database.session_factory() as session:
+            assert future_states(session, month_b) == {("app", app_id): expected}
+        calendar = client.get(calendar_url)
+        assert calendar.status_code == 200, calendar.text
+        if expected == "paid":
+            assert calendar.json() == []
+        else:
+            assert calendar.json() and all(not b["items"] for b in calendar.json())
+            assert all(b["actual_attribution_coverage"] == "unknown" for b in calendar.json())
+        assert database_bytes(database) == before
+
+    check("paid")
+    with database.session_factory() as session:
+        assert close_hard_guards(session.get(ReportingMonth, month_b), session) == ()
+        close_reporting_month(session, month_b)
+    check("paid")  # Normal Close retains the reviewed projection.
+    with database.session_factory() as session:
+        reopen_reporting_month(session, month_b)
+    check("unresolved")
+    with database.session_factory() as session:
+        # Actual A does not add a global HARD block to manual-only month B.
+        assert close_hard_guards(session.get(ReportingMonth, month_b), session) == ()
+        close_reporting_month(session, month_b)
+    check("unresolved")  # A second Close must never silently reaffirm R1.
+    with database.session_factory() as session:
+        reopen_reporting_month(session, month_b)
+    r3, _ = accept(
+        client,
+        {**intent, "operation": "reaffirm", "predecessor_id": r1["relations"][0]["id"]},
+        "cross-R3",
+        provider_key="n:1",
+    )
+    assert r3["relations"][0]["state"] == "paid"
+    with database.session_factory() as session:
+        close_reporting_month(session, month_b)
+        assert future_states(session, month_b) == {("app", app_id): "paid"}
+    assert client.get(calendar_url).json() == []
+    old = client.get("/api/broker-months/cross-R1").json()
+    assert old["accepted"] == r1["accepted"]
+    assert old["relations"][0]["retired_request_id"] == "cross-R3"
+
+
+@pytest.mark.parametrize("cross_month", [False, True])
+def test_app_only_month_workflow_uses_actual_lineage_not_null_ecf(
+    database, settlement, cross_month
+):
+    from test_close_readiness import _workflow_step
+
+    from hermes_finance.persistence import AppliedProviderPayout, ReportingMonth
+    from hermes_finance.services.month_close_workflow import _future_payout_dependencies
+
+    client, intent = settlement
+    with database.session_factory() as session:
+        session.delete(session.get(ExpectedCashFlow, intent["expected_cash_flow_id"]))
+        session.commit()
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        target = (
+            forecast_month(session, actual, year=2029, month=12, snapshot_date=date(2029, 12, 31))
+            if cross_month
+            else actual
+        )
+        app_id = create_provider_forecast(session, target)
+        review_month_id = target.reporting_month_id
+    intent = {**intent, "applied_payout_id": app_id, "expected_cash_flow_id": None}
+
+    def workflow(warning):
+        before = database_bytes(database)
+        with database.session_factory() as session:
+            counts = _future_payout_dependencies(
+                session,
+                session.get(ReportingMonth, review_month_id),
+                [session.get(AppliedProviderPayout, app_id)],
+            )
+            assert counts.position_missing == counts.quantity_changed == counts.mapping_changed == 0
+            assert bool(counts.reconciliation_changed) is warning
+            assert counts.affected_payouts == int(warning)
+        step = _workflow_step(client, review_month_id, "future_payouts")
+        assert ("payout_reconciliation_changed" in step["reason_codes"]) is warning
+        assert step["state"] == ("warning" if warning else "completed")
+        assert step["affects_close"] is False
+        assert database_bytes(database) == before
+
+    workflow(False)  # No ECF/actual link is not itself a reconciliation problem.
+    r1, _ = accept(client, intent, "month-R1", provider_key="n:1")
+    workflow(False)
+    if cross_month:
+        from hermes_finance.services.reporting_months import (
+            close_reporting_month,
+            reopen_reporting_month,
+        )
+
+        with database.session_factory() as session:
+            close_reporting_month(session, review_month_id)
+            reopen_reporting_month(session, review_month_id)
+        assert client.get("/api/broker-months/month-R1").json()["relations"][0]["state"] == "stale"
+        workflow(True)
+    r3, _ = accept(
+        client,
+        {**intent, "operation": "reaffirm", "predecessor_id": r1["relations"][0]["id"]},
+        "month-R3",
+        provider_key="n:1",
+    )
+    workflow(False)  # Retained R1 history is not a legacy forecast link.
+    accept(
+        client,
+        {**intent, "operation": "retire", "predecessor_id": r3["relations"][0]["id"]},
+        "month-R4",
+        provider_key="n:1",
+    )
+    workflow(True)  # The now-unresolved actual competitor still needs review.
+    r5, _ = accept(
+        client,
+        {**intent, "operation": "reaffirm", "predecessor_id": r3["relations"][0]["id"]},
+        "month-R5",
+        provider_key="n:1",
+    )
+    assert r5["relations"][0]["state"] == "paid"
+    workflow(False)

@@ -11460,6 +11460,13 @@ Close preserves those projections; an already CLOSED copy gains no new paid
 authority. Retirement requires every covered historical scope to be editable.
 Reopen changes the reviewed forecast-month generation, even before a first link;
 generation changes in months outside the reviewed candidate set do not stale it.
+A subsequent Close never resets an invalidated generation. Historical paid
+projections require the frozen reviewed scope's journal to still match the
+acceptance; unchanged journal history survives a same-schema physical restore.
+The guided Month consumer evaluates active legacy APP/ECF links separately from
+actual settlement currentness. APP-only settlement needs no ECF; retained retired
+links are not active legacy dependencies. Unresolved actual competitors retain
+an advisory reconciliation warning without extending the hard Close scope.
 
 R1 acceptance → R2 retirement → R3 reaffirmation preserves R1.retired_request_id=R2;
 R3 binds that exact terminal predecessor and retirement. LIVE replacement stamps

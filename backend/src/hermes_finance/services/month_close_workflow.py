@@ -507,7 +507,10 @@ def _future_payout_dependencies(
     links = list(
         session.scalars(
             select(AppliedPayoutReconciliation).where(
-                AppliedPayoutReconciliation.applied_payout_id.in_(payout_ids or {-1})
+                AppliedPayoutReconciliation.applied_payout_id.in_(payout_ids or {-1}),
+                AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+                AppliedPayoutReconciliation.retired_request_id.is_(None),
+                AppliedPayoutReconciliation.archived_from_period.is_(None),
             )
         )
     )
@@ -550,7 +553,17 @@ def _future_payout_dependencies(
             reconciliation_changed += 1
             if payout is not None:
                 affected_payout_ids.add(payout.id)
+    from hermes_finance.services.actual_payouts import future_states
+
+    actual_states = future_states(session, getattr(month, "id"))
     for payout in payouts:
+        actual_state = actual_states.get(("app", payout.id))
+        if actual_state == "paid":
+            continue  # This settled forecast has no legacy APP/ECF obligation.
+        if actual_state == "unresolved":
+            reconciliation_changed += 1
+            affected_payout_ids.add(payout.id)
+            continue
         link = reconciliation_by_payout.get(payout.id)
         candidate_ids = _manual_candidates_for_applied(
             payout,

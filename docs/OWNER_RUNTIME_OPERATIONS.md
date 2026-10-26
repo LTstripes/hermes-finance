@@ -629,6 +629,14 @@ prior sequence, both 0065 proof tables and all thirteen guards must survive,
 without new proof nonces from copying. Existing migration transaction handling
 restores FK enforcement after success or failure.
 
+Preflight requires the full released 0065 graph: all 136 trigger SQL bodies and
+81 explicit/implicit indexes, including source correction/disposition guards.
+Names, explicit SQL, uniqueness and complete index keys are checked before DDL;
+missing/modified/extra guards stop without changing data, schema or version.
+SQLite-generated implicit suffix-to-key assignment can vary through released
+Alembic reflection, so the exact name set and complete key multiset are checked
+per table. This does not permit a changed UNIQUE key or a weakened guard.
+
 Downgrade refuses before DDL for any v2/payout/dependency receipt, dividend owner,
 actual/retired link history or positive ECF revision. The populated 0065→0064
 prohibition remains unchanged; this is not a production rollback plan.

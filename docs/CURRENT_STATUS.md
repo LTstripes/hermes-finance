@@ -10,12 +10,20 @@ are evidence for their dated stage, not a newer installation status.
 
 **Worker candidate, not integrated:** #711 source-owned payout settlement,
 strict dividend Money v2 and scoped Close on branch `worker/711-financial-0066`,
-based on live main `b03681b9bec1474a6bb6c8cf37ca30093df7447f` (test-only #969).
+based on `b03681b9bec1474a6bb6c8cf37ca30093df7447f` (test-only #969).
+During remediation, live main advanced to `51e204015b6ccbe6c62d92fc1ee3bf0124bcc72b`
+(#971 exact-ISIN display names and #972 Month redirect query/hash preservation);
+those changes were inspected without integrating them into this Worker branch.
 The retirement amendment is implemented for separate R2 and atomic LIVE replacement;
 the candidate adds `0066_actual_payout_links`. Its draft PR must carry exact-HEAD
 CI and synthetic migration/API/UI evidence for independent financial/migration
 review. No acceptance, release, installation, real migration or runtime operation
 is implied. Integration remains with ChatGPT Integrator.
+[Integrator HOLD on #970](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6423924559)
+identified Reopen/reclose paid resurrection, an APP-only Month warning and an
+incomplete historical guard preflight. This same-PR remediation addresses those
+three findings; independent financial/source/migration re-review of the new
+exact HEAD remains required. Prior candidate CI does not clear the HOLD.
 
 **Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),

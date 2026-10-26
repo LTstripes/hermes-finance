@@ -1,6 +1,7 @@
 """Frozen 0065 rebuild inputs for #711. No released migration is edited."""
 
 import hashlib
+import json
 import re
 
 from sqlalchemy import event
@@ -377,6 +378,52 @@ def _check_integrity(connection):
         raise RuntimeError("0066_foreign_key_check_failed")
 
 
+# Raw SQL signatures from the unchanged 0001-0065 chain at main b03681b9.
+# The complete graph includes all 136 triggers and 81 explicit/implicit indexes.
+# Hashing SQL plus index uniqueness/keys also detects implicit constraint drift;
+# no whitespace/SQL normalization may bless a modified historical guard.
+RELEASED_GUARD_GRAPH_0065 = "785c94347c04744b50680e797d479cb2153721e189ecc28574b7efff199e1c9f"
+UNREBUILT_GUARD_GRAPH_0065 = "42dd6a557fddea2ab3e911fe2c8eb1289b0b3cf9fe0de2121fe32accb174df10"
+
+
+def _check_released_guard_graph(connection, *, upgrade):
+    graph = []
+    implicit_keys = []
+    for row in connection.exec_driver_sql(
+        "SELECT type,name,tbl_name,sql FROM sqlite_schema "
+        "WHERE type IN ('index','trigger') ORDER BY type,name"
+    ):
+        if not upgrade and row[2] in TABLES:
+            continue  # Rebuilt-table signatures/guards are checked separately.
+        details = None
+        if row[0] == "index":
+            name, table = row[1].replace('"', '""'), row[2].replace('"', '""')
+            index = next(
+                i
+                for i in connection.exec_driver_sql(f'PRAGMA index_list("{table}")')
+                if i[1] == row[1]
+            )
+            details = [
+                tuple(index[2:]),  # unique/origin/partial, including implicit UNIQUE/PK
+                [tuple(i) for i in connection.exec_driver_sql(f'PRAGMA index_xinfo("{name}")')],
+            ]
+        if row[0] == "index" and row[3] is None:
+            # Alembic reflection can reorder UNIQUE constraints in the released
+            # chain, swapping SQLite's generated suffix-to-key assignment.
+            # Require the exact name set AND complete key multiset per table;
+            # explicit index names/SQL and trigger SQL remain byte-exact.
+            implicit_keys.append([row[2], details])
+            details = None
+        graph.append((*row, details))
+    implicit_keys.sort(key=lambda item: json.dumps(item, separators=(",", ":")))
+    fingerprint = hashlib.sha256(
+        json.dumps([graph, implicit_keys], separators=(",", ":"), ensure_ascii=True).encode()
+    ).hexdigest()
+    expected = RELEASED_GUARD_GRAPH_0065 if upgrade else UNREBUILT_GUARD_GRAPH_0065
+    if fingerprint != expected:
+        raise RuntimeError("0066_historical_guard_schema_drift")
+
+
 def _checkpoint(_connection, _stage):
     """Fault-injection seam; production never skips a checkpoint or guard."""
 
@@ -441,6 +488,7 @@ def migrate(connection, *, upgrade):
     }
     if proof_tables != {name: _signature(sql) for name, sql in PROOF_TABLES_0065.items()}:
         raise RuntimeError("0066_source_return_proof_schema_drift")
+    _check_released_guard_graph(connection, upgrade=upgrade)
     columns = {
         name: [row[1] for row in connection.exec_driver_sql(f'PRAGMA table_info("{name}")')]
         for kind, name, _, _ in inventory

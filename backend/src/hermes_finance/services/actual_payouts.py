@@ -168,6 +168,41 @@ def _forecast_snapshot(session, kind, row):
     }
 
 
+def _journal_dependencies(session, intent, month_ids, *, exclude_request=None):
+    """The same scoped generation history for live and historical projections."""
+    tokens = []
+    sections = []
+    for row in session.scalars(select(BrokerMonthApply).order_by(BrokerMonthApply.request_id)):
+        if row.request_id == exclude_request or (row.account_id, row.reporting_month_id) != (
+            intent.account_id,
+            intent.reporting_month_id,
+        ):
+            continue
+        proof = journal.payload(row)
+        kind = journal.kind(row)
+        if proof.get("base_request_id") != intent.base_request_id:
+            continue
+        if kind == journal.PAYOUT_DEPENDENCY:
+            changed_months = proof.get("changed_reporting_month_ids")
+            if intent.investment_cash_flow_id in proof.get("investment_cash_flow_ids", []) and (
+                changed_months is None or month_ids.intersection(changed_months)
+            ):
+                tokens.append([row.request_id, proof])
+        elif kind == CONTRACT and any(
+            t.get("investment_cash_flow_id") == intent.investment_cash_flow_id
+            and (
+                proof["operation"] != "distinct"
+                or (t.get("applied_payout_id"), t.get("expected_cash_flow_id"))
+                == (intent.applied_payout_id, intent.expected_cash_flow_id)
+            )
+            for t in proof["targets"]
+        ):
+            tokens.append([row.request_id, proof])
+        elif kind not in {*journal.MONEY_KINDS, CONTRACT, journal.DEPENDENCY}:
+            sections.append([row.request_id, proof])
+    return tokens, sections
+
+
 def _dependency(session, intent, *, exclude_request=None):
     actual = session.get(InvestmentCashFlow, intent.investment_cash_flow_id, populate_existing=True)
     if actual is None or (actual.account_id, actual.reporting_month_id) != (
@@ -214,36 +249,9 @@ def _dependency(session, intent, *, exclude_request=None):
         )
         if r.instrument_id == actual.instrument_id
     ]
-    tokens = []
-    sections = []
-    for row in session.scalars(select(BrokerMonthApply).order_by(BrokerMonthApply.request_id)):
-        if row.request_id == exclude_request or (row.account_id, row.reporting_month_id) != (
-            actual.account_id,
-            actual.reporting_month_id,
-        ):
-            continue
-        proof = journal.payload(row)
-        kind = journal.kind(row)
-        if proof.get("base_request_id") != base.request_id:
-            continue
-        if kind == journal.PAYOUT_DEPENDENCY:
-            changed_months = proof.get("changed_reporting_month_ids")
-            if actual.id in proof.get("investment_cash_flow_ids", []) and (
-                changed_months is None or month_ids.intersection(changed_months)
-            ):
-                tokens.append([row.request_id, proof])
-        elif kind == CONTRACT and any(
-            t.get("investment_cash_flow_id") == actual.id
-            and (
-                proof["operation"] != "distinct"
-                or (t.get("applied_payout_id"), t.get("expected_cash_flow_id"))
-                == (intent.applied_payout_id, intent.expected_cash_flow_id)
-            )
-            for t in proof["targets"]
-        ):
-            tokens.append([row.request_id, proof])
-        elif kind not in {*journal.MONEY_KINDS, CONTRACT, journal.DEPENDENCY}:
-            sections.append([row.request_id, proof])
+    tokens, sections = _journal_dependencies(
+        session, intent, month_ids, exclude_request=exclude_request
+    )
     month = session.get(ReportingMonth, actual.reporting_month_id)
     result = {
         "actual": material(actual),
@@ -861,9 +869,31 @@ def future_states(session, calendar_month_id):
             receipt = session.get(BrokerMonthApply, link.accepted_request_id)
             if receipt is None or journal.kind(receipt) != CONTRACT:
                 continue
-            for ref in journal.payload(receipt).get("paid_forecasts", []):
+            proof = journal.payload(receipt)
+            # CLOSED keeps its accepted projection across a physical restore,
+            # but never erases a generation invalidation from Reopen/reclose.
+            # Compare the persisted journal with the frozen reviewed month set;
+            # do not revalidate or rewrite financial facts in a historical view.
+            state = "unresolved"
+            try:
+                intent = PayoutIntent.model_validate(proof["intent"])
+                dependency = proof["dependency"]
+                month_ids = {
+                    receipt.reporting_month_id,
+                    *[int(c["facts"]["reporting_month_id"]) for c in dependency["candidates"]],
+                }
+                tokens, _ = _journal_dependencies(
+                    session, intent, month_ids, exclude_request=receipt.request_id
+                )
+                if tokens == dependency["dependency_receipts"]:
+                    state = "paid"
+            except (KeyError, ValueError, TypeError):
+                pass
+            for ref in proof.get("paid_forecasts", []):
                 if ref["reporting_month_id"] == calendar_month_id:
-                    result[(ref["kind"], ref["id"])] = "paid"
+                    key = (ref["kind"], ref["id"])
+                    if result.get(key) != "unresolved":
+                        result[key] = state
         return result
     # Lost source authority never promotes a competitor to unquestioned future.
     # Close authority for stale economics remains with the existing source guards.

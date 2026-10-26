@@ -681,3 +681,115 @@ def test_counter_exhaustion_and_delete_reinsert_do_not_reuse_revision_identity(p
         for value in ("9223372036854775807", "9223372036854775808", "-1", "NULL", "'bad'"):
             with pytest.raises(sqlite3.IntegrityError):
                 c.execute(f"UPDATE expected_cash_flows SET payout_link_revision={value} WHERE id=3")
+
+
+def test_historical_correction_guard_is_required_before_first_ddl(populated_0065):
+    with sqlite3.connect(populated_0065) as connection:
+        connection.execute("DROP TRIGGER mybroker_correction_revisions_update")
+    _assert_preflight_zero_write_stop(populated_0065)
+
+
+def _assert_preflight_zero_write_stop(populated_0065):
+    from sqlalchemy import Engine, event
+
+    before = state(populated_0065)
+    raw = populated_0065.read_bytes()
+    ddl = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().split()[0].upper() in {"CREATE", "ALTER", "DROP"}:
+            ddl.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", capture)
+    try:
+        with pytest.raises(RuntimeError, match="0066_.*schema_drift"):
+            command.upgrade(_alembic_config(populated_0065), NEW)
+    finally:
+        event.remove(Engine, "before_cursor_execute", capture)
+    assert ddl == []
+    assert state(populated_0065) == before
+    assert populated_0065.read_bytes() == raw
+
+
+@pytest.mark.parametrize("change", ["missing", "modified"])
+def test_every_released_trigger_and_explicit_index_is_mandatory(populated_0065, change):
+    from sqlalchemy import create_engine, event
+
+    raw = populated_0065.read_bytes()
+    engine = create_engine("sqlite:///" + str(populated_0065))
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            schema._check_released_guard_graph(connection, upgrade=True)
+            objects = connection.exec_driver_sql(
+                "SELECT type,name,tbl_name,sql FROM sqlite_schema "
+                "WHERE type IN ('trigger','index') AND sql IS NOT NULL ORDER BY type,name"
+            ).all()
+            assert sum(row[0] == "trigger" for row in objects) == 136
+            ddl = []
+
+            def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+                if statement.lstrip().split()[0].upper() in {"CREATE", "ALTER", "DROP"}:
+                    ddl.append(statement)
+
+            event.listen(connection, "before_cursor_execute", capture)
+            for kind, name, table, _ in objects:
+                connection.exec_driver_sql("SAVEPOINT damaged_guard")
+                connection.exec_driver_sql(f'DROP {kind.upper()} "{name}"')
+                if change == "modified":
+                    if kind == "trigger":
+                        replacement = (
+                            f'CREATE TRIGGER "{name}" BEFORE UPDATE ON "{table}" '
+                            "BEGIN SELECT 1; END"
+                        )
+                    else:
+                        column = connection.exec_driver_sql(
+                            f'PRAGMA table_info("{table}")'
+                        ).first()[1]
+                        replacement = f'CREATE INDEX "{name}" ON "{table}" ("{column}")'
+                    connection.exec_driver_sql(replacement)
+                before = schema._inventory(connection)
+                columns = {
+                    row[1]: [
+                        c[1] for c in connection.exec_driver_sql(f'PRAGMA table_info("{row[1]}")')
+                    ]
+                    for row in before
+                    if row[0] == "table"
+                }
+                values = schema._snapshot(connection, columns)
+                ddl.clear()
+                with pytest.raises(RuntimeError, match="0066_.*schema_drift"):
+                    schema.migrate(connection, upgrade=True)
+                assert ddl == [], (change, kind, name)
+                assert schema._inventory(connection) == before, (change, kind, name)
+                assert schema._snapshot(connection, columns) == values, (change, kind, name)
+                connection.exec_driver_sql("ROLLBACK TO damaged_guard")
+                connection.exec_driver_sql("RELEASE damaged_guard")
+            connection.rollback()
+    finally:
+        engine.dispose()
+    assert populated_0065.read_bytes() == raw
+
+
+def test_implicit_unique_index_key_drift_is_not_hidden_by_null_sql(populated_0065):
+    table = "mybroker_disposition_revisions"
+    with sqlite3.connect(populated_0065) as connection:
+        graph_sql = "SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE type IN ('index','trigger') ORDER BY type,name"
+        before_graph = connection.execute(graph_sql).fetchall()
+        sql = connection.execute("SELECT sql FROM sqlite_schema WHERE name=?", (table,)).fetchone()[
+            0
+        ]
+        assert "UNIQUE (import_id, isin, revision)" in sql
+        triggers = connection.execute(
+            "SELECT sql FROM sqlite_schema WHERE type='trigger' AND tbl_name=?", (table,)
+        ).fetchall()
+        assert connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone() == (0,)
+        connection.execute(f'DROP TABLE "{table}"')
+        connection.execute(
+            sql.replace("UNIQUE (import_id, isin, revision)", "UNIQUE (revision, isin, import_id)")
+        )
+        for (guard,) in triggers:
+            connection.execute(guard)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert connection.execute(graph_sql).fetchall() == before_graph
+    _assert_preflight_zero_write_stop(populated_0065)
