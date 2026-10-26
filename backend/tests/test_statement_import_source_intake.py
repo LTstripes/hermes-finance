@@ -1003,6 +1003,195 @@ def test_history_partial_long_report_keeps_calendar_and_dated_flows(history_clie
     assert "partial_month_source" in {g["code"] for g in result["gaps"]}
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_history_identical_account_events_overlap_concurrent_save_and_replay(
+    history_client, reverse
+):
+    from decimal import Decimal, localcontext
+
+    from history_import_fixtures import ACCOUNTS, history_trade, history_xml
+    from test_source_monthly_returns_service import snapshot
+    from test_statement_import_broker_statement_provisional import _finite_tables
+    from test_statement_import_mybroker import ISIN
+
+    client, db = history_client
+    financial_before = _finite_tables(db)
+    day = date(2026, 6, 15)
+    trade = history_trade(day, 1)
+    trade["bank_tax"] = "0"
+    originals = [
+        history_xml(
+            account=account,
+            start=date(2026, start_month, 1),
+            end=date(2026, 6, 30),
+            trades=(trade,),
+            money=((day, "Дивиденды", ISIN, "10"),) * 2
+            + ((day, "Unsupported operation", "RU000A000001", "7"),),
+        )
+        for account in ACCOUNTS[:2]
+        for start_month in (5, 6)
+    ]
+    if reverse:
+        originals.reverse()
+    # Distinct request keys for duplicate files race with the overlapping originals.
+    originals *= 2
+    responses = _history_batch(client, originals)
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    ids = [r.json()["intake_id"] for r in responses]
+    assert len(set(ids)) == 4
+    saved = {key: client.get(f"{BASE}/{key}").json() for key in ids}
+    for view in saved.values():
+        assert view["exceptions"]
+        assert len(view["document"]["trades"]) == 1
+        assert len(view["document"]["money"]) == 3
+    before = snapshot(db)
+    results = {}
+    for account in ACCOUNTS[:2]:
+        result = _history_returns(client, account, "instruments")
+        stock = next(i for i in result["instruments"] if i["isin"] == ISIN)
+        june = next(m for m in stock["months"] if m["month"] == "2026-06-01")
+        assert june["buys_cost_kopecks"] == 10_000
+        assert june["dividends_kopecks"] == 2_000
+        analysis = june["analysis"]
+        assert analysis["pnl"]["value"] == 12_000
+        # 100000*30 + (10000 buy - 2000 payouts)*(30-15).
+        assert analysis["modified_dietz"]["capital_days"] == 3_120_000
+        with localcontext() as context:
+            context.prec = 60
+            assert Decimal(analysis["modified_dietz"]["value"]) == Decimal(3) / Decimal(26)
+        assert sorted(e["kind"] for e in analysis["events"]) == ["BUY", "DIVIDEND", "DIVIDEND"]
+        assert all(e["native_source_account"] == account for e in analysis["events"])
+        results[account] = result
+    assert snapshot(db) == before
+    replay = _history_batch(client, originals)
+    assert all(r.status_code == 200 for r in replay), [r.text for r in replay]
+    assert [r.json()["intake_id"] for r in replay] == ids
+    assert snapshot(db) == before
+    with TestClient(create_app(database=db)) as restarted:
+        for key, view in saved.items():
+            assert restarted.get(f"{BASE}/{key}").json() == view
+        for account, result in results.items():
+            assert _history_returns(restarted, account, "instruments") == result
+    assert snapshot(db) == before
+    assert _finite_tables(db) == financial_before
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("representation", [0, 1, 2], ids=["long", "adjacent", "overlap"])
+def test_history_equivalent_calendar_representations_keep_date_roles_and_missing_eod(
+    history_client, pending, representation
+):
+    from decimal import Decimal, localcontext
+
+    from history_import_fixtures import ACCOUNTS, history_trade, history_xml
+    from test_source_monthly_returns_service import snapshot
+    from test_statement_import_mybroker import ISIN, fixture
+
+    client, db = history_client
+    weekend, execution, settlement = date(2026, 6, 6), date(2026, 6, 30), date(2026, 7, 1)
+    assert weekend.weekday() == 5
+    trade = history_trade(execution, 1)
+    for key in ("save_settlement_date", "save_depo_settlement_date"):
+        trade[key] = "01.07.2026"
+    trade["settlement_time"] = "01.07.2026 10:00:00"
+    money = ((weekend, "Внесено по распоряжению Клиента", "Synthetic weekend funding", "500"),)
+    money += ((settlement, "Дивиденды", ISIN, "10"),) * 2
+
+    def original(start, end):
+        filename, raw = history_xml(
+            start=start,
+            end=end,
+            trades=(trade,) if start <= execution <= end else (),
+            money=tuple(row for row in money if start <= row[0] <= end),
+        )
+        root = ET.fromstring(raw)
+        stock = root.find(".//{MyBroker}Details[@ISIN1]")
+        stock.set("real_rest", "11" if end >= settlement else "10")
+        stock.set("forward_rest", stock.get("real_rest"))
+        stock.set("real_volume", "1200" if end >= settlement else "1000")
+        if pending and start <= execution <= end:
+            # Native pending syntax, with the same identity/core and planned dates.
+            table = ET.fromstring(fixture(pending=True)).find(".//{MyBroker}Tablix3")
+            row = table.find(".//{MyBroker}Details2")
+            fields = (
+                "trade_no",
+                "db_time",
+                "save_settlement_date",
+                "save_depo_settlement_date",
+                "settlement_time",
+                "acc_code",
+                "isin_reg",
+                "qty",
+                "Price",
+                "summ_trade",
+                "curr_calc",
+                "bank_tax",
+            )
+            attrs = dict(trade, acc_code=ACCOUNTS[0])
+            row.attrib.clear()
+            names = (
+                "trade_no1",
+                "db_time2",
+                "save_settlement_date3",
+                "save_depo_settlement_date3",
+                "settlement_time2",
+                "acc_code2",
+                "isin_reg1",
+                "qty2",
+                "Price2",
+                "summ_trade2",
+                "curr_calc2",
+                "bank_tax2",
+            )
+            row.attrib.update({new: attrs[old] for old, new in zip(fields, names, strict=True)})
+            root.find(".//{MyBroker}Tablix2/{MyBroker}Details_Collection")[:] = []
+            root.find("{MyBroker}Trades/{MyBroker}Report").append(table)
+        return filename, ET.tostring(root)
+
+    start, end = date(2026, 6, 1), date(2026, 7, 31)
+    representations = (
+        (original(start, end),),
+        (original(start, date(2026, 6, 14)), original(date(2026, 6, 15), end)),
+        (original(start, date(2026, 7, 15)), original(date(2026, 6, 15), end)),
+    )
+    reports = representations[representation]
+    responses = _history_batch(client, reports)
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    before = snapshot(db)
+    result = _history_returns(client, ACCOUNTS[0], "instruments")
+    stock = next(i for i in result["instruments"] if i["isin"] == ISIN)
+    analysis = stock["analysis"]
+    assert analysis["opening_date"] == "2026-05-31"
+    assert analysis["closing_date"] == "2026-07-31"
+    buy = next(e for e in analysis["events"] if e["kind"] == "BUY")
+    assert buy["trade_time"].startswith("2026-06-30")
+    if pending:
+        assert analysis["pnl"]["value"] is None
+        assert analysis["modified_dietz"]["value"] is None
+        assert "trade_missing_settlement" in analysis["reason_codes"]
+        assert not buy["counted"]
+    else:
+        assert buy["cash_settlement_date"] == buy["depository_settlement_date"] == "2026-07-01"
+        assert analysis["pnl"]["value"] == 11_900
+        # 100000*61 + (10100 buy - 2000 payouts)*(31-1).
+        assert analysis["modified_dietz"]["capital_days"] == 6_343_000
+        with localcontext() as context:
+            context.prec = 60
+            assert Decimal(analysis["modified_dietz"]["value"]) == Decimal(725900) / Decimal(
+                6343000
+            )
+    assert len(analysis["events"]) == 3
+    assert analysis["components"]["dividends"]["value"] == 2_000
+    assert all(m["analysis"]["pnl"]["value"] is None for m in stock["months"])
+    assert all(m["return_percent"] is None for m in stock["months"])
+    monthly = _history_returns(client, ACCOUNTS[0], "monthly")
+    assert [(f["event_date"], f["amount_kopecks"]) for f in monthly["flows"]] == [
+        ("2026-06-06", 50_000)
+    ]
+    assert all(m["modified_dietz_return"] is None for m in monthly["months"])
+    assert snapshot(db) == before
+
+
 def test_history_long_monthly_overlap_deduplicates_trades_income_and_reupload(history_client):
     from history_import_fixtures import ACCOUNTS, BOND, history_trade, history_xml
     from test_statement_import_mybroker import ISIN
