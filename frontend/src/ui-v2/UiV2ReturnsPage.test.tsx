@@ -69,6 +69,23 @@ function setup(path = "/v2/returns") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("tops show the name first, ISIN second and an honest single ISIN fallback", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.instruments[1].name = data.instruments[1].isin;
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const tops = await screen.findByRole("region", { name: "Лидеры и отстающие" });
+  const rows = within(tops).getAllByRole("listitem");
+  expect(rows[0].querySelector("span")?.firstChild?.textContent).toBe("Северные технологии");
+  expect(rows[0].querySelector("small")).toHaveTextContent("RU000A000001");
+  expect(rows[1]).toHaveTextContent("RU000A000002");
+  expect(rows[1].querySelector("small")).toBeNull();
+  expect(rows).toHaveLength(3);
+});
+
 test("source seam context stays behind each metric's details while values remain visible", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;

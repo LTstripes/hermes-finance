@@ -204,7 +204,10 @@ function Instruments({
                   <ol>
                     {top.map((r) => (
                       <li key={r.isin}>
-                        <span>{r.name}</span>
+                        <span>
+                          {r.name}
+                          {r.name !== r.isin && <small>{r.isin}</small>}
+                        </span>
                         <strong className={positive ? styles.positive : styles.negative}>
                           {displayMetric(r[mode], true)}
                         </strong>

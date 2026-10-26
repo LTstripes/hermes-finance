@@ -1,7 +1,7 @@
 """Synthetic presentation adapter: exact DTOs and unchanged authoritative readers."""
 
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -17,6 +17,7 @@ from hermes_finance.api.returns_view import Context, Detail, Overview
 from hermes_finance.api.returns_view import router as returns_router
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import Metric
+from hermes_finance.persistence import BrokerIdentityMapping, Instrument
 from hermes_finance.services import returns_view as view
 from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
@@ -24,6 +25,84 @@ from hermes_finance.services.source_monthly_returns import read_monthly_returns
 
 START, END = date(2030, 3, 31), date(2030, 4, 30)
 SCOPE = f"source:{ACCOUNT}"
+
+
+@pytest.mark.parametrize(
+    "source_name, catalogue_name, expected",
+    [
+        ("Source stock", "Catalogue stock", "Source stock"),
+        (None, "Catalogue stock", "Catalogue stock"),
+        ("", "Catalogue stock", "Catalogue stock"),
+        ("  ", "Catalogue stock", "Catalogue stock"),
+        (ISIN, "Catalogue stock", "Catalogue stock"),
+        (f" {ISIN.lower()} ", "Catalogue stock", "Catalogue stock"),
+        (None, None, ISIN),
+        (None, ISIN, ISIN),
+        (ISIN, "  ", ISIN),
+    ],
+)
+def test_exact_catalogue_name_is_presentation_only(
+    db, monkeypatch, source_name, catalogue_name, expected
+):
+    save(db, trades=(), bond=None)
+    direct_read = view.read_instrument_returns
+
+    def named(*args, **kwargs):
+        result = direct_read(*args, **kwargs)
+        return replace(
+            result,
+            instruments=tuple(replace(r, source_name=source_name) for r in result.instruments),
+        )
+
+    monkeypatch.setattr(view, "read_instrument_returns", named)
+    original = api_overview(db).instruments[0].model_dump(exclude={"name"})
+    if catalogue_name is not None:
+        with db.session_factory() as session:
+            session.add(Instrument(isin=ISIN, name=catalogue_name, instrument_type="stock"))
+            session.commit()
+    before = snapshot(db)
+    result = api_overview(db).instruments[0]
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=END, isin=ISIN)
+        )
+    assert result.name == detail.name == expected
+    assert result.model_dump(exclude={"name"}) == original
+    assert snapshot(db) == before
+
+
+def test_ambiguous_source_names_and_conflicting_alias_do_not_guess_catalogue_identity(db):
+    from hermes_finance.statement_import.mybroker import NS, PROVIDER
+
+    save(db, trades=(), bond=None)
+
+    def other_name(root):
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Other source name")
+
+    save(db, trades=(), bond=None, marker="conflicting-name", mutate=other_name)
+    with db.session_factory() as session:
+        target = Instrument(isin=BOND, name="Wrong alias target", instrument_type="bond")
+        session.add(target)
+        session.flush()
+        session.add(
+            BrokerIdentityMapping(
+                provider=PROVIDER,
+                subject_kind="instrument",
+                provider_identity=ISIN,
+                observed_isin=ISIN,
+                hermes_instrument_id=target.id,
+                status="effective",
+                confirmed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        assert (
+            read_instrument_returns(session, source_account=ACCOUNT).instruments[0].source_name
+            is None
+        )
+    before = snapshot(db)
+    assert api_overview(db).instruments[0].name == ISIN
+    assert snapshot(db) == before
 
 
 @pytest.fixture
