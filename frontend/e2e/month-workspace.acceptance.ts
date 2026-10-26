@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 async function tile(page: Page, name: string) {
   await page
@@ -149,6 +149,11 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   ]);
   await expect(page.getByText("broken.xml: Не сохранен", { exact: true })).toBeVisible();
   await expect(page.getByText(/Брокерский 711400[12].*: Сохранен$/)).toHaveCount(2);
+  // Upload ACK also retires the pending-write history sentinel. Wait for its
+  // asynchronous POP before starting a new account navigation (as after Save).
+  await expect
+    .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
+    .toBeUndefined();
   for (const alias of ["7114001", "7114002"]) {
     if (alias === "7114002") {
       await page.getByLabel("XML-файлы", { exact: true }).setInputFiles({
@@ -157,6 +162,9 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
         buffer: buffers[1],
       });
       await expect(page.getByText(/Брокерский 7114002.*: Сохранен$/)).toBeVisible();
+      await expect
+        .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
+        .toBeUndefined();
       const uploadedB = page.getByRole("button", { name: /Открыть разбор загрузки #/ });
       await uploadedB.click();
       await expect(
@@ -180,9 +188,15 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     const confirmScope = page.getByRole("alertdialog", { name: "Сменить счёт?" });
     if (await confirmScope.isVisible())
       await confirmScope.getByRole("button", { name: "Сменить счёт", exact: true }).click();
+    // Wait for the account navigation to commit before opening a source. The
+    // previous all-account list already contains alias but still has two buttons.
+    await expect(page.getByLabel("Счёт источника месяца", { exact: true })).toHaveValue(alias);
     const sources = page.getByRole("list", { name: "Источники и исключения месяца" });
     await expect(sources).toContainText(alias);
-    await sources.getByRole("button", { name: /Разобрать и исправить/ }).click();
+    await expect(sources).not.toContainText(alias === "7114001" ? "7114002" : "7114001");
+    const review = sources.getByRole("button", { name: /Разобрать и исправить/ });
+    await expect(review).toHaveCount(1);
+    await review.click();
     await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Проверить изменения", exact: true }).click();
     const apply = page.getByRole("button", { name: "Сохранить данные месяца", exact: true });
