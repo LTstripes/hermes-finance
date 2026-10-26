@@ -21,9 +21,14 @@ review. No acceptance, release, installation, real migration or runtime operatio
 is implied. Integration remains with ChatGPT Integrator.
 [Integrator HOLD on #970](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6423924559)
 identified Reopen/reclose paid resurrection, an APP-only Month warning and an
-incomplete historical guard preflight. This same-PR remediation addresses those
-three findings; independent financial/source/migration re-review of the new
-exact HEAD remains required. Prior candidate CI does not clear the HOLD.
+incomplete historical guard preflight. Independent review of `37db54e7` confirmed
+those three fixes. The [subsequent terminal-lineage HOLD](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6426663970)
+identified explicit retirement followed by forecast-month Close restoring future
+income and clearing UNKNOWN. This same-PR reader correction retains retired
+terminal coverage, gives current R3/R5 priority and requires current exact distinct
+evidence for future classification. Writers, migrations and hard Close scope are
+unchanged. Exact new-head CI/UI and the same independent Reviewer remain required;
+previous green checks do not clear the HOLD.
 
 **Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),

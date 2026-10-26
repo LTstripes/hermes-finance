@@ -11463,6 +11463,13 @@ generation changes in months outside the reviewed candidate set do not stale it.
 A subsequent Close never resets an invalidated generation. Historical paid
 projections require the frozen reviewed scope's journal to still match the
 acceptance; unchanged journal history survives a same-schema physical restore.
+CLOSED projection resolves the immutable terminal lineage: an explicit retirement
+without a current successor leaves its persisted relevant forecasts unresolved;
+it cannot restore future income or turn UNKNOWN into complete. Current R3/R5
+wins over superseded R1/R3; a stale successor never falls back to an older paid
+receipt. Only a current exact distinct receipt resolves its own pair as future.
+Covered canonical APP copies are deduplicated by exact forecast identity; an
+older CLOSED copy that was never covered gains no authority.
 The guided Month consumer evaluates active legacy APP/ECF links separately from
 actual settlement currentness. APP-only settlement needs no ECF; retained retired
 links are not active legacy dependencies. Unresolved actual competitors retain

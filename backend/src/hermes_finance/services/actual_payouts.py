@@ -851,6 +851,96 @@ def close_blockers(session, month_id):
     )
 
 
+def _closed_generation_current(session, receipt, proof):
+    # CLOSED preserves the accepted projection across a same-schema restore,
+    # but never erases scoped invalidations from Reopen or material writers.
+    try:
+        intent = PayoutIntent.model_validate(proof["intent"])
+        dependency = proof["dependency"]
+        month_ids = {
+            receipt.reporting_month_id,
+            *[int(c["facts"]["reporting_month_id"]) for c in dependency["candidates"]],
+        }
+        tokens, _ = _journal_dependencies(
+            session, intent, month_ids, exclude_request=receipt.request_id
+        )
+        return tokens == dependency["dependency_receipts"]
+    except (KeyError, ValueError, TypeError):
+        return False
+
+
+def _closed_future_states(session, month):
+    links = {
+        link.id: link
+        for link in session.scalars(
+            select(AppliedPayoutReconciliation).where(
+                AppliedPayoutReconciliation.investment_cash_flow_id.is_not(None)
+            )
+        )
+    }
+    superseded = {link.supersedes_id for link in links.values()}
+    result = {}
+    start, end = _future_bounds(month)
+    for terminal in links.values():
+        if terminal.id in superseded:
+            continue
+        # The immutable successor edge and typed, increasing receipt revisions
+        # are enforced by 0066. Only the terminal decides; older R1/R3 cannot
+        # override R3/R5. Retain their coverage even when the terminal is retired.
+        covered = set()
+        paid = set()
+        link = terminal
+        while link is not None:
+            receipt = session.get(BrokerMonthApply, link.accepted_request_id)
+            if receipt is not None and journal.kind(receipt) == CONTRACT:
+                proof = journal.payload(receipt)
+                refs = {
+                    (ref["kind"], ref["id"])
+                    for ref in proof.get("paid_forecasts", [])
+                    if ref["reporting_month_id"] == month.id
+                }
+                covered.update(refs)
+                if (
+                    link.id == terminal.id
+                    and terminal.retired_request_id is None
+                    and terminal.archived_from_period is None
+                    and proof.get("operation") in {"link", "reaffirm"}
+                    and _closed_generation_current(session, receipt, proof)
+                ):
+                    paid = refs
+            link = links.get(link.supersedes_id)
+        actual = session.get(InvestmentCashFlow, terminal.investment_cash_flow_id)
+        for key in covered:
+            kind, ident = key
+            forecast = session.get(
+                AppliedProviderPayout if kind == "app" else ExpectedCashFlow, ident
+            )
+            if (
+                forecast is None
+                or forecast.reporting_month_id != month.id
+                or forecast.archived_from_period is not None
+                or (kind == "app" and forecast.lifecycle != "active")
+            ):
+                continue
+            day = forecast.payment_date if kind == "app" else forecast.expected_date
+            if not start <= day < end:
+                continue
+            state = (
+                "paid"
+                if key in paid
+                else "future"
+                if actual is not None and _distinct_current(session, actual, kind, forecast)
+                else "unresolved"
+            )
+            # One exact forecast is counted once. A separate actual competitor
+            # can require review, but cannot turn another actual's paid into future.
+            if result.get(key) != "unresolved" and (
+                state == "unresolved" or result.get(key) != "paid"
+            ):
+                result[key] = state
+    return result
+
+
 def future_states(session, calendar_month_id):
     """Eligible future only; actual amounts continue to come solely from ICF."""
     month = session.get(ReportingMonth, calendar_month_id)
@@ -858,43 +948,7 @@ def future_states(session, calendar_month_id):
     if month is None:
         return result
     if month.status == "closed":
-        # Preserve only projections that were DRAFT and covered at acceptance.
-        # An older CLOSED copy of the canonical event never acquires new authority.
-        for link in session.scalars(
-            select(AppliedPayoutReconciliation).where(
-                AppliedPayoutReconciliation.investment_cash_flow_id.is_not(None),
-                AppliedPayoutReconciliation.retired_request_id.is_(None),
-            )
-        ):
-            receipt = session.get(BrokerMonthApply, link.accepted_request_id)
-            if receipt is None or journal.kind(receipt) != CONTRACT:
-                continue
-            proof = journal.payload(receipt)
-            # CLOSED keeps its accepted projection across a physical restore,
-            # but never erases a generation invalidation from Reopen/reclose.
-            # Compare the persisted journal with the frozen reviewed month set;
-            # do not revalidate or rewrite financial facts in a historical view.
-            state = "unresolved"
-            try:
-                intent = PayoutIntent.model_validate(proof["intent"])
-                dependency = proof["dependency"]
-                month_ids = {
-                    receipt.reporting_month_id,
-                    *[int(c["facts"]["reporting_month_id"]) for c in dependency["candidates"]],
-                }
-                tokens, _ = _journal_dependencies(
-                    session, intent, month_ids, exclude_request=receipt.request_id
-                )
-                if tokens == dependency["dependency_receipts"]:
-                    state = "paid"
-            except (KeyError, ValueError, TypeError):
-                pass
-            for ref in proof.get("paid_forecasts", []):
-                if ref["reporting_month_id"] == calendar_month_id:
-                    key = (ref["kind"], ref["id"])
-                    if result.get(key) != "unresolved":
-                        result[key] = state
-        return result
+        return _closed_future_states(session, month)
     # Lost source authority never promotes a competitor to unquestioned future.
     # Close authority for stale economics remains with the existing source guards.
     for obligation in obligations(

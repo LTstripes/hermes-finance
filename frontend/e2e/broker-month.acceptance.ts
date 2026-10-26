@@ -1989,3 +1989,145 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
     review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }),
   ).toBeVisible();
 });
+
+test("terminal retirement Close preserves UNKNOWN through Month calendar Back Reload and R3 R5", async ({
+  page,
+  request,
+}, info) => {
+  test.setTimeout(180000);
+  const seed = await (await request.get("/api/synthetic-terminal-payout")).json();
+  const monthId = seed.forecast_month_id;
+  const calendarUrl = `/api/payouts/calendar?month_id=${monthId}&forecast_version=v1`;
+  const calendarPage = `/v2/data/payouts?month=${monthId}&from=monthly-close-v2&monthId=${monthId}&step=future_payouts`;
+  const inventory = () => request.get("/api/synthetic-broker-inventory").then((r) => r.json());
+  const original = await inventory();
+  async function acceptStep(step: number, operation: string, predecessor?: number) {
+    const intent = {
+      ...seed.intent,
+      operation,
+      predecessor_id: predecessor ?? null,
+    };
+    const first = await (
+      await request.post("/api/broker-months/payout-preview", { data: intent })
+    ).json();
+    const reviewed = {
+      ...intent,
+      claims: {
+        reference: "synthetic-original-review",
+        independent_event_reference: "synthetic-exact-event",
+        settlement_basis_reference: "synthetic-full-settlement",
+        review_context_digest: first.review_context_digest,
+        provider_identity_key: "n:1",
+        actual_is_exact_event: operation !== "retire",
+        full_event_settled_not_partial: true,
+        exact_manual_row_is_same_event: operation !== "retire",
+      },
+    };
+    const plan = await (
+      await request.post("/api/broker-months/payout-preview", {
+        data: reviewed,
+      })
+    ).json();
+    expect(plan.can_apply, JSON.stringify(plan.blockers)).toBe(true);
+    const response = await request.post("/api/broker-months/payout-apply", {
+      data: {
+        ...reviewed,
+        request_id: `terminal-ui-R${step}`,
+        confirmation_digest: plan.confirmation_digest,
+      },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    return response.json();
+  }
+  async function transition(action: "close" | "reopen") {
+    const response = await request.post(`/api/months/${monthId}/${action}`);
+    expect(response.ok(), await response.text()).toBe(true);
+  }
+  async function checkUnknown(afterReload: boolean) {
+    const before = await inventory();
+    const calendar = await (await request.get(calendarUrl)).json();
+    expect(calendar).toHaveLength(1);
+    expect(calendar[0].items).toEqual([]);
+    expect(calendar[0].actual_attribution_coverage).toBe("unknown");
+    expect(calendar[0].passive_net).toEqual({
+      amount: "0.00",
+      currency: "RUB",
+    });
+    const [workflowResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith(`/api/months/${monthId}/close-workflow`)),
+      page.goto(`/v2/close?month=${monthId}&step=future_payouts`),
+    ]);
+    expect(workflowResponse.status()).toBe(200);
+    const workflow = await workflowResponse.json();
+    const future = workflow.steps.find((s: { id: string }) => s.id === "future_payouts");
+    expect(future.reason_codes).toEqual(["month_closed_read_only"]);
+    expect(future.affects_close).toBe(false);
+    await expect(
+      page.getByRole("heading", { name: "Месяц · Декабрь 2037", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
+    ).toBeVisible();
+    await page.goto(calendarPage);
+    const region = page.getByRole("region", {
+      name: "Календарь выплат: горизонтальная прокрутка таблицы",
+    });
+    await expect(region).toContainText("Полнота неизвестна; известная часть:");
+    await expect(region).toContainText("0 выплат");
+    await expect(region).not.toContainText("999");
+    if (afterReload) {
+      await page.goto(`/v2/returns?month=${monthId}`);
+      await page.goBack();
+      await page.reload();
+      await expect(region).toContainText("Полнота неизвестна; известная часть:");
+      await expect(region).toContainText("0 выплат");
+      await page.screenshot({
+        path: info.outputPath("retired-closed-calendar-after-back-reload.png"),
+        fullPage: true,
+      });
+    }
+    expect((await inventory()).digest).toBe(before.digest);
+  }
+  async function draftWarning(expected: boolean) {
+    const workflow = await (await request.get(`/api/months/${monthId}/close-workflow`)).json();
+    const future = workflow.steps.find((s: { id: string }) => s.id === "future_payouts");
+    expect(future.reason_codes.includes("payout_reconciliation_changed")).toBe(expected);
+    expect(future.affects_close).toBe(false);
+  }
+  const r1 = await acceptStep(1, "link");
+  await draftWarning(false); // APP-only, NULL ECF: no false Month warning.
+  await acceptStep(2, "retire", r1.relations[0].id);
+  await draftWarning(true); // Advisory while editable; CLOSED remains read-only.
+  await transition("close");
+  await checkUnknown(true);
+  await transition("reopen");
+  const r3 = await acceptStep(3, "reaffirm", r1.relations[0].id);
+  await transition("close");
+  expect(await (await request.get(calendarUrl)).json()).toEqual([]);
+  await page.goto(calendarPage);
+  await expect(page.getByText("Нет ожидаемых выплат", { exact: true })).toBeVisible();
+  await transition("reopen");
+  await acceptStep(4, "retire", r3.relations[0].id);
+  await transition("close");
+  await checkUnknown(false);
+  await transition("reopen");
+  await acceptStep(5, "reaffirm", r3.relations[0].id);
+  await transition("close");
+  expect(await (await request.get(calendarUrl)).json()).toEqual([]);
+  await page.goto(calendarPage);
+  await page.reload();
+  await expect(page.getByText("Нет ожидаемых выплат", { exact: true })).toBeVisible();
+  for (const [accepted, retired] of [
+    [r1, "terminal-ui-R2"],
+    [r3, "terminal-ui-R4"],
+  ]) {
+    const receipt = await (await request.get(`/api/broker-months/${accepted.request_id}`)).json();
+    expect(receipt.accepted).toEqual(accepted.accepted);
+    expect(receipt.relations[0].retired_request_id).toBe(retired);
+  }
+  const after = await inventory();
+  expect(after.table_digests.investment_cash_flows).toBe(
+    original.table_digests.investment_cash_flows,
+  );
+  expect(after.counts.investment_cash_flows).toBe(original.counts.investment_cash_flows);
+});
