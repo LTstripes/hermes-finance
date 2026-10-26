@@ -235,7 +235,6 @@ def main():
                 )
             )
             session.commit()
-        seed_statement_return(database)
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
         # All payout I/O in this disposable fixture stays in process.
@@ -258,6 +257,9 @@ def main():
         from terminal_payout_seed import seed_terminal_payout
 
         terminal_payout = seed_terminal_payout(database)
+        # Freeze source-return coverage after the new synthetic account/catalogue
+        # exists. Later catalogue creation correctly invalidates that coverage.
+        seed_statement_return(database)
 
         @app.get("/api/synthetic-terminal-payout")
         def terminal_payout_fixture():
