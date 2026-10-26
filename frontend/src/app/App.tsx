@@ -1,6 +1,6 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router";
 
 import { createQueryClient } from "../queryClient";
 import BrokerStatementReturnPage from "../ui-v2/BrokerStatementReturnPage";
@@ -37,7 +37,8 @@ type AppProps = {
 
 function MonthRedirect() {
   const { monthId } = useParams();
-  return <Navigate replace to={`/v2/data/months/${monthId}`} />;
+  const { search, hash } = useLocation();
+  return <Navigate replace to={`/v2/data/months/${monthId}${search}${hash}`} />;
 }
 
 function MonthCloseRedirect() {
