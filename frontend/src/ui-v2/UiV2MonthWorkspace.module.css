@@ -153,3 +153,30 @@
   font-size: 13px;
   margin: 0;
 }
+
+.instrumentTable table {
+  table-layout: fixed;
+}
+.instrumentTable th,
+.instrumentTable td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.instrumentName {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.instrumentTable button:focus .instrumentName {
+  display: block;
+}
+.observedPayout {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}

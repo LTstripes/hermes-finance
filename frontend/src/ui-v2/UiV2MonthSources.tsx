@@ -31,12 +31,14 @@ export function UiV2MonthSources({
   canClose,
   onPendingChange,
   onDirtyChange,
+  payoutsOnly = false,
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
   onReview?: (id: number) => void;
   canClose?: boolean;
   onPendingChange?: (value: boolean) => void;
   onDirtyChange?: (value: boolean) => void;
+  payoutsOnly?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
@@ -133,6 +135,10 @@ export function UiV2MonthSources({
     ? []
     : sources.filter((item) => !account || sourceAccounts(item).includes(account));
   const closing = lastDayOfMonth(month.year, month.month);
+  const brokerParams = new URLSearchParams(params);
+  brokerParams.delete("section");
+  brokerParams.delete("step");
+  brokerParams.set("panel", "brokers");
   const fullMonthSources = visible.filter(
     (item) => item.covered_from === `${period}-01` && item.covered_to === closing,
   );
@@ -242,13 +248,22 @@ export function UiV2MonthSources({
       />
       <UiV2Panel
         eyebrow="Выписки"
-        title="Брокерские выписки"
+        title={payoutsOnly ? "Выплаты из сохранённых выписок" : "Брокерские выписки"}
         id="month-sources"
         testIdPrefix="month"
         wide
       >
         <div className={styles.stack}>
-          <p>Загрузи выписки, выбери счёт и проверь распознанные бумаги.</p>
+          <p>
+            {payoutsOnly
+              ? "Выбери счёт и бумагу: полученные суммы читаются из выписок, будущие — по явной кнопке T-Invest. Количество повторно вводить не нужно."
+              : "Загрузи выписки, выбери счёт и проверь распознанные бумаги."}
+          </p>
+          {payoutsOnly && (
+            <Link to={monthWorkspacePath(month.id, undefined, brokerParams.toString())}>
+              Загрузить брокерские выписки
+            </Link>
+          )}
           <section aria-label="Состояние источников месяца">
             {list.isPending || list.isFetching ? (
               <p>Проверяем сохранённые выписки…</p>
@@ -292,7 +307,7 @@ export function UiV2MonthSources({
               </p>
             </details>
           </section>
-          {month.status === "closed" ? (
+          {payoutsOnly ? null : month.status === "closed" ? (
             <p>
               Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой
               месяц заново.
@@ -458,6 +473,7 @@ export function UiV2MonthSources({
           sourceVersion={JSON.stringify(
             history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
           )}
+          payoutsOnly={payoutsOnly}
         />
       ) : !invalidAccount && !account && sources.length > 0 ? (
         <p>
@@ -506,7 +522,8 @@ export function UiV2MonthSources({
           )}
         </details>
       </div>
-      {!!account &&
+      {!payoutsOnly &&
+        !!account &&
         !invalidAccount &&
         !changingScope &&
         !list.isPending &&

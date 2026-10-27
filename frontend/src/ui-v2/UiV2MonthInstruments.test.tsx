@@ -99,7 +99,7 @@ function preview(account = "SYNTH-01", isin = ISIN, asOf = "2030-05-31"): Source
     failures: [],
   };
 }
-function Harness() {
+function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
   const [params, setParams] = useSearchParams();
   const account = params.get("source_account") ?? "SYNTH-01";
   return (
@@ -107,8 +107,15 @@ function Harness() {
       <button type="button" onClick={() => setParams({ source_account: "SYNTH-02" })}>
         Другой счёт
       </button>
+      <button
+        type="button"
+        onClick={() => setParams({ source_account: "SYNTH-01", panel: "payouts" })}
+      >
+        Первый счёт
+      </button>
       <output aria-label="URL">{params.toString()}</output>
       <UiV2MonthInstruments
+        payoutsOnly={payoutsOnly}
         key={account}
         monthId={1}
         year={2030}
@@ -119,7 +126,7 @@ function Harness() {
     </>
   );
 }
-function setup(path = "/v2/close?source_account=SYNTH-01") {
+function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) {
   const state = {
     reply: null as
       | null
@@ -145,8 +152,11 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
           },
         ],
       });
-    if (url.pathname === "/api/source-returns/instruments")
-      return state.readReply?.() ?? json(instruments(url.searchParams.get("source_account") ?? ""));
+    if (url.pathname === "/api/source-returns/instruments") {
+      const data = instruments(url.searchParams.get("source_account") ?? "");
+      if (payoutsOnly) data.instruments[0].analysis.events = [event({})];
+      return state.readReply?.() ?? json(data);
+    }
     if (url.pathname.endsWith("/payout-preview")) {
       const payload = JSON.parse(String(init?.body));
       return state.reply
@@ -160,7 +170,7 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
   const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
-        <Harness />
+        <Harness payoutsOnly={payoutsOnly} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -169,6 +179,31 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
 const posts = (fetcher: ReturnType<typeof setup>["fetcher"]) =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
 afterEach(() => vi.unstubAllGlobals());
+
+test("payout entry exposes source observations with unknown tax separately and reuses explicit T-Invest preview", async () => {
+  const { fetcher } = setup("/v2/close?panel=payouts&month=1&source_account=SYNTH-01", true);
+  const observations = await screen.findByRole("region", { name: "Наблюдения выплат источника" });
+  expect(observations).toHaveTextContent("не принятые финансовые записи");
+  expect(observations).toHaveTextContent("Нетто по источнику: 12,34 ₽");
+  expect(observations).toHaveTextContent("Налог: неизвестен");
+  expect(
+    within(observations).getByRole("link", { name: "Рассмотрение и сверка выписки" }),
+  ).toHaveAttribute("href", "#month-source-review");
+  expect(posts(fetcher)).toHaveLength(0);
+  fireEvent.change(await screen.findByLabelText("Сохранённая дата количества"), {
+    target: { value: "2030-04-30" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  );
+  await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
+  expect(posts(fetcher)).toHaveLength(1);
+  expect(JSON.parse(String(posts(fetcher)[0][1]?.body))).toMatchObject({
+    source_account: "SYNTH-01",
+    isin: ISIN,
+    as_of: "2030-04-30",
+  });
+});
 
 test("selects a saved historical quantity without substituting the month's closing EOD or calling the provider", async () => {
   const { fetcher } = setup();
@@ -267,6 +302,24 @@ test("account switch and date changes retire old results and late provider respo
   expect(await screen.findByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
   expect(screen.queryByRole("table", { name: /Actual для сверки/ })).not.toBeInTheDocument();
   expect(posts(fetcher)).toHaveLength(1);
+});
+
+test("payout entry rejects a late A response after A→B→A even though the account name matches again", async () => {
+  const { state, fetcher } = setup("/v2/close?panel=payouts&source_account=SYNTH-01", true);
+  let finish: ((value: Response) => void) | undefined;
+  state.reply = () =>
+    new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  fireEvent.click(await screen.findByRole("button", { name: /Запросить предварительные/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Другой счёт" }));
+  await screen.findByText(/Выбранный счёт: SYNTH-02/);
+  fireEvent.click(screen.getByRole("button", { name: "Первый счёт" }));
+  await screen.findByText(/Выбранный счёт: SYNTH-01/);
+  await act(async () => finish?.(json(preview())));
+  expect(screen.queryByRole("table", { name: /Actual для сверки/ })).not.toBeInTheDocument();
+  expect(posts(fetcher)).toHaveLength(1);
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
 });
 
 test("read refresh discards provider preview; 409 and wrong scope fail closed without automatic retry", async () => {

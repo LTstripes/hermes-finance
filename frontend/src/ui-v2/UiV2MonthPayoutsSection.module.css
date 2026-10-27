@@ -12,13 +12,33 @@
 }
 
 .scroll table {
-  width: max-content;
-  max-width: none;
-  min-width: 44rem;
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+}
+
+.scroll th:global(.num),
+.scroll td:global(.num) {
+  width: auto;
 }
 
 .scroll th,
 .scroll td {
-  white-space: nowrap;
   vertical-align: top;
+}
+
+.scroll :global(.month-flows-table__party),
+.scroll td:not(:global(.num)) {
+  max-width: 15rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.scroll th {
+  white-space: normal;
+}
+
+.scroll th,
+.scroll td {
+  padding-inline: 6px;
 }

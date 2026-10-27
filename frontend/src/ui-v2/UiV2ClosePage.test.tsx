@@ -187,6 +187,14 @@ describe("native Monthly Close work mode", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Месяц · Август 2031");
     expect(screen.getByText(/Снимок 30.08.2031/)).toBeVisible();
     expect(within(nav).getAllByRole("link")).toHaveLength(10);
+    const panels = within(nav)
+      .getAllByRole("link")
+      .map((link) =>
+        new URL(link.getAttribute("href") ?? "", "http://synthetic").searchParams.get("panel"),
+      );
+    expect(panels.indexOf("brokers")).toBeLessThan(panels.indexOf("positions"));
+    expect(panels.indexOf("positions")).toBeLessThan(panels.indexOf("payouts"));
+    expect(within(nav).getByRole("link", { name: /Выплаты/ })).toHaveTextContent("T-Invest");
     for (const link of within(nav).getAllByRole("link"))
       expect(
         new URL(link.getAttribute("href") ?? "", "http://synthetic").searchParams.get("month"),

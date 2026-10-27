@@ -72,9 +72,11 @@ function selectedSection(params: URLSearchParams): EditorSection | null {
 export default function UiV2MonthEditorPage({
   embeddedMonthId,
   embeddedSection,
+  onNavigationStateChange,
 }: {
   embeddedMonthId?: number;
   embeddedSection?: EditorSection;
+  onNavigationStateChange?: (state: { dirty: boolean; pending: boolean }) => void;
 } = {}) {
   const queryClient = useQueryClient();
   const { monthId: rawMonthId } = useParams();
@@ -131,6 +133,13 @@ export default function UiV2MonthEditorPage({
     [],
   );
   const dirty = Object.values(dirtySections).some(Boolean);
+  useEffect(() => {
+    onNavigationStateChange?.({ dirty, pending });
+  }, [dirty, pending, onNavigationStateChange]);
+  useEffect(
+    () => () => onNavigationStateChange?.({ dirty: false, pending: false }),
+    [onNavigationStateChange],
+  );
 
   const returnContext = parseMonthlyCloseReturnContext(params);
   const returnToClose = embedded
@@ -239,11 +248,13 @@ export default function UiV2MonthEditorPage({
         </div>
       )}
       {rereadNotice ? <p role="status">{rereadNotice}</p> : null}
-      <MonthNavigationGuard
-        dirty={dirty}
-        pending={pending}
-        onDiscard={() => setDirtySections({})}
-      />
+      {!onNavigationStateChange && (
+        <MonthNavigationGuard
+          dirty={dirty}
+          pending={pending}
+          onDiscard={() => setDirtySections({})}
+        />
+      )}
       {monthId === null ? <p role="alert">Некорректный идентификатор месяца.</p> : null}
       {monthId !== null && monthQuery.isPending ? (
         <p role="status">Загружаем выбранный месяц…</p>

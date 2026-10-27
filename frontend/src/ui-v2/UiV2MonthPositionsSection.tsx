@@ -849,7 +849,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   <Th numeric>Цена</Th>
                   <Th numeric>Рыночная стоимость</Th>
                   <Th numeric>Результат</Th>
-                  <Th className="month-positions-table__actions">Действия</Th>
+                  <Th className="month-positions-table__actions" aria-label="Действия">
+                    ⋯
+                  </Th>
                 </tr>
               </thead>
               <tbody>
@@ -1003,8 +1005,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   return (
                     <tr key={row.id}>
                       <Td>{account?.name ?? `#${row.account_id}`}</Td>
-                      <Td>
-                        {instrumentTitle}
+                      <Td className={styles.instrument}>
+                        <span className={styles.instrumentTitle}>{instrumentTitle}</span>
+                        <HelpTip label={`Полное название: ${instrumentTitle}`}>
+                          {instrumentTitle}
+                        </HelpTip>
                         <div className="muted tiny">
                           {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")} ·{" "}
                           {instrument?.currency ?? "валюта неизвестна"}

@@ -2,6 +2,48 @@
   min-width: 0;
 }
 
+.root :global(.month-positions-table) th:global(.num),
+.root :global(.month-positions-table) td:global(.num) {
+  width: auto;
+}
+
+.root :global(.position-price) {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.root :global(.month-positions-table) {
+  width: 100%;
+  min-width: 0;
+  table-layout: auto;
+}
+
+.root :global(.month-positions-table__instrument) {
+  width: 14%;
+}
+
+.root :global(.month-positions-table__account) {
+  width: 4.5rem;
+}
+
+.root :global(.month-positions-table) th,
+.root :global(.month-positions-table) td {
+  padding-inline: 4px;
+}
+
+.instrumentTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  max-width: 15rem;
+}
+
+.instrument {
+  max-width: 15rem;
+}
+
 .scrollHint {
   display: none;
 }

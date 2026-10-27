@@ -7,6 +7,7 @@ import { Button } from "../components/ui";
 import { MonthInstrumentPayouts } from "./MonthInstrumentPayouts";
 import { SourceInstrumentDetail, money, observed, rate, Reasons } from "./SourceInstrumentDetail";
 import styles from "./UiV2BondSlice.module.css";
+import monthStyles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
@@ -17,12 +18,14 @@ export function UiV2MonthInstruments({
   month,
   account,
   sourceVersion,
+  payoutsOnly = false,
 }: {
   monthId: number;
   year: number;
   month: number;
   account: string;
   sourceVersion: string;
+  payoutsOnly?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
@@ -103,7 +106,7 @@ export function UiV2MonthInstruments({
   return (
     <UiV2Panel
       eyebrow="Из сохранённых источников · только чтение"
-      title="Бумаги и выплаты"
+      title={payoutsOnly ? "Получено / из выписок" : "Бумаги и выплаты"}
       id="month-instruments"
       testIdPrefix="month"
       wide
@@ -130,7 +133,7 @@ export function UiV2MonthInstruments({
           {!data.instruments.length ? (
             <p>В этом счёте нет доступных инструментов. Это не означает нулевой результат.</p>
           ) : (
-            <div className={styles.tableWrap}>
+            <div className={`${styles.tableWrap} ${monthStyles.instrumentTable}`}>
               <table className={styles.table}>
                 <caption>Инструменты выбранного счёта и месяца</caption>
                 <thead>
@@ -147,6 +150,7 @@ export function UiV2MonthInstruments({
                       <th>
                         <button
                           type="button"
+                          title={row.source_name ?? row.isin}
                           aria-pressed={instrument?.isin === row.isin}
                           onClick={() =>
                             setParams((previous) => {
@@ -157,7 +161,9 @@ export function UiV2MonthInstruments({
                             })
                           }
                         >
-                          {row.source_name ?? row.isin}
+                          <span className={monthStyles.instrumentName}>
+                            {row.source_name ?? row.isin}
+                          </span>
                         </button>
                         <br />
                         {row.isin} ·{" "}
@@ -205,6 +211,60 @@ export function UiV2MonthInstruments({
                 }
                 . Это доступные события источника; полнота и исключения показаны ниже.
               </p>
+              {payoutsOnly && (
+                <section aria-label="Наблюдения выплат источника">
+                  <p>
+                    Наблюдения источника · не принятые финансовые записи. Они не добавляются к итогу
+                    фактических выплат. Неизвестный налог остаётся неизвестным.
+                    <a href="#month-source-review"> Рассмотрение и сверка выписки</a>
+                  </p>
+                  {events
+                    .filter((event) => ["COUPON", "DIVIDEND", "REDEMPTION"].includes(event.kind))
+                    .map((event) => (
+                      <article key={event.event_key} className={monthStyles.observedPayout}>
+                        <strong>
+                          {event.event_date} ·{" "}
+                          {event.kind === "COUPON"
+                            ? "Купон"
+                            : event.kind === "DIVIDEND"
+                              ? "Дивиденды"
+                              : "Погашение"}
+                        </strong>
+                        <span>Нетто по источнику: {money(event.net_payout_kopecks)}</span>
+                        <span>
+                          Брутто: {money(event.gross_payout_kopecks)} · Налог:{" "}
+                          {event.withheld_tax_kopecks === null
+                            ? "неизвестен"
+                            : money(event.withheld_tax_kopecks)}
+                        </span>
+                        <span>
+                          Наблюдение источника · {event.current ? "текущее" : "не текущее"} ·
+                          атрибуция инструменту: {event.persisted_link_status ?? "не подтверждено"}
+                        </span>
+                        <details>
+                          <summary>Статус и доказательства наблюдения</summary>
+                          <p>
+                            Классификация: {event.classification_status ?? "не подтверждена"}.
+                            Включено в предварительный расчёт: {event.counted ? "да" : "нет"}.
+                          </p>
+                          <p>
+                            Ссылки источника: {event.source_references.join(", ") || "не указаны"}.
+                          </p>
+                          <Reasons codes={event.assumptions} />
+                        </details>
+                        <Reasons codes={event.reason_codes} />
+                      </article>
+                    ))}
+                  {!events.some((event) =>
+                    ["COUPON", "DIVIDEND", "REDEMPTION"].includes(event.kind),
+                  ) && (
+                    <p>
+                      В выбранном месяце распознанных выплат этой бумаги нет. Это не доказывает
+                      отсутствие полученных выплат.
+                    </p>
+                  )}
+                </section>
+              )}
               <details>
                 <summary>Сделки, выплаты и расчёт инструмента</summary>
                 <SourceInstrumentDetail

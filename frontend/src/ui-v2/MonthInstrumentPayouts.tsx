@@ -237,7 +237,11 @@ export function MonthInstrumentPayouts({
   }
 
   return (
-    <section className={styles.preview} aria-label={`Предварительные выплаты ${isin}`}>
+    <section
+      id="month-payout-preview"
+      className={styles.preview}
+      aria-label={`Предварительные выплаты ${isin}`}
+    >
       <h3>Предварительные выплаты · T-Invest</h3>
       <details>
         <summary>О предварительных выплатах</summary>
