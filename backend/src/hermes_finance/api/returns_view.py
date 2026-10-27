@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.services import returns_view
+from hermes_finance.services import returns_basket, returns_view
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -159,3 +159,54 @@ def instrument(
     session: Session = Depends(session_for_request),
 ):
     return read(returns_view.read_detail, session, isin=isin, **selected)
+
+
+class BasketCell(DTO):
+    period: Period
+    value_kopecks: str | None
+    reason_codes: list[str]
+
+
+class BasketComponent(DTO):
+    id: str
+    label: str
+    category: Literal["brokerage_iis", "deposits", "gold"]
+    basis: Literal["statements", "accepted", "unsupported"]
+    method: str
+    cells: list[BasketCell]
+
+
+class BasketSubtotal(DTO):
+    value_kopecks: str | None
+    covered_cells: int
+    total_cells: int
+    method: str
+    reason_codes: list[str]
+
+
+class Basket(DTO):
+    period: Period
+    categories: list[Literal["brokerage", "iis", "deposits", "gold"]]
+    partial: Literal[True]
+    result_kopecks: None
+    known_partial_subtotal_kopecks: str | None
+    rate: Metric
+    reason_codes: list[str]
+    source_subtotal: BasketSubtotal
+    deposit_received_interest: BasketSubtotal
+    components: list[BasketComponent]
+
+
+@router.get("/basket", response_model=Basket)
+def basket(
+    request: Request,
+    response: Response,
+    start: date,
+    end: date,
+    categories: Annotated[str, Query(max_length=64)] = ",".join(returns_basket.CATEGORIES),
+    session: Session = Depends(session_for_request),
+):
+    no_store(response)
+    if start >= end or any(len(request.query_params.getlist(k)) != 1 for k in request.query_params):
+        raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
+    return read(returns_basket.read_basket, session, start=start, end=end, categories=categories)

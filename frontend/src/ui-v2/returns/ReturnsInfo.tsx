@@ -3,6 +3,24 @@ import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const reasons: Record<string, string> = {
+  historical_brokerage_iis_type_unproven:
+    "Исторический тип счёта не подтверждён. Для известной части по всем выпискам включите и брокерские счета, и ИИС.",
+  basket_native_identity_unproven:
+    "Идентичность счёта или его aliases не подтверждена однозначно; сумма исключена.",
+  basket_account_identity_overlap:
+    "Представления счетов пересекаются или противоречат друг другу. Сумма исключена во избежание двойного учёта.",
+  basket_crossing_reconciliation_unavailable:
+    "Есть движения через границу счёта или сведения о переводе. Их общий эффект и расходы для выбранной корзины не подтверждены; месяц исключён.",
+  accepted_basket_pnl_and_category_unproven:
+    "Подтверждённый денежный мост счёта не является P&L этой корзины; историческая категория также не подтверждена.",
+  source_inventory_unproven: "Состав счетов по выпискам не подтверждён.",
+  deposit_inventory_unproven: "Нет наблюдений, доказывающих состав депозитов за период.",
+  deposit_snapshot_missing:
+    "В этом месяце нет наблюдения по депозитам этого счёта. Это не нулевые проценты.",
+  calendar_month_missing_or_not_closed:
+    "Нет единственного закрытого отчёта за этот календарный месяц.",
+  physical_gold_period_evidence_unavailable:
+    "Доходность физического золота за период не подтверждена. Текущая стоимость и прирост от цены покупки её не заменяют.",
   missing_endpoint: "Не хватает стоимости на границе периода.",
   missing_quantity: "Не подтверждено количество на границе периода.",
   unknown_flow: "Не все движения денег определены.",

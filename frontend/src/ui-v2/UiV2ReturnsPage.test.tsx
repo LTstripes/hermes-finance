@@ -1,10 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import UiV2ReturnsPage from "./UiV2ReturnsPage";
-import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
+import { afterEach, expect, test, vi } from "vitest";
 import {
+  basketFixture,
   contextFixture,
   detailFixture,
   longHistoryContext,
@@ -13,6 +12,8 @@ import {
   may,
   overviewFixture,
 } from "./returns/fixtures";
+import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
+import UiV2ReturnsPage from "./UiV2ReturnsPage";
 
 function Location() {
   const location = useLocation();
@@ -41,11 +42,13 @@ function install(override?: (url: URL) => Promise<Response> | undefined) {
       };
       return Promise.resolve(
         response(
-          url.pathname.endsWith("context")
-            ? contextFixture
-            : url.pathname.endsWith("instrument")
-              ? detailFixture(scope, period, url.searchParams.get("isin") ?? undefined)
-              : overviewFixture(scope, period),
+          url.pathname.endsWith("basket")
+            ? basketFixture(period, url.searchParams.get("categories") ?? undefined)
+            : url.pathname.endsWith("context")
+              ? contextFixture
+              : url.pathname.endsWith("instrument")
+                ? detailFixture(scope, period, url.searchParams.get("isin") ?? undefined)
+                : overviewFixture(scope, period),
         ),
       );
     }),

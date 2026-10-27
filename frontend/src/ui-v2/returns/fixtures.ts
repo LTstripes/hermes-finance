@@ -1,5 +1,53 @@
 /** Fabricated DTOs for Returns consumer/desktop tests only. No account data. */
 import type { Context, Detail, Instrument, Metric, Overview, Period, Result } from "./model";
+import type { Basket } from "./ReturnsBasket";
+export function basketFixture(period: Period, categories = "brokerage,iis,deposits,gold"): Basket {
+  const included = categories ? categories.split(",") : [];
+  const source = included.includes("brokerage") && included.includes("iis");
+  const subtotal = (value: string | null, total: number, method: string) => ({
+    value_kopecks: value,
+    covered_cells: value === null ? 0 : 1,
+    total_cells: total,
+    method,
+    reason_codes: [],
+  });
+  return {
+    period,
+    categories: included,
+    partial: true,
+    result_kopecks: null,
+    known_partial_subtotal_kopecks: source ? "-2000" : null,
+    reason_codes: ["basket_full_result_unproven"],
+    source_subtotal: subtotal(
+      source ? "-2000" : null,
+      source ? 2 : 0,
+      "source_no_crossing_calendar_months",
+    ),
+    deposit_received_interest: subtotal(
+      included.includes("deposits") ? "300" : null,
+      included.includes("deposits") ? 1 : 0,
+      "deposit_received_interest",
+    ),
+    components: included.includes("gold")
+      ? [
+          {
+            id: "gold:unknown",
+            label: "Физическое золото",
+            category: "gold",
+            basis: "unsupported",
+            method: "physical_gold_period_unavailable",
+            cells: [
+              {
+                period,
+                value_kopecks: null,
+                reason_codes: ["physical_gold_period_evidence_unavailable"],
+              },
+            ],
+          },
+        ]
+      : [],
+  };
+}
 export const april = { start: "2030-03-31", end: "2030-04-30" };
 export const may = { start: "2030-04-30", end: "2030-05-31" };
 export const contextFixture: Context = {

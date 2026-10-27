@@ -317,6 +317,18 @@ Exact historical performance uses historical membership, dated cash/in-kind cove
 
 ### Returns workspace
 
+«Моя доходность» on this same screen selects brokerage, IIS, deposits/savings
+and physical gold, all checked initially, over one backend-selected period.
+URL/Back/Reload retain membership. Empty selection asks for a category; unknown
+data do not uncheck a category or become zero. The first bounded panel shows a
+separately labelled source-only partial RUB result and separate actual deposit
+interest, with dates, observation coverage and concrete exclusions. It does not
+add these different methods. Full basket result/rate and unsupported physical
+gold period return remain unavailable; principal increases and current cost gains
+are not period income. Historical brokerage/IIS subtype is never inferred from
+today's account type. Existing account/class detail retains its scope. Exact
+capabilities and conservative crossing exclusions are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-selected-basket).
+
 `/v2/returns` is the ordinary **Доходность** entry in the left navigation. It
 defaults to the latest CLOSED month, even when a newer DRAFT exists, and pins
 the account and EOD dates in the URL. Four compact cards show the selected

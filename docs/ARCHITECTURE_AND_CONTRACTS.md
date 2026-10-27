@@ -6395,6 +6395,65 @@ ISIN precedence in table, tops and detail. Missing names have an accessible
 explanation. No automatic lookup, catalogue/financial write or identity guessing
 is introduced by a Returns GET.
 
+<a id="c7-returns-selected-basket"></a>
+### Selected investment basket: bounded first read model
+
+`GET /api/returns/basket?start=...&end=...&categories=brokerage,iis,deposits,gold`
+implements the bounded first panel from [#963 D](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6448489993).
+The four checkboxes default ON. The URL retains the exact period and category
+set; an explicit empty set means no selection, never zero RUB/percent. Repeated
+selection keys, unknown and duplicate categories fail closed. One coherent read
+snapshot supplies all components; no writer/provider/schema/Month change or
+change to PerformanceScope occurs. Browser request keys and cancellation include
+the whole selected period/set; old/ABA responses never fill the current panel.
+
+Full basket money and rate remain NULL: there is no supported dynamic-union
+kernel. PERF04A is a value bridge, not basket P&L; portfolio-wide class gold is
+not a physical-gold subset. `known_partial_subtotal_kopecks` is exclusively the
+signed **source-only** known part, always `partial=true`, labelled «Известная
+часть по выпискам». Source results stay provisional, not a confirmed personal
+after-all-taxes result. Source subtotal, separate received deposit interest,
+per-component dates/methods/reasons and covered/total observation cells are
+returned explicitly. Counts are observation coverage, not capital coverage or
+proof of complete inventory. Empty operands stay NULL; observed zero survives.
+
+Source grouping reuses #976's exact native/filename-alias proof. Conflicting or
+unproved document scopes and known mappings of multiple native groups to one
+accepted account are withheld. Accepted representations are not extra addends.
+Current mutable Account type and broker mappings do not prove historical
+brokerage/IIS subtype. With both boxes selected, proven native accounts belong
+to their union once; with just either box selected they remain UNKNOWN. Accepted
+account-only results stay unavailable rather than borrowing a current type,
+portfolio scope or PERF04 bridge. Shared ISINs in distinct accounts stay distinct.
+
+Exactly one existing full calendar account-month source growth is admitted per
+cell, including losses and true zeros. No outer report/segment/security result
+or extra payout is added. This first subset excludes cells containing ANY source
+external-flow evidence regardless of status/included/amount. It also excludes
+overlapping originals with raw normalized `unparsed_source_rows`,
+`4_Transfers_unsupported`, `5_UFSR_unsupported`, or saved internal-transfer /
+existing `is_broker_transfer` evidence. Structural/proof waivers are not used to
+infer union crossing reconciliation; no new XML/transfer-pair model is added.
+This conservative subset cannot lose an internal fee by summing account bridges.
+Missing/ambiguous/partial calendar cells and reader reasons remain explicit.
+
+`deposit_received_interest` separately sums canonical observed DepositSnapshot
+actual received interest once per distinct placement row, account and unique
+CLOSED complete calendar month inside the interval. Snapshot-local deposit_type
+supplies category evidence. Missing rows/months are unknown; multiple distinct
+placements are not deduplicated by names/balances. Current Account type can only
+identify potential missing inventory, never admit money. ICF interest, expected
+interest, principal changes and current gold cost gains are not operands. Known
+source/deposit account overlap withholds both; even distinct account IDs do not
+prove disjoint payout events, so deposit interest is NEVER added to the source
+partial. Physical gold period result stays NULL with its concrete evidence
+reason; current valuations and whole-portfolio class rates cannot fill it.
+
+This first panel deliberately leaves flow-bearing union reconciliation,
+historical brokerage/IIS classification, mixed-source event reconciliation and
+physical-gold period performance for a separately accepted contract. Existing
+source/account/class detail modes keep their own supported meaning and URLs.
+
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
