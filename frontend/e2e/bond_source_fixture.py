@@ -54,7 +54,7 @@ def original(account, *, trade=False, adverse=False, long=False):
             trade_no="10000000001\n2000000001" if trade else "10000000002\n2000000002",
             qty="1",
             Price="100",
-            summ_trade="1000",
+            summ_trade="1020" if trade else "1000",  # T includes N=20; F=5 is separate.
             summ_nkd="20",
             bank_tax="5",
             nominal="1000",
