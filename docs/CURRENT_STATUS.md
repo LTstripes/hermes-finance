@@ -23,8 +23,8 @@ are both SUCCESS (candidate CI attempt 2; first native Month
 `6a3f3d37b7ad6c3d8f2d96a7a1a6b86433d3ac60` equals the exact tested
 synthetic merge with current main. [New exact-main push
 CI40457523342](https://github.com/LTstripes/hermes-finance/actions/runs/40457523342)
-is **IN PROGRESS** at this checkpoint; code merge does not yet imply terminal
-canonical CI PASS.
+is **COMPLETED SUCCESS** on the exact merge SHA:
+28 successful jobs, 3 expected skips and terminal `ci-ok` SUCCESS.
 
 **Already integrated usability:** [#971](https://github.com/LTstripes/hermes-finance/pull/971)
 uses an exact-ISIN name from existing source/catalogue when available; otherwise
@@ -53,7 +53,7 @@ remaining source→position/forecast quantity evidence gaps.
 
 | Layer | Current verified status |
 | --- | --- |
-| Canonical GitHub main | `3d7fac67…`, #971/#972 usability and #970 financial 0066 source code **MERGED**; reviewed tree equals tested GitHub merge tree. [Exact push CI40457523342](https://github.com/LTstripes/hermes-finance/actions/runs/40457523342) **IN PROGRESS** until terminal ci-ok. |
+| Canonical GitHub main | `3d7fac67…`, #971/#972 usability and #970 financial 0066 source code **MERGED**; reviewed tree equals tested GitHub merge tree. [Exact push CI40457523342](https://github.com/LTstripes/hermes-finance/actions/runs/40457523342) **COMPLETED SUCCESS**, 28 successes, 3 expected skips and terminal `ci-ok` SUCCESS. |
 | Independent code acceptance | #970 [exact-head GO](https://github.com/LTstripes/hermes-finance/pull/970#pullrequestreview-5662750129), [PR CI attempt 2](https://github.com/LTstripes/hermes-finance/actions/runs/40453651414) SUCCESS and [UI comparison](https://github.com/LTstripes/hermes-finance/actions/runs/40453651427) SUCCESS. Synthetic 0065→0066 migration, 136 old trigger SQL bodies, index graph, four rollback checkpoints and P1/P2 boundary fixes are tested; **no Owner data migration is implied**. |
 | Published release | [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0) at `d53a6740…`, schema 0065. New merged main/0066 has **no published release**. |
 | Installed HONOR Stable | [Owner-local Operator LIVE receipt](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6408493088): v1.6.0/0065 health and Month/Returns UI PASS, DB unchanged: 78 tables, 10 originals, 9 CLOSED. **Test stopped.** #970/#971/#972 changes are NOT installed. |
@@ -124,12 +124,7 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Finish code integration check:** confirm [exact main push
-   CI40457523342](https://github.com/LTstripes/hermes-finance/actions/runs/40457523342)
-   on `3d7fac67…` reaches terminal **SUCCESS and ci-ok SUCCESS**. The
-   independent #970 source/migration GO already exists; no duplicate audit
-   of the unchanged reviewed candidate or full-suite rerun is needed.
-2. **Protected 0066 operations remain separate:** prepare **one narrowly scoped
+1. **Protected 0066 operations remain separate:** prepare **one narrowly scoped
    Owner decision** for an isolated, backup-first **disposable/Test 0065→0066
    migration rehearsal** against verified existing DB selection and explicit
    recovery; first confirm physical DB identity, no pre-existing schema drift,
@@ -137,7 +132,7 @@ observations across overlapping statements for distinct payments.
    Do not run 0066 on the currently serving Stable or import Owner source
    under this documentation/code integration. Published Stable v1.6.0 stays
    on 0065 until a new reviewed release and separately authorized rollout.
-3. **Owner financial user-path UAT after rehearsal:** next DRAFT month →
+2. **Owner financial user-path UAT after rehearsal:** next DRAFT month →
    scoped MyBroker original(s) and genuine exceptions → established instrument/
    position and provider-quantity basis → accepted actual/forecast link →
    payout calendar (paid/future/UNKNOWN) → read-only supported Returns →
@@ -145,7 +140,7 @@ observations across overlapping statements for distinct payments.
    from current source-only Save and the user's unverified 2024–2026 history;
    do not close #711 or declare full financial import complete before actual
    UAT and independently supported evidence.
-4. **Target missing history evidence**, reusing [#769](https://github.com/LTstripes/hermes-finance/issues/769),
+3. **Target missing history evidence**, reusing [#769](https://github.com/LTstripes/hermes-finance/issues/769),
    [#891](https://github.com/LTstripes/hermes-finance/issues/891),
    [#709](https://github.com/LTstripes/hermes-finance/issues/709)
    and [#940](https://github.com/LTstripes/hermes-finance/issues/940):
@@ -153,7 +148,7 @@ observations across overlapping statements for distinct payments.
    missing 2024/EOD operands, August principal/cash proof, June REPO and
    September bond NKD/settlement. No wholesale backfill, reimport, silent
    corrections to CLOSED or UNKNOWN→zero.
-5. **Later UI/maintenance only when valuable:** separate editor stays KEEP
+4. **Later UI/maintenance only when valuable:** separate editor stays KEEP
    after #940 audit, exact-ISIN display labels (#971) and old route query/hash
    compatibility (#972) are already code-merged. Legacy Alfa PRO/import
    entrypoints need confirmed consumer-route replacement before retirement.
