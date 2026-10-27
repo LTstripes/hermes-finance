@@ -83,6 +83,7 @@ export function ReturnsBasket({ period, refreshing }: { period: Period; refreshi
         <h2 id="my-returns-heading">Моя доходность</h2>
         {valid && <span>{periodLabel(period)}</span>}
       </div>
+      <p>Все счета выбранных категорий. Подробности отдельного счёта — ниже.</p>
       <fieldset className={`${styles.filters} ${styles.basketCategories}`}>
         <legend>Что учитывать</legend>
         {basketCategories.map((category, i) => (

@@ -433,6 +433,9 @@ export default function UiV2ReturnsPage() {
         ) : null}
         {data && (
           <>
+            <h2>
+              Подробности по счёту: {context.data?.accounts.find((a) => a.id === scope)?.label}
+            </h2>
             <div className={styles.cards}>
               <section
                 className={`${styles.card} ${styles.primaryCard}`}
