@@ -63,7 +63,7 @@ Unresolved NKD/REPO/EOD evidence is separate from honest UI acceptance.
 
 | Layer | Current verified status |
 | --- | --- |
-| GitHub `main` | `df1e6884fa7e70cb3559363d5fb1f90b18f11093`, #976/#977/#979 merged after independent code/financial review. #977 exact [push CI40575981857](https://github.com/LTstripes/hermes-finance/actions/runs/40575981857) SUCCESS; #979 final combined [push CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918) **IN_PROGRESS / not terminal**. PR CI success is not itself this final gate. |
+| GitHub `main` | `df1e6884fa7e70cb3559363d5fb1f90b18f11093`, #976/#977/#979 merged after independent code/financial review. #977 exact [push CI40575981857](https://github.com/LTstripes/hermes-finance/actions/runs/40575981857) SUCCESS; #979 final combined [push CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918) **FAILED** on one no-CLOSED source-period Frontend regression; [#980](https://github.com/LTstripes/hermes-finance/pull/980) is Draft/pending checks. PR CI success is not itself this final gate. |
 | Published release | [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0), peeled `d53a6740…`, released schema 0065. No release yet for #970/0066 or new Month/Returns changes. |
 | HONOR Stable | Attributed local receipts: same published v1.6.0/0065 and protected physical DB, originals, proof receipts and 9 CLOSED preserved. New main code not installed. |
 | Isolated Test | Operator technical 0065→0066 PASS and 35 scoped GETs on pinned `87624e12…`, then Test stopped; no new `df1e6884` repin/desktop acceptance. |
