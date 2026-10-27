@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -252,6 +253,7 @@ class PayoutCalendarMonthOut(BaseModel):
     passive_net: MoneyValue
     total_net: MoneyValue
     items: list[PayoutCalendarItemOut]
+    actual_attribution_coverage: Literal["complete", "unknown"] = "complete"
 
 
 @dataclass(frozen=True, slots=True)
@@ -909,6 +911,7 @@ def payout_calendar_endpoint(
             other=_money_amount(month.other),
             passive_net=_money_amount(month.passive_net),
             total_net=_money_amount(month.total_net),
+            actual_attribution_coverage=month.actual_attribution_coverage,
             items=[
                 PayoutCalendarItemOut(
                     source_kind=item.source_kind.value,

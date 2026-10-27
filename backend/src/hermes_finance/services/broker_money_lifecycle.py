@@ -26,6 +26,7 @@ from hermes_finance.persistence import (
     MyBrokerImport,
     PositionSnapshot,
     ReportingMonth,
+    SecurityRegIsinMapping,
 )
 from hermes_finance.services.broker_money_ownership import key, owners
 from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, digest
@@ -44,7 +45,7 @@ def next_journal_revision(session):
             (
                 journal.payload(r).get("journal_revision", 0)
                 for r in rows
-                if journal.kind(r) in {journal.MONEY, journal.DEPENDENCY}
+                if journal.kind(r) in journal.REVISION_KINDS
             ),
             default=0,
         )
@@ -217,7 +218,7 @@ def _before_flush(session, _context, _instances):
             target_id = (
                 (
                     row.investment_cash_flow_id
-                    if row.role == "coupon"
+                    if row.role in {"coupon", "dividend"}
                     else row.historical_owner_flow_id
                 )
                 if isinstance(row, BrokerMoneyOccurrenceOwner)
@@ -262,7 +263,7 @@ def _before_flush(session, _context, _instances):
                 if not isinstance(row, InvestmentCashFlow):
                     continue
                 for link in links:
-                    if link.role != "coupon":
+                    if link.role not in {"coupon", "dividend"}:
                         continue
                     target = session.get(InvestmentCashFlow, link.investment_cash_flow_id)
                     if target and (
@@ -332,13 +333,19 @@ def _before_flush(session, _context, _instances):
             month = session.get(ReportingMonth, receipt.reporting_month_id)
             instruments = (
                 {int(target["facts"]["instrument_id"])}
-                if target["role"] in ("coupon", "trade") and target["facts"]
+                if target["role"] in ("coupon", "dividend", "trade") and target["facts"]
                 else set()
             )
             source_ids = {s["import_id"] for s in proof["sources"]}
             funding_ids = {target["target_id"]} if target["role"] == "account_funding" else set()
 
             def affects(row):
+                if isinstance(row, SecurityRegIsinMapping):
+                    return target["role"] == "dividend" and any(
+                        e["target_id"] == target["target_id"]
+                        and e["identity_proof"]["registration"] in _values(row, "reg_number")
+                        for e in proof.get("dividend_evidence", [])
+                    )
                 if isinstance(row, ReportingMonth):
                     return (
                         target["role"] == "trade"

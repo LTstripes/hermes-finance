@@ -33,7 +33,7 @@ def owners(session, occurrences):
                         if field
                         else (
                             row.investment_cash_flow_id
-                            if row.role == "coupon"
+                            if row.role in {"coupon", "dividend"}
                             else row.historical_owner_flow_id
                         ),
                         "row_fingerprint": row.source_fingerprint

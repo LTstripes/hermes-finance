@@ -55,7 +55,10 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services.cash_flow_ladder import build_cash_flow_ladder
 from hermes_finance.services.passive_income import passive_income_for_months
-from hermes_finance.services.payout_calendar import merged_payout_calendar
+from hermes_finance.services.payout_calendar import (
+    INCOMPLETE_PAYOUT_WARNING,
+    merged_payout_calendar,
+)
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 from hermes_finance.services.settings import parse_passive_income_history_start_month
 
@@ -441,6 +444,13 @@ def materialize_frozen_base(
         }
         for item in frozen_ladder.months
     ]
+    payout_warnings = (
+        (INCOMPLETE_PAYOUT_WARNING,)
+        if any(bucket.actual_attribution_coverage == "unknown" for bucket in merged_months)
+        else ()
+    )
+    if payout_warnings:
+        forecast_dict["actual_attribution_coverage"] = "unknown"
     base_fingerprint = compute_frozen_base_fingerprint(
         reporting_month=reporting_month_dict,
         reporting_currency=DEFAULT_BASE_CURRENCY,
@@ -470,4 +480,5 @@ def materialize_frozen_base(
         forecast=forecast_inputs,
         ladder=frozen_ladder,
         base_fingerprint=base_fingerprint,
+        payout_warnings=payout_warnings,
     )

@@ -13,7 +13,20 @@ import { BrokerMoneyReview, MoneyStored } from "./BrokerMoneyReview";
 
 vi.mock("../../api/instruments", () => ({
   listInstruments: async () => [
-    { id: 2, name: "Synthetic bond", isin: "RU000A000001", currency: "RUB" },
+    {
+      id: 2,
+      name: "Synthetic bond",
+      instrument_type: "bond",
+      isin: "RU000A000001",
+      currency: "RUB",
+    },
+    {
+      id: 3,
+      name: "Synthetic stock",
+      instrument_type: "stock",
+      isin: "RU000A000002",
+      currency: "RUB",
+    },
   ],
 }));
 vi.mock("../../api/brokerMoney", () => ({
@@ -86,9 +99,11 @@ beforeEach(() => {
     can_apply: intent.money_decisions.every((d) =>
       d.role === "coupon"
         ? !!d.coupon_claims
-        : d.role === "trade"
-          ? !!d.trade_claims
-          : !!d.owner_flow_intent,
+        : d.role === "dividend"
+          ? !!d.dividend_claims
+          : d.role === "trade"
+            ? !!d.trade_claims
+            : !!d.owner_flow_intent,
     ),
     blockers: [],
     exceptions: ["money_semantics_unsupported"],
@@ -526,3 +541,59 @@ it.each(["account", "month", "base", "file", "closed", "epoch"])(
     expect(applyBrokerMoney).not.toHaveBeenCalled();
   },
 );
+
+it("dividend v2 opt-in requires independent final-net basis and strict reviewed claims", async () => {
+  const normalPreview = vi.mocked(previewBrokerMoney).getMockImplementation();
+  if (!normalPreview) throw new Error("missing mock");
+  vi.mocked(previewBrokerMoney).mockImplementation(async (files, intent) => ({
+    ...(await normalPreview(files, intent)),
+    inventory:
+      intent.contract_version === "broker_money_v2"
+        ? [{ ...inventory[0], candidate_kind: "dividend_paid_candidate" }]
+        : inventory,
+  }));
+  const v2 = (id: string): MoneyReadback => ({
+    ...readback(id),
+    contract_version: "broker_money_v2",
+    targets: [{ ...readback(id).targets[0], role: "dividend" }],
+  });
+  vi.mocked(applyBrokerMoney).mockImplementation(async (_files, _intent, _digest, id) => v2(id));
+  vi.mocked(readBrokerMoney).mockImplementation(async (id) => v2(id));
+  show(false, new File(["synthetic"], "synthetic.xml", { type: "application/xml" }));
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Принять Money в этот черновик"));
+  await user.click(screen.getByLabelText("Проверять также строгие net-дивиденды"));
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  const table = await screen.findByRole("table", { name: "Все наблюдения Money" });
+  await user.click(within(table).getByRole("checkbox"));
+  await user.selectOptions(screen.getByLabelText("Подтверждённая акция для строки 2"), "3");
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  const approval = screen.getByRole("checkbox", { name: /Я подтверждаю перечисленные конкретные/ });
+  expect(approval).toBeDisabled();
+  await user.type(
+    screen.getByLabelText("Независимое основание окончательного net-зачисления"),
+    "synthetic-independent-net",
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить Money" }));
+  await user.click(approval);
+  await user.click(screen.getByRole("button", { name: "Принять один Money batch" }));
+  await waitFor(() => expect(readBrokerMoney).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(applyBrokerMoney).mock.calls[0][1]).toMatchObject({
+    contract_version: "broker_money_v2",
+    money_decisions: [
+      {
+        role: "dividend",
+        instrument_id: 3,
+        dividend_claims: {
+          independent_net_basis_reference: "synthetic-independent-net",
+          posted_amount_is_final_net_credit: true,
+          withholding_is_embedded_not_additional_cash_leg: true,
+          review_context_digest: "a".repeat(64),
+        },
+      },
+    ],
+  });
+  expect(
+    await screen.findByRole("table", { name: "Сохранённые Money и доказательства покупки" }),
+  ).toHaveTextContent("Неизвестно");
+});

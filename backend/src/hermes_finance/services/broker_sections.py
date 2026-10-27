@@ -397,7 +397,8 @@ def coverage_disposition(session, source, account_id, codes):
                         "payload_digest": digest(r.projection_json),
                     }
                     for r in scoped
-                    if journal.kind(r) != journal.MONEY
+                    if journal.kind(r)
+                    not in {*journal.MONEY_KINDS, journal.PAYOUT, journal.PAYOUT_DEPENDENCY}
                 ],
                 "sections": sections,
             }

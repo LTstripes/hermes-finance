@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import (
     Account,
@@ -24,6 +25,10 @@ from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 class ExpectedCashFlowNotFoundError(LookupError):
     pass
+
+
+class ExpectedCashFlowRetainedByActualError(ValueError):
+    """An immutable settlement history retains this forecast's identity."""
 
 
 def _require_reporting_month(session: Session, month_id: int) -> ReportingMonth:
@@ -199,8 +204,10 @@ class CalendarMonth:
     passive_net: RubleAmount
     total_net: RubleAmount
     items: tuple[CalendarItem, ...]
+    actual_attribution_coverage: str = "complete"
 
 
+@coherent_read_operation
 def calendar_expected_cash_flows(
     session: Session,
     *,
@@ -233,8 +240,19 @@ def calendar_expected_cash_flows(
         .order_by(ExpectedCashFlow.expected_date, ExpectedCashFlow.id)
     ).all()
 
+    from hermes_finance.services.actual_payouts import future_states
+
+    states = future_states(session, reporting_month_id)
+    incomplete = set()
+    for (kind, ident), state in states.items():
+        if kind == "ecf" and state == "unresolved":
+            row = session.get(ExpectedCashFlow, ident)
+            if row is not None and start <= row.expected_date < end_exclusive:
+                incomplete.add((row.expected_date.year, row.expected_date.month))
     buckets: dict[tuple[int, int], dict[str, object]] = {}
     for flow, account_name, instrument_name in rows:
+        if states.get(("ecf", flow.id)) in {"paid", "unresolved"}:
+            continue
         key = (flow.expected_date.year, flow.expected_date.month)
         bucket = buckets.setdefault(
             key,
@@ -263,6 +281,12 @@ def calendar_expected_cash_flows(
             )
         )
 
+    for key in incomplete:
+        buckets.setdefault(
+            key,
+            {"coupon": 0, "dividend": 0, "interest": 0, "redemption": 0, "other": 0, "items": []},
+        )
+
     def build(key: tuple[int, int], bucket: dict[str, object]) -> CalendarMonth:
         coupon = int(bucket["coupon"])
         dividend = int(bucket["dividend"])
@@ -282,6 +306,7 @@ def calendar_expected_cash_flows(
             passive_net=RubleAmount(passive),
             total_net=RubleAmount(total),
             items=tuple(bucket["items"]),  # type: ignore[arg-type]
+            actual_attribution_coverage="unknown" if key in incomplete else "complete",
         )
 
     return tuple(build(key, bucket) for key, bucket in sorted(buckets.items()))
@@ -417,6 +442,11 @@ def delete_expected_cash_flow(session: Session, flow_id: int) -> None:
         )
         if any(link.archived_from_period is not None for link in links):
             raise ValueError("expected cash flow is retained by historical payout reconciliation")
+        if any(
+            link.investment_cash_flow_id is not None or link.retired_request_id is not None
+            for link in links
+        ):
+            raise ExpectedCashFlowRetainedByActualError("retained_by_actual_reconciliation")
         for link in links:
             session.delete(link)
         session.flush()

@@ -21,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from hermes_finance.actual_payout_schema import LINK_CHECK, LIVE
 from hermes_finance.domain.iis import TaxBenefitStatus
 
 APP_SETTINGS_ID: Final = 1
@@ -287,7 +288,7 @@ class BrokerMoneyOccurrenceOwner(Base):
         CheckConstraint("section = 'money' AND ordinal >= 0", name="ck_broker_money_occurrence"),
         CheckConstraint("length(row_fingerprint) = 64", name="ck_broker_money_fingerprint"),
         CheckConstraint(
-            "(role = 'coupon' AND investment_cash_flow_id IS NOT NULL AND "
+            "(role IN ('coupon', 'dividend') AND investment_cash_flow_id IS NOT NULL AND "
             "historical_owner_flow_id IS NULL) OR (role = 'account_funding' AND "
             "historical_owner_flow_id IS NOT NULL AND investment_cash_flow_id IS NULL)",
             name="ck_broker_money_target",
@@ -2229,9 +2230,17 @@ class ExpectedCashFlow(Base):
         CheckConstraint(
             "expected_net_amount_kopecks >= 0", name="ck_expected_cash_flows_net_nonnegative"
         ),
+        CheckConstraint(
+            "typeof(payout_link_revision) = 'integer' AND payout_link_revision >= 0",
+            name="ck_expected_cash_flows_payout_link_revision",
+        ),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payout_link_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
     reporting_month_id: Mapped[int | None] = mapped_column(
         ForeignKey("reporting_months.id", ondelete="RESTRICT"), nullable=True
     )
@@ -2408,33 +2417,91 @@ class AppliedPayoutRevision(Base):
 
 
 class AppliedPayoutReconciliation(Base):
-    """One link per payout; historical links do not occupy the active flow slot."""
+    """Forecast decisions or immutable actual provenance; never another money row."""
 
     __tablename__ = "applied_payout_reconciliations"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_applied_payout_reconciliations_payout",
             "applied_payout_id",
-            name="uq_applied_payout_reconciliations_payout",
+            unique=True,
+            sqlite_where=text(f"{LIVE} AND applied_payout_id IS NOT NULL"),
         ),
         Index(
             "uq_applied_payout_reconciliations_active_manual_flow",
             "expected_cash_flow_id",
             unique=True,
-            sqlite_where=text("archived_from_period IS NULL"),
+            sqlite_where=text(f"{LIVE} AND expected_cash_flow_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_applied_payout_reconciliations_active_actual_flow",
+            "investment_cash_flow_id",
+            unique=True,
+            sqlite_where=text(f"{LIVE} AND investment_cash_flow_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_applied_payout_reconciliations_active_provider_event",
+            "provider_event_key",
+            unique=True,
+            sqlite_where=text(f"{LIVE} AND provider_event_key IS NOT NULL"),
+        ),
+        Index(
+            "uq_applied_payout_reconciliations_successor",
+            "supersedes_id",
+            unique=True,
+            sqlite_where=text("supersedes_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_applied_payout_reconciliations_legacy_payout",
+            "applied_payout_id",
+            unique=True,
+            sqlite_where=text("investment_cash_flow_id IS NULL AND retired_request_id IS NULL"),
+        ),
+        Index(
+            "uq_applied_payout_reconciliations_receipt_actual",
+            "accepted_request_id",
+            "investment_cash_flow_id",
+            unique=True,
+            sqlite_where=text("accepted_request_id IS NOT NULL"),
         ),
         CheckConstraint(
-            "counting_decision IN ('keep_both', 'count_manual', 'count_provider')",
+            LINK_CHECK,
             name="ck_applied_payout_reconciliations_decision",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    applied_payout_id: Mapped[int] = mapped_column(
-        ForeignKey("applied_provider_payouts.id", ondelete="CASCADE"), nullable=False
+    applied_payout_id: Mapped[int | None] = mapped_column(
+        ForeignKey("applied_provider_payouts.id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        nullable=True,
     )
-    expected_cash_flow_id: Mapped[int] = mapped_column(
-        ForeignKey("expected_cash_flows.id", ondelete="RESTRICT"), nullable=False
+    expected_cash_flow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expected_cash_flows.id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        nullable=True,
     )
+    investment_cash_flow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("investment_cash_flows.id", ondelete="RESTRICT", onupdate="NO ACTION")
+    )
+    applied_payout_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("applied_payout_revisions.id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        index=True,
+    )
+    money_proof_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("broker_month_applies.request_id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        index=True,
+    )
+    accepted_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("broker_month_applies.request_id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        index=True,
+    )
+    retired_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("broker_month_applies.request_id", ondelete="RESTRICT", onupdate="NO ACTION"),
+        index=True,
+    )
+    supersedes_id: Mapped[int | None] = mapped_column(
+        ForeignKey("applied_payout_reconciliations.id", ondelete="RESTRICT", onupdate="NO ACTION")
+    )
+    provider_event_key: Mapped[str | None] = mapped_column(String(64))
     counting_decision: Mapped[str] = mapped_column(String(16), nullable=False)
     archived_from_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

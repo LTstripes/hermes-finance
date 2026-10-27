@@ -18,6 +18,7 @@ import { formatDate, formatMoney } from "../../lib/format";
 import { queryKeys } from "../../queryClient";
 import { Button, Panel, Table, Td, Th } from "../ui";
 import { BrokerMoneyReview } from "./BrokerMoneyReview";
+import { ActualPayoutReview } from "./ActualPayoutReview";
 import styles from "./BrokerMonthReview.module.css";
 import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
@@ -659,6 +660,13 @@ export function BrokerMonthReview({
                   !readOnly && !journalPending ? session.candidate(previous) : undefined
                 }
                 sessionEpoch={original.epoch}
+              />
+              <ActualPayoutReview
+                key={`payout:${previous.request_id}:${original.epoch}`}
+                baseRequestId={previous.request_id}
+                monthId={monthId}
+                accountId={previous.account_id}
+                closed={readOnly || journalPending}
               />
             </div>
           ))

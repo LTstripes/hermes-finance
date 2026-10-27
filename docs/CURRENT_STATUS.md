@@ -1,12 +1,40 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-25**. This is the sole changing project status book. Current source
+Updated **2026-10-27**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
 are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
+
+**Worker candidate, not integrated:** #711 source-owned payout settlement,
+strict dividend Money v2 and scoped Close on branch `worker/711-financial-0066`,
+based on `b03681b9bec1474a6bb6c8cf37ca30093df7447f` (test-only #969).
+During remediation, live main advanced to `51e204015b6ccbe6c62d92fc1ee3bf0124bcc72b`
+(#971 exact-ISIN display names and #972 Month redirect query/hash preservation);
+those changes were inspected without integrating them into this Worker branch.
+The retirement amendment is implemented for separate R2 and atomic LIVE replacement;
+the candidate adds `0066_actual_payout_links`. Its draft PR must carry exact-HEAD
+CI and synthetic migration/API/UI evidence for independent financial/migration
+review. No acceptance, release, installation, real migration or runtime operation
+is implied. Integration remains with ChatGPT Integrator.
+[Integrator HOLD on #970](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6423924559)
+identified Reopen/reclose paid resurrection, an APP-only Month warning and an
+incomplete historical guard preflight. Independent review of `37db54e7` confirmed
+those three fixes. The [subsequent terminal-lineage HOLD](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6426663970)
+identified explicit retirement followed by forecast-month Close restoring future
+income and clearing UNKNOWN. This same-PR reader correction retains retired
+terminal coverage, gives current R3/R5 priority and requires current exact distinct
+evidence for future classification. Writers, migrations and hard Close scope are
+unchanged. Independent review of `b9ea716c` confirmed the terminal-lineage P1 fixed.
+The [current-scope P2 HOLD](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6434005164)
+identified a retired coupon link hiding an ECF edited to interest after Close.
+The bounded reader correction now checks current account/instrument/kind/currency
+with the existing scope predicate before historical suppression. Relevant R2/R4
+remain unresolved; current R3/R5 and stale/ABA safeguards retain their priority.
+Exact new-head CI/UI and the same independent Reviewer remain required;
+previous green checks do not clear the HOLD.
 
 **Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.
 New [#964 Returns](https://github.com/LTstripes/hermes-finance/pull/964),

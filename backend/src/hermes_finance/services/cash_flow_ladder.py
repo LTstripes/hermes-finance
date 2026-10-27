@@ -21,7 +21,10 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import Account, DepositSnapshot, ReportingMonth
-from hermes_finance.services.payout_calendar import merged_payout_calendar
+from hermes_finance.services.payout_calendar import (
+    INCOMPLETE_PAYOUT_WARNING,
+    merged_payout_calendar,
+)
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
 
@@ -243,6 +246,8 @@ def build_cash_flow_ladder(
         )
 
     warnings: list[str] = []
+    if any(bucket.actual_attribution_coverage == "unknown" for bucket in merged):
+        warnings.append(INCOMPLETE_PAYOUT_WARNING)
     if deposit_rows:
         warnings.append(
             "Проценты по вкладам — приблизительная оценка по снимкам выбранного месяца; "

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from copy import deepcopy
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -13,8 +14,14 @@ from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.source_intake import router as intake_router
 from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.database import coherent_read_snapshot
-from hermes_finance.domain.broker_money import MoneyConfirmation, MoneyIntent
+from hermes_finance.domain.broker_money import (
+    MoneyConfirmation,
+    MoneyConfirmationV2,
+    MoneyIntent,
+    MoneyIntentV2,
+)
 from hermes_finance.domain.broker_sections import SectionConfirmation, SectionIntent
+from hermes_finance.domain.payout_reconciliation import PayoutConfirmation, PayoutIntent
 from hermes_finance.persistence import BrokerMonthApply
 from hermes_finance.services import broker_month_journal as journal
 from hermes_finance.services import broker_sections
@@ -31,6 +38,58 @@ router = APIRouter(
 )
 
 router.include_router(intake_router)
+
+
+def _money_transport(result):
+    if result.get("contract_version") != journal.MONEY_V2 or "inventory" not in result:
+        return result
+    result = deepcopy(result)
+    for observation in [
+        *result["inventory"],
+        *[decision["observation"] for decision in result["decisions"]],
+    ]:
+        if observation.get("amount_minor") is not None:
+            observation["amount_minor"] = str(observation["amount_minor"])
+    return result
+
+
+@router.get("/payout-obligations")
+def payout_obligations(
+    reporting_month_id: int,
+    account_id: int | None = None,
+    session: Session = Depends(session_for_request),
+):
+    from hermes_finance.services.actual_payouts import obligations
+
+    with coherent_read_snapshot(session):
+        return obligations(session, reporting_month_id, account_id)
+
+
+@router.post("/payout-preview")
+def payout_preview(intent: PayoutIntent, session: Session = Depends(session_for_request)):
+    from hermes_finance.services import actual_payouts
+
+    try:
+        return actual_payouts.preview(session, intent)
+    except MyBrokerError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+@router.post("/payout-apply")
+def payout_apply(confirmation: PayoutConfirmation, session: Session = Depends(session_for_request)):
+    from hermes_finance.services import actual_payouts
+
+    try:
+        return actual_payouts.apply(
+            session,
+            PayoutIntent.model_validate(
+                confirmation.model_dump(exclude={"request_id", "confirmation_digest"})
+            ),
+            request_id=confirmation.request_id,
+            confirmation_digest=confirmation.confirmation_digest,
+        )
+    except MyBrokerError as error:
+        raise HTTPException(409, str(error)) from None
 
 
 class InstrumentDecision(BaseModel):
@@ -91,14 +150,21 @@ async def preview(
             return broker_sections.preview_sections(
                 session, requested_sections, await _bytes(file), file.filename or ""
             )
-        if json.loads(intent).get("contract_version") == "broker_money_v1":
-            requested_money = MoneyIntent.model_validate_json(intent)
+        if json.loads(intent).get("contract_version") in journal.MONEY_KINDS:
+            model = (
+                MoneyIntentV2
+                if json.loads(intent)["contract_version"] == journal.MONEY_V2
+                else MoneyIntent
+            )
+            requested_money = model.model_validate_json(intent)
             if supporting or len(originals) > 31:
                 raise MyBrokerError("money_originals_invalid")
-            return preview_money(
-                session,
-                requested_money,
-                [(f.filename or "", await _bytes(f)) for f in [file, *originals]],
+            return _money_transport(
+                preview_money(
+                    session,
+                    requested_money,
+                    [(f.filename or "", await _bytes(f)) for f in [file, *originals]],
+                )
             )
         if originals:
             raise MyBrokerError("money_intent_required")
@@ -142,13 +208,16 @@ async def apply(
                 confirmation_digest=requested_sections.confirmation_digest,
                 request_id=requested_sections.request_id,
             )
-        if json.loads(confirmation).get("contract_version") == "broker_money_v1":
-            requested_money = MoneyConfirmation.model_validate_json(confirmation)
+        if json.loads(confirmation).get("contract_version") in journal.MONEY_KINDS:
+            v2 = json.loads(confirmation)["contract_version"] == journal.MONEY_V2
+            requested_money = (
+                MoneyConfirmationV2 if v2 else MoneyConfirmation
+            ).model_validate_json(confirmation)
             if supporting or len(originals) > 31:
                 raise MyBrokerError("money_originals_invalid")
             return apply_money(
                 session,
-                MoneyIntent.model_validate(
+                (MoneyIntentV2 if v2 else MoneyIntent).model_validate(
                     requested_money.model_dump(exclude={"request_id", "confirmation_digest"})
                 ),
                 [(f.filename or "", await _bytes(f)) for f in [file, *originals]],

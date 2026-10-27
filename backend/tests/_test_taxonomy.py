@@ -68,6 +68,7 @@ CI_INTEGRATIONS_B_SHARD_MARKERS = (
 # 435.61s. The migration module is deliberately isolated because its 211.30s
 # is almost exactly half of the lane's 425.68s of recorded test time.
 CI_PERSISTENCE_SHARD_WEIGHTS = {
+    "test_actual_payout_migration.py": 45.0,
     "test_applied_payouts.py": 9.937,
     "test_backups_api.py": 0.742,
     "test_class_endpoint_eligibility.py": 28.454,
@@ -274,6 +275,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_t_invest_probe.py": 3.81,
     "test_t_invest_provider.py": 11.02,
     "test_t_invest_quotation.py": 2.54,
+    "test_statement_import_payout_reconciliation.py": 30.0,
 }
 
 # Measured on Windows/Python 3.13.16 at e1c3107a for #902:
@@ -443,6 +445,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
 
 CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
+    "test_statement_import_payout_reconciliation.py": 30.0,
     "test_ai_financial_review_linked_pairs.py": 4.00,
     "test_alfa_pro_snapshot.py": 1.02,
     "test_broker_identity_mappings.py": 5.39,
@@ -597,6 +600,7 @@ _CI_LANE_OVERRIDES = {
     "test_investment_cash_flows.py": "ci_persistence",
     "test_positions_deposits_api.py": "ci_persistence",
     "test_payout_lifecycle_migration.py": "ci_persistence",
+    "test_actual_payout_migration.py": "ci_persistence",
     "test_r08_01b_valuation_points.py": "ci_persistence",
     "test_instrument_mappings_api.py": "ci_integrations",
     "test_ci_lane_ownership.py": "ci_runtime_release",
@@ -607,6 +611,7 @@ _MIGRATION_FILES = frozenset(
     {
         "test_migrations.py",
         "test_payout_lifecycle_migration.py",
+        "test_actual_payout_migration.py",
         "test_r04_08_release_verification.py",
         "test_r05_11_release_verification.py",
         "test_r06_10_release_verification.py",
@@ -868,9 +873,13 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
     relative_path = _relative_test_path(test_path)
     if relative_path is None:
         return None
+    # Keep the accepted A/B groups stable when adding the bounded #711 suite.
+    added = "test_statement_import_payout_reconciliation.py"
+    if relative_path.as_posix() == added:
+        return "ci_integrations_b" if CI_INTEGRATIONS_SHARD_WEIGHTS.get(added, 0) > 0 else None
     return _weighted_shard(
         relative_path.as_posix(),
-        CI_INTEGRATIONS_SHARD_WEIGHTS,
+        {key: value for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items() if key != added},
         CI_INTEGRATIONS_SHARD_MARKERS,
     )
 

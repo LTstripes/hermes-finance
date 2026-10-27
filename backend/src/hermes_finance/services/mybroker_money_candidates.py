@@ -34,8 +34,13 @@ from hermes_finance.statement_import.mybroker import (
 )
 
 ADAPTER = "mybroker-money-candidates-v1"
+ADAPTER_V2 = "mybroker-money-candidates-v2"
 CandidateKind = Literal[
-    "coupon_paid_candidate", "account_cash_in_candidate", "trade_paid_nkd_candidate", "unsupported"
+    "coupon_paid_candidate",
+    "account_cash_in_candidate",
+    "trade_paid_nkd_candidate",
+    "dividend_paid_candidate",
+    "unsupported",
 ]
 # Placeholder values stay opaque. Only delimiters and the complete observed
 # shape are recognized; no token/issuer/date is extracted as an economic key.
@@ -186,6 +191,18 @@ def _minor(row: dict, reasons: set[str]) -> int | None:
     return None
 
 
+def _pattern_v2(operation: str, narrative: str) -> CandidateKind:
+    from hermes_finance.domain.money_security import parse_money_security
+
+    prior = _pattern(operation, narrative)
+    if prior != "unsupported":
+        return prior
+    if operation != "Перевод" or len(narrative) > 4096:
+        return "unsupported"
+    security = parse_money_security(narrative)
+    return "dividend_paid_candidate" if security and security.kind == "dividend" else "unsupported"
+
+
 def _reference(import_id: int, row: dict) -> MoneyOccurrence:
     return MoneyOccurrence(import_id, "money", row["ordinal"], digest(row))
 
@@ -205,7 +222,13 @@ def read_money_candidates(
 
 
 def _read_money_candidates(
-    session: Session, *, import_id: int, document: bytes, filename: str, account_id: int
+    session: Session,
+    *,
+    import_id: int,
+    document: bytes,
+    filename: str,
+    account_id: int,
+    adapter: str = ADAPTER,
 ) -> MoneyCandidateInventory:
     """Read an immutable S1 import, original and full accepted overlap inventory.
 
@@ -214,6 +237,8 @@ def _read_money_candidates(
     Missing/currently changed account links remain visible diagnostics.
     """
     with session.no_autoflush:
+        if adapter not in {ADAPTER, ADAPTER_V2}:
+            raise MyBrokerError("money_candidate_adapter_unsupported")
         source = session.get(MyBrokerImport, import_id, populate_existing=True)
         if source is None:
             raise MyBrokerError("import_not_found")
@@ -327,7 +352,8 @@ def _read_money_candidates(
             if not stored["covered_from"] <= row["date"] <= stored["covered_to"]:
                 reasons.add("posted_date_outside_range")
             minor = _minor(row, reasons)
-            kind = _pattern(operation, narrative) if row["kind"] == "unsupported" else "unsupported"
+            pattern = _pattern if adapter == ADAPTER else _pattern_v2
+            kind = pattern(operation, narrative) if row["kind"] == "unsupported" else "unsupported"
             if kind != "unsupported" and minor is not None:
                 if (minor < 0) != (kind == "trade_paid_nkd_candidate"):
                     reasons.add("candidate_direction_invalid")
@@ -343,7 +369,7 @@ def _read_money_candidates(
                 )
                 if kind == "unsupported":
                     reasons.add("source_pattern_unproven")
-                elif kind == "coupon_paid_candidate":
+                elif kind in {"coupon_paid_candidate", "dividend_paid_candidate"}:
                     reasons.add("instrument_link_unproven")
                 elif kind == "account_cash_in_candidate":
                     reasons.update({"owner_crossing_unproven", "portfolio_externality_unproven"})
@@ -403,7 +429,7 @@ def _read_money_candidates(
                 )
             )
         return MoneyCandidateInventory(
-            ADAPTER,
+            adapter,
             source.id,
             source.document_sha256,
             source.parser_version,

@@ -13,6 +13,8 @@ from xml.etree import ElementTree as ET
 import httpx2
 import uvicorn
 from fastapi import Response
+from sqlalchemy import select
+
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
@@ -20,7 +22,6 @@ from hermes_finance.services.accounts import create_account
 from hermes_finance.services.broker_identity_mappings import confirm_mapping
 from hermes_finance.services.instruments import create_instrument
 from hermes_finance.services.reporting_months import create_reporting_month
-from sqlalchemy import select
 
 
 def main():
@@ -208,13 +209,39 @@ def main():
                     )
 
         # Build the accepted return proof after all catalogue/account dependencies.
-        seed_statement_return(database)
+        from datetime import UTC, datetime
+
+        from hermes_finance.persistence import SecurityRegIsinMapping
+
+        with database.session_factory() as session:
+            payout_account = create_account(
+                session, name="Synthetic payout settlement", account_type="brokerage"
+            )
+            for alias in ("7116600", "7116600-000"):
+                confirm_mapping(
+                    session,
+                    provider="alfa_mybroker",
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_target_id=payout_account.id,
+                )
+            create_reporting_month(session, year=2036, month=1, snapshot_date=date(2036, 1, 31))
+            session.add(
+                SecurityRegIsinMapping(
+                    reg_number="1-01-00000-A",
+                    isin="RU000A000000",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
         app = create_app(database, static_dir=root / "frontend" / "dist")
 
         # All payout I/O in this disposable fixture stays in process.
+        from t_invest_mapping_fixtures import accept_t_invest_mapping
+
         from hermes_finance.market_data.payout_protocol import PayoutFetchResult
         from hermes_finance.persistence import Instrument
-        from t_invest_mapping_fixtures import accept_t_invest_mapping
 
         with database.session_factory() as session:
             for instrument in session.scalars(
@@ -226,6 +253,19 @@ def main():
                     f"71100000-0000-0000-0000-{instrument.id:012d}",
                     isin=instrument.isin,
                 )
+
+        from terminal_payout_seed import seed_terminal_payout
+
+        terminal_payout = seed_terminal_payout(database)
+        # Freeze source-return coverage after the new synthetic account/catalogue
+        # exists. Later catalogue creation correctly invalidates that coverage.
+        seed_statement_return(database)
+
+        @app.get("/api/synthetic-terminal-payout")
+        def terminal_payout_fixture():
+            return terminal_payout
+
+        app.router.routes.insert(0, app.router.routes.pop())
 
         class LocalPayoutProvider:
             def fetch_payouts(self, request):
@@ -239,6 +279,22 @@ def main():
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
+            if kind == "dividend-settlement":
+                from test_statement_import_payout_reconciliation import (
+                    dividend_xml,
+                    move_payout_posted_date,
+                )
+
+                raw = (
+                    dividend_xml()
+                    .replace(b"1234567", b"7116600")
+                    .replace(b"31.12.2029", b"31.12.2035")
+                    .replace(b".01.2030", b".01.2036")
+                    .replace(b"2030-01-", b"2036-01-")
+                )
+                return Response(
+                    move_payout_posted_date(raw, "2036-01-31"), media_type="application/xml"
+                )
             if kind in {"workspace-october-a", "workspace-october-b"}:
                 alias = b"7114001" if kind.endswith("a") else b"7114002"
                 raw = (

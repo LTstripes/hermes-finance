@@ -180,6 +180,7 @@ export type PayoutCalendarItem = {
 };
 
 export type PayoutCalendarMonth = {
+  actual_attribution_coverage?: "complete" | "unknown";
   year: number;
   month: number;
   coupon: MoneyValue;

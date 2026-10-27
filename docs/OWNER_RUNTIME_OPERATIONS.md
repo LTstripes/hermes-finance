@@ -618,6 +618,34 @@ Historical notes before 1.3.0 are organized under `docs/release-notes/` on main;
 Runtime update is backup-first, published immutable release-pinned and separate from Start. Explicitly bind the existing physical production DB and disjoint backup destination. Preserve the matching old code/database recovery pair; old code must not open an unsupported newer schema. `backend/migrations/README` and released migrations remain byte-stable. Current installed/released identity belongs only in S.
 
 <a id="o3-source-proof-recovery"></a>
+### Actual payout schema 0066: candidate recovery boundary
+
+`0066_actual_payout_links` is the code-only #711 candidate; it authorizes no
+Owner/Stable/Test migration. Upgrade requires exactly `0065_source_return_proofs`,
+integrity/FK and supported-schema validation before DDL, FK suspension before
+BEGIN IMMEDIATE, and three explicit rebuilds: ECF, reconciliations and Money
+occurrence owners. Every old value/receipt/CLOSED fact, unrelated schema object,
+prior sequence, both 0065 proof tables and all thirteen guards must survive,
+without new proof nonces from copying. Existing migration transaction handling
+restores FK enforcement after success or failure.
+
+Preflight requires the full released 0065 graph: all 136 trigger SQL bodies and
+81 explicit/implicit indexes, including source correction/disposition guards.
+Names, explicit SQL, uniqueness and complete index keys are checked before DDL;
+missing/modified/extra guards stop without changing data, schema or version.
+SQLite-generated implicit suffix-to-key assignment can vary through released
+Alembic reflection, so the exact name set and complete key multiset are checked
+per table. This does not permit a changed UNIQUE key or a weakened guard.
+
+Downgrade refuses before DDL for any v2/payout/dependency receipt, dividend owner,
+actual/retired link history or positive ECF revision. The populated 0065→0064
+prohibition remains unchanged; this is not a production rollback plan.
+Same-schema physical recovery invalidates old confirmations/currentness and
+requires fresh DRAFT review/reaffirmation; CLOSED history remains accepted.
+Cross-schema restore remains forbidden. A verified producing code/schema pair,
+recovery cutoff and separate Owner authorization are necessary for real operations;
+post-backup history cannot be recreated from memory or provider responses.
+
 ### Source-only proof schema 0065: preservation and recovery
 
 `0065_source_return_proofs` adds two empty source-only tables and 13 guards over

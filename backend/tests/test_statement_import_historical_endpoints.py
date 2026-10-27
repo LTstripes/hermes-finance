@@ -921,6 +921,10 @@ def test_endpoint_migration_empty_append_only_and_populated_downgrade_refusal(tm
     assert run_alembic(path, "upgrade", "head").returncode == 0
     with sqlite3.connect(path) as connection:
         # Purely synthetic persistence identity; no source/private payload.
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute(
+            "INSERT INTO accounts(id,name,account_type) VALUES(1,'Synthetic endpoint','brokerage')"
+        )
         connection.execute(
             "INSERT INTO historical_endpoint_revisions "
             "(endpoint_key,account_id,valuation_date,basis,currency,revision,operation,acceptance_state,"
@@ -928,6 +932,7 @@ def test_endpoint_migration_empty_append_only_and_populated_downgrade_refusal(tm
             ("a" * 64, "b" * 64),
         )
         connection.commit()
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             connection.execute("DELETE FROM historical_endpoint_revisions")
     result = run_alembic(path, "downgrade", "0049_executed_trade_truth")

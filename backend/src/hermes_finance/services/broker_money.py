@@ -47,6 +47,7 @@ from hermes_finance.services.broker_money_ownership import conflicts, key, owner
 from hermes_finance.services.mybroker_dispositions import accepted_account_binding, resolve
 from hermes_finance.services.mybroker_money_candidates import (
     ADAPTER,
+    ADAPTER_V2,
     _narratives,
     _read_money_candidates,
 )
@@ -58,6 +59,8 @@ from hermes_finance.statement_import.mybroker import (
 )
 
 CONTRACT = "broker_money_v1"
+CONTRACT_V2 = "broker_money_v2"
+MONEY_CONTRACTS = {CONTRACT, CONTRACT_V2}
 
 
 def material(row):
@@ -81,7 +84,7 @@ def receipts(session):
                 BrokerMonthApply.accepted_at, BrokerMonthApply.request_id
             )
         )
-        if journal.kind(r) == CONTRACT
+        if journal.kind(r) in MONEY_CONTRACTS
     ]
     return sorted(
         result,
@@ -124,7 +127,7 @@ def _target(session, role, target_id):
             if revision
             else None,
         }
-    if role == "coupon":
+    if role in {"coupon", "dividend"}:
         row = session.get(InvestmentCashFlow, target_id, populate_existing=True)
         events = [
             event
@@ -316,9 +319,10 @@ def _union(session, intent, originals):
             document=document,
             filename=filename,
             account_id=intent.account_id,
+            adapter=ADAPTER_V2 if intent.contract_version == CONTRACT_V2 else ADAPTER,
         )
         stored = json.loads(source.normalized_json)
-        entry["adapter"] = ADAPTER
+        entry["adapter"] = diagnostic.adapter
         entry["dispositions"] = resolve(session, source)
         if entry["dispositions"]:
             blockers.add("source_disposition_changed")
@@ -378,18 +382,27 @@ def _cohort(inventory, seed, sources, blockers, *, trade=False):
 
 
 def _coupon(session, intent, decision, observation, occurrences, context, blockers):
+    role = decision.role
     instrument = session.get(Instrument, decision.instrument_id) if decision.instrument_id else None
-    if instrument is None or instrument.instrument_type != "bond" or instrument.currency != "RUB":
-        blockers.add("exact_rub_bond_link_required")
+    if (
+        instrument is None
+        or instrument.instrument_type != ("stock" if role == "dividend" else "bond")
+        or instrument.currency != "RUB"
+    ):
+        blockers.add(
+            "exact_rub_stock_link_required"
+            if role == "dividend"
+            else "exact_rub_bond_link_required"
+        )
     found = owners(session, occurrences)
-    owned = {o["target_id"] for o in found if o["role"] == "coupon"}
+    owned = {o["target_id"] for o in found if o["role"] == role}
     target_id = decision.investment_cash_flow_id
     if owned:
         if len(owned) != 1 or (target_id is not None and target_id not in owned):
             blockers.add("target_reassignment_unsupported")
         else:
             target_id = next(iter(owned))
-    if conflicts(session, occurrences, "coupon", target_id):
+    if conflicts(session, occurrences, role, target_id):
         blockers.add("occurrence_already_owned")
     target = session.get(InvestmentCashFlow, target_id) if target_id else None
     if target:
@@ -416,7 +429,7 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
             intent.reporting_month_id,
             intent.account_id,
             decision.instrument_id,
-            "coupon",
+            role,
             observation["date"],
             "RUB",
             observation["amount_minor"],
@@ -428,12 +441,12 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
         for f in broker_months._rows(session, InvestmentCashFlow)
         if f.account_id == intent.account_id
         and f.event_date.isoformat() == observation["date"]
-        and f.flow_type == "coupon"
+        and f.flow_type == role
         and f.net_amount_kopecks == observation["amount_minor"]
         and f.instrument_id == decision.instrument_id
         and f.id != target_id
         and not any(
-            o.role == "coupon"
+            o.role == role
             and o.investment_cash_flow_id == f.id
             and key(o) not in set(map(key, occurrences))
             for o in broker_months._rows(session, BrokerMoneyOccurrenceOwner)
@@ -441,12 +454,12 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
     ]
     if competing:
         blockers.add("legacy_payout_overlap")
-    previous = latest_proofs(session).get(("coupon", target_id))
+    previous = latest_proofs(session).get((role, target_id))
     selected_keys = set(map(key, occurrences))
     target_owners = {
         key(owner)
         for owner in broker_months._rows(session, BrokerMoneyOccurrenceOwner)
-        if owner.role == "coupon" and owner.investment_cash_flow_id == target_id
+        if owner.role == role and owner.investment_cash_flow_id == target_id
     }
     if target_owners - selected_keys:
         # A canonical payout cannot absorb a distinguishable second event,
@@ -455,32 +468,47 @@ def _coupon(session, intent, decision, observation, occurrences, context, blocke
     proven_reuse = (
         previous is not None
         and previous[1]["operation"] != "retire"
+        and (role != "dividend" or not proof_blockers(session, *previous))
         and decision.operation == "accept"
         and selected_keys == target_owners
         and selected_keys
         == {
             key(o)
             for o in previous[1]["occurrences"]
-            if o["role"] == "coupon" and o["target_id"] == target_id
+            if o["role"] == role and o["target_id"] == target_id
         }
     )
     reviewed = digest(
-        [context, "coupon", occurrences, material(instrument), material(target), competing]
+        [context, role, occurrences, material(instrument), material(target), competing]
     )
     if not proven_reuse:
-        claims = decision.coupon_claims
+        claims = decision.dividend_claims if role == "dividend" else decision.coupon_claims
         if claims is None or claims.review_context_digest != reviewed:
             blockers.add("coupon_claim_binding_required")
         if claims is None or not all(
             (
-                claims.actual_coupon_payment,
-                claims.exact_row_instrument_link,
+                claims.actual_ordinary_stock_dividend
+                if role == "dividend"
+                else claims.actual_coupon_payment,
+                claims.exact_row_stock_link
+                if role == "dividend"
+                else claims.exact_row_instrument_link,
                 claims.complete_occurrence_set_is_one_event,
             )
         ):
             blockers.add("specific_coupon_claims_required")
         if target and not owned and (claims is None or not claims.existing_target_is_same_payment):
             blockers.add("same_payment_link_claim_required")
+    if role == "dividend":
+        if target and (not owned or target.amount_basis != "broker_statement_net_v1"):
+            blockers.add("dividend_legacy_target_unsupported")
+        if not proven_reuse and (
+            claims is None
+            or not claims.posted_amount_is_final_net_credit
+            or not claims.withholding_is_embedded_not_additional_cash_leg
+            or (target and not claims.existing_target_is_same_payment)
+        ):
+            blockers.add("specific_final_net_dividend_claims_required")
     if previous and previous[1]["operation"] == "retire" and decision.operation != "reaffirm":
         blockers.add("reviewed_reaffirmation_required")
     return {
@@ -565,7 +593,12 @@ def _plan(session, intent, originals):
     blockers = set()
     if month.status != "draft":
         blockers.add("reporting_month_closed")
-    if account is None or account.status != "active" or account.account_type != "brokerage":
+    if (
+        account is None
+        or account.status != "active"
+        or account.account_type
+        not in ({"brokerage", "iis"} if intent.contract_version == CONTRACT_V2 else {"brokerage"})
+    ):
         blockers.add("active_brokerage_account_required")
     if (
         broker_months._projection(session, base)
@@ -577,6 +610,22 @@ def _plan(session, intent, originals):
     if base.import_id not in {s["import_id"] for s in sources}:
         blockers.add("base_source_missing")
     dependencies = _dependencies(session)
+    if intent.contract_version == CONTRACT_V2:
+        from hermes_finance.persistence import SecurityRegIsinMapping
+        from hermes_finance.services.actual_payouts import _physical
+
+        dependencies = digest(
+            [
+                dependencies,
+                _physical(session),
+                [
+                    material(r)
+                    for r in session.scalars(
+                        select(SecurityRegIsinMapping).order_by(SecurityRegIsinMapping.reg_number)
+                    )
+                ],
+            ]
+        )
     plans, selected, selected_targets = [], set(), set()
     for decision in intent.money_decisions:
         reasons = set(union_blockers)
@@ -594,6 +643,7 @@ def _plan(session, intent, originals):
             reasons.add("money_outside_selected_month")
         expected = {
             "coupon": "coupon_paid_candidate",
+            "dividend": "dividend_paid_candidate",
             "account_funding": "account_cash_in_candidate",
             "trade": "trade_paid_nkd_candidate",
         }[decision.role]
@@ -637,10 +687,25 @@ def _plan(session, intent, originals):
             if selected.intersection(extra):
                 reasons.add("duplicate_decision_occurrence")
             selected.update(extra)
-        elif decision.role == "coupon":
+        elif decision.role in {"coupon", "dividend"}:
+            dividend_evidence = None
+            if decision.role == "dividend":
+                from hermes_finance.services.broker_dividends import evidence
+
+                dividend_evidence = evidence(session, decision, observation, inventory, reasons)
             target_plan = _coupon(
-                session, intent, decision, observation, occurrences, dependencies, reasons
+                session,
+                intent,
+                decision,
+                observation,
+                occurrences,
+                digest([dependencies, dividend_evidence])
+                if dividend_evidence is not None
+                else dependencies,
+                reasons,
             )
+            if dividend_evidence is not None:
+                target_plan.update(dividend_evidence)
         else:
             target_plan = _funding(session, intent, decision, occurrences, reasons)
         target_identity = (decision.role, target_plan["target_id"])
@@ -673,7 +738,7 @@ def _plan(session, intent, originals):
         and month.period_start.isoformat() <= o["date"] <= month.period_end.isoformat()
     }
     plan = {
-        "contract_version": CONTRACT,
+        "contract_version": intent.contract_version,
         "base_request_id": intent.base_request_id,
         "reporting_month_id": intent.reporting_month_id,
         "account_id": intent.account_id,
@@ -724,6 +789,18 @@ def _plan(session, intent, originals):
         "coverage_state": "unknown",
         "exact_return_ready": False,
     }
+    if intent.contract_version == CONTRACT_V2:
+        plan["expected_effects"]["new_dividend_facts"] = sum(
+            p["decision"]["role"] == "dividend" and p["target_id"] is None for p in plans
+        )
+        plan["expected_effects"]["selected_dividend_net_minor"] = str(
+            sum(
+                p["observation"]["amount_minor"]
+                for p in plans
+                if p["decision"]["role"] == "dividend"
+                and p["observation"]["amount_minor"] is not None
+            )
+        )
     plan["confirmation_digest"] = digest([intent.model_dump(mode="json"), plan])
     return plan
 
@@ -756,7 +833,9 @@ def effective_occurrence(session, source_id, row):
     if owner.row_fingerprint != digest(row):
         return False
     target_id = (
-        owner.investment_cash_flow_id if owner.role == "coupon" else owner.historical_owner_flow_id
+        owner.investment_cash_flow_id
+        if owner.role in {"coupon", "dividend"}
+        else owner.historical_owner_flow_id
     )
     latest = latest_proofs(session).get((owner.role, target_id))
     return latest is not None and not proof_blockers(session, latest[0], latest[1], latest[2])
@@ -764,8 +843,28 @@ def effective_occurrence(session, source_id, row):
 
 def proof_blockers(session, receipt, proof, target):
     blockers = set()
+    if proof["contract_version"] == CONTRACT_V2:
+        from hermes_finance.services.actual_payouts import _physical
+
+        try:
+            if proof.get("physical_incarnation") != _physical(session):
+                blockers.add("money_database_incarnation_changed")
+        except MyBrokerError:
+            blockers.add("money_database_incarnation_unavailable")
     if proof["operation"] == "retire":
         blockers.add("money_review_retired")
+    if target["role"] == "dividend":
+        from hermes_finance.services.broker_dividends import identity
+
+        evidence = [
+            e for e in proof.get("dividend_evidence", []) if e["target_id"] == target["target_id"]
+        ]
+        if len(evidence) != 1 or evidence[0]["identity_proof"] != identity(
+            session,
+            evidence[0]["identity_proof"]["registration"],
+            int(target["facts"]["instrument_id"]),
+        ):
+            blockers.add("dividend_identity_changed")
     current = _target(session, target["role"], target["target_id"])
     if not compatible_target_readback(target, current):
         blockers.add("money_target_revision_changed")
@@ -836,7 +935,7 @@ def owned_payout_ids(session, month_id, account_id):
     return {
         target_id
         for (role, target_id), (receipt, proof, target) in latest_proofs(session).items()
-        if role == "coupon"
+        if role in {"coupon", "dividend"}
         and receipt.reporting_month_id == month_id
         and receipt.account_id == account_id
         and not proof_blockers(session, receipt, proof, target)
@@ -851,7 +950,7 @@ def read_money(session, request_id):
         if receipt is None:
             raise MyBrokerError("broker_month_not_found")
         proof = journal.payload(receipt)
-        if journal.kind(receipt) != CONTRACT:
+        if journal.kind(receipt) not in MONEY_CONTRACTS:
             raise MyBrokerError("money_receipt_required")
         latest = latest_proofs(session)
         targets, blockers = [], set()
@@ -889,7 +988,7 @@ def read_money(session, request_id):
             )
         )
         return {
-            "contract_version": CONTRACT,
+            "contract_version": proof["contract_version"],
             "request_id": request_id,
             "base_request_id": proof["base_request_id"],
             "reporting_month_id": receipt.reporting_month_id,
@@ -920,6 +1019,13 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
             ),
         ]
     )
+    if intent.contract_version == CONTRACT_V2:
+        with coherent_read_snapshot(session):
+            prior = session.get(BrokerMonthApply, request_id, populate_existing=True)
+            if prior:
+                if prior.request_fingerprint != fingerprint:
+                    raise MyBrokerError("idempotency_conflict")
+                return {**read_money(session, request_id), "duplicate": True}
     session.rollback()
     try:
         session.execute(
@@ -953,7 +1059,7 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                 # staging, before the final proof can be sealed.
                 projection_json=canonical(
                     {
-                        "contract_version": CONTRACT,
+                        "contract_version": intent.contract_version,
                         "base_request_id": intent.base_request_id,
                         "operation": "accept",
                         "sources": plan["sources"],
@@ -970,17 +1076,17 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
             target_refs, occurrence_refs = [], []
             for index, decision in enumerate(plan["decisions"]):
                 role, target_id = decision["decision"]["role"], decision["target_id"]
-                if role == "coupon" and target_id is None:
+                if role in {"coupon", "dividend"} and target_id is None:
                     row = stage_native_payout(
                         session,
                         reporting_month_id=intent.reporting_month_id,
                         account_id=intent.account_id,
                         instrument_id=decision["instrument_id"],
-                        flow_type="coupon",
+                        flow_type=role,
                         event_date=date.fromisoformat(decision["observation"]["date"]),
                         net_amount=RubleAmount(decision["observation"]["amount_minor"]),
                         source_import_id=decision["observation"]["occurrence"]["import_id"],
-                        source_row_key=digest([CONTRACT, "payment", uuid4().hex]),
+                        source_row_key=digest([intent.contract_version, "payment", uuid4().hex]),
                     )
                     target_id = row.id
                 elif role == "account_funding" and decision["h2_plan"] is not None:
@@ -1037,7 +1143,9 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                             BrokerMoneyOccurrenceOwner(
                                 **occurrence,
                                 role=role,
-                                investment_cash_flow_id=target_id if role == "coupon" else None,
+                                investment_cash_flow_id=target_id
+                                if role in {"coupon", "dividend"}
+                                else None,
                                 historical_owner_flow_id=target_id
                                 if role == "account_funding"
                                 else None,
@@ -1047,7 +1155,7 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
                     occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
             session.flush()
             proof = {
-                "contract_version": CONTRACT,
+                "contract_version": intent.contract_version,
                 "base_request_id": intent.base_request_id,
                 "operation": "reaffirm"
                 if any(d.operation == "reaffirm" for d in intent.money_decisions)
@@ -1059,6 +1167,18 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
             }
             from hermes_finance.services.broker_money_lifecycle import next_journal_revision
 
+            if intent.contract_version == CONTRACT_V2:
+                from hermes_finance.services.actual_payouts import _physical
+
+                proof["physical_incarnation"] = _physical(session)
+                proof["dividend_evidence"] = [
+                    {
+                        "target_id": target_id,
+                        **{k: d[k] for k in ("identity_proof", "observed_tax_kopecks", "tax_role")},
+                    }
+                    for (role, target_id), d in zip(target_refs, plan["decisions"], strict=True)
+                    if role == "dividend"
+                ]
             proof["journal_revision"] = next_journal_revision(session)
             receipt.accepted_at = datetime.now(UTC)
             receipt.projection_json = canonical(proof)

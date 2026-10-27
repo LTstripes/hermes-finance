@@ -65,6 +65,9 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
             <span className="payments-calendar__count">{month.items.length} выплат</span>
             <span className="payments-calendar__chips">{monthChips(month)}</span>
             <span className="payments-calendar__passive">
+              {month.actual_attribution_coverage === "unknown" && (
+                <strong>Полнота неизвестна; известная часть: </strong>
+              )}
               Пассивный доход: <strong>{formatMoney(moneyAmount(month.passive_net))}</strong>
               {" · "}весь денежный поток:{" "}
               <strong>{formatMoney(moneyAmount(month.total_net))}</strong>

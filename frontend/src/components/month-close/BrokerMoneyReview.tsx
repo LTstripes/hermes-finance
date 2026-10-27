@@ -29,7 +29,13 @@ const ownerClaims = [
 ];
 const identity = (row: { import_id: number; ordinal: number }) => `${row.import_id}:${row.ordinal}`;
 const roleLabel = (role: string) =>
-  role === "trade" ? "НКД и комиссия покупки" : role === "coupon" ? "Купон" : "Пополнение счёта";
+  role === "trade"
+    ? "НКД и комиссия покупки"
+    : role === "coupon"
+      ? "Купон"
+      : role === "dividend"
+        ? "Дивиденд"
+        : "Пополнение счёта";
 function minor(value: string | null | undefined) {
   if (value == null || !/^\d+$/.test(value)) return null;
   const amount = BigInt(value);
@@ -107,14 +113,16 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
                   formatMoney(
                     minor(
                       target.facts?.[
-                        target.role === "coupon" ? "net_amount_kopecks" : "boundary_amount_kopecks"
+                        target.role === "coupon" || target.role === "dividend"
+                          ? "net_amount_kopecks"
+                          : "boundary_amount_kopecks"
                       ],
                     ),
                   )
                 )}
               </Td>
               <Td>
-                {target.role === "coupon"
+                {target.role === "coupon" || target.role === "dividend"
                   ? formatMoney(
                       minor(
                         target.components
@@ -131,8 +139,8 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
         </tbody>
       </Table>
       <p>
-        Gross и комиссия новых net-купонов неизвестны. Остаток RUB cash не увеличивается. Полнота
-        портфеля и точная доходность не подтверждены.
+        Gross и комиссия новых выплат в net-формате неизвестны. Остаток RUB cash не увеличивается.
+        Полнота портфеля и точная доходность не подтверждены.
       </p>
       {saved.exceptions.length > 0 && (
         <details>
@@ -168,9 +176,11 @@ export function BrokerMoneyReview({
   sessionEpoch?: number;
 }) {
   const cache = useQueryClient();
+  const [dividends, setDividends] = useState(false);
+  const [dividendReferences, setDividendReferences] = useState<Record<string, string>>({});
   const instruments = useQuery({
-    queryKey: ["money-bonds"],
-    queryFn: ({ signal }) => listInstruments({ instrument_type: "bond" }, signal),
+    queryKey: ["money-bonds", dividends],
+    queryFn: ({ signal }) => listInstruments(dividends ? {} : { instrument_type: "bond" }, signal),
     enabled: !closed,
   });
   const [files, setFiles] = useState<File[]>(() => (originalFile ? [originalFile] : []));
@@ -193,7 +203,7 @@ export function BrokerMoneyReview({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<MoneyReadback | null>(null);
   const [pending, setPending] = useState<{
-    committed: MoneyReadback;
+    committed: MoneyReadback | null;
     digest: string;
     id: string;
   } | null>(null);
@@ -212,6 +222,8 @@ export function BrokerMoneyReview({
     setDecisions([]);
     setTradeBases({});
     setStockBasisReferences({});
+    setDividends(false);
+    setDividendReferences({});
     setReviewed(false);
     setCurrentPlan(false);
     setPending(null);
@@ -230,7 +242,7 @@ export function BrokerMoneyReview({
     if (stored) setSaved(null);
   }, [stored]);
   const intent = (selected = decisions): MoneyIntent => ({
-    contract_version: "broker_money_v1",
+    contract_version: dividends ? "broker_money_v2" : "broker_money_v1",
     base_request_id: baseRequestId,
     reporting_month_id: monthId,
     account_id: accountId,
@@ -245,7 +257,7 @@ export function BrokerMoneyReview({
   }
   function valid(result: MoneyPreview | MoneyReadback) {
     if (
-      result.contract_version !== "broker_money_v1" ||
+      result.contract_version !== (dividends ? "broker_money_v2" : "broker_money_v1") ||
       result.account_id !== accountId ||
       result.reporting_month_id !== monthId ||
       result.base_request_id !== baseRequestId
@@ -304,6 +316,22 @@ export function BrokerMoneyReview({
             complete_occurrence_set_is_one_event: true,
             existing_target_is_same_payment: decision.investment_cash_flow_id != null,
           };
+        if (decision.role === "dividend" && proposed.action !== "reuse") {
+          const reference = dividendReferences[identity(decision.seed)]?.trim();
+          if (!reference || !/^[a-zA-Z0-9_-]{1,64}$/.test(reference))
+            throw new Error("Укажи независимое основание окончательного net-зачисления.");
+          decision.dividend_claims = {
+            reference: "desktop-specific-dividend-review",
+            independent_net_basis_reference: reference,
+            review_context_digest: proposed.review_context_digest ?? "",
+            actual_ordinary_stock_dividend: true,
+            exact_row_stock_link: true,
+            complete_occurrence_set_is_one_event: true,
+            posted_amount_is_final_net_credit: true,
+            withholding_is_embedded_not_additional_cash_leg: true,
+            existing_target_is_same_payment: proposed.target_id != null,
+          };
+        }
         if (decision.role === "account_funding" && proposed.h2_plan && proposed.owner_flow_intent)
           decision.owner_flow_intent = {
             ...proposed.owner_flow_intent,
@@ -375,6 +403,7 @@ export function BrokerMoneyReview({
         throw new Error(confirmed.blockers.join("; "));
       }
       request.current ??= crypto.randomUUID();
+      setPending({ committed: null, digest: confirmed.confirmation_digest, id: request.current });
       const committed = await applyBrokerMoney(
         files,
         requested,
@@ -442,9 +471,11 @@ export function BrokerMoneyReview({
       if (
         read.request_id !== pending.id ||
         read.confirmation_digest !== pending.digest ||
-        JSON.stringify(read.accepted) !== JSON.stringify(pending.committed.accepted) ||
-        JSON.stringify(read.targets) !== JSON.stringify(pending.committed.targets) ||
-        JSON.stringify(read.current_targets) !== JSON.stringify(pending.committed.current_targets)
+        (pending.committed !== null &&
+          (JSON.stringify(read.accepted) !== JSON.stringify(pending.committed.accepted) ||
+            JSON.stringify(read.targets) !== JSON.stringify(pending.committed.targets) ||
+            JSON.stringify(read.current_targets) !==
+              JSON.stringify(pending.committed.current_targets)))
       )
         throw new Error("Независимое GET Money не совпало с сохранённым batch.");
       if (
@@ -486,13 +517,17 @@ export function BrokerMoneyReview({
   const current = saved ?? stored;
   const basisMissing = preview?.decisions.some(
     (p) =>
-      p.decision.role === "trade" &&
-      p.action !== "reuse" &&
-      (stockSeed(p.decision.seed)
-        ? !/^[a-zA-Z0-9_-]{1,64}$/.test(
-            stockBasisReferences[identity(p.decision.seed)]?.trim() ?? "",
-          )
-        : !tradeBases[identity(p.decision.seed)]),
+      (p.decision.role === "dividend" &&
+        !/^[a-zA-Z0-9_-]{1,64}$/.test(
+          dividendReferences[identity(p.decision.seed)]?.trim() ?? "",
+        )) ||
+      (p.decision.role === "trade" &&
+        p.action !== "reuse" &&
+        (stockSeed(p.decision.seed)
+          ? !/^[a-zA-Z0-9_-]{1,64}$/.test(
+              stockBasisReferences[identity(p.decision.seed)]?.trim() ?? "",
+            )
+          : !tradeBases[identity(p.decision.seed)])),
   );
   return (
     <div className={styles.stack}>
@@ -511,6 +546,21 @@ export function BrokerMoneyReview({
               существующий черновик. НКД и комиссия требуют отдельной доказанной связи с покупкой и
               basis. Неразобранные строки сохраняют ограничения.
             </p>
+            <label className={styles.field}>
+              <input
+                type="checkbox"
+                checked={dividends}
+                disabled={busy || pending != null}
+                onChange={(e) => {
+                  setDividends(e.target.checked);
+                  setDecisions([]);
+                  setPreview(null);
+                  setDividendReferences({});
+                  invalidate();
+                }}
+              />
+              Проверять также строгие net-дивиденды
+            </label>
             <label className={styles.field}>
               Оригинальные XML для Money, включая принятые пересекающиеся отчёты
               <input
@@ -592,6 +642,7 @@ export function BrokerMoneyReview({
                           {row.occurrence.import_id === importId &&
                           ([
                             "coupon_paid_candidate",
+                            "dividend_paid_candidate",
                             "account_cash_in_candidate",
                             "trade_paid_nkd_candidate",
                           ].includes(row.candidate_kind) ||
@@ -622,11 +673,13 @@ export function BrokerMoneyReview({
                                             role:
                                               row.candidate_kind === "coupon_paid_candidate"
                                                 ? "coupon"
-                                                : row.candidate_kind ===
-                                                      "trade_paid_nkd_candidate" ||
-                                                    row.s1_kind === "commission"
-                                                  ? "trade"
-                                                  : "account_funding",
+                                                : row.candidate_kind === "dividend_paid_candidate"
+                                                  ? "dividend"
+                                                  : row.candidate_kind ===
+                                                        "trade_paid_nkd_candidate" ||
+                                                      row.s1_kind === "commission"
+                                                    ? "trade"
+                                                    : "account_funding",
                                             seed,
                                           },
                                         ]
@@ -663,10 +716,13 @@ export function BrokerMoneyReview({
                   Строка #{decision.seed.import_id} / {decision.seed.ordinal + 1}:{" "}
                   {stockSeed(decision.seed) ? "Комиссия покупки акции" : roleLabel(decision.role)}
                 </p>
-                {decision.role === "coupon" && (
+                {(decision.role === "coupon" || decision.role === "dividend") && (
                   <>
                     <label className={styles.field}>
-                      Подтверждённая облигация для строки {decision.seed.ordinal + 1}
+                      {decision.role === "dividend"
+                        ? "Подтверждённая акция для строки"
+                        : "Подтверждённая облигация для строки"}{" "}
+                      {decision.seed.ordinal + 1}
                       <select
                         disabled={busy}
                         value={decision.instrument_id ?? ""}
@@ -677,9 +733,18 @@ export function BrokerMoneyReview({
                           })
                         }
                       >
-                        <option value="">Выбери точную облигацию</option>
+                        <option value="">
+                          {decision.role === "dividend"
+                            ? "Выбери точную акцию"
+                            : "Выбери точную облигацию"}
+                        </option>
                         {instruments.data
-                          ?.filter((i) => i.currency === "RUB")
+                          ?.filter(
+                            (i) =>
+                              i.currency === "RUB" &&
+                              i.instrument_type ===
+                                (decision.role === "dividend" ? "stock" : "bond"),
+                          )
                           .map((i) => (
                             <option key={i.id} value={i.id}>
                               {i.name} · {i.isin}
@@ -687,6 +752,22 @@ export function BrokerMoneyReview({
                           ))}
                       </select>
                     </label>
+                    {decision.role === "dividend" && (
+                      <label className={styles.field}>
+                        Независимое основание окончательного net-зачисления
+                        <input
+                          disabled={busy}
+                          value={dividendReferences[identity(decision.seed)] ?? ""}
+                          onChange={(e) => {
+                            setDividendReferences({
+                              ...dividendReferences,
+                              [identity(decision.seed)]: e.target.value,
+                            });
+                            invalidate();
+                          }}
+                        />
+                      </label>
+                    )}
                     <label className={styles.field}>
                       ID уже принятой той же выплаты, если она существует
                       <input
@@ -826,6 +907,16 @@ export function BrokerMoneyReview({
                       empty: "Неизвестно",
                     })}
                     . ExternalFlow и дополнительного изменения cash — 0.
+                    {preview.contract_version === "broker_money_v2" && (
+                      <>
+                        {" "}
+                        Новых дивидендов — {preview.expected_effects.new_dividend_facts}; net:{" "}
+                        {formatMoney(minor(preview.expected_effects.selected_dividend_net_minor), {
+                          empty: "Неизвестно",
+                        })}
+                        . Налог, gross и комиссия неизвестны.
+                      </>
+                    )}
                   </p>
                 )}
                 {preview.decisions.map((proposed) => (
@@ -843,6 +934,14 @@ export function BrokerMoneyReview({
                         Подтверждаю фактический купон, точную связь этой строки с выбранной
                         облигацией и что полный набор наблюдений — одна выплата. При выборе
                         существующей цели это именно та же выплата.
+                      </p>
+                    ) : proposed.decision.role === "dividend" ? (
+                      <p>
+                        Подтверждаю обычный дивиденд по точной акции; полный набор наблюдений
+                        представляет одно событие. Сумма — окончательное net-зачисление с уже
+                        удержанным налогом; отдельного налогового списания, возврата, сторно или
+                        частичного зачисления нет. Число налога в тексте остаётся примечанием и не
+                        заполняет налог денежного факта.
                       </p>
                     ) : proposed.decision.role === "trade" ? (
                       <div>

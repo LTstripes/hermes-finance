@@ -91,3 +91,40 @@ class MoneyIntent(StrictModel):
 class MoneyConfirmation(MoneyIntent):
     request_id: Label
     confirmation_digest: Digest
+
+
+class DividendClaims(StrictModel):
+    reference: Label
+    independent_net_basis_reference: Label
+    review_context_digest: Digest
+    actual_ordinary_stock_dividend: bool = Field(default=False, strict=True)
+    exact_row_stock_link: bool = Field(default=False, strict=True)
+    complete_occurrence_set_is_one_event: bool = Field(default=False, strict=True)
+    posted_amount_is_final_net_credit: bool = Field(default=False, strict=True)
+    withholding_is_embedded_not_additional_cash_leg: bool = Field(default=False, strict=True)
+    existing_target_is_same_payment: bool = Field(default=False, strict=True)
+
+
+class DividendDecision(StrictModel):
+    role: Literal["dividend"]
+    seed: MoneyOccurrence
+    operation: Literal["accept", "corroborate", "reaffirm"] = "accept"
+    instrument_id: int | None = Field(default=None, gt=0, strict=True)
+    investment_cash_flow_id: int | None = Field(default=None, gt=0, strict=True)
+    dividend_claims: DividendClaims | None = None
+
+
+class MoneyIntentV2(StrictModel):
+    # Separate model: adding even a nullable v2 field to v1 changes old hashes.
+    contract_version: Literal["broker_money_v2"]
+    base_request_id: Label
+    reporting_month_id: int = Field(gt=0, strict=True)
+    account_id: int = Field(gt=0, strict=True)
+    money_decisions: list[MoneyDecision | DividendDecision] = Field(
+        default_factory=list, max_length=1000
+    )
+
+
+class MoneyConfirmationV2(MoneyIntentV2):
+    request_id: Label
+    confirmation_digest: Digest

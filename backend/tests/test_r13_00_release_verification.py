@@ -136,7 +136,7 @@ def test_released_0044_upgrade_preserves_closed_provenance_and_duplicates(tmp_pa
 
     scripts = ScriptDirectory.from_config(Config(str(BACKEND_ROOT / "alembic.ini")))
     revisions = list(reversed(list(scripts.iterate_revisions(REVISION, RELEASED_HEAD))))
-    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 66))
+    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 67))
     for target in ["head"] if route == "direct" else [r.revision for r in revisions]:
         _upgrade(path, target)
         with sqlite3.connect(path) as c:
@@ -205,9 +205,9 @@ def test_released_upgrade_failure_rolls_back_schema_and_backup_remains_recoverab
         schema = c.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall()
     failed = run_alembic(path, "upgrade", "head")
     assert failed.returncode != 0
-    assert ("already exists" if failure == "ddl_collision" else "invalid SQLite FK graph") in (
-        failed.stderr
-    )
+    assert (
+        "already exists" if failure == "ddl_collision" else "0066_foreign_key_check_failed"
+    ) in (failed.stderr)
     assert revision_rows(path) == [RELEASED_HEAD]
     with sqlite3.connect(path) as c:
         assert _snapshot(c) == before

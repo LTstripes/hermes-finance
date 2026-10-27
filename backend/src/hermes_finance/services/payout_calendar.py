@@ -26,6 +26,11 @@ from hermes_finance.services.applied_payouts import (
 from hermes_finance.services.payout_preview import _manual_candidates_for_applied
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 
+INCOMPLETE_PAYOUT_WARNING = (
+    "Полнота будущих выплат неизвестна: требуется сверка с фактическими поступлениями. "
+    "Показана только известная часть прогноза; пропущенные суммы не равны нулю."
+)
+
 
 class PayoutCalendarSource(StrEnum):
     MANUAL = "manual"
@@ -74,6 +79,7 @@ class MergedPayoutCalendarMonth:
     passive_net: RubleAmount
     total_net: RubleAmount
     items: tuple[MergedPayoutCalendarItem, ...]
+    actual_attribution_coverage: str = "complete"
 
 
 @coherent_read_operation
@@ -142,11 +148,25 @@ def merged_payout_calendar(
                     AppliedProviderPayout,
                     AppliedPayoutReconciliation.applied_payout_id == AppliedProviderPayout.id,
                 )
-                .where(AppliedProviderPayout.reporting_month_id == reporting_month_id)
+                .where(
+                    AppliedProviderPayout.reporting_month_id == reporting_month_id,
+                    AppliedPayoutReconciliation.investment_cash_flow_id.is_(None),
+                    AppliedPayoutReconciliation.retired_request_id.is_(None),
+                )
                 .order_by(AppliedPayoutReconciliation.id)
             )
         )
 
+    from hermes_finance.services.actual_payouts import future_states
+
+    actual_states = future_states(session, reporting_month_id)
+    incomplete_periods = set()
+    for (kind, ident), state in actual_states.items():
+        if state == "unresolved":
+            row = session.get(AppliedProviderPayout if kind == "app" else ExpectedCashFlow, ident)
+            day = row.payment_date if kind == "app" else row.expected_date
+            if start <= day < end_exclusive:
+                incomplete_periods.add((day.year, day.month))
     manual_by_id = {flow.id: flow for flow, _, _ in manual_rows}
     manual_version_by_id = {flow.id: flow for flow in manual_duplicate_pool}
     reconciliation_by_payout = {item.applied_payout_id: item for item in reconciliations}
@@ -224,7 +244,10 @@ def merged_payout_calendar(
 
     items: list[MergedPayoutCalendarItem] = []
     for flow, account_name, instrument_name in manual_rows:
-        if flow.id in suppressed_manual_ids:
+        if flow.id in suppressed_manual_ids or actual_states.get(("ecf", flow.id)) in {
+            "paid",
+            "unresolved",
+        }:
             continue
         reconciliation = reconciliation_by_manual.get(flow.id)
         items.append(
@@ -267,7 +290,10 @@ def merged_payout_calendar(
             if effective_reconciliation is not None
             else None
         )
-        if not provider_is_countable:
+        if not provider_is_countable or actual_states.get(("app", payout.id)) in {
+            "paid",
+            "unresolved",
+        }:
             # An unresolved duplicate is manual-only until explicitly resolved.
             continue
 
@@ -308,11 +334,12 @@ def merged_payout_calendar(
             item.source_id,
         )
     )
-    return _bucket_items(items)
+    return _bucket_items(items, incomplete_periods)
 
 
 def _bucket_items(
     items: list[MergedPayoutCalendarItem],
+    incomplete_periods: set[tuple[int, int]] | None = None,
 ) -> tuple[MergedPayoutCalendarMonth, ...]:
     buckets: dict[tuple[int, int], dict[str, object]] = {}
     for item in items:
@@ -332,6 +359,12 @@ def _bucket_items(
         bucket[flow_type] = int(bucket[flow_type]) + item.expected_net_amount.kopecks
         bucket["items"].append(item)  # type: ignore[union-attr]
 
+    incomplete_periods = incomplete_periods or set()
+    for period in incomplete_periods:
+        buckets.setdefault(
+            period,
+            {"coupon": 0, "dividend": 0, "interest": 0, "redemption": 0, "other": 0, "items": []},
+        )
     result: list[MergedPayoutCalendarMonth] = []
     for (year, month), bucket in sorted(buckets.items()):
         coupon = int(bucket["coupon"])
@@ -352,6 +385,9 @@ def _bucket_items(
                 passive_net=RubleAmount(passive),
                 total_net=RubleAmount(passive + redemption),
                 items=tuple(bucket["items"]),  # type: ignore[arg-type]
+                actual_attribution_coverage="unknown"
+                if (year, month) in incomplete_periods
+                else "complete",
             )
         )
     return tuple(result)

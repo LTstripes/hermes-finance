@@ -1198,6 +1198,7 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "is_approximate",
             "notes",
             "archived_from_period",
+            "payout_link_revision",
         ]
         assert [row[1] for row in connection.execute("PRAGMA table_info(expense_entries)")] == [
             "id",
@@ -1352,6 +1353,13 @@ def test_alembic_upgrades_and_downgrades_a_temporary_database(tmp_path: Path) ->
             "counting_decision",
             "created_at",
             "archived_from_period",
+            "investment_cash_flow_id",
+            "applied_payout_revision_id",
+            "money_proof_request_id",
+            "accepted_request_id",
+            "retired_request_id",
+            "supersedes_id",
+            "provider_event_key",
         ]
         assert [
             row[1] for row in connection.execute("PRAGMA table_info(applied_statement_events)")
@@ -3151,10 +3159,17 @@ def test_money_ownership_migration_keeps_v1_bytes_and_refuses_populated_downgrad
         requested = _money_decide(session, intent, [(FILENAME, xml)], bond)
         _money_apply(session, requested, [(FILENAME, xml)])
     db.engine.dispose()
+    from test_r13_00_release_verification import _snapshot
+
+    with sqlite3.connect(path) as connection:
+        before = _snapshot(connection)
+        schema = connection.execute(
+            "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+        ).fetchall()
     blocked = run_alembic(path, "downgrade", "0057_broker_month_batch")
-    assert (
-        blocked.returncode != 0 and "cannot downgrade permanent Money ownership" in blocked.stderr
-    )
+    # Current writers also retain payout dependency generations. The new 0066
+    # guard must stop the chain before any such history can be discarded.
+    assert blocked.returncode != 0 and "0066_cannot_downgrade_payout_history" in blocked.stderr
     assert revision_rows(path) == [REVISION]
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -3162,6 +3177,38 @@ def test_money_ownership_migration_keeps_v1_bytes_and_refuses_populated_downgrad
             connection.execute("SELECT COUNT(*) FROM broker_money_occurrence_owners").fetchone()[0]
             == 3
         )
+        assert _snapshot(connection) == before
+        assert (
+            connection.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+            ).fetchall()
+            == schema
+        )
+    # Independently retain the original 0058 populated-ownership refusal proof:
+    # invoke the unchanged guard on this valid synthetic graph. It raises before
+    # DDL; no downgrade is stamped and no new receipt or owner is removed.
+    import pytest
+    from alembic.config import Config
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from alembic.script import ScriptDirectory
+
+    scripts = ScriptDirectory.from_config(Config(str(BACKEND_ROOT / "alembic.ini")))
+    legacy = scripts.get_revision("0058_broker_money_ownership").module
+    with db.engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            with pytest.raises(RuntimeError, match="cannot downgrade permanent Money ownership"):
+                legacy.downgrade()
+    db.engine.dispose()
+    with sqlite3.connect(path) as connection:
+        assert _snapshot(connection) == before
+        assert (
+            connection.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+            ).fetchall()
+            == schema
+        )
+    assert revision_rows(path) == [REVISION]
 
 
 def test_source_money_classification_migration_populated_downgrade_and_reupgrade(tmp_path):

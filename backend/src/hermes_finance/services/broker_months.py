@@ -641,9 +641,9 @@ def _readiness(session, receipt):
         return broker_sections._heads(
             session, receipt.import_id, receipt.account_id, receipt.reporting_month_id
         )[1]
-    if kind == journal.DEPENDENCY:
+    if kind in {journal.DEPENDENCY, journal.PAYOUT_DEPENDENCY, journal.PAYOUT}:
         return []
-    if kind == journal.MONEY:
+    if kind in journal.MONEY_KINDS:
         from hermes_finance.services.broker_money import latest_proofs, proof_blockers, target_key
 
         latest = latest_proofs(session)
@@ -776,7 +776,9 @@ def _account_readiness(session, month_id, account_id):
 
 def broker_month_close_blockers(session, month_id):
     """One shared pure read for readiness and reserved authoritative Close."""
-    result = []
+    from hermes_finance.services.actual_payouts import close_blockers
+
+    result = list(close_blockers(session, month_id))
     from hermes_finance.services.source_intake import scoped_status
 
     for code in scoped_status(session, month_id)["reason_codes"]:
@@ -820,12 +822,16 @@ def read_broker_month(session, request_id):
             }
         if kind == broker_sections.CONTRACT:
             return broker_sections.read_sections(session, request_id)
-        if kind == journal.DEPENDENCY:
+        if kind in {journal.DEPENDENCY, journal.PAYOUT_DEPENDENCY}:
             raise MyBrokerError("broker_month_not_found")
-        if kind == journal.MONEY:
+        if kind in journal.MONEY_KINDS:
             from hermes_finance.services.broker_money import read_money
 
             return read_money(session, request_id)
+        if kind == journal.PAYOUT:
+            from hermes_finance.services.actual_payouts import read
+
+            return read(session, request_id)
         blockers = _account_readiness(session, receipt.reporting_month_id, receipt.account_id)
         source = session.get(MyBrokerImport, receipt.import_id)
         accepted["document"] = (
