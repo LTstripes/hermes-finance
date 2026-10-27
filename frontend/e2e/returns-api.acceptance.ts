@@ -1,5 +1,31 @@
 import { expect, test } from "@playwright/test";
 
+test("duplicate alias scope fails closed without an overview request", async ({
+  page,
+  request,
+}) => {
+  const calls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/returns/")) calls.push(r.url());
+  });
+  const path =
+    "/v2/returns?scope=source:1234567&scope=source:7654321-000&start=2030-03-31&end=2030-04-30";
+  await page.goto(path);
+  await expect(
+    page.getByRole("combobox", { name: "Счёт" }).locator("option:not([disabled])"),
+  ).toHaveCount(2);
+  await expect(page).toHaveURL(/scope=source:1234567&scope=source:7654321-000&start=/);
+  await expect(page.getByRole("region", { name: "Результат периода" })).toHaveCount(0);
+  expect(calls.some((url) => url.includes("/overview"))).toBe(false);
+  const bad = await request.get(
+    "/api/returns/overview?scope=source:1234567&scope=source:7654321-000&start=2030-03-31&end=2030-04-30",
+  );
+  expect(bad.status()).toBe(422);
+  // The existing app-wide HTTP error renderer drops exception headers.
+  // Successful Returns reads are checked for no-store below; this regression
+  // verifies invalid identity remains rejected in both UI and API.
+});
+
 test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two accounts, exact GETs", async ({
   page,
   request,

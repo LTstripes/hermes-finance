@@ -124,6 +124,26 @@ test("proven alias URL normalizes only scope and preserves exact period/hash", a
   expect(calls.some((c) => c.includes("OLD-A") && !c.endsWith("context"))).toBe(false);
 });
 
+test("duplicate scope containing a proven alias stays invalid and never selects the first account", async () => {
+  const calls = install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            scope_aliases: { "source:OLD-A": "source:SYNTH-A" },
+          }),
+        )
+      : undefined,
+  );
+  const path =
+    "/v2/returns?scope=source:OLD-A&scope=source:SYNTH-B&start=2030-03-31&end=2030-04-30";
+  setup(path);
+  await screen.findByRole("option", { name: "Учебный счёт А" });
+  expect(screen.getByTestId("location")).toHaveTextContent(path.slice(path.indexOf("?")));
+  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
+  expect(calls.filter((c) => c.includes("/overview"))).toHaveLength(0);
+});
+
 test("partial history shows server RUB subtotal with coverage and no invented rate", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;

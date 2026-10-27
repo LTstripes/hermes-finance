@@ -247,6 +247,7 @@ export default function UiV2ReturnsPage() {
     ["scope", "start", "end"].every((k) => params.getAll(k).length === 1);
   useEffect(() => {
     if (!context.data || context.isFetching || context.isError) return;
+    if (["scope", "start", "end"].some((k) => params.getAll(k).length > 1)) return;
     const next = new URLSearchParams(params);
     const canonical = context.data.scope_aliases?.[scope];
     if (canonical) next.set("scope", canonical);
