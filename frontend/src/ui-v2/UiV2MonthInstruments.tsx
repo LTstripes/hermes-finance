@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { getSourceInstrumentReturns } from "../api/sourceReturns";
 import { Button } from "../components/ui";
@@ -27,7 +27,9 @@ export function UiV2MonthInstruments({
   sourceVersion: string;
   payoutsOnly?: boolean;
 }) {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const client = useQueryClient();
   const opening = new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
   const closing = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
@@ -102,6 +104,27 @@ export function UiV2MonthInstruments({
       (event) =>
         event.event_date !== null && event.event_date > opening && event.event_date <= closing,
     ) ?? [];
+  const selection = useMemo(
+    () => ({ location, monthId, account, sourceVersion, instrument }),
+    [location, monthId, account, sourceVersion, instrument],
+  );
+  const committedSelection = useRef<typeof selection | null>(null);
+  useLayoutEffect(() => {
+    committedSelection.current = selection;
+    return () => {
+      committedSelection.current = null;
+    };
+  }, [selection]);
+
+  function changeQuantityDate(value: string) {
+    // Outgoing controls can fire before navigation commits. A location instance
+    // also distinguishes A→B→A from the first A, even when its URL matches again.
+    if (committedSelection.current !== selection) return false;
+    const next = new URLSearchParams(location.search);
+    next.set("payout_as_of", value);
+    void navigate({ search: next.toString(), hash: location.hash });
+    return true;
+  }
 
   return (
     <UiV2Panel
@@ -152,14 +175,15 @@ export function UiV2MonthInstruments({
                           type="button"
                           title={row.source_name ?? row.isin}
                           aria-pressed={instrument?.isin === row.isin}
-                          onClick={() =>
-                            setParams((previous) => {
-                              const next = new URLSearchParams(previous);
-                              next.set("instrument_isin", row.isin);
-                              next.delete("payout_as_of");
-                              return next;
-                            })
-                          }
+                          onClick={() => {
+                            // Retire the outgoing date callback synchronously,
+                            // before React commits the newly selected instrument.
+                            committedSelection.current = null;
+                            const next = new URLSearchParams(location.search);
+                            next.set("instrument_isin", row.isin);
+                            next.delete("payout_as_of");
+                            void navigate({ search: next.toString(), hash: location.hash });
+                          }}
                         >
                           <span className={monthStyles.instrumentName}>
                             {row.source_name ?? row.isin}
@@ -280,6 +304,7 @@ export function UiV2MonthInstruments({
                 isin={instrument.isin}
                 closingDate={closing}
                 sourceReferences={instrument.analysis.source_references}
+                onAsOfChange={changeQuantityDate}
               />
             </section>
           ) : null}

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, useSearchParams } from "react-router";
+import { MemoryRouter, useLocation, useSearchParams } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SourcePayoutPreview } from "../api/sourcePayoutPreview";
 import { event, ISIN, metric, source } from "../test/sourceInstrumentFixtures";
@@ -101,6 +101,7 @@ function preview(account = "SYNTH-01", isin = ISIN, asOf = "2030-05-31"): Source
 }
 function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const account = params.get("source_account") ?? "SYNTH-01";
   return (
     <>
@@ -113,7 +114,10 @@ function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
       >
         Первый счёт
       </button>
-      <output aria-label="URL">{params.toString()}</output>
+      <output aria-label="URL">
+        {params.toString()}
+        {location.hash}
+      </output>
       <UiV2MonthInstruments
         payoutsOnly={payoutsOnly}
         key={account}
@@ -146,7 +150,7 @@ function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) 
         bases: [
           {
             as_of: "2030-04-30",
-            quantity: "2.5",
+            quantity: url.searchParams.get("isin") === STOCK ? "7" : "2.5",
             quantity_references: ["position:1:0:closing"],
             reason_codes: [],
           },
@@ -221,6 +225,47 @@ test("selects a saved historical quantity without substituting the month's closi
   await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
   expect(JSON.parse(String(posts(fetcher)[0][1]?.body)).as_of).toBe("2030-04-30");
 });
+
+test.each([false, true])(
+  "queued outgoing date cannot undo an ISIN switch (ABA=%s)",
+  async (aba) => {
+    const { fetcher } = setup(
+      `/v2/close?month=1&panel=payouts&source_account=SYNTH-01&keep=yes#details`,
+    );
+    const outgoingDate = await screen.findByLabelText("Сохранённая дата количества");
+    const first = screen.getByRole("button", { pressed: true });
+    const stock = screen.getByRole("button", { name: "Синтетическая акция" });
+    // Keep React's navigation commit pending while the outgoing native control fires.
+    // This exercises the real click/change closures, not a mock URL setter.
+    act(() => {
+      stock.click();
+      if (aba) first.click();
+      fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+    });
+    const expectedIsin = aba ? ISIN : STOCK;
+    await screen.findByRole("region", { name: `Инструмент ${expectedIsin}` });
+    expect(screen.getByLabelText("URL")).toHaveTextContent(`instrument_isin=${expectedIsin}`);
+    expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+    expect(screen.getByLabelText("URL")).toHaveTextContent("keep=yes");
+    expect(screen.getByLabelText("URL")).toHaveTextContent("#details");
+    expect(posts(fetcher)).toHaveLength(0);
+    fireEvent.change(await screen.findByLabelText("Сохранённая дата количества"), {
+      target: { value: "2030-04-30" },
+    });
+    expect(
+      screen.getByText(new RegExp(`Наблюдаемое количество: ${aba ? "2.5" : "7"} на 2030-04-30`)),
+    ).toBeVisible();
+    expect(screen.getByLabelText("URL")).toHaveTextContent(`instrument_isin=${expectedIsin}`);
+    expect(screen.getByLabelText("URL")).toHaveTextContent("#details");
+    fireEvent.click(screen.getByRole("button", { name: /Запросить предварительные/ }));
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(posts(fetcher)[0][1]?.body))).toEqual({
+      source_account: "SYNTH-01",
+      isin: expectedIsin,
+      as_of: "2030-04-30",
+    });
+  },
+);
 
 test("Month reuses #949 detail, separates full/conditional/NULL and never starts the provider automatically", async () => {
   const { fetcher } = setup();
