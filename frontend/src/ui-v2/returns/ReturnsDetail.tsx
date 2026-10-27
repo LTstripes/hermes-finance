@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatQuantity } from "../../lib/format";
 import { dateLabel, getDetail, type Period } from "./model";
 import { Explanation, Value } from "./ReturnsInfo";
+import { MissingName } from "./ReturnsAvailable";
 import styles from "./Returns.module.css";
 
 const kinds: Record<string, string> = {
@@ -43,6 +44,10 @@ export function ReturnsDetail({
   const d = query.data;
   return (
     <div className={styles.detail}>
+      <h3>
+        {d.name} <MissingName name={d.name} isin={d.isin} />
+      </h3>
+      {d.name !== d.isin && <small>{d.isin}</small>}
       <div className={styles.detailFacts}>
         <p>
           Количество: {formatQuantity(d.opening_quantity)} → {formatQuantity(d.closing_quantity)}

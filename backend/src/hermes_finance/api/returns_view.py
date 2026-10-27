@@ -46,6 +46,7 @@ class Account(DTO):
 
 class Context(DTO):
     accounts: list[Account]
+    scope_aliases: dict[str, str]
     source_periods: dict[str, list[Period]]
     default_period: Period | None
     closed_periods: list[Period]
@@ -63,10 +64,27 @@ class Instrument(DTO):
     conditional: bool
 
 
+class MissingMonth(DTO):
+    period: Period
+    reason_codes: list[str]
+
+
+class AvailableMonths(DTO):
+    period: Period
+    partial: Literal[True]
+    pnl: Metric
+    included: list[Period]
+    missing: list[MissingMonth]
+    covered_months: int
+    total_months: int
+
+
 class Overview(DTO):
     scope: str
     selected: Result
     all_history: Result | None
+    available_months_total: AvailableMonths | None
+    selected_available_months_total: AvailableMonths | None
     history: list[Result]
     periods: list[Period]
     instruments: list[Instrument]

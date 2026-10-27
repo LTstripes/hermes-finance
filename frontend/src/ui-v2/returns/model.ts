@@ -26,6 +26,7 @@ export type Instrument = Omit<Result, "period"> & {
   conditional: boolean;
 };
 export type Context = {
+  scope_aliases?: Record<string, string>;
   source_periods: Record<string, Period[]>;
   accounts: { id: string; label: string; basis: "statements" | "accepted" }[];
   default_period: Period | null;
@@ -35,11 +36,22 @@ export type Overview = {
   scope: string;
   selected: Result;
   all_history: Result | null;
+  available_months_total?: AvailableMonths | null;
+  selected_available_months_total?: AvailableMonths | null;
   history: Result[];
   periods: Period[];
   instruments: Instrument[];
   instrument_reason_codes: string[];
   proof_status: string;
+};
+export type AvailableMonths = {
+  period: Period;
+  partial: true;
+  pnl: Metric;
+  included: Period[];
+  missing: { period: Period; reason_codes: string[] }[];
+  covered_months: number;
+  total_months: number;
 };
 export type Detail = Instrument & {
   scope: string;
