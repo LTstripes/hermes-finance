@@ -6445,7 +6445,7 @@ less fees; C,D actual credited coupons/dividends; R principal redemption;
 F,T separate attributable costs/taxes not already embedded:
 `P = V1 - V0 - B + S + C + D + R - F - T = V1 - V0 - sum(instrument_flow)`.
 `valuation_and_trades` includes embedded costs/NKD, not pure market movement.
-The accepted native-total basis/proof precedence below remains unchanged.
+The source-specific native-total definition and proof conflict guards below apply.
 Net payout is sufficient even when gross/tax is unknown. The existing strict
 dividend narrative can evidence withheld tax and gross=net+tax; informational
 withholding is not subtracted again. Separate attributable tax cash is counted
@@ -6524,48 +6524,45 @@ buys/sells/total, including across overlapping reports; never deduplicate by int
 Let T be native `summ_trade`, N the native NKD and F commission. With an
 `includes_paid_nkd` basis, buys cost = T + F and sells proceeds = T - F;
 with `excludes_paid_nkd`, buys cost = T + N + F and sells proceeds = T + N - F.
-These are the C5 native-total basis meanings. For buys, a current accepted cash proof
-matching the native identity, IDs and exact trade components takes precedence,
-revalidated through the existing proof reader and cash checks. A malformed proof
-envelope (including missing/invalid `claims`, `source_identity`, `native_ids`,
-`signed_minor` or `nkd_leg` fields) is invalid and contributes no basis: use unique
-inference or withhold with `trade_nkd_basis_unknown`. These cash checks validate
-buys only; sells rely on per-row inference or remain withheld.
-For MyBroker bond buys and sells,
-the provisional reader also infers a basis per row from parsed `Price` (percent
-of face), signed `qty` and face value D in settlement-currency units per security:
-let P = Price / 100 * D * |qty|. Use the explicit positive trade-row face when
-present. When the trade-row face is absent or empty, provisionally assume D = 1000
-and apply the same exact-one-reading test below. The optional row attributes
-`face_value`, `nominal` and `nominal_value` (also their `2`-suffixed variants
-on pending rows) are normalized as `face_value` on parsed trade/position rows.
-Only a trade-row value supplies a dated nominal for inference. Position-row
-nominal has no proven validity interval and may describe a post-amortization face;
-it is not applied to trades, even for the same account/ISIN and statement.
-Conflicting trade aliases and explicit invalid/nonpositive values leave inference
-unknown and never fall back to 1000; position evidence cannot fill that gap.
-Contradictory nominal evidence across settled overlapping trade copies is
-`overlapping_trade_conflict` and withholds affected costs. There is no derivation
-of face from T or substitution of current instrument database metadata for
-historical source evidence. Explicit 500, 100 and other faces remain supported.
-An absent-face amortized trade whose amounts do not uniquely fit assumed 1000
-stays unknown; the reader does not search for another face.
-With Decimal arithmetic and the unchanged per-row 0.01 tolerance,
-|T - P - N| <= 0.01 implies
-`includes_paid_nkd`; |T - P| <= 0.01 with N != 0 implies `excludes_paid_nkd`.
-Both or neither matching leaves inference unknown. Optional nominal keys are omitted
-when no supported attribute exists, preserving normalized payloads for those legacy
-rows. Previously saved intakes are read as frozen facts: exact-original reattachment
-reproduces their saved nominal-key presence under the C3 compatibility rule; opaque
-attribute fingerprints are not promoted to nominal evidence. An unknown inference
-preserves a valid reviewed proof; a decidable inference conflicting with that proof makes the basis
-unknown and adds `trade_nkd_basis_conflict`, including when inference used assumed
-1000. Only an accepted basis supplied by assumed-face inference adds
-`face_value_assumed` to that instrument-month; a reviewed basis retains precedence
-and does not acquire the assumption flag. Without a valid proof or a unique
-inference, `trade_nkd_basis_unknown` withholds affected buys/sells/price effect/
-total/rate; bond EOD approximation does not waive this. This arithmetic inference
-is limited to the provisional reader and creates no accepted proof or attestation.
+These are the C5 native-total basis meanings. In the provisional instrument/monthly
+and dated-event readers, the verified saved document's `provider=alfa_mybroker`
+and `parser=mybroker-s1-v2` identify the supported MyBroker report family.
+For its completed bond trades, the source-specific field definition is
+**T includes trade N and excludes F**: BUY costs T + F, SELL proceeds T - F.
+This definition follows the [accepted #814 R1 assignment](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6442907396)
+and its linked sanitized broker-field receipt (the signed final letter was not
+independently verified). It is read interpretation, not a canonical cash proof,
+Money occurrence owner, new income/coupon/ICF/H2 event or strict SELL Apply authority.
+Other provider/parser families cannot acquire this basis from bond type alone.
+
+A current accepted cash proof matching exact native identity, ordered IDs and
+trade components is revalidated through the unchanged proof reader/cash checks.
+A contradictory valid `excludes_paid_nkd` proof produces
+`trade_nkd_basis_conflict` and NULL costs, never a silent override. Malformed,
+retired or mismatched proofs supply no basis and cannot override the source
+field definition. Strict S/N/F ownership, all five blocked real NKD-to-trade links,
+currentness, replay and CLOSED guards are unchanged.
+
+Price / 100 * dated trade-row face * |qty| checks consistency only. With a
+positive explicit face D, require |T - P - N| <= 0.01 using exact Decimal
+arithmetic; otherwise `trade_nkd_basis_conflict` and affected costs are NULL.
+A fit to T alone never selects an excludes basis. An absent/empty trade nominal
+adds the disclosure `trade_face_value_missing`; it does not substitute 1000,
+infer a nominal from T, or prevent the defined T + F / T - F cash read.
+Explicit invalid/nonpositive/conflicting nominal remains
+`trade_nkd_basis_unknown` and NULL; contradictory settled overlap remains
+`overlapping_trade_conflict`. Position nominal and current catalog metadata
+cannot supply a dated trade nominal. The parser's optional `face_value`,
+`nominal`, `nominal_value` (and pending `2` variants) remain frozen source facts;
+legacy exact-original reattachment preserves saved key presence under C3.
+No original, receipt, parser version, schema or financial writer changes.
+
+Trade-total basis is separate from EOD valuation basis. R1 leaves bond EOD
+`reported_unknown`, `bond_valuation_basis_unknown`, economic availability and
+exact account XIRR/TWRR unchanged. Applying the broker's dirty-EOD field definition
+to real retained source/account/ISIN/period requires the separate original-bound
+#767 validation and accepted R2 scope. No EOD amount/NKD adjustment or basis
+backfill follows from trade T including N.
 Missing commission or bond NKD is unknown; omitted stock NKD is inapplicable zero.
 Pending or missing settlement produces `trade_missing_settlement`,
 including both the execution and planned settlement months for pending trades.
@@ -6582,7 +6579,7 @@ without resolving clean/dirty or accrued-interest basis: `approximate=true` and
 `bond_valuation_basis_unknown` disclose this without blocking numbers. Stocks have
 `approximate=false` when no gaps or assumed income exist. Assumed income makes both
 the month and all-time row approximate, while confirmed income alone does not.
-`face_value_assumed` is also a disclosure: it makes the month and all-time row
+`trade_face_value_missing` is also a disclosure: it makes the month and all-time row
 approximate without by itself making all-time coverage partial. In general, any
 monthly flag except `income_confirmed` sets `approximate=true`.
 This grants no financial authority.

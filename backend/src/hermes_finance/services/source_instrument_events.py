@@ -311,11 +311,13 @@ def read_events(session, views, identities, native_account, gaps):
         basis = (
             "excludes_paid_nkd"
             if kind == "stock"
-            else _bond_total_basis(session, trade, flags)
+            else _bond_total_basis(
+                session, trade, flags, documents=[v["document"] for v, _ in observations]
+            )
             if kind == "bond"
             else _native_total_basis(session, trade)
         )
-        assumptions.update(flags & {"face_value_assumed"})
+        assumptions.update(flags & {"trade_face_value_missing"})
         reasons.update(flags - assumptions)
         if basis is None:
             reasons.add("trade_nkd_basis_unknown")

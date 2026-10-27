@@ -107,7 +107,7 @@ def test_reinvestment_two_visible_events_and_other_isin_keeps_issuer(db):
     assert result[BOND].months[1].analysis.components["dividends"].value == 0
 
 
-@pytest.mark.parametrize("amount", ["980", "1000"])
+@pytest.mark.parametrize("amount", ["1000"])
 def test_bond_nkd_fee_known_components_but_unknown_endpoint_basis_only_estimate(db, amount):
     save(
         db,
@@ -529,3 +529,95 @@ def test_known_other_instrument_unrecognized_money_does_not_block_stock(db):
     assert instruments[ISIN].analysis.pnl.value == 10000
     assert instruments[BOND].analysis.statement_estimate.pnl.value is None
     assert "unrecognized_money" in instruments[BOND].analysis.reason_codes
+
+
+@pytest.mark.parametrize("qty,expected", [("1", 102200), ("-1", 101800)])
+@pytest.mark.parametrize("face", [None, "1000", "500", "invalid"])
+def test_mybroker_native_total_once_in_monthly_and_dated_read(db, qty, expected, face):
+    def mutate(root):
+        trade_date(15)(root)
+        row = root.find(".//m:Details[@trade_no]", NS)
+        row.attrib.pop("nominal")
+        if face is not None:
+            row.set("nominal", face)
+
+    options = dict(
+        stock=None,
+        bond=("0", "1", "0", "1020") if qty == "1" else ("1", "0", "1020", "0"),
+        trades=((BOND, qty, "1020", "20", "2"),),
+        mutate=mutate,
+    )
+    intake = save(db, **options)
+    # Equivalent overlapping observations and exact replay are still one event.
+    assert save(db, **options) == intake
+    save(db, **options, marker="equivalent-source")
+    before = snapshot(db)
+    result = read(db)
+    row = by_isin(result)[BOND].months[0]
+    analysis = by_isin(result)[BOND].analysis
+    (event,) = [e for e in analysis.events if e.kind in {"BUY", "SELL"}]
+    if face in (None, "1000"):
+        assert (row.buys_cost_kopecks if qty == "1" else row.sells_proceeds_kopecks) == expected
+        assert sum(leg.account_cash_kopecks for leg in event.cash_legs) == (
+            -expected if qty == "1" else expected
+        )
+        assert event.native_total_basis == "includes_paid_nkd"
+        assert ("trade_face_value_missing" in row.flags) == (face is None)
+        assert ("trade_face_value_missing" in event.assumptions) == (face is None)
+    else:
+        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
+        assert "trade_nkd_basis_unknown" in event.reason_codes
+        assert not event.cash_legs
+        if face == "500":
+            assert "trade_nkd_basis_conflict" in event.reason_codes
+    assert analysis.opening.valuation_basis == "reported_unknown"
+    assert analysis.opening.economic_value_kopecks is None
+    assert "bond_valuation_basis_unknown" in row.flags
+    assert result.financial_authority == "none"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("field,value", [("provider", "other"), ("parser", "mybroker-s1-v99")])
+def test_mybroker_definition_requires_supported_frozen_source_scope(db, monkeypatch, field, value):
+    save(db)
+    original = source_intake.read_intake
+
+    def modified(session, intake_id):
+        view = deepcopy(original(session, intake_id))
+        view["document"][field] = value
+        return view
+
+    monkeypatch.setattr(source_intake, "read_intake", modified)
+    before = snapshot(db)
+    instrument = by_isin(read(db))[BOND]
+    assert instrument.months[0].buys_cost_kopecks is None
+    assert "trade_nkd_basis_unknown" in instrument.months[0].flags
+    (event,) = [e for e in instrument.analysis.events if e.kind == "BUY"]
+    assert "trade_nkd_basis_unknown" in event.reason_codes
+    assert not event.cash_legs
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fee", [None, "2"])
+def test_same_day_bonds_do_not_acquire_orphan_money_nkd_ownership(db, fee):
+    save(
+        db,
+        stock=None,
+        bond=("0", "2", "0", "2040"),
+        trades=((BOND, "1", "1020", "20", fee), (BOND, "1", "1020", "20", fee)),
+        mutate=trade_date(15, money=(("НКД по сделке", BOND, "-40", 15),)),
+    )
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[BOND]
+    buys = [e for e in instrument.analysis.events if e.kind == "BUY"]
+    assert len(buys) == 2 and len({e.native_identity for e in buys}) == 2
+    assert all(e.attribution_basis == "native_trade_settlement" for e in buys)
+    assert all(not any(leg.role == "nkd" for leg in e.cash_legs) for e in buys)
+    if fee is None:
+        assert instrument.months[0].buys_cost_kopecks is None
+        assert all("trade_components_missing" in e.reason_codes for e in buys)
+    else:
+        assert instrument.months[0].buys_cost_kopecks == 204400
+    assert instrument.analysis.pnl.value is None  # EOD/ownership guards survive.
+    assert snapshot(db) == before

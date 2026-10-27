@@ -111,8 +111,11 @@ is needed or approved.
 
 **Remaining finance evidence:** one account's August 2026 cancellation/principal/
 cash ownership and double-payment question; September settlement/NKD/commission
-broker inquiry ([#814](https://github.com/LTstripes/hermes-finance/issues/814),
-Owner says SENT/WAITING); June REPO/custody question
+broker reply ([#814 field-definition receipt](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6442328623),
+REPLY RECEIVED / PARTIAL: trade field meanings supplied, five Money NKD→trade
+links still BLOCKED; signed final letter unverified). The authorized R1 reader
+correction is separate from original-bound #767/R2 dirty-EOD acceptance and real
+financial authority. June REPO/custody question
 ([#888](https://github.com/LTstripes/hermes-finance/issues/888), UNSENT).
 Stock returns can be supported on exact scoped periods; full bond economic
 P&L/MD requires documented valuation clean/dirty/NKD basis and movements.

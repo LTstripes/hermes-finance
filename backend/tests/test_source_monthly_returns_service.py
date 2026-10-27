@@ -2166,13 +2166,18 @@ def test_astra_hunt_occurrences_signs_and_unknown_identity(astra_results):
         ("18_nkd_sell", "sells_proceeds_kopecks"),
     ],
 )
-def test_astra_hunt_nkd_is_counted_once(astra_results, case, field):
+def test_astra_hunt_excludes_shaped_total_does_not_override_mybroker_definition(
+    astra_results, case, field
+):
     result = astra_results[case]
     assert result["classifications"] == ["trade_settlement"]
     assert result["monthly"]["months"][0]["coupons_kopecks"] == 0
     assert result["monthly"]["period"]["contributions_kopecks"] == 0
     instrument = result["instruments"]["instruments"][0]["months"][0]
-    assert instrument[field] == 20_500  # 200 principal + 5 NKD, not +10 NKD.
+    # Retain the frozen synthetic XML: explicit P=200, T=200, N=5 conflicts
+    # with MyBroker T-includes-N. Never infer excludes from this arithmetic.
+    assert instrument[field] is None
+    assert {"trade_nkd_basis_unknown", "trade_nkd_basis_conflict"} <= set(instrument["flags"])
 
 
 def test_astra_hunt_missing_may_does_not_become_zero_flows(db):

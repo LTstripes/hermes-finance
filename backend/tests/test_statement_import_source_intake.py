@@ -1297,7 +1297,7 @@ def test_history_repo_withholds_affected_instrument_month(history_client, accoun
     assert "repo_trade_unsupported" in row["flags"]
 
 
-def test_history_non_1000_bond_is_withheld_without_poisoning_stock(history_client):
+def test_history_missing_nominal_uses_mybroker_total_without_poisoning_stock(history_client):
     from history_import_fixtures import ACCOUNTS, BOND, history_trade, history_xml
     from test_statement_import_mybroker import ISIN
 
@@ -1316,15 +1316,17 @@ def test_history_non_1000_bond_is_withheld_without_poisoning_stock(history_clien
     result = _history_returns(client, ACCOUNTS[0], "instruments")
     instruments = {i["isin"]: i for i in result["instruments"]}
     bond, stock = instruments[BOND]["months"][0], instruments[ISIN]["months"][0]
-    for field in (
-        "buys_cost_kopecks",
-        "sells_proceeds_kopecks",
-        "price_effect_kopecks",
-        "total_kopecks",
-        "return_percent",
-    ):
-        assert bond[field] is None
-    assert "trade_nkd_basis_unknown" in bond["flags"]
+    assert bond["buys_cost_kopecks"] == 82_100  # T=820 includes N=20; F=1.
+    assert bond["sells_proceeds_kopecks"] == 0
+    assert bond["price_effect_kopecks"] == bond["total_kopecks"] == 32_900
+    assert bond["return_percent"] is not None
+    assert "trade_face_value_missing" in bond["flags"]
+    assert "trade_nkd_basis_unknown" not in bond["flags"]
+    assert "bond_valuation_basis_unknown" in bond["flags"]
+    bond_analysis = instruments[BOND]["analysis"]
+    assert bond_analysis["opening"]["valuation_basis"] == "reported_unknown"
+    assert bond_analysis["opening"]["economic_value_kopecks"] is None
+    assert bond_analysis["pnl"]["value"] is None
     assert stock["buys_cost_kopecks"] == 10_100 and stock["total_kopecks"] == 9_900
 
 

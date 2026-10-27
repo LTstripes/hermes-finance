@@ -40,7 +40,7 @@ def db(tmp_path, source_returns_database_factory):
 @pytest.fixture
 def accepted_basis(monkeypatch):
     # Explicit synthetic reviewed proof for tests that exercise other boundaries.
-    monkeypatch.setattr(service, "_native_total_basis", lambda session, trade: "excludes_paid_nkd")
+    monkeypatch.setattr(service, "_native_total_basis", lambda session, trade: "includes_paid_nkd")
 
 
 def save(
@@ -49,7 +49,7 @@ def save(
     *,
     stock=("10", "10", "1000", "1100"),
     bond=("2", "3", "2000", "3150"),
-    trades=((BOND, "1", "1000", "20", "5"),),
+    trades=((BOND, "1", "1020", "20", "5"),),
     extra=(),
     marker=None,
     mutate=None,
@@ -359,7 +359,7 @@ def test_stock_dividend_bond_coupon_nkd_purchase_sale_and_all_time(db, accepted_
     assert m.price_effect_kopecks == 4_800 and m.total_kopecks == 4_800
     assert not m.flags and not m.approximate
     b, second = bond.months
-    assert b.buys_cost_kopecks == 102_500  # amount + paid NKD + fee
+    assert b.buys_cost_kopecks == 102_500  # native total (including NKD) + fee
     assert b.price_effect_kopecks == 12_500 and b.coupons_kopecks == 3_000
     assert b.total_kopecks == 15_500 and b.capital_base_kopecks == 302_500
     assert b.assumed_income_kopecks == 3_000 and b.income_assumptions_used
@@ -444,8 +444,8 @@ def test_bad_trade_only_blocks_its_instrument_month(db, missing):
     assert second.total_kopecks == 3_000
 
 
-def test_bond_sale_adds_received_nkd_and_subtracts_fees(db, accepted_basis):
-    save(db, bond=("2", "1", "2000", "1050"), trades=((BOND, "-1", "1000", "20", "5"),))
+def test_bond_sale_includes_received_nkd_and_subtracts_fees(db, accepted_basis):
+    save(db, bond=("2", "1", "2000", "1050"), trades=((BOND, "-1", "1020", "20", "5"),))
     row = by_isin(read(db))[BOND].months[0]
     assert row.sells_proceeds_kopecks == 101_500
     assert row.price_effect_kopecks == 6_500
@@ -846,6 +846,11 @@ def test_bond_native_total_basis_counts_nkd_once(db, monkeypatch, basis, amount,
     save(db, bond=bond, trades=((BOND, quantity, amount, "20", "5"),))
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
+    if basis == "excludes_paid_nkd":
+        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
+        assert {"trade_nkd_basis_unknown", "trade_nkd_basis_conflict"} <= set(row.flags)
+        assert snapshot(db) == before
+        return
     if quantity == "1":
         assert row.buys_cost_kopecks == 102_500
         assert row.sells_proceeds_kopecks == 0
@@ -862,7 +867,7 @@ def test_bond_native_total_basis_counts_nkd_once(db, monkeypatch, basis, amount,
 
 
 @pytest.mark.parametrize("quantity", ["1", "-1"])
-def test_unknown_native_bond_basis_withholds_costs_without_guessing(db, quantity):
+def test_contradictory_explicit_face_withholds_mybroker_costs(db, quantity):
     save(db, trades=((BOND, quantity, "520", "20", "5"),))
     save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
     result = by_isin(read(db))
@@ -1110,8 +1115,10 @@ def test_accepted_basis_is_bound_to_exact_trade_components(db, monkeypatch, basi
         before = snapshot(db)
         result = by_isin(read_instrument_returns(session, source_account=ACCOUNT))[BOND].months[0]
         assert snapshot(db) == before
-        assert "face_value_assumed" not in result.flags  # Reviewed basis has precedence.
-        if inference in {"conflicts", "assumed_conflicts"}:
+        assert ("trade_face_value_missing" in result.flags) == (
+            inference.startswith("assumed_") and basis == "includes_paid_nkd"
+        )
+        if basis == "excludes_paid_nkd" or inference in {"unknown", "conflicts"}:
             assert result.buys_cost_kopecks is None and result.total_kopecks is None
             assert {"trade_nkd_basis_unknown", "trade_nkd_basis_conflict"} <= set(result.flags)
         else:
@@ -1159,7 +1166,7 @@ def test_overlapping_rur_and_rub_trades_and_income_are_counted_once(db):
 
 @pytest.mark.parametrize("quantity", ["2", "-2"])
 @pytest.mark.parametrize("amount", ["2070.00", "2030.00"])
-def test_details_bond_arithmetic_counts_nkd_once_without_proof(db, quantity, amount):
+def test_explicit_face_cannot_select_mybroker_excludes_basis(db, quantity, amount):
     def mutate(root):
         row = root.find(".//m:Details[@trade_no]", NS)
         row.attrib.update(
@@ -1178,8 +1185,13 @@ def test_details_bond_arithmetic_counts_nkd_once_without_proof(db, quantity, amo
         assert service._native_total_basis(session, trade) is None
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
+    if amount == "2030.00":
+        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
+        assert "trade_nkd_basis_conflict" in row.flags
+        assert snapshot(db) == before
+        return
     if quantity == "2":
-        assert row.buys_cost_kopecks == 207_300  # T + fee, or T + NKD + fee.
+        assert row.buys_cost_kopecks == 207_300  # T already includes NKD; add only fee.
         assert row.sells_proceeds_kopecks == 0
         assert row.total_kopecks == 12_700
     else:
@@ -1199,15 +1211,15 @@ def test_details_bond_arithmetic_counts_nkd_once_without_proof(db, quantity, amo
     [
         ("2070.01", "40", 207_301),
         ("2069.99", "40", 207_299),
-        ("2030.01", "40", 207_301),
-        ("2029.99", "40", 207_299),
+        ("2030.01", "40", None),
+        ("2029.99", "40", None),
         ("2070.02", "40", None),
         ("2069.98", "40", None),
         ("2030.02", "40", None),
         ("2029.98", "40", None),
         ("1055", "40", None),  # Explicit face 1000: neither equation matches.
-        ("2030.00", "0.01", None),  # Both equations are within tolerance.
-        ("2030.00", "0", 203_300),  # Exclusive predicate requires nonzero NKD.
+        ("2030.00", "0.01", 203_300),  # Includes consistency is within tolerance.
+        ("2030.00", "0", 203_300),  # Explicit zero NKD remains a valid component.
     ],
 )
 def test_details_bond_basis_uses_exact_per_row_kopeck_tolerance(db, amount, nkd, expected):
@@ -1229,9 +1241,9 @@ def test_details_bond_basis_uses_exact_per_row_kopeck_tolerance(db, amount, nkd,
 
 
 @pytest.mark.parametrize(
-    "amounts,expected", [(("2070", "2030"), 414_600), (("2070.02", "2069.98"), None)]
+    "amounts,expected", [(("2070", "2070"), 414_600), (("2070.02", "2069.98"), None)]
 )
-def test_bond_basis_is_inferred_for_each_trade_before_summing(db, amounts, expected):
+def test_mybroker_bond_consistency_is_checked_per_trade_before_summing(db, amounts, expected):
     def mutate(root):
         for row in root.findall(".//m:Details[@trade_no]", NS):
             row.set("Price", "101.5")
@@ -1247,7 +1259,7 @@ def test_bond_basis_is_inferred_for_each_trade_before_summing(db, amounts, expec
     assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
 
 
-def test_arithmetic_bond_inference_requires_known_bond_type(db):
+def test_mybroker_bond_definition_requires_known_bond_type(db):
     def mutate(root):
         root.find(f".//m:Details[@ISIN1='{BOND}']", NS).set("active_type", "Unknown synthetic type")
         root.find(".//m:Details[@trade_no]", NS).set("Price", "101.5")
@@ -1354,9 +1366,9 @@ def test_malformed_proof_claims_fall_back_or_withhold(db, monkeypatch, claims, k
     )
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
-    assert row.buys_cost_kopecks == 102_500  # Price 100 * face 1000; amount excludes NKD.
+    assert row.buys_cost_kopecks == 102_500  # MyBroker native total includes NKD.
     assert "trade_nkd_basis_unknown" not in row.flags
-    assert ("face_value_assumed" in row.flags) == (not known_face)
+    assert ("trade_face_value_missing" in row.flags) == (not known_face)
     assert row.approximate
     assert "trade_components_missing" not in row.flags
     assert snapshot(db) == before
@@ -1366,7 +1378,7 @@ def test_malformed_proof_claims_fall_back_or_withhold(db, monkeypatch, claims, k
 @pytest.mark.parametrize("quantity", ["2", "-2"])
 @pytest.mark.parametrize("inclusive", [False, True])
 @pytest.mark.parametrize("location", ["trade", "position"])
-def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclusive, location):
+def test_explicit_face_checks_mybroker_includes_basis(db, face, quantity, inclusive, location):
     principal = Decimal("101.5") / 100 * Decimal(face) * abs(Decimal(quantity))
     amount = str(principal + (40 if inclusive else 0))
 
@@ -1382,15 +1394,15 @@ def test_explicit_face_bond_inference_counts_nkd_once(db, face, quantity, inclus
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
     expected = int((principal + 40 + (3 if quantity == "2" else -3)) * 100)
-    assert "face_value_assumed" not in row.flags
-    if location == "trade":
+    if location == "trade" and not inclusive:
+        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is row.total_kopecks is None
+        assert "trade_nkd_basis_conflict" in row.flags
+    else:
+        expected = int((Decimal(amount) + (3 if quantity == "2" else -3)) * 100)
         assert row.buys_cost_kopecks == (expected if quantity == "2" else 0)
         assert row.sells_proceeds_kopecks == (expected if quantity == "-2" else 0)
-        assert row.total_kopecks is not None
+        assert ("trade_face_value_missing" in row.flags) == (location == "position")
         assert "trade_nkd_basis_unknown" not in row.flags
-    else:
-        assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is row.total_kopecks is None
-        assert "trade_nkd_basis_unknown" in row.flags
     with localcontext() as context:
         context.prec = 6
         assert by_isin(read(db))[BOND].months[0] == row
@@ -1410,7 +1422,7 @@ def test_position_nominal_never_supplies_trade_face(db, face):
     result = by_isin(read(db))
     row = result[BOND].months[0]
     assert row.buys_cost_kopecks == 102_500
-    assert "face_value_assumed" in row.flags and row.approximate
+    assert "trade_face_value_missing" in row.flags and row.approximate
     assert "trade_nkd_basis_unknown" not in row.flags
     assert row.income_complete and result[ISIN].months[0].total_kopecks == 10_000
 
@@ -1440,12 +1452,12 @@ def test_conflicting_face_evidence_is_withheld(db, location):
     row = by_isin(read(db))[BOND].months[0]
     if location == "position":
         assert row.buys_cost_kopecks == 102_500
-        assert "face_value_assumed" in row.flags
+        assert "trade_face_value_missing" in row.flags
         assert "trade_nkd_basis_unknown" not in row.flags
     else:
         assert row.buys_cost_kopecks is row.total_kopecks is None
         assert {"trade_nkd_basis_unknown", "overlapping_trade_conflict"}.intersection(row.flags)
-        assert "face_value_assumed" not in row.flags
+        assert "trade_face_value_missing" not in row.flags
 
 
 @pytest.mark.parametrize("face", ["500", "", "invalid"])
@@ -1455,12 +1467,12 @@ def test_explicit_trade_nominal_takes_precedence_over_position(db, face):
         trade.set("nominal", face)
         trade.set("Price", "100")
 
-    amount = "500" if face == "500" else "1000"
+    amount = "520" if face == "500" else "1020"
     save(db, trades=((BOND, "1", amount, "20", "5"),), mutate=mutate)
     row = by_isin(read(db))[BOND].months[0]
     expected = {"500": 52_500, "": 102_500, "invalid": None}[face]
     assert row.buys_cost_kopecks == expected
-    assert ("face_value_assumed" in row.flags) == (face == "")
+    assert ("trade_face_value_missing" in row.flags) == (face == "")
     assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
 
 
@@ -1489,9 +1501,9 @@ def test_overlap_missing_and_empty_trade_nominal_is_one_trade(db):
     save(db, mutate=empty_nominal, marker="empty-nominal")
     row = by_isin(read(db))[BOND].months[0]
     assert len(row.intake_ids) == 2
-    assert row.buys_cost_kopecks == 102_500  # One counted trade, assumed face 1000.
+    assert row.buys_cost_kopecks == 102_500  # One counted trade; no nominal is invented.
     assert "overlapping_trade_conflict" not in row.flags
-    assert "face_value_assumed" in row.flags
+    assert "trade_face_value_missing" in row.flags
 
 
 @pytest.mark.parametrize("first_nominal", ["missing", "", "  "], ids=["missing", "empty", "blank"])
@@ -1513,7 +1525,7 @@ def test_overlap_missing_or_empty_and_explicit_1000_trade_nominal_remains_a_conf
     save(db, mutate=first_copy)
     save(db, mutate=explicit_nominal, marker="explicit-nominal")
     row = by_isin(read(db))[BOND].months[0]
-    # An explicit source fact differs from an assumption even at the same value.
+    # An explicit source fact differs from an absent nominal.
     assert "overlapping_trade_conflict" in row.flags
     assert row.buys_cost_kopecks is None
 
@@ -1555,18 +1567,16 @@ def test_non_overlap_trade_nominal_empty_explicit_and_invalid(db, trade_nominal)
             is None
         )
         assert "trade_nkd_basis_unknown" in row.flags
-        assert "face_value_assumed" not in row.flags
+        assert "trade_face_value_missing" not in row.flags
     else:
         assert row.buys_cost_kopecks == 102_500
         assert row.total_kopecks == 12_500
         assert "trade_nkd_basis_unknown" not in row.flags
-        assert ("face_value_assumed" in row.flags) == (trade_nominal == "")
+        assert ("trade_face_value_missing" in row.flags) == (trade_nominal == "")
     assert snapshot(db) == before
 
 
-@pytest.mark.parametrize(
-    "trade_face, expected", [(None, 75_300), ("1000", 75_300), ("500", 50_300)]
-)
+@pytest.mark.parametrize("trade_face, expected", [(None, 50_300), ("1000", None), ("500", 50_300)])
 def test_post_amortization_position_nominal_does_not_prove_trade_face(db, trade_face, expected):
     def mutate(root):
         root.find(f".//m:Details[@ISIN1='{BOND}']", NS).set("nominal", "500")
@@ -1580,9 +1590,9 @@ def test_post_amortization_position_nominal_does_not_prove_trade_face(db, trade_
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
     assert row.buys_cost_kopecks == expected
-    assert ("face_value_assumed" in row.flags) == (trade_face is None)
-    assert "trade_nkd_basis_unknown" not in row.flags
-    assert row.total_kopecks is not None and row.return_percent is not None
+    assert ("trade_face_value_missing" in row.flags) == (trade_face is None)
+    assert ("trade_nkd_basis_unknown" in row.flags) == (expected is None)
+    assert (row.total_kopecks is None) == (expected is None)
     assert snapshot(db) == before
 
 
@@ -1666,9 +1676,9 @@ def test_malformed_proof_envelope_falls_back_or_withholds(
     )
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
-    assert row.buys_cost_kopecks == 102_500  # Price 100 * face 1000; amount excludes NKD.
+    assert row.buys_cost_kopecks == 102_500  # MyBroker native total includes NKD.
     assert "trade_nkd_basis_unknown" not in row.flags
-    assert ("face_value_assumed" in row.flags) == (not known_face)
+    assert ("trade_face_value_missing" in row.flags) == (not known_face)
     assert row.approximate
     assert "trade_components_missing" not in row.flags
     assert snapshot(db) == before
@@ -1734,9 +1744,9 @@ def test_proof_attribute_error_falls_back_or_withholds(db, monkeypatch, known_fa
     )
     before = snapshot(db)
     row = by_isin(read(db))[BOND].months[0]
-    assert row.buys_cost_kopecks == 102_500  # Price 100 * face 1000; amount excludes NKD.
+    assert row.buys_cost_kopecks == 102_500  # MyBroker native total includes NKD.
     assert "trade_nkd_basis_unknown" not in row.flags
-    assert ("face_value_assumed" in row.flags) == (not known_face)
+    assert ("trade_face_value_missing" in row.flags) == (not known_face)
     assert row.approximate
     assert "trade_components_missing" not in row.flags
     assert snapshot(db) == before
@@ -1745,7 +1755,9 @@ def test_proof_attribute_error_falls_back_or_withholds(db, monkeypatch, known_fa
 @pytest.mark.parametrize("quantity", ["2", "-2"])
 @pytest.mark.parametrize("amount", ["2070", "2030"])
 @pytest.mark.parametrize("face", [None, "", "  "])
-def test_missing_or_empty_trade_face_uses_1000_only_for_unique_basis(db, quantity, amount, face):
+def test_missing_or_empty_trade_face_uses_mybroker_definition_without_nominal(
+    db, quantity, amount, face
+):
     def mutate(root):
         trade = root.find(".//m:Details[@trade_no]", NS)
         trade.attrib.pop("nominal")
@@ -1765,12 +1777,16 @@ def test_missing_or_empty_trade_face_uses_1000_only_for_unique_basis(db, quantit
     before = snapshot(db)
     instrument = by_isin(read(db))[BOND]
     row = instrument.months[0]
-    assert row.buys_cost_kopecks == (207_300 if quantity == "2" else 0)
-    assert row.sells_proceeds_kopecks == (206_700 if quantity == "-2" else 0)
+    assert row.buys_cost_kopecks == (int(Decimal(amount) * 100) + 300 if quantity == "2" else 0)
+    assert row.sells_proceeds_kopecks == (
+        int(Decimal(amount) * 100) - 300 if quantity == "-2" else 0
+    )
     assert row.total_kopecks is not None and row.return_percent is not None
-    assert "face_value_assumed" in row.flags and row.approximate
+    assert "trade_face_value_missing" in row.flags and row.approximate
     assert "trade_nkd_basis_unknown" not in row.flags
-    assert "face_value_assumed" in instrument.all_time.flags and instrument.all_time.approximate
+    assert (
+        "trade_face_value_missing" in instrument.all_time.flags and instrument.all_time.approximate
+    )
     assert not instrument.all_time.partial
     with localcontext() as context:
         context.prec = 6
@@ -1785,7 +1801,7 @@ def test_missing_or_empty_trade_face_uses_1000_only_for_unique_basis(db, quantit
         ("2030", "0.01"),  # Both readings fit within 0.01.
     ],
 )
-def test_missing_trade_face_never_guesses_an_ambiguous_or_unfitting_basis(db, amount, nkd):
+def test_missing_trade_face_never_infers_basis_from_assumed_nominal(db, amount, nkd):
     def mutate(root):
         trade = root.find(".//m:Details[@trade_no]", NS)
         trade.attrib.pop("nominal")
@@ -1794,10 +1810,9 @@ def test_missing_trade_face_never_guesses_an_ambiguous_or_unfitting_basis(db, am
 
     save(db, trades=((BOND, "2", amount, nkd, "3"),), mutate=mutate)
     row = by_isin(read(db))[BOND].months[0]
-    assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
-    assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
-    assert "trade_nkd_basis_unknown" in row.flags
-    assert "face_value_assumed" not in row.flags
+    assert row.buys_cost_kopecks == int(Decimal(amount) * 100) + 300
+    assert "trade_nkd_basis_unknown" not in row.flags
+    assert "trade_face_value_missing" in row.flags
 
 
 @pytest.mark.parametrize("face", ["0", "-500", "invalid", "NaN", "Infinity"])
@@ -1810,19 +1825,11 @@ def test_invalid_explicit_trade_face_is_withheld_without_fallback(db, face):
     assert row.buys_cost_kopecks is row.sells_proceeds_kopecks is None
     assert row.price_effect_kopecks is row.total_kopecks is row.return_percent is None
     assert "trade_nkd_basis_unknown" in row.flags
-    assert "face_value_assumed" not in row.flags
+    assert "trade_face_value_missing" not in row.flags
 
 
-def test_missing_nominal_true_face_500_is_accepted_as_excludes(db):
-    """Known accepted limitation of the 1000 face assumption for bond trades.
-
-    There is no nominal anywhere, the true face is 500, price 100 % and
-    quantity 10, so principal is 5000 and amount 10000 = principal + NKD 5000.
-    The true basis is includes_paid_nkd. Assuming face 1000 makes principal
-    10000 = amount, so only excludes_paid_nkd fits and that wrong reading is
-    accepted. The buy is overstated by the paid NKD; the disclosure is only
-    face_value_assumed plus approximate=true.
-    """
+def test_missing_nominal_mybroker_total_includes_nkd_without_assumed_face(db):
+    """MyBroker defines T as including N, even when a dated face is absent."""
 
     def mutate(root):
         root.find(".//m:Details[@trade_no]", NS).attrib.pop("nominal")
@@ -1835,9 +1842,9 @@ def test_missing_nominal_true_face_500_is_accepted_as_excludes(db):
         mutate=mutate,
     )
     row = by_isin(read(db))[BOND].months[0]
-    # amount + paid NKD + fee; the true includes basis would be 10000 + fee.
-    assert row.buys_cost_kopecks == 1_500_700
-    assert "face_value_assumed" in row.flags and row.approximate
+    assert row.buys_cost_kopecks == 1_000_700
+    assert "trade_face_value_missing" in row.flags and row.approximate
+    assert "face_value_assumed" not in row.flags
     assert "trade_nkd_basis_unknown" not in row.flags
 
 
@@ -1854,7 +1861,7 @@ def test_explicit_trade_nominal_500_on_same_counterexample_uses_includes(db):
     )
     row = by_isin(read(db))[BOND].months[0]
     assert row.buys_cost_kopecks == 1_000_700  # amount + fee; NKD is included.
-    assert "face_value_assumed" not in row.flags
+    assert "trade_face_value_missing" not in row.flags
     assert "trade_nkd_basis_unknown" not in row.flags
     assert row.approximate  # Bond valuation basis remains a disclosure.
 
@@ -1881,7 +1888,7 @@ def test_verbal_nkd_requires_proven_purchase_link_and_is_counted_once(
         db,
         stock=None,
         bond=("0", "1", "0", "1020"),
-        trades=((BOND, "1", "1000", "20", "0"),),
+        trades=((BOND, "1", "1020", "20", "0"),),
         extra=((operation, narrative, "-20"),),
         mutate=mutate,
     )
