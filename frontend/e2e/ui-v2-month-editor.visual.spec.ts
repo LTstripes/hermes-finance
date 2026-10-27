@@ -1070,6 +1070,22 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(dates).toHaveValue("2030-04-30");
   await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
   expect(previewBodies).toHaveLength(1);
+  await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await page.getByLabel("Сохранённый разбор").selectOption("1");
+  await page.getByLabel("Валюта предложения счёта").fill("RUB");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Остаться", exact: true }).click();
+  await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("RUB");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Перейти без сохранения" }).click();
+  await expect(page).toHaveURL(/panel=payouts/);
+  await page.goBack();
+  await expect(page).toHaveURL(/panel=brokers/);
+  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
   await page.locator("#payout-act-gross").fill("100");
   await nav.getByRole("link", { name: /Счета и позиции/ }).click();
@@ -1105,4 +1121,24 @@ test("ui-v2 Month payout entry keeps CLOSED records read-only without background
   await page.reload();
   await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
   expect(writes).toEqual([]);
+});
+
+test("ui-v2 Month UX legacy same-panel discard resets the manual draft and guard", async ({
+  page,
+}) => {
+  await installMonthUx(page);
+  await page.goto("/v2/close?month=7&section=payouts");
+  await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
+  await page.locator("#payout-act-gross").fill("123");
+  const nav = page.getByRole("navigation", { name: "Разделы месяца" });
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Перейти без сохранения" }).click();
+  await expect(page).toHaveURL(/panel=payouts/);
+  await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
+  await expect(page.locator("#payout-act-gross")).toHaveValue("");
+  await page.locator("#payout-act-gross").fill("456");
+  await nav.getByRole("link", { name: /Счета и позиции/ }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await page.getByRole("button", { name: "Остаться", exact: true }).click();
+  await expect(page.locator("#payout-act-gross")).toHaveValue("456");
 });

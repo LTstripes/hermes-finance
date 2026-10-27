@@ -7,6 +7,7 @@ import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
+import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import UiV2ClosePage from "./UiV2ClosePage";
 
 function LocationProbe() {
@@ -140,6 +141,28 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("keeps a selected original on Stay and clears it only on explicit source discard into payouts", async () => {
+    const { mount, client } = setup("/v2/close?month=12&panel=brokers");
+    const session = brokerOriginalSession(client);
+    const file = new File(["synthetic"], "synthetic.xml");
+    mount();
+    const nav = await screen.findByRole("navigation", { name: "Разделы месяца" });
+    await act(async () => session.select(file, 12, ""));
+    fireEvent.click(within(nav).getByRole("link", { name: /^Выплаты/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Остаться" }));
+    expect(session.snapshot().file).toBe(file);
+    fireEvent.click(within(nav).getByRole("link", { name: /^Выплаты/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("panel=payouts"),
+    );
+    expect(session.snapshot().file).toBeNull();
+    fireEvent.click(within(nav).getByRole("link", { name: /Счета и позиции/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("panel=positions"),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
   it.each(["failed", "draft", "ack404", "ack409"])(
     "holds unknown Close across %s GET, navigation and repeated clicks until GET proves status",
     async (readback) => {

@@ -217,6 +217,7 @@ export default function UiV2ClosePage() {
   const [uploadPending, setUploadPending] = useState(false);
   const [journalDirty, setJournalDirty] = useState(false);
   const [editorNavigation, setEditorNavigation] = useState({ dirty: false, pending: false });
+  const [discardVersion, setDiscardVersion] = useState(0);
   const sourcePending = Boolean(
     original.pending || original.busy || journalCommand || uploadPending,
   );
@@ -333,7 +334,7 @@ export default function UiV2ClosePage() {
             ) : null}
             {panel === "brokers" || panel === "payouts" ? (
               <UiV2MonthSources
-                key={workflow.month.id}
+                key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
                 month={workflow.month}
                 payoutsOnly={panel === "payouts"}
                 canClose={workflowReady && workflow.readiness.can_close}
@@ -343,7 +344,7 @@ export default function UiV2ClosePage() {
             ) : null}
             {MANUAL_SECTIONS.some(([id]) => id === panel) ? (
               <UiV2MonthEditorPage
-                key={`${workflow.month.id}:${panel}`}
+                key={`editor:${workflow.month.id}:${panel}:${discardVersion}`}
                 embeddedMonthId={workflow.month.id}
                 embeddedSection={panel as EditorSection}
                 onNavigationStateChange={setEditorNavigation}
@@ -530,8 +531,9 @@ export default function UiV2ClosePage() {
           emptyClosePending
         }
         onDiscard={() => {
+          setDiscardVersion((value) => value + 1);
           setEditorNavigation({ dirty: false, pending: false });
-          if (monthId !== null) session.select(original.file, monthId, original.accountId);
+          if (sourceDirty && monthId !== null) session.select(null, monthId, original.accountId);
         }}
       />
       <ConfirmDialog
