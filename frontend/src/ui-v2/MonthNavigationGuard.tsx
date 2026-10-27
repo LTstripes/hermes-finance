@@ -10,7 +10,7 @@ export function MonthNavigationGuard({
 }: {
   dirty: boolean;
   pending: boolean;
-  onDiscard?: () => void;
+  onDiscard?: (destination?: string) => void;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -101,7 +101,7 @@ export function MonthNavigationGuard({
           const replace = window.history.state?.monthNavigationGuard === token;
           allowPop.current = true;
           historyGuard.current = false;
-          onDiscard?.();
+          onDiscard?.(destination);
           navigate(destination, { replace });
         }
         setDestination(null);

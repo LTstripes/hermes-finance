@@ -141,6 +141,19 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("retains the actual File when source discard leaves Month for a catalogue round-trip", async () => {
+    const { mount, client } = setup("/v2/close?month=12&panel=brokers");
+    mount();
+    await screen.findByRole("navigation", { name: "Разделы месяца" });
+    const session = brokerOriginalSession(client);
+    const file = new File(["synthetic"], "synthetic.xml");
+    await act(async () => session.select(file, 12, ""));
+    fireEvent.click(screen.getByRole("link", { name: "Данные", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
+    await waitFor(() => expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data"));
+    expect(session.snapshot().file).toBe(file);
+    expect(session.snapshot().confirmed).toBeNull();
+  });
   it("keeps a selected original on Stay and clears it only on explicit source discard into payouts", async () => {
     const { mount, client } = setup("/v2/close?month=12&panel=brokers");
     const session = brokerOriginalSession(client);

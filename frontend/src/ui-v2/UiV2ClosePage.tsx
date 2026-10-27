@@ -530,10 +530,15 @@ export default function UiV2ClosePage() {
           Boolean(pendingLifecycle) ||
           emptyClosePending
         }
-        onDiscard={() => {
+        onDiscard={(destination) => {
           setDiscardVersion((value) => value + 1);
           setEditorNavigation({ dirty: false, pending: false });
-          if (sourceDirty && monthId !== null) session.select(null, monthId, original.accountId);
+          if (sourceDirty && monthId !== null) {
+            // Catalogue round-trips retain the actual File while retiring its
+            // preview/decisions. An explicit Month-panel discard drops it.
+            const withinMonth = destination?.split("?")[0] === "/v2/close";
+            session.select(withinMonth ? null : original.file, monthId, original.accountId);
+          }
         }}
       />
       <ConfirmDialog
