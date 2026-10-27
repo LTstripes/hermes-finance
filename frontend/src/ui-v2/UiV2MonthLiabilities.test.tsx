@@ -590,7 +590,11 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
         name: "Изменить объект «Синтетическая квартира»",
       }),
     );
-    await user.clear(within(propertyTable).getByLabelText("Название объекта"));
+    await user.clear(
+      within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
+        "Название объекта",
+      ),
+    );
     await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -599,10 +603,17 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(updateProperty).not.toHaveBeenCalled();
 
     await user.type(
-      within(propertyTable).getByLabelText("Название объекта"),
+      within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
+        "Название объекта",
+      ),
       "Синтетическая квартира",
     );
-    await user.type(within(propertyTable).getByLabelText("Годовая ставка ипотеки"), "-2");
+    await user.type(
+      within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
+        "Годовая ставка ипотеки",
+      ),
+      "-2",
+    );
     await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -1043,7 +1054,11 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
     await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1));
 
-    expect(within(propertyTable).getByLabelText("Название объекта")).toBeDisabled();
+    expect(
+      within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
+        "Название объекта",
+      ),
+    ).toBeDisabled();
     const pendingMortgage = screen.getByDisplayValue("2900000.00");
     expect(pendingMortgage).toBeDisabled();
     await user.type(pendingMortgage, "9");

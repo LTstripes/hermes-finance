@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, useSearchParams } from "react-router";
+import { BrowserRouter, useLocation, useSearchParams } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SourcePayoutPreview } from "../api/sourcePayoutPreview";
 import { event, ISIN, metric, source } from "../test/sourceInstrumentFixtures";
@@ -99,18 +99,32 @@ function preview(account = "SYNTH-01", isin = ISIN, asOf = "2030-05-31"): Source
     failures: [],
   };
 }
-function Harness() {
+function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const account = params.get("source_account") ?? "SYNTH-01";
   return (
     <>
       <button type="button" onClick={() => setParams({ source_account: "SYNTH-02" })}>
         Другой счёт
       </button>
-      <output aria-label="URL">{params.toString()}</output>
+      <button
+        type="button"
+        onClick={() => setParams({ source_account: "SYNTH-01", panel: "payouts" })}
+      >
+        Первый счёт
+      </button>
+      <button type="button" onClick={() => setParams({ month: "2", source_account: account })}>
+        Другой месяц
+      </button>
+      <output aria-label="URL">
+        {params.toString()}
+        {location.hash}
+      </output>
       <UiV2MonthInstruments
-        key={account}
-        monthId={1}
+        payoutsOnly={payoutsOnly}
+        key={`${account}:${params.get("month") ?? "1"}`}
+        monthId={Number(params.get("month") ?? "1")}
         year={2030}
         month={5}
         account={account}
@@ -119,7 +133,7 @@ function Harness() {
     </>
   );
 }
-function setup(path = "/v2/close?source_account=SYNTH-01") {
+function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) {
   const state = {
     reply: null as
       | null
@@ -139,14 +153,17 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
         bases: [
           {
             as_of: "2030-04-30",
-            quantity: "2.5",
+            quantity: url.searchParams.get("isin") === STOCK ? "7" : "2.5",
             quantity_references: ["position:1:0:closing"],
             reason_codes: [],
           },
         ],
       });
-    if (url.pathname === "/api/source-returns/instruments")
-      return state.readReply?.() ?? json(instruments(url.searchParams.get("source_account") ?? ""));
+    if (url.pathname === "/api/source-returns/instruments") {
+      const data = instruments(url.searchParams.get("source_account") ?? "");
+      if (payoutsOnly) data.instruments[0].analysis.events = [event({})];
+      return state.readReply?.() ?? json(data);
+    }
     if (url.pathname.endsWith("/payout-preview")) {
       const payload = JSON.parse(String(init?.body));
       return state.reply
@@ -157,11 +174,12 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
   });
   vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  window.history.replaceState(null, "", path);
   const view = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <Harness />
-      </MemoryRouter>
+      <BrowserRouter>
+        <Harness payoutsOnly={payoutsOnly} />
+      </BrowserRouter>
     </QueryClientProvider>,
   );
   return { ...view, fetcher, client, state };
@@ -169,6 +187,64 @@ function setup(path = "/v2/close?source_account=SYNTH-01") {
 const posts = (fetcher: ReturnType<typeof setup>["fetcher"]) =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
 afterEach(() => vi.unstubAllGlobals());
+
+test.each([
+  ["Другой счёт", "Сохранённая дата количества", "source_account=SYNTH-02"],
+  ["Другой счёт", "Дата количества из выписки", "source_account=SYNTH-02"],
+  ["Другой месяц", "Сохранённая дата количества", "month=2"],
+  ["Другой месяц", "Дата количества из выписки", "month=2"],
+])("outgoing %s / %s cannot overwrite external navigation", async (button, label, target) => {
+  const { fetcher } = setup();
+  await screen.findByLabelText("Сохранённая дата количества");
+  const outgoingDate = screen.getByLabelText(label);
+  act(() => {
+    screen.getByRole("button", { name: button }).click();
+    fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+  });
+  await waitFor(() => expect(screen.getByLabelText("URL")).toHaveTextContent(target));
+  expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+  expect(posts(fetcher)).toHaveLength(0);
+});
+
+test("outgoing date is retired by account A→B→A even before either navigation commits", async () => {
+  const { fetcher } = setup("/v2/close?source_account=SYNTH-01&panel=payouts");
+  const outgoingDate = await screen.findByLabelText("Сохранённая дата количества");
+  const href = window.location.href;
+  act(() => {
+    screen.getByRole("button", { name: "Другой счёт" }).click();
+    screen.getByRole("button", { name: "Первый счёт" }).click();
+    expect(window.location.href).toBe(href);
+    fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+  });
+  expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
+  expect(posts(fetcher)).toHaveLength(0);
+});
+
+test("payout entry exposes source observations with unknown tax separately and reuses explicit T-Invest preview", async () => {
+  const { fetcher } = setup("/v2/close?panel=payouts&month=1&source_account=SYNTH-01", true);
+  const observations = await screen.findByRole("region", { name: "Наблюдения выплат источника" });
+  expect(observations).toHaveTextContent("не принятые финансовые записи");
+  expect(observations).toHaveTextContent("Нетто по источнику: 12,34 ₽");
+  expect(observations).toHaveTextContent("Налог: неизвестен");
+  expect(
+    within(observations).getByRole("link", { name: "Рассмотрение и сверка выписки" }),
+  ).toHaveAttribute("href", "#month-source-review");
+  expect(posts(fetcher)).toHaveLength(0);
+  fireEvent.change(await screen.findByLabelText("Сохранённая дата количества"), {
+    target: { value: "2030-04-30" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  );
+  await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
+  expect(posts(fetcher)).toHaveLength(1);
+  expect(JSON.parse(String(posts(fetcher)[0][1]?.body))).toMatchObject({
+    source_account: "SYNTH-01",
+    isin: ISIN,
+    as_of: "2030-04-30",
+  });
+});
 
 test("selects a saved historical quantity without substituting the month's closing EOD or calling the provider", async () => {
   const { fetcher } = setup();
@@ -186,6 +262,47 @@ test("selects a saved historical quantity without substituting the month's closi
   await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
   expect(JSON.parse(String(posts(fetcher)[0][1]?.body)).as_of).toBe("2030-04-30");
 });
+
+test.each([false, true])(
+  "queued outgoing date cannot undo an ISIN switch (ABA=%s)",
+  async (aba) => {
+    const { fetcher } = setup(
+      `/v2/close?month=1&panel=payouts&source_account=SYNTH-01&keep=yes#details`,
+    );
+    const outgoingDate = await screen.findByLabelText("Сохранённая дата количества");
+    const first = screen.getByRole("button", { pressed: true });
+    const stock = screen.getByRole("button", { name: "Синтетическая акция" });
+    // Keep React's navigation commit pending while the outgoing native control fires.
+    // This exercises the real click/change closures, not a mock URL setter.
+    act(() => {
+      stock.click();
+      if (aba) first.click();
+      fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+    });
+    const expectedIsin = aba ? ISIN : STOCK;
+    await screen.findByRole("region", { name: `Инструмент ${expectedIsin}` });
+    expect(screen.getByLabelText("URL")).toHaveTextContent(`instrument_isin=${expectedIsin}`);
+    expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+    expect(screen.getByLabelText("URL")).toHaveTextContent("keep=yes");
+    expect(screen.getByLabelText("URL")).toHaveTextContent("#details");
+    expect(posts(fetcher)).toHaveLength(0);
+    fireEvent.change(await screen.findByLabelText("Сохранённая дата количества"), {
+      target: { value: "2030-04-30" },
+    });
+    expect(
+      screen.getByText(new RegExp(`Наблюдаемое количество: ${aba ? "2.5" : "7"} на 2030-04-30`)),
+    ).toBeVisible();
+    expect(screen.getByLabelText("URL")).toHaveTextContent(`instrument_isin=${expectedIsin}`);
+    expect(screen.getByLabelText("URL")).toHaveTextContent("#details");
+    fireEvent.click(screen.getByRole("button", { name: /Запросить предварительные/ }));
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(1));
+    expect(JSON.parse(String(posts(fetcher)[0][1]?.body))).toEqual({
+      source_account: "SYNTH-01",
+      isin: expectedIsin,
+      as_of: "2030-04-30",
+    });
+  },
+);
 
 test("Month reuses #949 detail, separates full/conditional/NULL and never starts the provider automatically", async () => {
   const { fetcher } = setup();
@@ -267,6 +384,24 @@ test("account switch and date changes retire old results and late provider respo
   expect(await screen.findByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
   expect(screen.queryByRole("table", { name: /Actual для сверки/ })).not.toBeInTheDocument();
   expect(posts(fetcher)).toHaveLength(1);
+});
+
+test("payout entry rejects a late A response after A→B→A even though the account name matches again", async () => {
+  const { state, fetcher } = setup("/v2/close?panel=payouts&source_account=SYNTH-01", true);
+  let finish: ((value: Response) => void) | undefined;
+  state.reply = () =>
+    new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  fireEvent.click(await screen.findByRole("button", { name: /Запросить предварительные/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Другой счёт" }));
+  await screen.findByText(/Выбранный счёт: SYNTH-02/);
+  fireEvent.click(screen.getByRole("button", { name: "Первый счёт" }));
+  await screen.findByText(/Выбранный счёт: SYNTH-01/);
+  await act(async () => finish?.(json(preview())));
+  expect(screen.queryByRole("table", { name: /Actual для сверки/ })).not.toBeInTheDocument();
+  expect(posts(fetcher)).toHaveLength(1);
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
 });
 
 test("read refresh discards provider preview; 409 and wrong scope fail closed without automatic retry", async () => {

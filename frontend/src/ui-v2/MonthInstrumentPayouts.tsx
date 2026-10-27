@@ -87,15 +87,17 @@ export function MonthInstrumentPayouts({
   isin,
   closingDate,
   sourceReferences,
+  onAsOfChange,
 }: {
   account: string;
   nativeAccount: string;
   isin: string;
   closingDate: string;
   sourceReferences: SourcePayoutPreview["source_references"];
+  onAsOfChange: (value: string) => boolean;
 }) {
   const client = useQueryClient();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const bases = useQuery({
     queryKey: ["source-returns", "quantity-bases", account, isin, closingDate],
     queryFn: async ({ signal }) => {
@@ -237,7 +239,11 @@ export function MonthInstrumentPayouts({
   }
 
   return (
-    <section className={styles.preview} aria-label={`Предварительные выплаты ${isin}`}>
+    <section
+      id="month-payout-preview"
+      className={styles.preview}
+      aria-label={`Предварительные выплаты ${isin}`}
+    >
       <h3>Предварительные выплаты · T-Invest</h3>
       <details>
         <summary>О предварительных выплатах</summary>
@@ -261,12 +267,7 @@ export function MonthInstrumentPayouts({
               value={selectedBasis ? asOf : ""}
               onChange={(event) => {
                 if (!event.target.value) return;
-                retire();
-                setParams((previous) => {
-                  const next = new URLSearchParams(previous);
-                  next.set("payout_as_of", event.target.value);
-                  return next;
-                });
+                if (onAsOfChange(event.target.value)) retire();
               }}
             >
               <option value="">Выбери доказанную дату из выписки</option>
@@ -306,12 +307,7 @@ export function MonthInstrumentPayouts({
           type="date"
           value={asOf}
           onChange={(event) => {
-            retire();
-            setParams((previous) => {
-              const next = new URLSearchParams(previous);
-              next.set("payout_as_of", event.target.value);
-              return next;
-            });
+            if (onAsOfChange(event.target.value)) retire();
           }}
         />
       </label>{" "}

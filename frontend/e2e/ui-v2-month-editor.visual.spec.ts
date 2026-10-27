@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { makeUiV2Workflow } from "../src/test/uiV2Fixtures";
+import { event, ISIN, source } from "../src/test/sourceInstrumentFixtures";
 
 const closed = {
   id: 7,
@@ -292,9 +293,14 @@ for (const outcome of ["success", "expired", "ambiguous"] as const) {
 
 async function installApi(
   page: Page,
-  overrides: { debts?: object[]; accounts?: object[]; properties?: object[] } = {},
+  overrides: {
+    debts?: object[];
+    accounts?: object[];
+    properties?: object[];
+    month?: typeof closed;
+  } = {},
 ) {
-  let month = { ...closed };
+  let month = { ...(overrides.month ?? closed) };
   const calls: string[] = [];
   const expenses: object[] = [];
   const money = { amount: "0.00", currency: "RUB" };
@@ -308,6 +314,11 @@ async function installApi(
     calls.push(`${request.method()} ${path}`);
     if (path === "/api/months" && request.method() === "GET") {
       await route.fulfill({ json: [month] });
+    } else if (path === "/api/months/7/close-workflow") {
+      const workflow = makeUiV2Workflow();
+      workflow.month = { ...workflow.month, ...month, status: month.status as "draft" | "closed" };
+      if (workflow.final_review.available) workflow.final_review.month_header = workflow.month;
+      await route.fulfill({ json: workflow });
     } else if (path === "/api/months/7" && request.method() === "GET") {
       await route.fulfill({ json: month });
     } else if (path === "/api/months/7" && request.method() === "PATCH") {
@@ -705,3 +716,433 @@ for (const width of [1280]) {
     },
   );
 }
+
+const uxName =
+  "Синтетическая облигация с очень длинным названием эмитента и дополнительными условиями выпуска серии 2030";
+const uxMoney = (amount: string) => ({ amount, currency: "RUB" });
+const uxAccount = {
+  id: 11,
+  name: "Синтетический брокерский счёт",
+  account_type: "brokerage",
+  status: "active",
+  include_in_capital: true,
+  include_in_returns: true,
+};
+const uxInstrument = {
+  id: 21,
+  name: uxName,
+  ticker: "SYN",
+  isin: ISIN,
+  instrument_type: "bond",
+  currency: "RUB",
+  is_active: true,
+  manual_price_allowed: true,
+};
+const uxActual = {
+  id: 41,
+  reporting_month_id: 7,
+  account_id: 11,
+  instrument_id: 21,
+  flow_type: "coupon",
+  event_date: "2030-05-15",
+  gross_amount: null,
+  tax_amount: null,
+  commission_amount: null,
+  net_amount: uxMoney("860.00"),
+  currency: "RUB",
+  source: "broker_statement_native",
+  amount_basis: "broker_statement_net_v1",
+  statement_link: null,
+};
+
+async function installMonthUx(page: Page, status = "draft") {
+  const calls = await installApi(page, {
+    month: { ...closed, month: 5, snapshot_date: "2030-05-31", status },
+    accounts: [uxAccount],
+    properties: [
+      {
+        id: 2,
+        reporting_month_id: 7,
+        name: "Синтетическая квартира",
+        estimated_value: uxMoney("7000000.00"),
+        mortgage_balance: uxMoney("3000000.00"),
+        monthly_payment: uxMoney("50000.00"),
+        mortgage_annual_rate: null,
+      },
+    ],
+  });
+  await page.route("**/api/instruments?*", (route) => route.fulfill({ json: [uxInstrument] }));
+  await page.route("**/api/positions?*", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 31,
+          reporting_month_id: 7,
+          account_id: 11,
+          instrument_id: 21,
+          quantity: "123.456789",
+          average_cost_per_unit: uxMoney("12345.67"),
+          market_price_per_unit: uxMoney("13456.78"),
+          market_value: uxMoney("1661330.85"),
+          cost_basis: uxMoney("1524156.78"),
+          unrealized_result: uxMoney("137174.07"),
+          accrued_interest: null,
+          price_source: "manual",
+          price_date: "2030-05-31",
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/investment-flows?*", (route) => route.fulfill({ json: [uxActual] }));
+  await page.route("**/api/expected-flows?*", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 51,
+          reporting_month_id: 7,
+          account_id: 11,
+          instrument_id: 21,
+          flow_type: "coupon",
+          expected_date: "2030-06-15",
+          gross_amount: uxMoney("500.00"),
+          expected_tax_amount: null,
+          expected_net_amount: uxMoney("435.00"),
+          currency: "RUB",
+          source: "manual",
+          forecast_version: "v1",
+          is_confirmed: false,
+          is_approximate: true,
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/broker-months*", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/source-intakes*", (route) => route.fulfill({ json: [] }));
+  return calls;
+}
+
+async function expectNoTableOverflow(page: Page) {
+  const geometry = await page
+    .locator("main .table-wrap")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => ({ width: node.clientWidth, scroll: node.scrollWidth })),
+    );
+  for (const table of geometry) expect(table.scroll).toBeLessThanOrEqual(table.width + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+  // Numbers must fit their own cells, not merely a hidden outer container.
+  const clipped = await page
+    .locator("main td.num")
+    .evaluateAll((cells) =>
+      cells
+        .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+        .map((cell) => cell.textContent),
+    );
+  expect(clipped).toEqual([]);
+}
+
+test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
+      writes.push(request.url());
+  });
+  await installMonthUx(page);
+  for (const width of [1280, 1440, 1920]) {
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/v2/close?month=7&panel=positions");
+      // CSS zoom exercises layout/reflow at the requested desktop scale; not native browser chrome.
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("columnheader", { name: "Результат, ₽", exact: true }),
+      ).toBeVisible();
+      await expectNoTableOverflow(page);
+      const fullName = page.getByRole("button", { name: `Полное название: ${uxName} (SYN)` });
+      await fullName.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("tooltip")).toHaveText(`${uxName} (SYN)`);
+      await page.keyboard.press("Escape");
+      await page.screenshot({
+        path: testInfo.outputPath(`month-positions-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+      const nav = page.getByRole("navigation", { name: "Разделы месяца" });
+      await nav.getByRole("link", { name: /Долги, кредитка и недвижимость/ }).click();
+      const payment = page.locator("#prop-pay");
+      const rate = page.locator("#prop-rate");
+      await expect(payment).toBeVisible();
+      await expect(rate).toHaveAccessibleDescription(/Пустая ставка — неизвестно/);
+      const payBox = await payment.boundingBox();
+      const rateBox = await rate.boundingBox();
+      expect(payBox).not.toBeNull();
+      expect(rateBox).not.toBeNull();
+      expect(Math.abs((payBox?.y ?? 0) - (rateBox?.y ?? 0))).toBeLessThan(2);
+      expect((payBox?.x ?? 0) + (payBox?.width ?? 0)).toBeLessThan(rateBox?.x ?? 0);
+      await page.getByRole("button", { name: /Изменить объект/ }).click();
+      const editor = page.getByRole("region", { name: "Изменение объекта недвижимости" });
+      await expect(editor.getByLabel("Ежемесячный платёж")).toBeVisible();
+      await expectNoTableOverflow(page);
+      await page.screenshot({
+        path: testInfo.outputPath(`month-property-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Отмена", exact: true }).click();
+      await nav.getByRole("link", { name: /^Выплаты/ }).click();
+      await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "Нетто, ₽", exact: true })).toBeVisible();
+      await expect(page.locator("#payout-act-gross")).not.toBeVisible();
+      await expectNoTableOverflow(page);
+      await page.screenshot({
+        path: testInfo.outputPath(`month-payouts-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+    }
+  }
+  expect(writes).toEqual([]);
+});
+
+test("ui-v2 Month payout entry source actual forecast historical date Back Reload and dirty guards @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const writes: string[] = [];
+  const previewBodies: object[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/") && request.method() !== "GET") writes.push(url.pathname);
+  });
+  await installMonthUx(page);
+  const sourceRows = ["SYNTH-01", "SYNTH-02"].map((account, i) => ({
+    id: i + 1,
+    head_seq: 2,
+    manifest_digest: "a".repeat(64),
+    covered_from: "2030-05-01",
+    covered_to: "2030-05-31",
+    contract_version: "source_intake_v1",
+    generation: 1,
+    document_sha256: "a".repeat(64),
+    original_required: true,
+    financial_authority: "none",
+    finance_link: null,
+    history: [],
+    proposals: [],
+    state: {
+      reporting_month_id: null,
+      account_id: null,
+      default_enabled: true,
+      account_currency: null,
+      policy_revision: 1,
+      overrides: {},
+      instrument_decisions: [],
+      deferred_isins: [],
+    },
+    document: {
+      provider: "mybroker",
+      parser: "mybroker-s1-v2",
+      document_sha256: "a".repeat(64),
+      filename_account: account,
+      source_accounts: [`${account}-000`],
+      covered_from: "2030-05-01",
+      covered_to: "2030-05-31",
+      positions: [],
+      trades: [],
+      money: [],
+      rub_money: [],
+      section_inventory: {},
+    },
+    observations: [],
+    exceptions: [],
+  }));
+  await page.route("**/api/broker-months/intakes*", (route) => route.fulfill({ json: sourceRows }));
+  await page.route("**/api/source-returns/instruments?*", (route) => {
+    const account = new URL(route.request().url()).searchParams.get("source_account") ?? "";
+    const data = source(account);
+    data.instruments[0].source_name = uxName;
+    data.instruments[0].analysis.events = [
+      event({ net_payout_kopecks: 86000, native_source_account: `${account}-000` }),
+    ];
+    return route.fulfill({ json: data });
+  });
+  await page.route("**/api/source-returns/quantity-bases?*", (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    const account = q.get("source_account");
+    return route.fulfill({
+      json: {
+        source_account: account,
+        native_source_account: `${account}-000`,
+        isin: ISIN,
+        on_or_before: "2030-05-31",
+        authority: "provisional",
+        financial_authority: "none",
+        bases: [
+          {
+            as_of: "2030-04-30",
+            quantity: "2.5",
+            reason_codes: [],
+            quantity_references: ["position:1:0:closing"],
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/source-returns/payout-preview", async (route) => {
+    const body = route.request().postDataJSON();
+    previewBodies.push(body);
+    await route.fulfill({
+      json: {
+        source_account: body.source_account,
+        native_source_account: `${body.source_account}-000`,
+        isin: ISIN,
+        as_of: body.as_of,
+        authority: "provisional",
+        financial_authority: "none",
+        account_id: null,
+        instrument_id: 21,
+        quantity: "2.5",
+        quantity_authority: "source_observed",
+        assumptions: ["fixed_source_quantity_not_entitlement"],
+        quantity_references: ["position:1:0:closing"],
+        source_references: source().instruments[0].analysis.source_references,
+        dependency_fingerprint: "synthetic",
+        reason_codes: [],
+        provider: "t_invest",
+        instrument_uid: "synthetic",
+        actuals: [event({ net_payout_kopecks: 86000 })],
+        reconciliation_reasons: [],
+        failures: [],
+        rows: [
+          {
+            identity_key: "future-1",
+            event_kind: "coupon",
+            payment_date: "2030-07-01",
+            provider_status: "ok",
+            source_method: "GetBondCoupons",
+            per_unit_amount: "1.23",
+            currency: "RUB",
+            announced_amount_kopecks: "308",
+            personal_tax_known: false,
+            status: "future",
+            countable_future: true,
+            actual_event_keys: [],
+            reason_codes: [],
+          },
+        ],
+      },
+    });
+  });
+  await page.goto(`/v2/close?month=7&source_account=SYNTH-01&instrument_isin=${ISIN}`);
+  const nav = page.getByRole("navigation", { name: "Разделы месяца" });
+  await expect(nav).toBeVisible();
+  const order = await nav
+    .getByRole("link")
+    .evaluateAll((links) =>
+      links.map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("panel")),
+    );
+  expect(order.indexOf("brokers")).toBeLessThan(order.indexOf("positions"));
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await expect(page.getByRole("region", { name: "Наблюдения выплат источника" })).toContainText(
+    "Налог: неизвестен",
+  );
+  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).toContainText("860");
+  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).not.toContainText(
+    "1 720",
+  );
+  const dates = page.getByLabel("Сохранённая дата количества");
+  await dates.selectOption("2030-04-30");
+  await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
+  await expect(page.getByText(/не заменяет закрывающий EOD 2030-05-31/)).toBeVisible();
+  expect(previewBodies).toEqual([]);
+  await page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }).click();
+  await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toBeVisible();
+  expect(previewBodies).toHaveLength(1);
+  expect(previewBodies[0]).toMatchObject({
+    source_account: "SYNTH-01",
+    isin: ISIN,
+    as_of: "2030-04-30",
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("month-payout-source-actual-future.png"),
+    fullPage: true,
+  });
+  await page.reload();
+  await expect(dates).toHaveValue("2030-04-30");
+  await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
+  expect(previewBodies).toHaveLength(1);
+  await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await page.getByLabel("Сохранённый разбор").selectOption("1");
+  await page.getByLabel("Валюта предложения счёта").fill("RUB");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Остаться", exact: true }).click();
+  await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("RUB");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Перейти без сохранения" }).click();
+  await expect(page).toHaveURL(/panel=payouts/);
+  await page.goBack();
+  await expect(page).toHaveURL(/panel=brokers/);
+  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
+  await page.locator("#payout-act-gross").fill("100");
+  await nav.getByRole("link", { name: /Счета и позиции/ }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await expect(page.getByRole("alertdialog")).toContainText("Несохранённые изменения");
+  await page.getByRole("button", { name: "Остаться", exact: true }).click();
+  await expect(page.locator("#payout-act-gross")).toHaveValue("100");
+  await nav.getByRole("link", { name: /Счета и позиции/ }).click();
+  await page.getByRole("button", { name: "Перейти без сохранения" }).click();
+  await expect(page).toHaveURL(/panel=positions/);
+  await page.goBack();
+  await expect(page).toHaveURL(/panel=payouts/);
+  await expect(dates).toHaveValue("2030-04-30");
+  expect(previewBodies).toHaveLength(1);
+  expect(writes).toEqual(["/api/source-returns/payout-preview"]);
+});
+
+test("ui-v2 Month payout entry keeps CLOSED records read-only without background writes", async ({
+  page,
+}) => {
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
+      writes.push(request.url());
+  });
+  await installMonthUx(page, "closed");
+  await page.goto("/v2/close?month=7&panel=payouts");
+  await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+  await expect(page.locator("#month-accepted-payouts")).toContainText("860");
+  await expect(page.locator("#payout-act-gross")).toHaveCount(0);
+  await expect(page.locator("#payout-exp-gross")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Добавить выплату", exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+test("ui-v2 Month UX legacy same-panel discard resets the manual draft and guard", async ({
+  page,
+}) => {
+  await installMonthUx(page);
+  await page.goto("/v2/close?month=7&section=payouts");
+  await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
+  await page.locator("#payout-act-gross").fill("123");
+  const nav = page.getByRole("navigation", { name: "Разделы месяца" });
+  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await page.getByRole("button", { name: "Перейти без сохранения" }).click();
+  await expect(page).toHaveURL(/panel=payouts/);
+  await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
+  await expect(page.locator("#payout-act-gross")).toHaveValue("");
+  await page.locator("#payout-act-gross").fill("456");
+  await nav.getByRole("link", { name: /Счета и позиции/ }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(1);
+  await page.getByRole("button", { name: "Остаться", exact: true }).click();
+  await expect(page.locator("#payout-act-gross")).toHaveValue("456");
+});

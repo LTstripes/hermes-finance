@@ -1344,7 +1344,7 @@ function PropertyBlock({
       {properties.length === 0 ? (
         <p className={leafStyles.empty}>Объектов нет.</p>
       ) : (
-        <Table>
+        <Table className={leafStyles.propertyTable}>
           <thead>
             <tr>
               <Th>Объект</Th>
@@ -1360,102 +1360,23 @@ function PropertyBlock({
               const editing = editingId === row.id ? editDraft : null;
               return (
                 <tr key={row.id}>
-                  <Td>
-                    {editing ? (
-                      <Input
-                        aria-label="Название объекта"
-                        disabled={busy || readOnly}
-                        onChange={(event) =>
-                          setEditDraft((previous) =>
-                            previous ? { ...previous, name: event.target.value } : previous,
-                          )
-                        }
-                        value={editing.name}
-                      />
-                    ) : (
-                      row.name
-                    )}
+                  <Td>{row.name}</Td>
+                  <Td numeric>
+                    <MoneyAmount amount={moneyAmount(row.estimated_value)} />
                   </Td>
                   <Td numeric>
-                    {editing ? (
-                      <Input
-                        aria-label="Стоимость"
-                        className="input--money"
-                        disabled={busy || readOnly}
-                        onChange={(event) =>
-                          setEditDraft((previous) =>
-                            previous
-                              ? { ...previous, estimated_value: event.target.value }
-                              : previous,
-                          )
-                        }
-                        value={editing.estimated_value}
-                      />
-                    ) : (
-                      <MoneyAmount amount={moneyAmount(row.estimated_value)} />
-                    )}
+                    <MoneyAmount amount={moneyAmount(row.mortgage_balance)} />
                   </Td>
                   <Td numeric>
-                    {editing ? (
-                      <Input
-                        aria-label="Остаток ипотеки"
-                        className="input--money"
-                        disabled={busy || readOnly}
-                        onChange={(event) =>
-                          setEditDraft((previous) =>
-                            previous
-                              ? { ...previous, mortgage_balance: event.target.value }
-                              : previous,
-                          )
-                        }
-                        value={editing.mortgage_balance}
-                      />
-                    ) : (
-                      <MoneyAmount amount={moneyAmount(row.mortgage_balance)} />
-                    )}
-                  </Td>
-                  <Td numeric>
-                    {editing ? (
-                      <Input
-                        aria-label="Ежемесячный платёж"
-                        className="input--money"
-                        disabled={busy || readOnly}
-                        onChange={(event) =>
-                          setEditDraft((previous) =>
-                            previous
-                              ? { ...previous, monthly_payment: event.target.value }
-                              : previous,
-                          )
-                        }
-                        value={editing.monthly_payment}
-                      />
-                    ) : (
-                      <MoneyAmount amount={moneyAmount(row.monthly_payment)} />
-                    )}
+                    <MoneyAmount amount={moneyAmount(row.monthly_payment)} />
                   </Td>
                   <Td>
-                    {editing ? (
-                      <Input
-                        aria-label="Годовая ставка ипотеки"
-                        disabled={busy || readOnly}
-                        onChange={(event) =>
-                          setEditDraft((previous) =>
-                            previous
-                              ? { ...previous, mortgage_annual_rate: event.target.value }
-                              : previous,
-                          )
-                        }
-                        placeholder="неизвестно"
-                        value={editing.mortgage_annual_rate}
-                      />
-                    ) : (
-                      <span className={leafStyles.muted}>
-                        {formatPercent(row.mortgage_annual_rate, {
-                          digits: 2,
-                          empty: "не указано",
-                        })}
-                      </span>
-                    )}
+                    <span className={leafStyles.muted}>
+                      {formatPercent(row.mortgage_annual_rate, {
+                        digits: 2,
+                        empty: "не указано",
+                      })}
+                    </span>
                   </Td>
                   <Td>
                     <div className={leafStyles.rowActions}>
@@ -1512,7 +1433,77 @@ function PropertyBlock({
           </tbody>
         </Table>
       )}
-      <div className={leafStyles.totals}>
+      {editingId !== null && editDraft && (
+        <section className={leafStyles.stackedEditor} aria-label="Изменение объекта недвижимости">
+          <h3>Изменение объекта недвижимости</h3>
+          <div className={leafStyles.propertyValues}>
+            <Field htmlFor="prop-edit-name" label="Название объекта">
+              <Input
+                id="prop-edit-name"
+                disabled={busy || readOnly}
+                value={editDraft.name}
+                onChange={(event) =>
+                  setEditDraft((previous) =>
+                    previous ? { ...previous, name: event.target.value } : previous,
+                  )
+                }
+              />
+            </Field>
+            <Field htmlFor="prop-edit-estimated_value" label="Стоимость">
+              <Input
+                id="prop-edit-estimated_value"
+                disabled={busy || readOnly}
+                value={editDraft.estimated_value}
+                onChange={(event) =>
+                  setEditDraft((previous) =>
+                    previous ? { ...previous, estimated_value: event.target.value } : previous,
+                  )
+                }
+              />
+            </Field>
+            <Field htmlFor="prop-edit-mortgage_balance" label="Остаток ипотеки">
+              <Input
+                id="prop-edit-mortgage_balance"
+                disabled={busy || readOnly}
+                value={editDraft.mortgage_balance}
+                onChange={(event) =>
+                  setEditDraft((previous) =>
+                    previous ? { ...previous, mortgage_balance: event.target.value } : previous,
+                  )
+                }
+              />
+            </Field>
+          </div>
+          <div className={leafStyles.propertyPayments}>
+            <Field htmlFor="prop-edit-monthly_payment" label="Ежемесячный платёж">
+              <Input
+                id="prop-edit-monthly_payment"
+                disabled={busy || readOnly}
+                value={editDraft.monthly_payment}
+                onChange={(event) =>
+                  setEditDraft((previous) =>
+                    previous ? { ...previous, monthly_payment: event.target.value } : previous,
+                  )
+                }
+              />
+            </Field>
+            <Field htmlFor="prop-edit-mortgage_annual_rate" label="Годовая ставка ипотеки">
+              <Input
+                id="prop-edit-mortgage_annual_rate"
+                disabled={busy || readOnly}
+                value={editDraft.mortgage_annual_rate}
+                onChange={(event) =>
+                  setEditDraft((previous) =>
+                    previous ? { ...previous, mortgage_annual_rate: event.target.value } : previous,
+                  )
+                }
+              />
+            </Field>
+          </div>
+          <p className={leafStyles.hint}>Пустая ставка — неизвестно. Платёж указан в ₽ за месяц.</p>
+        </section>
+      )}
+      <div className={leafStyles.propertyTotals}>
         <span>
           Стоимость:{" "}
           <strong>
@@ -1532,7 +1523,7 @@ function PropertyBlock({
           </strong>
         </span>
       </div>
-      <div className={leafStyles.totals}>
+      <div className={leafStyles.propertyTotals}>
         <span>
           Покрытие ипотеки (ориентир):{" "}
           <strong>{mortgage?.coverage_pct != null ? `${mortgage.coverage_pct}%` : "—"}</strong>
@@ -1546,8 +1537,8 @@ function PropertyBlock({
         </span>
       </div>
       {!readOnly ? (
-        <form className={leafStyles.form} onSubmit={(event) => void addProperty(event)}>
-          <div className={leafStyles.formGrid}>
+        <form className={leafStyles.propertyForm} onSubmit={(event) => void addProperty(event)}>
+          <div className={leafStyles.propertyValues}>
             <Field htmlFor="prop-name" label="Название объекта">
               <Input
                 disabled={busy || readOnly}
@@ -1592,6 +1583,8 @@ function PropertyBlock({
                 value={addDraft.mortgage_balance}
               />
             </Field>
+          </div>
+          <div className={leafStyles.propertyPayments}>
             <Field htmlFor="prop-pay" label="Ежемесячный платёж">
               <Input
                 className="input--money"
@@ -1608,10 +1601,11 @@ function PropertyBlock({
                 value={addDraft.monthly_payment}
               />
             </Field>
-            <Field htmlFor="prop-rate" label="Годовая ставка, % (пусто — неизвестно)">
+            <Field htmlFor="prop-rate" label="Годовая ставка, %">
               <Input
                 disabled={busy || readOnly}
                 id="prop-rate"
+                aria-describedby="prop-rate-hint"
                 onChange={(event) => {
                   setAddDraft((previous) => ({
                     ...previous,
@@ -1624,6 +1618,9 @@ function PropertyBlock({
               />
             </Field>
           </div>
+          <p id="prop-rate-hint" className={leafStyles.hint}>
+            Пустая ставка — неизвестно. Платёж указан в ₽ за месяц.
+          </p>
           <Button disabled={busy} type="submit" variant="primary">
             Добавить объект
           </Button>

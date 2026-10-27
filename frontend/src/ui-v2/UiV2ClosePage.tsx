@@ -54,7 +54,7 @@ const MANUAL_SECTIONS = [
   ["income", "Зарплата и другие доходы", "Ручные поступления"],
   ["assets", "Депозиты, накопления и деньги", "Остатки и проценты"],
   ["positions", "Счета и позиции", "Количество и оценка"],
-  ["payouts", "Полученные выплаты", "Фактические инвестиционные выплаты"],
+  ["payouts", "Выплаты", "Получено / из выписок · Ожидается · T-Invest"],
   ["budget", "Расходы и план", "Обязательные расходы и откладывание"],
   ["liabilities", "Долги, кредитка и недвижимость", "Долг, ипотека и платежи"],
   ["note", "Комментарии", "Пояснения к месяцу"],
@@ -216,11 +216,14 @@ export default function UiV2ClosePage() {
   const { command: journalCommand } = useSourceIntakeRecovery();
   const [uploadPending, setUploadPending] = useState(false);
   const [journalDirty, setJournalDirty] = useState(false);
+  const [editorNavigation, setEditorNavigation] = useState({ dirty: false, pending: false });
+  const [discardVersion, setDiscardVersion] = useState(0);
   const sourcePending = Boolean(
     original.pending || original.busy || journalCommand || uploadPending,
   );
   const sourceDirty =
-    panel === "brokers" && (journalDirty || (Boolean(original.file) && !original.confirmed));
+    ["brokers", "payouts"].includes(panel ?? "") &&
+    (journalDirty || (Boolean(original.file) && !original.confirmed));
   const panelPath = (next: string | null) => {
     const query = new URLSearchParams(location.search);
     query.delete("panel");
@@ -274,8 +277,11 @@ export default function UiV2ClosePage() {
     );
   else {
     const tiles = [
-      ...MANUAL_SECTIONS,
-      ["brokers", "Брокерские выписки", "Бумаги, выплаты и результат"],
+      ...MANUAL_SECTIONS.filter(([id]) =>
+        ["general", "income", "assets", "budget", "liabilities"].includes(id),
+      ),
+      ["brokers", "Брокерские выписки", "Загрузка и разбор источников"],
+      ...MANUAL_SECTIONS.filter(([id]) => ["positions", "payouts", "note"].includes(id)),
       ["close", "Закрыть месяц", "Итоговая проверка"],
     ];
     content = (
@@ -311,19 +317,37 @@ export default function UiV2ClosePage() {
               <h2>{tiles.find(([id]) => id === panel)?.[1]}</h2>
               <Link to={panelPath(null)}>← К месяцу</Link>
             </header>
-            {MANUAL_SECTIONS.some(([id]) => id === panel) ? (
-              <UiV2MonthEditorPage
-                embeddedMonthId={workflow.month.id}
-                embeddedSection={panel as EditorSection}
-              />
+            {panel === "payouts" ? (
+              <>
+                <nav className={monthStyles.sourceNav} aria-label="Выплаты месяца">
+                  <a href="#month-instruments">Получено / из выписок</a>
+                  <a href="#month-payout-preview">Ожидается · T-Invest</a>
+                  <a href="#month-accepted-payouts">Принятые фактические выплаты</a>
+                  <a href="#month-source-review">Рассмотрение и сверка</a>
+                </nav>
+                <p>
+                  Выписка показывает наблюдения источника. Принятые выплаты показаны отдельно;
+                  наблюдения не прибавляются к ним повторно. T-Invest даёт предварительные будущие
+                  выплаты, а не подтверждение полученной суммы.
+                </p>
+              </>
             ) : null}
-            {panel === "brokers" ? (
+            {panel === "brokers" || panel === "payouts" ? (
               <UiV2MonthSources
-                key={workflow.month.id}
+                key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
                 month={workflow.month}
+                payoutsOnly={panel === "payouts"}
                 canClose={workflowReady && workflow.readiness.can_close}
                 onPendingChange={setUploadPending}
                 onDirtyChange={setJournalDirty}
+              />
+            ) : null}
+            {MANUAL_SECTIONS.some(([id]) => id === panel) ? (
+              <UiV2MonthEditorPage
+                key={`editor:${workflow.month.id}:${panel}:${discardVersion}`}
+                embeddedMonthId={workflow.month.id}
+                embeddedSection={panel as EditorSection}
+                onNavigationStateChange={setEditorNavigation}
               />
             ) : null}
             {panel === "close" ? (
@@ -497,16 +521,26 @@ export default function UiV2ClosePage() {
       ) : null}
       {content}
       <MonthNavigationGuard
-        dirty={sourceDirty}
+        dirty={sourceDirty || editorNavigation.dirty}
         pending={
           sourcePending ||
+          editorNavigation.pending ||
           lifecycleBusy ||
           lifecycleRecovery ||
           Boolean(pendingLifecycle) ||
           emptyClosePending
         }
-        onDiscard={() => {
-          if (monthId !== null) session.select(original.file, monthId, original.accountId);
+        onDiscard={(destination) => {
+          const withinMonth = destination?.split("?")[0] === "/v2/close";
+          // External navigation unmounts the workspace itself. Avoid an
+          // intermediate remount that could retire the retained File first.
+          if (!destination || withinMonth) setDiscardVersion((value) => value + 1);
+          setEditorNavigation({ dirty: false, pending: false });
+          if (sourceDirty && monthId !== null) {
+            // Catalogue round-trips retain the actual File while retiring its
+            // preview/decisions. An explicit Month-panel discard drops it.
+            session.select(withinMonth ? null : original.file, monthId, original.accountId);
+          }
         }}
       />
       <ConfirmDialog

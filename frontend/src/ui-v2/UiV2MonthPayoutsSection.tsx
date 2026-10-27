@@ -664,7 +664,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   if (error) return <EmptyState description={error} inline title="Не удалось загрузить выплаты" />;
 
   return (
-    <div className="stack-18">
+    <div className={`stack-18 ${styles.root}`} id="month-accepted-payouts">
       {actionError ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {actionError}
@@ -679,6 +679,10 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         label="Выплаты"
         title="Фактические потоки"
       >
+        <p>
+          Принятые финансовые записи. Наблюдения выписок показаны отдельно и не прибавляются к этому
+          итогу.
+        </p>
         {sortedActual.length === 0 ? (
           <EmptyState
             description="Фактических купонов, дивидендов и процентов ещё нет."
@@ -696,10 +700,10 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                   <Th>Дата</Th>
                   <Th>Тип</Th>
                   <Th>Счёт / инструмент</Th>
-                  <Th numeric>Брутто</Th>
-                  <Th numeric>Налог</Th>
-                  <Th numeric>Комиссия</Th>
-                  <Th numeric>Нетто</Th>
+                  <Th numeric>Брутто, ₽</Th>
+                  <Th numeric>Налог, ₽</Th>
+                  <Th numeric>Комиссия, ₽</Th>
+                  <Th numeric>Нетто, ₽</Th>
                   <Th className="month-flows-table__actions">Действия</Th>
                 </tr>
               </thead>
@@ -809,7 +813,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.gross}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.gross_amount))
+                          formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -822,7 +826,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.tax}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.tax_amount))
+                          formatMoney(moneyAmount(row.tax_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -835,7 +839,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.commission}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.commission_amount))
+                          formatMoney(moneyAmount(row.commission_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -848,7 +852,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.net}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.net_amount))
+                          formatMoney(moneyAmount(row.net_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td className="month-flows-table__actions">
@@ -924,102 +928,105 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         </details>
 
         {!readOnly ? (
-          <form className="form-stack asset-form" onSubmit={handleCreateActual}>
-            <p className="panel__label section-form-label">Новая фактическая выплата</p>
-            <div className="editor-grid">
-              <Field htmlFor="payout-act-type" label="Тип потока">
-                <Select
-                  id="payout-act-type"
-                  onChange={(e) => touchActualDraft({ flow_type: e.target.value })}
-                  value={actualDraft.flow_type}
-                >
-                  <option value="coupon">Купон</option>
-                  <option value="dividend">Дивиденды</option>
-                  <option value="interest">Проценты</option>
-                  <option value="redemption">Погашение</option>
-                  <option value="commission">Комиссия</option>
-                  <option value="tax">Налог</option>
-                  <option value="other">Прочее</option>
-                </Select>
-              </Field>
-              <Field htmlFor="payout-act-date" label="Дата события">
-                <Input
-                  id="payout-act-date"
-                  onChange={(e) => touchActualDraft({ event_date: e.target.value })}
-                  required
-                  type="date"
-                  value={actualDraft.event_date}
-                />
-              </Field>
-              <Field htmlFor="payout-act-account" label="Счёт фактической выплаты">
-                <Select
-                  id="payout-act-account"
-                  onChange={(e) => touchActualDraft({ account_id: e.target.value })}
-                  required
-                  value={actualDraft.account_id}
-                >
-                  <option value="">—</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field htmlFor="payout-act-instr" label="Инструмент (необязательно)">
-                <Select
-                  id="payout-act-instr"
-                  onChange={(e) => touchActualDraft({ instrument_id: e.target.value })}
-                  value={actualDraft.instrument_id}
-                >
-                  <option value="">—</option>
-                  {instruments.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                      {i.ticker ? ` (${i.ticker})` : ""}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field htmlFor="payout-act-gross" label="Брутто">
-                <Input
-                  className="input--money"
-                  id="payout-act-gross"
-                  onChange={(e) => touchActualDraft({ gross: e.target.value })}
-                  required
-                  value={actualDraft.gross}
-                />
-              </Field>
-              <Field htmlFor="payout-act-tax" label="Налог">
-                <Input
-                  className="input--money"
-                  id="payout-act-tax"
-                  onChange={(e) => touchActualDraft({ tax: e.target.value })}
-                  value={actualDraft.tax}
-                />
-              </Field>
-              <Field htmlFor="payout-act-comm" label="Комиссия">
-                <Input
-                  className="input--money"
-                  id="payout-act-comm"
-                  onChange={(e) => touchActualDraft({ commission: e.target.value })}
-                  value={actualDraft.commission}
-                />
-              </Field>
-              <Field htmlFor="payout-act-net" label="Нетто">
-                <Input
-                  className="input--money"
-                  id="payout-act-net"
-                  onChange={(e) => touchActualDraft({ net: e.target.value })}
-                  required
-                  value={actualDraft.net}
-                />
-              </Field>
-            </div>
-            <Button disabled={busy} type="submit" variant="primary">
-              Добавить выплату
-            </Button>
-          </form>
+          <details open={!context.workspace}>
+            <summary>Добавить фактическую выплату вручную</summary>
+            <form className="form-stack asset-form" onSubmit={handleCreateActual}>
+              <p className="panel__label section-form-label">Новая фактическая выплата</p>
+              <div className="editor-grid">
+                <Field htmlFor="payout-act-type" label="Тип потока">
+                  <Select
+                    id="payout-act-type"
+                    onChange={(e) => touchActualDraft({ flow_type: e.target.value })}
+                    value={actualDraft.flow_type}
+                  >
+                    <option value="coupon">Купон</option>
+                    <option value="dividend">Дивиденды</option>
+                    <option value="interest">Проценты</option>
+                    <option value="redemption">Погашение</option>
+                    <option value="commission">Комиссия</option>
+                    <option value="tax">Налог</option>
+                    <option value="other">Прочее</option>
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-act-date" label="Дата события">
+                  <Input
+                    id="payout-act-date"
+                    onChange={(e) => touchActualDraft({ event_date: e.target.value })}
+                    required
+                    type="date"
+                    value={actualDraft.event_date}
+                  />
+                </Field>
+                <Field htmlFor="payout-act-account" label="Счёт фактической выплаты">
+                  <Select
+                    id="payout-act-account"
+                    onChange={(e) => touchActualDraft({ account_id: e.target.value })}
+                    required
+                    value={actualDraft.account_id}
+                  >
+                    <option value="">—</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-act-instr" label="Инструмент (необязательно)">
+                  <Select
+                    id="payout-act-instr"
+                    onChange={(e) => touchActualDraft({ instrument_id: e.target.value })}
+                    value={actualDraft.instrument_id}
+                  >
+                    <option value="">—</option>
+                    {instruments.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                        {i.ticker ? ` (${i.ticker})` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-act-gross" label="Брутто">
+                  <Input
+                    className="input--money"
+                    id="payout-act-gross"
+                    onChange={(e) => touchActualDraft({ gross: e.target.value })}
+                    required
+                    value={actualDraft.gross}
+                  />
+                </Field>
+                <Field htmlFor="payout-act-tax" label="Налог">
+                  <Input
+                    className="input--money"
+                    id="payout-act-tax"
+                    onChange={(e) => touchActualDraft({ tax: e.target.value })}
+                    value={actualDraft.tax}
+                  />
+                </Field>
+                <Field htmlFor="payout-act-comm" label="Комиссия">
+                  <Input
+                    className="input--money"
+                    id="payout-act-comm"
+                    onChange={(e) => touchActualDraft({ commission: e.target.value })}
+                    value={actualDraft.commission}
+                  />
+                </Field>
+                <Field htmlFor="payout-act-net" label="Нетто">
+                  <Input
+                    className="input--money"
+                    id="payout-act-net"
+                    onChange={(e) => touchActualDraft({ net: e.target.value })}
+                    required
+                    value={actualDraft.net}
+                  />
+                </Field>
+              </div>
+              <Button disabled={busy} type="submit" variant="primary">
+                Добавить выплату
+              </Button>
+            </form>
+          </details>
         ) : null}
       </Panel>
 
@@ -1076,9 +1083,9 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                   <Th>Дата</Th>
                   <Th>Тип</Th>
                   <Th>Инструмент</Th>
-                  <Th numeric>Брутто</Th>
-                  <Th numeric>Прогноз налога</Th>
-                  <Th numeric>Прогноз нетто</Th>
+                  <Th numeric>Брутто, ₽</Th>
+                  <Th numeric>Прогноз налога, ₽</Th>
+                  <Th numeric>Прогноз нетто, ₽</Th>
                   <Th>Статус</Th>
                   <Th className="month-flows-table__actions">Действия</Th>
                 </tr>
@@ -1096,13 +1103,19 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
                       </Td>
                       <Td>{instrumentName(row.instrument_id)}</Td>
-                      <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
+                      <Td numeric>
+                        {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
+                      </Td>
                       <Td numeric>
                         {row.expected_tax_amount
-                          ? formatMoney(moneyAmount(row.expected_tax_amount))
+                          ? formatMoney(moneyAmount(row.expected_tax_amount), {
+                              currency: "",
+                            }).trim()
                           : "—"}
                       </Td>
-                      <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
+                      <Td numeric>
+                        {formatMoney(moneyAmount(row.expected_net_amount), { currency: "" }).trim()}
+                      </Td>
                       <Td>
                         <div className="muted tiny">
                           {row.is_confirmed ? "подтверждено" : "план"}
@@ -1138,99 +1151,102 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         </div>
 
         {!readOnly ? (
-          <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
-            <p className="panel__label section-form-label">Новая ожидаемая выплата</p>
-            <div className="editor-grid">
-              <Field htmlFor="payout-exp-type" label="Тип выплаты">
-                <Select
-                  id="payout-exp-type"
-                  onChange={(e) => touchExpectedDraft({ flow_type: e.target.value })}
-                  value={expectedDraft.flow_type}
-                >
-                  <option value="coupon">Купон</option>
-                  <option value="dividend">Дивиденды</option>
-                  <option value="interest">Проценты</option>
-                  <option value="redemption">Погашение</option>
-                  <option value="other">Прочее</option>
-                </Select>
-              </Field>
-              <Field htmlFor="payout-exp-date" label="Дата выплаты">
-                <Input
-                  id="payout-exp-date"
-                  onChange={(e) => touchExpectedDraft({ expected_date: e.target.value })}
-                  required
-                  type="date"
-                  value={expectedDraft.expected_date}
-                />
-              </Field>
-              <Field htmlFor="payout-exp-account" label="Счёт выплаты">
-                <Select
-                  id="payout-exp-account"
-                  onChange={(e) => touchExpectedDraft({ account_id: e.target.value })}
-                  required
-                  value={expectedDraft.account_id}
-                >
-                  <option value="">—</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field htmlFor="payout-exp-instr" label="Инструмент выплаты">
-                <Select
-                  id="payout-exp-instr"
-                  onChange={(e) => touchExpectedDraft({ instrument_id: e.target.value })}
-                  required
-                  value={expectedDraft.instrument_id}
-                >
-                  <option value="">—</option>
-                  {instruments.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                      {i.ticker ? ` (${i.ticker})` : ""}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field htmlFor="payout-exp-gross" label="Прогноз брутто">
-                <Input
-                  className="input--money"
-                  id="payout-exp-gross"
-                  onChange={(e) => touchExpectedDraft({ gross: e.target.value })}
-                  required
-                  value={expectedDraft.gross}
-                />
-              </Field>
-              <Field htmlFor="payout-exp-tax" label="Прогноз налога (необязательно)">
-                <Input
-                  className="input--money"
-                  id="payout-exp-tax"
-                  onChange={(e) => touchExpectedDraft({ tax: e.target.value })}
-                  value={expectedDraft.tax}
-                />
-              </Field>
-              <Field htmlFor="payout-exp-net" label="Прогноз нетто (необязательно)">
-                <Input
-                  className="input--money"
-                  id="payout-exp-net"
-                  onChange={(e) => touchExpectedDraft({ net: e.target.value })}
-                  value={expectedDraft.net}
-                />
-              </Field>
-              <Field htmlFor="payout-exp-ver" label="Версия">
-                <Input
-                  id="payout-exp-ver"
-                  onChange={(e) => touchExpectedDraft({ forecast_version: e.target.value })}
-                  value={expectedDraft.forecast_version}
-                />
-              </Field>
-            </div>
-            <Button disabled={busy} type="submit" variant="primary">
-              Добавить ожидаемую выплату
-            </Button>
-          </form>
+          <details open={!context.workspace}>
+            <summary>Добавить ожидаемую выплату вручную</summary>
+            <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
+              <p className="panel__label section-form-label">Новая ожидаемая выплата</p>
+              <div className="editor-grid">
+                <Field htmlFor="payout-exp-type" label="Тип выплаты">
+                  <Select
+                    id="payout-exp-type"
+                    onChange={(e) => touchExpectedDraft({ flow_type: e.target.value })}
+                    value={expectedDraft.flow_type}
+                  >
+                    <option value="coupon">Купон</option>
+                    <option value="dividend">Дивиденды</option>
+                    <option value="interest">Проценты</option>
+                    <option value="redemption">Погашение</option>
+                    <option value="other">Прочее</option>
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-exp-date" label="Дата выплаты">
+                  <Input
+                    id="payout-exp-date"
+                    onChange={(e) => touchExpectedDraft({ expected_date: e.target.value })}
+                    required
+                    type="date"
+                    value={expectedDraft.expected_date}
+                  />
+                </Field>
+                <Field htmlFor="payout-exp-account" label="Счёт выплаты">
+                  <Select
+                    id="payout-exp-account"
+                    onChange={(e) => touchExpectedDraft({ account_id: e.target.value })}
+                    required
+                    value={expectedDraft.account_id}
+                  >
+                    <option value="">—</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-exp-instr" label="Инструмент выплаты">
+                  <Select
+                    id="payout-exp-instr"
+                    onChange={(e) => touchExpectedDraft({ instrument_id: e.target.value })}
+                    required
+                    value={expectedDraft.instrument_id}
+                  >
+                    <option value="">—</option>
+                    {instruments.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                        {i.ticker ? ` (${i.ticker})` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field htmlFor="payout-exp-gross" label="Прогноз брутто">
+                  <Input
+                    className="input--money"
+                    id="payout-exp-gross"
+                    onChange={(e) => touchExpectedDraft({ gross: e.target.value })}
+                    required
+                    value={expectedDraft.gross}
+                  />
+                </Field>
+                <Field htmlFor="payout-exp-tax" label="Прогноз налога (необязательно)">
+                  <Input
+                    className="input--money"
+                    id="payout-exp-tax"
+                    onChange={(e) => touchExpectedDraft({ tax: e.target.value })}
+                    value={expectedDraft.tax}
+                  />
+                </Field>
+                <Field htmlFor="payout-exp-net" label="Прогноз нетто (необязательно)">
+                  <Input
+                    className="input--money"
+                    id="payout-exp-net"
+                    onChange={(e) => touchExpectedDraft({ net: e.target.value })}
+                    value={expectedDraft.net}
+                  />
+                </Field>
+                <Field htmlFor="payout-exp-ver" label="Версия">
+                  <Input
+                    id="payout-exp-ver"
+                    onChange={(e) => touchExpectedDraft({ forecast_version: e.target.value })}
+                    value={expectedDraft.forecast_version}
+                  />
+                </Field>
+              </div>
+              <Button disabled={busy} type="submit" variant="primary">
+                Добавить ожидаемую выплату
+              </Button>
+            </form>
+          </details>
         ) : null}
       </Panel>
 

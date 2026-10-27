@@ -7,6 +7,7 @@ import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
+import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import UiV2ClosePage from "./UiV2ClosePage";
 
 function LocationProbe() {
@@ -140,6 +141,41 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("retains the actual File when source discard leaves Month for a catalogue round-trip", async () => {
+    const { mount, client } = setup("/v2/close?month=12&panel=brokers");
+    mount();
+    await screen.findByRole("navigation", { name: "Разделы месяца" });
+    const session = brokerOriginalSession(client);
+    const file = new File(["synthetic"], "synthetic.xml");
+    await act(async () => session.select(file, 12, ""));
+    fireEvent.click(screen.getByRole("link", { name: /^Данные$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
+    await waitFor(() => expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data"));
+    expect(session.snapshot().file).toBe(file);
+    expect(session.snapshot().confirmed).toBeNull();
+  });
+  it("keeps a selected original on Stay and clears it only on explicit source discard into payouts", async () => {
+    const { mount, client } = setup("/v2/close?month=12&panel=brokers");
+    const session = brokerOriginalSession(client);
+    const file = new File(["synthetic"], "synthetic.xml");
+    mount();
+    const nav = await screen.findByRole("navigation", { name: "Разделы месяца" });
+    await act(async () => session.select(file, 12, ""));
+    fireEvent.click(within(nav).getByRole("link", { name: /^Выплаты/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Остаться" }));
+    expect(session.snapshot().file).toBe(file);
+    fireEvent.click(within(nav).getByRole("link", { name: /^Выплаты/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("panel=payouts"),
+    );
+    expect(session.snapshot().file).toBeNull();
+    fireEvent.click(within(nav).getByRole("link", { name: /Счета и позиции/ }));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("panel=positions"),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
   it.each(["failed", "draft", "ack404", "ack409"])(
     "holds unknown Close across %s GET, navigation and repeated clicks until GET proves status",
     async (readback) => {
@@ -187,6 +223,14 @@ describe("native Monthly Close work mode", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Месяц · Август 2031");
     expect(screen.getByText(/Снимок 30.08.2031/)).toBeVisible();
     expect(within(nav).getAllByRole("link")).toHaveLength(10);
+    const panels = within(nav)
+      .getAllByRole("link")
+      .map((link) =>
+        new URL(link.getAttribute("href") ?? "", "http://synthetic").searchParams.get("panel"),
+      );
+    expect(panels.indexOf("brokers")).toBeLessThan(panels.indexOf("positions"));
+    expect(panels.indexOf("positions")).toBeLessThan(panels.indexOf("payouts"));
+    expect(within(nav).getByRole("link", { name: /Выплаты/ })).toHaveTextContent("T-Invest");
     for (const link of within(nav).getAllByRole("link"))
       expect(
         new URL(link.getAttribute("href") ?? "", "http://synthetic").searchParams.get("month"),

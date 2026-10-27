@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { getSourceInstrumentReturns } from "../api/sourceReturns";
 import { Button } from "../components/ui";
 import { MonthInstrumentPayouts } from "./MonthInstrumentPayouts";
 import { SourceInstrumentDetail, money, observed, rate, Reasons } from "./SourceInstrumentDetail";
 import styles from "./UiV2BondSlice.module.css";
+import monthStyles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
@@ -17,14 +18,18 @@ export function UiV2MonthInstruments({
   month,
   account,
   sourceVersion,
+  payoutsOnly = false,
 }: {
   monthId: number;
   year: number;
   month: number;
   account: string;
   sourceVersion: string;
+  payoutsOnly?: boolean;
 }) {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const client = useQueryClient();
   const opening = new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
   const closing = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
@@ -99,11 +104,42 @@ export function UiV2MonthInstruments({
       (event) =>
         event.event_date !== null && event.event_date > opening && event.event_date <= closing,
     ) ?? [];
+  const selection = useMemo(
+    () => ({ location, monthId, account, sourceVersion, instrument }),
+    [location, monthId, account, sourceVersion, instrument],
+  );
+  const committedSelection = useRef<typeof selection | null>(null);
+  useLayoutEffect(() => {
+    committedSelection.current = selection;
+    return () => {
+      committedSelection.current = null;
+    };
+  }, [selection]);
+
+  function changeQuantityDate(value: string) {
+    // Outgoing controls can fire before navigation commits. A location instance
+    // also distinguishes A→B→A from the first A, even when its URL matches again.
+    if (committedSelection.current !== selection) return false;
+    // BrowserRouter writes history before its transition commits. Check that
+    // live entry at event time too: account/month/Back navigation can originate
+    // outside this component while its outgoing controls are still mounted.
+    if (
+      (window.history.state?.key ?? "default") !== location.key ||
+      window.location.pathname !== location.pathname ||
+      window.location.search !== location.search ||
+      window.location.hash !== location.hash
+    )
+      return false;
+    const next = new URLSearchParams(location.search);
+    next.set("payout_as_of", value);
+    void navigate({ search: next.toString(), hash: location.hash });
+    return true;
+  }
 
   return (
     <UiV2Panel
       eyebrow="Из сохранённых источников · только чтение"
-      title="Бумаги и выплаты"
+      title={payoutsOnly ? "Получено / из выписок" : "Бумаги и выплаты"}
       id="month-instruments"
       testIdPrefix="month"
       wide
@@ -130,7 +166,7 @@ export function UiV2MonthInstruments({
           {!data.instruments.length ? (
             <p>В этом счёте нет доступных инструментов. Это не означает нулевой результат.</p>
           ) : (
-            <div className={styles.tableWrap}>
+            <div className={`${styles.tableWrap} ${monthStyles.instrumentTable}`}>
               <table className={styles.table}>
                 <caption>Инструменты выбранного счёта и месяца</caption>
                 <thead>
@@ -147,17 +183,21 @@ export function UiV2MonthInstruments({
                       <th>
                         <button
                           type="button"
+                          title={row.source_name ?? row.isin}
                           aria-pressed={instrument?.isin === row.isin}
-                          onClick={() =>
-                            setParams((previous) => {
-                              const next = new URLSearchParams(previous);
-                              next.set("instrument_isin", row.isin);
-                              next.delete("payout_as_of");
-                              return next;
-                            })
-                          }
+                          onClick={() => {
+                            // Retire the outgoing date callback synchronously,
+                            // before React commits the newly selected instrument.
+                            committedSelection.current = null;
+                            const next = new URLSearchParams(location.search);
+                            next.set("instrument_isin", row.isin);
+                            next.delete("payout_as_of");
+                            void navigate({ search: next.toString(), hash: location.hash });
+                          }}
                         >
-                          {row.source_name ?? row.isin}
+                          <span className={monthStyles.instrumentName}>
+                            {row.source_name ?? row.isin}
+                          </span>
                         </button>
                         <br />
                         {row.isin} ·{" "}
@@ -205,6 +245,60 @@ export function UiV2MonthInstruments({
                 }
                 . Это доступные события источника; полнота и исключения показаны ниже.
               </p>
+              {payoutsOnly && (
+                <section aria-label="Наблюдения выплат источника">
+                  <p>
+                    Наблюдения источника · не принятые финансовые записи. Они не добавляются к итогу
+                    фактических выплат. Неизвестный налог остаётся неизвестным.
+                    <a href="#month-source-review"> Рассмотрение и сверка выписки</a>
+                  </p>
+                  {events
+                    .filter((event) => ["COUPON", "DIVIDEND", "REDEMPTION"].includes(event.kind))
+                    .map((event) => (
+                      <article key={event.event_key} className={monthStyles.observedPayout}>
+                        <strong>
+                          {event.event_date} ·{" "}
+                          {event.kind === "COUPON"
+                            ? "Купон"
+                            : event.kind === "DIVIDEND"
+                              ? "Дивиденды"
+                              : "Погашение"}
+                        </strong>
+                        <span>Нетто по источнику: {money(event.net_payout_kopecks)}</span>
+                        <span>
+                          Брутто: {money(event.gross_payout_kopecks)} · Налог:{" "}
+                          {event.withheld_tax_kopecks === null
+                            ? "неизвестен"
+                            : money(event.withheld_tax_kopecks)}
+                        </span>
+                        <span>
+                          Наблюдение источника · {event.current ? "текущее" : "не текущее"} ·
+                          атрибуция инструменту: {event.persisted_link_status ?? "не подтверждено"}
+                        </span>
+                        <details>
+                          <summary>Статус и доказательства наблюдения</summary>
+                          <p>
+                            Классификация: {event.classification_status ?? "не подтверждена"}.
+                            Включено в предварительный расчёт: {event.counted ? "да" : "нет"}.
+                          </p>
+                          <p>
+                            Ссылки источника: {event.source_references.join(", ") || "не указаны"}.
+                          </p>
+                          <Reasons codes={event.assumptions} />
+                        </details>
+                        <Reasons codes={event.reason_codes} />
+                      </article>
+                    ))}
+                  {!events.some((event) =>
+                    ["COUPON", "DIVIDEND", "REDEMPTION"].includes(event.kind),
+                  ) && (
+                    <p>
+                      В выбранном месяце распознанных выплат этой бумаги нет. Это не доказывает
+                      отсутствие полученных выплат.
+                    </p>
+                  )}
+                </section>
+              )}
               <details>
                 <summary>Сделки, выплаты и расчёт инструмента</summary>
                 <SourceInstrumentDetail
@@ -220,6 +314,7 @@ export function UiV2MonthInstruments({
                 isin={instrument.isin}
                 closingDate={closing}
                 sourceReferences={instrument.analysis.source_references}
+                onAsOfChange={changeQuantityDate}
               />
             </section>
           ) : null}
