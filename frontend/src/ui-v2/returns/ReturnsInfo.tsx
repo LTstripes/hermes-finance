@@ -22,8 +22,14 @@ const reasons: Record<string, string> = {
   source_period_inferred: "Даты остатков в выписке не подтверждены.",
   seam_mismatch: "Остатки соседних периодов расходятся.",
   calendar_month_not_closed: "За этот месяц пока нет закрытого отчёта.",
+  calendar_month_missing: "Нет результата за полный календарный месяц.",
+  calendar_month_ambiguous: "Нельзя однозначно выбрать результат месяца.",
+  calendar_month_unavailable: "Результат месяца недоступен.",
+  partial_calendar_month: "Неполный календарный месяц не включён в сумму.",
 };
 const methods: Record<string, string> = {
+  available_calendar_months:
+    "Сумма доступных полных календарных результатов одного счёта. Это частичный итог, без процента.",
   modified_dietz: "Процент — оценка Modified Dietz за указанные даты, без пересчёта на год.",
   chained_modified_dietz:
     "Процент — последовательное связывание месячных оценок Modified Dietz. Пропуски не соединяются.",

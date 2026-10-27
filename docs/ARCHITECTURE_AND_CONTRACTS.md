@@ -6333,7 +6333,7 @@ totals; its monthly chain remains unavailable.
 
 `GET /api/returns/context`, `/overview?scope=...&start=...&end=...`, and
 `/instrument?...&isin=...` compose existing readers in a coherent read snapshot.
-The adapter performs no DML, provider request, relink, receipt or financial
+The adapter performs no DML, provider request, relink, receipt or new return
 calculation. `source:<native-or-filename-alias>` selects the existing source
 readers; `account:<id>` and `portfolio` select PERF04A and exact TWRR. A source
 alias is never converted to accepted account authority. Unknown scopes, repeated
@@ -6360,12 +6360,40 @@ Other date ranges may reuse the dated **whole-account** reconciliation
 growth with `method=source_account_reconciliation`, not the per-security
 `instrument_return_v2` method; its unsupported account rate stays NULL.
 Source security rows retain their own instrument method. Whole history never
-uses the sum of available months. Only credited coupon/dividend amounts are
+uses the sum of available months. Credited coupon/dividend amounts are
 added across adjacent, fully represented months, with any missing amount
 withholding the entire interval income. Accepted scopes retain their existing
 prerequisites; unsupported payout/instrument breakdowns stay NULL/empty with
 reasons. Browser comparison uses exact Decimal/BigInt ordering; Number is
 confined to bar geometry.
+
+Owner extension A–C ([#963](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6447928093)):
+the primary selector contains saved source accounts, grouping a filename alias
+only when every selected document proves the same single native account through
+the existing read selector. Unreadable, multiple-account and conflicting aliases
+remain visible. Grouping preserves the canonical account's union of originals
+and periods; `scope_aliases` supports equivalent old URLs. Existing effective
+exact broker-account mappings may supply a label only, never accepted authority.
+Manual/accepted accounts and PERF portfolio remain explicitly secondary and
+their URLs remain supported. This does not create an aggregate source portfolio.
+
+When full account P&L is unavailable, `available_months_total` separately carries
+a partial RUB subtotal over history, and `selected_available_months_total` over
+the selected range. Each sums integer kopecks from exactly one existing full
+calendar account-month result per cell, including losses; no segments, long
+outer results, instrument results or extra payouts are added. Duplicate cells
+are withheld, incomplete edge months excluded, and missing/blocked cells retain
+reasons. The DTO includes `partial=true`, included/missing intervals and covered/
+total month counts. Empty operands produce NULL; an observed zero stays zero.
+Included source flags and provisional status survive. No partial percentage is
+computed, and full P&L/rate/availability reasons are unchanged. A supported outer
+result takes precedence even when intermediate monthly endpoints are missing.
+UI labels the subtotal «За доступные месяцы · X из Y», with coverage behind ⓘ.
+
+Instrument names retain #971's source name → exact stored ISIN catalogue name →
+ISIN precedence in table, tops and detail. Missing names have an accessible
+explanation. No automatic lookup, catalogue/financial write or identity guessing
+is introduced by a Returns GET.
 
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates

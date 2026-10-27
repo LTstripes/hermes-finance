@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { UiV2Shell } from "./UiV2Shell";
 import { ReturnsDetail } from "./returns/ReturnsDetail";
+import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import {
@@ -131,6 +132,7 @@ function Instruments({
                       >
                         {expanded === row.isin ? "▾" : "▸"} {row.name}
                       </button>
+                      <MissingName name={row.name} isin={row.isin} />
                       <small>
                         {row.isin} ·{" "}
                         {row.kind === "bond"
@@ -206,6 +208,7 @@ function Instruments({
                       <li key={r.isin}>
                         <span>
                           {r.name}
+                          <MissingName name={r.name} isin={r.isin} />
                           {r.name !== r.isin && <small>{r.isin}</small>}
                         </span>
                         <strong className={positive ? styles.positive : styles.negative}>
@@ -244,9 +247,12 @@ export default function UiV2ReturnsPage() {
     ["scope", "start", "end"].every((k) => params.getAll(k).length === 1);
   useEffect(() => {
     if (!context.data || context.isFetching || context.isError) return;
+    if (["scope", "start", "end"].some((k) => params.getAll(k).length > 1)) return;
     const next = new URLSearchParams(params);
-    if (!params.has("scope") && context.data.accounts[0])
-      next.set("scope", context.data.accounts[0].id);
+    const canonical = context.data.scope_aliases?.[scope];
+    if (canonical) next.set("scope", canonical);
+    const defaultAccount = context.data.accounts.find((a) => a.basis === "statements");
+    if (!params.has("scope") && defaultAccount) next.set("scope", defaultAccount.id);
     const sourcePeriods = context.data.source_periods[next.get("scope") ?? ""] ?? [];
     const defaultPeriod =
       params.get("period") === "history" ? sourcePeriods.at(-1) : context.data.default_period;
@@ -257,7 +263,7 @@ export default function UiV2ReturnsPage() {
     }
     if (next.toString() !== params.toString())
       navigate({ search: next.toString(), hash }, { replace: true });
-  }, [context.data, context.isError, context.isFetching, params, navigate, hash]);
+  }, [context.data, context.isError, context.isFetching, params, navigate, hash, scope]);
   const overview = useQuery({
     queryKey: ["returns", "overview", scope, period.start, period.end],
     queryFn: ({ signal }) => getOverview(scope, period, signal),
@@ -302,6 +308,23 @@ export default function UiV2ReturnsPage() {
       >
         <div className={styles.controls}>
           <label>
+            Представление
+            <select
+              aria-label="Представление"
+              value={scope && !scope.startsWith("source:") ? "accepted" : "statements"}
+              onChange={(e) => {
+                const account = context.data?.accounts.find((a) => a.basis === e.target.value);
+                if (!account) return;
+                const next = new URLSearchParams(params);
+                next.set("scope", account.id);
+                setParams(next);
+              }}
+            >
+              <option value="statements">Брокерские выписки</option>
+              <option value="accepted">Подтверждённые отчёты</option>
+            </select>
+          </label>
+          <label>
             Счёт
             <select
               aria-label="Счёт"
@@ -315,7 +338,7 @@ export default function UiV2ReturnsPage() {
               <option value="" disabled>
                 Выберите счёт
               </option>
-              {["statements", "accepted"].map((basis) => (
+              {[scope && !scope.startsWith("source:") ? "accepted" : "statements"].map((basis) => (
                 <optgroup
                   key={basis}
                   label={basis === "statements" ? "По выпискам" : "Подтверждённые отчёты"}
@@ -411,27 +434,42 @@ export default function UiV2ReturnsPage() {
                 className={`${styles.card} ${styles.primaryCard}`}
                 aria-label="Результат периода"
               >
-                <h2>Результат периода</h2>
-                <div className={styles.mainValue}>
-                  <Value metric={data.selected.pnl} label="Результат периода" signed />
-                </div>
-                <Value metric={data.selected.rate} label="Доходность периода" />
-                <small>{periodLabel(data.selected.period)}</small>
+                {data.selected.pnl.value === null && data.selected_available_months_total ? (
+                  <ReturnsAvailable value={data.selected_available_months_total} />
+                ) : (
+                  <>
+                    <h2>Результат периода</h2>
+                    <div className={styles.mainValue}>
+                      <Value metric={data.selected.pnl} label="Результат периода" signed />
+                    </div>
+                    <Value metric={data.selected.rate} label="Доходность периода" />
+                    <small>{periodLabel(data.selected.period)}</small>
+                  </>
+                )}
               </section>
-              <section className={styles.card} aria-label="За всю историю">
-                <h2>За всю историю</h2>
-                <div className={styles.mainValue}>
-                  <Value
-                    metric={data.all_history?.pnl ?? unavailable}
-                    label="Результат за историю"
-                    signed
-                  />
-                </div>
-                <small>
-                  {data.all_history
-                    ? periodLabel(data.all_history.period)
-                    : "Границы истории не установлены"}
-                </small>
+              <section
+                className={styles.card}
+                aria-label={data.available_months_total ? "За доступные месяцы" : "За всю историю"}
+              >
+                {data.available_months_total ? (
+                  <ReturnsAvailable value={data.available_months_total} />
+                ) : (
+                  <>
+                    <h2>За всю историю</h2>
+                    <div className={styles.mainValue}>
+                      <Value
+                        metric={data.all_history?.pnl ?? unavailable}
+                        label="Результат за историю"
+                        signed
+                      />
+                    </div>
+                    <small>
+                      {data.all_history
+                        ? periodLabel(data.all_history.period)
+                        : "Границы истории не установлены"}
+                    </small>
+                  </>
+                )}
               </section>
               <section className={styles.card} aria-label="Полученные купоны">
                 <h2>Полученные купоны</h2>
