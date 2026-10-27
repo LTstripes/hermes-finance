@@ -11469,7 +11469,11 @@ it cannot restore future income or turn UNKNOWN into complete. Current R3/R5
 wins over superseded R1/R3; a stale successor never falls back to an older paid
 receipt. Only a current exact distinct receipt resolves its own pair as future.
 Covered canonical APP copies are deduplicated by exact forecast identity; an
-older CLOSED copy that was never covered gains no authority.
+older CLOSED copy that was never covered gains no authority. Historical coverage
+applies only while the current forecast still matches its actual's account,
+instrument, kind and currency. An edited forecast outside that scope remains
+eligible future income; returning to the original scope never revives stale or
+retired proof and requires current exact evidence under the existing rules.
 The guided Month consumer evaluates active legacy APP/ECF links separately from
 actual settlement currentness. APP-only settlement needs no ECF; retained retired
 links are not active legacy dependencies. Unresolved actual competitors retain

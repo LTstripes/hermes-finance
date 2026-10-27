@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-26**. This is the sole changing project status book. Current source
+Updated **2026-10-27**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -27,7 +27,13 @@ identified explicit retirement followed by forecast-month Close restoring future
 income and clearing UNKNOWN. This same-PR reader correction retains retired
 terminal coverage, gives current R3/R5 priority and requires current exact distinct
 evidence for future classification. Writers, migrations and hard Close scope are
-unchanged. Exact new-head CI/UI and the same independent Reviewer remain required;
+unchanged. Independent review of `b9ea716c` confirmed the terminal-lineage P1 fixed.
+The [current-scope P2 HOLD](https://github.com/LTstripes/hermes-finance/pull/970#issuecomment-6434005164)
+identified a retired coupon link hiding an ECF edited to interest after Close.
+The bounded reader correction now checks current account/instrument/kind/currency
+with the existing scope predicate before historical suppression. Relevant R2/R4
+remain unresolved; current R3/R5 and stale/ABA safeguards retain their priority.
+Exact new-head CI/UI and the same independent Reviewer remain required;
 previous green checks do not clear the HOLD.
 
 **Accepted pre-release Month/Returns UI baseline:** `f07b20ddc8bdad074fb0993792cf3f06e5cc30f8`.

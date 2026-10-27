@@ -1631,3 +1631,165 @@ def test_retired_closed_projection_requires_current_exact_distinct(
     if not invalidate:
         assert calendar[0]["items"][0]["source_id"] == app_id
     assert database_bytes(database) == before
+
+
+@pytest.mark.parametrize("settlement", ["near"], indirect=True)
+def test_retired_ecf_current_scope_survives_close_and_kind_aba(database, settlement):
+    from hermes_finance.persistence import ReportingMonth
+    from hermes_finance.services.actual_payouts import future_states
+    from hermes_finance.services.forecast_passive_income import forecast_passive_income
+    from hermes_finance.services.payout_calendar import INCOMPLETE_PAYOUT_WARNING
+    from hermes_finance.services.reporting_months import (
+        close_hard_guards,
+        close_reporting_month,
+        reopen_reporting_month,
+    )
+
+    client, intent = settlement
+    flow_id = intent["expected_cash_flow_id"]
+    with database.session_factory() as session:
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        forecast = forecast_month(
+            session, actual, year=2029, month=12, snapshot_date=date(2029, 12, 31)
+        )
+        month_id = forecast.reporting_month_id
+        session.get(ExpectedCashFlow, flow_id).reporting_month_id = month_id
+        session.commit()
+        original_actuals = session.execute(select(InvestmentCashFlow.__table__)).all()
+        assert len(original_actuals) == 1 and original_actuals[0].net_amount_kopecks == 100000
+    r1, replay = accept(client, intent, "scope-R1")
+    predecessor = r1["relations"][0]["id"]
+    r2, _ = accept(
+        client, {**intent, "operation": "retire", "predecessor_id": predecessor}, "scope-R2"
+    )
+    receipts = {"scope-R1": r1["accepted"], "scope-R2": r2["accepted"]}
+
+    def check(state, flow_type="coupon"):
+        before = database_bytes(database)
+        for request_id, accepted in receipts.items():
+            get = client.get(f"/api/broker-months/{request_id}")
+            assert get.status_code == 200, get.text
+            assert get.json()["accepted"] == accepted
+        old = client.get("/api/broker-months/scope-R1").json()["relations"][0]
+        assert old["state"] == "retired" and old["retired_request_id"] == "scope-R2"
+        replayed = client.post("/api/broker-months/payout-apply", json=replay)
+        assert replayed.status_code == 200 and replayed.json()["duplicate"]
+        with database.session_factory() as session:
+            assert session.execute(select(InvestmentCashFlow.__table__)).all() == original_actuals
+            assert future_states(session, month_id) == (
+                {} if state == "unrelated" else {("ecf", flow_id): state}
+            )
+            annual = forecast_passive_income(session, month_id, "synthetic-v1")
+            assert annual.annual_total.kopecks == (100000 if state == "unrelated" else 0)
+            assert (INCOMPLETE_PAYOUT_WARNING in annual.warnings) is (state == "unresolved")
+            if state == "unrelated":
+                assert annual.breakdown.expected_deposit_interest.kopecks == 100000
+                assert annual.breakdown.expected_coupon_net.kopecks == 0
+        for route, id_field in (("payouts", "source_id"), ("expected-flows", "id")):
+            response = client.get(
+                f"/api/{route}/calendar?month_id={month_id}&forecast_version=synthetic-v1"
+            )
+            assert response.status_code == 200, response.text
+            buckets = response.json()
+            if state == "paid":
+                assert buckets == []
+                continue
+            assert len(buckets) == 1
+            bucket = buckets[0]
+            assert bucket["actual_attribution_coverage"] == (
+                "complete" if state == "unrelated" else "unknown"
+            )
+            assert bucket["passive_net"] == {
+                "amount": "1000.00" if state == "unrelated" else "0.00",
+                "currency": "RUB",
+            }
+            assert len(bucket["items"]) == (1 if state == "unrelated" else 0)
+            if state == "unrelated":
+                assert bucket["interest"] == {"amount": "1000.00", "currency": "RUB"}
+                assert bucket["items"][0][id_field] == flow_id
+                assert bucket["items"][0]["flow_type"] == flow_type
+        assert database_bytes(database) == before
+
+    def close():
+        with database.session_factory() as session:
+            assert close_hard_guards(session.get(ReportingMonth, month_id), session) == ()
+            close_reporting_month(session, month_id)
+
+    check("unresolved")  # Relevant retired coupon still competes, even without APP.
+    before = database_bytes(database)
+    for field in ("account_id", "instrument_id"):
+        assert (
+            client.patch(f"/api/expected-flows/{flow_id}", json={field: 999999}).status_code == 422
+        )
+    assert database_bytes(database) == before  # These identity edits are not supported.
+    response = client.patch(f"/api/expected-flows/{flow_id}", json={"flow_type": "interest"})
+    assert response.status_code == 200, response.text
+    check("unrelated", "interest")
+    close()
+    check("unrelated", "interest")  # Close cannot hide a different income kind.
+    with database.session_factory() as session:
+        reopen_reporting_month(session, month_id)
+    response = client.patch(f"/api/expected-flows/{flow_id}", json={"flow_type": "coupon"})
+    assert response.status_code == 200, response.text
+    check("unresolved")  # Same ECF ID and kind ABA never revive the old R1.
+    close()
+    check("unresolved")
+    with database.session_factory() as session:
+        reopen_reporting_month(session, month_id)
+    r3, _ = accept(
+        client, {**intent, "operation": "reaffirm", "predecessor_id": predecessor}, "scope-R3"
+    )
+    receipts["scope-R3"] = r3["accepted"]
+    check("paid")  # Only a fresh exact reaffirm resolves the returned coupon.
+    close()
+    check("paid")
+    with database.session_factory() as session:
+        reopen_reporting_month(session, month_id)
+    assert client.get("/api/broker-months/scope-R3").json()["relations"][0]["state"] == "stale"
+    close()
+    check("unresolved")  # Stale successor cannot fall back to R1.
+
+
+@pytest.mark.parametrize("settlement", ["near"], indirect=True)
+@pytest.mark.parametrize("edit", [{"currency": "USD"}, {"expected_date": "2031-02-01"}])
+def test_retired_closed_ecf_requires_current_currency_and_horizon(database, settlement, edit):
+    from hermes_finance.services.actual_payouts import future_states
+    from hermes_finance.services.reporting_months import (
+        close_reporting_month,
+        reopen_reporting_month,
+    )
+
+    client, intent = settlement
+    flow_id = intent["expected_cash_flow_id"]
+    with database.session_factory() as session:
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        forecast = forecast_month(
+            session, actual, year=2029, month=12, snapshot_date=date(2029, 12, 31)
+        )
+        month_id = forecast.reporting_month_id
+        session.get(ExpectedCashFlow, flow_id).reporting_month_id = month_id
+        session.commit()
+    r1, _ = accept(client, intent, "eligibility-R1")
+    accept(
+        client,
+        {**intent, "operation": "retire", "predecessor_id": r1["relations"][0]["id"]},
+        "eligibility-R2",
+    )
+    response = client.patch(f"/api/expected-flows/{flow_id}", json=edit)
+    assert response.status_code == 200, response.text
+    with database.session_factory() as session:
+        assert future_states(session, month_id) == {}
+        close_reporting_month(session, month_id)
+        assert future_states(session, month_id) == {}
+        reopen_reporting_month(session, month_id)
+    response = client.patch(
+        f"/api/expected-flows/{flow_id}", json={"currency": "RUB", "expected_date": "2030-02-01"}
+    )
+    assert response.status_code == 200, response.text
+    with database.session_factory() as session:
+        assert future_states(session, month_id) == {("ecf", flow_id): "unresolved"}
+        close_reporting_month(session, month_id)
+        assert future_states(session, month_id) == {("ecf", flow_id): "unresolved"}
+    get = client.get("/api/broker-months/eligibility-R1").json()
+    assert get["accepted"] == r1["accepted"]
+    assert get["relations"][0]["retired_request_id"] == "eligibility-R2"

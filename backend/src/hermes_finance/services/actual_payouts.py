@@ -917,6 +917,8 @@ def _closed_future_states(session, month):
             )
             if (
                 forecast is None
+                or actual is None
+                or not _same_scope(actual, forecast)
                 or forecast.reporting_month_id != month.id
                 or forecast.archived_from_period is not None
                 or (kind == "app" and forecast.lifecycle != "active")
