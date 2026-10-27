@@ -11,11 +11,22 @@ from sqlalchemy import select
 
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import PerformanceScope
-from hermes_finance.persistence import Account, Instrument, ReportingMonth, SourceIntakeOriginal
+from hermes_finance.persistence import (
+    Account,
+    BrokerIdentityMapping,
+    Instrument,
+    ReportingMonth,
+    SourceIntakeOriginal,
+)
 from hermes_finance.services.performance_attribution import performance_attribution_for_interval
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
-from hermes_finance.services.source_monthly_returns import read_monthly_returns
+from hermes_finance.services.source_monthly_returns import (
+    _native_scope,
+    _selected_sources,
+    read_monthly_returns,
+)
+from hermes_finance.statement_import.mybroker import PROVIDER
 
 
 def metric(value=None, *, reasons=(), method="", unit="kopecks", estimate=True):
@@ -36,8 +47,12 @@ def _months(session):
     return list(session.scalars(select(ReportingMonth).order_by(ReportingMonth.period_end)))
 
 
-def _accounts(session):
-    # Do not infer a financial-account mapping from a filename, name or suffix.
+def _source_scopes(session):
+    """Group only aliases proved by every selected document, using the reader.
+
+    Unreadable, conflicting and multi-account documents preserve their entries.
+    No transitive grouping or persisted identity changes.
+    """
     aliases = set()
     for raw in session.scalars(select(SourceIntakeOriginal.native_accounts_json)):
         try:
@@ -49,8 +64,54 @@ def _accounts(session):
         aliases.update(
             a for a in accounts if isinstance(a, str) and a and not any(c.isspace() for c in a)
         )
+    selections = {a: _selected_sources(session, a) for a in aliases}
+    canonical = {a: a for a in aliases}
+    for alias, (selected, native) in selections.items():
+        if not native or not selected:
+            continue
+        target = next(iter(native))
+        if target not in selections or target == alias:
+            continue
+        target_selected, target_native = selections[target]
+        if target_native != {target}:
+            continue
+        if not {o.id for o, _, _ in selected} <= {o.id for o, _, _ in target_selected}:
+            continue
+        if all(
+            error is None
+            and view is not None
+            and _native_scope(view["document"]) == {target}
+            and alias in {target, view["document"]["filename_account"]}
+            for _, view, error in selected
+        ):
+            canonical[alias] = target
+    # Never follow an alias chain.
+    return {a: target if canonical[target] == target else a for a, target in canonical.items()}
+
+
+def _accounts(session, canonical=None):
+    canonical = _source_scopes(session) if canonical is None else canonical
+    labels = {}
+    for alias, account_id, name in session.execute(
+        select(BrokerIdentityMapping.provider_identity, Account.id, Account.name)
+        .join(Account, Account.id == BrokerIdentityMapping.hermes_account_id)
+        .where(
+            BrokerIdentityMapping.provider == PROVIDER,
+            BrokerIdentityMapping.subject_kind == "account",
+            BrokerIdentityMapping.status == "effective",
+        )
+    ):
+        if alias in canonical:
+            labels.setdefault(canonical[alias], set()).add((account_id, name))
     return (
-        [{"id": f"source:{a}", "label": a, "basis": "statements"} for a in sorted(aliases)]
+        [
+            {
+                "id": f"source:{a}",
+                "label": f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a,
+                "basis": "statements",
+            }
+            for a in sorted(set(canonical.values()))
+        ]
         + [
             {"id": f"account:{a.id}", "label": a.name, "basis": "accepted"}
             for a in session.scalars(select(Account).order_by(Account.id))
@@ -62,6 +123,7 @@ def _accounts(session):
 def read_context(session):
     with coherent_read_snapshot(session):
         closed = [m for m in _months(session) if m.status == "closed"]
+        canonical = _source_scopes(session)
         source_periods = {}
         for original in session.scalars(select(SourceIntakeOriginal)):
             try:
@@ -72,13 +134,15 @@ def read_context(session):
                 continue
             for alias in aliases:
                 if isinstance(alias, str) and alias and not any(c.isspace() for c in alias):
-                    source_periods.setdefault(f"source:{alias}", []).append(
+                    source_periods.setdefault(f"source:{canonical.get(alias, alias)}", []).append(
                         bounds(original.covered_from - timedelta(days=1), original.covered_to)
                     )
         for periods in source_periods.values():
+            periods[:] = list({(p["start"], p["end"]): p for p in periods}.values())
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
         return {
-            "accounts": _accounts(session),
+            "accounts": _accounts(session, canonical),
+            "scope_aliases": {f"source:{a}": f"source:{b}" for a, b in canonical.items() if a != b},
             "source_periods": source_periods,
             "default_period": bounds(
                 closed[-1].period_start - timedelta(days=1), closed[-1].period_end
@@ -92,8 +156,13 @@ def read_context(session):
 
 
 def _validate_scope(session, scope):
+    if scope.startswith("source:"):
+        canonical = _source_scopes(session)
+        if scope[7:] in canonical:
+            return f"source:{canonical[scope[7:]]}"
     if scope not in {a["id"] for a in _accounts(session)}:
         raise ValueError("returns_scope_unknown")
+    return scope
 
 
 def _instrument_metric(item, *, unit="kopecks"):
@@ -217,6 +286,48 @@ def _period_income(result, months, start, end):
         )
 
 
+def _available_months(history, start, end, full):
+    """A separately labelled RUB subtotal; never an interval return/rate.
+
+    Enumerate calendar cells once. Long/partial reports, segments, instruments
+    and credited payments cannot become extra operands.
+    """
+    if full and full["pnl"]["value"] is not None:
+        return None
+    included, missing, reasons, values = [], [], [], []
+    cursor = (start + timedelta(days=1)).replace(day=1)
+    while cursor <= end:
+        following = date(cursor.year + cursor.month // 12, cursor.month % 12 + 1, 1)
+        opening, closing = cursor - timedelta(days=1), following - timedelta(days=1)
+        cell = bounds(opening, closing)
+        rows = [r for r in history if r["period"] == cell]
+        codes = []
+        if opening < start or closing > end:
+            codes = ["partial_calendar_month"]
+        elif len(rows) != 1:
+            codes = ["calendar_month_missing" if not rows else "calendar_month_ambiguous"]
+        elif rows[0]["pnl"]["value"] is None:
+            codes = rows[0]["pnl"]["reason_codes"] or ["calendar_month_unavailable"]
+        if codes:
+            missing.append({"period": cell, "reason_codes": codes})
+        else:
+            values.append(int(rows[0]["pnl"]["value"]))
+            included.append(cell)
+            reasons.extend(rows[0]["pnl"]["reason_codes"])
+        cursor = following
+    return {
+        "period": bounds(start, end),
+        "partial": True,
+        "pnl": metric(
+            sum(values) if values else None, reasons=reasons, method="available_calendar_months"
+        ),
+        "included": included,
+        "missing": missing,
+        "covered_months": len(included),
+        "total_months": len(included) + len(missing),
+    }
+
+
 def _source_view(session, account, start, end):
     monthly = read_monthly_returns(session, source_account=account)
     instruments = read_instrument_returns(
@@ -265,6 +376,10 @@ def _source_view(session, account, start, end):
     return {
         "selected": selected,
         "all_history": whole,
+        "available_months_total": _available_months(history, first, last, whole)
+        if monthly.months
+        else None,
+        "selected_available_months_total": _available_months(history, start, end, selected),
         "history": history,
         "periods": periods,
         "instruments": [_instrument(row, start, end, names) for row in instruments.instruments],
@@ -328,9 +443,9 @@ def _accepted_history(session, scope, closed):
 
 def read_overview(session, *, scope, start, end):
     with coherent_read_snapshot(session):
-        _validate_scope(session, scope)
+        resolved = _validate_scope(session, scope)
         if scope.startswith("source:"):
-            view = _source_view(session, scope.removeprefix("source:"), start, end)
+            view = _source_view(session, resolved.removeprefix("source:"), start, end)
         else:
             closed = [m for m in _months(session) if m.status == "closed"]
             history = _accepted_history(session, scope, closed)
@@ -342,6 +457,8 @@ def read_overview(session, *, scope, start, end):
             view = {
                 "selected": _accepted_result(session, scope, start, end),
                 "all_history": whole,
+                "available_months_total": None,
+                "selected_available_months_total": None,
                 "history": history,
                 "periods": [r["period"] for r in history] + ([whole["period"]] if whole else []),
                 "instruments": [],
@@ -353,12 +470,12 @@ def read_overview(session, *, scope, start, end):
 
 def read_detail(session, *, scope, start, end, isin):
     with coherent_read_snapshot(session):
-        _validate_scope(session, scope)
+        resolved = _validate_scope(session, scope)
         if not scope.startswith("source:"):
             raise ValueError("returns_instrument_scope_unsupported")
         result = read_instrument_returns(
             session,
-            source_account=scope.removeprefix("source:"),
+            source_account=resolved.removeprefix("source:"),
             opening_date=start,
             closing_date=end,
             isin=isin,

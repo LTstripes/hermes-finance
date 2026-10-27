@@ -15,7 +15,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "backend/tests"))
     from hermes_finance.main import create_app
-    from hermes_finance.persistence import Instrument
+    from hermes_finance.persistence import Account, Instrument
     from hermes_finance.services.reporting_months import create_reporting_month
     from hermes_finance.services.source_intake import save_intake
     from hermes_finance.statement_import.mybroker import NS
@@ -31,9 +31,13 @@ def main():
         with db.session_factory() as session:
             session.add(
                 Instrument(
-                    isin=ISIN, name="Учебная акция из каталога", instrument_type="stock"
+                    isin=ISIN,
+                    name="Учебная акция из каталога",
+                    instrument_type="stock",
+                    is_active=False,
                 )
             )
+            session.add(Account(name="Учебный депозит", account_type="deposit"))
             closed = create_reporting_month(
                 session, year=2030, month=4, snapshot_date=date(2030, 4, 30)
             )
@@ -66,6 +70,24 @@ def main():
                     document=raw,
                     filename=f"Брокерский {alias} (01.04.30-30.04.30).xml",
                     request_id=f"synthetic-{alias}",
+                )
+                june = ET.fromstring(raw)
+                june.find(".//m:Details[@ISIN1]", NS).attrib.update(
+                    income_volume="1200",
+                    real_volume="1180" if alias == "1234567" else "1220",
+                )
+                june_raw = (
+                    ET.tostring(june, encoding="utf-8")
+                    .decode()
+                    .replace("2030-04-", "2030-06-")
+                    .replace(".04.2030", ".06.2030")
+                    .encode()
+                )
+                save_intake(
+                    session,
+                    document=june_raw,
+                    filename=f"Брокерский {alias} (01.06.30-30.06.30).xml",
+                    request_id=f"synthetic-june-{alias}",
                 )
         before = snapshot(db)
         app = create_app(database=db, static_dir=root / "frontend/dist")

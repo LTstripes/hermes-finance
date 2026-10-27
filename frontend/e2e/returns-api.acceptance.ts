@@ -12,6 +12,13 @@ test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two acco
   await page.goto("/v2/returns");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
   await expect(page).toHaveURL(/start=2030-03-31&end=2030-04-30/);
+  await expect(
+    page.getByRole("combobox", { name: "Счёт" }).locator("option:not([disabled])"),
+  ).toHaveCount(2);
+  await expect(page.getByRole("combobox", { name: "Счёт" })).not.toContainText("Учебный депозит");
+  const partial = page.getByRole("region", { name: "За доступные месяцы", exact: true });
+  await expect(partial).toContainText("За доступные месяцы · 2 из 3");
+  await expect(partial).toContainText("+80 ₽");
   const instruments = page.getByRole("region", { name: "По инструментам" });
   const tops = page.getByRole("region", { name: "Лидеры и отстающие" });
   await expect(tops.locator("li")).toHaveCount(1);
@@ -43,4 +50,49 @@ test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two acco
   expect(bad.status()).toBe(422);
   expect(responses.every((s) => s === 200)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("returns-actual-api.png"), fullPage: true });
+});
+
+test("alias history links, partial coverage, keyboard details, Back and accepted compatibility", async ({
+  page,
+  request,
+}, testInfo) => {
+  const context = await (await request.get("/api/returns/context")).json();
+  expect(context.scope_aliases["source:1234567"]).toBe("source:1234567-000");
+  await page.goto("/v2/capital/monthly-returns?source_account=1234567#bond-slice");
+  await expect(page).toHaveURL(/scope=source%3A1234567-000.*start=2030-03-31&end=2030-06-30/);
+  const result = page.getByRole("region", { name: "Результат периода", exact: true });
+  await expect(result).toContainText("За доступные месяцы · 2 из 3");
+  await expect(result).toContainText("+80 ₽");
+  await expect(result).not.toContainText("%");
+  const info = result.getByLabel("Подробнее: Покрытие доступных месяцев", { exact: true });
+  await info.focus();
+  await page.keyboard.press("Enter");
+  await expect(result.getByText("Не учтён: 30.04.2030 — 31.05.2030")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("returns-partial-coverage.png"),
+    fullPage: true,
+  });
+  const body = await (
+    await request.get("/api/returns/overview?scope=source:1234567&start=2030-03-31&end=2030-06-30")
+  ).json();
+  expect(body.all_history.pnl.value).toBeNull();
+  expect(body.all_history.rate.value).toBeNull();
+  expect(body.available_months_total.pnl.value).toBe("8000");
+  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:7654321-000");
+  await expect(result).toContainText("−80 ₽");
+  await page.goBack();
+  await expect(result).toContainText("+80 ₽");
+  await page.reload();
+  await expect(result).toContainText("+80 ₽");
+  await page.getByRole("combobox", { name: "Представление" }).selectOption("accepted");
+  await expect(page.getByRole("combobox", { name: "Счёт" })).toContainText("Учебный депозит");
+  const acceptedScope = context.accounts.find(
+    (a: { label: string }) => a.label === "Учебный депозит",
+  ).id;
+  await page.goto(`/v2/returns?scope=${acceptedScope}&start=2030-03-31&end=2030-06-30`);
+  await expect(page.getByRole("combobox", { name: "Представление" })).toHaveValue("accepted");
+  await expect(result).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
 });

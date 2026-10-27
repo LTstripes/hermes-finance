@@ -58,7 +58,9 @@ def test_exact_catalogue_name_is_presentation_only(
     original = api_overview(db).instruments[0].model_dump(exclude={"name"})
     if catalogue_name is not None:
         with db.session_factory() as session:
-            session.add(Instrument(isin=ISIN, name=catalogue_name, instrument_type="stock"))
+            session.add(
+                Instrument(isin=ISIN, name=catalogue_name, instrument_type="stock", is_active=False)
+            )
             session.commit()
     before = snapshot(db)
     result = api_overview(db).instruments[0]
@@ -309,6 +311,203 @@ def test_history_gap_does_not_become_sum_of_available_months(db):
     assert result.history[1].pnl.value is None
     assert result.instruments[0].pnl.value == "10000"
     assert result.all_history.rate.value is None
+
+
+@pytest.mark.parametrize("closing, expected", [("1180", "8000"), ("1100", "0")])
+def test_available_calendar_months_are_signed_exact_separate_and_replay_invariant(
+    db, closing, expected
+):
+    save(db, trades=(), stock=("10", "10", "1000", "1100"), bond=None)
+    save(db, 6, trades=(), stock=("10", "10", "1200", closing), bond=None)
+    before = snapshot(db)
+    result = api_overview(db, end=date(2030, 6, 30))
+    partial = result.available_months_total
+    assert partial.partial and partial.pnl.value == expected
+    assert (partial.covered_months, partial.total_months) == (2, 3)
+    assert [p.end.month for p in partial.included] == [4, 6]
+    assert [m.period.end.month for m in partial.missing] == [5]
+    assert partial.missing[0].reason_codes
+    assert result.all_history.pnl.value is result.all_history.rate.value is None
+    assert result.selected_available_months_total == partial
+    assert partial.pnl.estimate and partial.pnl.unit == "kopecks"
+    assert snapshot(db) == before
+    save(db, trades=(), stock=("10", "10", "1000", "1100"), bond=None, marker="replay")
+    assert api_overview(db, end=date(2030, 6, 30)).available_months_total == partial
+    with db.session_factory() as session:
+        alias = view.read_overview(
+            session, scope="source:1234567", start=START, end=date(2030, 6, 30)
+        )
+    assert alias["available_months_total"] == partial.model_dump()
+
+
+def test_available_months_empty_zero_large_duplicate_and_partial_cells():
+    end = date(2030, 6, 30)
+    history = [
+        {
+            "period": view.bounds(START, END),
+            "pnl": view.metric(900719925474099301, reasons=["seam_mismatch"]),
+        },
+        {"period": view.bounds(date(2030, 5, 31), end), "pnl": view.metric(-900719925474099301)},
+    ]
+    partial = view._available_months(history, START, end, None)
+    assert partial["pnl"]["value"] == "0"
+    assert partial["pnl"]["reason_codes"] == ["seam_mismatch"]
+    assert view._available_months([], START, end, None)["pnl"]["value"] is None
+    duplicate = view._available_months([history[0], history[0]], START, END, None)
+    assert duplicate["pnl"]["value"] is None
+    assert duplicate["missing"][0]["reason_codes"] == ["calendar_month_ambiguous"]
+    edge = view._available_months(history, date(2030, 4, 15), end, None)
+    assert edge["covered_months"] == 1
+    assert edge["missing"][0]["reason_codes"] == ["partial_calendar_month"]
+
+
+def test_supported_outer_interval_wins_even_with_unavailable_months(db):
+    save(db, trades=(), bond=None, end_month=6)
+    before = snapshot(db)
+    result = api_overview(db, end=date(2030, 6, 30))
+    assert any(row.pnl.value is None for row in result.history)
+    assert result.all_history.pnl.value is not None
+    assert result.available_months_total is None
+    assert result.selected_available_months_total is None
+    assert snapshot(db) == before
+
+
+def test_unavailable_months_keep_null_total_and_all_original_reasons(db, monkeypatch):
+    save(db, trades=(), bond=None)
+    direct_read = view.read_monthly_returns
+
+    def unavailable(*args, **kwargs):
+        monthly = direct_read(*args, **kwargs)
+        row = monthly.months[0]
+        return replace(
+            monthly,
+            months=(
+                replace(
+                    row,
+                    result=replace(
+                        row.result,
+                        growth_kopecks=None,
+                        modified_dietz_return=None,
+                        reason_codes=("unknown_flow",),
+                    ),
+                    flags=("seam_mismatch",),
+                ),
+            ),
+            period=replace(
+                monthly.period,
+                growth_kopecks=None,
+                chained_return=None,
+                growth_reason_codes=("unknown_flow",),
+                chain_reason_codes=("unknown_flow",),
+            ),
+        )
+
+    monkeypatch.setattr(view, "read_monthly_returns", unavailable)
+    result = api_overview(db)
+    assert result.available_months_total.pnl.value is None
+    assert result.available_months_total.covered_months == 0
+    assert result.available_months_total.total_months == 1
+    assert result.available_months_total.missing[0].reason_codes == [
+        "unknown_flow",
+        "seam_mismatch",
+    ]
+    assert result.all_history.pnl.reason_codes == ["unknown_flow", "seam_mismatch"]
+
+
+def test_conflicting_account_label_targets_are_not_resolved_by_same_name(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    save(db, trades=(), bond=None)
+    with db.session_factory() as session:
+        accounts = [Account(name="Same label", account_type="brokerage") for _ in range(2)]
+        session.add_all(accounts)
+        session.flush()
+        for alias, account in zip((ACCOUNT, "1234567"), accounts):
+            session.add(
+                BrokerIdentityMapping(
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=alias,
+                    hermes_account_id=account.id,
+                    status="effective",
+                    confirmed_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+        context = Context.model_validate(view.read_context(session))
+    assert next(a for a in context.accounts if a.id == SCOPE).label == ACCOUNT
+
+
+def test_source_context_groups_only_proved_aliases_keeps_ranges_and_accepted_compatibility(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    save(db, trades=(), bond=None)
+    save(db, 6, trades=(), bond=None)
+    with db.session_factory() as session:
+        account = Account(name="Synthetic brokerage", account_type="brokerage")
+        deposit = Account(name="Synthetic deposit", account_type="deposit")
+        session.add_all([account, deposit])
+        session.flush()
+        session.add(
+            BrokerIdentityMapping(
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=ACCOUNT,
+                hermes_account_id=account.id,
+                status="effective",
+                confirmed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        deposit_scope = f"account:{deposit.id}"
+    before = snapshot(db)
+    with db.session_factory() as session:
+        context = Context.model_validate(view.read_context(session))
+        compatible = view.read_overview(session, scope=deposit_scope, start=START, end=END)
+    sources = [a for a in context.accounts if a.basis == "statements"]
+    assert len(sources) == 1 and sources[0].id == SCOPE
+    assert sources[0].label == f"Synthetic brokerage · {ACCOUNT}"
+    assert context.scope_aliases == {"source:1234567": SCOPE}
+    assert {p.end.month for p in context.source_periods[SCOPE]} == {4, 6}
+    assert any(a.id == deposit_scope and a.basis == "accepted" for a in context.accounts)
+    assert compatible["selected"]["pnl"]["method"] == "PERF04A"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("case", ["conflict", "multiple", "unreadable", "similar"])
+def test_source_context_does_not_hide_unproved_or_conflicting_accounts(db, monkeypatch, case):
+    from test_source_monthly_returns_service import save_service_month
+
+    save_service_month(db)
+    if case == "conflict":
+        save_service_month(db, 5, row_account="7654321-000")
+    elif case == "multiple":
+        save_service_month(
+            db,
+            5,
+            mutate=lambda root: root.find(".//{MyBroker}Textbox11").set("acc_code", "7654321-000"),
+        )
+    elif case == "similar":
+        save_service_month(db, 5, row_account="1234567-001")
+    else:
+        reader = view._selected_sources
+
+        def unreadable(*args, **kwargs):
+            selected, native = reader(*args, **kwargs)
+            return [(o, None, "source_reader_unavailable") for o, _, _ in selected], native
+
+        monkeypatch.setattr(view, "_selected_sources", unreadable)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        context = Context.model_validate(view.read_context(session))
+    sources = {a.id for a in context.accounts if a.basis == "statements"}
+    assert {SCOPE, "source:1234567"} <= sources
+    assert context.scope_aliases == {}
+    if case == "similar":
+        assert "source:1234567-001" in sources
+    assert snapshot(db) == before
 
 
 @pytest.mark.parametrize("reinvest", [False, True])

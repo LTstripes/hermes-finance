@@ -69,6 +69,115 @@ function setup(path = "/v2/returns") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("no saved statements leaves brokerage selection empty until accepted mode is requested", async () => {
+  install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            accounts: contextFixture.accounts.filter((a) => a.basis === "accepted"),
+          }),
+        )
+      : undefined,
+  );
+  setup();
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("start=2030-04-30"));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue(""));
+  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Представление" }), {
+    target: { value: "accepted" },
+  });
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
+});
+
+test("brokerage selector excludes accepted accounts until explicitly switched; deep links stay valid", async () => {
+  install();
+  setup();
+  await screen.findByRole("region", { name: "Результат периода" });
+  const accounts = screen.getByRole("combobox", { name: "Счёт" });
+  expect(within(accounts).queryByRole("option", { name: "Общий портфель" })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Представление" }), {
+    target: { value: "accepted" },
+  });
+  await waitFor(() => expect(accounts).toHaveValue("portfolio"));
+  expect(within(accounts).getByRole("option", { name: "Общий портфель" })).toBeVisible();
+  expect(within(accounts).queryByRole("option", { name: "Учебный счёт А" })).toBeNull();
+});
+
+test("proven alias URL normalizes only scope and preserves exact period/hash", async () => {
+  const calls = install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            scope_aliases: { "source:OLD-A": "source:SYNTH-A" },
+          }),
+        )
+      : undefined,
+  );
+  setup("/v2/returns?scope=source:OLD-A&start=2030-03-31&end=2030-04-30#details");
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(screen.getByTestId("location")).toHaveTextContent(
+    "scope=source%3ASYNTH-A&start=2030-03-31&end=2030-04-30#details",
+  );
+  expect(calls.some((c) => c.includes("OLD-A") && !c.endsWith("context"))).toBe(false);
+});
+
+test("partial history shows server RUB subtotal with coverage and no invented rate", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.available_months_total = {
+      period: { start: "2030-03-31", end: "2030-06-30" },
+      partial: true,
+      pnl: { ...data.selected.pnl, value: "8000", method: "available_calendar_months" },
+      included: [
+        { start: "2030-03-31", end: "2030-04-30" },
+        { start: "2030-05-31", end: "2030-06-30" },
+      ],
+      missing: [
+        { period: { start: "2030-04-30", end: "2030-05-31" }, reason_codes: ["missing_endpoint"] },
+      ],
+      covered_months: 2,
+      total_months: 3,
+    };
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const card = await screen.findByRole("region", { name: "За доступные месяцы" });
+  expect(card).toHaveTextContent("За доступные месяцы · 2 из 3");
+  expect(card).toHaveTextContent("+80 ₽");
+  expect(card).not.toHaveTextContent("%");
+  expect(screen.queryByRole("region", { name: "За всю историю" })).toBeNull();
+  const info = within(card).getByLabelText("Подробнее: Покрытие доступных месяцев");
+  fireEvent.click(info);
+  expect(within(card).getByText("Не хватает стоимости на границе периода.")).toBeVisible();
+  expect(within(card).getByText("Не учтён: 30.04.2030 — 31.05.2030")).toBeVisible();
+});
+
+test("missing name is explained in table, tops and lazy detail without a lookup", async () => {
+  const calls = install((url) => {
+    if (url.pathname.endsWith("overview")) {
+      const data = overviewFixture();
+      data.instruments[0].name = data.instruments[0].isin;
+      return Promise.resolve(response(data));
+    }
+    if (url.pathname.endsWith("instrument")) {
+      const data = detailFixture("source:SYNTH-A", may, "RU000A000001");
+      data.name = data.isin;
+      return Promise.resolve(response(data));
+    }
+  });
+  setup();
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(screen.getAllByLabelText("Подробнее: Название RU000A000001")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: /▸ RU000A000001/ }));
+  await screen.findByText("Количество: 10 → 0");
+  expect(screen.getAllByLabelText("Подробнее: Название RU000A000001")).toHaveLength(3);
+  expect(calls.every((c) => c.startsWith("/api/returns/"))).toBe(true);
+});
+
 test("tops show the name first, ISIN second and an honest single ISIN fallback", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;
