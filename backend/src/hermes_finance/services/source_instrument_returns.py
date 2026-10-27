@@ -335,11 +335,11 @@ def _native_total_basis(session, trade):
         normalized = dict(trade, core=_trade_core(trade["core"]))
         return None if broker_trade_money.cash_reasons(normalized, groups, proof) else basis
     except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
-        # A malformed proof is no basis; it must not suppress source inference.
+        # A malformed proof is no basis; it cannot override the field definition.
         return None
 
 
-def _assumes_face_value(trade):
+def _missing_face_value(trade):
     # A present None is the parser's invalid/conflicting nominal marker.
     return "face_value" not in trade or trade["face_value"] == ""
 
@@ -347,53 +347,59 @@ def _assumes_face_value(trade):
 def _face_signature(trade):
     """Canonicalize the two spellings of "no nominal" for overlap comparison.
 
-    A missing key and an empty string both fall back to the same assumed face
-    1000. An invalid/conflicting None and explicit values stay distinct.
+    A missing key and an empty string both represent the same absent nominal
+    marker. An invalid/conflicting None and explicit values stay distinct.
     """
-    return "" if _assumes_face_value(trade) else trade["face_value"]
+    return "" if _missing_face_value(trade) else trade["face_value"]
 
 
-def _inferred_native_total_basis(trade):
-    """Infer this row's NKD basis with explicit nominal or a disclosed 1000 assumption."""
+def _bond_total_basis(session, trade, flags, *, documents):
+    """Read MyBroker's field definition; never attest a Money occurrence owner.
+
+    The frozen alfa_mybroker / mybroker-s1-v2 document identifies the parsed
+    MyBroker report family (completed 2_Trades rows). No raw sign is rewritten.
+    Explicit dated nominal checks consistency, never selects an excludes basis.
+    """
+    if not documents or any(
+        d.get("provider") != "alfa_mybroker" or d.get("parser") != "mybroker-s1-v2"
+        for d in documents
+    ):
+        return None
+    if trade.get("section") != "completed":
+        return None
+    reviewed = _native_total_basis(session, trade)
+    if reviewed is not None and reviewed != "includes_paid_nkd":
+        flags.add("trade_nkd_basis_conflict")
+        return None
     try:
         core = trade["core"]
-        price = Decimal(core["price"])
-        quantity = Decimal(core["quantity"])
-        amount = Decimal(core["trade_amount"])
-        nkd = Decimal(trade["accrued_interest"])
-        face = Decimal("1000") if _assumes_face_value(trade) else Decimal(trade["face_value"])
+        price, quantity, amount, nkd = (
+            Decimal(core["price"]),
+            Decimal(core["quantity"]),
+            Decimal(core["trade_amount"]),
+            Decimal(trade["accrued_interest"]),
+        )
         if (
-            any(not value.is_finite() for value in (price, quantity, amount, nkd, face))
+            any(not value.is_finite() for value in (price, quantity, amount, nkd))
             or quantity == 0
-            or face <= 0
             or any(value < 0 for value in (price, amount, nkd))
         ):
             return None
-        with localcontext() as context:
-            # Parser numeric tokens are bounded to 48 characters; keep the
-            # product and residual exact, independent of the caller's context.
-            context.prec = 200
-            principal = price / 100 * face * abs(quantity)
-            includes = abs(amount - principal - nkd) <= Decimal("0.01")
-            excludes = nkd != 0 and abs(amount - principal) <= Decimal("0.01")
-        if includes == excludes:
-            return None
-        return "includes_paid_nkd" if includes else "excludes_paid_nkd"
+        if _missing_face_value(trade):
+            flags.add("trade_face_value_missing")
+        else:
+            face = Decimal(trade["face_value"])
+            if not face.is_finite() or face <= 0:
+                return None
+            with localcontext() as context:
+                context.prec = 200
+                principal = price / 100 * face * abs(quantity)
+                if abs(amount - principal - nkd) > Decimal("0.01"):
+                    flags.add("trade_nkd_basis_conflict")
+                    return None
+        return "includes_paid_nkd"
     except (ValueError, TypeError, KeyError, ArithmeticError):
         return None
-
-
-def _bond_total_basis(session, trade, flags):
-    reviewed = _native_total_basis(session, trade)
-    inferred = _inferred_native_total_basis(trade)
-    if reviewed is not None and inferred is not None and reviewed != inferred:
-        flags.add("trade_nkd_basis_conflict")
-        return None
-    if reviewed is not None:
-        return reviewed
-    if inferred is not None and _assumes_face_value(trade):
-        flags.add("face_value_assumed")
-    return inferred
 
 
 def _trade_cash_total(amount, nkd, fee, quantity, basis):
@@ -405,10 +411,12 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
 
 def _trades(session, views, isin, month, instrument_type, flags):
     groups = defaultdict(list)
+    documents = defaultdict(list)
     for view in views:
         for trade in view["document"].get("trades", []):
             if trade["core"]["isin"] == isin:
                 key = trade.get("identity") or object()
+                documents[key].append(view["document"])
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
                 # A position nominal has no proven validity at the trade date.
@@ -418,7 +426,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
     buys = sells = 0
     quantity = Decimal(0)
     invalid = False
-    for observations in groups.values():
+    for key, observations in groups.items():
         settled = [trade for trade in observations if trade["state"] == "settled"]
         selected = settled or observations
         try:
@@ -501,7 +509,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
             if instrument_type == "stock":
                 basis = "excludes_paid_nkd"
             elif instrument_type == "bond":
-                basis = _bond_total_basis(session, trade, flags)
+                basis = _bond_total_basis(session, trade, flags, documents=documents[key])
             else:
                 basis = _native_total_basis(session, trade)
             cash_total = _trade_cash_total(amount, nkd, fee, qty, basis)
@@ -545,7 +553,7 @@ _SOURCE_GAPS = {
 }
 _DISCLOSURES = {
     "bond_valuation_basis_unknown",
-    "face_value_assumed",
+    "trade_face_value_missing",
     "income_assumed",
     "income_confirmed",
 }
