@@ -120,6 +120,16 @@ export function UiV2MonthInstruments({
     // Outgoing controls can fire before navigation commits. A location instance
     // also distinguishes A→B→A from the first A, even when its URL matches again.
     if (committedSelection.current !== selection) return false;
+    // BrowserRouter writes history before its transition commits. Check that
+    // live entry at event time too: account/month/Back navigation can originate
+    // outside this component while its outgoing controls are still mounted.
+    if (
+      (window.history.state?.key ?? "default") !== location.key ||
+      window.location.pathname !== location.pathname ||
+      window.location.search !== location.search ||
+      window.location.hash !== location.hash
+    )
+      return false;
     const next = new URLSearchParams(location.search);
     next.set("payout_as_of", value);
     void navigate({ search: next.toString(), hash: location.hash });

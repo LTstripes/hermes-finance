@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, useLocation, useSearchParams } from "react-router";
+import { BrowserRouter, useLocation, useSearchParams } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SourcePayoutPreview } from "../api/sourcePayoutPreview";
 import { event, ISIN, metric, source } from "../test/sourceInstrumentFixtures";
@@ -114,14 +114,17 @@ function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
       >
         Первый счёт
       </button>
+      <button type="button" onClick={() => setParams({ month: "2", source_account: account })}>
+        Другой месяц
+      </button>
       <output aria-label="URL">
         {params.toString()}
         {location.hash}
       </output>
       <UiV2MonthInstruments
         payoutsOnly={payoutsOnly}
-        key={account}
-        monthId={1}
+        key={`${account}:${params.get("month") ?? "1"}`}
+        monthId={Number(params.get("month") ?? "1")}
         year={2030}
         month={5}
         account={account}
@@ -171,11 +174,12 @@ function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) 
   });
   vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  window.history.replaceState(null, "", path);
   const view = render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
+      <BrowserRouter>
         <Harness payoutsOnly={payoutsOnly} />
-      </MemoryRouter>
+      </BrowserRouter>
     </QueryClientProvider>,
   );
   return { ...view, fetcher, client, state };
@@ -183,6 +187,39 @@ function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) 
 const posts = (fetcher: ReturnType<typeof setup>["fetcher"]) =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
 afterEach(() => vi.unstubAllGlobals());
+
+test.each([
+  ["Другой счёт", "Сохранённая дата количества", "source_account=SYNTH-02"],
+  ["Другой счёт", "Дата количества из выписки", "source_account=SYNTH-02"],
+  ["Другой месяц", "Сохранённая дата количества", "month=2"],
+  ["Другой месяц", "Дата количества из выписки", "month=2"],
+])("outgoing %s / %s cannot overwrite external navigation", async (button, label, target) => {
+  const { fetcher } = setup();
+  await screen.findByLabelText("Сохранённая дата количества");
+  const outgoingDate = screen.getByLabelText(label);
+  act(() => {
+    screen.getByRole("button", { name: button }).click();
+    fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+  });
+  await waitFor(() => expect(screen.getByLabelText("URL")).toHaveTextContent(target));
+  expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+  expect(posts(fetcher)).toHaveLength(0);
+});
+
+test("outgoing date is retired by account A→B→A even before either navigation commits", async () => {
+  const { fetcher } = setup("/v2/close?source_account=SYNTH-01&panel=payouts");
+  const outgoingDate = await screen.findByLabelText("Сохранённая дата количества");
+  const href = window.location.href;
+  act(() => {
+    screen.getByRole("button", { name: "Другой счёт" }).click();
+    screen.getByRole("button", { name: "Первый счёт" }).click();
+    expect(window.location.href).toBe(href);
+    fireEvent.change(outgoingDate, { target: { value: "2030-04-30" } });
+  });
+  expect(screen.getByLabelText("URL")).not.toHaveTextContent("payout_as_of");
+  expect(screen.getByLabelText("Дата количества из выписки")).toHaveValue("2030-05-31");
+  expect(posts(fetcher)).toHaveLength(0);
+});
 
 test("payout entry exposes source observations with unknown tax separately and reuses explicit T-Invest preview", async () => {
   const { fetcher } = setup("/v2/close?panel=payouts&month=1&source_account=SYNTH-01", true);
