@@ -845,10 +845,10 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   <Th className="month-positions-table__account">Счёт</Th>
                   <Th className="month-positions-table__instrument">Инструмент</Th>
                   <Th numeric>Количество</Th>
-                  <Th numeric>Средняя цена приобретения</Th>
-                  <Th numeric>Цена</Th>
-                  <Th numeric>Рыночная стоимость</Th>
-                  <Th numeric>Результат</Th>
+                  <Th numeric>Средняя цена приобретения, ₽</Th>
+                  <Th numeric>Цена, ₽</Th>
+                  <Th numeric>Рыночная стоимость, ₽</Th>
+                  <Th numeric>Результат, ₽</Th>
                   <Th className="month-positions-table__actions" aria-label="Действия">
                     ⋯
                   </Th>
@@ -1016,10 +1016,18 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                         </div>
                       </Td>
                       <Td numeric>{formatQuantity(row.quantity)}</Td>
-                      <Td numeric>{formatMoney(moneyAmount(row.average_cost_per_unit))}</Td>
+                      <Td numeric>
+                        {formatMoney(moneyAmount(row.average_cost_per_unit), {
+                          currency: "",
+                        }).trim()}
+                      </Td>
                       <Td numeric>
                         <span className="position-price">
-                          <span>{formatMoney(moneyAmount(row.market_price_per_unit))}</span>
+                          <span>
+                            {formatMoney(moneyAmount(row.market_price_per_unit), {
+                              currency: "",
+                            }).trim()}
+                          </span>
                           <HelpTip
                             label={`Детали оценки для ${instrument?.name ?? `#${row.instrument_id}`}`}
                           >
@@ -1032,11 +1040,13 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                         </span>
                       </Td>
                       <Td numeric>
-                        <span className="muted">{formatMoney(moneyAmount(row.market_value))}</span>
+                        <span className="muted">
+                          {formatMoney(moneyAmount(row.market_value), { currency: "" }).trim()}
+                        </span>
                       </Td>
                       <Td numeric>
                         <span className="muted">
-                          {formatMoney(moneyAmount(row.unrealized_result))}
+                          {formatMoney(moneyAmount(row.unrealized_result), { currency: "" }).trim()}
                         </span>
                       </Td>
                       <Td className="month-positions-table__actions">

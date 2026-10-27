@@ -860,6 +860,9 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
         document.documentElement.style.zoom = String(scale);
       }, zoom);
       await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("columnheader", { name: "Результат, ₽", exact: true }),
+      ).toBeVisible();
       await expectNoTableOverflow(page);
       const fullName = page.getByRole("button", { name: `Полное название: ${uxName} (SYN)` });
       await fullName.focus();
@@ -893,6 +896,7 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       await page.getByRole("button", { name: "Отмена", exact: true }).click();
       await nav.getByRole("link", { name: /^Выплаты/ }).click();
       await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "Нетто, ₽", exact: true })).toBeVisible();
       await expect(page.locator("#payout-act-gross")).not.toBeVisible();
       await expectNoTableOverflow(page);
       await page.screenshot({

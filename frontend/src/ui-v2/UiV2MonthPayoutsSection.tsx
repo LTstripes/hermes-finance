@@ -700,10 +700,10 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                   <Th>Дата</Th>
                   <Th>Тип</Th>
                   <Th>Счёт / инструмент</Th>
-                  <Th numeric>Брутто</Th>
-                  <Th numeric>Налог</Th>
-                  <Th numeric>Комиссия</Th>
-                  <Th numeric>Нетто</Th>
+                  <Th numeric>Брутто, ₽</Th>
+                  <Th numeric>Налог, ₽</Th>
+                  <Th numeric>Комиссия, ₽</Th>
+                  <Th numeric>Нетто, ₽</Th>
                   <Th className="month-flows-table__actions">Действия</Th>
                 </tr>
               </thead>
@@ -813,7 +813,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.gross}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.gross_amount))
+                          formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -826,7 +826,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.tax}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.tax_amount))
+                          formatMoney(moneyAmount(row.tax_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -839,7 +839,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.commission}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.commission_amount))
+                          formatMoney(moneyAmount(row.commission_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td numeric>
@@ -852,7 +852,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             value={editActual.net}
                           />
                         ) : (
-                          formatMoney(moneyAmount(row.net_amount))
+                          formatMoney(moneyAmount(row.net_amount), { currency: "" }).trim()
                         )}
                       </Td>
                       <Td className="month-flows-table__actions">
@@ -1083,9 +1083,9 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                   <Th>Дата</Th>
                   <Th>Тип</Th>
                   <Th>Инструмент</Th>
-                  <Th numeric>Брутто</Th>
-                  <Th numeric>Прогноз налога</Th>
-                  <Th numeric>Прогноз нетто</Th>
+                  <Th numeric>Брутто, ₽</Th>
+                  <Th numeric>Прогноз налога, ₽</Th>
+                  <Th numeric>Прогноз нетто, ₽</Th>
                   <Th>Статус</Th>
                   <Th className="month-flows-table__actions">Действия</Th>
                 </tr>
@@ -1103,13 +1103,19 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                         {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
                       </Td>
                       <Td>{instrumentName(row.instrument_id)}</Td>
-                      <Td numeric>{formatMoney(moneyAmount(row.gross_amount))}</Td>
+                      <Td numeric>
+                        {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
+                      </Td>
                       <Td numeric>
                         {row.expected_tax_amount
-                          ? formatMoney(moneyAmount(row.expected_tax_amount))
+                          ? formatMoney(moneyAmount(row.expected_tax_amount), {
+                              currency: "",
+                            }).trim()
                           : "—"}
                       </Td>
-                      <Td numeric>{formatMoney(moneyAmount(row.expected_net_amount))}</Td>
+                      <Td numeric>
+                        {formatMoney(moneyAmount(row.expected_net_amount), { currency: "" }).trim()}
+                      </Td>
                       <Td>
                         <div className="muted tiny">
                           {row.is_confirmed ? "подтверждено" : "план"}
