@@ -531,12 +531,14 @@ export default function UiV2ClosePage() {
           emptyClosePending
         }
         onDiscard={(destination) => {
-          setDiscardVersion((value) => value + 1);
+          const withinMonth = destination?.split("?")[0] === "/v2/close";
+          // External navigation unmounts the workspace itself. Avoid an
+          // intermediate remount that could retire the retained File first.
+          if (!destination || withinMonth) setDiscardVersion((value) => value + 1);
           setEditorNavigation({ dirty: false, pending: false });
           if (sourceDirty && monthId !== null) {
             // Catalogue round-trips retain the actual File while retiring its
             // preview/decisions. An explicit Month-panel discard drops it.
-            const withinMonth = destination?.split("?")[0] === "/v2/close";
             session.select(withinMonth ? null : original.file, monthId, original.accountId);
           }
         }}

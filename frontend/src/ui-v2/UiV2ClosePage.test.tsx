@@ -148,7 +148,7 @@ describe("native Monthly Close work mode", () => {
     const session = brokerOriginalSession(client);
     const file = new File(["synthetic"], "synthetic.xml");
     await act(async () => session.select(file, 12, ""));
-    fireEvent.click(screen.getByRole("link", { name: "Данные", exact: true }));
+    fireEvent.click(screen.getByRole("link", { name: /^Данные$/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
     await waitFor(() => expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data"));
     expect(session.snapshot().file).toBe(file);
