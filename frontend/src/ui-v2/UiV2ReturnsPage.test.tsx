@@ -408,6 +408,11 @@ test("without CLOSED months source intervals remain selectable without silently 
   await waitFor(() =>
     expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A"),
   );
+  // Flush post-context URL effects: source periods are offered for manual
+  // selection, not silently adopted in place of a missing CLOSED default.
+  await act(async () => {});
+  expect(screen.getByTestId("location")).not.toHaveTextContent("start=");
+  expect(screen.getByTestId("location")).not.toHaveTextContent("end=");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Подробнее о данных"));
   expect(screen.getByRole("link", { name: "Открыть диагностику выписок" })).toHaveAttribute(
