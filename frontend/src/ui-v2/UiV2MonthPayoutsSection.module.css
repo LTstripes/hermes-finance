@@ -1,5 +1,9 @@
 /* Leaf-local narrow-screen readability for #562. Shared Table/global CSS stays untouched. */
 
+.root :global(.panel) {
+  padding: 16px;
+}
+
 .scroll {
   max-width: 100%;
   overflow-x: auto;

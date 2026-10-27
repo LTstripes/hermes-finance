@@ -2,6 +2,10 @@
   min-width: 0;
 }
 
+.root :global(.panel) {
+  padding: 16px;
+}
+
 .root :global(.month-positions-table) th:global(.num),
 .root :global(.month-positions-table) td:global(.num) {
   width: auto;

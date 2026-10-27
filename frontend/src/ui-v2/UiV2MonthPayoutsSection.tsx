@@ -664,7 +664,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   if (error) return <EmptyState description={error} inline title="Не удалось загрузить выплаты" />;
 
   return (
-    <div className="stack-18" id="month-accepted-payouts">
+    <div className={`stack-18 ${styles.root}`} id="month-accepted-payouts">
       {actionError ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {actionError}
