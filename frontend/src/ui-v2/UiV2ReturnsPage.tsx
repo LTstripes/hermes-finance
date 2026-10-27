@@ -258,9 +258,7 @@ export default function UiV2ReturnsPage() {
     // Without a CLOSED default, only an explicitly selected source period may
     // drive the account result. Do not silently default to a DRAFT interval.
     const defaultPeriod =
-      params.get("period") === "history"
-        ? sourcePeriods.at(-1)
-        : context.data.default_period;
+      params.get("period") === "history" ? sourcePeriods.at(-1) : context.data.default_period;
     if (!params.has("start") && !params.has("end") && defaultPeriod) {
       next.set("start", defaultPeriod.start);
       next.set("end", defaultPeriod.end);
