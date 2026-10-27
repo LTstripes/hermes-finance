@@ -15,7 +15,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "backend/tests"))
     from hermes_finance.main import create_app
-    from hermes_finance.persistence import Account, Instrument
+    from hermes_finance.persistence import Account, DepositSnapshot, Instrument
     from hermes_finance.services.reporting_months import create_reporting_month
     from hermes_finance.services.source_intake import save_intake
     from hermes_finance.statement_import.mybroker import NS
@@ -37,9 +37,23 @@ def main():
                     is_active=False,
                 )
             )
-            session.add(Account(name="Учебный депозит", account_type="deposit"))
+            deposit = Account(name="Учебный депозит", account_type="deposit")
+            session.add(deposit)
+            session.flush()
             closed = create_reporting_month(
                 session, year=2030, month=4, snapshot_date=date(2030, 4, 30)
+            )
+            session.add(
+                DepositSnapshot(
+                    reporting_month_id=closed.id,
+                    account_id=deposit.id,
+                    name="Учебный вклад",
+                    deposit_type="deposit",
+                    balance_kopecks=900000,
+                    annual_rate_basis_points=1000,
+                    expected_monthly_interest_kopecks=9999,
+                    actual_interest_received_kopecks=300,
+                )
             )
             closed.status = "closed"
             session.commit()

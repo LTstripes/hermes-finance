@@ -23,6 +23,370 @@ from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_monthly_returns import read_monthly_returns
 
+
+def basket_source(
+    db, *, native=ACCOUNT, alias="1234567", closing="1100", month=4, extra=(), marker=""
+):
+    import calendar
+    from xml.etree import ElementTree as ET
+
+    from test_statement_import_broker_statement_provisional import provisional_xml
+
+    from hermes_finance.services.source_intake import save_intake
+    from hermes_finance.statement_import.mybroker import NS
+
+    root = ET.fromstring(
+        provisional_xml(beginning="1000", closing=closing, candidate_count=0, extra_money=extra)
+    )
+    root.set("marker", marker)
+    trades = root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS)
+    for row in list(trades):
+        trades.remove(row)
+    raw = (
+        ET.tostring(root)
+        .decode()
+        .replace(ACCOUNT, native)
+        .replace("2030-04-", f"2030-{month:02d}-")
+        .replace(".04.2030", f".{month:02d}.2030")
+        .encode()
+    )
+    with db.session_factory() as session:
+        return save_intake(
+            session,
+            document=raw,
+            filename=f"Брокерский {alias} (01.{month:02d}.30-{calendar.monthrange(2030, month)[1]}.{month:02d}.30).xml",
+            request_id=f"basket-{native}-{month}-{marker}",
+        )["intake_id"]
+
+
+def basket_api(db, categories="brokerage,iis,deposits,gold", start="2030-03-31", end="2030-04-30"):
+    from hermes_finance.api.returns_view import Basket
+
+    app = FastAPI()
+    app.include_router(returns_router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    with TestClient(app) as client:
+        result = client.get(
+            "/api/returns/basket", params={"categories": categories, "start": start, "end": end}
+        )
+    assert snapshot(db) == before
+    assert result.status_code == 200, result.text
+    assert result.headers["cache-control"] == "no-store"
+    return Basket.model_validate(result.json())
+
+
+def test_basket_native_union_loss_alias_replay_and_missing_month_are_exact_read_only(db):
+    basket_source(db)
+    basket_source(db, marker="replay")
+    basket_source(db, month=6, closing="980")
+    basket_source(db, native="7654321-000", alias="7654321", closing="900")
+    before = snapshot(db)
+    result = basket_api(db, end="2030-06-30")
+    assert result.known_partial_subtotal_kopecks == "-2000"
+    assert result.source_subtotal.covered_cells == 3
+    assert result.source_subtotal.total_cells == 6
+    assert len([c for c in result.components if c.basis == "statements"]) == 2
+    assert result.result_kopecks is result.rate.value is None
+    assert result.partial is True
+    assert "calendar_month_missing" in result.source_subtotal.reason_codes
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("categories", ["brokerage", "iis", "deposits", "gold", ""])
+def test_basket_single_and_empty_never_guess_historical_type_or_return(db, categories):
+    basket_source(db)
+    result = basket_api(db, categories)
+    assert (
+        result.known_partial_subtotal_kopecks is result.result_kopecks is result.rate.value is None
+    )
+    if categories in {"brokerage", "iis"}:
+        assert "historical_brokerage_iis_type_unproven" in result.source_subtotal.reason_codes
+    if not categories:
+        assert result.components == []
+        assert result.reason_codes == ["basket_empty_selection"]
+
+
+@pytest.mark.parametrize("closing", ["1000", "9007199254740993"])
+def test_basket_observed_zero_and_large_minor_units_are_strings(db, closing):
+    basket_source(db, closing=closing)
+    result = basket_api(db, "brokerage,iis")
+    assert result.known_partial_subtotal_kopecks == str((int(closing) - 1000) * 100)
+    assert result.source_subtotal.covered_cells == 1
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (("Внесено по распоряжению Клиента", "Synthetic transfer in", "100"),),
+        (("Выведено по распоряжению Клиента", "Synthetic transfer out", "-100"),),
+        (
+            ("Внесено по распоряжению Клиента", "Synthetic transfer in", "100"),
+            ("Выведено по распоряжению Клиента", "Synthetic transfer out", "-100"),
+        ),
+    ],
+)
+def test_basket_external_crossings_are_withheld_even_when_net_zero(db, extra):
+    basket_source(db, extra=extra)
+    result = basket_api(db)
+    assert result.known_partial_subtotal_kopecks is None
+    assert "basket_crossing_reconciliation_unavailable" in result.source_subtotal.reason_codes
+
+
+def test_basket_accepted_duplicate_and_current_type_edit_never_change_historical_money(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    basket_source(db)
+    with db.session_factory() as session:
+        account = Account(name="Synthetic", account_type="brokerage")
+        session.add(account)
+        session.flush()
+        session.add(
+            BrokerIdentityMapping(
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=ACCOUNT,
+                hermes_account_id=account.id,
+                status="effective",
+                confirmed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+        identity = account.id
+    result = basket_api(db, "brokerage,iis")
+    assert len(result.components) == 1
+    assert result.known_partial_subtotal_kopecks == "10000"
+    with db.session_factory() as session:
+        session.get(Account, identity).account_type = "iis"
+        session.commit()
+    assert basket_api(db, "brokerage,iis") == result
+    assert basket_api(db, "iis").known_partial_subtotal_kopecks is None
+
+
+def deposit_cell(db, *, month=4, interest=300, balance=100000, account_id=None, closed=True):
+    from hermes_finance.persistence import Account, DepositSnapshot
+
+    with db.session_factory() as session:
+        if account_id is None:
+            account = Account(name="Synthetic deposit", account_type="deposit")
+            session.add(account)
+            session.flush()
+            account_id = account.id
+        period = create_reporting_month(
+            session, year=2030, month=month, snapshot_date=date(2030, month, 30)
+        )
+        session.add(
+            DepositSnapshot(
+                reporting_month_id=period.id,
+                account_id=account_id,
+                name="Placement",
+                deposit_type="savings",
+                balance_kopecks=balance,
+                annual_rate_basis_points=1000,
+                expected_monthly_interest_kopecks=9999,
+                actual_interest_received_kopecks=interest,
+            )
+        )
+        period.status = "closed" if closed else "draft"
+        session.commit()
+    return account_id
+
+
+def test_basket_deposit_principal_expected_and_missingness_never_become_period_return(db):
+    basket_source(db)
+    account = deposit_cell(db, interest=300)
+    deposit_cell(db, account_id=account, month=6, interest=0, balance=900000)
+    result = basket_api(db, end="2030-06-30")
+    assert result.known_partial_subtotal_kopecks == "10000"
+    assert result.deposit_received_interest.value_kopecks == "300"
+    assert result.deposit_received_interest.covered_cells == 2
+    assert result.deposit_received_interest.total_cells == 3
+    assert "calendar_month_missing_or_not_closed" in result.deposit_received_interest.reason_codes
+    assert result.result_kopecks is None
+    only = basket_api(db, "deposits", end="2030-06-30")
+    assert only.known_partial_subtotal_kopecks is None
+    assert only.deposit_received_interest.value_kopecks == "300"
+    edge = basket_api(db, "deposits", start="2030-04-01")
+    assert edge.deposit_received_interest.value_kopecks is None
+    assert "partial_calendar_month" in edge.deposit_received_interest.reason_codes
+
+
+def test_basket_known_source_deposit_overlap_never_counts_either(db):
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    basket_source(db)
+    account = deposit_cell(db)
+    with db.session_factory() as session:
+        session.add(
+            BrokerIdentityMapping(
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=ACCOUNT,
+                hermes_account_id=account,
+                status="effective",
+                confirmed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    result = basket_api(db)
+    assert (
+        result.known_partial_subtotal_kopecks
+        is result.deposit_received_interest.value_kopecks
+        is None
+    )
+    assert "basket_account_identity_overlap" in result.source_subtotal.reason_codes
+    assert basket_api(db, "deposits").deposit_received_interest.value_kopecks is None
+
+
+@pytest.mark.parametrize("excluded", ["brokerage", "iis", "deposits", "gold"])
+def test_basket_each_off_recomputes_membership_without_frontend_subtraction(db, excluded):
+    basket_source(db)
+    categories = ",".join(c for c in ("brokerage", "iis", "deposits", "gold") if c != excluded)
+    result = basket_api(db, categories)
+    assert result.known_partial_subtotal_kopecks == (
+        None if excluded in {"brokerage", "iis"} else "10000"
+    )
+    assert excluded not in result.categories
+
+
+def test_basket_transfer_pair_fee_never_looks_like_zero_union_gain(db):
+    basket_source(
+        db, closing="900", extra=(("Выведено по распоряжению Клиента", "Transfer A to B", "-100"),)
+    )
+    basket_source(
+        db,
+        native="7654321-000",
+        alias="7654321",
+        closing="1099",
+        extra=(("Внесено по распоряжению Клиента", "Transfer A to B", "99"),),
+    )
+    result = basket_api(db, "brokerage,iis")
+    assert result.known_partial_subtotal_kopecks is None
+    assert result.source_subtotal.covered_cells == 0
+    assert result.source_subtotal.total_cells == 2
+
+
+def test_basket_raw_structural_warning_never_uses_reader_waiver_as_union_proof(db, monkeypatch):
+    from hermes_finance.services import returns_basket
+
+    basket_source(db)
+    reader = returns_basket._selected_sources
+
+    def raw_warning(*args, **kwargs):
+        selected, native = reader(*args, **kwargs)
+        return [
+            (
+                o,
+                {
+                    **v,
+                    "document": {**v["document"], "syntax_blockers": ["4_Transfers_unsupported"]},
+                },
+                e,
+            )
+            for o, v, e in selected
+        ], native
+
+    monkeypatch.setattr(returns_basket, "_selected_sources", raw_warning)
+    result = basket_api(db, "brokerage,iis")
+    assert result.known_partial_subtotal_kopecks is None
+    assert "basket_crossing_reconciliation_unavailable" in result.source_subtotal.reason_codes
+
+
+def test_basket_two_native_accounts_mapped_to_one_accepted_account_are_not_two_addends(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    basket_source(db)
+    basket_source(db, native="7654321-000", alias="7654321")
+    with db.session_factory() as session:
+        account = Account(name="Synthetic duplicate", account_type="brokerage")
+        session.add(account)
+        session.flush()
+        for native in (ACCOUNT, "7654321-000"):
+            session.add(
+                BrokerIdentityMapping(
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=native,
+                    hermes_account_id=account.id,
+                    status="effective",
+                    confirmed_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+    result = basket_api(db)
+    assert result.known_partial_subtotal_kopecks is None
+    assert "basket_account_identity_overlap" in result.source_subtotal.reason_codes
+
+
+def test_basket_current_gold_cost_gain_is_not_period_return(db):
+    from hermes_finance.persistence import Account, PositionSnapshot
+
+    with db.session_factory() as session:
+        account = Account(name="Synthetic physical asset", account_type="other")
+        instrument = Instrument(name="Synthetic gold", instrument_type="gold")
+        session.add_all([account, instrument])
+        session.flush()
+        month = create_reporting_month(session, year=2030, month=4, snapshot_date=END)
+        session.add(
+            PositionSnapshot(
+                reporting_month_id=month.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=Decimal("1"),
+                historical_instrument_type="gold",
+                average_cost_per_unit_kopecks=10000,
+                market_price_per_unit_kopecks=20000,
+                market_value_kopecks=20000,
+                cost_basis_kopecks=10000,
+                unrealized_result_kopecks=10000,
+                price_date=END,
+                price_source="manual",
+            )
+        )
+        month.status = "closed"
+        session.commit()
+    result = basket_api(db, "gold")
+    assert (
+        result.result_kopecks is result.known_partial_subtotal_kopecks is result.rate.value is None
+    )
+    assert result.components[0].cells[0].value_kopecks is None
+    assert "physical_gold_period_evidence_unavailable" in result.components[0].cells[0].reason_codes
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "categories=gold,gold",
+        "categories=other",
+        "categories=brokerage&categories=iis",
+        "start=2030-03-31&start=2030-03-30",
+        "end=2030-03-31",
+        "start=invalid",
+    ],
+)
+def test_basket_api_rejects_ambiguous_selection(db, query):
+    app = FastAPI()
+    app.include_router(returns_router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        assert (
+            client.get(f"/api/returns/basket?start=2030-03-31&end=2030-04-30&{query}").status_code
+            == 422
+        )
+
+
 START, END = date(2030, 3, 31), date(2030, 4, 30)
 SCOPE = f"source:{ACCOUNT}"
 

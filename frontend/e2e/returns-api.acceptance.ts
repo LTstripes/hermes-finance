@@ -1,5 +1,49 @@
 import { expect, test } from "@playwright/test";
 
+test("basket actual API: all/one/none, signed source-only coverage, separate interest, Back/Reload", async ({
+  page,
+  request,
+}, testInfo) => {
+  await page.goto("/v2/returns");
+  const basket = page.getByRole("region", { name: "Моя доходность" });
+  await expect(basket.getByRole("checkbox")).toHaveCount(4);
+  for (const box of await basket.getByRole("checkbox").all()) await expect(box).toBeChecked();
+  const source = basket.getByRole("region", { name: "Известная часть по выпискам" });
+  const deposits = basket.getByRole("region", { name: "Полученные депозитные проценты" });
+  await expect(source).toContainText("0 ₽");
+  await expect(source).toContainText("2 из 2");
+  await expect(deposits).toContainText("+3 ₽");
+  const result = await request.get(
+    "/api/returns/basket?start=2030-03-31&end=2030-04-30&categories=brokerage,iis,deposits,gold",
+  );
+  expect(result.headers()["cache-control"]).toBe("no-store");
+  const body = await result.json();
+  expect(body.result_kopecks).toBeNull();
+  expect(body.rate.value).toBeNull();
+  expect(body.known_partial_subtotal_kopecks).toBe("0");
+  expect(body.deposit_received_interest.value_kopecks).toBe("300");
+  await basket.getByText("Покрытие и причины по категориям").click();
+  await expect(basket.getByText(/Текущая стоимость и прирост от цены покупки/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("basket-all-coverage.png"), fullPage: true });
+  for (const name of ["Брокерские счета", "ИИС", "Физическое золото"])
+    await basket.getByRole("checkbox", { name, exact: true }).uncheck();
+  await expect(page).toHaveURL(/categories=deposits/);
+  await expect(deposits).toContainText("+3 ₽");
+  await page.reload();
+  await expect(basket.getByRole("checkbox", { name: "ИИС", exact: true })).not.toBeChecked();
+  await expect(deposits).toContainText("+3 ₽");
+  await basket.getByRole("checkbox", { name: "Депозиты и накопительные", exact: true }).uncheck();
+  await expect(basket).toContainText("Выбери хотя бы одну категорию");
+  await expect(basket.locator("strong")).toHaveCount(0);
+  await page.goBack();
+  await expect(deposits).toContainText("+3 ₽");
+  await page.reload();
+  await expect(deposits).toContainText("+3 ₽");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  );
+});
+
 test("duplicate alias scope fails closed without an overview request", async ({
   page,
   request,

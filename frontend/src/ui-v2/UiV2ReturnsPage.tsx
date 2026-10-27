@@ -1,25 +1,26 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-import { UiV2Shell } from "./UiV2Shell";
-import { ReturnsDetail } from "./returns/ReturnsDetail";
-import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
-import { ReturnsHistory } from "./returns/ReturnsHistory";
-import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import {
   compareDecimal,
   displayMetric,
   getContext,
   getOverview,
+  type Instrument,
+  type Period,
   periodKey,
   periodLabel,
   ranked,
   unavailable,
   validDate,
-  type Instrument,
-  type Period,
 } from "./returns/model";
 import styles from "./returns/Returns.module.css";
+import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
+import { ReturnsBasket } from "./returns/ReturnsBasket";
+import { ReturnsDetail } from "./returns/ReturnsDetail";
+import { ReturnsHistory } from "./returns/ReturnsHistory";
+import { Explanation, Info, Value } from "./returns/ReturnsInfo";
+import { UiV2Shell } from "./UiV2Shell";
 
 function Instruments({
   rows,
@@ -255,7 +256,9 @@ export default function UiV2ReturnsPage() {
     if (!params.has("scope") && defaultAccount) next.set("scope", defaultAccount.id);
     const sourcePeriods = context.data.source_periods[next.get("scope") ?? ""] ?? [];
     const defaultPeriod =
-      params.get("period") === "history" ? sourcePeriods.at(-1) : context.data.default_period;
+      params.get("period") === "history"
+        ? sourcePeriods.at(-1)
+        : (context.data.default_period ?? sourcePeriods.at(-1));
     if (!params.has("start") && !params.has("end") && defaultPeriod) {
       next.set("start", defaultPeriod.start);
       next.set("end", defaultPeriod.end);
@@ -398,6 +401,7 @@ export default function UiV2ReturnsPage() {
             </form>
           </details>
         </div>
+        <ReturnsBasket period={period} refreshing={context.isFetching || context.isError} />
         {selectionValid && (
           <div className={styles.periodLine}>
             {periodLabel(period)}

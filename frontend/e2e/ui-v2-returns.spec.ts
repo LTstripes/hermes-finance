@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
   april,
+  basketFixture,
   contextFixture,
   detailFixture,
   longHistoryContext,
@@ -29,6 +30,10 @@ async function install(page: Page, extendedHistory = false) {
       };
       if (url.pathname === "/api/returns/context")
         await route.fulfill({ json: extendedHistory ? longHistoryContext : contextFixture });
+      else if (url.pathname === "/api/returns/basket")
+        await route.fulfill({
+          json: basketFixture(period, url.searchParams.get("categories") ?? undefined),
+        });
       else if (url.pathname === "/api/returns/overview") {
         const body = extendedHistory
           ? longHistoryOverview(scope, period)
