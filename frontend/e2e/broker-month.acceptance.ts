@@ -167,6 +167,11 @@ test("October primary entry exposes saved sources and historical stock/bond quan
     instruments.getByRole("heading", { name: /Фактические строки источника/ }),
   ).toHaveCount(0);
   await instruments.getByRole("button", { name: "Synthetic entry bond", exact: true }).click();
+  // The old stock's date control must retire before choosing the bond's date.
+  // Wait for the new ISIN panel, not a timeout or retry of a stale event.
+  await expect(
+    instruments.getByRole("region", { name: "Предварительные выплаты RU000A000001" }),
+  ).toBeVisible();
   await dates.selectOption("2035-09-30");
   await expect(instruments.getByText(/Наблюдаемое количество: 2 на 2035-09-30/)).toBeVisible();
   await expect(instruments.getByText(/не заменяет закрывающий EOD 2035-10-31/)).toBeVisible();
