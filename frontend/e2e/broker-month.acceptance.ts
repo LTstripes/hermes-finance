@@ -2020,7 +2020,27 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
     review.getByText(`Выплата #${actual.target_id}: доказательство отозвано`, { exact: true }),
   ).toBeVisible();
   await prepareSettlement("reaffirm", "доказательство отозвано");
+  const reaffirmation = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/broker-months/payout-apply") &&
+      response.request().method() === "POST",
+  );
+  const reaffirmationRead = page.waitForResponse((response) =>
+    response.url().endsWith(obligationUrl),
+  );
   await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
+  const reaffirmedResponse = await reaffirmation;
+  expect(reaffirmedResponse.ok(), await reaffirmedResponse.text()).toBe(true);
+  const reaffirmed = await reaffirmedResponse.json();
+  const obligationsResponse = await reaffirmationRead;
+  expect(obligationsResponse.ok(), await obligationsResponse.text()).toBe(true);
+  const obligations = await obligationsResponse.json();
+  const current = obligations.find(
+    (row: { investment_cash_flow_id: number }) => row.investment_cash_flow_id === actual.target_id,
+  );
+  expect(current.terminal_relation.state).toBe("paid");
+  expect(current.terminal_relation.accepted_request_id).toBe(reaffirmed.request_id);
+  expect(payoutWrites).toBe(3);
   await expect(
     review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }),
   ).toBeVisible();
