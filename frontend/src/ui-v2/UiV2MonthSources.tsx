@@ -12,7 +12,6 @@ import { ConfirmDialog } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
 import { lastDayOfMonth } from "../lib/period";
-import { MonthDraftPayouts } from "./MonthDraftPayouts";
 import { monthWorkspacePath } from "./monthSelection";
 import { SourceMonthReturn } from "./SourceMonthReturn";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
@@ -32,14 +31,12 @@ export function UiV2MonthSources({
   canClose,
   onPendingChange,
   onDirtyChange,
-  payoutsOnly = false,
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
   onReview?: (id: number) => void;
   canClose?: boolean;
   onPendingChange?: (value: boolean) => void;
   onDirtyChange?: (value: boolean) => void;
-  payoutsOnly?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
@@ -56,11 +53,10 @@ export function UiV2MonthSources({
   );
   const [nextAccount, setNextAccount] = useState<string | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
-  const [forecastPending, setForecastPending] = useState(false);
   useEffect(() => {
-    onPendingChange?.(uploadPending || forecastPending);
+    onPendingChange?.(uploadPending);
     return () => onPendingChange?.(false);
-  }, [uploadPending, forecastPending, onPendingChange]);
+  }, [uploadPending, onPendingChange]);
   const [journalDirty, setJournalDirty] = useState(false);
   const reportDirty = useCallback(
     (dirty: boolean) => {
@@ -137,10 +133,6 @@ export function UiV2MonthSources({
     ? []
     : sources.filter((item) => !account || sourceAccounts(item).includes(account));
   const closing = lastDayOfMonth(month.year, month.month);
-  const brokerParams = new URLSearchParams(params);
-  brokerParams.delete("section");
-  brokerParams.delete("step");
-  brokerParams.set("panel", "brokers");
   const fullMonthSources = visible.filter(
     (item) => item.covered_from === `${period}-01` && item.covered_to === closing,
   );
@@ -212,6 +204,68 @@ export function UiV2MonthSources({
       setNextSource(target);
     else chooseSource(target);
   }
+  const renderSources = (items: SourceIntake[], label: string) => (
+    <ul className={styles.sources} aria-label={label}>
+      {items.map((intake) => (
+        <li key={intake.id} className={styles.source}>
+          <div>
+            <strong>
+              Источник #{intake.id} · {sourceAccounts(intake).join(" / ") || "Счёт неизвестен"}
+            </strong>
+            <p>
+              {formatDate(intake.covered_from)} — {formatDate(intake.covered_to)} · наблюдений:{" "}
+              {intake.observations.length}
+            </p>
+            <p>
+              {intake.covered_from === `${period}-01` && intake.covered_to === closing
+                ? "Полный календарный период по датам; достаточность доказательств проверяется отдельно."
+                : "Историческое или частичное пересечение; не полный месячный оригинал."}
+            </p>
+            <p>
+              {intake.state.reporting_month_id === null
+                ? "Без финансовой привязки"
+                : "Привязан к месяцу"}{" "}
+              · исключений: {intake.exceptions.length}.
+            </p>
+            {!!intake.exceptions.length && (
+              <details>
+                <summary>Что исправить</summary>
+                <ul>
+                  {[...new Set(intake.exceptions)].map((code) => (
+                    <li key={code}>
+                      {brokerSourceTitle(code) ?? "Нужно уточнить доказательства источника"}{" "}
+                      <code>{code}</code>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              disabled={changingScope || unresolved}
+              onClick={() => openSource(intake.id)}
+            >
+              {month.status === "closed" ? "Просмотреть разбор" : "Разобрать и исправить"} #
+              {intake.id}
+            </button>
+            {sourceAccounts(intake)
+              .filter((value) => !account || value === account)
+              .map((value) => (
+                <Link
+                  key={value}
+                  to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}#bond-slice`}
+                >
+                  Облигации и доходность · {value}
+                </Link>
+              ))}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
     <>
       <ConfirmDialog
@@ -250,22 +304,13 @@ export function UiV2MonthSources({
       />
       <UiV2Panel
         eyebrow="Выписки"
-        title={payoutsOnly ? "Выплаты из сохранённых выписок" : "Брокерские выписки"}
+        title="Брокерские выписки"
         id="month-sources"
         testIdPrefix="month"
         wide
       >
         <div className={styles.stack}>
-          <p>
-            {payoutsOnly
-              ? "Выбери счёт и бумагу: полученные суммы читаются из выписок, будущие — по явной кнопке T-Invest. Количество повторно вводить не нужно."
-              : "Загрузи выписки, выбери счёт и проверь распознанные бумаги."}
-          </p>
-          {payoutsOnly && (
-            <Link to={monthWorkspacePath(month.id, undefined, brokerParams.toString())}>
-              Загрузить брокерские выписки
-            </Link>
-          )}
+          <p>Загрузи выписки, выбери счёт и проверь распознанные бумаги.</p>
           <section aria-label="Состояние источников месяца">
             {list.isPending || list.isFetching ? (
               <p>Проверяем сохранённые выписки…</p>
@@ -309,7 +354,7 @@ export function UiV2MonthSources({
               </p>
             </details>
           </section>
-          {payoutsOnly ? null : month.status === "closed" ? (
+          {month.status === "closed" ? (
             <p>
               Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой
               месяц заново.
@@ -320,7 +365,7 @@ export function UiV2MonthSources({
               compact
               onPendingChange={reportUploadPending}
               reviewDisabled={unresolved}
-              disabled={unresolved || uploadWouldDiscard || forecastPending}
+              disabled={unresolved || uploadWouldDiscard}
               knownSources={list.data}
               onSaved={(file, intake) => {
                 savedFiles.current.set(intake.id, file);
@@ -365,7 +410,7 @@ export function UiV2MonthSources({
                 Счёт источника месяца
                 <select
                   aria-label="Счёт источника месяца"
-                  disabled={uploadPending || forecastPending}
+                  disabled={uploadPending}
                   value={account}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -392,82 +437,28 @@ export function UiV2MonthSources({
                   отчётного месяца; выписки других периодов не становятся его EOD.
                 </p>
               ) : (
-                <ul className={styles.sources} aria-label="Источники и исключения месяца">
-                  {visible.map((intake) => (
-                    <li key={intake.id} className={styles.source}>
-                      <div>
-                        <strong>
-                          Источник #{intake.id} ·{" "}
-                          {sourceAccounts(intake).join(" / ") || "Счёт неизвестен"}
-                        </strong>
-                        <p>
-                          {formatDate(intake.covered_from)} — {formatDate(intake.covered_to)} ·
-                          наблюдений: {intake.observations.length}
-                        </p>
-                        <p>
-                          {intake.covered_from === `${period}-01` && intake.covered_to === closing
-                            ? "Полный календарный период по датам; достаточность доказательств проверяется отдельно."
-                            : "Историческое или частичное пересечение; не полный месячный оригинал."}
-                        </p>
-                        <p>
-                          {intake.state.reporting_month_id === null
-                            ? "Без финансовой привязки"
-                            : "Привязан к месяцу"}{" "}
-                          · исключений: {intake.exceptions.length}.
-                        </p>
-                        {!!intake.exceptions.length && (
-                          <details>
-                            <summary>Что исправить</summary>
-                            <ul>
-                              {[...new Set(intake.exceptions)].map((code) => (
-                                <li key={code}>
-                                  {brokerSourceTitle(code) ??
-                                    "Нужно уточнить доказательства источника"}{" "}
-                                  <code>{code}</code>
-                                </li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                      </div>
-                      <div className={styles.actions}>
-                        <button
-                          type="button"
-                          disabled={changingScope || unresolved || forecastPending}
-                          onClick={() => openSource(intake.id)}
-                        >
-                          {month.status === "closed"
-                            ? "Просмотреть разбор"
-                            : "Разобрать и исправить"}{" "}
-                          #{intake.id}
-                        </button>
-                        {sourceAccounts(intake)
-                          .filter((value) => !account || value === account)
-                          .map((value) => (
-                            <Link
-                              key={value}
-                              to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}#bond-slice`}
-                            >
-                              Облигации и доходность · {value}
-                            </Link>
-                          ))}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  {fullMonthSources.length > 0 &&
+                    renderSources(fullMonthSources, "Источники и исключения месяца")}
+                  {overlappingSources > 0 && (
+                    <details>
+                      <summary>Исторические и частичные пересечения · {overlappingSources}</summary>
+                      <p>
+                        Эти источники пересекают выбранный месяц, но не заменяют полный месячный
+                        оригинал.
+                      </p>
+                      {renderSources(
+                        visible.filter((item) => !fullMonthSources.includes(item)),
+                        "Исторические и частичные источники",
+                      )}
+                    </details>
+                  )}
+                </>
               )}
             </>
           )}
         </div>
       </UiV2Panel>
-      <MonthDraftPayouts
-        key={`draft-forecasts:${month.id}`}
-        monthId={month.id}
-        closed={month.status === "closed"}
-        disabled={uploadPending || unresolved || journalDirty || changingScope}
-        sourceVersion={original.confirmed?.request_id}
-        onPendingChange={setForecastPending}
-      />
       {!changingScope &&
       !list.isPending &&
       !list.isError &&
@@ -483,7 +474,6 @@ export function UiV2MonthSources({
           sourceVersion={JSON.stringify(
             history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
           )}
-          payoutsOnly={payoutsOnly}
         />
       ) : !invalidAccount && !account && sources.length > 0 ? (
         <p>
@@ -517,7 +507,7 @@ export function UiV2MonthSources({
               key={review.generation}
               monthId={review.monthId}
               closed={month.status === "closed"}
-              scopeBlocked={changingScope || forecastPending}
+              scopeBlocked={changingScope}
               sourceAccount={
                 changingScope
                   ? (JSON.parse(review.scope)[0] ?? "")
@@ -532,8 +522,7 @@ export function UiV2MonthSources({
           )}
         </details>
       </div>
-      {!payoutsOnly &&
-        !!account &&
+      {!!account &&
         !invalidAccount &&
         !changingScope &&
         !list.isPending &&

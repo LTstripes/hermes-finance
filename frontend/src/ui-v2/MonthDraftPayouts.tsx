@@ -57,6 +57,11 @@ export function MonthDraftPayouts({
 }) {
   const client = useQueryClient();
   const location = useLocation();
+  const sourceParams = new URLSearchParams(location.search);
+  sourceParams.set("month", String(monthId));
+  sourceParams.set("panel", "brokers");
+  sourceParams.delete("section");
+  sourceParams.delete("step");
   const context = useQuery({
     queryKey: ["draft-payouts", monthId, sourceVersion],
     queryFn: ({ signal }) => getDraftPayoutContext(monthId, signal),
@@ -261,8 +266,11 @@ export function MonthDraftPayouts({
           <p>Месяц закрыт. Доступно чтение сохранённых прогнозов.</p>
         ) : !context.data?.eligible_positions && !context.isPending ? (
           <p>
-            Сначала исправь исключения и сохрани финансовый DRAFT в разделе «Исправления и
-            сохранение месяца». Одной загрузки XML недостаточно.
+            Сначала исправь исключения и сохрани финансовый DRAFT:{" "}
+            <Link to={`/v2/close?${sourceParams}#month-source-review`}>
+              Брокерские выписки → Исправления и сохранение месяца
+            </Link>
+            . Одной загрузки XML недостаточно.
           </p>
         ) : null}
         {reading && <p role="status">Читаем финансовый DRAFT и сохранённый календарь…</p>}

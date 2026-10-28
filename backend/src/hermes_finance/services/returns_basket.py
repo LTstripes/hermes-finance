@@ -9,7 +9,6 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.persistence import (
     Account,
     BrokerIdentityMapping,
@@ -23,6 +22,7 @@ from hermes_finance.services.source_monthly_returns import (
     _native_scope,
     _selected_sources,
     read_monthly_returns,
+    source_read_snapshot,
 )
 from hermes_finance.statement_import.mybroker import PROVIDER
 
@@ -225,7 +225,7 @@ def read_basket(session, *, start, end, categories):
     if start >= end:
         raise ValueError("basket_interval_invalid")
     categories = category_set(categories)
-    with coherent_read_snapshot(session):
+    with source_read_snapshot(session):
         cells = list(_calendar_cells(start, end))
         components = []
         snapshots = list(session.scalars(select(DepositSnapshot)))

@@ -6,6 +6,8 @@ import calendar
 import hashlib
 import json
 from collections import defaultdict
+from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
@@ -13,7 +15,7 @@ from typing import Literal, Mapping
 
 from sqlalchemy import select
 
-from hermes_finance.database import coherent_read_operation
+from hermes_finance.database import coherent_read_operation, coherent_read_snapshot
 from hermes_finance.domain.broker_statement_provisional import ProvisionalAssumptions
 from hermes_finance.domain.monthly_return_chain import (
     MonthlyReturnRow,
@@ -205,6 +207,38 @@ def _native_scope(document):
     return aliases - {None}
 
 
+_SOURCE_READ_VIEWS = "returns_source_read_views"
+
+
+@contextmanager
+def source_read_snapshot(session):
+    """Reuse verified source views only within this committed read snapshot.
+
+    No value survives a request, including failed reads. Copies keep consumers
+    from changing another reader's operands. Financial writers never use this.
+    """
+    with coherent_read_snapshot(session):
+        if _SOURCE_READ_VIEWS in session.info:
+            yield
+            return
+        session.info[_SOURCE_READ_VIEWS] = {}
+        try:
+            yield
+        finally:
+            session.info.pop(_SOURCE_READ_VIEWS, None)
+
+
+def _read_source_view(session, original, *, reserved):
+    if reserved:
+        return source_intake._view(session, original)
+    cache = session.info.get(_SOURCE_READ_VIEWS)
+    if cache is None:
+        return source_intake.read_intake(session, original.id)
+    if original.id not in cache:
+        cache[original.id] = source_intake.read_intake(session, original.id)
+    return deepcopy(cache[original.id])
+
+
 def _selected_sources(session, source_account, *, reserved=False):
     """Resolve a filename alias only through its documents' single row account.
 
@@ -218,11 +252,7 @@ def _selected_sources(session, source_account, *, reserved=False):
             aliases = json.loads(original.native_accounts_json)
             if not isinstance(aliases, list) or source_account not in aliases:
                 continue
-            view = (
-                source_intake._view(session, original)
-                if reserved
-                else source_intake.read_intake(session, original.id)
-            )
+            view = _read_source_view(session, original, reserved=reserved)
             document = view["document"]
             native = _native_scope(document)
             if len(native) == 1 and source_account in native | {document["filename_account"]}:

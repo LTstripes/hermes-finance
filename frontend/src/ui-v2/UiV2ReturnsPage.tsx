@@ -252,7 +252,10 @@ export default function UiV2ReturnsPage() {
     const next = new URLSearchParams(params);
     const canonical = context.data.scope_aliases?.[scope];
     if (canonical) next.set("scope", canonical);
-    const defaultAccount = context.data.accounts.find((a) => a.basis === "statements");
+    const defaultAccount =
+      params.get("period") !== "history" && context.data.closed_periods.length
+        ? context.data.accounts.find((a) => a.id === "portfolio")
+        : context.data.accounts.find((a) => a.basis === "statements");
     if (!params.has("scope") && defaultAccount) next.set("scope", defaultAccount.id);
     const sourcePeriods = context.data.source_periods[next.get("scope") ?? ""] ?? [];
     // Without a CLOSED default, only an explicitly selected source period may
@@ -270,7 +273,8 @@ export default function UiV2ReturnsPage() {
   const overview = useQuery({
     queryKey: ["returns", "overview", scope, period.start, period.end],
     queryFn: ({ signal }) => getOverview(scope, period, signal),
-    enabled: selectionValid && !context.isError && !context.isFetching,
+    // Refresh the same selection once; display still waits for current context.
+    enabled: selectionValid && !context.isError,
     staleTime: 0,
   });
   const busy = context.isFetching || (selectionValid && overview.isFetching);
@@ -283,8 +287,9 @@ export default function UiV2ReturnsPage() {
     setParams(next);
   };
   const options = [
-    ...(context.data?.closed_periods ?? []),
-    ...(context.data?.source_periods[scope] ?? []),
+    ...(scope.startsWith("source:")
+      ? (context.data?.source_periods[scope] ?? [])
+      : (context.data?.closed_periods ?? [])),
     ...(data?.periods ?? []),
   ]
     .filter(
@@ -316,7 +321,9 @@ export default function UiV2ReturnsPage() {
               aria-label="Представление"
               value={scope && !scope.startsWith("source:") ? "accepted" : "statements"}
               onChange={(e) => {
-                const account = context.data?.accounts.find((a) => a.basis === e.target.value);
+                const account = context.data?.accounts.find((a) =>
+                  e.target.value === "accepted" ? a.id === "portfolio" : a.basis === "statements",
+                );
                 if (!account) return;
                 const next = new URLSearchParams(params);
                 next.set("scope", account.id);
@@ -401,7 +408,25 @@ export default function UiV2ReturnsPage() {
             </form>
           </details>
         </div>
-        <ReturnsBasket period={period} refreshing={context.isFetching || context.isError} />
+        <p className={styles.basisNote}>
+          {scope.startsWith("source:") ? (
+            <>
+              Основа подробностей — сохранённые выписки выбранного счёта. Это предварительная
+              оценка; сохранение источника не означает принятия финансового месяца.
+            </>
+          ) : (
+            <>
+              Основа подробностей — принятые данные закрытых месяцев. Закрытие сохраняет факты, но
+              само по себе не подтверждает полноту потоков для расчёта процента.{" "}
+              <Link to="/v2/data/months">Открыть отчёты месяцев</Link>
+            </>
+          )}
+        </p>
+        <ReturnsBasket
+          period={period}
+          refreshing={context.isFetching || context.isError}
+          contextError={context.isError}
+        />
         {selectionValid && (
           <div className={styles.periodLine}>
             {periodLabel(period)}

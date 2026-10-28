@@ -245,7 +245,8 @@ export function UiV2MonthInstruments({
                 }
                 . Это доступные события источника; полнота и исключения показаны ниже.
               </p>
-              {payoutsOnly && (
+              <details open={payoutsOnly}>
+                <summary>Наблюдения выплат источника</summary>
                 <section aria-label="Наблюдения выплат источника">
                   <p>
                     Наблюдения источника · не принятые финансовые записи. Они не добавляются к итогу
@@ -298,7 +299,7 @@ export function UiV2MonthInstruments({
                     </p>
                   )}
                 </section>
-              )}
+              </details>
               <details>
                 <summary>Сделки, выплаты и расчёт инструмента</summary>
                 <SourceInstrumentDetail

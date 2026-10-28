@@ -75,6 +75,15 @@ function setup(path = "/v2/close") {
     const url = new URL(String(input), "http://localhost");
     const method = init?.method ?? "GET";
     if (url.pathname === "/api/months" && method === "GET") return jsonResponse(state.months);
+    if (url.pathname === "/api/months/12/draft-payouts" && method === "GET")
+      return jsonResponse({
+        reporting_month_id: 12,
+        status: "draft",
+        context_digest: "a".repeat(64),
+        eligible_positions: 0,
+        items: [],
+      });
+    if (url.pathname === "/api/payouts/calendar" && method === "GET") return jsonResponse([]);
     const workflowMatch = /^\/api\/months\/(\d+)\/close-workflow$/.exec(url.pathname);
     if (workflowMatch && method === "GET") {
       state.workflowReads += 1;
@@ -141,6 +150,28 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("payouts reuses saved DRAFT and calendar without loading a second XML review", async () => {
+    const { mount, fetchMock } = setup("/v2/close?month=12&panel=payouts");
+    mount();
+    await screen.findByRole("button", { name: "Получить и сохранить прогнозы Т-Инвест" });
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/draft-payouts"))).toBe(
+        true,
+      ),
+    );
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/api/broker-months/intakes")),
+    ).toBe(false);
+    expect(screen.queryByText("Исправления и сохранение месяца")).toBeNull();
+    expect(screen.queryByLabelText("XML-файлы")).toBeNull();
+    expect(screen.getByRole("link", { name: "Ожидается · T-Invest" })).toHaveAttribute(
+      "href",
+      "#month-draft-payouts",
+    );
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(
+      true,
+    );
+  });
   it("retains the actual File when source discard leaves Month for a catalogue round-trip", async () => {
     const { mount, client } = setup("/v2/close?month=12&panel=brokers");
     mount();

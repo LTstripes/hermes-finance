@@ -752,6 +752,7 @@ def read_intake(session, intake_id):
 
 def list_intakes(session, month_id=None, include_unbound=False):
     with coherent_read_snapshot(session):
+        month = session.get(ReportingMonth, month_id) if month_id is not None else None
         views = [
             _view(session, row, include_money_classifications=False)
             for row in _rows(session, SourceIntakeOriginal)
@@ -761,7 +762,13 @@ def list_intakes(session, month_id=None, include_unbound=False):
             for v in views
             if month_id is None
             or v["state"]["reporting_month_id"] == month_id
-            or (include_unbound and v["state"]["reporting_month_id"] is None)
+            or (
+                include_unbound
+                and month is not None
+                and v["state"]["reporting_month_id"] is None
+                and v["covered_from"] <= month.period_end.isoformat()
+                and v["covered_to"] >= month.period_start.isoformat()
+            )
         ]
 
 
