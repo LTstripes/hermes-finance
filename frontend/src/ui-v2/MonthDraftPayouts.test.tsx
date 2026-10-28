@@ -42,11 +42,12 @@ const saved: DraftPayoutResult = {
   items: context.items.map((i) => ({ ...i, status: "updated", saved_payout_ids: [i.account_id] })),
 };
 
-function show(props: Partial<Parameters<typeof MonthDraftPayouts>[0]> = {}) {
+function show(
+  props: Partial<Parameters<typeof MonthDraftPayouts>[0]> = {},
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <BrowserRouter>
         <MonthDraftPayouts monthId={1} closed={false} {...props} />
       </BrowserRouter>
@@ -130,5 +131,46 @@ test("old mounted CTA cannot send after native history switches month before Rea
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
   window.history.pushState({ key: "new-month" }, "", "/v2/close?month=2&panel=payouts");
   fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(refreshDraftPayouts).not.toHaveBeenCalled();
+});
+
+test("global refresh reads the panel once; changed dependency facts still invalidate it", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const keys = [["broker-months", 1], ["source-intakes"], ["instruments"], ["positions"]];
+  const facts = [{ id: 1 }];
+  for (const queryKey of keys) await client.fetchQuery({ queryKey, queryFn: async () => facts });
+  show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  let complete: ((value: DraftPayoutContext) => void) | undefined;
+  vi.mocked(getDraftPayoutContext).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await act(async () => {
+    void client.invalidateQueries();
+  });
+  expect(getDraftPayoutContext).toHaveBeenCalledTimes(2);
+  expect(listPayoutCalendar).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeDisabled());
+  await act(async () => {
+    complete?.(context);
+  });
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  // Identical background dependency reads do not amplify a completed refresh.
+  await act(async () => {
+    for (const queryKey of keys) await client.fetchQuery({ queryKey, queryFn: async () => facts });
+  });
+  expect(getDraftPayoutContext).toHaveBeenCalledTimes(2);
+  expect(listPayoutCalendar).toHaveBeenCalledTimes(2);
+  // A real dependency change still requires a new authoritative context GET.
+  vi.mocked(getDraftPayoutContext).mockResolvedValue({ ...context, eligible_positions: 0 });
+  await act(async () => {
+    await client.fetchQuery({ queryKey: keys[0], queryFn: async () => [{ id: 2 }] });
+  });
+  await waitFor(() => expect(getDraftPayoutContext).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeDisabled());
+  expect(listPayoutCalendar).toHaveBeenCalledTimes(3);
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });

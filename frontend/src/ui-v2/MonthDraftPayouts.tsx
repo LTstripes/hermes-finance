@@ -89,27 +89,57 @@ export function MonthDraftPayouts({
     onPendingChange?.(busy || unconfirmed);
     return () => onPendingChange?.(false);
   }, [busy, unconfirmed, onPendingChange]);
-  useEffect(
-    () =>
-      client.getQueryCache().subscribe((event) => {
-        if (
-          event.type === "updated" &&
-          [
-            "broker-months",
-            "source-intakes",
-            "instruments",
-            "positions",
-            "instrument-market-mapping",
-          ].includes(String(event.query.queryKey[0])) &&
-          (event.action.type === "invalidate" ||
-            (event.action.type === "success" && event.query.state.dataUpdateCount > 1))
-        ) {
-          void client.invalidateQueries({ queryKey: ["draft-payouts", monthId] });
-          void client.invalidateQueries({ queryKey: ["draft-payout-calendar", monthId] });
-        }
-      }),
-    [client, monthId],
-  );
+  useEffect(() => {
+    const dependencies = [
+      "broker-months",
+      "source-intakes",
+      "instruments",
+      "positions",
+      "instrument-market-mapping",
+    ];
+    const fingerprints = new Map(
+      client
+        .getQueryCache()
+        .getAll()
+        .filter((query) => dependencies.includes(String(query.queryKey[0])))
+        .map((query) => [query.queryHash, JSON.stringify(query.state.data)]),
+    );
+    let active = true;
+    let queued = false;
+    const invalidate = () => {
+      if (queued) return;
+      queued = true;
+      // One global invalidation emits several dependency events and already
+      // refetches this panel. Do not cancel/restart that read for every event.
+      queueMicrotask(() => {
+        queued = false;
+        if (!active) return;
+        void client.invalidateQueries({
+          predicate: (query) =>
+            ["draft-payouts", "draft-payout-calendar"].includes(String(query.queryKey[0])) &&
+            query.queryKey[1] === monthId &&
+            !(query.state.isInvalidated && query.state.fetchStatus === "fetching"),
+        });
+      });
+    };
+    const unsubscribe = client.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || !dependencies.includes(String(event.query.queryKey[0])))
+        return;
+      if (event.action.type === "invalidate") {
+        invalidate();
+        return;
+      }
+      if (event.action.type !== "success") return;
+      const before = fingerprints.get(event.query.queryHash);
+      const after = JSON.stringify(event.query.state.data);
+      fingerprints.set(event.query.queryHash, after);
+      if (event.action.manual || (before !== undefined && before !== after)) invalidate();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [client, monthId]);
 
   async function readSaved() {
     await Promise.all([
