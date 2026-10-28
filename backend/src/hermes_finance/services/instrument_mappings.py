@@ -5,6 +5,7 @@ Does not read or write PositionSnapshot, quotes, or historical months.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -240,6 +241,7 @@ def verify_identity_with_provider(
     instrument: Instrument,
     identity: MarketIdentity,
     provider: MarketDataProvider,
+    require_exact: bool = False,
 ) -> None:
     """Confirm an already-chosen identity. Never selects among candidates."""
 
@@ -266,6 +268,14 @@ def verify_identity_with_provider(
         local_kind = _mapping_instrument_kind(instrument)
         if matches[0].instrument_kind is not local_kind:
             raise ValueError(incompatible_mapping_message(local_kind))
+        if require_exact and (
+            result.status is not QuoteStatus.OK
+            or len(result.candidates) != 1
+            or not instrument_isin
+            or matches[0].verified_isin != instrument_isin
+            or matches[0].currency != instrument.currency
+        ):
+            raise ValueError("exact provider ISIN/type/currency verification required")
         return
     if result.status is QuoteStatus.AMBIGUOUS or len(result.candidates) > 1:
         raise ValueError("ambiguous market-data candidates cannot be accepted automatically")
@@ -325,6 +335,9 @@ def set_accepted_mapping(
     provider_venue_id: str | None = None,
     isin: str | None = None,
     verify_provider: MarketDataProvider | None = None,
+    require_exact: bool = False,
+    before_write: Callable[[], None] | None = None,
+    after_flush: Callable[[InstrumentMarketMapping], None] | None = None,
 ) -> InstrumentMappingView:
     instrument = get_instrument(session, instrument_id)
     identity = validate_accepted_identity(
@@ -350,7 +363,16 @@ def set_accepted_mapping(
             instrument=instrument,
             identity=identity,
             provider=verify_provider,
+            require_exact=require_exact,
         )
+
+    if before_write is not None:
+        # Optional DRAFT orchestration guard: provider I/O is finished; the
+        # caller now reserves its month writer and checks the pinned source.
+        session.rollback()
+        before_write()
+        instrument = get_instrument(session, instrument_id)
+        validate_accepted_identity(instrument, identity)
 
     row = session.get(InstrumentMarketMapping, instrument_id)
     if row is None:
@@ -361,6 +383,10 @@ def set_accepted_mapping(
     row.provider_venue_id = identity.provider_venue_id
     row.excluded = False
     _touch(row)
+    if after_flush is not None:
+        session.flush()
+        session.refresh(row)
+        after_flush(row)
     session.commit()
     session.refresh(row)
     session.refresh(instrument)

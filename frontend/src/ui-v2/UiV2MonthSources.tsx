@@ -1,20 +1,21 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ConfirmDialog } from "../components/ui";
 import { formatApiError } from "../api/client";
-import { SourceMonthReturn } from "./SourceMonthReturn";
 import { listAllSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { ReportingMonth } from "../api/types";
 import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
+import { ConfirmDialog } from "../components/ui";
 import { formatDate } from "../lib/format";
-import { lastDayOfMonth } from "../lib/period";
 import { brokerSourceTitle } from "../lib/ownerCopy";
-import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
+import { lastDayOfMonth } from "../lib/period";
+import { MonthDraftPayouts } from "./MonthDraftPayouts";
 import { monthWorkspacePath } from "./monthSelection";
+import { SourceMonthReturn } from "./SourceMonthReturn";
+import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
@@ -55,6 +56,11 @@ export function UiV2MonthSources({
   );
   const [nextAccount, setNextAccount] = useState<string | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
+  const [forecastPending, setForecastPending] = useState(false);
+  useEffect(() => {
+    onPendingChange?.(uploadPending || forecastPending);
+    return () => onPendingChange?.(false);
+  }, [uploadPending, forecastPending, onPendingChange]);
   const [journalDirty, setJournalDirty] = useState(false);
   const reportDirty = useCallback(
     (dirty: boolean) => {
@@ -63,13 +69,9 @@ export function UiV2MonthSources({
     },
     [onDirtyChange],
   );
-  const reportUploadPending = useCallback(
-    (pending: boolean) => {
-      setUploadPending(pending);
-      onPendingChange?.(pending);
-    },
-    [onPendingChange],
-  );
+  const reportUploadPending = useCallback((pending: boolean) => {
+    setUploadPending(pending);
+  }, []);
   const { command: journalCommand } = useSourceIntakeRecovery();
   // Raw URL values distinguish invalid/duplicate scopes, including A→invalid→A.
   const scope = JSON.stringify(params.getAll("source_account"));
@@ -318,7 +320,7 @@ export function UiV2MonthSources({
               compact
               onPendingChange={reportUploadPending}
               reviewDisabled={unresolved}
-              disabled={unresolved || uploadWouldDiscard}
+              disabled={unresolved || uploadWouldDiscard || forecastPending}
               knownSources={list.data}
               onSaved={(file, intake) => {
                 savedFiles.current.set(intake.id, file);
@@ -363,7 +365,7 @@ export function UiV2MonthSources({
                 Счёт источника месяца
                 <select
                   aria-label="Счёт источника месяца"
-                  disabled={uploadPending}
+                  disabled={uploadPending || forecastPending}
                   value={account}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -431,7 +433,7 @@ export function UiV2MonthSources({
                       <div className={styles.actions}>
                         <button
                           type="button"
-                          disabled={changingScope || unresolved}
+                          disabled={changingScope || unresolved || forecastPending}
                           onClick={() => openSource(intake.id)}
                         >
                           {month.status === "closed"
@@ -458,6 +460,14 @@ export function UiV2MonthSources({
           )}
         </div>
       </UiV2Panel>
+      <MonthDraftPayouts
+        key={`draft-forecasts:${month.id}`}
+        monthId={month.id}
+        closed={month.status === "closed"}
+        disabled={uploadPending || unresolved || journalDirty || changingScope}
+        sourceVersion={original.confirmed?.request_id}
+        onPendingChange={setForecastPending}
+      />
       {!changingScope &&
       !list.isPending &&
       !list.isError &&
@@ -507,7 +517,7 @@ export function UiV2MonthSources({
               key={review.generation}
               monthId={review.monthId}
               closed={month.status === "closed"}
-              scopeBlocked={changingScope}
+              scopeBlocked={changingScope || forecastPending}
               sourceAccount={
                 changingScope
                   ? (JSON.parse(review.scope)[0] ?? "")

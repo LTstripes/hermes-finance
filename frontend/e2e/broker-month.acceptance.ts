@@ -7,7 +7,16 @@ async function monthPanel(page: Page, panel: "brokers" | "close") {
     .getByRole("link", { name: panel === "brokers" ? /Брокерские выписки/ : /Закрыть месяц/ })
     .click();
   const discard = page.getByRole("button", { name: "Перейти без сохранения", exact: true });
+  // The router's dirty-input dialog may render after click() resolves.
+  // Wait for either the destination or that explicit navigation decision.
+  await expect
+    .poll(
+      async () =>
+        new URL(page.url()).searchParams.get("panel") === panel || (await discard.isVisible()),
+    )
+    .toBe(true);
   if (await discard.isVisible()) await discard.click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("panel") === panel);
 }
 async function uploadOriginal(
   page: Page,
@@ -430,6 +439,51 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1";
   });
+  const forecast = page.getByRole("button", {
+    name: "Получить и сохранить прогнозы Т-Инвест",
+    exact: true,
+  });
+  await expect(forecast).toBeEnabled();
+  await forecast.click();
+  await expect(page.getByText(/Позиций обновлено: 2; без изменений: 0/)).toBeVisible();
+  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
+    /25\s*₽/,
+  );
+  await expect(
+    page.getByRole("table", { name: "Возврат номинала · отдельно от дохода" }),
+  ).toContainText(/10\s000\s*₽/);
+  const forecasts = await (
+    await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")
+  ).json();
+  expect(forecasts.flatMap((period: { items: unknown[] }) => period.items)).toHaveLength(3);
+  const savedForecasts = await (await request.get("/api/synthetic-broker-inventory")).json();
+  await page.screenshot({ path: info.outputPath("draft-forecasts-1280.png"), fullPage: true });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("draft-forecasts-1280-125-percent.png"),
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1";
+  });
+  await forecast.click();
+  await expect(page.getByText(/Позиций обновлено: 0; без изменений: 2/)).toBeVisible();
+  expect(
+    (await (await request.get("/api/synthetic-broker-inventory")).json()).table_digests,
+  ).toEqual(savedForecasts.table_digests);
+  const providerCalls = await (await request.get("/api/synthetic-draft-provider-calls")).json();
+  await reloadWorkspace(page);
+  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
+    /25\s*₽/,
+  );
+  expect(await (await request.get("/api/synthetic-draft-provider-calls")).json()).toEqual(
+    providerCalls,
+  );
   await monthPanel(page, "close");
   await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
@@ -1966,7 +2020,27 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
     review.getByText(`Выплата #${actual.target_id}: доказательство отозвано`, { exact: true }),
   ).toBeVisible();
   await prepareSettlement("reaffirm", "доказательство отозвано");
+  const reaffirmation = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/broker-months/payout-apply") &&
+      response.request().method() === "POST",
+  );
+  const reaffirmationRead = page.waitForResponse((response) =>
+    response.url().endsWith(obligationUrl),
+  );
   await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
+  const reaffirmedResponse = await reaffirmation;
+  expect(reaffirmedResponse.ok(), await reaffirmedResponse.text()).toBe(true);
+  const reaffirmed = await reaffirmedResponse.json();
+  const obligationsResponse = await reaffirmationRead;
+  expect(obligationsResponse.ok(), await obligationsResponse.text()).toBe(true);
+  const obligations = await obligationsResponse.json();
+  const current = obligations.find(
+    (row: { investment_cash_flow_id: number }) => row.investment_cash_flow_id === actual.target_id,
+  );
+  expect(current.terminal_relation.state).toBe("paid");
+  expect(current.terminal_relation.accepted_request_id).toBe(reaffirmed.request_id);
+  expect(payoutWrites).toBe(3);
   await expect(
     review.getByText(`Выплата #${actual.target_id}: исполнено`, { exact: true }),
   ).toBeVisible();

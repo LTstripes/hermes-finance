@@ -219,6 +219,8 @@ def test_exact_uid_resolves_one_candidate() -> None:
     assert identity.provider_instrument_id == STOCK_UID
     assert identity.provider_venue_id is None
     assert identity.isin == STOCK_ISIN
+    assert result.candidates[0].verified_isin == STOCK_ISIN
+    assert result.candidates[0].currency == "RUB"
     assert all("GetLastPrices" not in req.url.path for req in stub.requests)
     assert not any("figi" in json.loads(req.content) for req in stub.requests if req.content)
 
@@ -256,6 +258,24 @@ def test_isin_mismatch_is_rejected() -> None:
     assert result.rejected[0].candidate_isin == "RU0000000000"
     assert result.status is QuoteStatus.UNAVAILABLE
     assert result.candidates == ()
+
+
+@pytest.mark.parametrize("detail_isin", [None, "RU0000000000"])
+def test_discovery_preserves_uid_detail_evidence_separate_from_search_isin(detail_isin):
+    stub = TInvestStub()
+    _prime_stock(stub)
+    stub.set(
+        "GetInstrumentBy",
+        _instrument(
+            STOCK_UID,
+            kind="INSTRUMENT_TYPE_SHARE",
+            instrument_type="share",
+            isin=detail_isin,
+        ),
+    )
+    result = _client(stub).discover_candidates(isin=STOCK_ISIN)
+    # A search/request fallback is not independent UID detail evidence.
+    assert all(candidate.verified_isin != STOCK_ISIN for candidate in result.candidates)
 
 
 def test_multiple_candidates_are_ambiguous() -> None:

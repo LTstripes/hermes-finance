@@ -11524,6 +11524,44 @@ T-Invest market data, Alfa current snapshots, MyBroker historical originals, PDF
 
 ### Durable actual payout settlement (#711)
 
+#### Explicit financial-DRAFT forecast refresh
+
+`GET /api/months/{id}/draft-payouts` returns eligibility and a dependency digest;
+`POST /api/months/{id}/draft-payouts/refresh` is the explicit provider action.
+Eligibility requires a current strict broker-month SOURCE receipt and its native
+positive `PositionSnapshot`, active broker/IIS account, stock/bond ISIN and RUB.
+Source-only observations, copied/manual positions and CLOSED scopes do not qualify.
+No quantity, account or original payload is sent to T-Invest: discovery uses ISIN
+and type, then independent UID detail verification; payout requests use the
+accepted UID and the existing snapshot-date calendar horizon. Unmapped instruments
+with prior applied history, exclusions, ambiguous or incomplete evidence require
+manual review. No mapping replacement is inferred from a provider search.
+
+The orchestration reuses batch preview/apply services, `AppliedProviderPayout`,
+append-only revisions and the merged calendar. Each position is independently
+committed and reread; no new store, background job or retry journal exists. Fresh
+source/identity and forecast dependencies are checked after provider I/O under
+the existing reserved DRAFT writer. Changed quantity requires a current accepted
+financial projection, never source-preview or browser quantity. A single physical
+SQLite connection is retained across this request's short transactions, without
+holding a read/write transaction during network I/O. Its `data_version` guard
+rejects other connections' commits (including absent mapping ABA); own group
+commits do not invalidate later groups. This intentionally fails closed even for
+an unrelated concurrent write. An active saved APP under a different accepted UID
+in the same month/account/instrument requires manual review before any new save.
+Only complete unambiguous NEW/REVISED future RUB events can be selected; repeated unchanged
+events create no revision. Omission/error does not erase persisted forecasts.
+Mixed success reports both saved rows and exceptions; lost acknowledgement is
+recovered by GET, then a new explicit request with the fresh digest.
+
+Manual candidates, inactive forecasts and actual payout competitors remain review
+items. Current paid events are skipped; canonical actual lineage, including
+retired links, cannot be revived by forecast refresh. No ICF, ECF, reconciliation,
+source receipt or CLOSED month is rewritten. Provider announced amounts do not
+prove personal net/tax, including when legacy calendar DTO names contain `net`.
+
+#### Actual settlement authority
+
 ICF remains the sole actual net fact; APP/ECF remain forecasts. The existing
 reconciliation table stores immutable `count_actual` provenance to exact ICF,
 Money receipt, APP revision and/or ECF revision, canonical event key and settlement

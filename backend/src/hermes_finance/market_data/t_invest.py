@@ -451,6 +451,8 @@ class TInvestClient:
                     exchange=display.exchange,
                     api_trade_available=display.api_trade_available,
                     position_uid=display.position_uid,
+                    verified_isin=_normalize_isin(_text(detail, "isin")),
+                    currency="RUB",  # Both quote and bond nominal checked above.
                 )
             )
 

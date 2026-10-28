@@ -268,14 +268,75 @@ def main():
         app.router.routes.insert(0, app.router.routes.pop())
 
         class LocalPayoutProvider:
+            calls = 0
+
+            def discover_candidates(self, **kwargs):
+                from hermes_finance.market_data.dto import DiscoverResult, QuoteStatus
+
+                return DiscoverResult(QuoteStatus.UNAVAILABLE)
+
             def fetch_payouts(self, request):
+                from decimal import Decimal
+
+                from hermes_finance.market_data.payout import (
+                    PayoutEvent,
+                    PayoutEventKind,
+                    PayoutEventStatus,
+                )
+
+                self.calls += 1
+                events = []
+                if request.calendar_from == date(2030, 1, 31):
+                    bond = request.instrument_uid.endswith("000000000002")
+                    for kind, identity, payment, amount in (
+                        [
+                            (PayoutEventKind.COUPON, "n:1", date(2030, 2, 15), "2.50"),
+                            (
+                                PayoutEventKind.REDEMPTION,
+                                "mty-date:2030-12-31",
+                                date(2030, 12, 31),
+                                "1000",
+                            ),
+                        ]
+                        if bond
+                        else [
+                            (
+                                PayoutEventKind.DIVIDEND,
+                                "r:2030-02-10",
+                                date(2030, 2, 15),
+                                "2.50",
+                            )
+                        ]
+                    ):
+                        events.append(
+                            PayoutEvent(
+                                provider="t_invest",
+                                instrument_uid=request.instrument_uid,
+                                event_kind=kind,
+                                identity_key=identity,
+                                status=PayoutEventStatus.OK,
+                                payment_date=payment,
+                                per_unit_amount=Decimal(amount),
+                                currency="RUB",
+                                source_method="synthetic",
+                                provider_filter_basis="paymentDate",
+                                provider_filter_date=payment,
+                            )
+                        )
                 return PayoutFetchResult(
                     provider="t_invest",
                     instrument_uid=request.instrument_uid,
-                    events=(),
+                    events=tuple(events),
                 )
 
         app.state.payout_provider = LocalPayoutProvider()
+        app.state.market_data_provider = app.state.payout_provider
+
+        @app.get("/api/synthetic-draft-provider-calls")
+        def draft_provider_calls():
+            return {"calls": app.state.payout_provider.calls}
+
+        app.router.routes.insert(0, app.router.routes.pop())
 
         @app.get("/api/synthetic-broker-source/{kind}")
         def source(kind: str):
