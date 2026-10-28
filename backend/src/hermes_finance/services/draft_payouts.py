@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import timedelta
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import InstrumentType, MarketMappingState
@@ -143,8 +144,12 @@ def read_context(session, month_id):
 
 def _source_current(session, month_id, source_token):
     month = session.get(ReportingMonth, month_id, populate_existing=True)
+    connection = session.connection()
     return (
-        month is not None
+        connection.connection.driver_connection is session.info["draft_payout_connection"]
+        and connection.exec_driver_sql("PRAGMA data_version").scalar_one()
+        == session.info["draft_payout_data_version"]
+        and month is not None
         and month.status == "draft"
         and broker_months._dependencies(session) == source_token
     )
@@ -281,6 +286,24 @@ def _refresh_position(session, item, month_id, version, source_token, mapping_to
         start, end = actual_payouts._future_bounds(month)
         mapping = get_instrument_mapping(session, item["instrument_id"])
         uid = mapping.identity.provider_instrument_id
+        if (
+            session.scalar(
+                select(AppliedProviderPayout.id)
+                .where(
+                    AppliedProviderPayout.reporting_month_id == month_id,
+                    AppliedProviderPayout.account_id == item["account_id"],
+                    AppliedProviderPayout.instrument_id == item["instrument_id"],
+                    AppliedProviderPayout.lifecycle == "active",
+                    (AppliedProviderPayout.provider != T_INVEST_PROVIDER)
+                    | (AppliedProviderPayout.provider_instrument_uid != uid),
+                )
+                .limit(1)
+            )
+            is not None
+        ):
+            # The calendar retains active history under the previous UID. A new
+            # accepted mapping cannot prove these are independent future events.
+            return "needs_review", ["saved_provider_identity_changed"], []
         context_token = _forecast_token(session)
     request = PayoutFetchRequest(
         instrument_uid=uid, calendar_from=start, calendar_to=end - timedelta(days=1)
@@ -379,6 +402,32 @@ def _refresh_position(session, item, month_id, version, source_token, mapping_to
 
 
 def refresh(
+    session, month_id, *, context_digest, forecast_version, mapping_provider, payout_provider
+):
+    # Pin one physical connection across short read/write transactions and I/O.
+    # SQLite data_version changes on OTHER connections' commits, including
+    # absent->excluded->absent mapping ABA, but not on this batch's own commits.
+    # https://www.sqlite.org/pragma.html#pragma_data_version
+    # No transaction or writer reservation is held during provider requests.
+    with session.get_bind().connect() as connection:
+        with Session(bind=connection, autoflush=False, expire_on_commit=False) as pinned:
+            pinned.info.update(session.info)
+            pinned.info["draft_payout_connection"] = connection.connection.driver_connection
+            pinned.info["draft_payout_data_version"] = (
+                pinned.connection().exec_driver_sql("PRAGMA data_version").scalar_one()
+            )
+            pinned.rollback()
+            return _refresh(
+                pinned,
+                month_id,
+                context_digest=context_digest,
+                forecast_version=forecast_version,
+                mapping_provider=mapping_provider,
+                payout_provider=payout_provider,
+            )
+
+
+def _refresh(
     session, month_id, *, context_digest, forecast_version, mapping_provider, payout_provider
 ):
     with coherent_read_snapshot(session):

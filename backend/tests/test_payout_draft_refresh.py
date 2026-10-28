@@ -41,6 +41,7 @@ UID = "44444444-4444-4444-4444-444444444444"
 class Provider:
     def __init__(self):
         self.discovery = []
+        self.uid = UID
         self.requests = []
         self.amount = Decimal("2.50")
         self.payment = date(2030, 2, 15)
@@ -52,7 +53,7 @@ class Provider:
     def discover_candidates(self, **kwargs):
         self.discovery.append(kwargs)
         candidate = DiscoverCandidate(
-            identity=MarketIdentity("t_invest", UID, None, ISIN),
+            identity=MarketIdentity("t_invest", self.uid, None, ISIN),
             instrument_kind=InstrumentType.STOCK,
             verified_isin=ISIN,
             currency="RUB",
@@ -318,6 +319,58 @@ def test_provider_mapping_aba_during_network_rejects_old_context(database, when)
     provider.on_fetch = aba
     assert refresh(client, month)["summary"]["updated"] == 0
     assert calendar(client, month) == []
+
+
+@pytest.mark.parametrize("when", [1, 2])
+def test_absent_mapping_aba_during_discovery_and_verification_cannot_auto_accept(database, when):
+    from hermes_finance.services.instrument_mappings import (
+        clear_instrument_mapping_exclusion,
+        exclude_instrument_mapping,
+    )
+
+    provider = Provider()
+    client, month = setup(database, provider)
+    original = provider.discover_candidates
+
+    def aba(**kwargs):
+        result = original(**kwargs)
+        if len(provider.discovery) == when:
+            with database.session_factory() as session:
+                exclude_instrument_mapping(session, 1)
+                clear_instrument_mapping_exclusion(session, 1)
+        return result
+
+    provider.discover_candidates = aba
+    before = _all_month_tables(database)
+    assert refresh(client, month)["summary"]["updated"] == 0
+    assert provider.requests == []
+    assert _all_month_tables(database) == before
+
+
+def test_replaced_accepted_uid_requires_review_before_new_forecast(database):
+    from hermes_finance.services.instrument_mappings import set_accepted_mapping
+
+    provider = Provider()
+    client, month = setup(database, provider)
+    assert refresh(client, month)["summary"]["updated"] == 1
+    provider.uid = "55555555-5555-5555-5555-555555555555"
+    with database.session_factory() as session:
+        set_accepted_mapping(
+            session,
+            1,
+            provider="t_invest",
+            provider_instrument_id=provider.uid,
+            isin=ISIN,
+            verify_provider=provider,
+        )
+    before = _all_month_tables(database)
+    calls = len(provider.requests)
+    result = refresh(client, month)
+    assert result["summary"]["needs_review"] == 1
+    assert result["items"][0]["reason_codes"] == ["saved_provider_identity_changed"]
+    assert len(provider.requests) == calls
+    assert _all_month_tables(database) == before
+    assert len(calendar(client, month)) == 1
 
 
 def test_closed_stale_get_and_manual_duplicate_never_coerce_eligibility(database):

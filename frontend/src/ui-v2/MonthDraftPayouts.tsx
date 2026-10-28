@@ -25,6 +25,8 @@ const REASONS: Record<string, string> = {
   mapping_unavailable:
     "UID не найден или провайдер недоступен; проверь сопоставление и настройки Т-Инвест.",
   mapping_excluded: "Бумага исключена из обновления; проверь её сопоставление в справочнике.",
+  saved_provider_identity_changed:
+    "Сохранённые прогнозы используют другой UID. Сначала проверь прежние события в календаре выплат.",
   mapping_exact_identity_required:
     "Провайдер не подтвердил точные ISIN, тип и валюту; нужна ручная проверка.",
   actual_payout_review_required:

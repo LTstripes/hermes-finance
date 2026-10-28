@@ -11542,8 +11542,14 @@ append-only revisions and the merged calendar. Each position is independently
 committed and reread; no new store, background job or retry journal exists. Fresh
 source/identity and forecast dependencies are checked after provider I/O under
 the existing reserved DRAFT writer. Changed quantity requires a current accepted
-financial projection, never source-preview or browser quantity. Only complete
-unambiguous NEW/REVISED future RUB events can be selected; repeated unchanged
+financial projection, never source-preview or browser quantity. A single physical
+SQLite connection is retained across this request's short transactions, without
+holding a read/write transaction during network I/O. Its `data_version` guard
+rejects other connections' commits (including absent mapping ABA); own group
+commits do not invalidate later groups. This intentionally fails closed even for
+an unrelated concurrent write. An active saved APP under a different accepted UID
+in the same month/account/instrument requires manual review before any new save.
+Only complete unambiguous NEW/REVISED future RUB events can be selected; repeated unchanged
 events create no revision. Omission/error does not erase persisted forecasts.
 Mixed success reports both saved rows and exceptions; lost acknowledgement is
 recovered by GET, then a new explicit request with the fresh digest.
