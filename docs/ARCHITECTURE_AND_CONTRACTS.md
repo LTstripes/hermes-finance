@@ -6543,8 +6543,9 @@ income or automatic repair. Explicit account-only costs stay outside instruments
 ambiguous possible instrument costs block completeness.
 
 Economic bond endpoints require evidenced dirty value or clean plus boundary NKD.
-Current saved source formats do not provide that proof: `reported_unknown` and
-`bond_valuation_basis_unknown` keep full economic P/MD NULL. Only
+Saved source facts alone do not provide that proof: `reported_unknown` and
+`bond_valuation_basis_unknown` keep full economic P/MD NULL without the separately
+reviewed instrument-only R2 read input below. Only
 `statement_estimate` may contain the conditional reported-value P/MD, with explicit
 provisional assumptions. Assumed trade face likewise cannot establish a full
 economic result. Unsupported source redemption/amortization/in-kind facts remain
@@ -6650,6 +6651,42 @@ exact account XIRR/TWRR unchanged. Applying the broker's dirty-EOD field definit
 to real retained source/account/ISIN/period requires the separate original-bound
 #767 validation and accepted R2 scope. No EOD amount/NKD adjustment or basis
 backfill follows from trade T including N.
+
+The instrument service accepts an optional backend-only `ReviewedBondValuation`
+input. A trusted caller must supply a **currently accepted** independent review
+decision on each invocation. Its bounded `review_reference` is provenance, not
+authentication or an acceptance operation. The resolver verifies applicability;
+it does not authenticate the reviewer or detect withdrawal/supersession of a
+decision from source revisions. Those decision-lifecycle obligations remain with
+the caller. There is no HTTP input, environment/file loader, automatic builder,
+registry, cache, DB write or production caller in this slice. Ordinary API reads
+therefore retain their existing unknown basis. Production delivery and review
+revocation require a separately accepted caller contract; this service mechanism
+alone is not a working deployment of R2.
+
+Inside the existing coherent read, the input must match the complete selected
+source set, including failures, and each original hash/provider/parser, intake
+generation/head/manifest and declared range. Each allowed endpoint additionally
+binds exact native account, ISIN, source ordinal, unique recognized observation
+locator/fingerprint and one side/date. Only supported MyBroker source facts with
+the existing preceding-day/covered-to EOD legend qualify. Malformed, duplicate,
+inferred, missing, unreadable or changed source bindings supply no basis. Source
+head changes invalidate an old packet even when its manifest returns to the same
+content. No private identifiers or accepted source allowlist live in code.
+
+All competing observations still participate in endpoint conflict checks. An
+equal other original only corroborates; it receives no review authority and
+cannot replace a missing bound original. With a current matching review and
+valid endpoint, `economic_value_kopecks = reported_value_kopecks`, basis=`dirty`,
+and separate accrued interest remains NULL. The applied review reference appears
+in endpoint source references. An accepted side never promotes the other side;
+monthly NKD-unknown disclosure clears only when both exact month boundaries pass.
+No cash/trade/payout/flow, currency, quantity, source completeness or other guard
+is cleared. Root account reconciliation deliberately uses the pre-R2 analyses,
+so this instrument-only input cannot improve account complete/status or amounts.
+Account statement DTO/adapter, H1, strict writer and financial authority remain
+unchanged; there is no source mutation or basis backfill.
+
 Missing commission or bond NKD is unknown; omitted stock NKD is inapplicable zero.
 Pending or missing settlement produces `trade_missing_settlement`,
 including both the execution and planned settlement months for pending trades.

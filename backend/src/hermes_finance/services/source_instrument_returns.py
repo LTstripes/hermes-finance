@@ -563,7 +563,11 @@ def _source_gap(code):
     return code in _SOURCE_GAPS
 
 
-def _month(session, views, isin, instrument_type, month, income, gaps, previous):
+def _month(
+    session, views, isin, instrument_type, month, income, gaps, previous, *, reviewed_basis=None
+):
+    from hermes_finance.services.source_instrument_events import endpoint
+
     end = _month_end(month)
     relevant = [
         v
@@ -573,9 +577,19 @@ def _month(session, views, isin, instrument_type, month, income, gaps, previous)
     flags = set()
     if not relevant:
         flags.add("missing_month")
-    if instrument_type == "bond":
+    if instrument_type == "bond" and not (
+        relevant
+        and reviewed_basis is not None
+        and all(
+            endpoint(
+                views, isin, day, instrument_type, reviewed_basis=reviewed_basis
+            ).valuation_basis
+            == "dirty"
+            for day in (month - timedelta(days=1), end)
+        )
+    ):
         flags.add("bond_valuation_basis_unknown")
-    elif instrument_type != "stock":
+    elif instrument_type not in {"stock", "bond"}:
         flags.add("instrument_type_unknown")
     for gap in gaps:
         if (
@@ -709,8 +723,10 @@ def read_instrument_returns(
     isin: str | None = None,
     opening_date: date | None = None,
     closing_date: date | None = None,
+    reviewed_bond_valuation=None,
 ) -> SourceInstrumentReturns:
     """Isolate unreadable sources and individual operand gaps; perform no writes."""
+    from hermes_finance.services.source_bond_valuation import resolve_reviewed_basis
     from hermes_finance.services.source_instrument_events import (
         analyse,
         read_events,
@@ -726,6 +742,7 @@ def read_instrument_returns(
     sources = []
     gaps = []
     selected, native_scope = _selected_sources(session, source_account)
+    reviewed_basis = resolve_reviewed_basis(selected, native_scope, reviewed_bond_valuation)
     for original, view, error in selected:
         try:
             sources.append(original)
@@ -787,6 +804,7 @@ def read_instrument_returns(
         if gap not in gaps:
             gaps.append(gap)
     instruments = []
+    account_analyses = []
     reconciliation = None
     if sources:
         start = min(s.covered_from for s in sources).replace(day=1)
@@ -802,7 +820,15 @@ def read_instrument_returns(
             month = start
             while month <= end:
                 row = _month(
-                    session, views, isin, kind, month, income, gaps, rows[-1] if rows else None
+                    session,
+                    views,
+                    isin,
+                    kind,
+                    month,
+                    income,
+                    gaps,
+                    rows[-1] if rows else None,
+                    reviewed_basis=reviewed_basis,
                 )
                 rows.append(row)
                 month = _next_month(month)
@@ -818,11 +844,28 @@ def read_instrument_returns(
                         events,
                         references,
                         gaps,
+                        reviewed_basis=reviewed_basis,
                     ),
                 )
                 for row in rows
             ]
-            analysis = analyse(views, isin, kind, first, last, events, references, gaps)
+            analysis = analyse(
+                views,
+                isin,
+                kind,
+                first,
+                last,
+                events,
+                references,
+                gaps,
+                reviewed_basis=reviewed_basis,
+            )
+            # Instrument R2 does not grant account reconciliation/EOD authority.
+            account_analyses.append(
+                analyse(views, isin, kind, first, last, events, references, gaps)
+                if kind == "bond" and reviewed_basis is not None
+                else analysis
+            )
             analysis = replace(
                 analysis,
                 chained_monthly=chain_monthly(
@@ -843,7 +886,7 @@ def read_instrument_returns(
             views,
             first,
             last,
-            [i.analysis for i in instruments],
+            account_analyses,
             events,
             filtered=requested_isin is not None,
         )
