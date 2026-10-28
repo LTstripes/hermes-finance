@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-27**. This is the sole changing project status book. Current source
+Updated **2026-10-28**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -8,72 +8,86 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-**GitHub CODE MERGED (2026-10-27):** canonical `main@df1e6884fa7e70cb3559363d5fb1f90b18f11093`
-contains the accepted [#976](https://github.com/LTstripes/hermes-finance/pull/976)
-source-account alias grouping and honest partial RUB history, [#977](https://github.com/LTstripes/hermes-finance/pull/977)
-one Month path/compact desktop forms and verified stale ISIN/date navigation fix, and
-[#979](https://github.com/LTstripes/hermes-finance/pull/979) the read-only
-four-checkbox «Моя доходность» basket. [#977 exact-main CI40575981857](https://github.com/LTstripes/hermes-finance/actions/runs/40575981857)
-**SUCCESS** on `main@6129090c62b9da69ee0ad3521aef77d675a51925`.
-[#979 exact candidate CI40567222067](https://github.com/LTstripes/hermes-finance/actions/runs/40567222067)
-attempt 2 and [UI40567222060](https://github.com/LTstripes/hermes-finance/actions/runs/40567222060)
-**SUCCESS** with one evidence-based G04 transport retry, independently reviewed.
-**Final combined-main [CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918): FAILED** on the exact merged SHA: Frontend 1/1356 tests failed on absent CLOSED default selecting a source period without Owner choice. Bounded [Draft #980](https://github.com/LTstripes/hermes-finance/pull/980) corrects this implicit selection: its Frontend job and [UI40582369342](https://github.com/LTstripes/hermes-finance/actions/runs/40582369342) passed, but exact [CI40582369190](https://github.com/LTstripes/hermes-finance/actions/runs/40582369190) FAILED on G04 broker-month historical bond quantity/date after 23 other broker-month tests passed. [Preserved G04 trace review](https://github.com/LTstripes/hermes-finance/pull/980#issuecomment-6453594768) proved the test changed the **retired stock date control** after the URL selected the new bond but before the new bond panel mounted. The accepted #977 guard correctly discarded that stale event (ISIN never regressed). A further test-only correction waits for the **new instrument panel** before selecting its date, preserving the exact bond quantity/month EOD assertions and adding no sleep/retry. New [#980 candidate `69313170`](https://github.com/LTstripes/hermes-finance/pull/980), exact [CI40584079496](https://github.com/LTstripes/hermes-finance/actions/runs/40584079496)/[UI40584079506](https://github.com/LTstripes/hermes-finance/actions/runs/40584079506) and independent review remain pending; no product G04 guard was relaxed.
-No new aggregate Test/Owner-real UI UAT is implied by PR or CI evidence.
+**Canonical GitHub `main@20ada2079114a3a7fded71283f2ae38776dbefb5` — code merged, final push CI pending at this checkpoint.**
+Accepted work: [#976](https://github.com/LTstripes/hermes-finance/pull/976)
+(native source-account aliases and partial RUB history),
+[#977](https://github.com/LTstripes/hermes-finance/pull/977)
+(Month forms/order/source-vs-actual-vs-forecast and stale ISIN/date guard),
+[#979](https://github.com/LTstripes/hermes-finance/pull/979)
+(four-checkbox investment basket with honest partial/NULL outcomes), and
+[#980](https://github.com/LTstripes/hermes-finance/pull/980)
+(no implicit source-period selection without CLOSED and G04 bound to new ISIN panel).
+[#980 exact candidate CI40584079496](https://github.com/LTstripes/hermes-finance/actions/runs/40584079496)
+and [UI40584079506](https://github.com/LTstripes/hermes-finance/actions/runs/40584079506)
+**COMPLETED SUCCESS** at `693131707157999d42ea8912241551e7ecbc391d`,
+with [independent UI/contract GO](https://github.com/LTstripes/hermes-finance/pull/980#issuecomment-6460306343)
+(Reviewer did not independently open prior native trace archive). Exact-head
+guarded squash merge is `20ada2079114a3a7fded71283f2ae38776dbefb5`.
+**Canonical final-main [CI40629971268](https://github.com/LTstripes/hermes-finance/actions/runs/40629971268)
+is QUEUED, not a verified success** at this document checkpoint.
+Do not release or repin Test solely on PR CI.
 
-The earlier [#976 push-main failure40557762042](https://github.com/LTstripes/hermes-finance/actions/runs/40557762042)
-was a genuine Month stale ISIN/date control P2 and remains dated failure evidence;
-the fixed [#977 HEAD](https://github.com/LTstripes/hermes-finance/pull/977#issuecomment-6452270051)
-passed deterministic BrowserRouter cases and G04, independently reviewed and then merged.
-No blanket test skip, assertion reduction or unexplained retry is accepted.
+Earlier exact-main [CI40557762042](https://github.com/LTstripes/hermes-finance/actions/runs/40557762042)
+FAILED on an actual stale ISIN/date navigation P2, subsequently fixed in #977.
+[CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918)
+FAILED 1/1356 frontend tests (implicit source interval without CLOSED);
+the first #980 candidate also exposed an old-panel G04 test interaction.
+The [trace-backed correction](https://github.com/LTstripes/hermes-finance/pull/980#issuecomment-6453594768)
+waits for the selected bond's new ISIN panel before changing quantity date;
+the production stale-control guard, exact quantity assertions and read-only
+provider boundaries remain unchanged. These failures are historical evidence,
+not current code acceptance or permission for an unchanged rerun.
 
-**Published/installed Stable remains [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0)**,
-immutable peeled SHA `d53a67409be4283f08f622218743ff5ef8e66ff0`,
-SQLite `0065_source_return_proofs`. [Owner-local Stable receipt](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6408493088)
-attests correct service/physical DB and preserved old CLOSED, sources and financial
-history; later [Operator #711 addendum](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6446621985)
-attests SAME Stable restored. These are attributed Windows-local results, not a fresh cloud DB inspection.
+**Published and installed Stable remains [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0)**,
+peeled SHA `d53a67409be4283f08f622218743ff5ef8e66ff0`,
+SQLite `0065_source_return_proofs`.
+[Owner-local Stable receipt](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6408493088)
+and later [Operator #711 return receipt](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6446621985)
+attest its physical DB, old source/proof rows, CLOSED history and service readback.
+These are attributed Operator-local proofs, not new cloud observation.
 
-**Isolated Test:** [#711 Operator technical rehearsal](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6446728835)
-PASS on the previous pinned Test code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541`;
-its existing physically isolated DB was migrated `0065→0066_actual_payout_links`,
-old values/receipts/9 CLOSED preserved and 35 real-history GETs passed.
-The Test was then **stopped on 0066**, Stable restored to 0065. This is **NOT**
-Test preparation/UAT of the newer `df1e6884` main, not actual source DRAFT,
-forecast saving, native Chrome, financial Close or an approved Stable upgrade.
+**Isolated Test:** prior pinned code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541`
+was technically verified by [#711 0066 migration/read-only
+receipt](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6446728835);
+the existing Test DB is on `0066_actual_payout_links` but Test stopped,
+and same published Stable returned on its 0065 DB.
+35 Owner-history GETs PASS; no newer `main@20ada207` Test preparation,
+native desktop Owner UAT, actual financial DRAFT/Apply/Close or physical restore
+has been accepted.
 
-**Remaining product gate:** Owner changed [#711 forecast plan](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450994944)
-to **broker XML → reviewed actual financial DRAFT/GET → one explicit T-Invest batch
-lookup/save/refresh of forecasts → GET calendar** through existing PositionSnapshot/
-provider-payout revision writers. This **is not implemented by #977/#979**.
-A prior source-journal-only forecast-writer HOLD is superseded for this simpler
-DRAFT-based route, but strict DRAFT can_apply/source account requirements still apply.
-Owner authorized [one separate read-only live T-Invest Test probe](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450551962);
-no actual provider result is verified in GitHub yet.
+**Product/release boundary:** [#711 revised Owner decision](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450994944)
+is **XML → source review → accepted financial DRAFT/GET → one-click T-Invest
+batch lookup, safe forecast save/refresh and calendar GET** using existing
+PositionSnapshot/provider payout revision writers. The one-click bulk
+forecast writer **is NOT delivered by #977/#980**. The former source-only
+persisted-forecast design STOP no longer governs the chosen DRAFT-first path.
+Owner approved [one separately scoped local read-only T-Invest Test
+request](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450551962),
+but no successful real provider auth/result has yet been attested.
+No additional release, Test/Stable operation or financial write is authorized
+by code acceptance.
 
-**Portfolio honesty:** known source-only account-month RUB values, accepted
-deposit interest and unavailable gold/composite return keep their distinct
-basis. Basket `result_kopecks` and overall rate remain NULL; a
-checkbox selection does not manufacture full cross-category returns, a
-2024–2026 monthly valuation, accepted dividends or exact XIRR/TWRR.
-Unresolved NKD/REPO/EOD evidence is separate from honest UI acceptance.
+**Financial limits:** source-only RUB account-month amounts and accepted deposit
+interest are separate read models, not summed into a total personal portfolio
+return. Gold period returns and the full four-category RUB/rate remain NULL;
+historical brokerage-versus-IIS subtype, missing EOD, NKD/REPO and
+money ownership are not guessed or filled with zero.
 
 <a id="s1"></a>
 ## 1. Code, release, installed runtime and UAT are distinct
 
 | Layer | Current verified status |
 | --- | --- |
-| GitHub `main` | `df1e6884fa7e70cb3559363d5fb1f90b18f11093`, #976/#977/#979 merged after independent code/financial review. #977 exact [push CI40575981857](https://github.com/LTstripes/hermes-finance/actions/runs/40575981857) SUCCESS; #979 final combined [push CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918) **FAILED** on one no-CLOSED source-period Frontend regression; [#980](https://github.com/LTstripes/hermes-finance/pull/980) remains Draft/HOLD with traced G04 obsolete-control timing; updated test-only correction at `69313170` has exact CI/UI pending. Frontend and UI of the prior candidate passed. PR CI success is not itself this final gate. |
-| Published release | [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0), peeled `d53a6740…`, released schema 0065. No release yet for #970/0066 or new Month/Returns changes. |
-| HONOR Stable | Attributed local receipts: same published v1.6.0/0065 and protected physical DB, originals, proof receipts and 9 CLOSED preserved. New main code not installed. |
-| Isolated Test | Operator technical 0065→0066 PASS and 35 scoped GETs on pinned `87624e12…`, then Test stopped; no new `df1e6884` repin/desktop acceptance. |
-| Owner UAT | Earlier [v1.6.0 Month/Returns Owner UI GO](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6401873080) plus Stable smoke do **not** certify new #977/#979 UI, DRAFT→T-Invest persistence, actual financial Save/Apply/Close/Reopen or exact full-period return. |
-| Protected operations | Separate exact scope/physical binding/backup and Owner GO for Test changes, live provider usage, financial writes, release #124 and Stable OPS02/Start. One read-only T-Invest probe was approved, not attested complete. |
+| GitHub `main` | `20ada2079114a3a7fded71283f2ae38776dbefb5`, #976/#977/#979/#980 merged; independent #980 GO, [PR CI40584079496](https://github.com/LTstripes/hermes-finance/actions/runs/40584079496) + [UI40584079506](https://github.com/LTstripes/hermes-finance/actions/runs/40584079506) SUCCESS. **Exact main [push CI40629971268](https://github.com/LTstripes/hermes-finance/actions/runs/40629971268) QUEUED**, not yet PASS. |
+| Published release | [v1.6.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.6.0), peeled `d53a6740…`, installed schema 0065. No newer published release or Stable installation. |
+| HONOR Stable | Owner-local evidence: same v1.6.0/0065 and original protected DB, immutable receipts and 9 CLOSED unchanged after Test rehearsal. |
+| Isolated Test | Old code `87624e12…` with migrated isolated DB 0066, then stopped. No new `20ada207` runtime/Owner UAT. |
+| Owner UI UAT | Earlier v1.6.0 UI GO/Stable smoke is NOT new Month/Returns owner browser UAT, financial DRAFT→T-Invest real forecast Apply or full exact XIRR/TWRR. |
+| Protected actions | Explicit physical Test/Stable binding, backup/recovery and stage-specific Owner GO before local repin, provider or real financial writes, release-control #124 and Stable OPS02/Start. One read-only T-Invest diagnostic is authorized, with no returned proof. |
 
-Existing accepted custody-source proof remains one scoped source-only observation
-identity, not a second economic payout. Stored source income and original journals
-do not automatically replace manual financial rows, prove bond clean/dirty/NKD
-basis or grant full portfolio returns.
+Existing accepted custody-source proof remains a scoped source-only observation,
+not an independent economic payout. Source money journal does not override
+manual financial rows, historical CLOSED facts or unknown NKD valuation.
 
 <a id="s2"></a>
 ## 2. What the user can do and what is already calculated
@@ -126,7 +140,10 @@ and **accepted deposit received interest separately**; composite RUB/%
 and gold period result are explicitly unavailable, not computed by averaging
 rates or present-day class inference. An external-flow/transfer/unknown coverage
 cell is unavailable rather than 0. The basket GET does not change financial
-data or silently reconcile forecasts with actual payouts.
+data or silently reconcile forecasts with actual payouts. [#980](https://github.com/LTstripes/hermes-finance/pull/980)
+preserves the selected source interval as an explicit Owner choice when no
+CLOSED reporting month exists, while retaining explicit historical links and
+correct dated quantity on the switched source instrument.
 
 **Historical reconciliation completed, read-only:**
 [private Owner analysis receipt](https://github.com/LTstripes/hermes-finance/issues/940#issuecomment-6397041341)
@@ -156,11 +173,11 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Code/integration gate:** exact [combined-main CI40580924918](https://github.com/LTstripes/hermes-finance/actions/runs/40580924918) FAILED on `df1e6884fa7e70cb3559363d5fb1f90b18f11093`: Frontend no-CLOSED source-period test exposes a real late implicit selection; do not rerun it unchanged. [Draft #980](https://github.com/LTstripes/hermes-finance/pull/980) fixes only that fallback plus its no-auto-selection regression. The second G04 failure's exact Playwright trace proved **old-control event correctly rejected**; updated test now waits for the committed new ISIN panel before choosing a date. Requires exact [candidate CI40584079496](https://github.com/LTstripes/hermes-finance/actions/runs/40584079496)/[UI40584079506](https://github.com/LTstripes/hermes-finance/actions/runs/40584079506), independent source/UI review, guarded merge and exact new-main push SUCCESS before Test/release. Old #976 ISIN race and #979 transport retry remain dated, separately established cases.
-2. **Finish the simple #711 source-financial-DRAFT payout workflow:** [accepted Owner decision](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450994944) requires a successful supported financial DRAFT Preview/Apply/independent GET BEFORE existing T-Invest batch preview and forecast Apply; one explicit button, unique exact ISIN→UID or manual exception, repeated click safely revises only forecasts and GET/Reload never calls provider. Reuse existing snapshot, mapping, applied-provider payout/revision and #970 paid-state contracts, with focused synthetic regressions and independent financial review. If `can_apply=false`, do not fabricate a position or weaken broker source guards. This CODE work is **not delivered**.
-3. **Combined Test and Owner UI/UAT:** after final accepted code and exact-main CI, use supported OPS03 on the existing isolated Test, confirm exact code/physical 0066 DB and migration compatibility without repeating accepted old backup/migration unnecessarily; compare Month → statement/exception/financial DRAFT readiness → payouts and T-Invest stored calendar → Returns four checkboxes/period/Back/Reload, NULL/known partial. The prior Test 0066 PASS was at an earlier code SHA and cannot count as this candidate's UI UAT. Only one separately authorized real read-only T-Invest diagnostic exists; real forecast writes, DRAFT Apply, live batch provider or Close in protected data require appropriate additional Owner GO. Return unchanged Stable after bounded Test.
-4. **One new release then safeguarded Stable:** after exact combined Main/Owner Test acceptance, prepare canonical version/notes, release-control #124 and an independent release review. **Publication and backup-first OPS02 Stable 0065→0066 plus separate owned Start require their own specific Owner approvals** and fresh physically verified backup/recovery cutoff. Test DB/rows never copied onto Stable; an in-place populated 0066→0065 downgrade is not a recovery promise. No automatic release just from CI green.
-5. **Other financial/source follow-ups are separate:** [#769](https://github.com/LTstripes/hermes-finance/issues/769)/[#891](https://github.com/LTstripes/hermes-finance/issues/891)/[#709](https://github.com/LTstripes/hermes-finance/issues/709)/[#940](https://github.com/LTstripes/hermes-finance/issues/940) own missing 2024–26 intermediate EODs, four quantity discrepancies, three date/identity ambiguities, August principal, June REPO [#888](https://github.com/LTstripes/hermes-finance/issues/888), September NKD links [#814](https://github.com/LTstripes/hermes-finance/issues/814) and full bond economic authority. These are not a reason to hide already supported partial numbers or invent exact composite rates. Legacy standalone month editor remains KEEP; old draft #744 and other unrelated work are not part of this release.
+1. **Exact canonical-main gate:** read terminal [CI40629971268](https://github.com/LTstripes/hermes-finance/actions/runs/40629971268) on `20ada2079114a3a7fded71283f2ae38776dbefb5`. Only terminal SUCCESS of required jobs, including G04/native and `ci-ok`, accepts this combined main; any failure needs a concrete remedy, exact new CI, and updated status. No assertion weakening or unchanged blind rerun.
+2. **Complete the agreed #711 DRAFT-first provider feature:** after exact-main GO, one Worker implements [the accepted minimal plan](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6450994944). Strict supported MyBroker Preview/Apply/GET financial DRAFT precedes the existing T-Invest PositionSnapshot batch preview and safe forecast Apply. One explicit action discovers exact ISIN/UID, stores or revises only unambiguous future forecasts, leaves duplicate/uncertain events for review, returns clear GET/readback; repeat click cannot duplicate/retire proved actuals. No source-only new forecast ledger/schema, no autofill of UNKNOWN tax/amount. Require independent financial/source review and exact code CI. This functionality is **not yet merged**.
+3. **One bounded aggregate Test/Owner UI pass:** after the accepted complete code candidate and successful exact-main CI, OPS03 prepares the existing isolated Test for the precise SHA, with physical process/profile/DB identity and 0066 compatibility guards. Previous 0065→0066 Test technical PASS can be reused; it does not certify the newer code or a live UI. Owner visually checks Month desktop fields/route, source-financial DRAFT availability, payout forecast persistence/Back/Reload, Returns categories and partial/NULL coverage. Provider tests require explicit current authorized scope; real Source/Apply/Close actions on protected data remain individually gated. Restore the unchanged Stable after bounded Test.
+4. **One guarded release then Stable:** after Owner test verdict and eligible exact release candidate, canonical version+notes, guarded #124 publication, separate Owner release GO, and backup-first stable OPS02/Start under separate approval with independent recovery/readback. Stable is still 0065; new main includes 0066. Never copy Test DB to Stable or treat an in-place 0066→0065 downgrade as a recovery method.
+5. **Source evidence not blocking honest UI:** unresolved 2024–26 monthly EOD, four position discrepancies, three identity-date ambiguities, August principal, REPO [#888](https://github.com/LTstripes/hermes-finance/issues/888), NKD [#814](https://github.com/LTstripes/hermes-finance/issues/814), old #767 dirty EOD and #769 history acceptance stay their owning financial tasks. Do not fill NULLs, fake gold P&L, duplicate income or re-open closed bugs; standalone month editor remains KEEP pending real consumer retirement.
 
 <a id="s4"></a>
 ## 4. Operating and evidence boundaries
