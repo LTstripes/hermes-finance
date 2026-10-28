@@ -2011,11 +2011,53 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
     fullPage: true,
   });
   await prepareSettlement("retire", "исполнено");
-  const retirement = page.waitForRequest((sent) =>
-    sent.url().endsWith("/api/broker-months/payout-apply"),
+  let r2 = "";
+  const retirement = page.waitForResponse((response) => {
+    if (
+      !response.url().endsWith("/api/broker-months/payout-apply") ||
+      response.request().method() !== "POST"
+    )
+      return false;
+    const sent = response.request().postDataJSON();
+    if (
+      sent.operation !== "retire" ||
+      sent.reporting_month_id !== month.id ||
+      sent.account_id !== account.id ||
+      sent.investment_cash_flow_id !== actual.target_id
+    )
+      return false;
+    r2 = sent.request_id;
+    return true;
+  });
+  const retirementReceiptRead = page.waitForResponse(
+    (response) =>
+      r2 !== "" &&
+      response.request().method() === "GET" &&
+      response.url().endsWith(`/api/broker-months/${r2}`),
+  );
+  const retirementObligationsRead = page.waitForResponse(
+    (response) =>
+      r2 !== "" && response.request().method() === "GET" && response.url().endsWith(obligationUrl),
   );
   await review.getByRole("button", { name: "Подтвердить связь выплаты", exact: true }).click();
-  const r2 = (await retirement).postDataJSON().request_id;
+  const retiredResponse = await retirement;
+  expect(retiredResponse.ok(), await retiredResponse.text()).toBe(true);
+  const retired = await retiredResponse.json();
+  expect(retired.request_id).toBe(r2);
+  const retiredReceiptResponse = await retirementReceiptRead;
+  expect(retiredReceiptResponse.ok(), await retiredReceiptResponse.text()).toBe(true);
+  const retiredReceipt = await retiredReceiptResponse.json();
+  expect(retiredReceipt.request_id).toBe(r2);
+  expect(retiredReceipt.confirmation_digest).toBe(retired.confirmation_digest);
+  expect(retiredReceipt.accepted).toEqual(retired.accepted);
+  const retiredObligationsResponse = await retirementObligationsRead;
+  expect(retiredObligationsResponse.ok(), await retiredObligationsResponse.text()).toBe(true);
+  const retiredObligations = await retiredObligationsResponse.json();
+  const retiredCurrent = retiredObligations.find(
+    (row: { investment_cash_flow_id: number }) => row.investment_cash_flow_id === actual.target_id,
+  );
+  expect(retiredCurrent.terminal_relation.state).toBe("retired");
+  expect(retiredCurrent.terminal_relation.retired_request_id).toBe(r2);
   await expect(
     review.getByText(`Выплата #${actual.target_id}: доказательство отозвано`, { exact: true }),
   ).toBeVisible();
