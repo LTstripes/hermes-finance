@@ -134,6 +134,52 @@ test("old mounted CTA cannot send after native history switches month before Rea
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });
 
+test.each(["initial", "refresh"])(
+  "dependency change during a delayed %s GET cannot leave its old snapshot current",
+  async (mode) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["positions"], [{ quantity: "10" }]);
+    let complete: ((value: DraftPayoutContext) => void) | undefined;
+    const delay = () =>
+      new Promise<DraftPayoutContext>((resolve) => {
+        complete = resolve;
+      });
+    if (mode === "initial") vi.mocked(getDraftPayoutContext).mockImplementationOnce(delay);
+    show({}, client);
+    if (mode === "refresh") {
+      await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+      vi.mocked(getDraftPayoutContext).mockImplementationOnce(delay);
+      await act(async () => {
+        void client.invalidateQueries();
+      });
+    }
+    await waitFor(() => expect(complete).toBeDefined());
+    vi.mocked(getDraftPayoutContext).mockResolvedValue({ ...context, eligible_positions: 0 });
+    await act(async () => {
+      if (mode === "initial") client.setQueryData(["positions"], [{ quantity: "20" }]);
+      else
+        await client.fetchQuery({
+          queryKey: ["positions"],
+          queryFn: async () => [{ quantity: "20" }],
+        });
+    });
+    await act(async () => {
+      complete?.(context);
+    });
+    await waitFor(() =>
+      expect(getDraftPayoutContext).toHaveBeenCalledTimes(mode === "initial" ? 2 : 3),
+    );
+    await waitFor(() =>
+      expect(
+        client.getQueryData<DraftPayoutContext>(["draft-payouts", 1, undefined])
+          ?.eligible_positions,
+      ).toBe(0),
+    );
+    expect(screen.getByRole("button", { name: cta })).toBeDisabled();
+    expect(refreshDraftPayouts).not.toHaveBeenCalled();
+  },
+);
+
 test("global refresh reads the panel once; changed dependency facts still invalidate it", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const keys = [["broker-months", 1], ["source-intakes"], ["instruments"], ["positions"]];

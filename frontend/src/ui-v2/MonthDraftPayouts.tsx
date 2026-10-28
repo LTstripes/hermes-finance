@@ -106,6 +106,8 @@ export function MonthDraftPayouts({
     );
     let active = true;
     let queued = false;
+    let dependencyEpoch = 0;
+    const readEpochs = new Map<string, number>();
     const invalidate = () => {
       if (queued) return;
       queued = true;
@@ -118,14 +120,29 @@ export function MonthDraftPayouts({
           predicate: (query) =>
             ["draft-payouts", "draft-payout-calendar"].includes(String(query.queryKey[0])) &&
             query.queryKey[1] === monthId &&
-            !(query.state.isInvalidated && query.state.fetchStatus === "fetching"),
+            (readEpochs.get(query.queryHash) ?? 0) < dependencyEpoch,
         });
       });
     };
     const unsubscribe = client.getQueryCache().subscribe((event) => {
-      if (event.type !== "updated" || !dependencies.includes(String(event.query.queryKey[0])))
+      if (event.type !== "updated") return;
+      if (
+        ["draft-payouts", "draft-payout-calendar"].includes(String(event.query.queryKey[0])) &&
+        event.query.queryKey[1] === monthId
+      ) {
+        if (event.action.type === "fetch") readEpochs.set(event.query.queryHash, dependencyEpoch);
+        // An initial GET without cached data may finish despite invalidation.
+        // Its old snapshot must be followed by a read covering the later edit.
+        if (
+          event.action.type === "success" &&
+          (readEpochs.get(event.query.queryHash) ?? 0) < dependencyEpoch
+        )
+          invalidate();
         return;
+      }
+      if (!dependencies.includes(String(event.query.queryKey[0]))) return;
       if (event.action.type === "invalidate") {
+        dependencyEpoch++;
         invalidate();
         return;
       }
@@ -133,7 +150,10 @@ export function MonthDraftPayouts({
       const before = fingerprints.get(event.query.queryHash);
       const after = JSON.stringify(event.query.state.data);
       fingerprints.set(event.query.queryHash, after);
-      if (event.action.manual || (before !== undefined && before !== after)) invalidate();
+      if (event.action.manual || (before !== undefined && before !== after)) {
+        dependencyEpoch++;
+        invalidate();
+      }
     });
     return () => {
       active = false;
