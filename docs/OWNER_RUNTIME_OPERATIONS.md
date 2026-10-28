@@ -236,6 +236,26 @@ v1 does **not** make host or port per-profile knobs. Bind is always `127.0.0.1:8
 
 `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` and any other secret remain in the checkout `.env` loaded by existing `Settings`. Launcher config must not copy them.
 
+**Reviewed bond valuations (C7).** An authorized Operator may configure
+`HERMES_FINANCE_REVIEWED_BOND_VALUATION_PATH` with one absolute path to a private
+JSON decision in permanent Ops. Keep that file outside Git, published fixtures
+and runtime data; restrict its write access to the trusted local Operator. The
+application only reads it and never discovers or prepares evidence automatically.
+The exact format, source/database binding and financial limits belong to C7.
+First prepare `status=prepared` against the intended physical DB and exact current
+sources; independent source/decision acceptance and authorization to activate the
+runtime remain required. Preparation alone changes no runtime setting. Only after
+that authorization configure the path and atomically replace the reviewed file
+with `status=accepted`. No financial rows or source originals are changed.
+
+For withdrawal, atomically replace the whole decision with `status=revoked` or
+remove it; the next read retains UNKNOWN without falling back. A read already in
+progress completes against its initial snapshot. After DB restore/replacement,
+do not reactivate a copied decision by editing its DB identity or source heads:
+review the new binding. Restoring an old accepted file after withdrawal is a new
+explicit activation, not automatic recovery; this file protocol has no monotonic
+revocation ledger. Never publish populated decisions or private file paths.
+
 
 <a id="o1-0014-launcher-runtime-profile-safety-77-4-production-data-protection"></a>
 #### 4. Production data protection

@@ -518,10 +518,12 @@ def read_events(session, views, identities, native_account, gaps):
     return tuple(sorted(events, key=lambda e: (e.event_date or date.min, e.event_key))), sources
 
 
-def endpoint(views, isin, day, kind):
+def endpoint(views, isin, day, kind, *, reviewed_basis=None):
+    from hermes_finance.services.source_bond_valuation import review_reference
     from hermes_finance.services.source_instrument_returns import _minor, _quantity
 
     quantities, values, refs, reasons = set(), set(), [], set()
+    basis_refs = set()
     for view in views:
         if "period_inferred_from_content" in view["document"].get("warnings", []):
             continue
@@ -540,6 +542,9 @@ def endpoint(views, isin, day, kind):
                 reasons.add("duplicate_position")
                 continue
             row = rows[0]
+            reference = review_reference(reviewed_basis, view, row, day, closing)
+            if reference:
+                basis_refs.add(reference)
             q = _quantity(row.get("actual_quantity" if closing else "beginning_actual_quantity"))
             v = _minor(row.get("ending_value" if closing else "beginning_value"))
             refs.append(
@@ -563,9 +568,13 @@ def endpoint(views, isin, day, kind):
     if reasons:
         v = None
     economic = v
+    dirty = kind == "stock" or (kind == "bond" and bool(basis_refs) and not reasons)
     if kind == "bond":
-        reasons.add("bond_valuation_basis_unknown")
-        economic = None
+        if dirty:
+            refs.extend(sorted(basis_refs))
+        else:
+            reasons.add("bond_valuation_basis_unknown")
+            economic = None
     elif kind != "stock":
         reasons.add("instrument_type_unknown")
         economic = None
@@ -575,14 +584,15 @@ def endpoint(views, isin, day, kind):
         v,
         economic,
         0 if kind == "stock" else None,
-        "dirty" if kind == "stock" else "reported_unknown",
+        "dirty" if dirty else "reported_unknown",
         tuple(refs),
         tuple(sorted(reasons)),
     )
 
 
-def analyse(views, isin, kind, start, end, events, references, gaps):
-    opening, closing = endpoint(views, isin, start, kind), endpoint(views, isin, end, kind)
+def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed_basis=None):
+    opening = endpoint(views, isin, start, kind, reviewed_basis=reviewed_basis)
+    closing = endpoint(views, isin, end, kind, reviewed_basis=reviewed_basis)
     selected = tuple(
         e
         for e in events

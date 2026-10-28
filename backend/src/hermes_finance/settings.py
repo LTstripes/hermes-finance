@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     reload: bool = False
     database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"
     frontend_dist: Path = REPOSITORY_ROOT / "frontend" / "dist"
+    reviewed_bond_valuation_path: Path | None = None
     t_invest_read_only_token: SecretStr | None = None
 
     @field_validator("host")

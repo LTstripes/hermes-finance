@@ -140,10 +140,16 @@ def create_app(
     market_data_provider: object | None = None,
     payout_provider: object | None = None,
     broker_snapshot_provider: object | None = None,
+    reviewed_bond_valuation_path: Path | None = None,
 ) -> FastAPI:
     configure_private_logging()
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.state.quote_preview_evidence = QuotePreviewEvidenceStore()
+    application.state.reviewed_bond_valuation_path = (
+        reviewed_bond_valuation_path
+        if reviewed_bond_valuation_path is not None
+        else Settings().reviewed_bond_valuation_path
+    )
     application.add_middleware(LocalhostSecurityMiddleware)
     if database is not None:
         application.state.database = database
