@@ -1,7 +1,9 @@
 """Saved synthetic originals -> dated events -> existing API, with no economic writes."""
 
+import json
+import sqlite3
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal, localcontext
 
@@ -15,17 +17,22 @@ from test_source_monthly_returns_service import snapshot
 from test_statement_import_broker_statement_provisional import _add_money
 from test_statement_import_mybroker import ACCOUNT, ISIN
 
+from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import SourceMoneyClassification
 from hermes_finance.services import security_reg_isin_mappings as mappings
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_bond_valuation import (
+    FILE_PATH_KEY,
+    FILE_VERSION,
+    MAX_FILE_BYTES,
     BondEndpointBinding,
     ReviewedBondValuation,
     SourceRevision,
 )
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_money_classifications import choose_classification
+from hermes_finance.source_proof_file import file_incarnation
 from hermes_finance.statement_import.mybroker import NS
 
 
@@ -82,6 +89,182 @@ def _read_reviewed_bond(db, packet):
             source_account=ACCOUNT,
             reviewed_bond_valuation=packet,
         )
+
+
+def _reviewed_bond_file(db, tmp_path):
+    packet = _reviewed_bond_packet(db)
+    payload = json.loads(json.dumps(asdict(packet), default=date.isoformat))
+    payload.update(
+        version=FILE_VERSION,
+        status="accepted",
+        database_incarnation=file_incarnation(db.database_path),
+    )
+    path = tmp_path / "synthetic-review.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path, payload, packet
+
+
+def test_reviewed_bond_file_reaches_ordinary_api_and_returns_then_revokes(
+    db, tmp_path, monkeypatch
+):
+    save(db, stock=None, bond=("1", "1", "1000", "1010"), trades=())
+    path, payload, _ = _reviewed_bond_file(db, tmp_path)
+    # Exercise the actual deployment setting and normal shared request session.
+    monkeypatch.setenv("HERMES_FINANCE_REVIEWED_BOND_VALUATION_PATH", str(path))
+    client = TestClient(create_app(database=db))
+    before = snapshot(db)
+    selection = {"scope": "source:" + ACCOUNT, "start": "2030-03-31", "end": "2030-04-30"}
+    for accepted in (True, False):
+        if not accepted:
+            replacement = path.with_suffix(".next")
+            replacement.write_text(json.dumps(payload | {"status": "revoked"}), encoding="utf-8")
+            replacement.replace(path)
+        response = client.get("/api/source-returns/instruments", params={"source_account": ACCOUNT})
+        assert response.status_code == 200, response.text
+        assert response.headers["cache-control"] == "no-store"
+        result = response.json()
+        bond = result["instruments"][0]
+        assert bond["analysis"]["closing"]["economic_value_kopecks"] == (
+            101000 if accepted else None
+        )
+        assert result["financial_authority"] == "none"
+        assert not result["reconciliation"]["complete"]
+        overview = client.get("/api/returns/overview", params=selection)
+        detail = client.get("/api/returns/instrument", params=selection | {"isin": BOND})
+        assert overview.status_code == detail.status_code == 200
+        assert overview.json()["instruments"][0]["conditional"] is not accepted
+        assert detail.json()["conditional"] is not accepted
+        assert overview.headers["cache-control"] == detail.headers["cache-control"] == "no-store"
+    assert snapshot(db) == before
+    assert json.loads(path.read_text(encoding="utf-8")) == payload | {"status": "revoked"}
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "missing",
+        "prepared",
+        "revoked",
+        "malformed",
+        "duplicate_key",
+        "extra_field",
+        "version",
+        "database",
+        "relative",
+        "oversize",
+        "boolean_id",
+        "head",
+        "unreadable",
+    ],
+)
+def test_reviewed_bond_file_failure_never_falls_back_to_packet(db, tmp_path, monkeypatch, failure):
+    from pathlib import Path
+
+    save(db, stock=None, bond=("1", "1", "1000", "1010"), trades=())
+    path, payload, packet = _reviewed_bond_file(db, tmp_path)
+    if failure in {"prepared", "revoked"}:
+        payload["status"] = failure
+    elif failure == "version":
+        payload["version"] = "unknown"
+    elif failure == "database":
+        payload["database_incarnation"] = "0" * 64
+    elif failure == "extra_field":
+        payload["automatic_acceptance"] = True
+    elif failure == "boolean_id":
+        payload["sources"][0]["intake_id"] = True
+    elif failure == "head":
+        payload["sources"][0]["head_seq"] += 2
+    raw = json.dumps(payload)
+    if failure == "duplicate_key":
+        raw = '{"status":"revoked",' + raw[1:]
+    elif failure == "malformed":
+        raw = "{"
+    elif failure == "oversize":
+        raw = " " * (MAX_FILE_BYTES + 1)
+    path.write_text(raw, encoding="utf-8")
+    if failure == "missing":
+        path.unlink()
+    elif failure == "relative":
+        path = Path(path.name)
+    elif failure == "unreadable":
+        original_open = Path.open
+
+        def denied(value, *args, **kwargs):
+            if value == path:
+                raise PermissionError("synthetic review denied")
+            return original_open(value, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", denied)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        session.info[FILE_PATH_KEY] = path
+        result = read_instrument_returns(
+            session, source_account=ACCOUNT, reviewed_bond_valuation=packet
+        )
+    assert result == read(db)
+    assert snapshot(db) == before
+
+
+def test_reviewed_bond_file_identical_database_copy_requires_new_binding(db, tmp_path):
+    save(db, stock=None, bond=("1", "1", "1000", "1010"), trades=())
+    path, _, _ = _reviewed_bond_file(db, tmp_path)
+    copied_path = tmp_path / "synthetic-restored.db"
+    with (
+        sqlite3.connect(str(db.database_path)) as source,
+        sqlite3.connect(str(copied_path)) as target,
+    ):
+        source.backup(target)
+    copied = create_database(copied_path)
+    try:
+        assert file_incarnation(copied_path) != file_incarnation(db.database_path)
+        with copied.session_factory() as session:
+            session.info[FILE_PATH_KEY] = path
+            result = read_instrument_returns(session, source_account=ACCOUNT)
+        assert by_isin(result)[BOND].analysis.closing.economic_value_kopecks is None
+    finally:
+        copied.engine.dispose()
+    # A new application/session on the original physical DB still uses its exact binding.
+    with db.session_factory() as session:
+        session.info[FILE_PATH_KEY] = path
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+    assert by_isin(result)[BOND].analysis.closing.economic_value_kopecks == 101000
+
+
+@pytest.mark.parametrize("failure", ["connection_stamp", "incarnation_unavailable"])
+def test_reviewed_bond_file_requires_physical_database_and_connection_stamp(
+    db, tmp_path, monkeypatch, failure
+):
+    from hermes_finance import source_proof_file
+
+    save(db, stock=None, bond=("1", "1", "1000", "1010"), trades=())
+    path, _, _ = _reviewed_bond_file(db, tmp_path)
+    with db.session_factory() as session:
+        session.info[FILE_PATH_KEY] = path
+        if failure == "connection_stamp":
+            session.connection().info["source_proof_incarnation"] = "0" * 64
+        else:
+            monkeypatch.setattr(source_proof_file, "file_incarnation", lambda _path: None)
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+    assert by_isin(result)[BOND].analysis.closing.economic_value_kopecks is None
+
+
+def test_reviewed_bond_file_cannot_be_selected_by_http_input(db, tmp_path, monkeypatch):
+    monkeypatch.delenv("HERMES_FINANCE_REVIEWED_BOND_VALUATION_PATH", raising=False)
+    save(db, stock=None, bond=("1", "1", "1000", "1010"), trades=())
+    path, _, _ = _reviewed_bond_file(db, tmp_path)
+    client = TestClient(create_app(database=db))
+    response = client.get(
+        "/api/source-returns/instruments",
+        params={
+            "source_account": ACCOUNT,
+            "reviewed_bond_valuation_path": str(path),
+            "accepted": "true",
+        },
+    )
+    assert response.status_code == 200
+    assert (
+        response.json()["instruments"][0]["analysis"]["closing"]["economic_value_kopecks"] is None
+    )
 
 
 def test_reviewed_bond_endpoint_native_once_read_only_and_account_unchanged(db):

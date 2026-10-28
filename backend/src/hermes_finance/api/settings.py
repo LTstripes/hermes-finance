@@ -86,6 +86,9 @@ def session_for_request(request: Request) -> Generator[Session, None, None]:
             session.info["source_intake_epoch"] = (
                 f"{PROCESS_EPOCH}:{database.maintenance.form_incarnation}:{database.maintenance.form_epoch}"
             )
+            session.info["reviewed_bond_valuation_path"] = getattr(
+                request.app.state, "reviewed_bond_valuation_path", None
+            )
             yield session
 
 

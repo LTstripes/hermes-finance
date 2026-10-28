@@ -6652,17 +6652,40 @@ to real retained source/account/ISIN/period requires the separate original-bound
 #767 validation and accepted R2 scope. No EOD amount/NKD adjustment or basis
 backfill follows from trade T including N.
 
-The instrument service accepts an optional backend-only `ReviewedBondValuation`
-input. A trusted caller must supply a **currently accepted** independent review
-decision on each invocation. Its bounded `review_reference` is provenance, not
-authentication or an acceptance operation. The resolver verifies applicability;
-it does not authenticate the reviewer or detect withdrawal/supersession of a
-decision from source revisions. Those decision-lifecycle obligations remain with
-the caller. There is no HTTP input, environment/file loader, automatic builder,
-registry, cache, DB write or production caller in this slice. Ordinary API reads
-therefore retain their existing unknown basis. Production delivery and review
-revocation require a separately accepted caller contract; this service mechanism
-alone is not a working deployment of R2.
+Ordinary instrument API and Returns overview/detail share a trusted local
+read-only evidence source at `read_instrument_returns`. The explicit optional
+`HERMES_FINANCE_REVIEWED_BOND_VALUATION_PATH` setting names one absolute private
+Ops JSON file; no default search or HTTP-supplied path/status/evidence exists.
+The shared request session supplies only that configured path. Each instrument
+read loads a fresh bounded file snapshot inside its coherent database read.
+There is no loader cache, acceptance writer, new table or automatic proof builder.
+
+The strict `source_bond_valuation_v1` JSON object has exactly `version`, `status`,
+`database_incarnation`, `review_reference`, `sources` and `endpoints`. Sources and
+endpoints use the exact `SourceRevision`/`BondEndpointBinding` field sets; dates
+are ISO dates and integers do not accept booleans or strings. Unknown/extra or
+duplicate keys, malformed/oversized files, relative paths and file-read failures
+supply no basis. Only `status=accepted` is effective; `prepared`, `revoked` and
+absence leave UNKNOWN. Errors expose neither private content nor paths through
+the API. The file is at most 256 KiB, with at most 256 sources and 4096 endpoints.
+
+Its physical database incarnation must match both the current DB file ID/birth
+time identity and the pooled SQL connection stamp, reusing `source_proof_file`.
+Missing identity capability fails closed. Restart on the same physical DB can
+retain evidence; a copied/replaced/restored DB, even with identical contents,
+requires a newly reviewed binding. The complete selected source set and exact
+source/row/date checks below still apply; database binding is not sufficient alone.
+
+A trusted Operator supplies a **currently accepted** independent review decision.
+`review_reference` is provenance, not authentication of acceptance. The local
+file is the current decision source: remove it or atomically replace it with a
+revoked version to retire it from the next read. An already-started read uses its
+one snapshot. A configured invalid/revoked file never falls back to an older file
+or a caller-supplied packet. No monotonic revocation history is introduced:
+restoring an older accepted file is an explicit new trusted activation requiring
+current review, not automatic recovery or replay protection. The direct service
+argument remains only for trusted callers when no file is configured. Operator
+storage/activation procedure is in O1; preparing a file does not enable a runtime.
 
 Inside the existing coherent read, the input must match the complete selected
 source set, including failures, and each original hash/provider/parser, intake

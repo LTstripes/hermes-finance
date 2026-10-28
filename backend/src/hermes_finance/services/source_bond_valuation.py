@@ -1,19 +1,26 @@
-"""Explicit reviewed instrument-only basis; no acceptance writer or proof registry.
+"""Instrument-only basis from an explicit trusted local review decision.
 
-The trusted caller supplies a currently accepted decision on EACH call. This
-module verifies its source applicability, not the authority/revocation status of
-the decision. No HTTP input, file loader, cache or automatic acceptance exists.
+The configured private file is read afresh for each operation. It is not an
+HTTP input, acceptance writer, proof registry or automatically generated proof.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
-from dataclasses import dataclass
+import stat
+from dataclasses import dataclass, fields
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 
 from hermes_finance.statement_import.mybroker import digest
+
+FILE_VERSION = "source_bond_valuation_v1"
+FILE_PATH_KEY = "reviewed_bond_valuation_path"
+MAX_FILE_BYTES = 256 * 1024
 
 
 @dataclass(frozen=True)
@@ -46,6 +53,98 @@ class ReviewedBondValuation:
     review_reference: str
     sources: tuple[SourceRevision, ...]
     endpoints: tuple[BondEndpointBinding, ...]
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate review field")
+        result[key] = value
+    return result
+
+
+def _record(record_type, value):
+    if not isinstance(value, dict) or set(value) != {f.name for f in fields(record_type)}:
+        raise ValueError("invalid review record")
+    integers = {"intake_id", "generation", "head_seq", "ordinal"}
+    if any(type(v) is not (int if k in integers else str) for k, v in value.items()):
+        raise ValueError("invalid review field type")
+    if record_type is BondEndpointBinding:
+        value = {**value, "valuation_date": date.fromisoformat(value["valuation_date"])}
+    return record_type(**value)
+
+
+def _file_signature(info):
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+
+
+def load_reviewed_basis(session, configured_path):
+    """One bounded file snapshot; absent/revoked/stale never falls back or writes.
+
+    Only trusted local configuration supplies the path. Operators replace the
+    entire file atomically. Restoring an older accepted file is a new trusted
+    activation, not something an append-only revocation history detects here.
+    """
+    from hermes_finance.source_proof_file import file_incarnation
+
+    try:
+        path = Path(configured_path)
+        if not path.is_absolute() or path.is_symlink():
+            return None
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or not 0 < before.st_size <= MAX_FILE_BYTES
+            ):
+                return None
+            raw = stream.read(MAX_FILE_BYTES + 1)
+            after = os.fstat(stream.fileno())
+        current = path.stat()
+        if (
+            len(raw) > MAX_FILE_BYTES
+            or _file_signature(before) != _file_signature(after)
+            or _file_signature(before) != _file_signature(current)
+        ):
+            return None
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+        if (
+            not isinstance(payload, dict)
+            or set(payload)
+            != {
+                "version",
+                "status",
+                "database_incarnation",
+                "review_reference",
+                "sources",
+                "endpoints",
+            }
+            or payload["version"] != FILE_VERSION
+            or payload["status"] != "accepted"
+            or type(payload["sources"]) is not list
+            or not 0 < len(payload["sources"]) <= 256
+            or type(payload["endpoints"]) is not list
+            or not 0 < len(payload["endpoints"]) <= 4096
+        ):
+            return None
+        connection = session.connection()
+        database_path = connection.engine.url.database
+        physical = file_incarnation(Path(database_path)) if database_path else None
+        if (
+            not physical
+            or connection.info.get("source_proof_incarnation") != physical
+            or payload["database_incarnation"] != physical
+        ):
+            return None
+        return ReviewedBondValuation(
+            payload["review_reference"],
+            tuple(_record(SourceRevision, row) for row in payload["sources"]),
+            tuple(_record(BondEndpointBinding, row) for row in payload["endpoints"]),
+        )
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
+        return None
 
 
 def resolve_reviewed_basis(selected, native_scope, evidence):

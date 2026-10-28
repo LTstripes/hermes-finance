@@ -726,7 +726,11 @@ def read_instrument_returns(
     reviewed_bond_valuation=None,
 ) -> SourceInstrumentReturns:
     """Isolate unreadable sources and individual operand gaps; perform no writes."""
-    from hermes_finance.services.source_bond_valuation import resolve_reviewed_basis
+    from hermes_finance.services.source_bond_valuation import (
+        FILE_PATH_KEY,
+        load_reviewed_basis,
+        resolve_reviewed_basis,
+    )
     from hermes_finance.services.source_instrument_events import (
         analyse,
         read_events,
@@ -742,6 +746,10 @@ def read_instrument_returns(
     sources = []
     gaps = []
     selected, native_scope = _selected_sources(session, source_account)
+    if session.info.get(FILE_PATH_KEY) is not None:
+        # The ordinary API and Returns share this path. A configured file is
+        # authoritative for this call; failure cannot revive a caller's packet.
+        reviewed_bond_valuation = load_reviewed_basis(session, session.info[FILE_PATH_KEY])
     reviewed_basis = resolve_reviewed_basis(selected, native_scope, reviewed_bond_valuation)
     for original, view, error in selected:
         try:
