@@ -229,6 +229,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_market_identity.py": 3.81,
     "test_normalized_reconciliation.py": 3.81,
     "test_payout_api.py": 9.32,
+    "test_payout_draft_refresh.py": 12.0,
     "test_payout_api_hardening.py": 1.27,
     "test_payout_apply.py": 12.71,
     "test_payout_apply_hardening.py": 0.85,
@@ -454,6 +455,7 @@ CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
     "test_market_identity.py": 0.70,
     "test_payout_api_hardening.py": 1.20,
     "test_payout_api.py": 9.11,
+    "test_payout_draft_refresh.py": 12.0,
     "test_payout_apply_reread.py": 1.61,
     "test_payout_apply_scope_guard.py": 0.34,
     "test_payout_calendar.py": 5.97,
@@ -874,12 +876,16 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
     if relative_path is None:
         return None
     # Keep the accepted A/B groups stable when adding the bounded #711 suite.
-    added = "test_statement_import_payout_reconciliation.py"
-    if relative_path.as_posix() == added:
-        return "ci_integrations_b" if CI_INTEGRATIONS_SHARD_WEIGHTS.get(added, 0) > 0 else None
+    added = {"test_statement_import_payout_reconciliation.py", "test_payout_draft_refresh.py"}
+    if relative_path.as_posix() in added:
+        return (
+            "ci_integrations_b"
+            if CI_INTEGRATIONS_SHARD_WEIGHTS.get(relative_path.as_posix(), 0) > 0
+            else None
+        )
     return _weighted_shard(
         relative_path.as_posix(),
-        {key: value for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items() if key != added},
+        {key: value for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items() if key not in added},
         CI_INTEGRATIONS_SHARD_MARKERS,
     )
 

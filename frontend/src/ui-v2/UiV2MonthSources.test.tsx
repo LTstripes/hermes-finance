@@ -31,22 +31,34 @@ function mount(
 ) {
   const onReview = vi.fn();
   const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
-    String(input).startsWith("/api/source-returns/monthly")
-      ? new Response(JSON.stringify({ months: [] }), {
-          headers: { "Content-Type": "application/json" },
-        })
-      : new Response(
-          JSON.stringify([
-            intake(1, "ACCOUNT-A"),
-            intake(2, "ACCOUNT-B"),
-            intake(3, "OTHER-PERIOD", { covered_from: "2031-07-01", covered_to: "2031-07-31" }),
-            intake(4, "OTHER-MONTH", {
-              state: { reporting_month_id: 91 },
-            } as Partial<SourceIntake>),
-            ...extras,
-          ]),
-          { headers: { "Content-Type": "application/json" } },
-        ),
+    String(input).includes("/draft-payouts")
+      ? new Response(
+          JSON.stringify({
+            reporting_month_id: 12,
+            status: closed ? "closed" : "draft",
+            context_digest: "a".repeat(64),
+            eligible_positions: 0,
+            items: [],
+          }),
+        )
+      : String(input).includes("/payouts/calendar")
+        ? new Response(JSON.stringify([]))
+        : String(input).startsWith("/api/source-returns/monthly")
+          ? new Response(JSON.stringify({ months: [] }), {
+              headers: { "Content-Type": "application/json" },
+            })
+          : new Response(
+              JSON.stringify([
+                intake(1, "ACCOUNT-A"),
+                intake(2, "ACCOUNT-B"),
+                intake(3, "OTHER-PERIOD", { covered_from: "2031-07-01", covered_to: "2031-07-31" }),
+                intake(4, "OTHER-MONTH", {
+                  state: { reporting_month_id: 91 },
+                } as Partial<SourceIntake>),
+                ...extras,
+              ]),
+              { headers: { "Content-Type": "application/json" } },
+            ),
   );
   vi.stubGlobal("fetch", fetcher);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

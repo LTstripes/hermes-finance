@@ -16,6 +16,18 @@ Reporting month and snapshot date are separate identities. A month may contain a
 <a id="p2"></a>
 ## 2. Monthly workflows
 
+After XML intake, exception correction and a saved, independently reread financial
+DRAFT, **«Получить и сохранить прогнозы Т-Инвест»** updates every eligible positive
+native broker/IIS position in that month, across accounts. A source-list filter
+does not narrow this action. Exact ISIN/UID/type/RUB discovery uses the existing
+instrument mapping; ambiguities and excluded instruments stay in manual review.
+The next click refreshes existing events and appends changed revisions. Calendar
+GET/Reload never contacts the provider or repeats a write. Partial failures retain
+successful positions and show exceptions; a lost acknowledgement requires GET
+recovery before another explicit click. Coupons/dividends and principal repayment
+are separate, labelled announced/forecast with personal tax/net unknown. Source
+previews and actual payout reconciliation retain their existing authority.
+
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
 Ordinary Close of a completely unfilled manual DRAFT is blocked with

@@ -430,6 +430,51 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1";
   });
+  const forecast = page.getByRole("button", {
+    name: "Получить и сохранить прогнозы Т-Инвест",
+    exact: true,
+  });
+  await expect(forecast).toBeEnabled();
+  await forecast.click();
+  await expect(page.getByText(/Позиций обновлено: 2; без изменений: 0/)).toBeVisible();
+  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
+    /25\s*₽/,
+  );
+  await expect(
+    page.getByRole("table", { name: "Возврат номинала · отдельно от дохода" }),
+  ).toContainText(/10\s000\s*₽/);
+  const forecasts = await (
+    await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")
+  ).json();
+  expect(forecasts.flatMap((period: { items: unknown[] }) => period.items)).toHaveLength(3);
+  const savedForecasts = await (await request.get("/api/synthetic-broker-inventory")).json();
+  await page.screenshot({ path: info.outputPath("draft-forecasts-1280.png"), fullPage: true });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: info.outputPath("draft-forecasts-1280-125-percent.png"),
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1";
+  });
+  await forecast.click();
+  await expect(page.getByText(/Позиций обновлено: 0; без изменений: 2/)).toBeVisible();
+  expect(
+    (await (await request.get("/api/synthetic-broker-inventory")).json()).table_digests,
+  ).toEqual(savedForecasts.table_digests);
+  const providerCalls = await (await request.get("/api/synthetic-draft-provider-calls")).json();
+  await reloadWorkspace(page);
+  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
+    /25\s*₽/,
+  );
+  expect(await (await request.get("/api/synthetic-draft-provider-calls")).json()).toEqual(
+    providerCalls,
+  );
   await monthPanel(page, "close");
   await page.getByRole("button", { name: "Закрыть месяц", exact: true }).click();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();

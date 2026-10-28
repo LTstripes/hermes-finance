@@ -180,3 +180,14 @@
   border-radius: 10px;
   overflow-wrap: anywhere;
 }
+
+.forecastContent {
+  display: grid;
+  gap: 12px;
+}
+.forecastActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

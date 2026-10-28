@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.market_data import (
     close_owned_payout_resource,
+    close_owned_provider,
     resolve_payout_provider,
+    resolve_verify_provider,
 )
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.database import coherent_read_operation, coherent_read_snapshot
@@ -28,6 +30,7 @@ from hermes_finance.market_data.payout_protocol import (
     PayoutProvider,
 )
 from hermes_finance.persistence import AppliedProviderPayout, PositionSnapshot, ReportingMonth
+from hermes_finance.services import draft_payouts
 from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.instrument_mappings import get_instrument_mapping
 from hermes_finance.services.payout_apply import (
@@ -112,6 +115,54 @@ class PayoutBatchPreviewRequest(BaseModel):
 
     forecast_version: str = Field(min_length=1, max_length=32)
     position_snapshot_ids: list[int] | None = Field(default=None, max_length=500)
+
+
+class DraftPayoutRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    context_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    forecast_version: str = Field(default="v1", min_length=1, max_length=32)
+
+
+class DraftPayoutPositionOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    account_name: str
+    instrument_id: int
+    instrument_name: str
+    isin: str | None
+    position_snapshot_id: int
+    quantity: str
+    eligible: bool
+    reason_codes: list[str]
+
+
+class DraftPayoutContextOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    snapshot_date: date
+    status: Literal["draft", "closed"]
+    context_digest: str
+    eligible_positions: int
+    items: list[DraftPayoutPositionOut]
+
+
+DraftPayoutStatus = Literal["updated", "unchanged", "unsupported", "needs_review", "error"]
+
+
+class DraftPayoutItemOut(DraftPayoutPositionOut):
+    status: DraftPayoutStatus
+    saved_payout_ids: list[int]
+
+
+class DraftPayoutResultOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    items: list[DraftPayoutItemOut]
+    summary: dict[DraftPayoutStatus, int]
 
 
 class PayoutBatchPreviewItemOut(BaseModel):
@@ -624,6 +675,46 @@ def _payout_preview_in_snapshot(
 
 def _payout_context_changed() -> HTTPException:
     return HTTPException(status_code=409, detail="Payout context changed; request a new preview")
+
+
+@router.get("/api/months/{month_id}/draft-payouts", response_model=DraftPayoutContextOut)
+def draft_payout_context_endpoint(
+    month_id: int,
+    session: Session = Depends(session_for_request),
+):
+    try:
+        return draft_payouts.read_context(session, month_id)
+    except ReportingMonthNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Reporting month not found") from error
+
+
+@router.post("/api/months/{month_id}/draft-payouts/refresh", response_model=DraftPayoutResultOut)
+def draft_payout_refresh_endpoint(
+    month_id: int,
+    payload: DraftPayoutRefreshRequest,
+    request: Request,
+    session: Session = Depends(session_for_request),
+):
+    mapping_provider, owned_mapping = resolve_verify_provider(
+        request, payload_provider=T_INVEST_PROVIDER
+    )
+    payout_provider, owned_payout = resolve_payout_provider(request)
+    try:
+        return draft_payouts.refresh(
+            session,
+            month_id,
+            context_digest=payload.context_digest,
+            forecast_version=payload.forecast_version,
+            mapping_provider=mapping_provider,
+            payout_provider=payout_provider,
+        )
+    except ReportingMonthNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Reporting month not found") from error
+    except ValueError as error:
+        raise _payout_context_changed() from error
+    finally:
+        close_owned_provider(mapping_provider, owned_mapping)
+        close_owned_payout_resource(owned_payout)
 
 
 @router.post(

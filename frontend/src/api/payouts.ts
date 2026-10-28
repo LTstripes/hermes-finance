@@ -193,6 +193,55 @@ export type PayoutCalendarMonth = {
   items: PayoutCalendarItem[];
 };
 
+export type DraftPayoutPosition = {
+  account_id: number;
+  account_name: string;
+  instrument_id: number;
+  instrument_name: string;
+  isin: string | null;
+  position_snapshot_id: number;
+  quantity: string;
+  eligible: boolean;
+  reason_codes: string[];
+};
+
+export type DraftPayoutContext = {
+  reporting_month_id: number;
+  snapshot_date: string;
+  status: "draft" | "closed";
+  context_digest: string;
+  eligible_positions: number;
+  items: DraftPayoutPosition[];
+};
+
+export type DraftPayoutResult = {
+  reporting_month_id: number;
+  summary: Record<"updated" | "unchanged" | "unsupported" | "needs_review" | "error", number>;
+  items: (DraftPayoutPosition & { status: string; saved_payout_ids: number[] })[];
+};
+
+export async function getDraftPayoutContext(monthId: number, signal?: AbortSignal) {
+  const value = await apiRequest<DraftPayoutContext>(`/api/months/${monthId}/draft-payouts`, {
+    signal,
+  });
+  if (value.reporting_month_id !== monthId || !Array.isArray(value.items))
+    throw new Error("Сохранённый финансовый DRAFT не подтверждён.");
+  return value;
+}
+
+export async function refreshDraftPayouts(monthId: number, contextDigest: string) {
+  const value = await apiRequest<DraftPayoutResult>(
+    `/api/months/${monthId}/draft-payouts/refresh`,
+    {
+      method: "POST",
+      body: { context_digest: contextDigest, forecast_version: "v1" },
+    },
+  );
+  if (value.reporting_month_id !== monthId || !Array.isArray(value.items))
+    throw new Error("Результат обновления прогнозов не подтверждён.");
+  return value;
+}
+
 export function previewPayouts(
   monthId: number,
   payload: PayoutContextRequest,

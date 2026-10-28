@@ -64,6 +64,10 @@ class DiscoverCandidate:
     exchange: str | None = None
     api_trade_available: bool | None = None
     position_uid: str | None = None
+    # Independent detail evidence for automatic exact-ISIN adoption. A search
+    # hit or the requested ISIN alone is not proof of the resolved UID.
+    verified_isin: str | None = None
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
