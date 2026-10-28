@@ -4,6 +4,31 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [1.7.0] - 2026-10-28
+
+- [#970](https://github.com/LTstripes/hermes-finance/pull/970): durable actual
+  payout settlement, dividends and scoped Close dependencies, with schema
+  `0066_actual_payout_links` and preserved historical financial facts.
+- [#981](https://github.com/LTstripes/hermes-finance/pull/981): explicit T-Invest
+  forecast save/refresh from eligible financial DRAFT positions, reusing existing
+  receipt/revision writers and calendar GET without reviving actual payouts.
+- [#977](https://github.com/LTstripes/hermes-finance/pull/977) and
+  [#980](https://github.com/LTstripes/hermes-finance/pull/980): clearer Month
+  source/actual/forecast presentation, guarded ISIN/date navigation and explicit
+  source-period choice when no CLOSED reporting month provides a default.
+- [#976](https://github.com/LTstripes/hermes-finance/pull/976) and
+  [#979](https://github.com/LTstripes/hermes-finance/pull/979): native source-account
+  aliases, signed partial RUB coverage and a four-category Returns basket with
+  explicit period/Back/Reload behavior and honest unavailable composite results.
+- [#971](https://github.com/LTstripes/hermes-finance/pull/971),
+  [#972](https://github.com/LTstripes/hermes-finance/pull/972) and
+  [#975](https://github.com/LTstripes/hermes-finance/pull/975): trusted exact-ISIN
+  names, query/hash-preserving legacy Month redirect and included-NKD reader fix.
+
+[Release notes 1.7.0](docs/release-notes-1.7.0.md) describe schema/update/recovery
+boundaries and the deferred Owner UAT. This entry does not attest publication,
+installation or financial Apply/save/Close; see [CURRENT_STATUS](docs/CURRENT_STATUS.md).
+
 ## [1.6.0] — 2026-10-25
 
 - [#964](https://github.com/LTstripes/hermes-finance/pull/964):
