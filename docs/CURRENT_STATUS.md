@@ -8,7 +8,22 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-**Accepted application baseline: [#981](https://github.com/LTstripes/hermes-finance/pull/981)
+**Latest accepted application baseline: [#984](https://github.com/LTstripes/hermes-finance/pull/984),
+merged as `main@61eabbac6e9059c3fc2c575719bba6da9e598d3b`.** Exact-main
+[CI40744351609](https://github.com/LTstripes/hermes-finance/actions/runs/40744351609)
+**COMPLETED SUCCESS**. The source-bound R2 mechanism reaches the ordinary
+instrument API and Returns overview/detail. Independent code GO and CI do not
+accept a real original or activate its evidence. The private packet remains
+prepared and inactive; full account/all-time results remain unconfirmed.
+
+The Owner authorized the next guarded release/Stable update and activation of
+the reviewed, exactly matching September scope. **1.7.1 packaging is prepared
+locally**, with no application or schema change beyond integrated #984. Its
+branch/Draft PR publication still needs the separately requested confirmation;
+packaging acceptance, exact-candidate/main CI and release gates remain ahead.
+Stable remains v1.7.0, and no activation or financial/source mutation is claimed.
+
+**Earlier accepted application baseline: [#981](https://github.com/LTstripes/hermes-finance/pull/981)
 merged as `main@a1027347b253ed2e53647143726c11f76d09c0da` - CODE MERGED and accepted.**
 The explicit financial-DRAFT T-Invest forecast save/refresh action is implemented
 and accepted in code, and is now included in installed Stable v1.7.0. Earlier exact-main
@@ -123,7 +138,7 @@ money ownership are not guessed or filled with zero.
 
 | Layer | Current verified status |
 | --- | --- |
-| Accepted code | #981/#982/#983 integrated; released target `536bb2336284b75cc6901570a7c196235326cf68`, exact-main [CI40682375464](https://github.com/LTstripes/hermes-finance/actions/runs/40682375464) SUCCESS. Earlier evidence retains its original scope; CI40653035431 attempt 1 recovery intermittency remains unexplained. |
+| Accepted code | #984 integrated at `61eabbac6e9059c3fc2c575719bba6da9e598d3b`; exact-main [CI40744351609](https://github.com/LTstripes/hermes-finance/actions/runs/40744351609) SUCCESS. Local 1.7.1 packaging remains separate from accepted code, publication and activation. Earlier evidence retains its original scope; CI40653035431 attempt 1 recovery intermittency remains unexplained. |
 | Published release | [v1.7.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.7.0), annotated tag `d8aaf8599bbbb05c105a6c1cb3c39b54a8d2ae6b`, peeled `536bb2336284b75cc6901570a7c196235326cf68`; guarded [release40684513085](https://github.com/LTstripes/hermes-finance/actions/runs/40684513085) SUCCESS. API `immutable=false`. |
 | HONOR Stable | Operator-local 28 October OPS02/Prepare/Validate/Start PASS: v1.7.0 / 0066, health HTTP 200/ok, original physical DB/file identity and prior values/triggers/sequences/sidecar preserved; verified 0065 backup and producing v1.6.0 code bundle retained. Earlier source/proof and CLOSED-history evidence retains its scope. |
 | Isolated Test | Old code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541` / isolated DB0066, stopped. New OPS03 was blocked before execution by the now-completed lifecycle Scan -Retire. Owner cancelled the separate aggregate Test on 28 October. |
@@ -207,7 +222,8 @@ broker reply ([#814 field-definition receipt](https://github.com/LTstripes/herme
 REPLY RECEIVED / PARTIAL: trade field meanings supplied, five Money NKD→trade
 links still BLOCKED; signed final letter unverified). The authorized R1 reader
 correction is separate from original-bound #767/R2 dirty-EOD acceptance and real
-financial authority. June REPO/custody question
+financial authority. #984 now implements the exact-bound instrument read path;
+its prepared private evidence is not yet activated in Stable. June REPO/custody question
 ([#888](https://github.com/LTstripes/hermes-finance/issues/888), UNSENT).
 Stock returns can be supported on exact scoped periods; full bond economic
 P&L/MD requires documented valuation clean/dirty/NKD basis and movements.
@@ -218,9 +234,10 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Deferred Owner acceptance:** visual review is planned for evening/Thursday and the main monthly UAT for 1 November. v1.7.0 publication and guarded Stable installation are complete; do not repeat release, migration or aggregate Test solely for handoff. Installation/readback is not a visual or monthly UAT PASS.
-2. **Separately scoped finance:** real DRAFT Apply, forecast save/refresh, Close and any provider action retain their exact scope, currentness and separate authority. The deployment performed none of those actions. Preserve the verified original backup and producing code/schema pair; no automatic downgrade, cross-schema overwrite or Test-to-Stable data promotion.
-3. **Source evidence not blocking honest UI:** unresolved 2024–26 monthly EOD, four position discrepancies, three identity-date ambiguities, August principal, REPO [#888](https://github.com/LTstripes/hermes-finance/issues/888), NKD [#814](https://github.com/LTstripes/hermes-finance/issues/814), old #767 dirty EOD and #769 history acceptance stay their owning financial tasks. Do not fill NULLs, fake gold P&L, duplicate income or re-open closed bugs; standalone month editor remains KEEP pending real consumer retirement.
+1. **1.7.1 packaging and bounded rollout:** obtain the specific packaging branch/Draft PR publication confirmation, then Integrator acceptance and required CI. After guarded publication, perform the authorized backup-first Stable update and recheck the exact source/database/revision binding before separate September evidence activation. Preserve other UNKNOWN gates; no source imports, financial Apply/payouts/Close or provider calls. Historical all-time work is not expanded by this release.
+2. **Deferred Owner acceptance:** visual review is planned for evening/Thursday and the main monthly UAT for 1 November. v1.7.0 publication and guarded Stable installation are complete; do not repeat its migration or aggregate Test solely for handoff. Installation/readback is not a visual or monthly UAT PASS.
+3. **Separately scoped finance:** real DRAFT Apply, forecast save/refresh, Close and any provider action retain their exact scope, currentness and separate authority. The deployment performed none of those actions. Preserve the verified original backup and producing code/schema pair; no automatic downgrade, cross-schema overwrite or Test-to-Stable data promotion.
+4. **Source evidence not blocking honest UI:** unresolved 2024–26 monthly EOD, four position discrepancies, three identity-date ambiguities, August principal, REPO [#888](https://github.com/LTstripes/hermes-finance/issues/888), NKD [#814](https://github.com/LTstripes/hermes-finance/issues/814), old #767 dirty EOD and #769 history acceptance stay their owning financial tasks. Do not fill NULLs, fake gold P&L, duplicate income or re-open closed bugs; standalone month editor remains KEEP pending real consumer retirement.
 
 <a id="s4"></a>
 ## 4. Operating and evidence boundaries

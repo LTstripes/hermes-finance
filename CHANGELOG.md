@@ -4,6 +4,19 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [1.7.1] - 2026-10-28
+
+- [#984](https://github.com/LTstripes/hermes-finance/pull/984): ordinary instrument
+  API and Returns readers consume explicitly accepted, source-bound bond endpoint
+  evidence. Matching reported dirty values are counted once; absent, revoked or
+  stale evidence leaves UNKNOWN, and separate accrued interest remains NULL.
+- Exact database/source/row/date bindings and independent financial guards remain
+  required. No schema change, automatic evidence activation or financial rewrite.
+
+[Release notes 1.7.1](docs/release-notes-1.7.1.md) describe the bounded read scope
+and the separate update/activation procedure. Publication, installation and
+acceptance remain recorded in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
+
 ## [1.7.0] - 2026-10-28
 
 - [#970](https://github.com/LTstripes/hermes-finance/pull/970): durable actual
