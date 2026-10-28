@@ -7,7 +7,16 @@ async function monthPanel(page: Page, panel: "brokers" | "close") {
     .getByRole("link", { name: panel === "brokers" ? /Брокерские выписки/ : /Закрыть месяц/ })
     .click();
   const discard = page.getByRole("button", { name: "Перейти без сохранения", exact: true });
+  // The router's dirty-input dialog may render after click() resolves.
+  // Wait for either the destination or that explicit navigation decision.
+  await expect
+    .poll(
+      async () =>
+        new URL(page.url()).searchParams.get("panel") === panel || (await discard.isVisible()),
+    )
+    .toBe(true);
   if (await discard.isVisible()) await discard.click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("panel") === panel);
 }
 async function uploadOriginal(
   page: Page,
