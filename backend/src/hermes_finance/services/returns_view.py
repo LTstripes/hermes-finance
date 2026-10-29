@@ -7,6 +7,7 @@ Money crosses this boundary as integer-minor-unit strings, including large value
 
 import json
 from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -141,6 +142,16 @@ def read_context(session):
         for periods in source_periods.values():
             periods[:] = list({(p["start"], p["end"]): p for p in periods}.values())
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
+        from hermes_finance.services.source_investment_proofs import read_reports
+
+        for proof in read_reports(session):
+            key = f"source:{canonical.get(proof['source_account'], proof['source_account'])}"
+            period = bounds(
+                date.fromisoformat(proof["covered_from"]) - timedelta(days=1),
+                date.fromisoformat(proof["covered_to"]),
+            )
+            if period not in source_periods.setdefault(key, []):
+                source_periods[key].append(period)
         return {
             "accounts": _accounts(session, canonical),
             "scope_aliases": {f"source:{a}": f"source:{b}" for a, b in canonical.items() if a != b},
@@ -378,6 +389,51 @@ def _source_view(session, account, start, end):
             "rate": metric(reasons=("interval_rate_unavailable",), unit="fraction"),
         }
     _period_income(selected, monthly.months, start, end)
+    from hermes_finance.services.source_investment_proofs import read_reports
+
+    reports = read_reports(session, source_account=account)
+
+    def report_result(proof):
+        interval = proof["interval"]
+        period = bounds(
+            date.fromisoformat(proof["covered_from"]) - timedelta(days=1),
+            date.fromisoformat(proof["covered_to"]),
+        )
+        reasons = (
+            tuple(proof["reason_codes"]) if interval is None else tuple(interval["reason_codes"])
+        )
+        return {
+            "period": period,
+            "pnl": metric(
+                None
+                if interval is None or interval["pnl"]["value"] is None
+                else int(interval["pnl"]["value"]),
+                reasons=reasons,
+                method="source_xml_pdf_interval",
+            ),
+            "rate": metric(
+                None
+                if interval is None or interval["modified_dietz"]["value"] is None
+                else Decimal(interval["modified_dietz"]["value"]),
+                reasons=reasons,
+                method="modified_dietz",
+                unit="fraction",
+            ),
+            "coupons": metric(reasons=("see_linked_instrument_payouts",)),
+            "dividends": metric(reasons=("see_linked_instrument_payouts",)),
+        }
+
+    for proof in reports:
+        value = report_result(proof)
+        periods.append(value["period"])
+        if value["period"] == bounds(start, end):
+            selected = value
+    historical = sorted(
+        (p for p in reports if p["history_from_zero"]),
+        key=lambda p: (p["covered_to"], p["proof_id"]),
+    )
+    if historical:
+        whole = report_result(historical[-1])
     if instruments.instruments:
         analysis = instruments.instruments[0].analysis
         periods.append(bounds(analysis.history_start, analysis.history_end))

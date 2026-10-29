@@ -12,6 +12,7 @@ from hermes_finance.api.broker_statement_provisional import ProvisionalRoute
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.monthly_return_chain import PeriodReturnTotals
+from hermes_finance.services import source_investment_proofs as investment_proofs
 from hermes_finance.services import source_return_proofs as proof_service
 from hermes_finance.services.broker_statement_provisional import ProvisionalStaleError
 from hermes_finance.services.source_monthly_returns import (
@@ -76,6 +77,7 @@ class SourceMonthlyReturnsResponse(BaseModel):
     currency: Literal["RUB"]
     approximate: Literal[True]
     source_proof: SourceProofResponse | None = None
+    investment_reports: tuple[dict, ...] = ()
 
 
 @router.get("/monthly", response_model=SourceMonthlyReturnsResponse)
@@ -232,6 +234,75 @@ router.add_api_route(
 router.add_api_route(
     "/proofs/requests/{request_id}",
     source_proof_request_status,
+    methods=["GET"],
+    route_class_override=ProvisionalRoute,
+)
+
+
+class ConfirmInvestmentProof(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    form_token: str = Field(min_length=20, max_length=128)
+    preview_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    request_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+    replace_existing: bool = False
+    attested: Literal[True]
+
+    @field_validator("attested", mode="before")
+    @classmethod
+    def explicit_true(cls, value):
+        if value is not True:
+            raise ValueError("attested must be JSON true")
+        return value
+
+
+@router.get("/investment-reports")
+def investment_reports(
+    response: Response,
+    source_account: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+    session: Session = Depends(session_for_request),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return {"reports": investment_proofs.read_reports(session, source_account=source_account)}
+
+
+def confirm_investment_report(
+    payload: ConfirmInvestmentProof,
+    request: Request,
+    response: Response,
+    session: Session = Depends(session_for_request),
+):
+    if request.query_params:
+        raise HTTPException(422, "investment_proof_request_invalid")
+    try:
+        result = investment_proofs.confirm(session, **payload.model_dump(exclude={"attested"}))
+    except proof_service.ProofError as error:
+        raise HTTPException(409, str(error)) from None
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+def investment_report_request(
+    request_id: str, response: Response, session: Session = Depends(session_for_request)
+):
+    if not __import__("re").fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}", request_id):
+        raise HTTPException(422, "investment_proof_request_invalid")
+    try:
+        result = investment_proofs.request_status(session, request_id)
+    except proof_service.ProofError as error:
+        raise HTTPException(404, str(error)) from None
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+router.add_api_route(
+    "/investment-reports/confirm",
+    confirm_investment_report,
+    methods=["POST"],
+    route_class_override=ProvisionalRoute,
+)
+router.add_api_route(
+    "/investment-reports/requests/{request_id}",
+    investment_report_request,
     methods=["GET"],
     route_class_override=ProvisionalRoute,
 )

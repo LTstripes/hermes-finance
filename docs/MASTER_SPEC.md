@@ -78,8 +78,11 @@ source account/instrument RUB results with period and annual percentage labels.
 Long originals explicitly show a historical interval; new monthly originals use
 their own matching closing date. The PDF supplies identity/control, never another
 payment. Account-wide costs/taxes and unresolved links remain separate. This slice
-does not persist PDF links or financially apply history; no old month needs Close
-for Preview. The ordinary **Выплаты** step keeps actual records and its existing
+allows explicit source-only Save of verified PDF links after XML Save, with
+conflict preview and explicit replacement confirmation. Saved evidence is
+rechecked and results recomputed after Reload in the ordinary returns readers;
+stale evidence hides numbers and requires fresh Preview. Neither Save financially
+applies history nor rewrites CLOSED; no old month needs Close. The ordinary **Выплаты** step keeps actual records and its existing
 explicit future T-Invest action without another broker-document upload form.
 Full calendar originals and historical/partial overlaps are counted separately;
 historical/partial overlaps are collapsed separately. Both the month list and

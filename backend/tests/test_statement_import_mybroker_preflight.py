@@ -989,6 +989,236 @@ def investment_case():
     return service, doc, raw, report, service._money(doc, raw)
 
 
+def saved_investment_preview(database, monkeypatch):
+    from hermes_finance.services import source_intake
+
+    service, _, raw, report, _ = investment_case()
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(service, "parse_investment_report", lambda *_: report)
+    with database.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=FILENAME, request_id="investment-xml"
+        )
+    result = run(database, [(FILENAME, raw)], income_report=b"pdf", history_from_zero=True)[
+        "source_return_preview"
+    ]
+    return result
+
+
+def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.returns_view import read_overview
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    preview = saved_investment_preview(database, monkeypatch)
+    persistence = preview["persistence"]
+    assert persistence["available"], persistence
+    before = snapshot(database)
+    intent = {k: persistence[k] for k in ("form_token", "preview_digest")}
+    with database.session_factory() as session:
+        ack = proofs.confirm(session, **intent, request_id="investment-proof")
+    assert ack["current"] and not ack["replay"]
+    after = snapshot(database)
+    assert {name for name in before if before[name] != after[name]} == {"source_return_proofs"}
+    with database.session_factory() as session:
+        assert proofs.confirm(session, **intent, request_id="investment-proof")["replay"]
+    # A fresh session/process-bound form registry is not needed for reads.
+    proofs.FORMS.entries.clear()
+    with database.session_factory() as session:
+        reports = proofs.read_reports(session, source_account="1234567")
+        assert reports[0]["status"] == "current", reports
+        assert reports[0]["interval"] == preview["intervals"][0]
+        assert proofs.request_status(session, "investment-proof")["current"]
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+        assert result.instruments[0].analysis.pnl.value == 9000
+        assert result.instruments[0].analysis.modified_dietz.value is not None
+        view = read_overview(
+            session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
+        )
+        assert view["selected"]["pnl"]["value"] == "9000"
+        assert view["instruments"][0]["pnl"]["value"] == "9000"
+    assert snapshot(database) == after
+    repeated = run(
+        database, [(FILENAME, investment_original())], income_report=b"pdf", history_from_zero=True
+    )["source_return_preview"]
+    assert repeated["persistence"]["reason_codes"] == ["investment_proof_already_saved"]
+
+
+@pytest.mark.parametrize("mutation", ["classification", "aba", "overlap"])
+def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mutation):
+    from hermes_finance.persistence import SourceMoneyClassification
+    from hermes_finance.services import source_intake
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    preview = saved_investment_preview(database, monkeypatch)["persistence"]
+    with database.session_factory() as session:
+        proofs.confirm(
+            session,
+            **{k: preview[k] for k in ("form_token", "preview_digest")},
+            request_id="proof-currentness",
+        )
+    if mutation == "overlap":
+        root = ET.fromstring(investment_original())
+        root.set("synthetic", "overlap")
+        raw = ET.tostring(root, encoding="utf-8")
+        with database.session_factory() as session:
+            source_intake.save_intake(
+                session, document=raw, filename=FILENAME, request_id="overlap"
+            )
+    else:
+        with database.session_factory() as session:
+            row = session.scalar(
+                select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+            )
+            old = row.classification
+            row.classification = "unknown" if old != "unknown" else "fee"
+            session.commit()
+            if mutation == "aba":
+                row.classification = old
+                session.commit()
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == "stale" and report["interval"] is None
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+        assert all(
+            r.analysis.pnl.value is None and r.analysis.modified_dietz.value is None
+            for r in result.instruments
+        )
+
+
+def test_investment_persistent_duplicate_save_and_future_month_do_not_retire_history(
+    database, monkeypatch
+):
+    from hermes_finance.services import source_intake
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    preview = saved_investment_preview(database, monkeypatch)["persistence"]
+    with database.session_factory() as session:
+        proofs.confirm(
+            session,
+            **{k: preview[k] for k in ("form_token", "preview_digest")},
+            request_id="proof-stable",
+        )
+        source_intake.save_intake(
+            session, document=investment_original(), filename=FILENAME, request_id="xml-repeat"
+        )
+        assert proofs.read_reports(session)[0]["status"] == "current"
+    raw = investment_original().replace(b"2030-01-", b"2030-02-").replace(b".01.2030", b".02.2030")
+    with database.session_factory() as session:
+        source_intake.save_intake(
+            session,
+            document=raw,
+            filename="Брокерский 1234567 (01.02.30-28.02.30).xml",
+            request_id="future-month",
+        )
+        assert proofs.read_reports(session)[0]["status"] == "current"
+
+
+def test_investment_persistent_replacement_requires_explicit_preview_confirmation(
+    database, monkeypatch
+):
+    from dataclasses import replace
+
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_return_proofs import ProofError
+
+    first = saved_investment_preview(database, monkeypatch)["persistence"]
+    with database.session_factory() as session:
+        proofs.confirm(
+            session,
+            **{k: first[k] for k in ("form_token", "preview_digest")},
+            request_id="proof-original",
+        )
+    service, _, _, report, _ = investment_case()
+    monkeypatch.setattr(
+        service, "parse_investment_report", lambda *_: replace(report, sha256="e" * 64)
+    )
+    second = run(
+        database,
+        [(FILENAME, investment_original())],
+        income_report=b"changed pdf",
+        history_from_zero=True,
+    )["source_return_preview"]["persistence"]
+    assert len(second["replacements"]) == 1
+    before = snapshot(database)
+    with database.session_factory() as session:
+        with pytest.raises(ProofError, match="replacement_not_confirmed"):
+            proofs.confirm(
+                session,
+                **{k: second[k] for k in ("form_token", "preview_digest")},
+                request_id="replacement-denied",
+            )
+    assert snapshot(database) == before
+    third = run(
+        database,
+        [(FILENAME, investment_original())],
+        income_report=b"changed pdf",
+        history_from_zero=True,
+    )["source_return_preview"]["persistence"]
+    with database.session_factory() as session:
+        ack = proofs.confirm(
+            session,
+            **{k: third[k] for k in ("form_token", "preview_digest")},
+            request_id="replacement",
+            replace_existing=True,
+        )
+        assert ack["current"]
+        assert len(proofs.read_reports(session)) == 1
+    assert (
+        len(snapshot(database)["source_return_proofs"]) == len(before["source_return_proofs"]) + 1
+    )
+
+
+def test_investment_same_native_id_in_pending_section_is_not_material_execution_conflict():
+    from hermes_finance.services.source_report_preview import _trade_comparison_key
+
+    _, doc, _, _, _ = investment_case()
+    completed = doc["trades"][0]
+    pending = {**completed, "section": "pending", "state": "pending"}
+    assert _trade_comparison_key(completed) != _trade_comparison_key(pending)
+
+
+def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
+    database, monkeypatch
+):
+    saved_investment_preview(database, monkeypatch)
+    client = TestClient(create_app(database=database))
+    result = client.post(
+        "/api/mybroker-preflight/preview",
+        files=[
+            ("files", (FILENAME, investment_original())),
+            ("income_report", ("synthetic.pdf", b"pdf")),
+        ],
+        data={"intent": '{"history_from_zero":true}'},
+    )
+    assert result.status_code == 200
+    first = result.json()["source_return_preview"]["persistence"]
+    payload = {
+        **{k: first[k] for k in ("form_token", "preview_digest")},
+        "request_id": "api-proof",
+        "attested": "true",
+    }
+    assert (
+        client.post("/api/source-returns/investment-reports/confirm", json=payload).status_code
+        == 422
+    )
+    payload["attested"] = True
+    saved = client.post("/api/source-returns/investment-reports/confirm", json=payload)
+    assert saved.status_code == 200 and saved.json()["current"], saved.text
+    read = client.get("/api/source-returns/investment-reports/requests/api-proof")
+    assert read.status_code == 200 and read.json()["preview_digest"] == first["preview_digest"]
+    assert (
+        client.get("/api/source-returns/investment-reports?source_account=" + ACCOUNT).json()[
+            "reports"
+        ][0]["status"]
+        == "current"
+    )
+    ordinary = client.get("/api/source-returns/monthly?source_account=" + ACCOUNT).json()
+    assert ordinary["months"][0]["growth_kopecks"] == 9000
+    assert ordinary["period"]["growth_kopecks"] == 9000
+
+
 def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch):
     from decimal import Decimal
 

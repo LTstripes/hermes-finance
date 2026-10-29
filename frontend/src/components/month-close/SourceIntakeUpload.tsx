@@ -10,6 +10,7 @@ import {
 } from "../../api/sourceIntake";
 import { formatDate } from "../../lib/format";
 import { brokerSourceTitle } from "../../lib/ownerCopy";
+import { SavedInvestmentReports } from "../SavedInvestmentReports";
 import { SourceReportPreviewPanel } from "../SourceReportPreviewPanel";
 import styles from "./SourceIntakeUpload.module.css";
 
@@ -60,13 +61,14 @@ export function SourceIntakeUpload({
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const uploadBusy = useRef(false);
   const [uploading, setUploading] = useState(false);
+  const [proofPending, setProofPending] = useState(false);
   const [heldFiles, setHeldFiles] = useState<string[]>([]);
   const mounted = useRef(true);
   const filesByRequest = useRef(new Map<string, File>());
   const unresolved = uploads.some((item) => item.uncertain || item.readbackFailed);
   useEffect(() => {
-    onPendingChange?.(uploading || unresolved);
-  }, [uploading, unresolved, onPendingChange]);
+    onPendingChange?.(uploading || unresolved || proofPending);
+  }, [uploading, unresolved, proofPending, onPendingChange]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -262,7 +264,7 @@ export function SourceIntakeUpload({
           accept=".xml"
           multiple
           type="file"
-          disabled={uploading || disabled}
+          disabled={uploading || disabled || proofPending}
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             setPreviewFiles(files);
@@ -271,7 +273,15 @@ export function SourceIntakeUpload({
           }}
         />
       </label>
-      <SourceReportPreviewPanel xmlFiles={previewFiles} />
+      <SourceReportPreviewPanel
+        xmlFiles={previewFiles}
+        onPendingChange={setProofPending}
+        onSaved={() => {
+          void client.invalidateQueries({ queryKey: ["source-returns"] });
+          void client.invalidateQueries({ queryKey: ["returns"] });
+        }}
+      />
+      <SavedInvestmentReports />
       <details className={styles.note}>
         <summary>Подробнее о сохранении выписок</summary>
         <p>

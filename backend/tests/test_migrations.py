@@ -3211,6 +3211,78 @@ def test_money_ownership_migration_keeps_v1_bytes_and_refuses_populated_downgrad
     assert revision_rows(path) == [REVISION]
 
 
+def test_investment_proof_migration_preserves_rows_sequence_and_legacy_guard_profile(tmp_path):
+    import pytest
+
+    path = tmp_path / "synthetic-investment-proof.db"
+    upgraded = run_alembic(path, "upgrade", "0066_actual_payout_links")
+    assert upgraded.returncode == 0, upgraded.stderr
+    with sqlite3.connect(path) as connection:
+        old_guards = connection.execute(
+            "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name LIKE 'return_proof_%' ORDER BY name"
+        ).fetchall()
+        connection.execute(
+            "INSERT INTO source_return_proofs (source_account,native_account,request_id,request_fingerprint,proof_version,dependency_digest,evidence_json,confirmed_at) VALUES ('synthetic','synthetic','legacy',?, 'source_return_custody_v1',?, '{}','2030-01-01')",
+            ("a" * 64, "b" * 64),
+        )
+        connection.execute("UPDATE sqlite_sequence SET seq=100 WHERE name='source_return_proofs'")
+        previous = connection.execute("SELECT * FROM source_return_proofs").fetchall()
+    upgraded = run_alembic(path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT * FROM source_return_proofs").fetchall() == previous
+        assert connection.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name='source_return_proofs'"
+        ).fetchone() == (100,)
+        assert (
+            "AUTOINCREMENT"
+            in connection.execute(
+                "SELECT sql FROM sqlite_master WHERE name='source_return_proofs'"
+            ).fetchone()[0]
+        )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            connection.execute("UPDATE source_return_proofs SET source_account='other'")
+    downgraded = run_alembic(path, "downgrade", "0066_actual_payout_links")
+    assert downgraded.returncode == 0, downgraded.stderr
+    with sqlite3.connect(path) as connection:
+        assert (
+            connection.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name LIKE 'return_proof_%' ORDER BY name"
+            ).fetchall()
+            == old_guards
+        )
+        assert connection.execute("SELECT * FROM source_return_proofs").fetchall() == previous
+        assert connection.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name='source_return_proofs'"
+        ).fetchone() == (100,)
+    upgraded = run_alembic(path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO source_return_proofs (source_account,native_account,request_id,request_fingerprint,proof_version,dependency_digest,evidence_json,confirmed_at) VALUES ('synthetic','synthetic','investment',?, 'source_return_investment_v1',?, '{}','2030-01-01')",
+            ("c" * 64, "d" * 64),
+        )
+        assert connection.execute(
+            "SELECT id FROM source_return_proofs WHERE request_id='investment'"
+        ).fetchone() == (101,)
+        before = connection.execute(
+            "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+        ).fetchall()
+    blocked = run_alembic(path, "downgrade", "0066_actual_payout_links")
+    assert (
+        blocked.returncode != 0
+        and "cannot downgrade populated investment report proof history" in blocked.stderr
+    )
+    with sqlite3.connect(path) as connection:
+        assert (
+            connection.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+            ).fetchall()
+            == before
+        )
+
+
 def test_source_money_classification_migration_populated_downgrade_and_reupgrade(tmp_path):
     from datetime import UTC, datetime
 

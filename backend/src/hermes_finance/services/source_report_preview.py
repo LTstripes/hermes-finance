@@ -6,6 +6,7 @@ XML Money remains cash authority; PDF supplies identity/control, never extra cas
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal, localcontext
 from xml.etree import ElementTree as ET
@@ -14,6 +15,7 @@ from hermes_finance.domain.instrument_return import (
     CashLeg,
     Coverage,
     Endpoint,
+    InstrumentAnalysis,
     InstrumentEvent,
     calculate_economics,
 )
@@ -55,7 +57,8 @@ def _metric(value, reasons=(), *, method=None, annualized=False):
 
 def _trade_comparison_key(trade):
     if trade["identity"]:
-        return trade["identity"]
+        # Pending and completed sections are different lifecycle observations.
+        return digest([trade["identity"], trade["section"]])
     # Comparison only, never a financial identity for an identityless REPO leg.
     if trade.get("repo_observed") and trade.get("ids"):
         return digest(["repo_observation", trade["core"]["source_account"], trade["ids"]])
@@ -95,8 +98,8 @@ def _classification_revision(rows):
     )
 
 
-def _money(document, payload):
-    texts = list(_narratives(payload))
+def _money(document, payload, *, texts=None):
+    texts = list(_narratives(payload)) if texts is None else texts
     if len(texts) != len(document["money"]):
         raise MyBrokerError("source_return_original_money_mismatch")
     result = []
@@ -219,12 +222,12 @@ def _native(document, payload):
     primary = defaultdict(list)
     for trade, node in zip(trades, nodes):
         if node.get("p_name"):
-            names[node.get("p_name")].add(trade["core"]["isin"])
+            names[digest(node.get("p_name"))].add(trade["core"]["isin"])
         if trade["ids"]:
             primary[trade["ids"][0]].append(trade)
     for node in root.findall(".//m:Details[@ISIN1]", NS):
         if node.get("ISIN1") and node.get("active_name"):
-            names[node.get("active_name")].add(node.get("ISIN1"))
+            names[digest(node.get("active_name"))].add(node.get("ISIN1"))
     cancellations = []
     for node in root.findall("m:Trades3/m:Report/m:Tablix1/m:Details_Collection/m:Details", NS):
         match = re.fullmatch(
@@ -238,7 +241,7 @@ def _native(document, payload):
             try:
                 q = Decimal(node.get("qty", ""))
                 day = date.fromisoformat(node.get("settlement_date", "")[:10])
-                if q < 0:
+                if q.is_finite() and q < 0:
                     cancellations.append((node.get("acc_code"), match[1], day, q))
             except (ValueError, ArithmeticError):
                 pass
@@ -364,7 +367,18 @@ def parse_source_blockers(root):
     )
 
 
-def _interval(document, payload, report, money, links, link_issues, from_zero):
+def _interval(
+    document,
+    payload,
+    report,
+    money,
+    links,
+    link_issues,
+    from_zero,
+    *,
+    native_evidence=None,
+    analyses=None,
+):
     account = document["filename_account"]
     native_account = {r["source_account"] for r in document["money"] + document["positions"]}
     native_account.update(t["core"]["source_account"] for t in document["trades"])
@@ -375,7 +389,19 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         raise MyBrokerError("source_return_filename_native_account_conflict")
     start = date.fromisoformat(document["covered_from"]) - timedelta(days=1)
     end = date.fromisoformat(document["covered_to"])
-    trades, names, primary, cancellations = _native(document, payload)
+    if native_evidence is None:
+        trades, names, primary, cancellations = _native(document, payload)
+    else:
+        trades = [t for t in document["trades"] if t["section"] == "completed"]
+        names = {k: set(v) for k, v in native_evidence["names"].items()}
+        primary = defaultdict(list)
+        for trade in trades:
+            if trade["ids"]:
+                primary[trade["ids"][0]].append(trade)
+        cancellations = [
+            (a, i, date.fromisoformat(d), Decimal(q))
+            for a, i, d, q in native_evidence["cancellations"]
+        ]
     qdelta = defaultdict(Decimal)
     repo_quantity = defaultdict(Decimal)
     expected = defaultdict(int)
@@ -463,7 +489,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
                 unlinked.append(row)
                 continue
         elif kind in {"trade_settlement", "fee"}:
-            token = row.get("primary_id")
+            token = row.get("native_token", row.get("primary_id"))
             match = re.fullmatch(
                 r"(?:Расчеты|Комиссия) по сделке ([0-9]{1,128}|B[0-9]{1,127})", row["operation"]
             )
@@ -479,7 +505,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
                 isin = next(iter(options))
             elif row["operation"].casefold().strip() == "нкд по сделке":
                 label = re.fullmatch(r"[cс] ([^\r\n]+)", row["narrative"], re.IGNORECASE)
-                values = names.get(label[1], set()) if label else set()
+                values = names.get(digest(label[1]), set()) if label else set()
                 if len(values) == 1:
                     isin = next(iter(values))
             if isin:
@@ -602,7 +628,16 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
     if from_zero and not inception:
         raise MyBrokerError("source_return_zero_start_contradiction")
     instruments = []
-    movements = _unresolved_movements(payload, native_account, matched_cancellations)
+    if native_evidence is None:
+        movements = _unresolved_movements(payload, native_account, matched_cancellations)
+    else:
+        movements = list(native_evidence["unresolved"])
+        remaining = Counter(cancellations) - Counter(matched_cancellations)
+        movements.extend(
+            {"isin": c[1], "reason": "unresolved_native_security_movement"}
+            for c, n in remaining.items()
+            for _ in range(n)
+        )
     unresolved_payouts = any(r["classification"] in {"coupon", "dividend"} for r in unlinked)
     advisory_reasons = (
         ("source_sections_not_financially_accepted",) if document["syntax_blockers"] else ()
@@ -617,6 +652,8 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         why.update(code for a, code in report.issues if a == account)
         if unresolved_payouts:
             why.add("unresolved_account_payout_attribution")
+        if any(r["classification"] not in {"coupon", "dividend"} for r in unlinked):
+            why.add("unresolved_account_cash_attribution")
         why.update(m["reason"] for m in movements if m["isin"] in (None, isin))
         if p:
             q0 = (
@@ -656,7 +693,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         }
         opening = Endpoint(start, q0, v0, v0, None, "dirty")
         closing = Endpoint(end, q1, v1, v1, None, "dirty")
-        components, pnl, known, dietz, _ = calculate_economics(
+        components, pnl, known, dietz, estimate = calculate_economics(
             opening, closing, events[isin], coverage
         )
         flows = [
@@ -669,6 +706,37 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
             for key in rates:
                 rates[key]["value"] = None
                 rates[key]["status"] = "unavailable"
+        if analyses is not None:
+            reasons = tuple(sorted(why)) + advisory_reasons
+
+            def qualified(metric):
+                return replace(
+                    metric,
+                    status=("provisional" if not why else "partial")
+                    if metric.value is not None and reasons
+                    else metric.status,
+                    reason_codes=tuple(sorted(set(metric.reason_codes + reasons))),
+                )
+
+            analyses[isin] = InstrumentAnalysis(
+                opening_date=start,
+                closing_date=end,
+                history_start=start + timedelta(days=1),
+                history_end=end,
+                history_complete_since_acquisition=inception,
+                events=tuple(events[isin]),
+                opening=opening,
+                closing=closing,
+                components={k: qualified(v) for k, v in components.items()},
+                pnl=qualified(pnl),
+                known_subtotal=known,
+                modified_dietz=qualified(dietz),
+                coverage=coverage,
+                source_references=(),
+                reason_codes=reasons,
+                assumptions=("source_only_xml_pdf",),
+                statement_estimate=estimate,
+            )
         instruments.append(
             {
                 "isin": isin,
@@ -759,6 +827,34 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         "history_from_zero": inception,
         "opening_kopecks": None if v0total is None else str(v0total),
         "closing_kopecks": None if v1total is None else str(v1total),
+        "external_flows": [
+            {"date": str(d), "amount_kopecks": str(a), "status": status}
+            for d, a, status in external
+        ],
+        "contributions_kopecks": None
+        if any(s == "unknown" for _, _, s in external)
+        else str(sum(a for _, a, _ in external if a > 0)),
+        "withdrawals_kopecks": None
+        if any(s == "unknown" for _, _, s in external)
+        else str(-sum(a for _, a, _ in external if a < 0)),
+        "coupons_kopecks": str(
+            sum(
+                r["minor"]
+                for r in money
+                if r["classification"] == "coupon" and r["currency"] == "RUB"
+            )
+        )
+        if not any(r["currency"] != "RUB" and r["classification"] == "coupon" for r in money)
+        else None,
+        "dividends_kopecks": str(
+            sum(
+                r["minor"]
+                for r in money
+                if r["classification"] == "dividend" and r["currency"] == "RUB"
+            )
+        )
+        if not any(r["currency"] != "RUB" and r["classification"] == "dividend" for r in money)
+        else None,
         **rates,
         "known_subtotal": known_subtotal,
         "unresolved_movements": movements,
@@ -859,13 +955,13 @@ def preview_source_reports(session, entries, originals, income_report, *, histor
                 key = _trade_comparison_key(t)
                 known = saved_trades.get(key, set()) if key else set()
                 stats[
-                    "repeated_native_trades"
-                    if _trade_material(t) in known
-                    else "conflicting_native_trades"
+                    "conflicting_native_trades"
+                    if known - {_trade_material(t)}
+                    else "repeated_native_trades"
                     if known
                     else "new_native_trades"
                 ] += 1
-                if known and _trade_material(t) not in known:
+                if known - {_trade_material(t)}:
                     conflicts.append(
                         {
                             "kind": "native_trade_material_conflict",
@@ -906,8 +1002,21 @@ def preview_source_reports(session, entries, originals, income_report, *, histor
                     history_from_zero,
                 )
             )
+    from hermes_finance.services.source_investment_proofs import prepare
+
+    persistence = prepare(
+        session,
+        sorted(documents, key=lambda d: d["filename_account"]),
+        payloads,
+        {hashlib.sha256(raw).hexdigest(): name for name, raw in originals},
+        report,
+        intervals,
+        comparison,
+        history_from_zero,
+    )
     return {
         "contract": "xml-pdf-source-return-preview-v1",
+        "persistence": persistence,
         "financial_authority": "none",
         "financial_apply_available": False,
         "close_available": False,

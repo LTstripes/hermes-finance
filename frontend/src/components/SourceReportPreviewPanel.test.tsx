@@ -1,9 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { previewSourceReports, type SourceReportPreview } from "../api/sourceReportPreview";
+import {
+  confirmInvestmentReport,
+  getInvestmentProofRequest,
+  getInvestmentReports,
+  previewSourceReports,
+  type SourceReportPreview,
+} from "../api/sourceReportPreview";
 import { SourceReportPreviewPanel } from "./SourceReportPreviewPanel";
 
-vi.mock("../api/sourceReportPreview", () => ({ previewSourceReports: vi.fn() }));
+vi.mock("../api/sourceReportPreview", () => ({
+  previewSourceReports: vi.fn(),
+  confirmInvestmentReport: vi.fn(),
+  getInvestmentProofRequest: vi.fn(),
+  getInvestmentReports: vi.fn(),
+}));
 const preview = vi.mocked(previewSourceReports);
 const xml = new File(["synthetic"], "historical.xml", { type: "application/xml" });
 const metric = (value: string | null) => ({ value, status: "provisional", reason_codes: [] });
@@ -58,7 +69,113 @@ function choosePdf() {
     target: { files: [new File(["synthetic"], "report.pdf", { type: "application/pdf" })] },
   });
 }
-beforeEach(() => preview.mockReset());
+function savable() {
+  const value = result();
+  value.persistence = {
+    available: true,
+    form_token: "synthetic-form-capability",
+    preview_digest: "d".repeat(64),
+    replacements: [],
+    reason_codes: [],
+  };
+  return value;
+}
+function readback() {
+  vi.mocked(getInvestmentReports).mockResolvedValue({
+    reports: [
+      {
+        pdf_period: result().pdf_period,
+        pdf_payout_rows: 1,
+        proof_id: 42,
+        source_account: "1234567",
+        covered_from: "2030-01-01",
+        covered_to: "2030-09-30",
+        status: "current",
+        reason_codes: [],
+        interval: result().intervals[0],
+        financial_authority: "none",
+      },
+    ],
+  });
+}
+it("saves one proof, verifies the exact acknowledgement and derived readback", async () => {
+  preview.mockResolvedValue(savable());
+  readback();
+  vi.mocked(confirmInvestmentReport).mockImplementation(async (form) => ({
+    ...form,
+    proof_ids: [42],
+    current: true,
+    financial_authority: "none",
+  }));
+  const pending = vi.fn();
+  render(<SourceReportPreviewPanel xmlFiles={[xml]} onPendingChange={pending} />);
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "Проверить XML и PDF" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Сохранить PDF-связи" }));
+  await screen.findByText(/PDF-связи сохранены и перечитаны/);
+  expect(confirmInvestmentReport).toHaveBeenCalledOnce();
+  expect(getInvestmentReports).toHaveBeenCalledOnce();
+  expect(sessionStorage.getItem("hermes-investment-proof-pending-v1")).toBeNull();
+  expect(pending).toHaveBeenCalledWith(true);
+  expect(pending).toHaveBeenLastCalledWith(false);
+});
+it("recovers an uncertain Save after Reload by GET, without repeating POST", async () => {
+  preview.mockResolvedValue(savable());
+  readback();
+  vi.mocked(confirmInvestmentReport).mockRejectedValue(new Error("lost acknowledgement"));
+  const mounted = render(<SourceReportPreviewPanel xmlFiles={[xml]} />);
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "Проверить XML и PDF" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Сохранить PDF-связи" }));
+  await screen.findByText("lost acknowledgement");
+  const intent = JSON.parse(sessionStorage.getItem("hermes-investment-proof-pending-v1") ?? "null");
+  expect(intent.request_id).toBeTruthy();
+  vi.mocked(getInvestmentProofRequest).mockResolvedValue({
+    ...intent,
+    proof_ids: [42],
+    current: true,
+    financial_authority: "none",
+  });
+  mounted.unmount();
+  render(<SourceReportPreviewPanel xmlFiles={[]} />);
+  await screen.findByText(/PDF-связи сохранены и перечитаны/);
+  expect(getInvestmentProofRequest).toHaveBeenCalledWith(intent.request_id);
+  expect(confirmInvestmentReport).toHaveBeenCalledOnce();
+});
+it("requires explicit replacement and retains an unverified acknowledgement for recovery", async () => {
+  const r = savable();
+  if (!r.persistence) throw new Error("missing synthetic proof form");
+  r.persistence.replacements = [
+    {
+      source_account: "1234567",
+      proof_id: 41,
+      covered_from: "2030-01-01",
+      covered_to: "2030-09-30",
+    },
+  ];
+  preview.mockResolvedValue(r);
+  vi.mocked(confirmInvestmentReport).mockImplementation(async (form) => ({
+    ...form,
+    preview_digest: "bad",
+    proof_ids: [42],
+    current: true,
+    financial_authority: "none",
+  }));
+  render(<SourceReportPreviewPanel xmlFiles={[xml]} />);
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "Проверить XML и PDF" }));
+  const save = await screen.findByRole("button", { name: "Сохранить PDF-связи" });
+  expect(save).toBeDisabled();
+  fireEvent.click(screen.getByLabelText(/Подтверждаю замену только source-proof/));
+  fireEvent.click(save);
+  await screen.findByText(/Сохранение требует проверки квитанции/);
+  expect(sessionStorage.getItem("hermes-investment-proof-pending-v1")).not.toBeNull();
+  expect(getInvestmentReports).not.toHaveBeenCalled();
+});
+beforeEach(() => {
+  vi.resetAllMocks();
+  sessionStorage.clear();
+});
 
 it("shows source restrictions and known partial amounts when complete movement returns are unavailable", async () => {
   const r = result();

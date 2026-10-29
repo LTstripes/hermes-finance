@@ -2301,13 +2301,37 @@ investment-report family, separate from the accepted depository-income PDF Apply
 contract. A wrong family, inferred XML range or different PDF closing date fails
 explicitly. The PDF declared range must cover the entire XML interval.
 
-`source_return_preview` is an ephemeral original-bound projection, with no saved
-PDF evidence, payout writer, batch Apply, financial receipt or Close authority.
-It reuses S1, the source journal, InstrumentEvent/CashLeg economics, Modified Dietz
-and XIRR; it does not create a second ledger. The existing source-only XML Save
-and financial writers retain their own contracts. Persisting this PDF enrichment
-for later readers requires a separately defined typed evidence/revision contract;
-putting it in an arbitrary journal decision blob is not supported.
+`source_return_preview` reuses S1, the source journal, InstrumentEvent/CashLeg
+economics, Modified Dietz and XIRR. After the existing immutable XML Save, an
+explicit **Save PDF links** can append `source_return_investment_v1` on the
+existing source-proof host (schema 0067). It retains selected-account normalized
+PDF payout/control cells, exact-native identity label hashes, cancellation
+operands and unresolved-structure descriptors, never originals, extracted text,
+paths, names or calculated returns. It creates no cash, financial receipt,
+Apply/Close authority or parallel ledger. S1 revisions and CLOSED financial rows
+are untouched. One original per selected account is required for this Save;
+multiple originals for one account remain Preview-only until disambiguated.
+
+The bounded single-use server form binds exact source hash/filename/parser and
+frozen manifest, native account, declared interval, current classifications,
+meaningful source decisions, overlapping source membership, physical database
+incarnation and calculating code. Scoped monotonic classification tokens detect
+ABA/deletion/reinsertion; unrelated later intervals and no-change XML resaves do
+not retire the proof. Legacy unscoped dependency tokens remain conservative.
+Under the held SQLite writer reservation, confirmation revalidates every account
+and appends the entire batch atomically or none. Native-material or explicit
+classification conflicts block Save. A changed proof for the same account/exact
+interval requires an explicit replacement acknowledgement; the old row remains.
+Request ID/fingerprint readback recovers a lost ACK without repeating a write.
+
+`GET /api/source-returns/investment-reports` and ordinary source monthly,
+instrument and Returns readers derive results afresh from retained XML Money
+and typed evidence after Reload. Latest proof only, with no numeric fallback
+when stale. Historical outer endpoints cannot supply interior monthly EOD.
+Exact full-month proofs can supply that month's existing estimate; a complete
+from-zero proof supplies its exact historical interval. Any code/dependency or
+database-incarnation change requires fresh original Preview and confirmation.
+No prepared valuation packet is activated by these routes.
 
 Actual XML Money is counted once. PDF payout rows corroborate ISIN via whole
 account/kind/payment-day/currency/registration groups and exact net sums, with a

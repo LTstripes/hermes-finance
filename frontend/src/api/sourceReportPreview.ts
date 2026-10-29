@@ -1,4 +1,4 @@
-import { apiMultipart } from "./client";
+import { apiMultipart, apiRequest } from "./client";
 
 export type SourceMetric = { value: string | null; status: string; reason_codes: string[] };
 export type SourceInstrumentResult = {
@@ -44,6 +44,18 @@ export type SourceIntervalResult = Omit<
   };
 };
 export type SourceReportPreview = {
+  persistence?: {
+    available: boolean;
+    reason_codes: string[];
+    preview_digest?: string;
+    form_token?: string;
+    replacements: {
+      source_account: string;
+      proof_id: number;
+      covered_from: string;
+      covered_to: string;
+    }[];
+  };
   contract: "xml-pdf-source-return-preview-v1";
   financial_apply_available: false;
   close_available: false;
@@ -63,6 +75,45 @@ export type SourceReportPreview = {
     conflicts?: { kind: string; isin: string; identity: string; settlement_date: string | null }[];
   }[];
 };
+
+export type InvestmentProofAck = {
+  request_id: string;
+  preview_digest: string;
+  proof_ids: number[];
+  current: boolean;
+  financial_authority: "none";
+};
+export type SavedInvestmentReport = {
+  pdf_period: { covered_from: string; covered_to: string };
+  pdf_payout_rows: number;
+  proof_id: number;
+  source_account: string;
+  covered_from: string;
+  covered_to: string;
+  status: "current" | "stale";
+  reason_codes: string[];
+  interval: SourceIntervalResult | null;
+  financial_authority: "none";
+};
+export const getInvestmentReports = (account?: string, signal?: AbortSignal) =>
+  apiRequest<{ reports: SavedInvestmentReport[] }>(
+    `/api/source-returns/investment-reports${account ? `?source_account=${encodeURIComponent(account)}` : ""}`,
+    { signal },
+  );
+export const getInvestmentProofRequest = (requestId: string) =>
+  apiRequest<InvestmentProofAck>(
+    `/api/source-returns/investment-reports/requests/${encodeURIComponent(requestId)}`,
+  );
+export const confirmInvestmentReport = (form: {
+  form_token: string;
+  preview_digest: string;
+  request_id: string;
+  replace_existing: boolean;
+}) =>
+  apiRequest<InvestmentProofAck>("/api/source-returns/investment-reports/confirm", {
+    method: "POST",
+    body: { ...form, attested: true },
+  });
 
 export async function previewSourceReports(
   xml: File[],

@@ -6,11 +6,11 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
 }, info) => {
   await page.setViewportSize({ width: 1366, height: 1000 });
   const metric = (value: string | null) => ({ value, status: "provisional", reason_codes: [] });
-  const intervals = ["7114001", "7114002"].map((source_account) => ({
+  const intervals = ["7114901", "7114902"].map((source_account) => ({
     source_account,
     source_sha256: source_account.repeat(8),
-    opening_date: "2039-12-31",
-    closing_date: "2040-10-31",
+    opening_date: "2038-12-31",
+    closing_date: "2039-10-31",
     period_kind: "historical_interval",
     history_from_zero: false,
     pnl: metric("12345"),
@@ -67,16 +67,21 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
           contract: "xml-pdf-source-return-preview-v1",
           financial_apply_available: false,
           close_available: false,
-          pdf_period: { covered_from: "2040-01-01", covered_to: "2040-10-31" },
+          pdf_period: { covered_from: "2039-01-01", covered_to: "2039-10-31" },
           pdf_payout_rows: 2,
-          source_accounts: ["7114001", "7114002"],
+          source_accounts: ["7114901", "7114902"],
           comparison: [],
           intervals,
         },
       },
     });
   });
-  await page.goto("/v2/close?month=1");
+  const created = await request.post("/api/months", {
+    data: { year: 2039, month: 10, snapshot_date: "2039-10-31", source: "manual" },
+  });
+  expect(created.status()).toBe(201);
+  const month = await created.json();
+  await page.goto(`/v2/close?month=${month.id}`);
   await tile(page, /Брокерские выписки/);
   const buffers = await Promise.all(
     ["a", "b"].map(async (suffix) =>
@@ -85,12 +90,18 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
   );
   await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(
     buffers.map((buffer, i) => ({
-      name: `Брокерский 711400${i + 1} (01.01.40-31.10.40).xml`,
+      name: `Брокерский 711490${i + 1} (01.01.39-31.10.39).xml`,
       mimeType: "application/xml",
-      buffer,
+      buffer: Buffer.from(
+        buffer
+          .toString()
+          .replaceAll("7114001", "7114901")
+          .replaceAll("7114002", "7114902")
+          .replaceAll("2040", "2039"),
+      ),
     })),
   );
-  await expect(page.getByText(/Брокерский 711400[12].*: Сохран[её]н$/)).toHaveCount(2);
+  await expect(page.getByText(/Брокерский 711490[12].*: Сохран[её]н$/)).toHaveCount(2);
   await page.getByText("Расшифровка купонов и дивидендов — PDF Альфы", { exact: true }).click();
   await expect(page.locator('input[type="file"][accept=".xml"]')).toHaveCount(1);
   await page.getByLabel("Загрузить PDF Альфы").setInputFiles({
@@ -101,7 +112,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
   const inspect = page.getByRole("button", { name: "Проверить XML и PDF", exact: true });
   await inspect.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText(/Период PDF: 2040-01-01/)).toBeVisible();
+  await expect(page.getByText(/Период PDF: 2039-01-01/)).toBeVisible();
   await expect(page.getByText(/Исторический период/)).toHaveCount(2);
   await expect(page.getByText(/Рублёвый результат счёта/).last()).toContainText("123.45");
   await expect(page.getByText(/Рублёвый результат счёта/).first()).toContainText("Не определено");
