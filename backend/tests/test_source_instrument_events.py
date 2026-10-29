@@ -113,6 +113,115 @@ def _repo_source_scope(root, *, duplicate=False):
         root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS).append(other)
 
 
+def _closed_native_issue(root, *, ambiguous=False, stock_collision=False):
+    row = root.find(".//m:Details[@trade_no]", NS)
+    row.set("p_name", "Shared Issuer Bond 01")
+    if ambiguous:
+        other = deepcopy(row)
+        other.set("isin_reg", "RU000A000002")
+        other.set("trade_no", "90000000001\n90000000002")
+        root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS).append(other)
+    if stock_collision:
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Shared Issuer Bond 01")
+
+
+@pytest.mark.parametrize(
+    "case", ["exact", "name_missing", "prefix", "ambiguous", "position_conflict"]
+)
+def test_native_trade_issue_scope_without_position_is_not_money_ownership(db, case):
+    label = "Shared Issuer" if case == "prefix" else "Shared Issuer Bond 01"
+    save(
+        db,
+        bond=None,
+        trades=((BOND, "1", "100", "0", "0"),),
+        extra=(("НКД по сделке", "c " + label, "-20"),),
+        mutate=(
+            None
+            if case == "name_missing"
+            else lambda r: _closed_native_issue(
+                r, ambiguous=case == "ambiguous", stock_collision=case == "position_conflict"
+            )
+        ),
+    )
+    before = snapshot(db)
+    result = read(db)
+    stock = by_isin(result)[ISIN].analysis
+    if case == "exact":
+        (event,) = [e for e in by_isin(result)[BOND].analysis.events if e.kind == "UNRESOLVED"]
+        assert event.isin == BOND and event.attribution_basis == "source_issue"
+        assert not event.counted and event.effective_isin is None
+        assert event.reason_codes == ("unmatched_trade_money",)
+        assert event.native_identity is None
+        assert all(leg.ownership == event.event_key for leg in event.cash_legs)
+        assert stock.pnl.value == 10000
+        assert "unmatched_trade_money" not in stock.reason_codes
+    else:
+        assert stock.pnl.value is None
+        assert any("unmatched_trade_money" in e.reason_codes for e in result.unresolved_events)
+    assert snapshot(db) == before and result.financial_authority == "none"
+
+
+@pytest.mark.parametrize("confirmed_scoped", [False, True])
+def test_native_trade_issue_scope_overlap_needs_each_original_proof(db, confirmed_scoped):
+    extra = (("НКД по сделке", "c Shared Issuer Bond 01", "-20"),)
+    scoped = save(
+        db,
+        bond=None,
+        trades=((BOND, "1", "100", "0", "0"),),
+        extra=extra,
+        mutate=_closed_native_issue,
+    )
+    save(db, bond=None, trades=(), extra=extra, marker="missing-closed-issue-proof")
+    if confirmed_scoped:
+        with db.session_factory() as session:
+            row = session.scalar(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.intake_id == scoped
+                )
+            )
+            choose_classification(session, scoped, row.source_reference, row.classification)
+    before = snapshot(db)
+    result = read(db)
+    (event,) = [
+        e for e in result.unresolved_events if "overlap_flow_choice_conflict" in e.reason_codes
+    ]
+    assert event.isin is None and not event.counted and len(event.source_references) == 2
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fault", ["reference_digest", "native_identity", "native_ordinal"])
+def test_native_trade_issue_scope_requires_current_reference_chain(db, fault):
+    from hermes_finance.services.source_instrument_events import _native_trade_issue_scopes
+
+    intake = save(
+        db,
+        bond=None,
+        trades=((BOND, "1", "100", "0", "0"),),
+        mutate=_closed_native_issue,
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+    proven = _native_trade_issue_scopes(view)
+    assert {target[1] for targets in proven.values() for target in targets if target} == {BOND}
+    if fault == "reference_digest":
+        row = next(
+            o
+            for o in view["observations"]
+            if o["facts"].get("native_references", {}).get("trade_no")
+        )
+        row["facts"]["native_references"]["acc_code"] = "9999999-000"
+    elif fault == "native_identity":
+        view["document"]["trades"][0]["identity"] = "synthetic-stale-native-identity"
+    else:
+        view["document"]["trades"][0]["ordinal"] = 1
+    assert not any(
+        target for targets in _native_trade_issue_scopes(view).values() for target in targets
+    )
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize("case", ["exact", "unknown_id", "ambiguous"])
 def test_source_scope_repo_native_reference_is_not_cash_authority(db, case):
     native_id = "B99999" if case == "unknown_id" else "B90001"
