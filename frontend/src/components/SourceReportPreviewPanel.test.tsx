@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { ApiClientError } from "../api/client";
 import {
   confirmInvestmentReport,
   getInvestmentProofRequest,
@@ -171,6 +172,27 @@ it("requires explicit replacement and retains an unverified acknowledgement for 
   await screen.findByText(/Сохранение требует проверки квитанции/);
   expect(sessionStorage.getItem("hermes-investment-proof-pending-v1")).not.toBeNull();
   expect(getInvestmentReports).not.toHaveBeenCalled();
+});
+
+it("retires the old form on a typed missing request, but retains uncertain GET failures", async () => {
+  const intent = { request_id: "synthetic_missing", preview_digest: "d".repeat(64) };
+  sessionStorage.setItem("hermes-investment-proof-pending-v1", JSON.stringify(intent));
+  vi.mocked(getInvestmentProofRequest).mockRejectedValueOnce(new Error("network unavailable"));
+  render(<SourceReportPreviewPanel xmlFiles={[xml]} />);
+  await screen.findByText("network unavailable");
+  expect(sessionStorage.getItem("hermes-investment-proof-pending-v1")).not.toBeNull();
+  vi.mocked(getInvestmentProofRequest).mockRejectedValueOnce(
+    new ApiClientError(404, {
+      code: "investment_proof_request_not_found",
+      message: "investment_proof_request_not_found",
+      details: [],
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Проверить статус сохранения" }));
+  await screen.findByText(/Старый Preview сброшен/);
+  expect(sessionStorage.getItem("hermes-investment-proof-pending-v1")).toBeNull();
+  expect(confirmInvestmentReport).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Загрузить PDF Альфы")).toBeEnabled();
 });
 beforeEach(() => {
   vi.resetAllMocks();

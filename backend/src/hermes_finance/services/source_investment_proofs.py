@@ -22,7 +22,7 @@ from hermes_finance.services.broker_statement_provisional import ProvisionalStal
 from hermes_finance.services.source_monthly_returns import _selected_sources
 from hermes_finance.services.source_return_proofs import FORMS, ProofError, _epoch
 from hermes_finance.source_proof_file import file_incarnation
-from hermes_finance.statement_import import investment_money, investment_report, mybroker
+from hermes_finance.statement_import import mybroker
 from hermes_finance.statement_import.investment_report import InvestmentPayout, InvestmentReport
 
 VERSION = "source_return_investment_v1"
@@ -111,6 +111,16 @@ def _latest(session, scope):
     return None
 
 
+def _implementation_digest():
+    package = Path(__file__).resolve().parents[1]
+    return mybroker.digest(
+        [
+            (p.relative_to(package).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest())
+            for p in sorted(package.rglob("*.py"))
+        ]
+    )
+
+
 def _snapshot(session, account, start, end, *, reserved=False):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
@@ -162,21 +172,10 @@ def _snapshot(session, account, start, end, *, reserved=False):
         # profiles. New scoped clocks follow both old and current member IDs.
         if len(bits) != 3 or (bits[0] == "m" and int(bits[1]) in ids):
             clocks.append([clock.seq, clock.token])
-    from hermes_finance.domain import instrument_return, monthly_return_chain
-    from hermes_finance.services import source_report_preview
-
-    code = [
-        hashlib.sha256(Path(p).read_bytes()).hexdigest()
-        for p in (
-            __file__,
-            source_report_preview.__file__,
-            investment_report.__file__,
-            investment_money.__file__,
-            mybroker.__file__,
-            instrument_return.__file__,
-            monthly_return_chain.__file__,
-        )
-    ]
+    # Conservative implementation fingerprint, including transitive classifier,
+    # identity, Decimal/money and XIRR helpers. A hand-picked parent-module list
+    # could silently keep a proof current after a helper-only semantic change.
+    code = _implementation_digest()
     digest = mybroker.digest(
         {
             "physical": physical,
@@ -421,7 +420,7 @@ def request_status(session, request_id):
             select(SourceReturnProof)
             .where(
                 SourceReturnProof.proof_version == VERSION,
-                SourceReturnProof.request_id.startswith(request_id + ":"),
+                SourceReturnProof.request_id.startswith(request_id + ":", autoescape=True),
             )
             .order_by(SourceReturnProof.id)
         )
@@ -455,7 +454,7 @@ def confirm(session, *, form_token, preview_digest, request_id, replace_existing
         session.expire_all()
         existing = session.scalar(
             select(SourceReturnProof).where(
-                SourceReturnProof.request_id.startswith(request_id + ":")
+                SourceReturnProof.request_id.startswith(request_id + ":", autoescape=True)
             )
         )
         fingerprint = mybroker.digest([form_token, preview_digest, replace_existing])

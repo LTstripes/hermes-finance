@@ -2203,7 +2203,7 @@ pending. No RUB assumption supplies this proof.
 
 Schema `0065_source_return_proofs` adds empty `source_return_proofs` and
 `source_return_proof_dependencies`. This does not reparse, extend or rewrite V1
-manifest/observation/review operations. A proof holds only a version, explicit
+manifest/observation/review operations. A custody-v1 proof holds only a version, explicit
 request identity, native account, all selected immutable source hashes/parsers/
 manifest heads, server-proven cancellation months and dependency digest/time.
 It holds no raw XML, filenames/paths, quantities, money, rates, positions or
@@ -2315,7 +2315,8 @@ multiple originals for one account remain Preview-only until disambiguated.
 The bounded single-use server form binds exact source hash/filename/parser and
 frozen manifest, native account, declared interval, current classifications,
 meaningful source decisions, overlapping source membership, physical database
-incarnation and calculating code. Scoped monotonic classification tokens detect
+incarnation and the backend Python implementation (including transitive financial
+helpers). Any backend code change conservatively retires this profile. Scoped monotonic classification tokens detect
 ABA/deletion/reinsertion; unrelated later intervals and no-change XML resaves do
 not retire the proof. Legacy unscoped dependency tokens remain conservative.
 Under the held SQLite writer reservation, confirmation revalidates every account

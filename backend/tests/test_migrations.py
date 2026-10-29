@@ -3283,6 +3283,40 @@ def test_investment_proof_migration_preserves_rows_sequence_and_legacy_guard_pro
         )
 
 
+def test_investment_proof_migration_rejects_guard_drift_before_any_ddl(tmp_path):
+    from shutil import copyfile
+
+    template = tmp_path / "proof-schema-template.db"
+    assert run_alembic(template, "upgrade", "0066_actual_payout_links").returncode == 0
+    for mutation in ("missing", "changed", "unexpected"):
+        path = tmp_path / f"proof-drift-{mutation}.db"
+        copyfile(template, path)
+        with sqlite3.connect(path) as connection:
+            if mutation in {"missing", "changed"}:
+                connection.execute("DROP TRIGGER source_return_proofs_no_update")
+            if mutation == "changed":
+                connection.execute(
+                    "CREATE TRIGGER source_return_proofs_no_update BEFORE UPDATE ON source_return_proofs BEGIN SELECT 1; END"
+                )
+            if mutation == "unexpected":
+                connection.execute(
+                    "CREATE TRIGGER synthetic_extra_proof_guard BEFORE INSERT ON source_return_proofs BEGIN SELECT RAISE(ABORT, 'synthetic guard'); END"
+                )
+            before = connection.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+            ).fetchall()
+        blocked = run_alembic(path, "upgrade", "head")
+        assert blocked.returncode != 0 and "0067_source_return_proof_schema_drift" in blocked.stderr
+        assert revision_rows(path) == ["0066_actual_payout_links"]
+        with sqlite3.connect(path) as connection:
+            assert (
+                connection.execute(
+                    "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+                ).fetchall()
+                == before
+            )
+
+
 def test_source_money_classification_migration_populated_downgrade_and_reupgrade(tmp_path):
     from datetime import UTC, datetime
 

@@ -89,7 +89,18 @@ export function SourceReportPreviewPanel({
     try {
       await acknowledged(await getInvestmentProofRequest(intent.request_id), intent);
     } catch (cause) {
-      setError(formatApiError(cause));
+      if (
+        cause instanceof ApiClientError &&
+        cause.status === 404 &&
+        cause.code === "investment_proof_request_not_found"
+      ) {
+        hold(null);
+        setResult(null);
+        setReplaceExisting(false);
+        setError(
+          "При чтении сохранённой записи запроса не найдено. Старый Preview сброшен; выполните новую явную проверку оригиналов. Это не отмена ранее отправленного запроса.",
+        );
+      } else setError(formatApiError(cause));
     } finally {
       saving.current = false;
     }

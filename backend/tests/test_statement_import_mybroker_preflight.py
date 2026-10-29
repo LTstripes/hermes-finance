@@ -1179,6 +1179,49 @@ def test_investment_same_native_id_in_pending_section_is_not_material_execution_
     assert _trade_comparison_key(completed) != _trade_comparison_key(pending)
 
 
+def test_investment_request_underscore_is_a_literal_prefix(database, monkeypatch):
+    from hermes_finance.persistence import SourceReturnProof
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_return_proofs import ProofError
+
+    preview = saved_investment_preview(database, monkeypatch)["persistence"]
+    with database.session_factory() as session:
+        proofs.confirm(
+            session,
+            **{k: preview[k] for k in ("form_token", "preview_digest")},
+            request_id="probeXone",
+        )
+        with pytest.raises(ProofError, match="request_not_found"):
+            proofs.request_status(session, "probe_one")
+        # Same issued plan, deliberately different literal request ID. It must
+        # reach form validation, not conflict with the unrelated existing ID.
+        with pytest.raises(ProofError, match="form_expired"):
+            proofs.confirm(
+                session,
+                **{k: preview[k] for k in ("form_token", "preview_digest")},
+                request_id="probe_one",
+            )
+        assert len(list(session.scalars(select(SourceReturnProof)))) == 1
+
+
+def test_investment_code_currentness_covers_helper_only_changes(tmp_path, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    (tmp_path / "services").mkdir()
+    monkeypatch.setattr(proofs, "__file__", str(tmp_path / "services" / "proof.py"))
+    for name in (
+        "source_money_classifications.py",
+        "mybroker_money_candidates.py",
+        "xirr.py",
+        "money_security.py",
+    ):
+        target = tmp_path / name
+        target.write_text("synthetic original helper", encoding="utf-8")
+        before = proofs._implementation_digest()
+        target.write_text("synthetic changed helper", encoding="utf-8")
+        assert proofs._implementation_digest() != before
+
+
 def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
     database, monkeypatch
 ):
