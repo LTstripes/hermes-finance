@@ -354,12 +354,19 @@ def read_events(session, views, identities, native_account, gaps):
                 reasons.add("trade_money_classification_conflict")
         if total is not None and cash_date:
             # Money's native role/date replaces its corresponding cash component.
-            # An included NKD is split only if a separately evidenced NKD row exists.
             expected = {
                 "principal": sign * (amount + (nkd if basis == "excludes_paid_nkd" else 0)),
                 "commission": -fee,
             }
-            if groups.get("nkd"):
+            # MyBroker bond BUY principal Money excludes NKD. Retain the trade's
+            # native NKD at settlement unless an independently linked Money row
+            # replaces it; this split creates no owner for anonymous NKD Money.
+            if groups.get("nkd") or (
+                kind == "bond"
+                and qty > 0
+                and basis == "includes_paid_nkd"
+                and groups.get("principal")
+            ):
                 expected["principal"] -= sign * nkd
                 expected["nkd"] = sign * nkd
             for role, value in expected.items():
