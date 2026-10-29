@@ -158,6 +158,41 @@ def test_source_scope_repo_inconsistent_overlap_remains_root_gap(db):
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("kind", ["nkd", "repo"])
+@pytest.mark.parametrize("confirmed_copy", ["scoped", "missing"])
+def test_source_scope_overlap_classification_confirmation_cannot_attest_identity(
+    db, kind, confirmed_copy
+):
+    extra = (
+        (("НКД по сделке", "c Synthetic bond", "-20"),)
+        if kind == "nkd"
+        else (("Расчеты по сделке B90001", "репо ч.1 c Synthetic stock", "-100"),)
+    )
+    scoped = save(
+        db,
+        trades=() if kind == "nkd" else ((BOND, "1", "100", "0", "0"),),
+        extra=extra,
+        mutate=None if kind == "nkd" else _repo_source_scope,
+    )
+    missing = save(db, bond=None, trades=(), extra=extra, marker="no-issue-evidence")
+    intake = scoped if confirmed_copy == "scoped" else missing
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        )
+        choose_classification(session, intake, row.source_reference, row.classification)
+    before = snapshot(db)
+    result = read(db)
+    assert "overlap_flow_choice_conflict" in by_isin(result)[ISIN].analysis.reason_codes
+    (event,) = [
+        e for e in result.unresolved_events if "overlap_flow_choice_conflict" in e.reason_codes
+    ]
+    assert event.isin is None and not event.counted and event.effective_isin is None
+    assert len(event.source_references) == 2
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize(
     "reg,isin,issuer",
     [

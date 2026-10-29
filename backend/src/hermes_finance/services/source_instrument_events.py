@@ -291,6 +291,17 @@ def read_events(session, views, identities, native_account, gaps):
         ):
             reasons.add("overlap_flow_choice_conflict")
             isin = None
+        # A confirmed classification does not attest another original's issue
+        # evidence. Known/unknown or different source scopes remain a root gap.
+        if (
+            any(
+                o[5] in {"source_issue", "native_repo_reference", "source_identity_unresolved"}
+                for o in observations
+            )
+            and len({o[4] for o in observations}) != 1
+        ):
+            reasons.add("overlap_flow_choice_conflict")
+            isin = None
         if any(o[6] for o in observations):
             reasons.update(r for o in observations for r in o[6])
             # A failed payout link can retain independently evidenced issue scope;
