@@ -35,6 +35,259 @@ from hermes_finance.services.source_money_classifications import choose_classifi
 from hermes_finance.source_proof_file import file_incarnation
 from hermes_finance.statement_import.mybroker import NS
 
+CASH_RETURN = "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС"
+
+
+@pytest.mark.parametrize("choice", [None, "unknown"])
+def test_contract_return_read_rule_preserves_saved_default_and_manual_choice(db, choice):
+    intake = save(db, bond=None, trades=(), extra=(("Перевод", CASH_RETURN, "-50"),))
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        )
+        # An old intake predating this rule; do not rewrite it during a read.
+        row.classification, row.origin, row.status = "unknown", "default_rule", "assumed"
+        reference = row.source_reference
+        session.commit()
+        if choice:
+            choose_classification(session, intake, reference, choice)
+    before = snapshot(db)
+    result = read(db)
+    analysis = by_isin(result)[ISIN].analysis
+    assert analysis.pnl.value == (None if choice else 10000)
+    assert ("unrecognized_money" in analysis.reason_codes) == bool(choice)
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(
+                SourceMoneyClassification.source_reference == reference
+            )
+        )
+        assert row.classification == "unknown"
+        assert row.origin == ("user_choice" if choice else "default_rule")
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("case", ["exact", "prefix", "ambiguous"])
+def test_source_scope_nkd_uses_full_issue_not_shared_stock_name(db, case):
+    def mutate(root):
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Shared Issuer")
+        bond = next(r for r in root.findall(".//m:Details[@ISIN1]", NS) if r.get("ISIN1") == BOND)
+        bond.set("active_name", "Shared Issuer Bond 01")
+        if case == "ambiguous":
+            other = deepcopy(bond)
+            other.set("ISIN1", "RU000A000002")
+            root.find(
+                "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/"
+                "m:active_type/m:Details_Collection",
+                NS,
+            ).append(other)
+
+    label = "Shared Issuer" if case == "prefix" else "Shared Issuer Bond 01"
+    save(db, trades=(), extra=(("НКД по сделке", "c " + label, "-20"),), mutate=mutate)
+    before = snapshot(db)
+    result = read(db)
+    stock = by_isin(result)[ISIN].analysis
+    assert ("unmatched_trade_money" in stock.reason_codes) == (case != "exact")
+    if case == "exact":
+        (event,) = by_isin(result)[BOND].analysis.events
+        assert event.isin == BOND and event.attribution_basis == "source_issue"
+        assert not event.counted and event.effective_isin is None
+        assert all(leg.ownership == event.event_key for leg in event.cash_legs)
+        assert "unmatched_trade_money" in event.reason_codes
+        assert stock.pnl.value == 10000
+    else:
+        assert result.unresolved_events and stock.pnl.value is None
+    assert result.financial_authority == "none"
+    assert snapshot(db) == before
+
+
+def _repo_source_scope(root, *, duplicate=False):
+    rows = root.findall(".//m:Details[@trade_no]", NS)
+    for row in rows:
+        row.set("trade_no", "B90001")
+        row.set("repo_no", "B90002")
+        row.set("comment", "репо ч.1")
+    if duplicate:
+        other = deepcopy(rows[0])
+        other.set("isin_reg", "RU000A000002")
+        root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS).append(other)
+
+
+@pytest.mark.parametrize("case", ["exact", "unknown_id", "ambiguous"])
+def test_source_scope_repo_native_reference_is_not_cash_authority(db, case):
+    native_id = "B99999" if case == "unknown_id" else "B90001"
+    save(
+        db,
+        trades=((BOND, "1", "100", "0", "0"),),
+        extra=(("Расчеты по сделке " + native_id, "репо ч.1 c Synthetic stock", "-100"),),
+        mutate=lambda r: _repo_source_scope(r, duplicate=case == "ambiguous"),
+    )
+    before = snapshot(db)
+    result = read(db)
+    stock = by_isin(result)[ISIN].analysis
+    assert ("unmatched_trade_money" in stock.reason_codes) == (case != "exact")
+    if case == "exact":
+        (event,) = [
+            e
+            for e in by_isin(result)[BOND].analysis.events
+            if e.attribution_basis == "native_repo_reference"
+        ]
+        assert event.isin == BOND and not event.counted and event.effective_isin is None
+        assert event.reason_codes == ("unmatched_trade_money",)
+        assert all(leg.ownership == event.event_key for leg in event.cash_legs)
+        assert stock.pnl.value == 10000
+        assert all(not e.counted for e in by_isin(result)[BOND].analysis.events)
+    else:
+        assert stock.pnl.value is None and result.unresolved_events
+    assert snapshot(db) == before
+
+
+def test_source_scope_repo_inconsistent_overlap_remains_root_gap(db):
+    extra = (("Расчеты по сделке B90001", "репо ч.1 c Synthetic stock", "-100"),)
+    save(
+        db,
+        trades=((BOND, "1", "100", "0", "0"),),
+        extra=extra,
+        mutate=_repo_source_scope,
+    )
+    save(db, trades=(), extra=extra, marker="missing-native-reference")
+    before = snapshot(db)
+    result = read(db)
+    assert "overlap_flow_choice_conflict" in by_isin(result)[ISIN].analysis.reason_codes
+    assert any("overlap_flow_choice_conflict" in e.reason_codes for e in result.unresolved_events)
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("kind", ["nkd", "repo"])
+@pytest.mark.parametrize("confirmed_copy", ["scoped", "missing"])
+def test_source_scope_overlap_classification_confirmation_cannot_attest_identity(
+    db, kind, confirmed_copy
+):
+    extra = (
+        (("НКД по сделке", "c Synthetic bond", "-20"),)
+        if kind == "nkd"
+        else (("Расчеты по сделке B90001", "репо ч.1 c Synthetic stock", "-100"),)
+    )
+    scoped = save(
+        db,
+        trades=() if kind == "nkd" else ((BOND, "1", "100", "0", "0"),),
+        extra=extra,
+        mutate=None if kind == "nkd" else _repo_source_scope,
+    )
+    missing = save(db, bond=None, trades=(), extra=extra, marker="no-issue-evidence")
+    intake = scoped if confirmed_copy == "scoped" else missing
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        )
+        choose_classification(session, intake, row.source_reference, row.classification)
+    before = snapshot(db)
+    result = read(db)
+    assert "overlap_flow_choice_conflict" in by_isin(result)[ISIN].analysis.reason_codes
+    (event,) = [
+        e for e in result.unresolved_events if "overlap_flow_choice_conflict" in e.reason_codes
+    ]
+    assert event.isin is None and not event.counted and event.effective_isin is None
+    assert len(event.source_references) == 2
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "reg,isin,issuer",
+    [
+        ("1-04-33498-E", "RU000A0JPNM1", 'ПАО "Интер РАО"'),
+        ("10401000B", "RU000A0JP5V6", "Банк ВТБ (ПАО)"),
+        ("1-01-04715-A", "RU0007775219", 'ПАО "МТС"'),
+    ],
+)
+def test_registration_scope_is_identity_only_and_never_accepts_payout(db, reg, isin, issuer):
+    narrative = f"Дивиденды за 2029 г. по акциям {issuer} ({reg}). (Удержан налог 13 руб.)."
+    save(db, bond=None, trades=(), extra=(("Перевод", narrative, "87"),))
+    before = snapshot(db)
+    result = read(db)
+    assert by_isin(result)[ISIN].analysis.pnl.value == 10000
+    scoped = by_isin(result)[isin].analysis
+    (event,) = scoped.events
+    assert event.isin == isin and event.attribution_basis == "registration_scope"
+    assert event.persisted_link_status == "unresolved_no_match"
+    assert not event.counted and event.effective_isin is None
+    assert all(leg.ownership == event.event_key for leg in event.cash_legs)
+    assert "payout_link_unresolved_no_match" in event.reason_codes
+    assert scoped.pnl.value is None and scoped.components["dividends"].value is None
+    assert result.income[0].isin is None  # legacy projection is not silently promoted
+    assert not result.reconciliation.complete
+    assert snapshot(db) == before
+
+
+def test_registration_scope_conflicting_explicit_crosswalk_stays_unresolved(db):
+    narrative = 'Дивиденды за 2029 г. по акциям ПАО "МТС" (1-01-04715-A). (Удержан налог 13 руб.).'
+    save(db, bond=None, trades=(), extra=(("Перевод", narrative, "87"),))
+    with db.session_factory() as session:
+        _security_instrument(session, isin=ISIN)
+        session.commit()
+        mappings.set_mapping(session, "1-01-04715-A", ISIN)
+    before = snapshot(db)
+    result = read(db)
+    assert result.unresolved_events[0].isin is None
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert snapshot(db) == before
+
+
+def test_source_scope_does_not_hide_compensation_or_account_tax(db):
+    save(
+        db,
+        trades=(),
+        extra=(
+            ("НКД по сделке", "c Synthetic bond", "-20"),
+            ("Перевод", "Компенсация утраченных дивидендов FOREIGN_01", "10"),
+            ("НДФЛ", "Погашение обязательств по НДФЛ за 2029 год", "-5"),
+        ),
+    )
+    before = snapshot(db)
+    result = read(db)
+    reasons = set(by_isin(result)[ISIN].analysis.reason_codes)
+    assert {
+        "unrecognized_money",
+        "payout_classification_conflict",
+        "unallocated_instrument_cost",
+    } <= reasons
+    assert "unmatched_trade_money" not in reasons
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert "unmatched_trade_money" in by_isin(result)[BOND].analysis.reason_codes
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("change", ["kind", "metadata", "ambiguous", "missing_old_parse"])
+def test_registration_scope_never_overrides_contradictory_saved_decisions(db, change):
+    narrative = "Дивиденды за 2029 г. по акциям Банк Синтетический (ПАО) (10401000B). (Удержан налог 13 руб.)."
+    intake = save(db, bond=None, trades=(), extra=(("Перевод", narrative, "87"),))
+    with db.session_factory() as session:
+        row = session.scalar(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        )
+        if change == "kind":
+            row.classification, row.instrument_link_status = "coupon", "not_parsed"
+        elif change == "metadata":
+            row.instrument_link_status, row.security_reg_number = "not_parsed", "1-01-99999-Z"
+        elif change == "ambiguous":
+            row.instrument_link_status = "unresolved_ambiguous"
+        else:
+            row.instrument_link_status = "not_parsed"
+            row.security_reg_number = row.security_issuer = None
+        session.commit()
+    before = snapshot(db)
+    result = read(db)
+    if change == "missing_old_parse":
+        (event,) = by_isin(result)["RU000A0JP5V6"].analysis.events
+        assert event.attribution_basis == "registration_scope" and not event.counted
+        assert event.reason_codes == ("payout_link_missing",)
+        assert by_isin(result)[ISIN].analysis.pnl.value == 10000
+    else:
+        assert result.unresolved_events and result.unresolved_events[0].isin is None
+        assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert snapshot(db) == before
+
 
 def _reviewed_bond_packet(db, *, sides=("opening", "closing"), intake_id=None):
     """Synthetic trusted-caller decision, not a production acceptance API."""

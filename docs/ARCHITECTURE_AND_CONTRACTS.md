@@ -6551,10 +6551,41 @@ unresolved or kind-mismatch decisions cannot be overridden by a name match.
 Legacy whole-identifier/name attribution is labelled `legacy_text` only when no
 contradictory persisted decision exists. New possible mappings are never silently
 saved/promoted. Valid linked payout-only ISINs join the universe with missing
-holdings; unresolved events remain at the root. Original digest, frozen parser,
+holdings; events without independently proved issue scope remain at the root. Original digest, frozen parser,
 journal revision and classification/link dependency digests are disclosed.
 The existing coherent read snapshot and proof revision checks apply on every GET;
 `Cache-Control: no-store`, no cache, relink, financial writer or receipt is added.
+
+Issue scope is distinct from cash ownership and an effective persisted payout
+link. For frozen MyBroker S1 v2 sources, anonymous NKD may be scoped only by an
+exact full bond issue label against that original's unambiguous bond proposals;
+an issuer/stock name prefix is insufficient. REPO Money scope requires its exact
+native B-reference to one settled, explicitly observed REPO issue in the same
+original/native account. Missing or conflicting references stay root gaps.
+These events remain uncounted with their existing reasons and NULL effective
+ISIN; no anonymous NKD ownership or REPO economics is inferred. Overlap conflicts
+and occurrence multiplicity remain checked, including disagreements in scope.
+
+An unresolved dividend may retain coverage-only issue scope through the bounded
+public registration snapshot below, provided the complete payout shape parses,
+saved parsed metadata is current and current explicit crosswalk/alias/catalogue
+evidence does not contradict the stock identity. This never overrides a stale,
+ambiguous or kind-mismatch saved decision, creates a mapping, accepts cash or
+supplies legacy income attribution. The original unresolved/missing-link reason
+still blocks that issue's result; unrelated issues do not inherit it solely
+because the payout link is unresolved. The public identity sources are
+[MOEX registration 1-04-33498-E](https://www.moex.com/n8427),
+[MOEX registration 10401000B](https://www.moex.com/n71157), and
+[MOEX registration 1-01-04715-A](https://www.moex.com/ru/listing/securities-cards.aspx?code=RU0007775219).
+They establish ISIN identity only, without payout, tax or valuation authority.
+
+The explicit single-line client cash-return template (`Перевод`, negative Money,
+`Возврат средств по дог. № <number> от <valid date>. <person>. Без НДС`) is an
+external withdrawal default, with financial-purpose words and extra meaning
+rejected. Reads may reinterpret only an old `unknown/default_rule/assumed` row
+matching that template, retaining original saved data; manual/confirmed choices
+remain authoritative. Other refunds, unresolved compensation and unallocated
+account-wide taxes retain their existing blockers. No pre-tax result is added.
 
 Let B be purchase cash including fees/paid NKD; S sale cash including received NKD
 less fees; C,D actual credited coupons/dividends; R principal redemption;

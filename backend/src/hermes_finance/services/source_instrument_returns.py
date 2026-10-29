@@ -186,7 +186,10 @@ def _income(session, views, identities, gaps):
         try:
             for key, flow in _money(session, view, None, local_gaps):
                 narrative = saved[flow.source_references[0]]
-                isin, _, reasons = payout_attribution(narrative, resolver, identities)
+                isin, basis, reasons = payout_attribution(narrative, resolver, identities)
+                if basis == "registration_scope":
+                    # Legacy income must not turn coverage-only identity into a payout.
+                    isin = None
                 if flow.classification in {"coupon", "dividend"}:
                     gaps.extend(
                         InstrumentReturnGap(

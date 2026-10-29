@@ -51,6 +51,87 @@ def _fingerprint(value):
     return digest(json.dumps(value, sort_keys=True, default=str))
 
 
+# Public MOEX issue identity only, never a persisted payout link or cash proof.
+# https://www.moex.com/n8427
+# https://www.moex.com/n71157
+# https://www.moex.com/ru/listing/securities-cards.aspx?code=RU0007775219
+_REGISTRATION_SCOPE = {
+    "1-04-33498-E": "RU000A0JPNM1",
+    "10401000B": "RU000A0JP5V6",
+    "1-01-04715-A": "RU0007775219",
+}
+
+
+def _registration_scope(saved, security, resolver):
+    """Identify the issue for coverage without accepting a saved unresolved link."""
+    if security is None or security.kind != "dividend" or saved["classification"] != security.kind:
+        return None
+    if saved.get("instrument_id") is not None:
+        return None
+    if any(
+        saved.get(key) is not None and saved[key] != expected
+        for key, expected in (
+            ("security_reg_number", security.reg_number),
+            ("security_issuer", security.issuer_name),
+        )
+    ):
+        return None
+    if saved.get("instrument_link_status") == "unresolved_no_match" and (
+        saved.get("security_reg_number") != security.reg_number
+        or saved.get("security_issuer") != security.issuer_name
+    ):
+        return None
+    isin = _REGISTRATION_SCOPE.get(security.reg_number)
+    if isin is None or resolver.reg_isins.get(security.reg_number) not in (None, isin):
+        return None
+    related = resolver._related(security.reg_number) | resolver._related(isin)
+    if related & resolver.conflicts:
+        return None
+    for target in resolver._candidates(related):
+        instrument = resolver.instruments[target]
+        if instrument.isin != isin or instrument.instrument_type != "stock":
+            return None
+    return isin
+
+
+def _source_money_attribution(view, saved, raw, identities):
+    """Frozen full issue/B-ID attribution; it supplies no Money occurrence owner."""
+    from hermes_finance.services.source_instrument_returns import _attribute
+
+    doc = view["document"]
+    operation = saved["operation"].casefold().strip()
+    nkd = _is_nkd(operation)
+    repo = re.fullmatch(r"(?i:расчеты по сделке) (B[0-9]{1,127})", saved["operation"])
+    repo_text = re.search(r"\bрепо\b", saved["narrative"].casefold()) is not None
+    if nkd or repo or repo_text:
+        if doc["provider"] != "alfa_mybroker" or doc["parser"] != "mybroker-s1-v2":
+            return None, "source_identity_unresolved"
+        candidates = set()
+        if nkd and operation == "нкд по сделке":
+            label = re.fullmatch(r"[cс] ([^\r\n]+)", saved["narrative"], re.IGNORECASE)
+            if label:
+                name = " ".join(label[1].casefold().split())
+                candidates = {
+                    proposal["isin"]
+                    for proposal in view.get("proposals", [])
+                    if proposal.get("instrument_type") == "bond"
+                    and " ".join((proposal.get("source_name") or "").casefold().split()) == name
+                }
+        elif repo:
+            candidates = {
+                trade["core"]["isin"]
+                for trade in doc.get("trades", [])
+                if trade.get("state") == "settled"
+                and trade.get("repo_observed")
+                and trade.get("ids") == [repo[1]]
+                and trade["core"]["source_account"] == raw["source_account"]
+            }
+        if len(candidates) == 1:
+            return next(iter(candidates)), "source_issue" if nkd else "native_repo_reference"
+        return None, "source_identity_unresolved"
+    return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
+
+
 def payout_attribution(saved, resolver, identities):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
@@ -80,9 +161,17 @@ def payout_attribution(saved, resolver, identities):
             return None, "persisted_link", ("payout_link_stale",)
         return instrument.isin, "persisted_link", ()
     if status not in (None, "not_parsed", "not_applicable"):
+        if status == "unresolved_no_match":
+            scope = _registration_scope(saved, parse_money_security(saved["narrative"]), resolver)
+            if scope:
+                return scope, "registration_scope", ("payout_link_" + status,)
         return None, "persisted_link", ("payout_link_" + status,)
     # A parsed security with no saved link must not be promoted by today's catalog.
-    if parse_money_security(saved["narrative"]) is not None:
+    security = parse_money_security(saved["narrative"])
+    if security is not None:
+        scope = _registration_scope(saved, security, resolver)
+        if scope:
+            return scope, "registration_scope", ("payout_link_missing",)
         return None, "persisted_link", ("payout_link_missing",)
     isin = _attribute(saved["operation"] + " " + saved["narrative"], identities)
     return isin, "legacy_text", () if isin else ("unattributed_income",)
@@ -91,7 +180,6 @@ def payout_attribution(saved, resolver, identities):
 def read_events(session, views, identities, native_account, gaps):
     from hermes_finance.services.source_instrument_returns import (
         InstrumentReturnGap,
-        _attribute,
         _bond_total_basis,
         _face_signature,
         _minor,
@@ -142,12 +230,17 @@ def read_events(session, views, identities, native_account, gaps):
                         metadata = identities[isin]
                         metadata["identifiers"].add(isin)
                         target = resolver.instruments.get(row.get("instrument_id"))
-                        if target:
+                        if basis == "registration_scope":
+                            metadata["types"].add("stock")
+                            metadata["names"].add(
+                                parse_money_security(row["narrative"]).issuer_name
+                            )
+                        elif target:
                             metadata["types"].add(target.instrument_type)
                             metadata["names"].add(target.name)
                 else:
-                    isin = _attribute(row["operation"] + " " + row["narrative"], identities)
-                    basis, reasons = "legacy_text", ()
+                    isin, basis = _source_money_attribution(view, row, raw[ref], identities)
+                    reasons = ()
                 occurrences[key].append((view, flow, row, raw[ref], isin, basis, reasons))
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
             gaps.append(
@@ -198,9 +291,25 @@ def read_events(session, views, identities, native_account, gaps):
         ):
             reasons.add("overlap_flow_choice_conflict")
             isin = None
+        # A confirmed classification does not attest another original's issue
+        # evidence. Known/unknown or different source scopes remain a root gap.
+        if (
+            any(
+                o[5] in {"source_issue", "native_repo_reference", "source_identity_unresolved"}
+                for o in observations
+            )
+            and len({o[4] for o in observations}) != 1
+        ):
+            reasons.add("overlap_flow_choice_conflict")
+            isin = None
         if any(o[6] for o in observations):
             reasons.update(r for o in observations for r in o[6])
-            isin = None
+            # A failed payout link can retain independently evidenced issue scope;
+            # it still cannot contribute cash or become an effective saved link.
+            if isin is None or not all(
+                o[4] == isin and (not o[6] or o[5] == "registration_scope") for o in observations
+            ):
+                isin = None
         present = {o[0]["id"] for o in observations}
         if any(
             v["covered_from"] <= flow.event_date.isoformat() <= v["covered_to"]
