@@ -278,6 +278,11 @@ def _unresolved_movements(payload, native_account, matched_cancellations):
     root = ET.fromstring(payload.decode("utf-8-sig"))
     remaining = Counter(matched_cancellations)
     unresolved = []
+    for outer in ("Trades3", "Trades4"):
+        wrapper = root.find(f"m:{outer}", NS)
+        report = wrapper.find("m:Report", NS) if wrapper is not None else None
+        if wrapper is None or list(wrapper) != [report] or (wrapper.text or "").strip():
+            unresolved.append({"isin": None, "reason": "unresolved_native_movement_wrapper"})
     for node in root.findall("m:Trades3/m:Report//m:Details", NS):
         observed_account = node.get("acc_code")
         if (

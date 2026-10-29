@@ -1257,6 +1257,7 @@ def test_investment_opposite_unknown_custody_movements_cannot_prove_flow_complet
         ("other_comment", 1),
         ("nonfinite", 1),
         ("unknown_auxiliary", 1),
+        ("wrapper_sibling", 1),
         ("foreign", 0),
     ],
 )
@@ -1290,6 +1291,8 @@ def test_investment_movement_guard_is_exact_and_keeps_supported_metadata(change,
         row.set("qty", "sNaN")
     if change == "unknown_auxiliary":
         metadata.set("qty", "1")
+    if change == "wrapper_sibling":
+        node(root.find("{MyBroker}Trades4"), "OpaqueFinancialRow", amount="100")
     if change == "foreign":
         row.set("acc_code", "7654321-000")
         row.set("comment_new", "Unknown foreign transfer")
