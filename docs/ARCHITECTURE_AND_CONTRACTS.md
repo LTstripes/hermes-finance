@@ -6730,10 +6730,26 @@ source set, including failures, and each original hash/provider/parser, intake
 generation/head/manifest and declared range. Each allowed endpoint additionally
 binds exact native account, ISIN, source ordinal, unique recognized observation
 locator/fingerprint and one side/date. Only supported MyBroker source facts with
-the existing preceding-day/covered-to EOD legend qualify. Malformed, duplicate,
+the existing preceding-day/covered-to EOD legend, or the independently reviewed
+temporal equivalence below, qualify. Malformed, duplicate,
 inferred, missing, unreadable or changed source bindings supply no basis. Source
 head changes invalidate an old packet even when its manifest returns to the same
 content. No private identifiers or accepted source allowlist live in code.
+
+When the literal EOD legend is absent, the independent review may establish
+temporal equivalence only for its separately accepted exact-original endpoint
+scope. It must verify that the accepted broker definition of the specific
+`1_Positions/income_volume` and `real_volume` fields applies to the retained report
+version and its declared, non-inferred range: opening is end of the calendar day
+before `covered_from`; closing is end of `covered_to`. Contradictory source wording
+precludes this route. Normalized parser labels or a filename alone are not temporal
+proof. The accepted [broker-field receipt](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6442328623)
+and its [independent definition review](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6442650418)
+retain their source limitation: a draft bank response whose signed final copy was
+not independently authenticated. This route changes no evidence schema or runtime
+validation and grants no authority to another original, endpoint or period; all
+exact bindings, missing-endpoint and conflict checks remain required. Preparing
+this review is not acceptance or authorization to activate its packet.
 
 All competing observations still participate in endpoint conflict checks. An
 equal other original only corroborates; it receives no review authority and
