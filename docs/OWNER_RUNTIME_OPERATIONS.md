@@ -826,6 +826,10 @@ For the normal chat-driven path the owner can ask the integrator to release a pr
 1. read current GitHub `main` and capture its exact 40-character SHA;
 2. confirm canonical `ci.yml` has a completed successful `push` run for that exact `main` SHA;
 3. verify repository release identity and `docs/release-notes-X.Y.Z.md` are present;
+   for a version bump, synchronize the current-release expectations in
+   `test_health.py`, `test_r05_11_release_verification.py` and
+   `test_r13_00_release_verification.py` with the manifests/locks, while keeping
+   historical version fixtures unchanged;
 4. create the exact `/release` request comment on control issue #124 itself;
 5. read the Guarded Release run and its job summary;
 6. independently read back the tag object, peeled commit and published GitHub Release before reporting success.
