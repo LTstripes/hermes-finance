@@ -94,7 +94,70 @@ def _registration_scope(saved, security, resolver):
     return isin
 
 
-def _source_money_attribution(view, saved, raw, identities):
+def _native_trade_issue_scopes(view):
+    """Exact issue-name proof, not a Money-to-execution or economic cash link."""
+    from hermes_finance.statement_import.mybroker import NS, _ids, single
+    from hermes_finance.statement_import.mybroker_return_structure import _inventory_tree
+
+    doc = view["document"]
+    if doc["provider"] != "alfa_mybroker" or doc["parser"] != "mybroker-s1-v2":
+        return {}
+    try:
+        references = {}
+        root = _inventory_tree(view["observations"], references=references)
+        reports = root.findall("m:Trades/m:Report", NS)
+        if root.tag != "{MyBroker}Report" or len(reports) != 1:
+            return {}
+        rows = reports[0].findall("m:Tablix2/m:Details_Collection/m:Details", NS)
+        trades = [t for t in doc.get("trades", []) if t["section"] == "completed"]
+        if len(trades) != len(rows) or {t["ordinal"] for t in trades} != set(range(len(rows))):
+            return {}
+        by_ordinal = {t["ordinal"]: t for t in trades}
+        owners = defaultdict(set)
+        for trade in trades:
+            owners[(trade["core"]["source_account"], tuple(trade["ids"]))].add(
+                trade["core"]["isin"]
+            )
+        scopes = defaultdict(set)
+        for ordinal, node in enumerate(rows):
+            name_digest = node.get("p_name")
+            if name_digest in (None, digest("")):
+                continue
+            target = None
+            trade, native = by_ordinal[ordinal], references[id(node)]
+            try:
+                account, isin, ids = (
+                    single(native["acc_code"]),
+                    single(native["isin_reg"]),
+                    _ids(native["trade_no"]),
+                )
+                if (
+                    all(
+                        node.get(key) == digest(native[key])
+                        for key in ("acc_code", "isin_reg", "trade_no")
+                    )
+                    and trade["state"] == "settled"
+                    and not trade.get("repo_observed")
+                    and len(ids) == 2
+                    and trade["identity"] == digest([PROVIDER, account, ids])
+                    and trade["ids"] == ids
+                    and trade["core"]["source_account"] == account
+                    and trade["core"]["isin"] == isin
+                    and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin)
+                    and len(owners[(account, tuple(ids))]) == 1
+                ):
+                    target = (account, isin)
+            except (MyBrokerError, ValueError, TypeError, KeyError, AttributeError):
+                pass
+            # An unusable row with the same full name must not be ignored when
+            # another native row or position happens to offer a candidate.
+            scopes[name_digest].add(target)
+        return scopes
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return {}
+
+
+def _source_money_attribution(view, saved, raw, identities, native_issues):
     """Frozen full issue/B-ID attribution; it supplies no Money occurrence owner."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
@@ -112,11 +175,14 @@ def _source_money_attribution(view, saved, raw, identities):
             if label:
                 name = " ".join(label[1].casefold().split())
                 candidates = {
-                    proposal["isin"]
+                    proposal["isin"] if proposal.get("instrument_type") == "bond" else None
                     for proposal in view.get("proposals", [])
-                    if proposal.get("instrument_type") == "bond"
-                    and " ".join((proposal.get("source_name") or "").casefold().split()) == name
+                    if " ".join((proposal.get("source_name") or "").casefold().split()) == name
                 }
+                candidates.update(
+                    target[1] if target is not None and target[0] == raw["source_account"] else None
+                    for target in native_issues.get(digest(label[1]), ())
+                )
         elif repo:
             candidates = {
                 trade["core"]["isin"]
@@ -126,7 +192,7 @@ def _source_money_attribution(view, saved, raw, identities):
                 and trade.get("ids") == [repo[1]]
                 and trade["core"]["source_account"] == raw["source_account"]
             }
-        if len(candidates) == 1:
+        if len(candidates) == 1 and None not in candidates:
             return next(iter(candidates)), "source_issue" if nkd else "native_repo_reference"
         return None, "source_identity_unresolved"
     return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
@@ -217,6 +283,11 @@ def read_events(session, views, identities, native_account, gaps):
     for view in views:
         saved = {r["source_reference"]: r for r in view["money_classifications"]}
         raw = {source_reference(view["id"], r): r for r in view["document"].get("money", [])}
+        native_issues = (
+            _native_trade_issue_scopes(view)
+            if any(r["operation"].casefold().strip() == "нкд по сделке" for r in saved.values())
+            else {}
+        )
         local = []
         validated_refs = set()
         try:
@@ -239,7 +310,9 @@ def read_events(session, views, identities, native_account, gaps):
                             metadata["types"].add(target.instrument_type)
                             metadata["names"].add(target.name)
                 else:
-                    isin, basis = _source_money_attribution(view, row, raw[ref], identities)
+                    isin, basis = _source_money_attribution(
+                        view, row, raw[ref], identities, native_issues
+                    )
                     reasons = ()
                 occurrences[key].append((view, flow, row, raw[ref], isin, basis, reasons))
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):

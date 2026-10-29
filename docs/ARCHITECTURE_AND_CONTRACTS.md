@@ -6558,8 +6558,16 @@ The existing coherent read snapshot and proof revision checks apply on every GET
 
 Issue scope is distinct from cash ownership and an effective persisted payout
 link. For frozen MyBroker S1 v2 sources, anonymous NKD may be scoped only by an
-exact full bond issue label against that original's unambiguous bond proposals;
-an issuer/stock name prefix is insufficient. REPO Money scope requires its exact
+exact full bond issue label against that original's unambiguous bond proposals.
+When an issue is absent from positions, coverage-only scope may instead use an
+exact literal Money issue label matching the frozen `p_name` digest on the known
+completed Trades path, joined to that row's recognized settled native identity,
+ordered IDs, account and ISIN. Native reference values must agree with their
+frozen attribute digests and normalized row; conflicting issue identities,
+unusable matching rows and incompatible position labels remain unknown. A trade's
+presence or a normalized name alone is insufficient. This bridge neither links
+Money to a particular execution nor grants cash ownership. An issuer/stock name
+prefix is insufficient. REPO Money scope requires its exact
 native B-reference to one settled, explicitly observed REPO issue in the same
 original/native account. Missing or conflicting references stay root gaps.
 These events remain uncounted with their existing reasons and NULL effective
