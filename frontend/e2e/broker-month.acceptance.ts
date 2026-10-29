@@ -1704,7 +1704,10 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   );
   const returnsPaper = page.getByRole("row").filter({ hasText: "RU000A000001" });
   await returnsPaper.getByRole("button").click();
-  await expect(page.getByText(/Количество:/)).toBeVisible();
+  const position = page
+    .getByRole("heading", { name: "Позиция на 31.05.2034", exact: true })
+    .locator("..");
+  await expect(position.getByText("Количество: 2 → 2", { exact: true })).toBeVisible();
   await page.goBack();
   await expect(picker).toHaveValue("7452034");
   await page.getByRole("link", { name: /Снимок и общие данные/ }).click();
