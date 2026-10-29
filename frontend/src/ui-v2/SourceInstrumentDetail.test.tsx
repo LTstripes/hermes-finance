@@ -115,3 +115,86 @@ test("absent holding and unknown value never look like a closed zero position", 
   expect(screen.getByText("Количество: 2 → Неизвестно")).toBeVisible();
   expect(screen.queryByText("Позиция закрыта на эту дату")).not.toBeInTheDocument();
 });
+
+test.each([false, true])(
+  "unbound same-issuer cash rows stay separate from instrument history (personal=%s)",
+  (personalResult) => {
+    const a = analysis();
+    // A linked stock dividend adds catalogue name «Пример». The bond exists only
+    // in trades. Money «НКД по сделке» / «Пример 001Р-01» has no ISIN/execution ID:
+    // legacy name matching sets isin to the stock, but effective_isin stays null.
+    a.events = [
+      event({ event_key: "stock-dividend", kind: "DIVIDEND" }),
+      event({
+        event_key: "pending-stock-buy",
+        kind: "BUY",
+        native_trade_amount_kopecks: 50000,
+        net_payout_kopecks: null,
+        current: false,
+        counted: false,
+        reason_codes: ["trade_missing_settlement"],
+      }),
+      ...[123, 234].map((amount, index) =>
+        event({
+          event_key: `unbound-nkd-${index}`,
+          kind: "UNRESOLVED",
+          effective_isin: null,
+          attribution_basis: "legacy_text",
+          persisted_link_status: null,
+          classification: "trade_settlement",
+          net_payout_kopecks: null,
+          current: false,
+          counted: false,
+          assumptions: [],
+          reason_codes: ["unmatched_trade_money"],
+          source_references: [`money:1:unbound-nkd:${index}`],
+          cash_legs: [
+            {
+              ownership: `unbound-nkd-${index}`,
+              date: "2030-05-15",
+              role: "trade_settlement",
+              account_cash_kopecks: -amount,
+              instrument_flow_kopecks: amount,
+              source_references: [`money:1:unbound-nkd:${index}`],
+            },
+          ],
+        }),
+      ),
+    ];
+    a.pnl.reason_codes = ["unmatched_trade_money"];
+    const before = structuredClone(a);
+    render(
+      <MemoryRouter>
+        <SourceInstrumentDetail
+          analysis={a}
+          instrumentType="stock"
+          personalResult={personalResult}
+        />
+      </MemoryRouter>,
+    );
+    const summary = screen.getByText("Сделки и выплаты (2)");
+    if (personalResult) fireEvent.click(summary);
+    const history = within(summary.parentElement as HTMLElement);
+    expect(history.getByText("Покупка")).toBeVisible();
+    expect(history.getByText("Не учтено в расчёте")).toBeVisible();
+    expect(history.getByText("Дивиденд")).toBeVisible();
+    expect(history.queryByText(/−1,23 ₽|−2,34 ₽/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Строки без подтверждённого инструмента (2)"));
+    const unbound = within(
+      screen.getByRole("region", { name: "Строки без подтверждённого инструмента" }),
+    );
+    expect(unbound.getByText(/Совпадение названия не подтверждает связь/)).toBeVisible();
+    expect(unbound.getByText(/−1,23 ₽/)).toBeVisible();
+    expect(unbound.getByText(/−2,34 ₽/)).toBeVisible();
+    expect(
+      unbound.getAllByText("Не установлена принадлежность денежной строки сделке."),
+    ).toHaveLength(2);
+    fireEvent.click(unbound.getAllByText("Строки источников (1)")[0]);
+    expect(unbound.getByText("money:1:unbound-nkd:0")).toBeVisible();
+    expect(
+      card(personalResult ? "Мой результат за период, ₽" : "Полный P&L, ₽").getByText("Недоступен"),
+    ).toBeVisible();
+    expect(a).toEqual(before);
+  },
+);

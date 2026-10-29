@@ -377,6 +377,10 @@ known components and conditional statement estimates remain distinct. Modified
 Dietz is secondary, named with its actual interval and nonannualized units. The
 source-history flag does not establish lifetime ownership or move the starting
 boundary to the first visible buy.
+Source rows without an effective instrument binding appear in a separate
+disclosure with account cash, reasons and references. A name match alone does not
+make them this instrument's operations; pending trades with a native binding
+remain in its history with their uncounted status.
 
 Old `/v2/capital/monthly-returns` links enter the same Returns screen, preserving
 source account, ISIN and selected bond interval. A legacy bond-slice URL with no

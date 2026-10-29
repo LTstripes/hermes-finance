@@ -316,6 +316,41 @@ function Events({
     </p>
   );
 }
+function CashEvent({
+  event,
+  unattributed = false,
+}: {
+  event: InstrumentEvent<Money>;
+  unattributed?: boolean;
+}) {
+  return (
+    <div className={styles.card}>
+      <h4>
+        {unattributed
+          ? "Строка источника"
+          : (
+              {
+                FEE: "Комиссия",
+                TAX: "Налог",
+                REDEMPTION: "Погашение",
+                UNRESOLVED: "Операция требует уточнения",
+              } as Record<string, string>
+            )[event.kind]}
+      </h4>
+      <p>
+        {observed(event.event_date)} ·{" "}
+        {event.counted && event.current ? "Учтено в доступных компонентах" : "Не учтено в расчёте"}
+      </p>
+      {event.cash_legs.map((leg) => (
+        <p key={leg.ownership}>
+          {leg.date} · Движение денег по счёту: {money(leg.account_cash_kopecks)}
+        </p>
+      ))}
+      <Reasons codes={[...event.reason_codes, ...event.assumptions]} />
+      <References values={event.source_references} />
+    </div>
+  );
+}
 export function SourceInstrumentDetail({
   analysis,
   instrumentType = "bond",
@@ -330,6 +365,16 @@ export function SourceInstrumentDetail({
   const bond = instrumentType === "bond";
   const estimate = analysis.statement_estimate;
   const hasEstimate = estimate.pnl.value !== null || estimate.modified_dietz.value !== null;
+  const instrumentEvents: InstrumentEvent<Money>[] = [];
+  const unattributedEvents: InstrumentEvent<Money>[] = [];
+  for (const event of analysis.events) {
+    // A legacy name match may set isin without proving ownership of the row.
+    // Keep pending native trades with an effective binding in instrument history.
+    (event.effective_isin !== null && event.effective_isin === event.isin
+      ? instrumentEvents
+      : unattributedEvents
+    ).push(event);
+  }
   return (
     <>
       <p>
@@ -478,16 +523,16 @@ export function SourceInstrumentDetail({
         </div>
       </details>
       <details open={personalResult ? undefined : true}>
-        <summary>Сделки и выплаты ({analysis.events.length})</summary>
+        <summary>Сделки и выплаты ({instrumentEvents.length})</summary>
         <p className={styles.note}>
           Суммы, НКД, комиссии и удержания раскрывают состав операций; они не прибавляются к
           результату повторно.
         </p>
         <Events
-          events={analysis.events.filter((event) => event.kind === "BUY" || event.kind === "SELL")}
+          events={instrumentEvents.filter((event) => event.kind === "BUY" || event.kind === "SELL")}
         />
         <Events
-          events={analysis.events.filter((event) =>
+          events={instrumentEvents.filter((event) =>
             personalResult
               ? event.kind === "COUPON" || event.kind === "DIVIDEND"
               : event.kind === (bond ? "COUPON" : "DIVIDEND"),
@@ -502,38 +547,26 @@ export function SourceInstrumentDetail({
           }
           emptyPayoutLabel={personalResult ? "Платёжных" : bond ? "Купонных" : "Дивидендных"}
         />
-        {analysis.events
+        {instrumentEvents
           .filter((event) => !["BUY", "SELL", "COUPON", "DIVIDEND"].includes(event.kind))
           .map((event) => (
-            <div className={styles.card} key={event.event_key}>
-              <h4>
-                {
-                  (
-                    {
-                      FEE: "Комиссия",
-                      TAX: "Налог",
-                      REDEMPTION: "Погашение",
-                      UNRESOLVED: "Операция требует уточнения",
-                    } as Record<string, string>
-                  )[event.kind]
-                }
-              </h4>
-              <p>
-                {observed(event.event_date)} ·{" "}
-                {event.counted && event.current
-                  ? "Учтено в доступных компонентах"
-                  : "Не учтено в расчёте"}
-              </p>
-              {event.cash_legs.map((leg) => (
-                <p key={leg.ownership}>
-                  {leg.date} · Движение денег по счёту: {money(leg.account_cash_kopecks)}
-                </p>
-              ))}
-              <Reasons codes={[...event.reason_codes, ...event.assumptions]} />
-              <References values={event.source_references} />
-            </div>
+            <CashEvent event={event} key={event.event_key} />
           ))}
       </details>
+      {unattributedEvents.length > 0 && (
+        <details>
+          <summary>Строки без подтверждённого инструмента ({unattributedEvents.length})</summary>
+          <section aria-label="Строки без подтверждённого инструмента">
+            <p>
+              Связь этих строк с выбранным инструментом не подтверждена. Совпадение названия не
+              подтверждает связь. Денежные суммы относятся к счёту.
+            </p>
+            {unattributedEvents.map((event) => (
+              <CashEvent event={event} key={event.event_key} unattributed />
+            ))}
+          </section>
+        </details>
+      )}
       <p className={styles.note}>
         {payoutPreviewHere ? (
           "Предварительные выплаты запрашиваются ниже отдельным действием."
