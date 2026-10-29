@@ -2338,6 +2338,19 @@ not a claim of complete personal after-tax return. Unknown external-flow status
 withholds account growth/rates. A known source-control discrepancy labels the
 calculated account observation partial instead of hiding every known component.
 
+Unresolved internal payout attribution does not erase known account cash growth,
+but withholds full P&L and all rates for potentially affected instruments unless
+exact source evidence excludes them. An unobserved coupon/dividend component is
+NULL, never zero; the existing linked known subtotal stays partial and visible.
+Unrecognized native security movements, including opposite movements with zero
+endpoint net quantity, withhold full account and affected instrument P&L/rates.
+Only an exact cancellation already corroborated by its principal Money is recognized
+as redemption. Native service connection timestamp rows are metadata, not movement
+proof. Other source syntax advisories remain visible and qualify computable
+projections as partial; they never grant financial source completeness. The known
+cash/valuation subtotal can remain visible when full movement meaning/value is
+unknown. No inferred zero or extra before-tax metric is introduced.
+
 Saved-history comparison is advisory: stable native keys compare all material
 fields, while Money repeats compare exact signatures and occurrence multiplicity
 across overlapping originals (maximum observed multiplicity, not their sum).

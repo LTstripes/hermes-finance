@@ -269,6 +269,96 @@ def _rates(start, end, v0, v1, flows, reasons=()):
     }
 
 
+def _unresolved_movements(payload, native_account, matched_cancellations):
+    """Net-zero custody movements still need dated/value/flow meaning.
+
+    An exact, cash-corroborated cancellation is recognized separately. A service
+    connection status is metadata, not a movement. No legacy blocker is cleared.
+    """
+    root = ET.fromstring(payload.decode("utf-8-sig"))
+    remaining = Counter(matched_cancellations)
+    unresolved = []
+    for node in root.findall("m:Trades3/m:Report//m:Details", NS):
+        observed_account = node.get("acc_code")
+        if (
+            observed_account
+            and re.fullmatch(r"[0-9]{1,32}-[0-9]{3}", observed_account)
+            and observed_account != native_account
+        ):
+            continue
+        match = re.fullmatch(
+            r"[^\r\n]+(?: / |\r?\n)([A-Z]{2}[A-Z0-9]{9}[0-9])", node.get("p_name", "")
+        )
+        key = None
+        try:
+            if match:
+                quantity = Decimal(node.get("qty", ""))
+                if not quantity.is_finite():
+                    raise ValueError
+                key = (
+                    node.get("acc_code"),
+                    match[1],
+                    date.fromisoformat(node.get("settlement_date", "")[:10]),
+                    quantity,
+                )
+        except (ValueError, ArithmeticError):
+            pass
+        if (
+            key
+            and remaining[key]
+            and node.get("oper_type") == "Перевод"
+            and re.fullmatch(r"Аннулирование выпуска [A-Z0-9]+\.", node.get("comment_new", ""))
+        ):
+            remaining[key] -= 1
+        else:
+            unresolved.append(
+                {
+                    "isin": match[1] if match else None,
+                    "reason": "unresolved_native_security_movement",
+                }
+            )
+    for node in root.findall("m:Trades4/m:Report//m:Details", NS):
+        # Known connection timestamps contain no dated security/cash transaction.
+        if (
+            set(node.attrib) == {"sys_start_time", "sys_end_time"}
+            and not list(node)
+            and not (node.text or "").strip()
+        ):
+            continue
+        unresolved.append({"isin": None, "reason": "unresolved_native_auxiliary_row"})
+    native_transfers = root.find("m:Trades3/m:Report", NS)
+    if native_transfers is not None and any(
+        n.tag
+        not in {
+            f"{{MyBroker}}{name}" for name in ("Report", "Tablix1", "Details_Collection", "Details")
+        }
+        for n in native_transfers.iter()
+    ):
+        unresolved.append({"isin": None, "reason": "unresolved_native_movement_structure"})
+    auxiliary = root.find("m:Trades4/m:Report", NS)
+    if auxiliary is not None and any(
+        n.tag
+        not in {
+            f"{{MyBroker}}{name}" for name in ("Report", "Tablix1", "Details_Collection", "Details")
+        }
+        for n in auxiliary.iter()
+    ):
+        unresolved.append({"isin": None, "reason": "unresolved_native_auxiliary_structure"})
+    if "unknown_section" in parse_source_blockers(root):
+        unresolved.append({"isin": None, "reason": "unknown_native_section"})
+    return unresolved
+
+
+def parse_source_blockers(root):
+    from hermes_finance.statement_import.mybroker import SECTIONS
+
+    return (
+        {"unknown_section"}
+        if any(child.tag not in {f"{{MyBroker}}{name}" for name in SECTIONS} for child in root)
+        else set()
+    )
+
+
 def _interval(document, payload, report, money, links, link_issues, from_zero):
     account = document["filename_account"]
     native_account = {r["source_account"] for r in document["money"] + document["positions"]}
@@ -325,6 +415,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
     external = []
     unlinked = []
     redemptions = defaultdict(Decimal)
+    matched_cancellations = []
     reg_to_isin = defaultdict(set)
     for row in money:
         if row["ref"] in links:
@@ -361,6 +452,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
             if len(candidates) == 1 and amount > 0:
                 _, isin, _, q = candidates[0]
                 redemptions[isin] += q
+                matched_cancellations.append(candidates[0])
                 event_kind = "REDEMPTION"
             else:
                 unlinked.append(row)
@@ -505,6 +597,11 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
     if from_zero and not inception:
         raise MyBrokerError("source_return_zero_start_contradiction")
     instruments = []
+    movements = _unresolved_movements(payload, native_account, matched_cancellations)
+    unresolved_payouts = any(r["classification"] in {"coupon", "dividend"} for r in unlinked)
+    advisory_reasons = (
+        ("source_sections_not_financially_accepted",) if document["syntax_blockers"] else ()
+    )
     v0total = _minor(cash[0]["beginning_amount"])
     v1total = _minor(cash[0]["ending_amount"])
     for isin in sorted(set(positions) | set(qdelta) | set(events) | set(redemptions)):
@@ -513,6 +610,9 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         v0 = v1 = None
         why = set(issues[isin]) | set(link_issues.get((document["document_sha256"], isin), ()))
         why.update(code for a, code in report.issues if a == account)
+        if unresolved_payouts:
+            why.add("unresolved_account_payout_attribution")
+        why.update(m["reason"] for m in movements if m["isin"] in (None, isin))
         if p:
             q0 = (
                 Decimal(p["beginning_actual_quantity"])
@@ -559,7 +659,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
             for e in events[isin]
             for leg in e.cash_legs
         ]
-        rates = _rates(start, end, v0, v1, flows, why)
+        rates = _rates(start, end, v0, v1, flows, tuple(why) + advisory_reasons)
         if why:
             for key in rates:
                 rates[key]["value"] = None
@@ -572,10 +672,15 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
                 "opening_kopecks": None if v0 is None else str(v0),
                 "closing_kopecks": None if v1 is None else str(v1),
                 "result_scope": "linked_instrument_cash_and_valuation; account-wide items separate",
-                "pnl": _metric(pnl.value, why),
-                "known_subtotal": _metric(known.value, why),
+                "pnl": _metric(pnl.value, tuple(why) + advisory_reasons),
+                "known_subtotal": {
+                    **_metric(known.value, tuple(why) + advisory_reasons),
+                    "status": "partial" if known.value is not None else "unavailable",
+                },
                 "modified_dietz": _metric(
-                    dietz.value, tuple(why) + dietz.reason_codes, method="modified_dietz"
+                    dietz.value,
+                    tuple(why) + dietz.reason_codes + advisory_reasons,
+                    method="modified_dietz",
                 ),
                 "xirr_annualized": rates["xirr_annualized"],
                 "xirr_period": rates["xirr_period"],
@@ -585,6 +690,7 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
             }
         )
     account_reasons = {code for a, code in report.issues if a == account}
+    account_reasons.update(advisory_reasons)
     if any(q != 0 for q in repo_quantity.values()):
         account_reasons.add("repo_position_open_at_boundary")
     if account not in report.closing:
@@ -598,7 +704,19 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
             if r["classification"] not in {"coupon", "dividend"}
         )
         account_reasons.add("unclassified_money")
+    if any(r["currency"] != "RUB" for r in unlinked):
+        external.append((end, 0, "unknown"))
+        account_reasons.add("non_rub_money_valuation_unknown")
     rates = _rates(start, end, v0total, v1total, external, account_reasons)
+    known_subtotal = {
+        **rates["pnl"],
+        "status": "partial" if rates["pnl"]["value"] is not None else "unavailable",
+    }
+    if movements:
+        account_reasons.update(m["reason"] for m in movements)
+        known_subtotal["reason_codes"] = sorted(account_reasons)
+        for metric in rates.values():
+            metric.update(value=None, status="unavailable", reason_codes=sorted(account_reasons))
     cash_delta = (
         _minor(cash[0]["ending_amount"])
         - _minor(cash[0]["beginning_amount"])
@@ -637,6 +755,8 @@ def _interval(document, payload, report, money, links, link_issues, from_zero):
         "opening_kopecks": None if v0total is None else str(v0total),
         "closing_kopecks": None if v1total is None else str(v1total),
         **rates,
+        "known_subtotal": known_subtotal,
+        "unresolved_movements": movements,
         "instruments": instruments,
         "account_only": only,
         "exceptions": [

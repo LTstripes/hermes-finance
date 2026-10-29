@@ -21,6 +21,9 @@ export type SourceIntervalResult = Omit<
   closing_date: string;
   period_kind: string;
   history_from_zero: boolean;
+  known_subtotal?: SourceMetric;
+  source_advisories?: string[];
+  unresolved_movements?: { isin: string | null; reason: string }[];
   instruments: SourceInstrumentResult[];
   account_only: { kind: string; amount_kopecks: string }[];
   unallocated_payouts: { reference: string; amount_kopecks: string; reason: string }[];

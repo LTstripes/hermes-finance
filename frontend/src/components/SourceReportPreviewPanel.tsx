@@ -174,6 +174,26 @@ export function SourceReportPreviewPanel({ xmlFiles }: { xmlFiles: File[] }) {
                   оценка): {rate(a.modified_dietz)}. Денежно-взвешенная за период:{" "}
                   {rate(a.xirr_period)}. XIRR годовых: {rate(a.xirr_annualized)}.
                 </p>
+                {a.pnl.value === null && a.known_subtotal?.value != null && (
+                  <p>
+                    Известная часть по денежным операциям и оценке счёта:{" "}
+                    {money(a.known_subtotal.value)}. Смысл прочих движений имущества не установлен;
+                    это не полный результат.
+                  </p>
+                )}
+                {!!a.source_advisories?.length && (
+                  <p>
+                    Дополнительные разделы исходного XML не получили финансовой приёмки:{" "}
+                    {a.source_advisories.join(", ")}. Расчёт по разобранным операциям остаётся
+                    предварительным.
+                  </p>
+                )}
+                {!!a.unresolved_movements?.length && (
+                  <p>
+                    Требуют разбора движения бумаг: {a.unresolved_movements.length}. Без их смысла,
+                    дат и стоимости полные показатели счёта и затронутых бумаг не определены.
+                  </p>
+                )}
                 <p>
                   Сопоставлено денежных строк выплат: {a.reconciliation.linked_payout_occurrences}{" "}
                   из {a.reconciliation.xml_payout_occurrences}. Две строки одной выплаты могут
@@ -201,7 +221,12 @@ export function SourceReportPreviewPanel({ xmlFiles }: { xmlFiles: File[] }) {
                     {a.instruments.map((s) => (
                       <tr key={s.isin}>
                         <Td>{s.isin}</Td>
-                        <Td>{money(s.pnl.value)}</Td>
+                        <Td>
+                          {money(s.pnl.value)}
+                          {s.pnl.value === null && s.known_subtotal.value !== null && (
+                            <div>Известная часть: {money(s.known_subtotal.value)}</div>
+                          )}
+                        </Td>
                         <Td>{rate(s.modified_dietz)}</Td>
                         <Td>{rate(s.xirr_period)}</Td>
                         <Td>{rate(s.xirr_annualized)}</Td>

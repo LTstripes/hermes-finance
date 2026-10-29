@@ -1184,3 +1184,116 @@ def test_investment_filename_never_relabels_another_native_account():
     doc["filename_account"] = "7654321"
     with pytest.raises(MyBrokerError, match="filename_native_account_conflict"):
         service._interval(doc, raw, report, money, {}, {}, True)
+
+
+def test_investment_unmatched_internal_income_is_not_zero_instrument_income():
+    from dataclasses import replace
+
+    from hermes_finance.domain.money_security import MoneySecurity
+
+    service, doc, raw, report, money = investment_case()
+    money.append(
+        {
+            **money[0],
+            "classification": "dividend",
+            "minor": 1000,
+            "security": MoneySecurity("1-01-12345-A", "Synthetic", "dividend"),
+            "redemption": None,
+            "ref": "unresolved-dividend",
+        }
+    )
+    doc["rub_money"][0]["ending_amount"] = "1000"
+    report = replace(report, closing={"1234567": 210000}, reported_pnl={"1234567": 10000})
+    links, issues = service._payout_links([doc], {doc["document_sha256"]: money}, report)
+    r = service._interval(doc, raw, report, money, links, issues, True)
+    assert r["pnl"]["value"] == "10000"  # internal income attribution does not erase account growth
+    assert r["reconciliation"]["pdf_pnl_delta_kopecks"] == "0"
+    s = r["instruments"][0]
+    assert s["pnl"]["value"] is None and s["known_subtotal"]["value"] == "9000"
+    assert s["known_subtotal"]["status"] == "partial"
+    assert s["components"]["dividends"]["value"] is None
+    assert all(
+        s[key]["value"] is None for key in ("modified_dietz", "xirr_period", "xirr_annualized")
+    )
+    assert "unresolved_account_payout_attribution" in s["reason_codes"]
+
+
+def test_investment_opposite_unknown_custody_movements_cannot_prove_flow_completeness():
+    from test_statement_import_mybroker_endpoints import node
+
+    service, _, raw, report, _ = investment_case()
+    root = ET.fromstring(raw)
+    wrapper = root.find("{MyBroker}Trades3/{MyBroker}Report")
+    collection = node(node(wrapper, "Tablix1"), "Details_Collection")
+    for day, qty in [(5, "-1"), (25, "1")]:
+        node(
+            collection,
+            "Details",
+            acc_code=ACCOUNT,
+            p_name="Synthetic / RU000A000000",
+            settlement_date=f"2030-01-{day:02d}T00:00:00",
+            qty=qty,
+            oper_type="Перевод",
+            comment_new="Unsupported custody movement",
+        )
+    raw = ET.tostring(root, encoding="utf-8")
+    doc = parse_mybroker(raw, FILENAME)
+    r = service._interval(doc, raw, report, service._money(doc, raw), {}, {}, True)
+    assert len(r["unresolved_movements"]) == 2
+    assert r["pnl"]["value"] is None and r["known_subtotal"]["value"] == "9000"
+    assert all(
+        r[key]["value"] is None for key in ("modified_dietz", "xirr_period", "xirr_annualized")
+    )
+    s = r["instruments"][0]
+    assert s["pnl"]["value"] is None and s["known_subtotal"]["value"] == "9000"
+    assert "unresolved_native_security_movement" in s["reason_codes"]
+    assert "4_Transfers_unsupported" in r["source_advisories"]
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ("supported", 0),
+        ("other_comment", 1),
+        ("nonfinite", 1),
+        ("unknown_auxiliary", 1),
+        ("foreign", 0),
+    ],
+)
+def test_investment_movement_guard_is_exact_and_keeps_supported_metadata(change, expected):
+    from decimal import Decimal
+
+    from test_statement_import_mybroker_endpoints import node
+
+    service, _, raw, _, _ = investment_case()
+    root = ET.fromstring(raw)
+    collection = node(
+        node(root.find("{MyBroker}Trades3/{MyBroker}Report"), "Tablix1"), "Details_Collection"
+    )
+    row = node(
+        collection,
+        "Details",
+        acc_code=ACCOUNT,
+        p_name="Synthetic\r\nRU000A000000",
+        settlement_date="2030-01-17T00:00:00",
+        qty="-10",
+        oper_type="Перевод",
+        comment_new="Аннулирование выпуска SYNTHETIC1.",
+    )
+    aux = node(
+        node(root.find("{MyBroker}Trades4/{MyBroker}Report"), "Tablix1"), "Details_Collection"
+    )
+    metadata = node(aux, "Details", sys_start_time="01.01.2030 00:00", sys_end_time="-")
+    if change == "other_comment":
+        row.set("comment_new", "Unsupported")
+    if change == "nonfinite":
+        row.set("qty", "sNaN")
+    if change == "unknown_auxiliary":
+        metadata.set("qty", "1")
+    if change == "foreign":
+        row.set("acc_code", "7654321-000")
+        row.set("comment_new", "Unknown foreign transfer")
+    unresolved = service._unresolved_movements(
+        ET.tostring(root), ACCOUNT, [(ACCOUNT, "RU000A000000", date(2030, 1, 17), Decimal(-10))]
+    )
+    assert len(unresolved) == expected

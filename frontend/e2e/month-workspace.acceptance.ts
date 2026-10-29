@@ -29,6 +29,27 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
       pdf_pnl_delta_kopecks: "0",
     },
   }));
+  intervals[0].pnl = metric(null);
+  intervals[0].modified_dietz = metric(null);
+  intervals[0].xirr_period = metric(null);
+  intervals[0].xirr_annualized = metric(null);
+  Object.assign(intervals[0], {
+    known_subtotal: metric("12345"),
+    source_advisories: ["4_Transfers_unsupported"],
+    unresolved_movements: [{ isin: "RU000A000000", reason: "unresolved_native_security_movement" }],
+    instruments: [
+      {
+        isin: "RU000A000000",
+        pnl: metric(null),
+        known_subtotal: metric("9000"),
+        modified_dietz: metric(null),
+        xirr_period: metric(null),
+        xirr_annualized: metric(null),
+        event_count: 2,
+        reason_codes: ["unresolved_native_security_movement"],
+      },
+    ],
+  });
   let previews = 0;
   const writes: string[] = [];
   page.on("request", (r) => {
@@ -82,7 +103,10 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
   await page.keyboard.press("Enter");
   await expect(page.getByText(/Период PDF: 2040-01-01/)).toBeVisible();
   await expect(page.getByText(/Исторический период/)).toHaveCount(2);
-  await expect(page.getByText(/Рублёвый результат счёта/).first()).toContainText("123.45");
+  await expect(page.getByText(/Рублёвый результат счёта/).last()).toContainText("123.45");
+  await expect(page.getByText(/Рублёвый результат счёта/).first()).toContainText("Не определено");
+  await expect(page.getByText(/Дополнительные разделы исходного XML/)).toBeVisible();
+  await expect(page.getByText(/Известная часть по денежным операциям/)).toContainText("123.45");
   await fits(page);
   await page.screenshot({
     path: info.outputPath("xml-pdf-historical-preview.png"),

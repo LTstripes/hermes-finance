@@ -60,6 +60,40 @@ function choosePdf() {
 }
 beforeEach(() => preview.mockReset());
 
+it("shows source restrictions and known partial amounts when complete movement returns are unavailable", async () => {
+  const r = result();
+  const account = r.intervals[0];
+  account.pnl = metric(null);
+  account.known_subtotal = metric("9000");
+  account.modified_dietz = metric(null);
+  account.source_advisories = ["4_Transfers_unsupported"];
+  account.unresolved_movements = [
+    { isin: "RU000A000000", reason: "unresolved_native_security_movement" },
+  ];
+  account.instruments = [
+    {
+      isin: "RU000A000000",
+      pnl: metric(null),
+      known_subtotal: metric("9000"),
+      modified_dietz: metric(null),
+      xirr_period: metric(null),
+      xirr_annualized: metric(null),
+      event_count: 2,
+      reason_codes: ["unresolved_native_security_movement"],
+    },
+  ];
+  preview.mockResolvedValue(r);
+  render(<SourceReportPreviewPanel xmlFiles={[xml]} />);
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "Проверить XML и PDF" }));
+  await screen.findByText(/Дополнительные разделы исходного XML/);
+  expect(screen.getByText(/Известная часть по денежным операциям/)).toHaveTextContent("90.00");
+  expect(screen.getByText(/Требуют разбора движения бумаг/)).toHaveTextContent("1");
+  expect(screen.getByRole("row", { name: /RU000A000000/ })).toHaveTextContent(
+    "Не определеноИзвестная часть: 90.00",
+  );
+});
+
 it("uses the shared XML selection and shows the entire period, exact money and distinct period/annual rates", async () => {
   preview.mockResolvedValue(result());
   render(<SourceReportPreviewPanel xmlFiles={[xml]} />);
