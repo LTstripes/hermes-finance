@@ -45,6 +45,30 @@ def is_broker_transfer(operation, narrative):
     )
 
 
+def is_contract_cash_return(operation, narrative, amount):
+    """One explicit MyBroker client cash-return shape, never arbitrary transfers."""
+    if operation.casefold().strip() != "перевод" or any(c in narrative for c in "\r\n"):
+        return False
+    match = re.fullmatch(
+        r"возврат средств по дог\. № [0-9]{1,32} от "
+        r"(?P<day>[0-9]{2}\.[0-9]{2}\.[0-9]{4})\. "
+        r"[а-яёa-z][а-яёa-z-]+(?: [а-яёa-z][а-яёa-z-]+){1,3}\. без ндс",
+        narrative.casefold().strip(),
+    )
+    if match is None:
+        return False
+    if re.search(
+        r"\b(?:дивиденд\w*|купон\w*|налог\w*|компенсац\w*|комисси\w*|репо)\b", narrative.casefold()
+    ):
+        return False
+    try:
+        datetime.strptime(match["day"], "%d.%m.%Y")
+        value = Decimal(amount)
+        return value.is_finite() and value < 0
+    except (ValueError, ArithmeticError):
+        return False
+
+
 def transfer_classification(operation, narrative, amount, *, source_account, selected_accounts):
     """Resolve only explicit directional account operands within the requested scope."""
     text = " ".join(narrative.casefold().replace("ё", "е").split())
@@ -128,6 +152,8 @@ def default_classification(
         return "trade_settlement"
     op = operation.casefold().strip()
     text = f"{operation} {narrative}".casefold()
+    if is_contract_cash_return(operation, narrative, amount):
+        return "external_withdrawal"
     if op == "внесено/выведено по распоряжению клиента":
         return "external_deposit" if Decimal(amount) > 0 else "external_withdrawal"
     if op == "внесено по распоряжению клиента":

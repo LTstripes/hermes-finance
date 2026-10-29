@@ -22,6 +22,75 @@ DIVIDEND_SECURITY = 'Дивиденды за 2029 г. по акциям ПАО "
 
 
 @pytest.mark.parametrize(
+    "operation,narrative,amount,expected",
+    [
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС",
+            "-1",
+            "external_withdrawal",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС",
+            "1",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС",
+            "0",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 31.02.2030. Тестов Иван Иванович. Без НДС",
+            "-1",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС компенсация",
+            "-1",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Компенсация Иван Иванович. Без НДС",
+            "-1",
+            "unknown",
+        ),
+        (
+            "Перевод",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван\nИванович. Без НДС",
+            "-1",
+            "unknown",
+        ),
+        ("Перевод", "Возврат средств", "-1", "unknown"),
+        (
+            "Anything",
+            "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС",
+            "-1",
+            "unknown",
+        ),
+    ],
+)
+def test_contract_cash_return_boundaries(operation, narrative, amount, expected):
+    assert default_classification(operation, narrative, "unsupported", amount) == expected
+
+
+@pytest.mark.parametrize("suffix", ["", " возврат", " комиссия 1 руб.", "\n"])
+def test_bank_legal_suffix_dividend_is_bounded(suffix):
+    from hermes_finance.domain.money_security import parse_money_security
+
+    narrative = DIVIDEND_SECURITY.replace('ПАО "Синтетический Ландыш"', "Банк Синтетический (ПАО)")
+    result = parse_money_security(narrative + suffix)
+    assert result == (
+        ("1-01-99999-Z", "Банк Синтетический (ПАО)", "dividend") if not suffix else None
+    )
+
+
+@pytest.mark.parametrize(
     "text,expected",
     [
         (COUPON_SECURITY, ("4B02-09-99999-Z-001P", 'АО "Синтетический Ландыш"', "coupon")),

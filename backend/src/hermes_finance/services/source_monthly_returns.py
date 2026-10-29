@@ -27,6 +27,7 @@ from hermes_finance.services import broker_statement_provisional as provisional
 from hermes_finance.services import source_intake
 from hermes_finance.services.source_money_classifications import (
     is_broker_transfer,
+    is_contract_cash_return,
     source_reference,
     transfer_classification,
 )
@@ -349,6 +350,13 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
             )
             continue
         classification = saved.classification
+        if (
+            classification == "unknown"
+            and (saved.origin, saved.status) == ("default_rule", "assumed")
+            and is_contract_cash_return(saved.operation, saved.narrative, row["amount"])
+        ):
+            # A bounded source-rule correction; never rewrite or override a choice.
+            classification = "external_withdrawal"
         if classification == "internal_transfer" or (
             selected_accounts is not None
             and (saved.origin, saved.status) == ("default_rule", "assumed")

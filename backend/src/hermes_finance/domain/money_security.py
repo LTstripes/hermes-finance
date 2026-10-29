@@ -23,13 +23,14 @@ class MoneySecurity(NamedTuple):
 # Deliberately bounded registration grammars, not arbitrary parenthesized tokens.
 _REG = r"(?a:(?:(?:[0-9][A-Z][0-9]{2}|[0-9])-[0-9]{2}-[0-9]{5}-[A-Z](?:-[0-9]{3}[A-Z])?|[0-9]{8}[A-Z]))"
 _ISSUER = r'(?:ПАО|АО|ООО) (?:"[^"()\r\n]+"|«[^«»()\r\n]+»|[^"«»()\r\n]+)'
+_DIVIDEND_ISSUER = rf"(?:{_ISSUER}|Банк [А-ЯЁA-Z][А-ЯЁа-яёA-Za-z -]* \(ПАО\))"
 _COUPON = re.compile(
     rf"погашение купона (?P<reg>{_REG}) \(облигации (?P<issuer>{_ISSUER})\) "
     r"д\.ф\.(?P<date>[0-9]{2}\.[0-9]{2}\.[0-9]{2})",
     re.IGNORECASE,
 )
 _DIVIDEND = re.compile(
-    rf"Дивиденды за [0-9]{{4}} (?:г\.|год) по акциям (?P<issuer>{_ISSUER})"
+    rf"Дивиденды за [0-9]{{4}} (?:г\.|год) по акциям (?P<issuer>{_DIVIDEND_ISSUER})"
     rf"(?: |\.  )\((?P<reg>{_REG})\)\."
     r" \(Удержан налог [0-9]+(?:[.,][0-9]{1,2})? руб\.\)\."
     r"(?: Эмитентом уменьшена НОБ)?",
