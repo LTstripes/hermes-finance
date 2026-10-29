@@ -55,7 +55,7 @@ function install(override?: (url: URL) => Promise<Response> | undefined) {
   );
   return calls;
 }
-function setup(path = "/v2/returns") {
+function setup(path = "/v2/returns?scope=source:SYNTH-A") {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -72,7 +72,7 @@ function setup(path = "/v2/returns") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
-test("no saved statements leaves brokerage selection empty until accepted mode is requested", async () => {
+test("unscoped CLOSED history opens the accepted portfolio even without saved statements", async () => {
   install((url) =>
     url.pathname.endsWith("context")
       ? Promise.resolve(
@@ -83,15 +83,44 @@ test("no saved statements leaves brokerage selection empty until accepted mode i
         )
       : undefined,
   );
-  setup();
+  setup("/v2/returns");
   await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("start=2030-04-30"));
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue(""));
-  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
-  fireEvent.change(screen.getByRole("combobox", { name: "Представление" }), {
-    target: { value: "accepted" },
-  });
   await screen.findByRole("region", { name: "Результат периода" });
   expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
+  expect(screen.getByRole("combobox", { name: "Представление" })).toHaveValue("accepted");
+  expect(screen.getByRole("link", { name: "Открыть отчёты месяцев" })).toHaveAttribute(
+    "href",
+    "/v2/data/months",
+  );
+});
+
+test("refresh reads context, overview and basket once in parallel and exposes context failure", async () => {
+  let hold = false;
+  let complete: (response: Response) => void = () => {};
+  const calls = install((url) =>
+    hold && url.pathname.endsWith("context")
+      ? new Promise<Response>((resolve) => {
+          complete = resolve;
+        })
+      : undefined,
+  );
+  setup();
+  await screen.findByRole("region", { name: "Результат периода" });
+  hold = true;
+  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+  await waitFor(() => {
+    expect(calls.filter((c) => c.includes("/overview?"))).toHaveLength(2);
+    expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(2);
+  });
+  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
+  await act(async () => complete(response(contextFixture)));
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(calls.filter((c) => c.includes("/overview?"))).toHaveLength(2);
+  expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+  await act(async () => complete(response({}, 503)));
+  await screen.findByText("Не удалось загрузить выбранную корзину.");
+  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
 });
 
 test("brokerage selector excludes accepted accounts until explicitly switched; deep links stay valid", async () => {

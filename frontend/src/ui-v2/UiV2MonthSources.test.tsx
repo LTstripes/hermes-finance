@@ -82,14 +82,17 @@ it("distinguishes long historical overlap from a complete month and names the ab
     intake(5, "LONG", { covered_from: "2024-01-01", covered_to: "2031-08-04" }),
   ]);
   const status = await screen.findByRole("region", { name: "Состояние источников месяца" });
-  await screen.findByRole("list", { name: "Источники и исключения месяца" });
+  const history = await screen.findByText("Исторические и частичные пересечения · 1");
+  expect(history.closest("details")).not.toHaveAttribute("open");
+  expect(screen.queryByRole("list", { name: "Источники и исключения месяца" })).toBeNull();
+  fireEvent.click(history);
   expect(status).toHaveTextContent(
     "Полных месячных оригиналов: 0. Исторических или частичных пересечений: 1",
   );
   expect(status).toHaveTextContent("остатки на 2031-08-31");
-  expect(screen.getByRole("list", { name: "Источники и исключения месяца" })).toHaveTextContent(
-    "Историческое или частичное пересечение",
-  );
+  expect(
+    screen.getByRole("list", { name: "Исторические и частичные источники" }),
+  ).toHaveTextContent("Историческое или частичное пересечение");
   expect(
     screen.getByText("Исправления и сохранение месяца").closest("details"),
   ).not.toHaveAttribute("open");

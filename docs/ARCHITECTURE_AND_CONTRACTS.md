@@ -6339,6 +6339,15 @@ readers; `account:<id>` and `portfolio` select PERF04A and exact TWRR. A source
 alias is never converted to accepted account authority. Unknown scopes, repeated
 selection parameters, and invalid dates fail closed; responses are no-store.
 
+Composite Returns reads reuse verified source views only inside their existing
+coherent snapshot. Each consumer receives a copy; success and failure both
+discard the memo before another request. There is no TTL or persisted cache.
+Accepted account/portfolio validation does not read unrelated source journals.
+The overview and instrument-detail adapters request selected-interval analysis
+without unused instrument monthly/all-time projections; the ordinary source
+reader keeps its full-history default. Selected metrics, events, reasons,
+reviewed bond basis and account reconciliation retain the same authority.
+
 The allowlisted DTO carries money as integer-kopeck **strings**, and rates as
 Decimal strings with explicit fraction/percentage-point units and method. It
 omits journals, hashes, source references and native transaction identifiers.
@@ -6368,14 +6377,17 @@ reasons. Browser comparison uses exact Decimal/BigInt ordering; Number is
 confined to bar geometry.
 
 Owner extension A–C ([#963](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6447928093)):
-the primary selector contains saved source accounts, grouping a filename alias
+the source selector contains saved source accounts, grouping a filename alias
 only when every selected document proves the same single native account through
 the existing read selector. Unreadable, multiple-account and conflicting aliases
 remain visible. Grouping preserves the canonical account's union of originals
 and periods; `scope_aliases` supports equivalent old URLs. Existing effective
 exact broker-account mappings may supply a label only, never accepted authority.
-Manual/accepted accounts and PERF portfolio remain explicitly secondary and
-their URLs remain supported. This does not create an aggregate source portfolio.
+Manual/accepted accounts and PERF portfolio remain a separate basis with their
+existing URLs. With CLOSED periods, an unscoped ordinary entry selects the
+accepted portfolio; explicit source and legacy history links keep their scope.
+This does not create an aggregate source portfolio or make closed records
+sufficient evidence for a computable return.
 
 When full account P&L is unavailable, `available_months_total` separately carries
 a partial RUB subtotal over history, and `selected_available_months_total` over

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { apiRequest } from "../../api/client";
 import { displayMetric, type Period, periodLabel, validDate } from "./model";
@@ -37,7 +37,15 @@ export type Basket = {
 const money = (value: string | null) =>
   displayMetric({ value, method: "", unit: "kopecks", estimate: true, reason_codes: [] }, true);
 
-export function ReturnsBasket({ period, refreshing }: { period: Period; refreshing: boolean }) {
+export function ReturnsBasket({
+  period,
+  refreshing,
+  contextError = false,
+}: {
+  period: Period;
+  refreshing: boolean;
+  contextError?: boolean;
+}) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { hash, key: locationKey } = useLocation();
@@ -45,7 +53,20 @@ export function ReturnsBasket({ period, refreshing }: { period: Period; refreshi
   // Controlled input feedback is immediate; financial reads/display wait for
   // the matching committed Router URL, including Back/Reload and ABA.
   const [inputSelection, setInputSelection] = useState({ key: locationKey, value: raw });
-  useLayoutEffect(() => setInputSelection({ key: locationKey, value: raw }), [raw, locationKey]);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  useEffect(() => {
+    // Native Back can return to A before Router commits the pending A→B
+    // transition. The key/raw dependencies then never change; retire B's
+    // optimistic checkbox selection on that POP too.
+    const onPop = () => setHistoryRevision((value) => value + 1);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: POP must synchronize even if Router never committed the intermediate URL.
+  useLayoutEffect(
+    () => setInputSelection({ key: locationKey, value: raw }),
+    [raw, locationKey, historyRevision],
+  );
   const inputParts = inputSelection.value ? inputSelection.value.split(",") : [];
   const inputMatchesUrl = inputSelection.key === locationKey && inputSelection.value === raw;
   const parts = raw ? raw.split(",") : [];
@@ -70,7 +91,7 @@ export function ReturnsBasket({ period, refreshing }: { period: Period; refreshi
         throw new Error("basket_selection_mismatch");
       return result;
     },
-    enabled: valid && inputMatchesUrl && !refreshing,
+    enabled: valid && inputMatchesUrl,
     staleTime: 0,
   });
   const data =
@@ -111,7 +132,7 @@ export function ReturnsBasket({ period, refreshing }: { period: Period; refreshi
         <p role="status">Выберите корректный период и категории.</p>
       ) : !parts.length ? (
         <p role="status">Выбери хотя бы одну категорию</p>
-      ) : query.isError ? (
+      ) : contextError || query.isError ? (
         <p role="alert">Не удалось загрузить выбранную корзину.</p>
       ) : !data ? (
         <p role="status">Пересчитываем выбранное…</p>

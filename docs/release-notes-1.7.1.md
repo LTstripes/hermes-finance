@@ -1,13 +1,13 @@
 # Hermes Finance 1.7.1
 
-Hermes Finance **1.7.1** packages the source-bound bond endpoint reader from
-[#984](https://github.com/LTstripes/hermes-finance/pull/984), integrated as
-`61eabbac6e9059c3fc2c575719bba6da9e598d3b`. Its
-[exact-main CI40744351609](https://github.com/LTstripes/hermes-finance/actions/runs/40744351609)
-completed successfully. This patch synchronizes release identity and notes;
-dependency resolutions, application logic and migration sources are unchanged
-by the packaging change. Current publication, installation and acceptance state
-belongs to [CURRENT_STATUS](CURRENT_STATUS.md).
+Hermes Finance **1.7.1** combines the source-bound bond endpoint reader from
+[#984](https://github.com/LTstripes/hermes-finance/pull/984) with the Returns read
+efficiency and Month workflow changes from
+[#986](https://github.com/LTstripes/hermes-finance/pull/986). The packaging change
+synchronizes release identity and notes; dependency resolutions, application
+logic and migration sources are unchanged relative to those integrated changes.
+Current publication, installation and acceptance state belongs to
+[CURRENT_STATUS](CURRENT_STATUS.md).
 
 ## Changes since v1.7.0
 
@@ -25,6 +25,25 @@ Cash, flow, cost, quantity, currency, conflict and completeness guards remain
 independent; root account reconciliation, H1 and financial writers retain their
 existing authority. This does not establish full account or all-time returns,
 exact XIRR/TWRR, financial balances or Close readiness.
+
+Returns reuses verified source views only within one coherent read and avoids
+unused history projections in selected-period overview/detail requests. It adds
+no persistent cache; the ordinary source reader retains its full-history default.
+Refreshing the page avoids the redundant request cascade while retaining stale,
+error and currentness handling. When CLOSED periods exist, an unscoped entry
+selects the accepted portfolio and latest CLOSED month. Explicit source/history
+links retain their basis, dates and NULL reasons. Category checkboxes preserve
+keyboard focus, URL, Reload and rapid Back navigation. These changes do not make
+unsupported rates computable or combine source-only sums with deposit interest.
+
+Month keeps XML upload/review in Broker statements. Payouts uses saved financial
+DRAFT positions for the existing explicit T-Invest forecast action and saved
+calendar; source-only Save does not create that financial DRAFT. Both source
+lists use the selected month/account scope, with historical/partial overlaps
+collapsed separately. An explicitly uploaded wrong-period original remains
+available for its mismatch explanation. Source selection follows the newest
+confirmed revision while preserving month/account and pending-recovery guards.
+Source observations, accepted actual payouts and forecasts remain distinct.
 
 ## Update, activation and recovery
 

@@ -4,7 +4,7 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
-## [1.7.1] - 2026-10-28
+## [1.7.1] - 2026-10-29
 
 - [#984](https://github.com/LTstripes/hermes-finance/pull/984): ordinary instrument
   API and Returns readers consume explicitly accepted, source-bound bond endpoint
@@ -12,10 +12,16 @@
   stale evidence leaves UNKNOWN, and separate accrued interest remains NULL.
 - Exact database/source/row/date bindings and independent financial guards remain
   required. No schema change, automatic evidence activation or financial rewrite.
+- [#986](https://github.com/LTstripes/hermes-finance/pull/986): reuse verified source
+  reads within a request, avoid unused Returns projections and redundant page
+  reads, and show the selected period/basis with preserved NULL reasons.
+  Month keeps one source-review entry and uses saved financial DRAFT positions
+  for the existing explicit forecast action; source/month/revision and navigation
+  guards remain intact. Source Save and financial Apply remain separate.
 
-[Release notes 1.7.1](docs/release-notes-1.7.1.md) describe the bounded read scope
-and the separate update/activation procedure. Publication, installation and
-acceptance remain recorded in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
+[Release notes 1.7.1](docs/release-notes-1.7.1.md) describe the combined Returns/Month
+and bounded R2 scope and the separate update/activation procedure. Publication,
+installation and acceptance remain recorded in [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
 ## [1.7.0] - 2026-10-28
 

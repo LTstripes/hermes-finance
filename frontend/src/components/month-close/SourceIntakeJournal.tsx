@@ -194,8 +194,11 @@ export function SourceIntakeJournal({
       disabled
     )
       return;
-    const value =
-      intakeSelection.snapshot ?? sources.find((item) => item.id === intakeSelection.id);
+    const snapshot = intakeSelection.snapshot;
+    const listed = list.data?.find((item) => item.id === intakeSelection.id);
+    // A delayed explicit selection must not replace a newer confirmed GET.
+    // Upload readback may itself be newer than a list still being refreshed.
+    const value = listed && (!snapshot || listed.head_seq >= snapshot.head_seq) ? listed : snapshot;
     if (
       value &&
       (value.id !== intakeSelection.id ||
@@ -241,7 +244,7 @@ export function SourceIntakeJournal({
     }
   }, [
     intakeSelection,
-    sources,
+    list.data,
     busy,
     pendingCommand,
     disabled,
