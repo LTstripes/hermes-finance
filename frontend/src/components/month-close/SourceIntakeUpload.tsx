@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { ApiClientError, formatApiError } from "../../api/client";
 import {
   type IntakeAck,
-  type SourceIntake,
   listAllSourceIntakes,
   readSourceIntake,
+  type SourceIntake,
   saveSourceIntake,
 } from "../../api/sourceIntake";
 import { formatDate } from "../../lib/format";
 import { brokerSourceTitle } from "../../lib/ownerCopy";
+import { SourceReportPreviewPanel } from "../SourceReportPreviewPanel";
 import styles from "./SourceIntakeUpload.module.css";
 
 async function originalDigest(file: File) {
@@ -56,6 +57,7 @@ export function SourceIntakeUpload({
 }) {
   const client = useQueryClient();
   const [uploads, setUploads] = useState<Upload[]>([]);
+  const [previewFiles, setPreviewFiles] = useState<File[]>([]);
   const uploadBusy = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [heldFiles, setHeldFiles] = useState<string[]>([]);
@@ -263,11 +265,13 @@ export function SourceIntakeUpload({
           disabled={uploading || disabled}
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
+            setPreviewFiles(files);
             event.target.value = "";
             void upload(files);
           }}
         />
       </label>
+      <SourceReportPreviewPanel xmlFiles={previewFiles} />
       <details className={styles.note}>
         <summary>Подробнее о сохранении выписок</summary>
         <p>

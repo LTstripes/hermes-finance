@@ -750,3 +750,437 @@ def test_renamed_multiaccount_preflight_omits_empty_filename_groups(database):
     assert "source_account_conflict" not in entry["mappings"]["conflicts"]
     assert {a["source_account"] for a in entry["accounts"]} == {ACCOUNT, other_alias}
     assert result["calendar"] == result["report_availability"] == []
+
+
+def investment_text(*, account="1234567", amount="10,00", future="999,00", end="31.01.2030"):
+    from hermes_finance.statement_import.dto import ExtractedDocument, ExtractedPage, ExtractStatus
+
+    return ExtractedDocument(
+        ExtractStatus.OK,
+        "a" * 64,
+        1,
+        (
+            ExtractedPage(
+                tuple(
+                    [
+                        "Инвестиционный",
+                        "отчёт",
+                        f"Период c 01.01.2030 по {end}",
+                        f"Счёт {account} на {end} В долларах",
+                        "2 090,00 ₽",
+                        "",
+                        "+90,00 ₽",
+                        "Оценка портфеля",
+                        f"на {end}",
+                        f"Synthetic RU000A000000 {account}-000 Depository RUB 10  100,00  110,00  1 100,00  1 100,00  0",
+                        "Денежный поток",
+                        "Инструмент ISIN Дата выплаты Сумма в валюте",
+                        "Акции",
+                        f"Synthetic RU000A000000 RUB 20.01.2030 10  1,00  {amount}",
+                        "Будущий денежный поток",
+                        "Акции",
+                        f"Synthetic RU000A000000 RUB 20.01.2030 10  1,00  {future}",
+                    ]
+                )
+            ),
+        ),
+        None,
+    )
+
+
+def investment_original():
+    from copy import deepcopy
+
+    from test_statement_import_mybroker_endpoints import node
+
+    root = ET.fromstring(native_money_xml(nkd="1.23"))
+    p = root.find(".//{MyBroker}Details[@ISIN1]")
+    for key, value in {
+        "income_rest": "0",
+        "income_volume": "0",
+        "real_volume": "1100",
+        "active_type": "Акции",
+    }.items():
+        p.set(key, value)
+    node(
+        root.find(".//{MyBroker}Details_Collection"),
+        "Details",
+        active_type="Валюта",
+        active_name="RUB",
+        acc_code=ACCOUNT,
+        income_rest="0",
+        real_rest="990",
+    )
+    root.find(".//{MyBroker}Details[@trade_no]").set("bank_tax", "10")
+    rn = root.find(".//{MyBroker}rn")
+    deposit = deepcopy(rn)
+    op = deposit.find("{MyBroker}oper_type")
+    op.set("oper_type", "deposit")
+    op.find("{MyBroker}comment").set("comment", "")
+    deposit.find(".//{MyBroker}p_code[@volume]").set("volume", "2000")
+    root.find(".//{MyBroker}rn_Collection").append(deposit)
+    return ET.tostring(root, encoding="utf-8")
+
+
+def test_investment_pdf_selects_only_uploaded_accounts_and_actual_not_forecast():
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    report = parse_investment_report(investment_text(), {"1234567"})
+    assert len(report.payouts) == 1 and report.payouts[0].net_kopecks == 1000
+    assert report.positions[("1234567", "RU000A000000")] == ("10", 110000)
+    assert report.closing == {"1234567": 209000}
+    assert report.reported_pnl == {"1234567": 9000}
+    foreign = parse_investment_report(
+        investment_text(account="7654321", amount="invalid"), {"1234567"}
+    )
+    assert foreign.payouts == () and not foreign.issues
+
+
+@pytest.mark.parametrize("amount", ["1,001", "-1,00", "0,00", "NaN", "Infinity"])
+def test_investment_pdf_bad_actual_cell_is_explicit(amount):
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    report = parse_investment_report(investment_text(amount=amount), {"1234567"})
+    assert not report.payouts
+    assert ("1234567", "pdf_payout_row_invalid") in report.issues
+
+
+@pytest.mark.parametrize(
+    "narrative",
+    [
+        'погашение купона 4B02-806-12345-B-001P (Биржевые облигации АО "Synthetic") д.ф.10.01.30',
+        'Дивиденды за 1 кв 2030 г. по акциям ПАО МКК "Synthetic" (1-01-12345-A). (Удержан налог 1 руб.)',
+        'Дивиденды за 9 месяцев 2030 г. по акциям МКПАО "Synthetic 5" (1-01-12345-A). (Удержан налог 1 руб.)',
+    ],
+)
+def test_investment_narrative_is_complete_bounded_grammar(narrative):
+    from hermes_finance.statement_import.investment_money import parse_investment_money_security
+
+    assert parse_investment_money_security(narrative) is not None
+    assert parse_investment_money_security(narrative + " extra") is None
+    assert parse_investment_money_security(narrative + "\n") is None
+
+
+def test_investment_payout_uses_whole_registration_group_not_subset_sum():
+    from dataclasses import replace
+
+    from hermes_finance.domain.money_security import MoneySecurity
+    from hermes_finance.services.source_report_preview import _payout_links
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    report = parse_investment_report(investment_text(amount="6,00"), {"1234567"})
+    doc = {
+        "filename_account": "1234567",
+        "document_sha256": "b" * 64,
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-01-31",
+    }
+    rows = [
+        {
+            "classification": "dividend",
+            "security": MoneySecurity("1-01-12345-A", "Synthetic", "dividend"),
+            "minor": n,
+            "day": date(2030, 1, 20),
+            "currency": "RUB",
+            "ref": str(i),
+        }
+        for i, n in enumerate([100, 500])
+    ]
+    links, issues = _payout_links([doc], {doc["document_sha256"]: rows}, report)
+    assert len(links) == 2 and not issues
+    # A third row of the SAME registration cannot be silently omitted to fit the PDF.
+    rows.append({**rows[0], "minor": 200, "ref": "third"})
+    assert not _payout_links([doc], {doc["document_sha256"]: rows}, report)[0]
+    rows.pop()
+    ambiguous = replace(
+        report, payouts=report.payouts + (replace(report.payouts[0], isin="RU000A000001"),)
+    )
+    assert not _payout_links([doc], {doc["document_sha256"]: rows}, ambiguous)[0]
+
+
+def test_investment_joint_preview_cash_once_rates_and_no_writes(database, monkeypatch):
+    from dataclasses import replace
+
+    from hermes_finance.services import source_report_preview as service
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    # No payout in this cash-only case; the PDF actual section explicitly exists.
+    report = replace(parse_investment_report(investment_text(), {"1234567"}), payouts=())
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(service, "parse_investment_report", lambda *_: report)
+    before = snapshot(database)
+    first = run(
+        database,
+        [(FILENAME, investment_original())],
+        income_report=b"synthetic pdf",
+        history_from_zero=True,
+    )
+    result = first["source_return_preview"]
+    assert not result["financial_apply_available"] and not result["close_available"]
+    a = result["intervals"][0]
+    assert a["pnl"]["value"] == "9000"
+    assert a["instruments"][0]["pnl"]["value"] == "9000"
+    assert a["instruments"][0]["components"]["buys"]["value"] == "100000"
+    assert a["instruments"][0]["components"]["fees"]["value"] == "1000"
+    assert a["modified_dietz"]["value"] is not None
+    assert a["xirr_annualized"]["annualized"] is True
+    assert a["xirr_period"]["value"] != a["xirr_annualized"]["value"]
+    assert all(v == "0" for k, v in a["reconciliation"].items() if "delta_kopecks" in k)
+    assert snapshot(database) == before
+    second = run(
+        database,
+        [(FILENAME, investment_original())],
+        income_report=b"synthetic pdf",
+        history_from_zero=True,
+    )
+    assert first == second and snapshot(database) == before
+
+
+def test_investment_zero_start_cannot_override_nonzero_original(database, monkeypatch):
+    from hermes_finance.services import source_report_preview as service
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(
+        service,
+        "parse_investment_report",
+        lambda *_: parse_investment_report(investment_text(), {"1234567"}),
+    )
+    raw = investment_original().replace(b'income_rest="0"', b'income_rest="1"', 1)
+    with pytest.raises(MyBrokerError, match="zero_start_contradiction"):
+        run(database, [(FILENAME, raw)], income_report=b"pdf", history_from_zero=True)
+
+
+def test_investment_multipart_optional_pdf_bounds_and_duplicate(database, monkeypatch):
+    from hermes_finance.services import source_report_preview as service
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(
+        service,
+        "parse_investment_report",
+        lambda *_: parse_investment_report(investment_text(), {"1234567"}),
+    )
+    client = TestClient(create_app(database=database))
+    files = [
+        ("files", (FILENAME, investment_original())),
+        ("income_report", ("synthetic.pdf", b"pdf")),
+    ]
+    ok = client.post("/api/mybroker-preflight/preview", files=files)
+    assert ok.status_code == 200 and "source_return_preview" in ok.json()
+    duplicate = client.post("/api/mybroker-preflight/preview", files=files + files[-1:])
+    assert duplicate.status_code == 422
+    oversized = client.post(
+        "/api/mybroker-preflight/preview",
+        files=files[:1] + [("income_report", ("too-big.pdf", b"x" * (8 * 1024 * 1024 + 1)))],
+    )
+    assert oversized.status_code == 413
+
+
+def investment_case():
+    from dataclasses import replace
+
+    from hermes_finance.services import source_report_preview as service
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    raw = investment_original()
+    doc = parse_mybroker(raw, FILENAME)
+    report = replace(parse_investment_report(investment_text(), {"1234567"}), payouts=())
+    return service, doc, raw, report, service._money(doc, raw)
+
+
+def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch):
+    from decimal import Decimal
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, cancellations = service._native(doc, raw)
+    ordinary = trades[0]
+    for i, (quantity, amount) in enumerate([("5", "500"), ("-5", "501")]):
+        t = deepcopy(ordinary)
+        token = f"B{i + 1}"
+        t.update(ids=[token], repo_observed=True, bank_commission="0")
+        t["core"].update(quantity=quantity, trade_amount=amount)
+        trades.append(t)
+        primary[token] = [t]
+        money.append(
+            {**money[0], "minor": -50000 if i == 0 else 50100, "primary_id": token, "ref": token}
+        )
+    monkeypatch.setattr(service, "_native", lambda *_: (trades, names, primary, cancellations))
+    doc["rub_money"][0]["ending_amount"] = "991"
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    instrument = result["instruments"][0]
+    assert instrument["pnl"]["value"] == "9000"
+    assert instrument["event_count"] == 2
+    assert (
+        sum(
+            int(r["amount_kopecks"])
+            for r in result["account_only"]
+            if r["kind"] == "repo_financing"
+        )
+        == 100
+    )
+    assert not instrument["reason_codes"]
+    assert Decimal(instrument["closing_quantity"]) == 10
+
+
+def test_investment_anonymous_nkd_corroborates_cash_does_not_add_it_twice():
+    service, doc, raw, report, money = investment_case()
+    # Native T includes N; settlement principal plus a separate NKD Money equals T.
+    money[0]["minor"] = -99877
+    money.append(
+        {
+            **money[0],
+            "minor": -123,
+            "primary_id": None,
+            "operation": "НКД по сделке",
+            "narrative": "с Synthetic name never retained",
+            "ref": "anonymous-nkd",
+        }
+    )
+    # Original position/native full names are exact source authority, no substring match.
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    assert result["instruments"][0]["pnl"]["value"] == "9000"
+    money[-1]["narrative"] += " similar"
+    unknown = service._interval(doc, raw, report, money, {}, {}, True)
+    assert unknown["instruments"][0]["pnl"]["value"] is None
+    assert unknown["pnl"]["value"] is None
+
+
+def test_investment_redemption_is_principal_with_exact_cancellation(monkeypatch):
+    from dataclasses import replace
+    from decimal import Decimal
+
+    from hermes_finance.domain.money_security import MoneySecurity
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, _ = service._native(doc, raw)
+    day = money[0]["day"]
+    security = MoneySecurity("4B02-01-12345-A-001P", "АО Synthetic", "coupon")
+    coupon = {
+        **money[0],
+        "classification": "coupon",
+        "minor": 1000,
+        "security": security,
+        "redemption": None,
+        "ref": "coupon",
+    }
+    redemption = {
+        **coupon,
+        "classification": "unknown",
+        "minor": 100000,
+        "redemption": security,
+        "security": None,
+        "ref": "redemption",
+    }
+    money.extend([coupon, redemption])
+    monkeypatch.setattr(
+        service,
+        "_native",
+        lambda *_: (trades, names, primary, [(ACCOUNT, "RU000A000000", day, Decimal(-10))]),
+    )
+    doc["positions"][0].update(actual_quantity="0", ending_value="0")
+    doc["rub_money"][0]["ending_amount"] = "2000"
+    report = replace(
+        report,
+        positions={("1234567", "RU000A000000"): ("0", 0)},
+        closing={"1234567": 200000},
+        reported_pnl={"1234567": 0},
+    )
+    r = service._interval(
+        doc, raw, report, money, {"coupon": ("RU000A000000", security.reg_number)}, {}, True
+    )
+    s = r["instruments"][0]
+    assert s["pnl"]["value"] == "0"
+    assert s["components"]["redemption"]["value"] == "100000"
+    assert s["components"]["coupons"]["value"] == "1000"
+    assert not s["reason_codes"]
+
+
+@pytest.mark.parametrize(
+    "change,reason",
+    [
+        ("quantity", "quantity_bridge_mismatch"),
+        ("cash", "native_money_cash_bridge_mismatch"),
+        ("missing_value", "economic_endpoint_unavailable"),
+    ],
+)
+def test_investment_mismatch_withholds_full_result_preserves_unknown(change, reason):
+    service, doc, raw, report, money = investment_case()
+    if change == "quantity":
+        doc["positions"][0]["actual_quantity"] = "11"
+    elif change == "cash":
+        money[0]["minor"] += 1
+    else:
+        doc["positions"][0]["ending_value"] = None
+    r = service._interval(doc, raw, report, money, {}, {}, True)
+    s = r["instruments"][0]
+    assert s["pnl"]["value"] is None and s["modified_dietz"]["value"] is None
+    assert reason in s["reason_codes"]
+
+
+def test_investment_monthly_and_history_are_explicit_and_pdf_asof_must_match(database, monkeypatch):
+    from dataclasses import replace
+
+    service, _, raw, report, _ = investment_case()
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(service, "parse_investment_report", lambda *_: report)
+    r = run(database, [(FILENAME, raw)], income_report=b"pdf")["source_return_preview"][
+        "intervals"
+    ][0]
+    assert r["period_kind"] == "monthly" and not r["history_from_zero"]
+    monkeypatch.setattr(
+        service, "parse_investment_report", lambda *_: replace(report, end=date(2030, 2, 28))
+    )
+    with pytest.raises(MyBrokerError, match="endpoint_scope_mismatch"):
+        run(database, [(FILENAME, raw)], income_report=b"pdf")
+
+
+def test_investment_saved_history_material_conflict_and_occurrence_not_source_sum(
+    database, monkeypatch
+):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    service, doc, raw, report, rows = investment_case()
+    monkeypatch.setattr(service, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(service, "parse_investment_report", lambda *_: report)
+    classifications = [
+        {
+            "date": r["day"],
+            "amount_kopecks": r["minor"],
+            "currency": r["currency"],
+            "operation": r["operation"],
+            "narrative": r["narrative"],
+            "updated_at": datetime(2030, 1, 31, tzinfo=UTC),
+        }
+        for r in rows
+    ]
+    saved = {
+        "document": deepcopy(doc),
+        "money_classifications": classifications,
+        "head_seq": 1,
+        "manifest_digest": "a" * 64,
+    }
+    monkeypatch.setattr(
+        service,
+        "_selected_sources",
+        lambda *_: ([(SimpleNamespace(id=i), saved, None) for i in [1, 2]], None),
+    )
+    r = run(database, [(FILENAME, raw)], income_report=b"pdf")["source_return_preview"]
+    c = r["comparison"][0]
+    assert c["repeated_money_occurrences"] == 3 and c["unmatched_money_occurrences"] == 0
+    assert c["repeated_native_trades"] == 1
+    saved["document"]["trades"][0]["bank_commission"] = "11"
+    changed = run(database, [(FILENAME, raw)], income_report=b"pdf")["source_return_preview"]
+    assert changed["comparison"][0]["conflicting_native_trades"] == 1
+    assert changed["context_fingerprint"] != r["context_fingerprint"]
+    classifications[0]["updated_at"] = datetime(2030, 2, 1, tzinfo=UTC)
+    refreshed = run(database, [(FILENAME, raw)], income_report=b"pdf")["source_return_preview"]
+    assert refreshed["context_fingerprint"] != changed["context_fingerprint"]
+
+
+def test_investment_filename_never_relabels_another_native_account():
+    service, doc, raw, report, money = investment_case()
+    doc["filename_account"] = "7654321"
+    with pytest.raises(MyBrokerError, match="filename_native_account_conflict"):
+        service._interval(doc, raw, report, money, {}, {}, True)

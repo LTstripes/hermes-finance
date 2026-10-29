@@ -71,6 +71,16 @@ corrections, explicit T-Invest preview and the available preliminary result.
 Source-only Save and strict financial Preview/Apply remain distinct internal
 stages. Verified saved uploads can supply the same in-memory original to strict
 review; a fresh exact original is required again after Reload.
+Under the same XML upload, **Расшифровка купонов и дивидендов — PDF Альфы** accepts
+one investment-report PDF for the last selected XML account set. It previews the
+file's actual range, matched actual payouts, saved-history repeats/conflicts and
+source account/instrument RUB results with period and annual percentage labels.
+Long originals explicitly show a historical interval; new monthly originals use
+their own matching closing date. The PDF supplies identity/control, never another
+payment. Account-wide costs/taxes and unresolved links remain separate. This slice
+does not persist PDF links or financially apply history; no old month needs Close
+for Preview. The ordinary **Выплаты** step keeps actual records and its existing
+explicit future T-Invest action without another broker-document upload form.
 Full calendar originals and historical/partial overlaps are counted separately;
 historical/partial overlaps are collapsed separately. Both the month list and
 saved-review selector include bound sources or unbound calendar overlaps, not
