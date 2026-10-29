@@ -95,11 +95,30 @@ export type SavedInvestmentReport = {
   interval: SourceIntervalResult | null;
   financial_authority: "none";
 };
-export const getInvestmentReports = (account?: string, signal?: AbortSignal) =>
-  apiRequest<{ reports: SavedInvestmentReport[] }>(
+export async function getInvestmentReports(account?: string, signal?: AbortSignal) {
+  const response = await apiRequest<{ reports: SavedInvestmentReport[] }>(
     `/api/source-returns/investment-reports${account ? `?source_account=${encodeURIComponent(account)}` : ""}`,
     { signal },
   );
+  if (
+    !response ||
+    !Array.isArray(response.reports) ||
+    !response.reports.every(
+      (p) =>
+        p &&
+        typeof p.source_account === "string" &&
+        typeof p.covered_from === "string" &&
+        typeof p.covered_to === "string" &&
+        p.financial_authority === "none" &&
+        Array.isArray(p.reason_codes) &&
+        (p.status === "stale" ||
+          (p.status === "current" && p.interval !== null && typeof p.interval === "object")),
+    )
+  ) {
+    throw new Error("Сохранённые PDF-связи не удалось проверить. Обновите чтение; числа скрыты.");
+  }
+  return response;
+}
 export const getInvestmentProofRequest = (requestId: string) =>
   apiRequest<InvestmentProofAck>(
     `/api/source-returns/investment-reports/requests/${encodeURIComponent(requestId)}`,

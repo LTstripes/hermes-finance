@@ -35,7 +35,7 @@ def install_sql_guards(connection, *, scoped=False):
             if operation == "UPDATE":
                 condition += f" AND ({changed})"
             token = (
-                f"'{marker}:' || {row_alias}.id || ':' || lower(hex(randomblob(16)))"
+                f"'{marker}:' || {row_alias}.id || ':' || substr(lower(hex(randomblob(32))),1,61-length({row_alias}.id))"
                 if scoped
                 else "lower(hex(randomblob(32)))"
             )

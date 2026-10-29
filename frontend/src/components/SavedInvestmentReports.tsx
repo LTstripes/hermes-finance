@@ -10,7 +10,7 @@ export function SavedInvestmentReports({ account, period }: { account?: string; 
     refetchOnMount: "always",
   });
   if (query.isPending || query.isFetching) return <p>Проверяем сохранённые PDF-связи…</p>;
-  if (query.isError) return <p role="alert">{formatApiError(query.error)}</p>;
+  if (query.isError) return <p aria-live="polite">{formatApiError(query.error)}</p>;
   return (
     <>
       {query.data.reports

@@ -32,7 +32,7 @@ def _guards(scoped):
                 alias = "OLD" if operation == "delete" else "NEW"
                 expected[name] = expected[name].replace(
                     "lower(hex(randomblob(32)))",
-                    f"'{marker}:' || {alias}.id || ':' || lower(hex(randomblob(16)))",
+                    f"'{marker}:' || {alias}.id || ':' || substr(lower(hex(randomblob(32))),1,61-length({alias}.id))",
                 )
     return expected
 
