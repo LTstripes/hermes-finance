@@ -6652,6 +6652,15 @@ independently verified). It is read interpretation, not a canonical cash proof,
 Money occurrence owner, new income/coupon/ICF/H2 event or strict SELL Apply authority.
 Other provider/parser families cannot acquire this basis from bond type alone.
 
+For a completed MyBroker bond BUY with matched principal Money, the dated reader
+checks that principal against `-(T-N)` and commission against `-F`. If no
+independently linked Money NKD row exists, the native trade's `-N` remains a
+separate cash leg at its settled cash date; matched Money supplies only its own
+component's posting date. The legs sum to `-(T+F)` once. This split does not claim
+anonymous Money NKD or resolve its ownership: those rows remain uncounted gaps.
+Actual component conflicts, missing native components, overlapping occurrences
+and current classification/proof checks still block dependent results.
+
 A current accepted cash proof matching exact native identity, ordered IDs and
 trade components is revalidated through the unchanged proof reader/cash checks.
 A contradictory valid `excludes_paid_nkd` proof produces

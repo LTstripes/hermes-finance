@@ -827,6 +827,188 @@ def test_matched_bond_money_principal_nkd_and_fee_each_have_one_owner(db, narrat
     assert len({leg.ownership for leg in buy.cash_legs}) == 3
 
 
+@pytest.mark.parametrize("nkd,fee", [("20", "2"), ("0", "2"), ("20", "0")])
+def test_bond_buy_money_principal_keeps_native_nkd_once(db, nkd, fee):
+    amount = str(Decimal("1000") + Decimal(nkd))
+    save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "1100"),
+        trades=((BOND, "1", amount, nkd, fee),),
+        mutate=trade_date(
+            15,
+            money=(
+                ("Расчеты по сделке 10000000001", "Principal", "-1000", 16),
+                ("Комиссия по сделке 10000000001", "Fee", str(-Decimal(fee)), 17),
+            ),
+        ),
+    )
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[BOND]
+    analysis = instrument.analysis
+    (buy,) = analysis.events
+    assert buy.counted, buy.reason_codes
+    assert buy.native_total_basis == "includes_paid_nkd"
+    assert buy.proof_dependency is None
+    legs = {leg.role: leg for leg in buy.cash_legs}
+    assert len(legs) == len(buy.cash_legs) == 3
+    assert legs["principal"].account_cash_kopecks == -100000
+    assert legs["nkd"].account_cash_kopecks == -int(Decimal(nkd) * 100)
+    assert legs["commission"].account_cash_kopecks == -int(Decimal(fee) * 100)
+    assert legs["principal"].date == date(2030, 4, 16)
+    assert legs["commission"].date == date(2030, 4, 17)
+    assert legs["nkd"].date == buy.cash_settlement_date == date(2030, 4, 15)
+    assert legs["nkd"].ownership == buy.event_key + ":nkd"
+    assert legs["nkd"].source_references == buy.source_references
+    assert all(legs[role].ownership.startswith("money:") for role in ("principal", "commission"))
+    cost = int((Decimal(amount) + Decimal(fee)) * 100)
+    assert -sum(leg.account_cash_kopecks for leg in buy.cash_legs) == cost
+    assert analysis.components["buys"].value == instrument.months[0].buys_cost_kopecks == cost
+    assert analysis.statement_estimate.pnl.value == 110000 - cost
+    assert analysis.statement_estimate.modified_dietz.capital_days == (
+        100000 * 14 + int(Decimal(nkd) * 100) * 15 + int(Decimal(fee) * 100) * 13
+    )
+    assert analysis.pnl.value is analysis.modified_dietz.value is None
+    assert "bond_valuation_basis_unknown" in analysis.reason_codes
+    assert result.financial_authority == "none"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("principal,fee", [("-1020", "-2"), ("-1000", "-3")])
+def test_bond_buy_money_component_conflict_stays_uncounted(db, principal, fee):
+    save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "1100"),
+        trades=((BOND, "1", "1020", "20", "2"),),
+        mutate=trade_date(
+            15,
+            money=(
+                ("Расчеты по сделке 10000000001", "Principal", principal, 15),
+                ("Комиссия по сделке 10000000001", "Fee", fee, 15),
+            ),
+        ),
+    )
+    before = snapshot(db)
+    analysis = by_isin(read(db))[BOND].analysis
+    (buy,) = analysis.events
+    assert not buy.counted
+    assert "trade_money_cash_conflict" in buy.reason_codes
+    assert analysis.pnl.value is analysis.modified_dietz.value is None
+    assert analysis.statement_estimate.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_bond_buy_native_nkd_never_claims_anonymous_money(db, count):
+    money = tuple(
+        row
+        for index in range(1, count + 1)
+        for row in (
+            (f"Расчеты по сделке 1000000000{index}", "Principal", "-1000", 15),
+            (f"Комиссия по сделке 1000000000{index}", "Fee", "-2", 15),
+        )
+    ) + (("НКД по сделке", BOND, str(-20 * count), 15),)
+    save(
+        db,
+        stock=None,
+        bond=("0", str(count), "0", str(1100 * count)),
+        trades=((BOND, "1", "1020", "20", "2"),) * count,
+        mutate=trade_date(15, money=money),
+    )
+    before = snapshot(db)
+    analysis = by_isin(read(db))[BOND].analysis
+    buys = [event for event in analysis.events if event.kind == "BUY"]
+    (orphan,) = [event for event in analysis.events if event.kind == "UNRESOLVED"]
+    assert len(buys) == count and all(event.counted for event in buys)
+    assert analysis.components["buys"].value == 102200 * count
+    assert not orphan.counted and orphan.effective_isin is None
+    assert "unmatched_trade_money" in orphan.reason_codes
+    for buy in buys:
+        (nkd,) = [leg for leg in buy.cash_legs if leg.role == "nkd"]
+        assert nkd.ownership == buy.event_key + ":nkd"
+        assert set(nkd.source_references).isdisjoint(orphan.source_references)
+        assert all(leg.ownership != orphan.event_key for leg in buy.cash_legs)
+    assert analysis.pnl.value is analysis.modified_dietz.value is None
+    assert analysis.statement_estimate.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("missing", ["summ_nkd", "bank_tax"])
+def test_bond_buy_money_does_not_fill_missing_native_components(db, missing):
+    def mutate(root):
+        trade_date(
+            15,
+            money=(
+                ("Расчеты по сделке 10000000001", "Principal", "-1000", 15),
+                ("Комиссия по сделке 10000000001", "Fee", "-2", 15),
+            ),
+        )(root)
+        root.find(".//m:Details[@trade_no]", NS).attrib.pop(missing)
+
+    save(db, stock=None, trades=((BOND, "1", "1020", "20", "2"),), mutate=mutate)
+    before = snapshot(db)
+    analysis = by_isin(read(db))[BOND].analysis
+    (buy,) = analysis.events
+    assert not buy.counted and not buy.cash_legs
+    assert "trade_components_missing" in buy.reason_codes
+    assert analysis.pnl.value is analysis.modified_dietz.value is None
+    assert snapshot(db) == before
+
+
+def test_bond_buy_mixed_legs_replay_overlap_and_current_classification(db):
+    money = (
+        ("Расчеты по сделке 10000000001", "Principal", "-1000", 15),
+        ("Комиссия по сделке 10000000001", "Fee", "-2", 15),
+    )
+    options = dict(
+        stock=None,
+        bond=("0", "1", "0", "1100"),
+        trades=((BOND, "1", "1020", "20", "2"),),
+        mutate=trade_date(15, money=money),
+    )
+    intake = save(db, **options)
+    assert save(db, **options) == intake
+    save(db, **options, marker="overlap")
+
+    def checked_read():
+        before = snapshot(db)
+        result = read(db)
+        assert snapshot(db) == before
+        return by_isin(result)[BOND].analysis
+
+    analysis = checked_read()
+    assert checked_read() == analysis
+    (buy,) = analysis.events
+    assert buy.counted and len(buy.source_references) == 2
+    assert sum(leg.account_cash_kopecks for leg in buy.cash_legs) == -102200
+    assert all(len(leg.source_references) == 2 for leg in buy.cash_legs)
+    assert len({leg.ownership for leg in buy.cash_legs}) == 3
+    with db.session_factory() as session:
+        fee = session.scalar(
+            select(SourceMoneyClassification).where(
+                SourceMoneyClassification.intake_id == intake,
+                SourceMoneyClassification.classification == "fee",
+            )
+        )
+        reference = fee.source_reference
+        choose_classification(session, intake, reference, "external_withdrawal")
+    changed = checked_read()
+    assert not changed.events[0].counted
+    assert "trade_money_classification_conflict" in changed.events[0].reason_codes
+    assert changed.source_references != analysis.source_references
+    with db.session_factory() as session:
+        choose_classification(session, intake, reference, "fee")
+    assert checked_read().events[0].counted
+    options["mutate"] = trade_date(15, money=money[1:])
+    save(db, **options, marker="missing-principal-observation")
+    incomplete = checked_read()
+    assert not incomplete.events[0].counted
+    assert "overlap_money_occurrence_missing" in incomplete.events[0].reason_codes
+    assert incomplete.pnl.value is incomplete.modified_dietz.value is None
+
+
 def test_conflicting_money_never_added_to_native_trade_total(db):
     save(
         db,
