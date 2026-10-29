@@ -4,10 +4,11 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.domain.instrument_return import InstrumentAnalysis
 from hermes_finance.services import returns_basket, returns_view
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
@@ -105,6 +106,7 @@ class Event(DTO):
 
 class Detail(Instrument):
     scope: str
+    analysis: InstrumentAnalysis
     opening_quantity: str | None
     closing_quantity: str | None
     buys: Metric
@@ -113,6 +115,21 @@ class Detail(Instrument):
     conditional_rate: Metric
     reason_codes: list[str]
     events: list[Event]
+
+    @field_serializer("analysis", mode="wrap", when_used="json")
+    def exact_analysis(self, value, handler) -> dict:
+        """Reuse the v2 allowlist, preserving exact money at the Returns boundary."""
+
+        def exact(item, key=""):
+            if type(item) is int and (key.endswith("_kopecks") or key in {"value", "capital_days"}):
+                return str(item)
+            if isinstance(item, dict):
+                return {name: exact(child, name) for name, child in item.items()}
+            if isinstance(item, (list, tuple)):
+                return [exact(child) for child in item]
+            return item
+
+        return exact(handler(value))
 
 
 def no_store(response: Response):

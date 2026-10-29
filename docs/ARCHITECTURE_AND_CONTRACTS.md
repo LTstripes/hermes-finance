@@ -6495,6 +6495,17 @@ rates (`0.1` = 10%). Status is supported/provisional/partial/unavailable.
 Supported means complete within the selected source scope, never an accepted
 financial receipt. Root authority remains provisional / financial authority none.
 
+The on-demand Returns projection `/api/returns/instrument` adds the same complete
+`analysis` shape while retaining its compatibility fields; the overview stays
+compact. Money values and capital-days serialize as exact integer strings in this
+projection, Decimal rates/quantities/prices as strings, with NULL and source
+identities preserved. No new calculation or authority is introduced. Consumers
+bind analysis and endpoint dates, contract, account scope and ISIN to the request.
+The shared detail presents `history_complete_since_acquisition` only as the
+existing zero-opening/acquisition/coverage condition within the source interval;
+it is not proof of no earlier ownership. Attributed account/file origin evidence
+and any new valuation acceptance require their separate reviewed input.
+
 Month and the existing bond reader share one instrument-detail presentation. The
 Month reader requests the exact selected source account and reporting-month EOD
 endpoints; it does not use legacy simple percentages as Modified Dietz or promote

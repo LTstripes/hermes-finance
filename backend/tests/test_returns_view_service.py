@@ -922,6 +922,97 @@ def test_large_money_and_decimal_remain_strings_partial_is_withheld(db, monkeypa
     assert result.instruments[0].pnl.value == "900719925474099301"
     assert result.instruments[0].rate.value == "0.10000000000000000001"
     assert view._instrument_metric(Metric(123, "partial"))["value"] is None
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=END, isin=ISIN)
+        )
+    import json
+
+    wire = json.loads(detail.model_dump_json())["analysis"]
+    assert wire["pnl"]["value"] == "900719925474099301"
+    assert wire["modified_dietz"]["value"] == "0.10000000000000000001"
+    assert wire["closing"]["reported_value_kopecks"] == "110000"
+    assert type(wire["source_references"][0]["intake_id"]) is int
+
+
+@pytest.mark.parametrize("holding", ["zero", "absent"])
+def test_detail_api_reuses_dated_analysis_with_provenance_unknowns_and_replay(db, holding):
+    """The display carries the reader's exact meaning, never a new financial result."""
+    from pydantic import TypeAdapter
+
+    from hermes_finance.domain.instrument_return import InstrumentAnalysis
+    from hermes_finance.statement_import.mybroker import NS
+
+    def dated_trades(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        for row, day in zip(rows, (20, 25, 28)):
+            row.set("save_settlement_date", f"{day}.04.2030")
+            row.set("save_depo_settlement_date", f"{day}.04.2030")
+            row.set("db_time", f"{day}.04.2030 09:00:00")
+        if holding == "absent":
+            position = root.find(".//m:Details[@ISIN1]", NS)
+            position.attrib.pop("income_rest")
+
+    kwargs = dict(
+        stock=("0", "4", "0", "4400"),
+        bond=("2", "2", "2000", "2010"),
+        trades=(
+            (ISIN, "2", "2000", "0", "5"),
+            (ISIN, "3", "3030", "0", "7"),
+            (ISIN, "-1", "1100", "0", "3"),
+        ),
+        extra=(("Купон", f"Купон {BOND}", "70"),),
+        mutate=dated_trades,
+    )
+    save(db, **kwargs)
+    save(db, **kwargs, marker="replayed-observations")
+    before = snapshot(db)
+    app = FastAPI()
+    app.include_router(returns_router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        for isin in (ISIN, BOND):
+            response = client.get(
+                "/api/returns/instrument",
+                params={"scope": SCOPE, "start": START, "end": END, "isin": isin},
+            )
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == "no-store"
+            wire = response.json()["analysis"]
+            with db.session_factory() as value:
+                direct = (
+                    read_instrument_returns(
+                        value,
+                        source_account=ACCOUNT,
+                        opening_date=START,
+                        closing_date=END,
+                        isin=isin,
+                        include_monthly_history=False,
+                    )
+                    .instruments[0]
+                    .analysis
+                )
+            assert TypeAdapter(InstrumentAnalysis).validate_python(wire) == direct
+            assert wire["opening_date"] == "2030-03-31"  # never trim to the first trade
+            if isin == ISIN:
+                assert len(wire["events"]) == 3  # overlapping originals do not duplicate trades
+                assert [e["kind"] for e in wire["events"]].count("BUY") == 2
+                assert [e["kind"] for e in wire["events"]].count("SELL") == 1
+                assert wire["opening"]["quantity"] == ("0" if holding == "zero" else None)
+                assert wire["events"][0]["commission_kopecks"] == "500"
+                assert wire["events"][0]["unit_price"] is not None
+                assert wire["events"][0]["native_ids"]
+            else:
+                assert wire["pnl"]["value"] is None
+                assert "bond_valuation_basis_unknown" in wire["reason_codes"]
+                assert len(wire["events"]) == 1
+                assert wire["events"][0]["net_payout_kopecks"] == "7000"
+    assert snapshot(db) == before
 
 
 def test_invalid_scope_never_falls_back_and_accepted_reader_keeps_null(db):

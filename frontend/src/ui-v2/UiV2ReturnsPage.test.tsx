@@ -320,6 +320,31 @@ test("pins CLOSED default in URL and loads trades only on expansion", async () =
   expect(screen.getByRole("button", { name: /Учебная облигация/ })).toBeVisible();
 });
 
+test.each(["contract", "interval", "endpoint"])(
+  "detail rejects mismatched v2 %s",
+  async (mismatch) => {
+    install((url) => {
+      if (!url.pathname.endsWith("instrument")) return;
+      const d = detailFixture("source:SYNTH-A", may, "RU000A000002");
+      if (mismatch === "interval") d.analysis.opening_date = "2000-01-01";
+      if (mismatch === "endpoint") d.analysis.closing.date = "2000-01-01";
+      return Promise.resolve(
+        response(
+          mismatch === "contract"
+            ? { ...d, analysis: { ...d.analysis, contract_version: "unknown" } }
+            : d,
+        ),
+      );
+    });
+    setup();
+    fireEvent.click(await screen.findByRole("button", { name: /Горизонт — проданная/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить детали");
+    expect(
+      screen.queryByRole("heading", { name: "Мой результат за период, ₽" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
 test("late account response cannot populate the new scope; error hides cached financial results", async () => {
   let resolveA: (r: Response) => void = () => {};
   let fail = false;

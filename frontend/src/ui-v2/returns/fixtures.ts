@@ -1,4 +1,10 @@
 /** Fabricated DTOs for Returns consumer/desktop tests only. No account data. */
+
+import type { InstrumentAnalysis } from "../../api/sourceReturns";
+import {
+  analysis as sourceAnalysis,
+  event as sourceEvent,
+} from "../../test/sourceInstrumentFixtures";
 import type { Context, Detail, Instrument, Metric, Overview, Period, Result } from "./model";
 import type { Basket } from "./ReturnsBasket";
 export function basketFixture(period: Period, categories = "brokerage,iis,deposits,gold"): Basket {
@@ -142,8 +148,60 @@ export function detailFixture(
   period = may,
   isin = "RU000A000002",
 ): Detail {
+  const analysis = sourceAnalysis();
+  analysis.opening_date = analysis.opening.date = period.start;
+  analysis.closing_date = analysis.closing.date = period.end;
+  analysis.history_start = period.start;
+  analysis.history_end = period.end;
+  analysis.opening.quantity = "10";
+  analysis.closing.quantity = "0";
+  analysis.opening.reported_value_kopecks = analysis.opening.economic_value_kopecks = 10000000;
+  analysis.closing.reported_value_kopecks = analysis.closing.economic_value_kopecks = 0;
+  analysis.pnl = { value: 1800000, status: "supported", reason_codes: [], assumptions: [] };
+  analysis.modified_dietz = {
+    ...analysis.modified_dietz,
+    value: "0.1",
+    status: "supported",
+    reason_codes: [],
+  };
+  analysis.components.coupons = { ...analysis.pnl, value: 0 };
+  analysis.components.dividends = { ...analysis.pnl, value: 0 };
+  analysis.reason_codes = [];
+  analysis.opening.reason_codes = analysis.closing.reason_codes = [];
+  analysis.coverage.valuation = { complete: true, reason_codes: [] };
+  analysis.statement_estimate.pnl.value = analysis.statement_estimate.modified_dietz.value = null;
+  analysis.events = [
+    sourceEvent({
+      event_key: "sale-1",
+      kind: "SELL",
+      isin,
+      effective_isin: isin,
+      event_date: "2030-05-12",
+      trade_time: "2030-05-12 10:30:00",
+      cash_settlement_date: "2030-05-14",
+      depository_settlement_date: "2030-05-14",
+      quantity_delta: "-10",
+      unit_price: "11800",
+      price_unit: "RUB_PER_UNIT",
+      native_trade_amount_kopecks: 11800000,
+      accrued_interest_kopecks: 0,
+      commission_kopecks: 0,
+      net_payout_kopecks: null,
+      assumptions: [],
+    }),
+  ];
+  // Fixtures use the Returns wire representation, including exact integer strings.
+  const wire = JSON.parse(
+    JSON.stringify(analysis, (key, value) =>
+      typeof value === "number" &&
+      (key.endsWith("_kopecks") || key === "value" || key === "capital_days")
+        ? String(value)
+        : value,
+    ),
+  ) as InstrumentAnalysis<string>;
   return {
     ...row(isin, "Горизонт — проданная бумага", "1800000", "0.1", period),
+    analysis: wire,
     scope,
     opening_quantity: "10",
     closing_quantity: "0",

@@ -1,5 +1,6 @@
 import { apiRequest } from "../../api/client";
-import { formatMoneyDelta, formatMoney } from "../../lib/format";
+import type { InstrumentAnalysis } from "../../api/sourceReturns";
+import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
 
@@ -54,6 +55,7 @@ export type AvailableMonths = {
   total_months: number;
 };
 export type Detail = Instrument & {
+  analysis: InstrumentAnalysis<string>;
   scope: string;
   opening_quantity: string | null;
   closing_quantity: string | null;
@@ -165,7 +167,16 @@ export async function getDetail(scope: string, period: Period, isin: string, sig
   const params = query(scope, period);
   params.set("isin", isin);
   const value = await apiRequest<Detail>(`/api/returns/instrument?${params}`, { signal });
-  if (value.scope !== scope || value.isin !== isin || !samePeriod(value.period, period))
+  if (
+    value.scope !== scope ||
+    value.isin !== isin ||
+    !samePeriod(value.period, period) ||
+    value.analysis?.contract_version !== "instrument_return_v2" ||
+    value.analysis.opening_date !== period.start ||
+    value.analysis.closing_date !== period.end ||
+    value.analysis.opening.date !== period.start ||
+    value.analysis.closing.date !== period.end
+  )
     throw new Error("Return context mismatch");
   return value;
 }
