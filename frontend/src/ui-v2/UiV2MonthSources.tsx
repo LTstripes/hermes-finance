@@ -44,10 +44,9 @@ export function UiV2MonthSources({
   const [reviewExpanded, setReviewExpanded] = useState(Boolean(original.file));
   const savedFiles = useRef(new Map<number, File>());
   const savedSources = useRef(new Map<number, SourceIntake>());
-  const sourceAfterNavigation = useRef<{ id: number; file?: File; account: string } | null>(null);
-  const [nextSource, setNextSource] = useState<{ id: number; file?: File; account: string } | null>(
-    null,
-  );
+  type SourceSelection = { id: number; file?: File; account: string; snapshot: SourceIntake };
+  const sourceAfterNavigation = useRef<SourceSelection | null>(null);
+  const [nextSource, setNextSource] = useState<SourceSelection | null>(null);
   const [reviewError, setReviewError] = useState<{ message: string; monthId?: number } | null>(
     null,
   );
@@ -94,6 +93,24 @@ export function UiV2MonthSources({
   const unresolved = Boolean(original.pending) || original.busy || Boolean(journalCommand);
   const uploadWouldDiscard =
     Boolean(original.file) && (journalDirty || original.decisions.length > 0);
+  const list = useQuery({
+    queryKey: ["source-intakes", month.id, "month-overview"],
+    queryFn: ({ signal }) => listAllSourceIntakes(signal),
+    refetchOnWindowFocus: true,
+  });
+  const sourceForReview = useCallback(
+    (id: number, fallback?: SourceIntake) => {
+      let latest = fallback;
+      for (const source of [
+        savedSources.current.get(id),
+        list.data?.find((item) => item.id === id),
+      ]) {
+        if (source && (!latest || source.head_seq >= latest.head_seq)) latest = source;
+      }
+      return latest;
+    },
+    [list.data],
+  );
   useLayoutEffect(() => {
     if (!changingScope || unresolved) return;
     // Never select/clear while a command's ACK or independent GET is unresolved.
@@ -101,19 +118,15 @@ export function UiV2MonthSources({
     const target = sourceAfterNavigation.current;
     const selected =
       target && scope === JSON.stringify(target.account ? [target.account] : []) ? target : null;
+    const snapshot = selected ? sourceForReview(selected.id, selected.snapshot) : undefined;
     sourceAfterNavigation.current = null;
     setReview((previous) => ({
       scope,
       monthId: month.id,
       generation: previous.generation + 1,
-      selection: selected ? { id: selected.id, file: selected.file } : null,
+      selection: selected && snapshot ? { id: selected.id, file: selected.file, snapshot } : null,
     }));
-  }, [changingScope, unresolved, scope, month.id, session]);
-  const list = useQuery({
-    queryKey: ["source-intakes", month.id, "month-overview"],
-    queryFn: ({ signal }) => listAllSourceIntakes(signal),
-    refetchOnWindowFocus: true,
-  });
+  }, [changingScope, unresolved, scope, month.id, session, sourceForReview]);
   const period = `${month.year}-${String(month.month).padStart(2, "0")}`;
   // A journal can be unbound. Calendar overlap is a display filter, never financial binding.
   const sources = (list.data ?? []).filter(
@@ -148,7 +161,25 @@ export function UiV2MonthSources({
       return next;
     });
   }
-  function chooseSource(target: { id: number; file?: File; account: string }) {
+  function chooseSource(requested: SourceSelection) {
+    const snapshot = sourceForReview(requested.id, requested.snapshot) ?? requested.snapshot;
+    if (
+      snapshot.state.reporting_month_id !== null &&
+      snapshot.state.reporting_month_id !== month.id
+    ) {
+      setNextSource(null);
+      setReviewError({
+        message: "Выписка привязана к другому месяцу. Открой исходный месяц для просмотра.",
+        monthId: snapshot.state.reporting_month_id,
+      });
+      return;
+    }
+    if (requested.account && !sourceAccounts(snapshot).includes(requested.account)) {
+      setNextSource(null);
+      setReviewError({ message: "Счёт выписки изменился. Обнови список и выбери разбор явно." });
+      return;
+    }
+    const target = { ...requested, snapshot };
     session.select(null, month.id, "");
     if (target.account !== account) {
       // Router navigation may commit later than local state. Attach the exact
@@ -160,7 +191,7 @@ export function UiV2MonthSources({
         ...previous,
         monthId: month.id,
         generation: previous.generation + 1,
-        selection: { id: target.id, file: target.file },
+        selection: { id: target.id, file: target.file, snapshot: target.snapshot },
       }));
     }
     setReviewExpanded(true);
@@ -169,7 +200,7 @@ export function UiV2MonthSources({
   }
   function openSource(id: number) {
     if (unresolved) return;
-    const source = savedSources.current.get(id) ?? list.data?.find((item) => item.id === id);
+    const source = sourceForReview(id);
     if (!source) {
       setReviewError({ message: "Источник ещё не подтверждён. Обнови список выписок." });
       return;
@@ -199,7 +230,14 @@ export function UiV2MonthSources({
       setReviewExpanded(true);
       return;
     }
-    const target = { id, file: savedFiles.current.get(id), account: targetAccount };
+    // Explicit review carries the confirmed original even when the month list
+    // excludes its dates. The reviewer still checks binding and period itself.
+    const target = {
+      id,
+      file: savedFiles.current.get(id),
+      account: targetAccount,
+      snapshot: source,
+    };
     if ((journalDirty || original.file) && (selectedId !== id || targetAccount !== account))
       setNextSource(target);
     else chooseSource(target);
