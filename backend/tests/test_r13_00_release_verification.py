@@ -136,7 +136,7 @@ def test_released_0044_upgrade_preserves_closed_provenance_and_duplicates(tmp_pa
 
     scripts = ScriptDirectory.from_config(Config(str(BACKEND_ROOT / "alembic.ini")))
     revisions = list(reversed(list(scripts.iterate_revisions(REVISION, RELEASED_HEAD))))
-    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 67))
+    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 68))
     for target in ["head"] if route == "direct" else [r.revision for r in revisions]:
         _upgrade(path, target)
         with sqlite3.connect(path) as c:
