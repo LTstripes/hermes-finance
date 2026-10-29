@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
-async function monthPanel(page: Page, panel: "brokers" | "close") {
+async function monthPanel(page: Page, panel: "brokers" | "payouts" | "close") {
   await page
     .getByRole("navigation", { name: "Разделы месяца" })
-    .getByRole("link", { name: panel === "brokers" ? /Брокерские выписки/ : /Закрыть месяц/ })
+    .getByRole("link", {
+      name: { brokers: /Брокерские выписки/, payouts: /Выплаты/, close: /Закрыть месяц/ }[panel],
+    })
     .click();
   const discard = page.getByRole("button", { name: "Перейти без сохранения", exact: true });
   // The router's dirty-input dialog may render after click() resolves.
@@ -439,6 +441,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1";
   });
+  await monthPanel(page, "payouts");
   const forecast = page.getByRole("button", {
     name: "Получить и сохранить прогнозы Т-Инвест",
     exact: true,

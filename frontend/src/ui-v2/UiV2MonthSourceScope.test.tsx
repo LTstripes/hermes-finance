@@ -224,6 +224,31 @@ async function originalA() {
   await selectOriginalA();
   await screen.findByRole("button", { name: "Сохранить данные месяца" });
 }
+it("rechecks a newer foreign binding before confirming a queued source change", async () => {
+  const { session, client } = mount(false, undefined, "/v2/close");
+  await openA();
+  const file = new File(["<synthetic/>"], "A.xml", { type: "application/xml" });
+  act(() => session.select(file, 1, "7"));
+  fireEvent.click(await screen.findByRole("button", { name: "Разобрать и исправить #2" }));
+  await screen.findByRole("button", { name: "Открыть выписку" });
+  act(() =>
+    client.setQueryData(
+      ["source-intakes", 1, "month-overview"],
+      [a, { ...b, head_seq: 3, state: { ...b.state, reporting_month_id: 2 } }],
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Разобрать и исправить #2" })).toBeNull(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Открыть выписку" }));
+  await screen.findByText(
+    "Выписка привязана к другому месяцу. Открой исходный месяц для просмотра.",
+  );
+  expect(session.snapshot().file).toBe(file);
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
+
 it("A→B→A and Back retire original, Preview, overrides and public consent before showing B reads", async () => {
   const { session } = mount();
   await openA();

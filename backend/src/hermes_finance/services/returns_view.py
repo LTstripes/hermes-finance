@@ -9,7 +9,6 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import PerformanceScope
 from hermes_finance.persistence import (
     Account,
@@ -25,6 +24,7 @@ from hermes_finance.services.source_monthly_returns import (
     _native_scope,
     _selected_sources,
     read_monthly_returns,
+    source_read_snapshot,
 )
 from hermes_finance.statement_import.mybroker import PROVIDER
 
@@ -121,7 +121,7 @@ def _accounts(session, canonical=None):
 
 
 def read_context(session):
-    with coherent_read_snapshot(session):
+    with source_read_snapshot(session):
         closed = [m for m in _months(session) if m.status == "closed"]
         canonical = _source_scopes(session)
         source_periods = {}
@@ -160,9 +160,13 @@ def _validate_scope(session, scope):
         canonical = _source_scopes(session)
         if scope[7:] in canonical:
             return f"source:{canonical[scope[7:]]}"
-    if scope not in {a["id"] for a in _accounts(session)}:
+    elif scope == "portfolio" or scope in {
+        f"account:{account_id}" for account_id in session.scalars(select(Account.id))
+    }:
+        return scope
+    else:
         raise ValueError("returns_scope_unknown")
-    return scope
+    raise ValueError("returns_scope_unknown")
 
 
 def _instrument_metric(item, *, unit="kopecks"):
@@ -331,7 +335,11 @@ def _available_months(history, start, end, full):
 def _source_view(session, account, start, end):
     monthly = read_monthly_returns(session, source_account=account)
     instruments = read_instrument_returns(
-        session, source_account=account, opening_date=start, closing_date=end
+        session,
+        source_account=account,
+        opening_date=start,
+        closing_date=end,
+        include_monthly_history=False,
     )
     history = [_monthly(row) for row in monthly.months]
     whole = None
@@ -442,7 +450,7 @@ def _accepted_history(session, scope, closed):
 
 
 def read_overview(session, *, scope, start, end):
-    with coherent_read_snapshot(session):
+    with source_read_snapshot(session):
         resolved = _validate_scope(session, scope)
         if scope.startswith("source:"):
             view = _source_view(session, resolved.removeprefix("source:"), start, end)
@@ -469,7 +477,7 @@ def read_overview(session, *, scope, start, end):
 
 
 def read_detail(session, *, scope, start, end, isin):
-    with coherent_read_snapshot(session):
+    with source_read_snapshot(session):
         resolved = _validate_scope(session, scope)
         if not scope.startswith("source:"):
             raise ValueError("returns_instrument_scope_unsupported")
@@ -479,6 +487,7 @@ def read_detail(session, *, scope, start, end, isin):
             opening_date=start,
             closing_date=end,
             isin=isin,
+            include_monthly_history=False,
         )
         if len(result.instruments) != 1:
             raise LookupError("returns_instrument_missing")

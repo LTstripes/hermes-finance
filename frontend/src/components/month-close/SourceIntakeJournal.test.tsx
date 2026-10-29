@@ -100,7 +100,7 @@ beforeEach(() => {
 
 function setup(
   file: File | null = original,
-  intakeSelection?: { id: number },
+  intakeSelection?: Parameters<typeof SourceIntakeJournal>[0]["intakeSelection"],
   existingClient?: QueryClient,
 ) {
   const client =
@@ -198,6 +198,38 @@ it("reattaches an exact original after Reload without losing dirty currency or u
     account_currency: "USD",
   });
   expect(saveSourceIntake).not.toHaveBeenCalled();
+});
+
+it("uses the newer confirmed list revision when reopening an older upload snapshot", async () => {
+  const user = userEvent.setup();
+  const current = { ...structuredClone(stored), head_seq: 3 };
+  vi.mocked(listSourceIntakes).mockResolvedValue([current]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["source-intakes", 1], [current]);
+  setup(null, { id: 1, file: original, snapshot: stored }, client);
+  await user.click(await screen.findByRole("button", { name: "Проверить изменения разбора" }));
+  await waitFor(() => expect(previewIntakeReview).toHaveBeenCalled());
+  expect(vi.mocked(previewIntakeReview).mock.calls[0][2].expected_head_seq).toBe(3);
+  expect(saveSourceIntake).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
+});
+
+it("rejects a newer foreign-month binding before attaching an older upload's file", async () => {
+  const current = {
+    ...structuredClone(stored),
+    head_seq: 3,
+    state: { ...stored.state, reporting_month_id: 2 },
+  };
+  vi.mocked(listSourceIntakes).mockResolvedValue([current]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["source-intakes", 1], [current]);
+  setup(null, { id: 1, file: original, snapshot: stored }, client);
+  await screen.findByText(
+    "Сохранённый источник не подтвердил текущий месяц и счёт. Выбери разбор явно.",
+  );
+  expect(brokerOriginalSession(client).snapshot().file).toBeNull();
+  expect(previewIntakeReview).not.toHaveBeenCalled();
+  expect(confirmIntakeReview).not.toHaveBeenCalled();
 });
 
 it("does not replace an unsaved identity choice when the same XML is supplied again", async () => {

@@ -35,6 +35,7 @@ import {
   sortReportingMonths,
 } from "./monthSelection";
 import { UiV2MonthSources } from "./UiV2MonthSources";
+import { MonthDraftPayouts } from "./MonthDraftPayouts";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
@@ -54,7 +55,7 @@ const MANUAL_SECTIONS = [
   ["income", "Зарплата и другие доходы", "Ручные поступления"],
   ["assets", "Депозиты, накопления и деньги", "Остатки и проценты"],
   ["positions", "Счета и позиции", "Количество и оценка"],
-  ["payouts", "Выплаты", "Получено / из выписок · Ожидается · T-Invest"],
+  ["payouts", "Выплаты", "Прогнозы T-Invest · полученные выплаты"],
   ["budget", "Расходы и план", "Обязательные расходы и откладывание"],
   ["liabilities", "Долги, кредитка и недвижимость", "Долг, ипотека и платежи"],
   ["note", "Комментарии", "Пояснения к месяцу"],
@@ -320,23 +321,39 @@ export default function UiV2ClosePage() {
             {panel === "payouts" ? (
               <>
                 <nav className={monthStyles.sourceNav} aria-label="Выплаты месяца">
-                  <a href="#month-instruments">Получено / из выписок</a>
-                  <a href="#month-payout-preview">Ожидается · T-Invest</a>
+                  <a href="#month-draft-payouts">Ожидается · T-Invest</a>
                   <a href="#month-accepted-payouts">Принятые фактические выплаты</a>
-                  <a href="#month-source-review">Рассмотрение и сверка</a>
+                  <Link to={panelPath("brokers")}>Выписки и наблюдения источников</Link>
                 </nav>
                 <p>
-                  Выписка показывает наблюдения источника. Принятые выплаты показаны отдельно;
-                  наблюдения не прибавляются к ним повторно. T-Invest даёт предварительные будущие
-                  выплаты, а не подтверждение полученной суммы.
+                  Прогноз T-Invest использует позиции из уже сохранённого финансового DRAFT.
+                  Повторно загружать выписку здесь не нужно. Сохранение источника без финансового
+                  принятия ещё не создаёт такой DRAFT. Прогнозы и полученные выплаты показаны
+                  отдельно.
                 </p>
+                <MonthDraftPayouts
+                  key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
+                  monthId={workflow.month.id}
+                  closed={closed}
+                  disabled={
+                    !workflowReady ||
+                    sourceDirty ||
+                    sourcePending ||
+                    editorNavigation.dirty ||
+                    editorNavigation.pending ||
+                    lifecycleBusy ||
+                    lifecycleRecovery ||
+                    Boolean(pendingLifecycle)
+                  }
+                  sourceVersion={original.confirmed?.request_id}
+                  onPendingChange={setUploadPending}
+                />
               </>
             ) : null}
-            {panel === "brokers" || panel === "payouts" ? (
+            {panel === "brokers" ? (
               <UiV2MonthSources
                 key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
                 month={workflow.month}
-                payoutsOnly={panel === "payouts"}
                 canClose={workflowReady && workflow.readiness.can_close}
                 onPendingChange={setUploadPending}
                 onDirtyChange={setJournalDirty}

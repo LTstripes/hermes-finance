@@ -38,6 +38,30 @@ async function install(page: Page, extendedHistory = false) {
         const body = extendedHistory
           ? longHistoryOverview(scope, period)
           : overviewFixture(scope, period);
+        if (!scope.startsWith("source:")) {
+          body.instruments = [];
+          body.instrument_reason_codes = ["accepted_instrument_breakdown_unavailable"];
+          body.selected.pnl = {
+            ...body.selected.pnl,
+            value: null,
+            reason_codes: ["not_computable_external_flows_incomplete"],
+          };
+          body.selected.rate = {
+            ...body.selected.rate,
+            value: null,
+            reason_codes: ["not_computable_external_flows_incomplete"],
+          };
+          body.selected.coupons = {
+            ...body.selected.coupons,
+            value: null,
+            reason_codes: ["accepted_income_breakdown_unavailable"],
+          };
+          body.selected.dividends = {
+            ...body.selected.dividends,
+            value: null,
+            reason_codes: ["accepted_income_breakdown_unavailable"],
+          };
+        }
         if (state.unavailable) {
           body.selected.pnl.value = null;
           body.selected.pnl.reason_codes = ["missing_endpoint"];
@@ -60,7 +84,7 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   page,
 }) => {
   const { calls, state } = await install(page);
-  await page.goto("/v2/returns");
+  await page.goto("/v2/returns?scope=source:SYNTH-A");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
   await expect(page).toHaveURL(/start=2030-04-30&end=2030-05-31/);
   await expect(page.getByRole("link", { name: "Доходность", exact: true })).toHaveAttribute(
@@ -115,7 +139,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
   page,
 }) => {
   await install(page);
-  await page.goto("/v2/returns");
+  await page.goto("/v2/returns?scope=source:SYNTH-A");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
     `${may.start}/${may.end}`,
@@ -151,7 +175,7 @@ test("ui-v2 returns: 24-month selection stays visible and synchronized through l
   page,
 }, testInfo) => {
   await install(page, true);
-  await page.goto("/v2/returns");
+  await page.goto("/v2/returns?scope=source:SYNTH-A");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
   const history = page.getByRole("region", { name: "Результат по месяцам" });
   const chart = history.getByRole("group", { name: "История результата в рублях" });
@@ -249,7 +273,7 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
       });
       const page = await context.newPage();
       const { state } = await install(page);
-      await page.goto("/v2/returns");
+      await page.goto("/v2/returns?scope=source:SYNTH-A");
       await expect(page.getByRole("heading", { name: "По инструментам" })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
@@ -289,4 +313,37 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
       await context.close();
     }
   }
+});
+
+test("returns accepted basis and category keyboard controls @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const { calls } = await install(page);
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/v2/returns");
+    await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
+    await expect(page.getByRole("combobox", { name: "Представление" })).toHaveValue("accepted");
+    await expect(page.getByRole("link", { name: "Открыть отчёты месяцев" })).toBeVisible();
+    const checkbox = page.getByRole("checkbox", { name: "ИИС", exact: true });
+    await expect(checkbox).toBeChecked();
+    await checkbox.focus();
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toHaveCSS("appearance", "none");
+    await expect(checkbox).toHaveCSS("outline-style", "solid");
+    await page.screenshot({ path: testInfo.outputPath(`returns-accepted-focus-${width}.png`) });
+    await page.keyboard.press("Space");
+    await expect(checkbox).not.toBeChecked();
+    await expect(page).toHaveURL(/categories=brokerage%2Cdeposits%2Cgold/);
+    await page.goBack();
+    await expect(checkbox).toBeChecked();
+    await page.getByRole("combobox", { name: "Представление" }).selectOption("statements");
+    await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A");
+    await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`returns-statements-${width}.png`) });
+  }
+  expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
 });

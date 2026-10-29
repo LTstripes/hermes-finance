@@ -724,8 +724,14 @@ def read_instrument_returns(
     opening_date: date | None = None,
     closing_date: date | None = None,
     reviewed_bond_valuation=None,
+    include_monthly_history: bool = True,
 ) -> SourceInstrumentReturns:
-    """Isolate unreadable sources and individual operand gaps; perform no writes."""
+    """Isolate unreadable sources and individual operand gaps; perform no writes.
+
+    Presentation callers may omit the unused monthly/all-time projections.
+    Selected interval analysis, events, gaps and reconciliation stay identical;
+    the ordinary source API retains its full history by default.
+    """
     from hermes_finance.services.source_bond_valuation import (
         FILE_PATH_KEY,
         load_reviewed_basis,
@@ -826,7 +832,7 @@ def read_instrument_returns(
             name = next(iter(metadata["names"])) if len(metadata["names"]) == 1 else None
             rows = []
             month = start
-            while month <= end:
+            while include_monthly_history and month <= end:
                 row = _month(
                     session,
                     views,

@@ -53,7 +53,7 @@ After a successful ACK, failed readback is recovered by GET. Never replay a fina
 
 The monthly workflow derives progress from authoritative read models, not a second progress ledger. It presents one next useful action, keeps optional provider stages conditional on supported accounts/data and returns native month edits to the selected Close context. Final review composes existing income, capital, budget, tax and readiness reads. Close is explicit; next-month outlook is read-only until an explicit month-create/copy action.
 
-`/v2/close` is the normal **Month** entry: personal data first, then broker statements before dependent positions and payouts, followed by comments and final review/explicit Close. It reuses the existing editor sections, shared multi-file source-intake upload and saved-source/exception list. The ordinary **Выплаты** entry distinguishes source-observed receipts, accepted actual records and **Ожидается · T-Invest**. It reuses the saved-source instrument/quantity-date reader and explicit provider preview; an earlier scenario date never becomes month-end EOD. Source observations are not added to accepted actual totals; unknown tax remains unknown. Manual payout forms are secondary disclosures, retaining existing records and guards. Panel/section/step links, exact month/account/ISIN/quantity date, dirty/pending recovery and Back/Reload remain supported. Each XML has its own Save/readback result; a broken file does not discard valid siblings. Month displays sources bound to that month and unbound sources overlapping its calendar period, with an explicit source-account filter; this display never binds or financially accepts an original. Source review reuses the existing identity/journal/strict-DRAFT controls, with exact originals reselected after reload. Unknown ISINs require explicit review. Account-and-period links open the existing read-only bond/monthly-return reader; source estimates do not establish financial readiness. The backend-owned DRAFT/Close/Reopen workflow and existing routes remain available.
+`/v2/close` is the normal **Month** entry: personal data first, then broker statements before dependent positions and payouts, followed by comments and final review/explicit Close. It reuses the existing editor sections, shared multi-file source-intake upload and saved-source/exception list. The ordinary **Выплаты** entry reuses saved financial DRAFT positions for one explicit T-Invest forecast action and the saved calendar, alongside accepted actual records. It does not mount a second XML upload/review. Source-only Save does not establish that financial DRAFT. Source observations and quantity-date scenarios remain accessible in **Брокерские выписки**, with payout observations in a separate disclosure; an earlier scenario date never becomes month-end EOD. Source observations are not added to accepted actual totals; unknown tax remains unknown. Manual payout forms are secondary disclosures, retaining existing records and guards. Panel/section/step links, exact month/account/ISIN/quantity date, dirty/pending recovery and Back/Reload remain supported. Each XML has its own Save/readback result; a broken file does not discard valid siblings. Month displays sources bound to that month and unbound sources overlapping its calendar period, with an explicit source-account filter; this display never binds or financially accepts an original. Source review reuses the existing identity/journal/strict-DRAFT controls, with exact originals reselected after reload. Unknown ISINs require explicit review. Account-and-period links open the existing read-only bond/monthly-return reader; source estimates do not establish financial readiness. The backend-owned DRAFT/Close/Reopen workflow and existing routes remain available.
 
 In the period list, every compact row has the same primary **Открыть месяц** action
 to `/v2/close?month=id`, including immediately after create/copy and list readback.
@@ -72,7 +72,10 @@ Source-only Save and strict financial Preview/Apply remain distinct internal
 stages. Verified saved uploads can supply the same in-memory original to strict
 review; a fresh exact original is required again after Reload.
 Full calendar originals and historical/partial overlaps are counted separately;
-an overlap never hides the missing full-month original/closing EOD. Accounts from
+historical/partial overlaps are collapsed separately. Both the month list and
+saved-review selector include bound sources or unbound calendar overlaps, not
+unrelated unbound months. An overlap never hides the missing full-month
+original/closing EOD. Accounts from
 earlier saved originals remain selectable for inspection; they do not supply this
 month's closing EOD. Monthly results require exact calendar boundaries; absent
 results name the required EOD dates instead of displaying zero.
@@ -342,8 +345,14 @@ today's account type. Existing account/class detail retains its scope. Exact
 capabilities and conservative crossing exclusions are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-selected-basket).
 
 `/v2/returns` is the ordinary **Доходность** entry in the left navigation. It
-defaults to the latest CLOSED month, even when a newer DRAFT exists, and pins
-the account and EOD dates in the URL. Four compact cards show the selected
+defaults to the accepted portfolio and latest CLOSED month when available,
+even when a newer DRAFT exists, and pins the account and EOD dates in the URL.
+Explicit source URLs keep their selected basis; period options follow that basis.
+The basis explanation links to saved month records and preserves concrete NULL
+reasons. Refresh starts each active read once without a context/overview/basket
+enable cascade; fetching or failed reads never display cached results as current.
+Category checkboxes retain native keyboard semantics, visible focus and exact
+URL/Back/Reload selection. Four compact cards show the selected
 result/rate, the whole-history result with dates, credited coupons and credited
 dividends. Missing values are `—` with keyboard-accessible details. Statements
 and accepted reporting scopes are explicitly separate choices; source aliases

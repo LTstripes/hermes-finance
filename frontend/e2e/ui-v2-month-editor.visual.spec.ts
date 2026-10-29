@@ -818,6 +818,19 @@ async function installMonthUx(page: Page, status = "draft") {
   );
   await page.route("**/api/broker-months*", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/source-intakes*", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/months/7/draft-payouts", (route) =>
+    route.fulfill({
+      json: {
+        reporting_month_id: 7,
+        snapshot_date: "2030-05-31",
+        status,
+        context_digest: "a".repeat(64),
+        eligible_positions: 0,
+        items: [],
+      },
+    }),
+  );
+  await page.route("**/api/payouts/calendar?*", (route) => route.fulfill({ json: [] }));
   return calls;
 }
 
@@ -1045,13 +1058,10 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
       links.map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("panel")),
     );
   expect(order.indexOf("brokers")).toBeLessThan(order.indexOf("positions"));
-  await nav.getByRole("link", { name: /^Выплаты/ }).click();
+  await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  await page.getByText("Наблюдения выплат источника", { exact: true }).click();
   await expect(page.getByRole("region", { name: "Наблюдения выплат источника" })).toContainText(
     "Налог: неизвестен",
-  );
-  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).toContainText("860");
-  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).not.toContainText(
-    "1 720",
   );
   const dates = page.getByLabel("Сохранённая дата количества");
   await dates.selectOption("2030-04-30");
@@ -1090,6 +1100,17 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).toContainText("860");
+  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).not.toContainText(
+    "1 720",
+  );
+  await expect(page.locator("#month-draft-payouts")).toBeVisible();
+  await expect(page.getByText("Исправления и сохранение месяца", { exact: true })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("month-saved-draft-payouts.png"),
+    fullPage: true,
+  });
   await page.getByText("Добавить фактическую выплату вручную", { exact: true }).click();
   await page.locator("#payout-act-gross").fill("100");
   await nav.getByRole("link", { name: /Счета и позиции/ }).click();
@@ -1102,6 +1123,8 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=positions/);
   await page.goBack();
   await expect(page).toHaveURL(/panel=payouts/);
+  await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
+  await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
   await expect(dates).toHaveValue("2030-04-30");
   expect(previewBodies).toHaveLength(1);
   expect(writes).toEqual(["/api/source-returns/payout-preview"]);
@@ -1145,4 +1168,68 @@ test("ui-v2 Month UX legacy same-panel discard resets the manual draft and guard
   await expect(page.getByRole("alertdialog")).toHaveCount(1);
   await page.getByRole("button", { name: "Остаться", exact: true }).click();
   await expect(page.locator("#payout-act-gross")).toHaveValue("456");
+});
+
+test("month sources collapse historical overlaps and isolate saved draft payouts @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const calls = await installMonthUx(page);
+  const sources = [
+    { id: 1, covered_from: "2030-05-01", covered_to: "2030-05-31" },
+    { id: 2, covered_from: "2029-01-01", covered_to: "2030-05-05" },
+    { id: 3, covered_from: "2030-04-01", covered_to: "2030-04-30" },
+  ].map((period) => ({
+    ...period,
+    head_seq: 1,
+    manifest_digest: "a".repeat(64),
+    observations: [],
+    exceptions: [],
+    state: { reporting_month_id: null, account_id: null, default_enabled: true, overrides: {} },
+    document: { filename_account: "SYNTH-01", source_accounts: ["SYNTH-01-000"] },
+    proposals: [],
+    history: [],
+    finance_link: null,
+  }));
+  await page.route("**/api/broker-months/intakes*", (route) =>
+    route.fulfill({
+      json: sources.filter(
+        (source) =>
+          !new URL(route.request().url()).searchParams.has("reporting_month_id") ||
+          source.covered_to >= "2030-05-01",
+      ),
+    }),
+  );
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/v2/close?month=7&panel=brokers");
+    await expect(
+      page.getByRole("list", { name: "Источники и исключения месяца" }).getByRole("listitem"),
+    ).toHaveCount(1);
+    const historical = page.getByText("Исторические и частичные пересечения · 1");
+    await expect(historical.locator("..")).not.toHaveAttribute("open");
+    await expect(page.getByRole("button", { name: "Разобрать и исправить #2" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Разобрать и исправить #3" })).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`month-sources-${width}.png`),
+      fullPage: true,
+    });
+    await historical.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Разобрать и исправить #2" })).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "Разделы месяца" })
+      .getByRole("link", { name: /^Выплаты/ })
+      .click();
+    await expect(page.locator("#month-draft-payouts")).toBeVisible();
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+    await expect(page.getByLabel("Сохранённый разбор")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`month-payouts-${width}.png`),
+      fullPage: true,
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+  }
+  expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
 });
