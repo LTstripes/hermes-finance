@@ -156,22 +156,22 @@ export type InstrumentMetric<T> = {
   reason_codes: string[];
   assumptions: string[];
 };
-export type InstrumentDietz = InstrumentMetric<string> & {
+export type InstrumentDietz<Money = number> = InstrumentMetric<string> & {
   /** Decimal FRACTION, 0.1 = 10%; never the legacy percentage. */
   method: "modified_dietz";
   approximate: true;
   annualized: false;
-  capital_days: number | null;
+  capital_days: Money | null;
 };
-export type InstrumentCashLeg = {
+export type InstrumentCashLeg<Money = number> = {
   role: string;
   date: string;
-  account_cash_kopecks: number;
-  instrument_flow_kopecks: number;
+  account_cash_kopecks: Money;
+  instrument_flow_kopecks: Money;
   source_references: string[];
   ownership: string;
 };
-export type InstrumentEvent = {
+export type InstrumentEvent<Money = number> = {
   event_key: string;
   provider: string;
   native_source_account: string;
@@ -189,14 +189,14 @@ export type InstrumentEvent = {
   price_unit: "RUB_PER_UNIT" | "PERCENT_OF_FACE" | "UNKNOWN";
   face_value: string | null;
   face_value_date: string | null;
-  native_trade_amount_kopecks: number | null;
+  native_trade_amount_kopecks: Money | null;
   native_total_basis: string | null;
   proof_dependency: string | null;
-  accrued_interest_kopecks: number | null;
-  commission_kopecks: number | null;
-  gross_payout_kopecks: number | null;
-  withheld_tax_kopecks: number | null;
-  net_payout_kopecks: number | null;
+  accrued_interest_kopecks: Money | null;
+  commission_kopecks: Money | null;
+  gross_payout_kopecks: Money | null;
+  withheld_tax_kopecks: Money | null;
+  net_payout_kopecks: Money | null;
   classification: string | null;
   classification_origin: string | null;
   classification_status: string | null;
@@ -205,30 +205,30 @@ export type InstrumentEvent = {
   effective_isin: string | null;
   current: boolean;
   counted: boolean;
-  cash_legs: InstrumentCashLeg[];
+  cash_legs: InstrumentCashLeg<Money>[];
   reason_codes: string[];
   assumptions: string[];
 };
-export type InstrumentEndpoint = {
+export type InstrumentEndpoint<Money = number> = {
   date: string;
   quantity: string | null;
-  reported_value_kopecks: number | null;
-  economic_value_kopecks: number | null;
-  accrued_interest_kopecks: number | null;
+  reported_value_kopecks: Money | null;
+  economic_value_kopecks: Money | null;
+  accrued_interest_kopecks: Money | null;
   valuation_basis: "dirty" | "clean_plus_nkd" | "reported_unknown";
   source_references: string[];
   reason_codes: string[];
 };
-export type InstrumentAnalysis = {
+export type InstrumentAnalysis<Money = number> = {
   contract_version: "instrument_return_v2";
   opening_date: string;
   closing_date: string;
   history_start: string;
   history_end: string;
   history_complete_since_acquisition: boolean;
-  events: InstrumentEvent[];
-  opening: InstrumentEndpoint;
-  closing: InstrumentEndpoint;
+  events: InstrumentEvent<Money>[];
+  opening: InstrumentEndpoint<Money>;
+  closing: InstrumentEndpoint<Money>;
   components: Record<
     | "buys"
     | "sells"
@@ -238,11 +238,11 @@ export type InstrumentAnalysis = {
     | "fees"
     | "taxes"
     | "valuation_and_trades",
-    InstrumentMetric<number>
+    InstrumentMetric<Money>
   >;
-  pnl: InstrumentMetric<number>;
-  known_subtotal: InstrumentMetric<number>;
-  modified_dietz: InstrumentDietz;
+  pnl: InstrumentMetric<Money>;
+  known_subtotal: InstrumentMetric<Money>;
+  modified_dietz: InstrumentDietz<Money>;
   chained_monthly: InstrumentMetric<string>;
   coverage: Record<
     "events" | "quantity" | "endpoints" | "payouts" | "costs" | "valuation",
@@ -260,8 +260,8 @@ export type InstrumentAnalysis = {
   reason_codes: string[];
   assumptions: string[];
   statement_estimate: {
-    pnl: InstrumentMetric<number>;
-    modified_dietz: InstrumentDietz;
+    pnl: InstrumentMetric<Money>;
+    modified_dietz: InstrumentDietz<Money>;
     assumptions: string[];
   };
 };

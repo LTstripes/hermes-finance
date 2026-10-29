@@ -7,6 +7,9 @@ import type {
 } from "../api/sourceReturns";
 import styles from "./UiV2BondSlice.module.css";
 
+type Money = number | string;
+const dateText = (value: string) => value.split("-").reverse().join(".");
+
 /** Display integer minor units exactly; reject already-unsafe legacy JSON numbers. */
 export function money(value: number | string | null): string {
   if (value === null) return "Неизвестно";
@@ -127,7 +130,7 @@ export function References({ values }: { values: string[] }) {
     <span>Ссылка не предоставлена</span>
   );
 }
-function Endpoint({ title, value }: { title: string; value: InstrumentEndpoint }) {
+function Endpoint({ title, value }: { title: string; value: InstrumentEndpoint<Money> }) {
   return (
     <div className={styles.card}>
       <h4>
@@ -147,6 +150,7 @@ function Endpoint({ title, value }: { title: string; value: InstrumentEndpoint }
             : value.valuation_basis}
         </dd>
       </dl>
+      <Reasons codes={value.reason_codes} />
       <References values={value.source_references} />
     </div>
   );
@@ -154,7 +158,7 @@ function Endpoint({ title, value }: { title: string; value: InstrumentEndpoint }
 function Metric(
   props: { title: string } & (
     | { percent: true; metric: InstrumentMetric<string> }
-    | { percent?: false; metric: InstrumentMetric<number> }
+    | { percent?: false; metric: InstrumentMetric<Money> }
   ),
 ) {
   const { title, metric } = props;
@@ -179,13 +183,18 @@ function Events({
   caption,
   emptyPayoutLabel = "Купонных",
 }: {
-  events: InstrumentEvent[];
+  events: InstrumentEvent<Money>[];
   coupons?: boolean;
   caption?: string;
   emptyPayoutLabel?: string;
 }) {
   return events.length ? (
-    <div className={styles.tableWrap}>
+    <section
+      className={styles.tableWrap}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll the operation table.
+      tabIndex={0}
+      aria-label={caption ?? (coupons ? "Купоны" : "Сделки")}
+    >
       <table className={styles.table}>
         <caption>
           {caption ?? (coupons ? "Купоны по строкам источников" : "Сделки по строкам источников")}
@@ -215,6 +224,7 @@ function Events({
             <tr key={event.event_key}>
               <td>
                 {coupons ? observed(event.event_date) : observed(event.trade_time)}
+                {coupons && <p>{event.kind === "COUPON" ? "Купон" : "Дивиденд"}</p>}
                 {!coupons && (
                   <>
                     <br />
@@ -223,7 +233,11 @@ function Events({
                     Бумаги: {observed(event.depository_settlement_date)}
                   </>
                 )}
-                <p>{event.counted ? "Учтено в доступных компонентах" : "Не учтено в расчёте"}</p>
+                <p>
+                  {event.counted && event.current
+                    ? "Учтено в доступных компонентах"
+                    : "Не учтено в расчёте"}
+                </p>
                 {!event.current && <strong>Сопоставление неактуально</strong>}
               </td>
               {coupons ? (
@@ -250,12 +264,12 @@ function Events({
               ) : (
                 <>
                   <td>
-                    {event.kind === "BUY" ? "Покупка" : "Продажа"}
+                    <span>{event.kind === "BUY" ? "Покупка" : "Продажа"}</span>
                     <br />
                     {observed(event.quantity_delta)}
                   </td>
                   <td>
-                    {observed(event.unit_price)}
+                    <span>{observed(event.unit_price)}</span>
                     <br />
                     {event.price_unit === "PERCENT_OF_FACE"
                       ? "% от номинала"
@@ -293,7 +307,7 @@ function Events({
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
   ) : (
     <p>
       {coupons
@@ -302,55 +316,165 @@ function Events({
     </p>
   );
 }
+function CashEvent({
+  event,
+  unattributed = false,
+}: {
+  event: InstrumentEvent<Money>;
+  unattributed?: boolean;
+}) {
+  return (
+    <div className={styles.card}>
+      <h4>
+        {unattributed
+          ? "Строка источника"
+          : (
+              {
+                FEE: "Комиссия",
+                TAX: "Налог",
+                REDEMPTION: "Погашение",
+                UNRESOLVED: "Операция требует уточнения",
+              } as Record<string, string>
+            )[event.kind]}
+      </h4>
+      <p>
+        {observed(event.event_date)} ·{" "}
+        {event.counted && event.current ? "Учтено в доступных компонентах" : "Не учтено в расчёте"}
+      </p>
+      {event.cash_legs.map((leg) => (
+        <p key={leg.ownership}>
+          {leg.date} · Движение денег по счёту: {money(leg.account_cash_kopecks)}
+        </p>
+      ))}
+      <Reasons codes={[...event.reason_codes, ...event.assumptions]} />
+      <References values={event.source_references} />
+    </div>
+  );
+}
 export function SourceInstrumentDetail({
   analysis,
   instrumentType = "bond",
   payoutPreviewHere = false,
+  personalResult = false,
 }: {
-  analysis: InstrumentAnalysis;
+  analysis: InstrumentAnalysis<Money>;
   instrumentType?: string | null;
   payoutPreviewHere?: boolean;
+  personalResult?: boolean;
 }) {
   const bond = instrumentType === "bond";
   const estimate = analysis.statement_estimate;
   const hasEstimate = estimate.pnl.value !== null || estimate.modified_dietz.value !== null;
+  const instrumentEvents: InstrumentEvent<Money>[] = [];
+  const unattributedEvents: InstrumentEvent<Money>[] = [];
+  for (const event of analysis.events) {
+    // A legacy name match may set isin without proving ownership of the row.
+    // Keep pending native trades with an effective binding in instrument history.
+    (event.effective_isin !== null && event.effective_isin === event.isin
+      ? instrumentEvents
+      : unattributedEvents
+    ).push(event);
+  }
   return (
     <>
       <p>
         Интервал: ({analysis.opening_date}, {analysis.closing_date}].
       </p>
-      <div className={styles.grid}>
-        <Endpoint title="Начало" value={analysis.opening} />
-        <Endpoint title="Конец" value={analysis.closing} />
-      </div>
-      <h4>Полный экономический результат</h4>
-      <div className={styles.grid}>
-        <Metric title="Полный P&L, ₽" metric={analysis.pnl} />
-        <Metric
-          title="Modified Dietz · приблизительно, за период"
-          metric={analysis.modified_dietz}
-          percent
-        />
-      </div>
-      {hasEstimate ? (
-        <section className={styles.estimate} aria-label="Условная оценка по выписке">
-          <h4>Условная доходность по стоимости из выписки</h4>
-          <p>
-            {bond
-              ? "Состав оценки / НКД не подтверждён. "
-              : "Оценка зависит от допущений источника. "}
-            Условные показатели не являются полным экономическим результатом.
+      {personalResult && (
+        <>
+          <p className={styles.note}>
+            По сохранённым выпискам выбранного счёта. Расчёт предварительный.
           </p>
-          <div className={styles.grid}>
-            <Metric title="Условный результат, ₽" metric={estimate.pnl} />
+          <div className={styles.summary}>
+            <Metric title="Мой результат за период, ₽" metric={analysis.pnl} />
+            <div className={styles.card}>
+              <h4>Позиция на {dateText(analysis.closing.date)}</h4>
+              <p className={styles.value}>{money(analysis.closing.reported_value_kopecks)}</p>
+              <p>
+                Количество: {observed(analysis.opening.quantity)} →{" "}
+                {observed(analysis.closing.quantity)}
+              </p>
+              <p className={styles.note}>Стоимость по выписке</p>
+              {analysis.closing.quantity !== null &&
+                /^0+(?:\.0+)?$/.test(analysis.closing.quantity) && (
+                  <p>Позиция закрыта на эту дату</p>
+                )}
+              {bond && analysis.closing.valuation_basis === "reported_unknown" && (
+                <p className={styles.note}>Состав стоимости / НКД не подтверждён.</p>
+              )}
+            </div>
+            <div className={styles.card}>
+              <h4>Полученные выплаты</h4>
+              <p>
+                Купоны: <strong>{money(analysis.components.coupons.value)}</strong>
+              </p>
+              <p className={styles.note}>{statusLabel(analysis.components.coupons.status)}</p>
+              <p>
+                Дивиденды: <strong>{money(analysis.components.dividends.value)}</strong>
+              </p>
+              <p className={styles.note}>{statusLabel(analysis.components.dividends.status)}</p>
+              <p className={styles.note}>
+                После удержаний. Уже учтены в результате, когда он доступен.
+              </p>
+            </div>
+          </div>
+          <details>
+            <summary>Доходность в процентах · Modified Dietz за период</summary>
+            <p>
+              {dateText(analysis.opening_date)} — {dateText(analysis.closing_date)}. Приблизительная
+              доходность за этот интервал, не годовая. Начало периода не переносится на первую
+              покупку.
+            </p>
             <Metric
-              title="Условный Modified Dietz · приблизительно, за период"
-              metric={estimate.modified_dietz}
+              title="Modified Dietz · приблизительно, за период"
+              metric={analysis.modified_dietz}
+              percent
+            />
+          </details>
+        </>
+      )}
+      <details open={personalResult ? undefined : true}>
+        <summary>Количество и оценка на границах периода</summary>
+        <div className={styles.grid}>
+          <Endpoint title="Начало" value={analysis.opening} />
+          <Endpoint title="Конец" value={analysis.closing} />
+        </div>
+      </details>
+      {!personalResult && (
+        <>
+          <h4>Полный экономический результат</h4>
+          <div className={styles.grid}>
+            <Metric title="Полный P&L, ₽" metric={analysis.pnl} />
+            <Metric
+              title="Modified Dietz · приблизительно, за период"
+              metric={analysis.modified_dietz}
               percent
             />
           </div>
-          <Reasons codes={estimate.assumptions} />
-        </section>
+        </>
+      )}
+      {hasEstimate ? (
+        <details open={personalResult ? undefined : true}>
+          <summary>Условная оценка по стоимости в выписке</summary>
+          <section className={styles.estimate} aria-label="Условная оценка по выписке">
+            <h4>Условная доходность по стоимости из выписки</h4>
+            <p>
+              {bond
+                ? "Состав оценки / НКД не подтверждён. "
+                : "Оценка зависит от допущений источника. "}
+              Условные показатели не являются полным экономическим результатом.
+            </p>
+            <div className={styles.grid}>
+              <Metric title="Условный результат, ₽" metric={estimate.pnl} />
+              <Metric
+                title="Условный Modified Dietz · приблизительно, за период"
+                metric={estimate.modified_dietz}
+                percent
+              />
+            </div>
+            <Reasons codes={estimate.assumptions} />
+          </section>
+        </details>
       ) : (
         <details>
           <summary>Условная оценка недоступна</summary>
@@ -359,12 +483,16 @@ export function SourceInstrumentDetail({
           />
         </details>
       )}
-      <p>
-        <strong>{bond ? "Известный компонент купонов:" : "Известный компонент дивидендов:"}</strong>{" "}
-        {money((bond ? analysis.components.coupons : analysis.components.dividends).value)} ·{" "}
-        {statusLabel((bond ? analysis.components.coupons : analysis.components.dividends).status)}.
-        Он не заменяет полный результат.
-      </p>
+      {!personalResult && (
+        <p>
+          <strong>
+            {bond ? "Известный компонент купонов:" : "Известный компонент дивидендов:"}
+          </strong>{" "}
+          {money((bond ? analysis.components.coupons : analysis.components.dividends).value)} ·{" "}
+          {statusLabel((bond ? analysis.components.coupons : analysis.components.dividends).status)}
+          . Он не заменяет полный результат.
+        </p>
+      )}
       <details>
         <summary>Известные компоненты, выплаты и расходы</summary>
         <Metric
@@ -394,15 +522,51 @@ export function SourceInstrumentDetail({
           ))}
         </div>
       </details>
-      <Events
-        events={analysis.events.filter((event) => event.kind === "BUY" || event.kind === "SELL")}
-      />
-      <Events
-        events={analysis.events.filter((event) => event.kind === (bond ? "COUPON" : "DIVIDEND"))}
-        coupons
-        caption={bond ? "Купоны по строкам источников" : "Дивиденды по строкам источников"}
-        emptyPayoutLabel={bond ? "Купонных" : "Дивидендных"}
-      />
+      <details open={personalResult ? undefined : true}>
+        <summary>Сделки и выплаты ({instrumentEvents.length})</summary>
+        <p className={styles.note}>
+          Суммы, НКД, комиссии и удержания раскрывают состав операций; они не прибавляются к
+          результату повторно.
+        </p>
+        <Events
+          events={instrumentEvents.filter((event) => event.kind === "BUY" || event.kind === "SELL")}
+        />
+        <Events
+          events={instrumentEvents.filter((event) =>
+            personalResult
+              ? event.kind === "COUPON" || event.kind === "DIVIDEND"
+              : event.kind === (bond ? "COUPON" : "DIVIDEND"),
+          )}
+          coupons
+          caption={
+            personalResult
+              ? "Фактические выплаты по строкам источников"
+              : bond
+                ? "Купоны по строкам источников"
+                : "Дивиденды по строкам источников"
+          }
+          emptyPayoutLabel={personalResult ? "Платёжных" : bond ? "Купонных" : "Дивидендных"}
+        />
+        {instrumentEvents
+          .filter((event) => !["BUY", "SELL", "COUPON", "DIVIDEND"].includes(event.kind))
+          .map((event) => (
+            <CashEvent event={event} key={event.event_key} />
+          ))}
+      </details>
+      {unattributedEvents.length > 0 && (
+        <details>
+          <summary>Строки без подтверждённого инструмента ({unattributedEvents.length})</summary>
+          <section aria-label="Строки без подтверждённого инструмента">
+            <p>
+              Связь этих строк с выбранным инструментом не подтверждена. Совпадение названия не
+              подтверждает связь. Денежные суммы относятся к счёту.
+            </p>
+            {unattributedEvents.map((event) => (
+              <CashEvent event={event} key={event.event_key} unattributed />
+            ))}
+          </section>
+        </details>
+      )}
       <p className={styles.note}>
         {payoutPreviewHere ? (
           "Предварительные выплаты запрашиваются ниже отдельным действием."
@@ -415,18 +579,32 @@ export function SourceInstrumentDetail({
       </p>
       <details>
         <summary>Полнота и происхождение</summary>
+        <Reasons codes={[...analysis.reason_codes, ...analysis.assumptions]} />
         <ul>
           {Object.entries(analysis.coverage).map(([name, value]) => (
             <li key={name}>
-              {name}: {value.complete ? "полно" : "неполно"}
+              {
+                (
+                  {
+                    events: "Операции",
+                    quantity: "Количество",
+                    endpoints: "Границы периода",
+                    payouts: "Выплаты",
+                    costs: "Расходы",
+                    valuation: "Оценка",
+                  } as Record<string, string>
+                )[name]
+              }
+              : {value.complete ? "полно" : "неполно"}
               <Reasons codes={value.reason_codes} />
             </li>
           ))}
         </ul>
         <p>
-          История источников: {analysis.history_start} — {analysis.history_end}. История с
-          приобретения:{" "}
-          {analysis.history_complete_since_acquisition ? "подтверждена" : "не подтверждена"}.
+          История источников: {analysis.history_start} — {analysis.history_end}.{" "}
+          {analysis.history_complete_since_acquisition
+            ? "В этом интервале подтверждены нулевой начальный остаток, покупка и движения количества. Этот признак не проверяет владение до начала источников."
+            : "Начало истории владения не подтверждено. Результат относится только к выбранному интервалу."}
         </p>
         <ul className={styles.references}>
           {analysis.source_references.map((source) => (

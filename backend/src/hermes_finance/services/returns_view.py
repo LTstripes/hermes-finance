@@ -1,6 +1,7 @@
 """Read-only presentation composition. The existing readers own every return.
 
-No financial facts, provenance payloads, providers or persisted presentation cache.
+No financial writes, providers or persisted presentation cache. On-demand detail
+retains the existing v2 analysis and provenance; overview remains compact.
 Money crosses this boundary as integer-minor-unit strings, including large values.
 """
 
@@ -495,6 +496,7 @@ def read_detail(session, *, scope, start, end, isin):
         analysis = row.analysis
         return {
             "scope": scope,
+            "analysis": analysis,
             **_instrument(row, start, end, _catalogue_names(session, (row,))),
             "opening_quantity": None
             if analysis.opening.quantity is None

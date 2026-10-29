@@ -368,6 +368,20 @@ whole-period result with available fragments or calculates financial returns.
 Custom intervals keep unavailable account rates explicit while retaining any
 independently supported dated instrument results.
 
+Expanding an instrument reuses the shared source detail: personal RUB result for
+the displayed interval, remaining quantity and reported value at a visible date,
+and actual credited coupons/dividends. Closed positions remain reachable. Dated
+buys/sales expose their own prices, units, amounts, NKD, commissions and settlement
+dates; payments retain withholding unknowns and source references. Full results,
+known components and conditional statement estimates remain distinct. Modified
+Dietz is secondary, named with its actual interval and nonannualized units. The
+source-history flag does not establish lifetime ownership or move the starting
+boundary to the first visible buy.
+Source rows without an effective instrument binding appear in a separate
+disclosure with account cash, reasons and references. A name match alone does not
+make them this instrument's operations; pending trades with a native binding
+remain in its history with their uncounted status.
+
 Old `/v2/capital/monthly-returns` links enter the same Returns screen, preserving
 source account, ISIN and selected bond interval. A legacy bond-slice URL with no
 `bond_period` means **full source history**, not the latest CLOSED month.

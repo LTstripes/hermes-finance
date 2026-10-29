@@ -99,6 +99,7 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   await expect(tops.locator("ol").first().locator("li").first()).toContainText("Горизонт");
   await page.getByRole("button", { name: /Горизонт — проданная бумага/ }).click();
   await expect(page.getByText("Количество: 10 → 0")).toBeVisible();
+  await page.getByText("Сделки и выплаты (1)", { exact: true }).click();
   await expect(page.getByText("Продажа", { exact: true })).toBeVisible();
   // React's development StrictMode may abort and repeat the first mounted GET.
   expect(calls.filter((c) => c.endsWith("/instrument")).length).toBeGreaterThanOrEqual(1);
