@@ -69,14 +69,15 @@ function Context() {
     </>
   );
 }
-function setup(path = "/v2/returns") {
+function setup(path = "/v2/returns", previous?: string) {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={previous ? [previous, path] : [path]}>
         <Context />
         <Routes>
+          <Route path="/v2/capital" element={<h1>Капитал: исходный контекст</h1>} />
           <Route path="/v2/returns" element={<UiV2ReturnsEntry />} />
           <Route path="/v2/returns/account" element={<UiV2ReturnsAccountEntry />} />
         </Routes>
@@ -201,7 +202,9 @@ test("metadata-only stale account, missing snapshots and empty instruments make 
   install(value);
   setup();
   await screen.findByText("Нет подтверждённых числовых значений.");
-  expect(screen.getByText(/проверка устарела/)).toBeVisible();
+  expect(
+    within(screen.getByRole("region", { name: "По счетам" })).getByText(/проверка устарела/),
+  ).toBeVisible();
   expect(screen.getByText("Нет доступных расчётов по инструментам.")).toBeVisible();
   expect(screen.getByRole("region", { name: "Депозиты" })).not.toHaveTextContent("0 ₽");
   expect(screen.getByRole("region", { name: "Золото" })).toHaveTextContent(
@@ -279,4 +282,140 @@ test("legacy month/category URL remains on the account path without changing aut
     ),
   );
   expect(calls.includes("/api/returns/overall")).toBe(false);
+});
+
+test("Capital ISIN and unique canonical account open exact source detail, replace URL and preserve Back", async () => {
+  const calls = install();
+  setup("/v2/returns?isin=RU000A000002&capital_account=3", "/v2/capital?month=91");
+  await waitFor(() => expect(calls.filter((url) => url.includes("/instrument?"))).toHaveLength(1));
+  expect(calls[1]).toContain("scope=source%3ASYNTH-A");
+  expect(calls[1]).toContain(`start=${may.start}&end=${may.end}`);
+  expect(screen.getByTestId("location")).not.toHaveTextContent("capital_account=");
+  expect(screen.getByRole("button", { name: "Разбор: Учебный счёт А" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  await screen.findByRole("heading", { name: "Капитал: исходный контекст" });
+  expect(screen.getByTestId("location")).toHaveTextContent("/v2/capital?month=91");
+});
+test.each(["0", "-1", "3.5", "03", "9007199254740992", "NaN", "3&capital_account=4"])(
+  "invalid/duplicate Capital account %s never picks source detail",
+  async (id) => {
+    const calls = install();
+    setup(`/v2/returns?isin=RU000A000002&capital_account=${id}`);
+    await screen.findByText(/нет единственного подтверждённого соответствия/);
+    expect(calls).toEqual(["/api/returns/overall"]);
+  },
+);
+test.each(["unmapped", "conflict", "missing-period", "invalid-period"])(
+  "Capital %s metadata never guesses; manual source selection stays available",
+  async (kind) => {
+    const value = overallFixture();
+    if (kind === "unmapped") value.instruments[0].accounts[0].canonical_account_id = null;
+    if (kind === "conflict") value.instruments[0].accounts[1].canonical_account_id = 3;
+    if (kind === "missing-period") value.instruments[0].accounts[0].period = null;
+    if (kind === "invalid-period")
+      value.instruments[0].accounts[0].period = { start: "2030-02-31", end: may.end };
+    const calls = install(value);
+    setup("/v2/returns?isin=RU000A000002&capital_account=3");
+    await screen.findByText(/нет единственного подтверждённого соответствия/);
+    expect(calls).toEqual(["/api/returns/overall"]);
+    fireEvent.click(screen.getByRole("button", { name: "Разбор: Учебный счёт Б" }));
+    await waitFor(() =>
+      expect(calls.filter((url) => url.includes("/instrument?"))).toHaveLength(1),
+    );
+    expect(calls[1]).toContain("scope=source%3ASYNTH-B");
+    expect(screen.getByTestId("location")).not.toHaveTextContent("capital_account=");
+  },
+);
+test("same ISIN canonical navigation never joins by account label", async () => {
+  const value = overallFixture();
+  value.instruments[0].accounts[0].label = "Учебный счёт Б";
+  const calls = install(value);
+  setup("/v2/returns?isin=RU000A000002&capital_account=4");
+  await waitFor(() => expect(calls.filter((url) => url.includes("/instrument?"))).toHaveLength(1));
+  expect(calls[1]).toContain("scope=source%3ASYNTH-B");
+  expect(calls[1]).toContain(`start=${april.start}&end=${april.end}`);
+});
+test("gold from Capital focuses only exact saved snapshot and never opens source detail", async () => {
+  const calls = install();
+  setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
+  await screen.findByText(/Выбран сохранённый снимок/);
+  await waitFor(() =>
+    expect(document.activeElement).toHaveAttribute("data-capital-selected", "true"),
+  );
+  expect(document.activeElement).toHaveTextContent("Учебное золото");
+  expect(calls).toEqual(["/api/returns/overall"]);
+});
+test.each([
+  "capital_account=0&gold_instrument=20",
+  "capital_account=10&gold_instrument=21",
+  "capital_account=10&gold_instrument=20&gold_instrument=20",
+])("gold identity mismatch stays explicit: %s", async (selection) => {
+  const calls = install();
+  setup(`/v2/returns?${selection}#returns-gold`);
+  await screen.findByText(/нет единственного подтверждённого соответствия/);
+  expect(document.querySelector('[data-capital-selected="true"]')).toBeNull();
+  expect(calls).toEqual(["/api/returns/overall"]);
+});
+test("coupon card uses server sum once, independent of instrument coupons and P&L", async () => {
+  const value = overallFixture();
+  value.coupon_income.known_total.value = "987654321";
+  value.instruments[0].accounts[0].coupons.value = "999999999999";
+  value.mixed_result.known_result.value = "800";
+  install(value);
+  setup();
+  const card = await screen.findByRole("region", { name: "Полученные купоны" });
+  expect(within(card).getByRole("region", { name: "Известная сумма купонов" })).toHaveTextContent(
+    "9 876 543,21 ₽",
+  );
+  expect(card).toHaveTextContent("включено счетов 1 из 2");
+  expect(card).toHaveTextContent("повторно не прибавляется");
+  fireEvent.click(within(card).getByText("Счета, периоды и покрытие купонов"));
+  expect(within(card).getByText(/проверка устарела/)).toBeVisible();
+  expect(within(card).getByRole("link", { name: "Учебный счёт А" })).toHaveAttribute(
+    "href",
+    `/v2/returns/account?scope=source%3ASYNTH-A&start=${may.start}&end=${may.end}`,
+  );
+  expect(screen.getByRole("region", { name: "Известная сумма результата" })).toHaveTextContent(
+    "+8 ₽",
+  );
+});
+test.each([null, "0"])(
+  "partial coupon total retains true zero versus unknown: %s",
+  async (amount) => {
+    const value = overallFixture();
+    value.coupon_income.known_total.value = amount;
+    value.coupon_income.accounts[0].amount.value = amount;
+    install(value);
+    setup();
+    const card = await screen.findByRole("region", { name: "Полученные купоны" });
+    const total = within(card).getByRole("region", { name: "Известная сумма купонов" });
+    if (amount === null) expect(total).not.toHaveTextContent("0 ₽");
+    else expect(total).toHaveTextContent("0 ₽");
+    expect(card).toHaveTextContent("Частичное покрытие");
+  },
+);
+
+test("conflicting coupon sibling remains visible but cannot inflate the server's known zero", async () => {
+  const value = overallFixture();
+  value.coupon_income.known_total.value = "0";
+  value.coupon_income.accounts[0].amount.value = "0";
+  Object.assign(value.coupon_income.accounts[1], {
+    amount: { ...value.coupon_income.accounts[1].amount, value: "999000" },
+    proof_status: "conflict",
+    exclusion_reason: "source_account_identity_mapping_conflict",
+    reason_codes: ["source_account_identity_mapping_conflict"],
+  });
+  install(value);
+  setup();
+  const card = await screen.findByRole("region", { name: "Полученные купоны" });
+  expect(within(card).getByRole("region", { name: "Известная сумма купонов" })).toHaveTextContent(
+    "0 ₽",
+  );
+  fireEvent.click(within(card).getByText("Счета, периоды и покрытие купонов"));
+  expect(within(card).getByText(/конфликт данных/)).toBeVisible();
+  expect(card).toHaveTextContent("9 990 ₽");
+  expect(card).toHaveTextContent("не включён");
 });

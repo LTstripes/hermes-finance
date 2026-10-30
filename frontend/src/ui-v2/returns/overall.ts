@@ -11,6 +11,7 @@ export type OverallAccount = {
   instrument_count: number;
 };
 export type OverallInstrumentAccount = Pick<Result, "pnl" | "rate" | "coupons" | "dividends"> & {
+  canonical_account_id?: number | null;
   period: Period | null;
   scope: string;
   label: string;
@@ -49,9 +50,27 @@ export type MixedResult = {
   components: MixedComponent[];
   reason_codes: string[];
 };
+export type CouponIncome = {
+  known_total: Metric;
+  partial: true;
+  selected_accounts: number;
+  included_accounts: number;
+  accounts: {
+    scope: string;
+    label: string;
+    period: Period | null;
+    amount: Metric;
+    proof_status: "current" | "stale" | "absent" | "conflict";
+    included: boolean;
+    exclusion_reason: string | null;
+    reason_codes: string[];
+  }[];
+  reason_codes: string[];
+};
 export type Overall = {
   contract_version: "returns_overall_v1";
   mixed_result: MixedResult;
+  coupon_income: CouponIncome;
   overall: { pnl: Metric; rate: Metric; partial: true; reason_codes: string[] };
   source_accounts: OverallAccount[];
   instruments: OverallInstrument[];

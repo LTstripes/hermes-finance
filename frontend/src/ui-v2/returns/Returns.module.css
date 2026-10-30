@@ -507,3 +507,8 @@
   outline: 3px solid #2b74c4;
   outline-offset: 3px;
 }
+
+.page [data-capital-selected="true"] {
+  outline: 3px solid #2b74c4;
+  outline-offset: -3px;
+}

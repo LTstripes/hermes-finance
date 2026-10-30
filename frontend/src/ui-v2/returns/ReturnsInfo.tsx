@@ -3,6 +3,18 @@ import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const reasons: Record<string, string> = {
+  known_source_history_coupons_only:
+    "Учтены только известные полученные купоны из сохранённой истории выписок каждого включённого счёта.",
+  current_coupon_history_unavailable:
+    "Актуальная проверенная история купонов этого счёта недоступна; старые значения не подставляются.",
+  coupon_income_unavailable: "Сумма полученных купонов по этому счёту не подтверждена.",
+  coupon_history_accounts_missing_or_excluded:
+    "По части счетов история отсутствует либо счёт исключён; доступные купоны остальных счетов сохранены.",
+  coupon_account_history_periods_differ:
+    "Границы доступной истории купонов различаются по счетам и приведены отдельно.",
+  source_account_identity_mapping_conflict:
+    "Соответствие источника каноническому счёту конфликтует; компонент не включён в известный итог.",
+  source_proof_stale: "Проверка выписок устарела; требуется актуальное подтверждение.",
   known_components_only:
     "В известный результат входят только включённые компоненты с подтверждённой основой и отсутствием пересечений.",
   source_only_not_financial_close:
@@ -72,6 +84,8 @@ const reasons: Record<string, string> = {
   partial_calendar_month: "Неполный календарный месяц не включён в сумму.",
 };
 const methods: Record<string, string> = {
+  known_source_history_coupons:
+    "Сумма купонов по уникальным счетам, рассчитанная сервером по актуальной сохранённой истории. Суммы инструментов и месячные наблюдения повторно не добавляются.",
   available_calendar_months:
     "Сумма доступных полных календарных результатов одного счёта. Это частичный итог, без процента.",
   modified_dietz: "Процент — оценка Modified Dietz за указанные даты, без пересчёта на год.",

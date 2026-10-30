@@ -45,6 +45,7 @@ import {
   type HoldingFilter,
   type HoldingRow,
   holdingContextLabel,
+  holdingReturnsNavigation,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
 import { CLASS_COLORS, classMeta } from "./assetClasses";
@@ -562,6 +563,14 @@ function HoldingsBlock({
                   >
                     <div className={capitalStyles.holdingMain}>
                       <span className={capitalStyles.holdingName}>{row.name}</span>
+                      {row.kind === "position" &&
+                        (holdingReturnsNavigation(row).href ? (
+                          <Link to={holdingReturnsNavigation(row).href ?? ""}>
+                            Доходность инструмента
+                          </Link>
+                        ) : (
+                          <small>{holdingReturnsNavigation(row).reason}</small>
+                        ))}
                       <span className={capitalStyles.holdingMeta}>
                         {holdingContextLabel(row)}
                         {row.accountName === null ? "" : ` · ${row.accountName}`}
@@ -700,28 +709,36 @@ function PerformanceBlock({
       : "/v2/capital";
   return (
     <Panel eyebrow="Доходность" id="capital-performance-title" title="Доходность портфеля" wide>
-      {pairStart === null || pairEnd === null ? (
-        <UiV2WidgetState title="Нужны два закрытых отчёта для расчёта за период" />
-      ) : (
-        <CapitalPerformanceSummary
-          attribution={attribution}
-          attributionError={attributionError}
-          attributionReady={attributionReady}
-          detailHref={detailHref}
-          pairEnd={pairEnd}
-          pairStart={pairStart}
-          readiness={readiness}
-          readinessError={readinessError}
-          readinessReady={readinessReady}
-          retry={retry}
-        />
-      )}
-      <p className={styles.panelFootnote}>
-        Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
-        <Link className={styles.contextLink} to={detailHref}>
-          Доходность →
+      <p>
+        <Link className={styles.contextLink} to="/v2/returns">
+          В целом — доступная история и инструменты
         </Link>
       </p>
+      <details>
+        <summary>Принятый портфель: TWRR / XIRR, покрытие и диагностика</summary>
+        {pairStart === null || pairEnd === null ? (
+          <UiV2WidgetState title="Нужны два закрытых отчёта для расчёта за период" />
+        ) : (
+          <CapitalPerformanceSummary
+            attribution={attribution}
+            attributionError={attributionError}
+            attributionReady={attributionReady}
+            detailHref={detailHref}
+            pairEnd={pairEnd}
+            pairStart={pairStart}
+            readiness={readiness}
+            readinessError={readinessError}
+            readinessReady={readinessReady}
+            retry={retry}
+          />
+        )}
+        <p className={styles.panelFootnote}>
+          Расчёты доступны только для того же интервала между двумя закрытыми отчётами.{" "}
+          <Link className={styles.contextLink} to={detailHref}>
+            Доходность →
+          </Link>
+        </p>
+      </details>
     </Panel>
   );
 }

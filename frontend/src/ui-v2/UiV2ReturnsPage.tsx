@@ -1,6 +1,13 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { dateLabel, periodKey, periodLabel } from "./returns/model";
+import {
+  capitalGoldSnapshot,
+  capitalInstrumentAccount,
+  validDetailPeriod,
+} from "./returns/navigation";
+import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
 import { accountHref, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { MissingName } from "./returns/ReturnsAvailable";
@@ -33,6 +40,9 @@ const proofLabels = {
 
 export default function UiV2ReturnsPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const goldRef = useRef<HTMLTableRowElement>(null);
   const query = useQuery({
     queryKey: ["returns", "overall"],
     queryFn: ({ signal }) => getOverall(signal),
@@ -43,6 +53,10 @@ export default function UiV2ReturnsPage() {
   const expanded = params.getAll("isin").length === 1 ? params.get("isin") : null;
   const change = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
+    if ("isin" in updates || "detail_scope" in updates) {
+      next.delete("capital_account");
+      next.delete("gold_instrument");
+    }
     for (const [key, value] of Object.entries(updates)) {
       if (value === null) next.delete(key);
       else next.set(key, value);
@@ -53,23 +67,45 @@ export default function UiV2ReturnsPage() {
     data?.instruments.filter((row) =>
       `${row.name} ${row.isin}`.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru")),
     ) ?? [];
+  const capitalRequested = params.has("capital_account");
+  const capitalAccount = data && capitalRequested ? capitalInstrumentAccount(data, params) : null;
+  const goldSnapshot = data && capitalRequested ? capitalGoldSnapshot(data, params) : null;
+  useEffect(() => {
+    if (!data || !capitalAccount || !validDetailPeriod(capitalAccount.period)) return;
+    const next = new URLSearchParams(params);
+    next.delete("capital_account");
+    next.set("detail_scope", capitalAccount.scope);
+    next.set("detail_start", capitalAccount.period.start);
+    next.set("detail_end", capitalAccount.period.end);
+    navigate(
+      { search: next.toString(), hash: location.hash || "#returns-instruments" },
+      { replace: true },
+    );
+  }, [data, capitalAccount, params, navigate, location.hash]);
+  useEffect(() => {
+    if (!goldSnapshot) return;
+    goldRef.current?.focus({ preventScroll: true });
+    goldRef.current?.scrollIntoView?.({ block: "center" });
+  }, [goldSnapshot]);
   const detailRequested = ["detail_scope", "detail_start", "detail_end"].some((key) =>
     params.has(key),
   );
-  const detailAvailable = data?.instruments.some(
-    (row) =>
-      row.isin === expanded &&
-      row.accounts.some(
-        (account) =>
-          !!account.period &&
-          params.getAll("detail_scope").length === 1 &&
-          params.getAll("detail_start").length === 1 &&
-          params.getAll("detail_end").length === 1 &&
-          account.scope === params.get("detail_scope") &&
-          account.period.start === params.get("detail_start") &&
-          account.period.end === params.get("detail_end"),
-      ),
-  );
+  const detailAvailable =
+    !capitalRequested &&
+    data?.instruments.some(
+      (row) =>
+        row.isin === expanded &&
+        row.accounts.some(
+          (account) =>
+            validDetailPeriod(account.period) &&
+            params.getAll("detail_scope").length === 1 &&
+            params.getAll("detail_start").length === 1 &&
+            params.getAll("detail_end").length === 1 &&
+            account.scope === params.get("detail_scope") &&
+            account.period.start === params.get("detail_start") &&
+            account.period.end === params.get("detail_end"),
+        ),
+    );
   return (
     <div className={styles.page}>
       <UiV2Shell
@@ -227,6 +263,13 @@ export default function UiV2ReturnsPage() {
                 </div>
               )}
             </section>
+            <ReturnsCouponIncome value={data.coupon_income} />
+            {capitalRequested && !capitalAccount && !goldSnapshot && (
+              <p role="status">
+                Для этого точного счёта и инструмента нет единственного подтверждённого
+                соответствия. Выберите доступный счёт бумаги; автоматический разбор не открыт.
+              </p>
+            )}
             <section className={styles.panel} aria-labelledby="overall-accounts">
               <h2 id="overall-accounts">По счетам</h2>
               <p className={styles.basisNote}>
@@ -379,15 +422,15 @@ export default function UiV2ReturnsPage() {
                                   <th>
                                     <button
                                       type="button"
-                                      disabled={!account.period}
+                                      disabled={!validDetailPeriod(account.period)}
                                       aria-pressed={
-                                        !!account.period &&
+                                        validDetailPeriod(account.period) &&
                                         params.get("detail_scope") === account.scope &&
                                         params.get("detail_start") === account.period.start &&
                                         params.get("detail_end") === account.period.end
                                       }
                                       onClick={() => {
-                                        if (account.period)
+                                        if (validDetailPeriod(account.period))
                                           change({
                                             detail_scope: account.scope,
                                             detail_start: account.period.start,
@@ -438,7 +481,8 @@ export default function UiV2ReturnsPage() {
                         {row.accounts.map((account) => {
                           const period = account.period;
                           if (
-                            !period ||
+                            capitalRequested ||
+                            !validDetailPeriod(period) ||
                             params.getAll("detail_scope").length !== 1 ||
                             params.getAll("detail_start").length !== 1 ||
                             params.getAll("detail_end").length !== 1 ||
@@ -504,8 +548,14 @@ export default function UiV2ReturnsPage() {
               )}
               <Diagnostics codes={data.deposits.reason_codes} />
             </section>
-            <section className={styles.panel} aria-label="Золото">
+            <section id="returns-gold" className={styles.panel} aria-label="Золото">
               <h2>Золото</h2>
+              {goldSnapshot && (
+                <p>
+                  Выбран сохранённый снимок по точным идентификаторам из Капитала. Это не разбор
+                  сделок по ISIN.
+                </p>
+              )}
               <p>
                 Последние сохранённые снимки закрытых месяцев. Классификация «золото» взята из
                 текущего справочника и не подтверждает исторический класс.
@@ -525,7 +575,12 @@ export default function UiV2ReturnsPage() {
                     </thead>
                     <tbody>
                       {data.gold.snapshots.map((snapshot) => (
-                        <tr key={`${snapshot.account_id}/${snapshot.instrument_id}`}>
+                        <tr
+                          key={`${snapshot.account_id}/${snapshot.instrument_id}`}
+                          ref={goldSnapshot === snapshot ? goldRef : undefined}
+                          tabIndex={goldSnapshot === snapshot ? -1 : undefined}
+                          data-capital-selected={goldSnapshot === snapshot ? "true" : undefined}
+                        >
                           <th>
                             {snapshot.label}
                             <small>

@@ -222,6 +222,10 @@ function setup(path = "/v2/capital") {
           <LocationProbe />
           <Routes>
             <Route path="v2/capital" element={<UiV2CapitalPage />} />
+            <Route
+              path="v2/capital/performance"
+              element={<h1>Диагностика принятого портфеля</h1>}
+            />
             <Route path="months/:monthId" element={<h1>Month detail</h1>} />
           </Routes>
         </MemoryRouter>
@@ -354,6 +358,9 @@ it("distinguishes a missing comparison base from a genuine zero", async () => {
 
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getAllByText("Нужны два закрытых отчёта для сравнения").length).toBeGreaterThan(0);
+  fireEvent.click(
+    await screen.findByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика"),
+  );
   expect(screen.getByText(/Нужны два закрытых отчёта для расчёта за период/)).toBeVisible();
 });
 
@@ -451,6 +458,9 @@ it("shows supported performance for the same closed pair and hides raw reason co
   const { mount } = setup();
   mount();
 
+  fireEvent.click(
+    await screen.findByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика"),
+  );
   const pair = await screen.findByTestId("capital-performance-period");
   const panel = pair.closest("section");
   if (!panel) throw new Error("performance panel is missing");
@@ -471,34 +481,40 @@ it("shows supported performance for the same closed pair and hides raw reason co
   );
 });
 
-it("keeps the compact performance summary visible on the narrow layout", async () => {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn((query: string) => ({
-      addEventListener: vi.fn(),
-      matches: query === "(max-width: 800px)",
-      media: query,
-      onchange: null,
-      removeEventListener: vi.fn(),
-    })),
-  );
+it("keeps the compact entry visible and opens/closes the unchanged accepted metrics", async () => {
   const { mount } = setup();
   mount();
-
   await screen.findByTestId("capital-net");
-  // Primary XIRR/TWRR summary is not hidden inside a collapsed disclosure.
-  expect(await screen.findByText("+7,42%")).toBeVisible();
-  expect(await screen.findByText("+6,10%")).toBeVisible();
-  // Only the secondary monetary bridge stays collapsed.
+  expect(
+    screen.getByRole("link", { name: "В целом — доступная история и инструменты" }),
+  ).toHaveAttribute("href", "/v2/returns");
+  const summary = screen.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика");
+  const disclosure = summary.closest("details");
+  if (!disclosure) throw new Error("missing accepted performance disclosure");
+  expect(disclosure).not.toHaveAttribute("open");
+  expect(await screen.findByText("+7,42%")).not.toBeVisible();
+  fireEvent.click(summary);
+  expect(screen.getByText("+7,42%")).toBeVisible();
+  expect(screen.getByText("+6,10%")).toBeVisible();
+  expect(within(disclosure).getByRole("link", { name: "Подробнее" })).toHaveAttribute(
+    "href",
+    expect.stringContaining("/v2/capital/performance?start=2031-05-31&end=2031-07-31"),
+  );
   const bridge = screen.getByTestId("capital-performance-bridge").closest("details");
-  if (!bridge) throw new Error("performance bridge disclosure is missing");
+  if (!bridge) throw new Error("missing original bridge disclosure");
   expect(bridge).not.toHaveAttribute("open");
+  fireEvent.click(summary);
+  expect(screen.getByText("+7,42%")).not.toBeVisible();
 });
 
 it("reports an unavailable performance metric with an owner-facing reason", async () => {
   const { mount, state } = setup();
   state.performance = makeUiV2Performance({ notComputable: true });
   mount();
+  await screen.findByTestId("capital-net");
+  fireEvent.click(
+    await screen.findByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика"),
+  );
 
   expect(await screen.findAllByText(/XIRR неоднозначен для этой истории/i)).not.toHaveLength(0);
   expect(
@@ -509,6 +525,14 @@ it("reports an unavailable performance metric with an owner-facing reason", asyn
   expect(screen.queryByText(/not_computable_xirr_root_ambiguity/)).toBeNull();
   expect(screen.queryByText(/valuation_boundary_unavailable/)).toBeNull();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  const diagnosticsLink = screen.getByRole("link", { name: "Проверить данные" });
+  expect(diagnosticsLink).toHaveAttribute(
+    "href",
+    expect.stringContaining("/v2/capital/performance?start=2031-05-31&end=2031-07-31"),
+  );
+  fireEvent.click(diagnosticsLink);
+  await screen.findByRole("heading", { name: "Диагностика принятого портфеля" });
+  expect(screen.getByTestId("test-location")).toHaveTextContent("scope=portfolio");
 });
 
 it("does not blank unrelated widgets when a single widget fails", async () => {
@@ -699,6 +723,9 @@ it("refuses a non-portfolio attribution response on the portfolio panel", async 
   mount();
 
   await screen.findByTestId("capital-net");
+  fireEvent.click(
+    await screen.findByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика"),
+  );
   const pair = await screen.findByTestId("capital-performance-period");
   const panel = pair.closest("section");
   if (!panel) throw new Error("performance panel is missing");
@@ -740,4 +767,41 @@ describe("UI v2 Capital isolation", () => {
     expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
+});
+
+it("links exact catalogue instruments from Capital and gives unsupported rows an explicit reason", async () => {
+  const { mount, state } = setup();
+  state.instruments = state.instruments.map((instrument) => ({
+    ...instrument,
+    isin: instrument.id === 10 ? "RU000A000010" : null,
+  }));
+  mount();
+  const position = await screen.findByTestId("capital-holding-position-501");
+  expect(within(position).getByRole("link", { name: "Доходность инструмента" })).toHaveAttribute(
+    "href",
+    "/v2/returns?isin=RU000A000010&capital_account=3",
+  );
+  const noIsin = screen.getByTestId("capital-holding-position-502");
+  expect(within(noIsin).queryByRole("link")).toBeNull();
+  expect(noIsin).toHaveTextContent("Точный ISIN не подтверждён");
+});
+it("accepted performance retry and diagnostic controls remain usable inside the disclosure", async () => {
+  const { mount, state, reads } = setup();
+  state.performanceError = true;
+  mount();
+  await screen.findByTestId("capital-net");
+  const summary = screen.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика");
+  fireEvent.click(summary);
+  const disclosure = summary.closest("details");
+  if (!disclosure) throw new Error("missing disclosure");
+  const retries = await within(disclosure).findAllByRole("button", { name: "Повторить" });
+  expect(retries.length).toBeGreaterThan(0);
+  const before = reads.filter((read) => read.includes("/api/performance/readiness")).length;
+  state.performanceError = false;
+  fireEvent.click(retries[0]);
+  await waitFor(() => expect(within(disclosure).getByText("+7,42%")).toBeVisible());
+  expect(
+    reads.filter((read) => read.includes("/api/performance/readiness")).length,
+  ).toBeGreaterThan(before);
+  expect(within(disclosure).getByText("+6,10%")).toBeVisible();
 });

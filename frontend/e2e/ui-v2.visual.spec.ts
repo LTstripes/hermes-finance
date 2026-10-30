@@ -959,6 +959,7 @@ for (const width of [1440]) {
     const explanation =
       "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.";
     await page.goto("/v2/capital");
+    await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
     await expect(page.getByText(explanation)).toBeVisible();
     for (const metric of ["xirr", "twrr"]) {
       await expect(page.getByTestId(`capital-performance-${metric}`)).toContainText(
@@ -1124,10 +1125,14 @@ test("ui-v2 Capital desktop long values: compact performance stay operable", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
-  // Compact XIRR/TWRR summary is visible by default; only the secondary bridge is disclosed.
+  const acceptedSummary = page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика");
+  await expect(page.getByTestId("capital-performance-xirr")).not.toBeVisible();
+  await acceptedSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("capital-performance-xirr")).toBeVisible();
   await expect(page.getByTestId("capital-performance-xirr")).toContainText("+7,42%");
   await expect(page.getByTestId("capital-performance-twrr")).toContainText("+6,10%");
-  const bridge = page.locator('details:has([data-testid="capital-performance-bridge"])');
+  const bridge = page.getByTestId("capital-performance-bridge").locator("..");
   await expect(bridge).not.toHaveAttribute("open", "");
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop-long-values");

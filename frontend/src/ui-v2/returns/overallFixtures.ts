@@ -4,6 +4,7 @@ import type { Overall } from "./overall";
 export function overallFixture(): Overall {
   const a = {
     scope: "source:SYNTH-A",
+    canonical_account_id: 3,
     label: "Учебный счёт А",
     period: may,
     pnl: m("1200"),
@@ -14,6 +15,7 @@ export function overallFixture(): Overall {
   const b = {
     ...a,
     scope: "source:SYNTH-B",
+    canonical_account_id: 4,
     label: "Учебный счёт Б",
     period: april,
     pnl: m("-400"),
@@ -21,6 +23,35 @@ export function overallFixture(): Overall {
   };
   return {
     contract_version: "returns_overall_v1",
+    coupon_income: {
+      known_total: m("3500", "kopecks", "known_source_history_coupons"),
+      partial: true,
+      selected_accounts: 2,
+      included_accounts: 1,
+      accounts: [
+        {
+          scope: a.scope,
+          label: a.label,
+          period: may,
+          amount: m("3500"),
+          proof_status: "current",
+          included: true,
+          exclusion_reason: null,
+          reason_codes: [],
+        },
+        {
+          scope: b.scope,
+          label: b.label,
+          period: april,
+          amount: m(null),
+          proof_status: "stale",
+          included: false,
+          exclusion_reason: "source_proof_stale",
+          reason_codes: ["source_proof_stale"],
+        },
+      ],
+      reason_codes: ["known_source_history_coupons_only"],
+    },
     mixed_result: {
       known_result: m("800"),
       rate: m(null, "fraction"),
