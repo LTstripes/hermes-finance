@@ -595,6 +595,86 @@ def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, m
     )
 
 
+@pytest.mark.parametrize(
+    "blocker", [None, "assumption", "extra_reason", "wrong_period", "wrong_source"]
+)
+def test_card_known_source_only_components_require_current_exact_native_proof(
+    db, monkeypatch, blocker
+):
+    source_fixture(monkeypatch)
+    view = read(db).model_dump(mode="python")
+
+    def detail(session, *, scope, start, end, isin):
+        def metric(value):
+            return SimpleNamespace(
+                value=value,
+                status="provisional",
+                reason_codes=("source_sections_not_financially_accepted",)
+                + (("missing_economic_endpoint",) if blocker == "extra_reason" else ()),
+                assumptions=("estimated_cash",) if blocker == "assumption" else (),
+            )
+
+        return {
+            "analysis": SimpleNamespace(
+                opening_date=date(2020, 1, 1) if blocker == "wrong_period" else start,
+                closing_date=end,
+                assumptions=("source_only_xml_pdf",) if blocker != "wrong_source" else (),
+                closing=SimpleNamespace(
+                    quantity=Decimal("3"), date=end, reported_value_kopecks=900, reason_codes=()
+                ),
+                pnl=metric(140),
+                components={
+                    name: metric(value)
+                    for name, value in {
+                        "coupons": 35,
+                        "dividends": 15,
+                        "valuation_and_trades": 100,
+                        "fees": 10,
+                        "taxes": 0,
+                        "redemption": 0,
+                    }.items()
+                },
+            )
+        }
+
+    monkeypatch.setattr(overall.returns_view, "read_detail", detail)
+    with db.session_factory() as session:
+        card = overall.read_instrument_card(session, ISIN, overview=view)
+    assert card["summary"]["pnl"]["value"] == ("280" if blocker is None else None)
+    assert card["summary"]["coupons"]["value"] == ("70" if blocker is None else None)
+    assert card["summary"]["dividends"]["value"] == ("30" if blocker is None else None)
+    assert card["summary"]["rate"]["value"] is None
+    assert (
+        "combined_rate_periods_and_flows_not_proven"
+        not in card["summary"]["quantity"]["reason_codes"]
+    )
+
+
+def test_income_isin_sum_retains_current_source_only_authority_without_promoting_estimates(
+    db, monkeypatch
+):
+    source_fixture(monkeypatch)
+    original = overall.source_investment_proofs.read_report_summaries
+
+    def source_only(session, **kwargs):
+        reports = original(session, **kwargs)
+        for values in kwargs["analyses"].values():
+            for analysis in values.values():
+                analysis.assumptions = ("source_only_xml_pdf",)
+                analysis.events = ()
+                item = analysis.components["coupons"]
+                item.status = "provisional"
+                item.reason_codes = ("source_sections_not_financially_accepted",)
+                item.assumptions = ()
+        return reports
+
+    monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", source_only)
+    with db.session_factory() as session:
+        income = overall.read_income(session, kind="coupon")
+    assert income["instruments"][0]["amount"]["value"] == "50"
+    assert "known_account_income_not_fully_attributed" in income["reason_codes"]
+
+
 def test_income_keeps_known_unattributed_operations_without_inventing_an_isin(db, monkeypatch):
     from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
 

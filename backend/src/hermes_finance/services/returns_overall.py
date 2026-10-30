@@ -662,11 +662,29 @@ def _known_sum(metrics, *, method):
     )
 
 
-def _component_metric(item):
+def _current_source_analysis(analysis, period, *, current):
+    # Callers have just read the current exact proof; this is its native
+    # analysis, never a statement estimate or an interior-period fallback.
+    return bool(
+        current
+        and period
+        and getattr(analysis, "opening_date", None) == period["start"]
+        and getattr(analysis, "closing_date", None) == period["end"]
+        and tuple(getattr(analysis, "assumptions", ())) == ("source_only_xml_pdf",)
+    )
+
+
+def _component_metric(item, *, current_source=False):
     # A known partial credited component is useful; provisional assumptions do
     # not become a supported addend merely because they have a numeric value.
+    source_only = (
+        current_source
+        and item.status == "provisional"
+        and set(item.reason_codes) == {"source_sections_not_financially_accepted"}
+        and not getattr(item, "assumptions", ())
+    )
     return returns_view.metric(
-        item.value if item.status in {"supported", "partial"} else None,
+        item.value if item.status in {"supported", "partial"} or source_only else None,
         reasons=item.reason_codes,
         method="instrument_return_v2",
         estimate=False,
@@ -723,14 +741,20 @@ def read_instrument_card(session, isin, *, overview=None):
         details = [row["detail"] for row in accounts if row["included"] and row["detail"]]
         omitted = len(details) != len(accounts)
 
-        def aggregate(name, *, component=False):
+        def aggregate(name):
             operands = [
-                _component_metric(row["analysis"].components[name])
-                if component
-                else _component_metric(
-                    row["analysis"].pnl if name == "pnl" else row["analysis"].components[name]
+                _component_metric(
+                    row["detail"]["analysis"].pnl
+                    if name == "pnl"
+                    else row["detail"]["analysis"].components[name],
+                    current_source=_current_source_analysis(
+                        row["detail"]["analysis"],
+                        row["period"],
+                        current=row["proof_status"] == "current",
+                    ),
                 )
-                for row in details
+                for row in accounts
+                if row["included"] and row["detail"]
             ]
             if omitted:
                 operands.append(_unknown("instrument_accounts_missing_or_excluded"))
@@ -738,7 +762,7 @@ def read_instrument_card(session, isin, *, overview=None):
 
         endpoints = [row["analysis"].closing for row in details]
         quantities = [e.quantity for e in endpoints if e.quantity is not None]
-        reasons = ["known_instrument_accounts_only", "combined_rate_periods_and_flows_not_proven"]
+        reasons = ["known_instrument_accounts_only"]
         if omitted or len(quantities) != len(endpoints):
             reasons.append("instrument_accounts_missing_or_excluded")
         dates = sorted({e.date for e in endpoints})
@@ -762,10 +786,10 @@ def read_instrument_card(session, isin, *, overview=None):
             "pnl": aggregate("pnl"),
             "coupons": aggregate("coupons"),
             "dividends": aggregate("dividends"),
-            "valuation_and_trades": aggregate("valuation_and_trades", component=True),
-            "costs": aggregate("fees", component=True),
-            "taxes": aggregate("taxes", component=True),
-            "redemption": aggregate("redemption", component=True),
+            "valuation_and_trades": aggregate("valuation_and_trades"),
+            "costs": aggregate("fees"),
+            "taxes": aggregate("taxes"),
+            "redemption": aggregate("redemption"),
             "rate": _unknown("combined_rate_periods_and_flows_not_proven", rate=True),
         }
         return {
@@ -801,7 +825,13 @@ def read_income(session, *, kind):
             start, end = account["period"]["start"], account["period"]["end"]
             seen, conflicts, event_total = {}, set(), 0
             for isin, analysis in captured.get(account["scope"], {}).items():
-                amount = _component_metric(analysis.components[f"{kind}s"])
+                proof = reports.get(account["scope"]) or {}
+                amount = _component_metric(
+                    analysis.components[f"{kind}s"],
+                    current_source=_current_source_analysis(
+                        analysis, account["period"], current=proof.get("status") == "current"
+                    ),
+                )
                 grouped[isin].append(
                     {
                         "scope": account["scope"],

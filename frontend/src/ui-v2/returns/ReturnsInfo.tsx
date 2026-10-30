@@ -3,6 +3,12 @@ import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const reasons: Record<string, string> = {
+  known_instrument_accounts_only:
+    "Сумма известных значений по показанным счетам; пробелы отмечены отдельно.",
+  combined_rate_periods_and_flows_not_proven:
+    "Общий процент по счетам не подтверждён: периоды и денежные потоки проверяются отдельно.",
+  source_sections_not_financially_accepted:
+    "Это аналитические данные выписки; они не заменяют данные финансового закрытия месяца.",
   known_source_history_coupons_only:
     "Учтены только известные полученные купоны из сохранённой истории выписок каждого включённого счёта.",
   current_coupon_history_unavailable:
