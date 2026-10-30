@@ -2306,8 +2306,16 @@ economics, Modified Dietz and XIRR. After the existing immutable XML Save, an
 explicit **Save PDF links** can append `source_return_investment_v1` on the
 existing source-proof host (schema 0067). It retains selected-account normalized
 PDF payout/control cells, exact-native identity label hashes, cancellation
-operands and unresolved-structure descriptors, never originals, extracted text,
-paths, names or calculated returns. It creates no cash, financial receipt,
+operands and unresolved-structure descriptors, never originals, arbitrary extracted
+text, paths, person/account names or calculated returns. Optional security-display
+metadata may retain exact-ISIN labels only from the completed Trade `p_name` and
+same-native Position `active_name` fields already bound by original verification.
+Labels are bounded to 256 characters without control characters and at most32
+distinct values per ISIN. Ambiguity stays explicit; labels never establish identity
+or replace the unchanged hashed attribution keys. They are part of the existing
+native evidence digest, not a catalogue write. Legacy proofs without labels stay
+valid and unnamed; only fresh Preview/explicit confirmation can retain new metadata.
+It creates no cash, financial receipt,
 Apply/Close authority or parallel ledger. S1 revisions and CLOSED financial rows
 are untouched. One original per selected account is required for this Save;
 multiple originals for one account remain Preview-only until disambiguated.
