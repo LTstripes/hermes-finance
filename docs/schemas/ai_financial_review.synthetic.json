@@ -327,7 +327,7 @@
           "periods": "Compare identical dates and coverage. All-history endpoints do not prove intervening monthly valuations; available months are not full history.",
           "authority": "Source-only provisional observations; financial_authority=none. Separate from accepted Performance and financial Close.",
           "identity": "Source account refs are local to this file. No verified join to current_portfolio accounts is asserted.",
-          "events": "Cash legs show account and opposite instrument-flow signs. Events repeat across overlapping intervals and must not be summed across them."
+          "events": "Cash legs show account and opposite instrument-flow signs. Only included_in_interval legs enter the interval cash economics; outside amounts are NULL. producer_eligible preserves source eligibility; counted means at least one eligible in-window cash leg. Cross-boundary dates are chronology, not extra profit. Events repeat across overlapping intervals and must not be summed across them."
         },
         "included_components": [
           "source_linked_cash_and_valuation",
@@ -352,7 +352,9 @@
               "through_date": "2026-08-31",
               "complete_calendar_month": true,
               "interval_ref": null,
-              "reason_codes": ["selected_source_interval_unavailable"]
+              "reason_codes": [
+                "selected_source_interval_unavailable"
+              ]
             },
             "monthly_history_refs": [
               "source-account-1-interval-1"
@@ -714,10 +716,13 @@
                             "instrument_flow": {
                               "amount": "1000.00",
                               "currency": "RUB"
-                            }
+                            },
+                            "included_in_interval": true
                           }
                         ],
-                        "reason_codes": []
+                        "reason_codes": [],
+                        "producer_eligible": true,
+                        "cash_scope": "within_interval"
                       },
                       {
                         "kind": "FEE",
@@ -742,10 +747,13 @@
                             "instrument_flow": {
                               "amount": "10.00",
                               "currency": "RUB"
-                            }
+                            },
+                            "included_in_interval": true
                           }
                         ],
-                        "reason_codes": []
+                        "reason_codes": [],
+                        "producer_eligible": true,
+                        "cash_scope": "within_interval"
                       }
                     ]
                   }

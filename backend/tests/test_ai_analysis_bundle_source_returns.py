@@ -333,3 +333,163 @@ def test_producer_local_bad_instrument_retains_known_coupon_and_good_neighbor():
     assert (
         next(e for e in bad["events"] if e["kind"] == "COUPON")["net_payout"]["amount"] == "120.00"
     )
+
+
+def test_snapshot_proof_derivation_is_bounded_copy_isolated_and_discarded(database, monkeypatch):
+    from calendar import monthrange
+    from datetime import timedelta
+
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+    from hermes_finance.services.source_monthly_returns import (
+        _SOURCE_INVESTMENT_READS,
+        source_read_snapshot,
+    )
+
+    _save(database, monkeypatch)
+    original = proofs._derive
+    calls = []
+
+    def derive(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", derive)
+    with database.session_factory() as session:
+        with source_read_snapshot(session):
+            first = proofs.read_reports(session, source_account=ACCOUNT)
+            first[0]["interval"]["pnl"]["value"] = "-999"
+            for month in range(1, 13):
+                day = date(2030, month, 1)
+                read_instrument_returns(
+                    session,
+                    source_account=ACCOUNT,
+                    opening_date=day - timedelta(days=1),
+                    closing_date=day.replace(day=monthrange(2030, month)[1]),
+                    include_monthly_history=False,
+                )
+            captured = {}
+            again = proofs.read_reports(session, source_account=ACCOUNT, analyses=captured)
+            assert again[0]["interval"]["pnl"]["value"] == "9000"
+            assert captured
+            assert len(calls) == 1
+        assert _SOURCE_INVESTMENT_READS not in session.info
+        row = session.scalar(
+            select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+        )
+        row.classification = "unknown" if row.classification != "unknown" else "fee"
+        session.commit()
+        fresh = proofs.read_reports(session, source_account=ACCOUNT)
+        assert fresh[0]["status"] == "stale" and fresh[0]["interval"] is None
+        assert len(calls) == 2
+        with pytest.raises(RuntimeError, match="synthetic exit"):
+            with source_read_snapshot(session):
+                proofs.read_reports(session, source_account=ACCOUNT)
+                raise RuntimeError("synthetic exit")
+        assert _SOURCE_INVESTMENT_READS not in session.info
+
+
+def test_all_history_same_end_uses_ordinary_latest_proof_tiebreak(database, monkeypatch):
+    from datetime import timedelta
+
+    _, doc, raw, report, money = investment_case()
+    proof, original = _derived(doc, raw, report, money)
+    older = copy.deepcopy(proof)
+    older.update(proof_id=1, covered_from="2028-01-01")
+    older["interval"]["opening_date"] = "2027-12-31"
+    newer = copy.deepcopy(proof)
+    newer.update(proof_id=2, covered_from="2029-01-01")
+    newer["interval"]["opening_date"] = "2028-12-31"
+    captured = {}
+    for p in (older, newer):
+        start = date.fromisoformat(p["covered_from"]) - timedelta(days=1)
+        captured[p["proof_id"]] = {
+            isin: replace(
+                a,
+                opening_date=start,
+                opening=replace(a.opening, date=start),
+                history_start=start + timedelta(days=1),
+            )
+            for isin, a in original.items()
+        }
+
+    def reports(session, **kwargs):
+        kwargs["analyses"].update(copy.deepcopy(captured))
+        return [newer, older]
+
+    monkeypatch.setattr(proofs, "read_reports", reports)
+    monkeypatch.setattr(adapter, "_source_scopes", lambda s: {})
+    monkeypatch.setattr(adapter, "_selected_sources", lambda *a: ([], None))
+    monkeypatch.setattr(
+        adapter, "read_monthly_returns", lambda *a, **kw: SimpleNamespace(months=())
+    )
+    with database.session_factory() as session:
+        section = _section(session)
+        ordinary = proofs.instrument_result(session, "private-999", [], None, None, None)
+    account = section["data"]["accounts"][0]
+    chosen = next(i for i in account["intervals"] if i["ref"] == account["all_history_ref"])
+    assert (
+        chosen["opening_date"] == str(ordinary.instruments[0].analysis.opening_date) == "2028-12-31"
+    )
+
+
+def test_event_cash_eligibility_at_both_boundaries_preserves_producer_result():
+    from hermes_finance.domain.instrument_return import (
+        CashLeg,
+        InstrumentEvent,
+        calculate_economics,
+    )
+
+    _, doc, raw, report, money = investment_case()
+    _, analyses = _derived(doc, raw, report, money)
+    a = next(iter(analyses.values()))
+    late = InstrumentEvent(
+        event_key="late-private",
+        provider="private",
+        native_source_account="private",
+        isin="RU000A000000",
+        kind="BUY",
+        source_references=(),
+        event_date=END,
+        cash_settlement_date=date(2030, 2, 1),
+        depository_settlement_date=END,
+        quantity_delta=Decimal(1),
+        native_trade_amount_kopecks=100000,
+        cash_legs=(CashLeg("trade", date(2030, 2, 1), -100000, 100000, (), "late"),),
+        reason_codes=("cross_boundary_settlement",),
+    )
+    early = replace(
+        late,
+        event_key="early-private",
+        event_date=date(2030, 1, 2),
+        cash_settlement_date=date(2030, 1, 2),
+        depository_settlement_date=date(2030, 1, 2),
+        cash_legs=(
+            CashLeg("commission", START, -1000, 1000, (), "earlier"),
+            CashLeg("trade", date(2030, 1, 2), -50000, 50000, (), "inside"),
+        ),
+    )
+    components, pnl, known, dietz, estimate = calculate_economics(
+        a.opening, a.closing, (late, early), a.coverage
+    )
+    a = replace(
+        a,
+        events=(late, early),
+        components=components,
+        pnl=pnl,
+        known_subtotal=known,
+        modified_dietz=dietz,
+        statement_estimate=estimate,
+    )
+    exported = adapter._instrument("RU000A000000", {}, a)
+    early_row, late_row = exported["events"]
+    assert late_row["producer_eligible"] and not late_row["counted"]
+    assert late_row["cash_date"] == "2030-02-01" and late_row["trade_amount"] is None
+    assert late_row["cash_legs"][0]["account_cash"] is None
+    assert not late_row["cash_legs"][0]["included_in_interval"]
+    assert early_row["counted"] and early_row["cash_scope"] == "cross_boundary"
+    assert early_row["cash_legs"][0]["account_cash"] is None
+    assert not early_row["cash_legs"][0]["included_in_interval"]
+    assert early_row["cash_legs"][1]["account_cash"]["amount"] == "-500.00"
+    assert early_row["cash_legs"][1]["included_in_interval"]
+    assert exported["metrics"]["pnl"]["value"] == adapter._money(pnl.value)
+    assert pnl.value == 60000  # 1100 endpoint minus the sole in-window 500 purchase

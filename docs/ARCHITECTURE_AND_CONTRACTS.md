@@ -14081,6 +14081,18 @@ The embedded reading guide explains personal return versus YTM, capital flows,
 NULL versus zero, honest period comparisons and double counting: components,
 events and overlapping intervals explain results and must not be added again.
 Account and instrument results and percentage rates must not be summed.
+All-history selection follows the ordinary reader's closing-date/latest-proof
+tie-break; the proof identity is internal and never exported. Within the existing
+read snapshot, derived proof results and analyses are reused by source readers
+through copy-isolated request-local state, discarded on exit (including failure).
+There is no cross-request cache or stale fallback.
+
+Event chronology can cross a selected boundary. Each cash leg explicitly states
+`included_in_interval`; amounts outside `(opening_date, closing_date]` are NULL.
+`producer_eligible` retains source eligibility, while `counted` means at least one
+eligible cash leg lies inside that interval. Aggregate event cash details are
+NULL for cross-boundary events; dates remain explanatory. This projects the
+existing economics' eligibility and does not calculate another return.
 The existing local JSON download/CTA is retained; no upload, provider call or
 financial write occurs.
 

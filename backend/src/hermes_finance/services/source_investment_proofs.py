@@ -5,6 +5,7 @@ No original cache, cash ledger, financial writer or stored calculated return.
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -19,7 +20,10 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import source_intake
 from hermes_finance.services.broker_statement_provisional import ProvisionalStaleError
-from hermes_finance.services.source_monthly_returns import _selected_sources
+from hermes_finance.services.source_monthly_returns import (
+    _SOURCE_INVESTMENT_READS,
+    _selected_sources,
+)
 from hermes_finance.services.source_return_proofs import FORMS, ProofError, _epoch
 from hermes_finance.source_proof_file import file_incarnation
 from hermes_finance.statement_import import mybroker
@@ -365,6 +369,15 @@ def _derive(session, row, plan, *, analyses=None):
 
 @coherent_read_operation
 def read_reports(session, *, source_account=None, analyses=None):
+    # Reuse derivation only inside the existing read-only coherent snapshot.
+    # Copies prevent one presentation consumer from altering another's operands.
+    cache = session.info.get(_SOURCE_INVESTMENT_READS)
+    if cache is not None and source_account in cache:
+        result, captured = deepcopy(cache[source_account])
+        if analyses is not None:
+            analyses.update(captured)
+        return result
+    captured = {} if cache is not None else None
     rows = session.scalars(
         select(SourceReturnProof)
         .where(SourceReturnProof.proof_version == VERSION)
@@ -400,10 +413,12 @@ def read_reports(session, *, source_account=None, analyses=None):
             "financial_authority": "none",
         }
         try:
-            derived = {} if analyses is not None else None
+            derived = {} if analyses is not None or captured is not None else None
             item["interval"] = _derive(session, row, plan, analyses=derived)
             if analyses is not None:
                 analyses[row.id] = derived
+            if captured is not None:
+                captured[row.id] = derived
         except (ProofError, ValueError, TypeError, KeyError, ArithmeticError, OSError) as error:
             item.update(
                 status="stale",
@@ -412,6 +427,8 @@ def read_reports(session, *, source_account=None, analyses=None):
                 ],
             )
         result.append(item)
+    if cache is not None:
+        cache[source_account] = deepcopy((result, captured))
     return result
 
 

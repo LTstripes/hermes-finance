@@ -32,7 +32,7 @@ READING_GUIDE = {
     "periods": "Compare identical dates and coverage. All-history endpoints do not prove intervening monthly valuations; available months are not full history.",
     "authority": "Source-only provisional observations; financial_authority=none. Separate from accepted Performance and financial Close.",
     "identity": "Source account refs are local to this file. No verified join to current_portfolio accounts is asserted.",
-    "events": "Cash legs show account and opposite instrument-flow signs. Events repeat across overlapping intervals and must not be summed across them.",
+    "events": "Cash legs show account and opposite instrument-flow signs. Only included_in_interval legs enter the interval cash economics; outside amounts are NULL. producer_eligible preserves source eligibility; counted means at least one eligible in-window cash leg. Cross-boundary dates are chronology, not extra profit. Events repeat across overlapping intervals and must not be summed across them.",
 }
 EXCLUDED = [
     "unproved_realized_unrealized_split",
@@ -108,12 +108,17 @@ def _endpoint(endpoint):
 
 def _events(analysis):
     rows = []
+
+    def in_window(day):
+        return day is not None and analysis.opening_date < day <= analysis.closing_date
+
     for event in analysis.events:
-        # The detail reader uses any economic date, not just the trade date.
+        # Preserve cross-boundary chronology, but apply the economics' cash
+        # window separately to every leg. Outside cash amounts are not exported.
         if not (
             event.event_date is None
             or any(
-                d is not None and analysis.opening_date < d <= analysis.closing_date
+                in_window(d)
                 for d in (
                     event.event_date,
                     event.cash_settlement_date,
@@ -123,6 +128,10 @@ def _events(analysis):
             )
         ):
             continue
+        eligible = event.counted and event.current
+        all_cash_inside = bool(event.cash_legs) and all(
+            in_window(leg.date) for leg in event.cash_legs
+        )
         rows.append(
             {
                 "kind": event.kind,
@@ -133,21 +142,36 @@ def _events(analysis):
                 "quantity_date": None
                 if event.depository_settlement_date is None
                 else event.depository_settlement_date.isoformat(),
-                "quantity_delta": None
-                if event.quantity_delta is None
-                else str(event.quantity_delta),
-                "trade_amount": _money(event.native_trade_amount_kopecks),
-                "accrued_interest": _money(event.accrued_interest_kopecks),
-                "commission": _money(event.commission_kopecks),
-                "gross_payout": _money(event.gross_payout_kopecks),
-                "withheld_tax": _money(event.withheld_tax_kopecks),
-                "net_payout": _money(event.net_payout_kopecks),
-                "counted": event.counted and event.current,
+                "quantity_delta": str(event.quantity_delta)
+                if event.quantity_delta is not None
+                and in_window(event.depository_settlement_date or event.event_date)
+                else None,
+                **{
+                    name: _money(getattr(event, field)) if all_cash_inside else None
+                    for name, field in (
+                        ("trade_amount", "native_trade_amount_kopecks"),
+                        ("accrued_interest", "accrued_interest_kopecks"),
+                        ("commission", "commission_kopecks"),
+                        ("gross_payout", "gross_payout_kopecks"),
+                        ("withheld_tax", "withheld_tax_kopecks"),
+                        ("net_payout", "net_payout_kopecks"),
+                    )
+                },
+                "producer_eligible": eligible,
+                "counted": eligible and any(in_window(leg.date) for leg in event.cash_legs),
+                "cash_scope": "no_cash"
+                if not event.cash_legs
+                else ("within_interval" if all_cash_inside else "cross_boundary"),
                 "cash_legs": [
                     {
                         "date": leg.date.isoformat(),
-                        "account_cash": _money(leg.account_cash_kopecks),
-                        "instrument_flow": _money(leg.instrument_flow_kopecks),
+                        "account_cash": _money(leg.account_cash_kopecks)
+                        if in_window(leg.date)
+                        else None,
+                        "instrument_flow": _money(leg.instrument_flow_kopecks)
+                        if in_window(leg.date)
+                        else None,
+                        "included_in_interval": eligible and in_window(leg.date),
                     }
                     for leg in event.cash_legs
                 ],
@@ -330,6 +354,7 @@ def source_returns_section(session, *, as_of_date, reporting_period):
                 for isin, m in identities.items()
             }
             intervals = {}
+            proof_order = {}
             # The same latest scope wins as in the ordinary proof reader. A stale
             # latest scope never falls back to a formerly numeric result.
             for proof in sorted(proofs, key=lambda p: p["proof_id"], reverse=True):
@@ -337,6 +362,7 @@ def source_returns_section(session, *, as_of_date, reporting_period):
                     continue
                 key = (proof["covered_from"], proof["covered_to"])
                 if key not in intervals:
+                    proof_order[key] = proof["proof_id"]
                     intervals[key] = _proof_interval(
                         proof, analyses.get(proof["proof_id"], {}), metadata
                     )
@@ -354,7 +380,24 @@ def source_returns_section(session, *, as_of_date, reporting_period):
             for index, item in enumerate(ordered, 1):
                 item["ref"] = f"source-account-{ordinal}-interval-{index}"
             history = [i for i in ordered if i["history_from_zero"]]
-            whole = max(history, key=lambda i: i["closing_date"]) if history else None
+            whole = (
+                max(
+                    history,
+                    key=lambda i: (
+                        i["closing_date"],
+                        proof_order[
+                            (
+                                (
+                                    date.fromisoformat(i["opening_date"]) + timedelta(days=1)
+                                ).isoformat(),
+                                i["closing_date"],
+                            )
+                        ],
+                    ),
+                )
+                if history
+                else None
+            )
             requested_end = min(month_end, as_of_date)
             selected_interval = next(
                 (

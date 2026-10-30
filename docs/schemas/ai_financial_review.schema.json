@@ -263,7 +263,8 @@
       "required": [
         "date",
         "account_cash",
-        "instrument_flow"
+        "instrument_flow",
+        "included_in_interval"
       ],
       "properties": {
         "date": {
@@ -289,6 +290,9 @@
               "type": "null"
             }
           ]
+        },
+        "included_in_interval": {
+          "type": "boolean"
         }
       }
     },
@@ -309,7 +313,9 @@
         "net_payout",
         "counted",
         "cash_legs",
-        "reason_codes"
+        "reason_codes",
+        "producer_eligible",
+        "cash_scope"
       ],
       "properties": {
         "kind": {
@@ -439,6 +445,16 @@
         },
         "reason_codes": {
           "$ref": "#/$defs/reason_codes"
+        },
+        "producer_eligible": {
+          "type": "boolean"
+        },
+        "cash_scope": {
+          "enum": [
+            "no_cash",
+            "within_interval",
+            "cross_boundary"
+          ]
         }
       }
     },
