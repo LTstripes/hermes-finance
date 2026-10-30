@@ -813,12 +813,12 @@
           "snapshot": "Current persisted Returns snapshot, independent of the selected reporting month and its historical as_of_date. Observation dates and intervals belong to each operand; generated_at is not a valuation date.",
           "mixed_result": "Known included nonoverlapping components only. This is partial, not full portfolio P&L or a lower bound: omitted components may be negative. Inspect selected, available, included, exclusion_reason, dates, method and authority. There is no common portfolio rate.",
           "counting": "Coupons/dividends and costs may already be included in P&L. Components and events explain it; never add them again. Do not add account and instrument results or sum rates.",
-          "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies.",
-          "gold": "Saved valuation and cost-based unrealized result only where supported by the shared reader. Cost return is nonannualized. Snapshot observations are not a dated trading history or realized return.",
+          "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies. Event attribution is not asserted: known account income may be unattributed to an instrument, and instrument events do not constitute a complete account payment ledger.",
+          "gold": "Saved snapshot cost return is nonannualized. Separate owner_manual_gold_history facts retain owner_attestation authority, completeness/zero-start declarations, event amount/fee basis and independent result reasons. Only the producer's exact as_of_date event prefix enters its result; valuation_date can be NULL. Tax treatment is not provided. Revisions are alternative history versions, never additional events or profit. Do not add snapshot unrealized results to overlapping whole-history results.",
           "instruments": "Unified instrument summaries retain their own supported amount and date bounds. Every rate is exported independently with its method and availability; do not sum account rates.",
           "unknown": "NULL is unknown/unavailable, not zero. Known partial income can coexist with unknown valuation or return.",
           "identity": "Source account refs match source_returns within this file. Component and saved snapshot refs are local pseudonyms, not account numbers or database identities.",
-          "authority": "Per-component authority remains source_only or accepted_snapshot. This read-only presentation does not confer financial Close authority on provisional source observations."
+          "authority": "Per-component source_only, accepted_snapshot and owner_attestation authority remains explicit. This read-only presentation does not confer financial Close authority on source observations or attestations."
         },
         "overall": {
           "pnl": {
@@ -1468,6 +1468,7 @@
         },
         "gold": {
           "snapshots": [],
+          "histories": [],
           "period_result": {
             "value": null,
             "unit": "RUB",
@@ -1487,6 +1488,7 @@
           "source_only_not_financial_close"
         ],
         "coupon_income": {
+          "event_attribution": "not_asserted",
           "known_total": {
             "value": {
               "amount": "0.00",
@@ -1528,6 +1530,7 @@
           ]
         },
         "dividend_income": {
+          "event_attribution": "not_asserted",
           "known_total": {
             "value": {
               "amount": "0.00",

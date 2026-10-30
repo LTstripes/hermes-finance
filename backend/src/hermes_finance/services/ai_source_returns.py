@@ -10,6 +10,7 @@ from decimal import Decimal, localcontext
 
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.services import returns_overall, source_investment_proofs
+from hermes_finance.services.owner_manual_gold_history import read_gold_histories
 from hermes_finance.services.returns_view import _source_scopes
 from hermes_finance.services.source_instrument_returns import (
     _identities,
@@ -473,12 +474,12 @@ OVERALL_READING_GUIDE = {
     "snapshot": "Current persisted Returns snapshot, independent of the selected reporting month and its historical as_of_date. Observation dates and intervals belong to each operand; generated_at is not a valuation date.",
     "mixed_result": "Known included nonoverlapping components only. This is partial, not full portfolio P&L or a lower bound: omitted components may be negative. Inspect selected, available, included, exclusion_reason, dates, method and authority. There is no common portfolio rate.",
     "counting": READING_GUIDE["counting"],
-    "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies.",
-    "gold": "Saved valuation and cost-based unrealized result only where supported by the shared reader. Cost return is nonannualized. Snapshot observations are not a dated trading history or realized return.",
+    "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies. Event attribution is not asserted: known account income may be unattributed to an instrument, and instrument events do not constitute a complete account payment ledger.",
+    "gold": "Saved snapshot cost return is nonannualized. Separate owner_manual_gold_history facts retain owner_attestation authority, completeness/zero-start declarations, event amount/fee basis and independent result reasons. Only the producer's exact as_of_date event prefix enters its result; valuation_date can be NULL. Tax treatment is not provided. Revisions are alternative history versions, never additional events or profit. Do not add snapshot unrealized results to overlapping whole-history results.",
     "instruments": "Unified instrument summaries retain their own supported amount and date bounds. Every rate is exported independently with its method and availability; do not sum account rates.",
     "unknown": READING_GUIDE["unknown"],
     "identity": "Source account refs match source_returns within this file. Component and saved snapshot refs are local pseudonyms, not account numbers or database identities.",
-    "authority": "Per-component authority remains source_only or accepted_snapshot. This read-only presentation does not confer financial Close authority on provisional source observations.",
+    "authority": "Per-component source_only, accepted_snapshot and owner_attestation authority remains explicit. This read-only presentation does not confer financial Close authority on source observations or attestations.",
 }
 
 
@@ -517,6 +518,7 @@ def _overall_result(raw):
 
 def _overall_income(raw, account_refs):
     return {
+        "event_attribution": "not_asserted",
         "known_total": _overall_metric(raw["known_total"]),
         "partial": raw["partial"],
         "selected_accounts": raw["selected_accounts"],
@@ -569,11 +571,172 @@ def _overall_mixed(raw, account_refs):
     }
 
 
-def _overall_gold(raw):
+def _gold_declaration(raw):
+    return {
+        name: raw[name]
+        for name in (
+            "covered_from",
+            "covered_to",
+            "complete",
+            "zero_start",
+            "current_quantity",
+            "current_quantity_date",
+        )
+    }
+
+
+def _gold_events(raw, refs):
+    return [
+        {
+            "ref": refs[row["event_id"]],
+            **{
+                name: row[name]
+                for name in (
+                    "event_date",
+                    "side",
+                    "grams",
+                    "amount_basis",
+                    "unit_price_rub",
+                    "fee_state",
+                )
+            },
+            "amount": _money(row["amount_kopecks"]),
+            "separate_fee": _money(row["separate_fee_kopecks"]),
+        }
+        for row in raw
+    ]
+
+
+def _gold_history(raw, index, account_refs, instrument_refs):
+    if not raw["events_loaded"]:
+        raise ValueError("gold_history_events_not_loaded")
+    event_keys = sorted(
+        {row["event_id"] for row in raw["events"]}
+        | {
+            row["event_id"]
+            for revision in raw["revisions"]
+            for row in revision["declaration"]["events"]
+        }
+    )
+    refs = {
+        key: f"returns-gold-history-{index}-event-{ordinal}"
+        for ordinal, key in enumerate(event_keys, 1)
+    }
+    valuation, result = raw["valuation"], raw["result"]
+    return {
+        "ref": f"returns-gold-history-{index}",
+        "account_ref": account_refs[raw["account_id"]],
+        "instrument_ref": instrument_refs[raw["instrument_id"]],
+        **{
+            name: raw[name]
+            for name in (
+                "contract_version",
+                "source_kind",
+                "authority",
+                "revision",
+                "currentness",
+                "events_loaded",
+            )
+        },
+        "declaration": _gold_declaration(raw["declaration"]),
+        "events": _gold_events(raw["events"], refs),
+        "valuation": None
+        if valuation is None
+        else {
+            **{
+                name: valuation[name]
+                for name in (
+                    "date",
+                    "price_date",
+                    "snapshot_date",
+                    "quantity",
+                    "price_source",
+                    "month_status",
+                    "provisional",
+                )
+            },
+            "market_value": _money(valuation["market_value_kopecks"]),
+        },
+        "result": {
+            **{
+                name: _money(result[name + "_kopecks"])
+                for name in (
+                    "total_result",
+                    "realized_result",
+                    "unrealized_result",
+                    "remaining_cost",
+                    "buy_amount",
+                    "sale_amount",
+                    "separate_fees",
+                    "net_sales",
+                    "valuation",
+                )
+            },
+            **{
+                name: result[name]
+                for name in (
+                    "calculated_quantity",
+                    "declared_calculated_quantity",
+                    "as_of_date",
+                    "valuation_date",
+                    "valuation_basis",
+                    "valuation_provisional",
+                    "amount_basis",
+                    "tax_treatment",
+                    "method",
+                )
+            },
+            "period": {name: result["period"][name] for name in ("covered_from", "covered_to")},
+            **{
+                name: sorted(set(result[name]))
+                for name in (
+                    "reason_codes",
+                    "total_reason_codes",
+                    "realized_reason_codes",
+                    "unrealized_reason_codes",
+                    "decomposition_reason_codes",
+                )
+            },
+        },
+        "reason_codes": sorted(set(raw["reason_codes"])),
+        "revisions": [
+            {
+                "revision": row["revision"],
+                "declaration": _gold_declaration(row["declaration"]),
+                "events": _gold_events(row["declaration"]["events"], refs),
+            }
+            for row in raw["revisions"]
+        ],
+    }
+
+
+def _overall_gold(raw, histories):
+    account_refs = {
+        key: f"returns-gold-account-{index}"
+        for index, key in enumerate(
+            sorted(
+                {row["account_id"] for row in raw["snapshots"]}
+                | {row["account_id"] for row in histories}
+            ),
+            1,
+        )
+    }
+    instrument_refs = {
+        key: f"returns-gold-instrument-{index}"
+        for index, key in enumerate(
+            sorted(
+                {row["instrument_id"] for row in raw["snapshots"]}
+                | {row["instrument_id"] for row in histories}
+            ),
+            1,
+        )
+    }
     return {
         "snapshots": [
             {
                 "ref": f"returns-gold-snapshot-{index}",
+                "account_ref": account_refs[row["account_id"]],
+                "instrument_ref": instrument_refs[row["instrument_id"]],
                 "name": row["label"],
                 "date": _overall_date(row["date"]),
                 "quantity": row["quantity"],
@@ -583,6 +746,10 @@ def _overall_gold(raw):
                 },
             }
             for index, row in enumerate(raw["snapshots"], 1)
+        ],
+        "histories": [
+            _gold_history(row, index, account_refs, instrument_refs)
+            for index, row in enumerate(histories, 1)
         ],
         "period_result": _overall_metric(raw["period_result"]),
         "reason_codes": sorted(set(raw["reason_codes"])),
@@ -757,7 +924,9 @@ def returns_overall_section(session, *, source_account_refs, source_section):
                 ],
                 "reason_codes": sorted(set(overview["deposits"]["reason_codes"])),
             },
-            "gold": _overall_gold(overview["gold"]),
+            "gold": _overall_gold(
+                overview["gold"], read_gold_histories(session, include_events=True)
+            ),
             "reason_codes": sorted(set(overview["reason_codes"])),
         }
         return {"status": "partial", "reason_codes": data["reason_codes"], "data": data}

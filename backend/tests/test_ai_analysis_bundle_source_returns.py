@@ -200,15 +200,15 @@ def test_latest_stale_scope_never_revives_numeric_month_or_history(database, mon
 def test_current_available_history_is_not_limited_to_selected_month_or_as_of(database, monkeypatch):
     _save(database, monkeypatch)
     with database.session_factory() as session:
-        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+        create_reporting_month(session, year=2029, month=12, snapshot_date=START)
     before = snapshot(database)
     with database.session_factory() as session:
         report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 1, 15)
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
         )
     history = report["sections"]["source_returns"]["data"]
     current = report["sections"]["returns_overall"]["data"]
-    assert history["as_of_date"] == "2030-01-15"
+    assert history["as_of_date"] == "2029-12-31"
     assert history["accounts"][0]["all_history_ref"] is None
     assert current["source_accounts"][0]["period"]["end"] == str(END)
     assert current["source_accounts"][0]["result"]["pnl"]["value"]["amount"] == "90.00"
@@ -285,10 +285,10 @@ def test_saved_gold_projection_keeps_observation_date_cost_result_and_privacy(da
         ordinary = returns_overall.read_overall(session, include_instrument_details=True)
     gold = section["data"]["gold"]
     saved = gold["snapshots"][0]
-    assert saved["date"] == "2030-01-29" and saved["quantity"] == "2"
+    assert saved["date"] == "2030-01-29" and Decimal(saved["quantity"]) == Decimal("2")
     for name in ("market_value", "cost_basis", "unrealized_result", "cost_return"):
         assert saved[name] == adapter._overall_metric(ordinary["gold"]["snapshots"][0][name])
-    assert saved["cost_return"]["value"] == "49.00"
+    assert Decimal(saved["cost_return"]["value"]) == Decimal("49")
     assert gold["period_result"]["value"] is None
     wire = json.dumps(section)
     for forbidden in (
@@ -496,6 +496,331 @@ def test_current_returns_metric_preserves_exact_zero_unknown_units_and_methods()
     assert rate["method"] == "modified_dietz" and rate["unit"] == "percent"
     with pytest.raises(ValueError, match="unit_unsupported"):
         adapter._overall_metric(metric("1", unit="unapproved_unit"))
+
+
+def _gold_history_fixture():
+    events = [
+        {
+            "event_id": "private-buy",
+            "event_date": "2030-01-03",
+            "side": "BUY",
+            "grams": "6",
+            "amount_basis": "actual",
+            "amount_kopecks": "30000",
+            "unit_price_rub": None,
+            "fee_state": "known_zero",
+            "separate_fee_kopecks": "0",
+        },
+        {
+            "event_id": "private-sell",
+            "event_date": "2030-01-16",
+            "side": "SELL",
+            "grams": "2",
+            "amount_basis": "derived_unit_price",
+            "amount_kopecks": "14000",
+            "unit_price_rub": "70",
+            "fee_state": "known",
+            "separate_fee_kopecks": "100",
+        },
+    ]
+    declaration = {
+        "contract_version": "owner_manual_gold_history_v1",
+        "account_id": 40,
+        "instrument_id": 90,
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-01-31",
+        "complete": True,
+        "zero_start": True,
+        "current_quantity": "4",
+        "current_quantity_date": "2030-01-31",
+        "provenance_reference": "D:\\private\\gold-notes",
+        "change_reason": "private audit text",
+        "events": events,
+    }
+    return {
+        "contract_version": "owner_manual_gold_history_v1",
+        "source_kind": "owner_manual_gold_history",
+        "authority": "owner_attestation",
+        "history_id": 70,
+        "revision": 1,
+        "account_id": 40,
+        "instrument_id": 90,
+        "currentness": "current",
+        "declaration": declaration,
+        "events": events,
+        "events_loaded": True,
+        "valuation": {
+            "snapshot_id": 80,
+            "date": "2030-01-29",
+            "price_date": "2030-01-29",
+            "snapshot_date": "2030-01-31",
+            "quantity": "4",
+            "market_value_kopecks": "26000",
+            "price_source": "manual",
+            "month_status": "closed",
+            "provisional": False,
+        },
+        "result": {
+            "total_result_kopecks": "9900",
+            "realized_result_kopecks": "3900",
+            "unrealized_result_kopecks": "6000",
+            "remaining_cost_kopecks": "20000",
+            "buy_amount_kopecks": "30000",
+            "sale_amount_kopecks": "14000",
+            "separate_fees_kopecks": "100",
+            "net_sales_kopecks": "13900",
+            "calculated_quantity": "4",
+            "declared_calculated_quantity": "4",
+            "as_of_date": "2030-01-29",
+            "valuation_kopecks": "26000",
+            "valuation_date": "2030-01-29",
+            "valuation_basis": "saved_snapshot_quote",
+            "valuation_provisional": False,
+            "period": {"covered_from": "2030-01-01", "covered_to": "2030-01-29"},
+            "amount_basis": "derived",
+            "tax_treatment": "not_provided",
+            "method": "owner_gold_complete_from_zero",
+            "reason_codes": [],
+            "total_reason_codes": [],
+            "realized_reason_codes": [],
+            "unrealized_reason_codes": [],
+            "decomposition_reason_codes": [],
+        },
+        "reason_codes": [],
+        "revisions": [
+            {"revision": 1, "declaration": declaration, "accepted_at": "2030-02-01T00:00:00Z"}
+        ],
+    }
+
+
+def test_full_gold_history_allowlist_preserves_basis_dates_fees_and_revision_refs():
+    raw = _gold_history_fixture()
+    baseline = copy.deepcopy(raw)
+    exported = adapter._gold_history(
+        raw, 1, {40: "returns-gold-account-1"}, {90: "returns-gold-instrument-1"}
+    )
+    assert raw == baseline
+    assert exported["result"]["total_result"]["amount"] == "99.00"
+    assert exported["result"]["valuation_date"] == "2030-01-29"
+    assert exported["declaration"]["current_quantity_date"] == "2030-01-31"
+    assert exported["events"][1]["amount_basis"] == "derived_unit_price"
+    assert exported["events"][1]["separate_fee"]["amount"] == "1.00"
+    assert exported["events"][0]["ref"] == exported["revisions"][0]["events"][0]["ref"]
+    assert exported["result"]["tax_treatment"] == "not_provided"
+    validator = Draft202012Validator(
+        {"$defs": SCHEMA["$defs"], "$ref": "#/$defs/returns_gold_history"},
+        format_checker=FormatChecker(),
+    )
+    validator.validate(exported)
+    wire = json.dumps(exported)
+    for forbidden in (
+        "history_id",
+        "account_id",
+        "instrument_id",
+        "snapshot_id",
+        "event_id",
+        "private-buy",
+        "private-sell",
+        "provenance_reference",
+        "change_reason",
+        "accepted_at",
+        "private audit",
+        "private\\\\gold-notes",
+    ):
+        assert forbidden not in wire
+    for key in ("history_id", "account_id", "instrument_id", "provenance_reference", "request_id"):
+        private = copy.deepcopy(exported)
+        private[key] = "private-999"
+        with pytest.raises(ValidationError):
+            validator.validate(private)
+    raw["valuation"] = None
+    raw["result"].update(
+        total_result_kopecks=None,
+        unrealized_result_kopecks=None,
+        as_of_date="2030-01-31",
+        valuation_date=None,
+        valuation_basis=None,
+        valuation_provisional=None,
+        period={"covered_from": "2030-01-01", "covered_to": "2030-01-31"},
+        reason_codes=["gold_saved_valuation_unavailable"],
+        total_reason_codes=["gold_saved_valuation_unavailable"],
+        unrealized_reason_codes=["gold_saved_valuation_unavailable"],
+    )
+    partial = adapter._gold_history(
+        raw, 1, {40: "returns-gold-account-1"}, {90: "returns-gold-instrument-1"}
+    )
+    validator.validate(partial)
+    assert partial["result"]["total_result"] is None
+    assert partial["result"]["unrealized_result"] is None
+    assert partial["result"]["realized_result"]["amount"] == "39.00"
+    assert partial["result"]["realized_reason_codes"] == []
+    assert partial["result"]["as_of_date"] == "2030-01-31"
+    assert partial["result"]["valuation_date"] is None
+    raw["events_loaded"] = False
+    with pytest.raises(ValueError, match="events_not_loaded"):
+        adapter._gold_history(
+            raw, 1, {40: "returns-gold-account-1"}, {90: "returns-gold-instrument-1"}
+        )
+
+
+def _save_manual_gold(database, *, quote=True, draft=False, unknown_fee=False):
+    from hermes_finance.services.owner_manual_gold_history import (
+        apply_gold_history,
+        preview_gold_history,
+    )
+
+    with database.session_factory() as session:
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+        account = Account(name="private-gold-account-424242", account_type="other")
+        instrument = Instrument(name="Synthetic history gold", instrument_type="gold")
+        session.add_all([account, instrument])
+        session.flush()
+        if quote:
+            session.add(
+                PositionSnapshot(
+                    reporting_month_id=month.id,
+                    account_id=account.id,
+                    instrument_id=instrument.id,
+                    quantity=Decimal("4"),
+                    average_cost_per_unit_kopecks=5000,
+                    market_price_per_unit_kopecks=6500,
+                    market_value_kopecks=26000,
+                    cost_basis_kopecks=20000,
+                    unrealized_result_kopecks=6000,
+                    price_date=date(2030, 1, 29),
+                    manual_adjustment=False,
+                )
+            )
+        month.status = "draft" if draft else "closed"
+        account_id, instrument_id = account.id, instrument.id
+        session.commit()
+    intent = {
+        "account_id": account_id,
+        "instrument_id": instrument_id,
+        "expected_revision": 0,
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-01-31",
+        "complete": True,
+        "zero_start": True,
+        "current_quantity": "4",
+        "current_quantity_date": "2030-01-31",
+        "provenance_reference": "D:\\private\\synthetic-history",
+        "events": [
+            {
+                "event_id": "private-buy",
+                "event_date": "2030-01-03",
+                "side": "BUY",
+                "grams": "6",
+                "amount_basis": "actual",
+                "amount_rub": "300.00",
+                "fee_state": "unknown" if unknown_fee else "known_zero",
+            },
+            {
+                "event_id": "private-sell",
+                "event_date": "2030-01-16",
+                "side": "SELL",
+                "grams": "2",
+                "amount_basis": "derived_unit_price",
+                "unit_price_rub": "70.00",
+                "fee_state": "known",
+                "fee_rub": "1.00",
+            },
+        ],
+    }
+    with database.session_factory() as session:
+        preview = preview_gold_history(session, intent)
+        apply_gold_history(
+            session,
+            {
+                **intent,
+                "confirmation_digest": preview["confirmation_digest"],
+                "request_id": "ai-synthetic-gold",
+            },
+        )
+    return intent
+
+
+@pytest.mark.parametrize("mode", ["closed", "draft", "missing_quote", "unknown_fee"])
+def test_current_export_gold_history_matches_shared_producer_and_keeps_local_gaps(database, mode):
+    from hermes_finance.services.owner_manual_gold_history import read_gold_histories
+
+    _save_manual_gold(
+        database,
+        quote=mode != "missing_quote",
+        draft=mode == "draft",
+        unknown_fee=mode == "unknown_fee",
+    )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
+        )
+        producer = read_gold_histories(session)[0]
+        ordinary = returns_overall.read_overall(session)
+    current = report["sections"]["returns_overall"]["data"]
+    history = current["gold"]["histories"][0]
+    assert history["authority"] == "owner_attestation" and history["events_loaded"]
+    assert len(history["events"]) == len(producer["events"]) == 2
+    assert history["declaration"]["complete"] and history["declaration"]["zero_start"]
+    for name in (
+        "total_result",
+        "realized_result",
+        "unrealized_result",
+        "remaining_cost",
+        "buy_amount",
+        "sale_amount",
+        "separate_fees",
+        "net_sales",
+        "valuation",
+    ):
+        assert history["result"][name] == adapter._money(producer["result"][name + "_kopecks"])
+    for name in (
+        "as_of_date",
+        "valuation_date",
+        "valuation_basis",
+        "valuation_provisional",
+        "total_reason_codes",
+        "realized_reason_codes",
+        "unrealized_reason_codes",
+    ):
+        assert history["result"][name] == producer["result"][name]
+    assert current["mixed_result"]["known_result"] == adapter._overall_metric(
+        ordinary["mixed_result"]["known_result"]
+    )
+    if mode in {"closed", "draft"}:
+        assert history["result"]["total_result"]["amount"] == "99.00"
+        assert history["valuation"]["date"] == "2030-01-29"
+        assert history["valuation"]["snapshot_date"] == "2030-01-31"
+        assert history["valuation"]["provisional"] == (mode == "draft")
+        assert current["mixed_result"]["known_result"]["value"]["amount"] == "99.00"
+    if mode == "missing_quote":
+        assert history["result"]["total_result"] is None
+        assert history["result"]["unrealized_result"] is None
+        assert history["result"]["realized_result"]["amount"] == "39.00"
+        assert history["result"]["as_of_date"] == "2030-01-31"
+        assert history["result"]["valuation_date"] is None
+    if mode == "unknown_fee":
+        assert history["events"][0]["separate_fee"] is None
+        assert history["result"]["total_result"] is None
+        assert history["result"]["net_sales"]["amount"] == "139.00"
+    wire = json.dumps(current)
+    for forbidden in (
+        "private-gold-account-424242",
+        "private-buy",
+        "private-sell",
+        "history_id",
+        "account_id",
+        "instrument_id",
+        "snapshot_id",
+        "event_id",
+        "provenance_reference",
+        "synthetic-history",
+        "confirmation_digest",
+        "request_id",
+    ):
+        assert forbidden not in wire
+    validate_ai_financial_review(report)
+    assert snapshot(database) == before
 
 
 def test_monthly_reader_fallback_schema_and_partial_cutoff(database, monkeypatch):

@@ -29,6 +29,502 @@
     "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } }
   },
   "$defs": {
+    "returns_gold_declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "covered_from",
+        "covered_to",
+        "complete",
+        "zero_start",
+        "current_quantity",
+        "current_quantity_date"
+      ],
+      "properties": {
+        "covered_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "covered_to": {
+          "type": "string",
+          "format": "date"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "zero_start": {
+          "type": "boolean"
+        },
+        "current_quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "current_quantity_date": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "returns_gold_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "event_date",
+        "side",
+        "grams",
+        "amount_basis",
+        "unit_price_rub",
+        "fee_state",
+        "amount",
+        "separate_fee"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-gold-history-[1-9][0-9]*-event-[1-9][0-9]*$"
+        },
+        "event_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "grams": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "amount_basis": {
+          "enum": [
+            "actual",
+            "derived_unit_price"
+          ]
+        },
+        "unit_price_rub": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fee_state": {
+          "enum": [
+            "known_zero",
+            "known",
+            "unknown"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "separate_fee": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fee_state": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "separate_fee": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "separate_fee": {
+                "$ref": "#/$defs/money"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "returns_gold_valuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "price_date",
+        "snapshot_date",
+        "quantity",
+        "price_source",
+        "month_status",
+        "provisional",
+        "market_value"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "price_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "snapshot_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "month_status": { "enum": ["closed", "draft"] },
+        "provisional": { "type": "boolean" },
+        "price_source": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "market_value": {
+          "$ref": "#/$defs/money"
+        }
+      }
+    },
+    "returns_gold_history_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_result",
+        "realized_result",
+        "unrealized_result",
+        "remaining_cost",
+        "buy_amount",
+        "sale_amount",
+        "separate_fees",
+        "net_sales",
+        "valuation",
+        "calculated_quantity",
+        "declared_calculated_quantity",
+        "as_of_date",
+        "valuation_date",
+        "valuation_basis",
+        "valuation_provisional",
+        "amount_basis",
+        "tax_treatment",
+        "method",
+        "period",
+        "reason_codes",
+        "total_reason_codes",
+        "realized_reason_codes",
+        "unrealized_reason_codes",
+        "decomposition_reason_codes"
+      ],
+      "properties": {
+        "total_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "realized_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unrealized_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_cost": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buy_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sale_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "separate_fees": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "net_sales": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valuation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calculated_quantity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declared_calculated_quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "as_of_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "valuation_date": {
+          "oneOf": [
+            { "type": "string", "format": "date" },
+            { "type": "null" }
+          ]
+        },
+        "valuation_basis": {
+          "enum": [
+            "saved_snapshot_quote",
+            "owner_declared_zero_quantity",
+            null
+          ]
+        },
+        "valuation_provisional": { "type": ["boolean", "null"] },
+        "amount_basis": {
+          "enum": [
+            "actual",
+            "derived"
+          ]
+        },
+        "tax_treatment": {
+          "const": "not_provided"
+        },
+        "method": {
+          "const": "owner_gold_complete_from_zero"
+        },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "covered_from",
+            "covered_to"
+          ],
+          "properties": {
+            "covered_from": {
+              "type": "string",
+              "format": "date"
+            },
+            "covered_to": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "total_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "realized_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "unrealized_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "decomposition_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_gold_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "account_ref",
+        "instrument_ref",
+        "contract_version",
+        "source_kind",
+        "authority",
+        "revision",
+        "currentness",
+        "events_loaded",
+        "declaration",
+        "events",
+        "valuation",
+        "result",
+        "reason_codes",
+        "revisions"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-gold-history-[1-9][0-9]*$"
+        },
+        "account_ref": {
+          "type": "string",
+          "pattern": "^returns-gold-account-[1-9][0-9]*$"
+        },
+        "instrument_ref": {
+          "type": "string",
+          "pattern": "^returns-gold-instrument-[1-9][0-9]*$"
+        },
+        "contract_version": {
+          "const": "owner_manual_gold_history_v1"
+        },
+        "source_kind": {
+          "const": "owner_manual_gold_history"
+        },
+        "authority": {
+          "const": "owner_attestation"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "currentness": {
+          "enum": [
+            "current",
+            "dependency_changed"
+          ]
+        },
+        "events_loaded": {
+          "const": true
+        },
+        "declaration": {
+          "$ref": "#/$defs/returns_gold_declaration"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_gold_event"
+          }
+        },
+        "valuation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_gold_valuation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/returns_gold_history_result"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "declaration",
+              "events"
+            ],
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "declaration": {
+                "$ref": "#/$defs/returns_gold_declaration"
+              },
+              "events": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/returns_gold_event"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "returns_period": {
       "type": "object",
       "additionalProperties": false,
@@ -270,6 +766,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "event_attribution",
         "known_total",
         "partial",
         "selected_accounts",
@@ -278,6 +775,7 @@
         "reason_codes"
       ],
       "properties": {
+        "event_attribution": { "const": "not_asserted" },
         "known_total": {
           "$ref": "#/$defs/returns_metric"
         },
@@ -404,7 +902,8 @@
         "authority": {
           "enum": [
             "source_only",
-            "accepted_snapshot"
+            "accepted_snapshot",
+            "owner_attestation"
           ]
         },
         "exclusion_reason": {
@@ -466,6 +965,8 @@
       "additionalProperties": false,
       "required": [
         "ref",
+        "account_ref",
+        "instrument_ref",
         "name",
         "date",
         "quantity",
@@ -479,6 +980,8 @@
           "type": "string",
           "pattern": "^returns-gold-snapshot-[1-9][0-9]*$"
         },
+        "account_ref": { "type": "string", "pattern": "^returns-gold-account-[1-9][0-9]*$" },
+        "instrument_ref": { "type": "string", "pattern": "^returns-gold-instrument-[1-9][0-9]*$" },
         "name": {
           "type": "string"
         },
@@ -516,6 +1019,7 @@
       "additionalProperties": false,
       "required": [
         "snapshots",
+        "histories",
         "period_result",
         "reason_codes"
       ],
@@ -526,6 +1030,7 @@
             "$ref": "#/$defs/returns_gold_snapshot"
           }
         },
+        "histories": { "type": "array", "items": { "$ref": "#/$defs/returns_gold_history" } },
         "period_result": {
           "$ref": "#/$defs/returns_metric"
         },
