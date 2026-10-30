@@ -482,7 +482,7 @@ it("shows supported performance for the same closed pair and hides raw reason co
 });
 
 it("keeps the compact entry visible and opens/closes the unchanged accepted metrics", async () => {
-  const { mount } = setup();
+  const { mount, reads } = setup();
   mount();
   await screen.findByTestId("capital-net");
   expect(
@@ -492,9 +492,10 @@ it("keeps the compact entry visible and opens/closes the unchanged accepted metr
   const disclosure = summary.closest("details");
   if (!disclosure) throw new Error("missing accepted performance disclosure");
   expect(disclosure).not.toHaveAttribute("open");
-  expect(await screen.findByText("+7,42%")).not.toBeVisible();
+  expect(reads.filter((read) => read.includes("/api/performance/"))).toEqual([]);
+  expect(screen.queryByText("+7,42%")).toBeNull();
   fireEvent.click(summary);
-  expect(screen.getByText("+7,42%")).toBeVisible();
+  expect(await screen.findByText("+7,42%")).toBeVisible();
   expect(screen.getByText("+6,10%")).toBeVisible();
   expect(within(disclosure).getByRole("link", { name: "Подробнее" })).toHaveAttribute(
     "href",
@@ -505,6 +506,10 @@ it("keeps the compact entry visible and opens/closes the unchanged accepted metr
   expect(bridge).not.toHaveAttribute("open");
   fireEvent.click(summary);
   expect(screen.getByText("+7,42%")).not.toBeVisible();
+  const readCount = reads.length;
+  fireEvent.click(summary);
+  expect(screen.getByText("+7,42%")).toBeVisible();
+  expect(reads).toHaveLength(readCount);
 });
 
 it("reports an unavailable performance metric with an owner-facing reason", async () => {

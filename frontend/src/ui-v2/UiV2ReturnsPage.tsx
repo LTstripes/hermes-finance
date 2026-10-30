@@ -1,17 +1,13 @@
-import { useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { lazy, Suspense, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router";
 import { dateLabel, periodKey, periodLabel } from "./returns/model";
-import {
-  capitalGoldSnapshot,
-  capitalInstrumentAccount,
-  validDetailPeriod,
-} from "./returns/navigation";
+import { capitalGoldSnapshot, capitalGoldHistorySummary, validIsin } from "./returns/navigation";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
 import { accountHref, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { MissingName } from "./returns/ReturnsAvailable";
-import { ReturnsDetail } from "./returns/ReturnsDetail";
+import { ReturnsInstrumentCard } from "./returns/ReturnsInstrumentCard";
 import { Explanation, Value } from "./returns/ReturnsInfo";
 import { UiV2Shell } from "./UiV2Shell";
 
@@ -31,6 +27,9 @@ function Diagnostics({ codes }: { codes: string[] }) {
     </details>
   );
 }
+const ReturnsGoldHistory = lazy(() =>
+  import("./returns/ReturnsGoldHistory").then((module) => ({ default: module.ReturnsGoldHistory })),
+);
 const proofLabels = {
   current: "проверка актуальна",
   stale: "проверка устарела",
@@ -39,9 +38,8 @@ const proofLabels = {
 };
 
 export default function UiV2ReturnsPage() {
+  const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
-  const location = useLocation();
   const goldRef = useRef<HTMLTableRowElement>(null);
   const query = useQuery({
     queryKey: ["returns", "overall"],
@@ -68,44 +66,14 @@ export default function UiV2ReturnsPage() {
       `${row.name} ${row.isin}`.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru")),
     ) ?? [];
   const capitalRequested = params.has("capital_account");
-  const capitalAccount = data && capitalRequested ? capitalInstrumentAccount(data, params) : null;
   const goldSnapshot = data && capitalRequested ? capitalGoldSnapshot(data, params) : null;
+  const goldHistory = data && capitalRequested ? capitalGoldHistorySummary(data, params) : null;
+  const goldFocus = goldHistory ?? goldSnapshot;
   useEffect(() => {
-    if (!data || !capitalAccount || !validDetailPeriod(capitalAccount.period)) return;
-    const next = new URLSearchParams(params);
-    next.delete("capital_account");
-    next.set("detail_scope", capitalAccount.scope);
-    next.set("detail_start", capitalAccount.period.start);
-    next.set("detail_end", capitalAccount.period.end);
-    navigate(
-      { search: next.toString(), hash: location.hash || "#returns-instruments" },
-      { replace: true },
-    );
-  }, [data, capitalAccount, params, navigate, location.hash]);
-  useEffect(() => {
-    if (!goldSnapshot) return;
+    if (!goldFocus) return;
     goldRef.current?.focus({ preventScroll: true });
     goldRef.current?.scrollIntoView?.({ block: "center" });
-  }, [goldSnapshot]);
-  const detailRequested = ["detail_scope", "detail_start", "detail_end"].some((key) =>
-    params.has(key),
-  );
-  const detailAvailable =
-    !capitalRequested &&
-    data?.instruments.some(
-      (row) =>
-        row.isin === expanded &&
-        row.accounts.some(
-          (account) =>
-            validDetailPeriod(account.period) &&
-            params.getAll("detail_scope").length === 1 &&
-            params.getAll("detail_start").length === 1 &&
-            params.getAll("detail_end").length === 1 &&
-            account.scope === params.get("detail_scope") &&
-            account.period.start === params.get("detail_start") &&
-            account.period.end === params.get("detail_end"),
-        ),
-    );
+  }, [goldFocus]);
   return (
     <div className={styles.page}>
       <UiV2Shell
@@ -198,9 +166,11 @@ export default function UiV2ReturnsPage() {
                                   ? "Депозиты"
                                   : "Золото"}{" "}
                               ·{" "}
-                              {component.authority === "source_only"
-                                ? "по выпискам, оценка"
-                                : "сохранённый снимок закрытого месяца"}
+                              {component.authority === "owner_attestation"
+                                ? "Сведения владельца (owner_attestation)"
+                                : component.authority === "source_only"
+                                  ? "по выпискам, оценка"
+                                  : "сохранённый снимок закрытого месяца"}
                             </small>
                             <details className={styles.diagnostics}>
                               <summary>Метод и покрытие</summary>
@@ -263,8 +233,22 @@ export default function UiV2ReturnsPage() {
                 </div>
               )}
             </section>
-            <ReturnsCouponIncome value={data.coupon_income} />
-            {capitalRequested && !capitalAccount && !goldSnapshot && (
+            <ReturnsCouponIncome
+              value={data.coupon_income}
+              revision={query.dataUpdatedAt}
+              openInstrument={(isin) =>
+                change({ isin, q: null, detail_scope: null, detail_start: null, detail_end: null })
+              }
+            />
+            <ReturnsCouponIncome
+              value={data.dividend_income}
+              kind="dividend"
+              revision={query.dataUpdatedAt}
+              openInstrument={(isin) =>
+                change({ isin, q: null, detail_scope: null, detail_start: null, detail_end: null })
+              }
+            />
+            {capitalRequested && params.has("gold_instrument") && !goldFocus && (
               <p role="status">
                 Для этого точного счёта и инструмента нет единственного подтверждённого
                 соответствия. Выберите доступный счёт бумаги; автоматический разбор не открыт.
@@ -357,171 +341,102 @@ export default function UiV2ReturnsPage() {
                 />
               </label>
               <p className={styles.basisNote}>
-                Один ISIN объединяет навигацию. Денежные результаты и проценты остаются отдельными
-                для каждого счёта и интервала.
+                Один точный ISIN — одна карточка по всем счетам и доступной истории. Проданные
+                бумаги остаются в списке. Подробности не рассчитываются до открытия.
               </p>
-              {detailRequested && !detailAvailable && (
+              {params.has("isin") && !validIsin(expanded) && (
                 <p role="status">
-                  Выбранный разбор недоступен для этого точного счёта и интервала. Выберите
-                  доступный счёт бумаги.
+                  Некорректный или неоднозначный ISIN в ссылке; карточка не открыта.
                 </p>
               )}
-              {!rows.length ? (
+              {!rows.length && (
                 <p>
                   {data.instruments.length
                     ? "Бумаги не найдены."
-                    : "Нет доступных расчётов по инструментам."}
+                    : "Нет доступного индекса инструментов."}
                 </p>
-              ) : (
-                rows.map((row) => (
-                  <article key={row.isin} className={styles.overallInstrument}>
-                    <h3>
-                      <button
-                        type="button"
-                        className={styles.instrumentName}
-                        aria-expanded={expanded === row.isin}
-                        onClick={() =>
-                          change({
-                            isin: expanded === row.isin ? null : row.isin,
-                            detail_scope: null,
-                            detail_start: null,
-                            detail_end: null,
-                          })
-                        }
-                      >
-                        {row.name}
-                      </button>{" "}
-                      <MissingName name={row.name} isin={row.isin} />
-                    </h3>
-                    <small>
-                      {row.isin} ·{" "}
-                      {row.kind === "bond"
-                        ? "Облигация"
-                        : row.kind === "stock"
-                          ? "Акция"
-                          : "Бумага"}{" "}
-                      · {row.accounts.length} счетов
-                    </small>
-                    {expanded === row.isin && (
-                      <>
-                        <div className={styles.tableScroll}>
-                          <table className={styles.instruments}>
-                            <thead>
-                              <tr>
-                                <th>Счёт и интервал</th>
-                                <th>Прибыль</th>
-                                <th>Доходность</th>
-                                <th>Купоны / дивиденды</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {row.accounts.map((account) => (
-                                <tr
-                                  key={`${account.scope}/${account.period ? periodKey(account.period) : "unavailable"}`}
-                                >
-                                  <th>
-                                    <button
-                                      type="button"
-                                      disabled={!validDetailPeriod(account.period)}
-                                      aria-pressed={
-                                        validDetailPeriod(account.period) &&
-                                        params.get("detail_scope") === account.scope &&
-                                        params.get("detail_start") === account.period.start &&
-                                        params.get("detail_end") === account.period.end
-                                      }
-                                      onClick={() => {
-                                        if (validDetailPeriod(account.period))
-                                          change({
-                                            detail_scope: account.scope,
-                                            detail_start: account.period.start,
-                                            detail_end: account.period.end,
-                                          });
-                                      }}
-                                    >
-                                      Разбор: {account.label}
-                                    </button>
-                                    <small>
-                                      {account.period
-                                        ? periodLabel(account.period)
-                                        : "Интервал не подтверждён"}
-                                    </small>
-                                    <Link to={accountHref(account.scope, account.period)}>
-                                      История счёта
-                                    </Link>
-                                  </th>
-                                  <td>
-                                    <Value
-                                      metric={account.pnl}
-                                      label={`${row.name}, ${account.label}: прибыль`}
-                                      signed
-                                    />
-                                  </td>
-                                  <td>
-                                    <Value
-                                      metric={account.rate}
-                                      label={`${row.name}, ${account.label}: доходность`}
-                                    />
-                                  </td>
-                                  <td>
-                                    <Value
-                                      metric={account.coupons}
-                                      label={`${row.name}, ${account.label}: купоны`}
-                                    />
-                                    <span> / </span>
-                                    <Value
-                                      metric={account.dividends}
-                                      label={`${row.name}, ${account.label}: дивиденды`}
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        {row.accounts.map((account) => {
-                          const period = account.period;
-                          if (
-                            capitalRequested ||
-                            !validDetailPeriod(period) ||
-                            params.getAll("detail_scope").length !== 1 ||
-                            params.getAll("detail_start").length !== 1 ||
-                            params.getAll("detail_end").length !== 1 ||
-                            params.get("detail_scope") !== account.scope ||
-                            params.get("detail_start") !== period.start ||
-                            params.get("detail_end") !== period.end
-                          )
-                            return null;
-                          return (
-                            <div key={`${row.isin}/${account.scope}/${periodKey(period)}`}>
-                              <p>
-                                {account.label} · {periodLabel(period)}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  change({
-                                    detail_scope: null,
-                                    detail_start: null,
-                                    detail_end: null,
-                                  })
-                                }
-                              >
-                                К списку счетов этой бумаги
-                              </button>
-                              <ReturnsDetail
-                                isin={row.isin}
-                                scope={account.scope}
-                                period={period}
-                                revision={query.dataUpdatedAt}
-                              />
-                            </div>
-                          );
-                        })}
-                        <Diagnostics codes={row.reason_codes} />
-                      </>
+              )}
+              {rows.map((row) => (
+                <article key={row.isin} className={styles.overallInstrument}>
+                  <h3>
+                    <button
+                      type="button"
+                      className={styles.instrumentName}
+                      aria-expanded={expanded === row.isin}
+                      onClick={() =>
+                        change({
+                          isin: expanded === row.isin ? null : row.isin,
+                          detail_scope: null,
+                          detail_start: null,
+                          detail_end: null,
+                        })
+                      }
+                    >
+                      {row.name}
+                    </button>{" "}
+                    <MissingName name={row.name} isin={row.isin} />
+                  </h3>
+                  <small>
+                    {row.isin} ·{" "}
+                    {row.kind === "bond"
+                      ? "Облигация"
+                      : row.kind === "stock"
+                        ? "Акция"
+                        : "Инструмент"}{" "}
+                    · {row.accounts.length} счетов
+                  </small>
+                  {row.accounts.some((account) => account.details_loaded === false) &&
+                    expanded !== row.isin && (
+                      <p className={styles.basisNote}>
+                        Подробности не запрошены. Откройте карточку, чтобы увидеть результат и
+                        операции.
+                      </p>
                     )}
-                  </article>
-                ))
+                  {expanded === row.isin && validIsin(expanded) && (
+                    <ReturnsInstrumentCard
+                      key={expanded}
+                      isin={expanded}
+                      revision={query.dataUpdatedAt}
+                      capitalRequested={capitalRequested}
+                      capitalAccount={
+                        params.getAll("capital_account").length === 1
+                          ? params.get("capital_account")
+                          : null
+                      }
+                      selectedStart={params.get("detail_start")}
+                      selectedEnd={params.get("detail_end")}
+                      selectedScope={
+                        params.getAll("detail_scope").length === 1
+                          ? params.get("detail_scope")
+                          : null
+                      }
+                      close={() =>
+                        change({
+                          isin: null,
+                          detail_scope: null,
+                          detail_start: null,
+                          detail_end: null,
+                        })
+                      }
+                    />
+                  )}
+                </article>
+              ))}
+              {validIsin(expanded) && !rows.some((row) => row.isin === expanded) && (
+                <ReturnsInstrumentCard
+                  key={expanded}
+                  isin={expanded}
+                  revision={query.dataUpdatedAt}
+                  capitalRequested={capitalRequested}
+                  capitalAccount={
+                    params.getAll("capital_account").length === 1
+                      ? params.get("capital_account")
+                      : null
+                  }
+                  close={() =>
+                    change({ isin: null, detail_scope: null, detail_start: null, detail_end: null })
+                  }
+                />
               )}
             </section>
             <section className={styles.panel} aria-label="Депозиты">
@@ -550,10 +465,10 @@ export default function UiV2ReturnsPage() {
             </section>
             <section id="returns-gold" className={styles.panel} aria-label="Золото">
               <h2>Золото</h2>
-              {goldSnapshot && (
+              {goldFocus && (
                 <p>
-                  Выбран сохранённый снимок по точным идентификаторам из Капитала. Это не разбор
-                  сделок по ISIN.
+                  Выбран точный инструмент золота. Снимки и история владельца показаны отдельно; это
+                  не разбор сделок по ISIN.
                 </p>
               )}
               <p>
@@ -583,6 +498,11 @@ export default function UiV2ReturnsPage() {
                         >
                           <th>
                             {snapshot.label}
+                            <Link
+                              to={`/v2/returns?${new URLSearchParams({ capital_account: String(snapshot.account_id), gold_instrument: String(snapshot.instrument_id) })}#returns-gold`}
+                            >
+                              История покупок и продаж
+                            </Link>
                             <small>
                               {dateLabel(snapshot.date)} · количество: {snapshot.quantity}
                             </small>
@@ -616,6 +536,106 @@ export default function UiV2ReturnsPage() {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!!data.gold.histories?.length && (
+                <section aria-label="Результаты истории золота владельца">
+                  <h3>Известные результаты по истории владельца</h3>
+                  <p>
+                    Отдельный источник сведений владельца; суммы не добавляются к снимкам повторно.
+                    Период и дата оценки указаны для каждого результата.
+                  </p>
+                  <div className={styles.tableScroll}>
+                    <table className={styles.instruments}>
+                      <thead>
+                        <tr>
+                          <th>Инструмент / период</th>
+                          <th>Общий результат</th>
+                          <th>Реализованный</th>
+                          <th>Нереализованный</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.gold.histories.map((history) => (
+                          <tr
+                            key={`${history.account_id}/${history.instrument_id}`}
+                            ref={goldHistory === history ? goldRef : undefined}
+                            tabIndex={goldHistory === history ? -1 : undefined}
+                            data-capital-selected={goldHistory === history ? "true" : undefined}
+                          >
+                            <th>
+                              {history.label}
+                              <small>
+                                {history.period
+                                  ? periodLabel(history.period)
+                                  : "Интервал не подтверждён"}{" "}
+                                · оценка на{" "}
+                                {history.valuation_date
+                                  ? dateLabel(history.valuation_date)
+                                  : "неподтверждённую дату"}
+                              </small>
+                              <Link
+                                to={`/v2/returns?${new URLSearchParams({ capital_account: String(history.account_id), gold_instrument: String(history.instrument_id) })}#returns-gold`}
+                              >
+                                Открыть историю золота
+                              </Link>
+                              <small>
+                                {history.currentness === "current"
+                                  ? "Основа актуальна"
+                                  : "Зависимости изменились"}{" "}
+                                · ревизия {history.revision} · сведения владельца
+                                (owner_attestation);{" "}
+                                {history.amount_basis === "actual"
+                                  ? "фактические суммы сделок"
+                                  : "суммы, выведенные из цены"}
+                                ; налоги не предоставлены
+                                {history.valuation_status === "draft" &&
+                                  "; оценка DRAFT, предварительная"}
+                              </small>
+                              <Diagnostics codes={history.reason_codes} />
+                            </th>
+                            <td>
+                              <Value
+                                metric={history.total_result}
+                                label={`${history.label}: общий результат истории`}
+                                signed
+                              />
+                            </td>
+                            <td>
+                              <Value
+                                metric={history.realized_result}
+                                label={`${history.label}: реализованный результат`}
+                                signed
+                              />
+                            </td>
+                            <td>
+                              <Value
+                                metric={history.unrealized_result}
+                                label={`${history.label}: нереализованный результат`}
+                                signed
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+              {goldFocus && (
+                <Suspense fallback={<p role="status">Открываем историю золота…</p>}>
+                  <ReturnsGoldHistory
+                    key={`${goldFocus.account_id}/${goldFocus.instrument_id}`}
+                    accountId={goldFocus.account_id}
+                    instrumentId={goldFocus.instrument_id}
+                    onConfirmed={async () => {
+                      await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ["returns", "overall"] }),
+                        queryClient.invalidateQueries({ queryKey: ["performance-attribution"] }),
+                        queryClient.invalidateQueries({ queryKey: ["performance-readiness"] }),
+                      ]);
+                    }}
+                  />
+                </Suspense>
               )}
               <p>Результат за период</p>
               <Value metric={data.gold.period_result} label="Золото: результат периода" />

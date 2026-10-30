@@ -677,6 +677,7 @@ function LinkedPairsBlock({
 }
 
 function PerformanceBlock({
+  onOpenChange,
   attribution,
   attributionError,
   attributionReady,
@@ -687,6 +688,7 @@ function PerformanceBlock({
   readinessReady,
   retry,
 }: {
+  onOpenChange: (open: boolean) => void;
   attribution: PerformanceAttribution | null;
   attributionError: boolean;
   attributionReady: boolean;
@@ -714,7 +716,7 @@ function PerformanceBlock({
           В целом — доступная история и инструменты
         </Link>
       </p>
-      <details>
+      <details onToggle={(event) => onOpenChange(event.currentTarget.open)}>
         <summary>Принятый портфель: TWRR / XIRR, покрытие и диагностика</summary>
         {pairStart === null || pairEnd === null ? (
           <UiV2WidgetState title="Нужны два закрытых отчёта для расчёта за период" />
@@ -816,6 +818,7 @@ function PropertyBlock({
 }
 
 export default function UiV2CapitalPage() {
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [filter, setFilter] = useState<HoldingFilter>(null);
 
   const monthsQuery = useQuery({
@@ -932,14 +935,14 @@ export default function UiV2CapitalPage() {
   const pairEnd = pairStart === null ? null : (current?.snapshot_date ?? null);
 
   const attributionQuery = useQuery({
-    enabled: pairStart !== null,
+    enabled: performanceOpen && pairStart !== null,
     queryKey: queryKeys.performanceAttribution(pairStart, pairEnd),
     queryFn: ({ signal }) =>
       getPerformanceAttribution(pairStart as string, pairEnd as string, signal),
     refetchOnWindowFocus: true,
   });
   const readinessQuery = useQuery({
-    enabled: pairStart !== null,
+    enabled: performanceOpen && pairStart !== null,
     queryKey: queryKeys.performanceReadiness(pairStart, pairEnd, "portfolio", null),
     queryFn: ({ signal }) =>
       getPerformanceReadiness(pairStart as string, pairEnd as string, "portfolio", null, signal),
@@ -1095,6 +1098,7 @@ export default function UiV2CapitalPage() {
             }
           />
           <PerformanceBlock
+            onOpenChange={setPerformanceOpen}
             attribution={attributionReady ? (attributionQuery.data ?? null) : null}
             attributionError={attributionQuery.isError}
             attributionReady={attributionReady}

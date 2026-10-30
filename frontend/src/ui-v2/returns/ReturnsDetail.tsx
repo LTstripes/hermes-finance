@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { SourceInstrumentDetail } from "../SourceInstrumentDetail";
-import { getDetail, type Period } from "./model";
+import { getDetail, type Period, type Detail } from "./model";
 import styles from "./Returns.module.css";
 import { MissingName } from "./ReturnsAvailable";
 
@@ -30,7 +30,10 @@ export function ReturnsDetail({
       </p>
     );
   if (query.isFetching || !query.data) return <p role="status">Загружаем детали…</p>;
-  const d = query.data;
+  return <ReturnsDetailBody detail={query.data} />;
+}
+
+export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
   return (
     <div className={styles.detail}>
       <h3>

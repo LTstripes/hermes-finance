@@ -12,6 +12,7 @@ export type OverallAccount = {
 };
 export type OverallInstrumentAccount = Pick<Result, "pnl" | "rate" | "coupons" | "dividends"> & {
   canonical_account_id?: number | null;
+  details_loaded: boolean;
   period: Period | null;
   scope: string;
   label: string;
@@ -38,7 +39,7 @@ export type MixedComponent = {
     reason_codes: string[];
   };
   method: string;
-  authority: "source_only" | "accepted_snapshot";
+  authority: "source_only" | "accepted_snapshot" | "owner_attestation";
   exclusion_reason: string | null;
 };
 export type MixedResult = {
@@ -67,10 +68,32 @@ export type CouponIncome = {
   }[];
   reason_codes: string[];
 };
+export type GoldHistorySummary = {
+  account_id: number;
+  instrument_id: number;
+  label: string;
+  revision: number;
+  amount_basis: "actual" | "derived";
+  tax_treatment: "not_provided";
+  source_kind: "owner_manual_gold_history";
+  authority: "owner_attestation";
+  currentness: "current" | "dependency_changed";
+  period: Period | null;
+  valuation_date: string | null;
+  total_result: Metric;
+  valuation_status: "draft" | "closed" | null;
+  realized_result: Metric;
+  unrealized_result: Metric;
+  buy_amount: Metric;
+  sale_amount: Metric;
+  separate_fees: Metric;
+  reason_codes: string[];
+};
 export type Overall = {
   contract_version: "returns_overall_v1";
   mixed_result: MixedResult;
   coupon_income: CouponIncome;
+  dividend_income: CouponIncome;
   overall: { pnl: Metric; rate: Metric; partial: true; reason_codes: string[] };
   source_accounts: OverallAccount[];
   instruments: OverallInstrument[];
@@ -81,6 +104,7 @@ export type Overall = {
     reason_codes: string[];
   };
   gold: {
+    histories?: GoldHistorySummary[];
     snapshots: {
       account_id: number;
       instrument_id: number;
