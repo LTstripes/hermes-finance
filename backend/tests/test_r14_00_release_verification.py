@@ -26,6 +26,7 @@ TRANSITION = (
     "0065_source_return_proofs",
     "0066_actual_payout_links",
     "0067_investment_report_proofs",
+    "0068_owner_manual_gold_history",
 )
 
 

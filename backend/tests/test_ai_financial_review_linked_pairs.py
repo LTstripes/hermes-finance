@@ -180,7 +180,7 @@ def test_linked_pairs_surface_canonical_balances_and_counting_semantics(
     payload = _report(client)
     current = payload["sections"]["current_capital"]["data"]
     linked_pairs = current["linked_pairs"]
-    assert payload["schema_version"] == "1.4.0"
+    assert payload["schema_version"] == "1.5.0"
     assert "linked_pair_read_model" in payload["provenance_summary"]["financial_sources"]
     assert len(linked_pairs) == len(specs)
     assert [item["ref"] for item in linked_pairs] == sorted(item["ref"] for item in linked_pairs)
