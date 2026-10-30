@@ -121,6 +121,12 @@ def basis(v0=1000000, v1=1121100, flows=((MID, 100000),), **changes):
         (1000000, 1028000, (), "0.028"),
         (1000000, 800000, (), "-0.2"),
         (1000000, 1100000, ((T1, 100000),), "0"),
+        (
+            1000000,
+            500000,
+            ((MID, -2000000), (date(2026, 9, 16), 2000000)),
+            "-0.5352752126942204352503606655",
+        ),
     ],
 )
 def test_decimal_period_return_and_independent_ruble_residual(v0, v1, flows, expected):
@@ -197,7 +203,9 @@ def test_endpoint_crossing_boundaries_components_and_root_guards():
         ),
         (basis(0, 1000000, ()), "not_computable_xirr_no_valid_root"),
         (
-            basis(1000000, 500000, ((MID, -2000000), (date(2026, 9, 16), 2000000))),
+            # Equal ten-day spacing gives P(z)=500000(z-.2)(z-.8)(z-.9):
+            # three distinct positive roots, not merely three sign changes.
+            basis(72000, 500000, ((date(2026, 9, 10), -530000), (date(2026, 9, 20), 950000))),
             "not_computable_xirr_root_ambiguity",
         ),
     ]

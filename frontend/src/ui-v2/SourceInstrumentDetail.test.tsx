@@ -8,6 +8,42 @@ import { SourceInstrumentDetail } from "./SourceInstrumentDetail";
 const card = (name: string) =>
   within(screen.getByRole("heading", { name }).parentElement as HTMLElement);
 
+test("original-bound identity is visible without pretending to have a legacy link", () => {
+  const a = analysis();
+  a.events = [
+    event({
+      kind: "BUY",
+      event_key: "source-buy",
+      persisted_link_status: null,
+      attribution_basis: "native_money_group_bridge",
+      classification_status: "confirmed",
+      trade_time: null,
+      event_date: "2030-05-15",
+      net_payout_kopecks: null,
+    }),
+    event({
+      event_key: "source-coupon",
+      persisted_link_status: null,
+      attribution_basis: "xml_pdf_original_bound",
+      classification_status: "confirmed",
+    }),
+  ];
+  render(
+    <MemoryRouter>
+      <SourceInstrumentDetail analysis={a} personalResult />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByText("Сделки и выплаты (2)"));
+  const payouts = within(
+    screen.getByRole("table", { name: "Фактические выплаты по строкам источников" }),
+  );
+  expect(payouts.getByText("12,34 ₽")).toBeVisible();
+  expect(payouts.getByText(/Связь подтверждена исходными документами/)).toBeVisible();
+  expect(payouts.getByText(/Классификация: подтверждена/)).toBeVisible();
+  expect(payouts.queryByText("Сохранённая связь с инструментом")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Несвязанные события/)).not.toBeInTheDocument();
+});
+
 test("personal summary keeps exact money, dated zero closing position and secondary period MD", () => {
   const a = detailFixture().analysis;
   a.pnl.value = "900719925474099301";

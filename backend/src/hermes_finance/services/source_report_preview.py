@@ -272,6 +272,47 @@ def _rates(start, end, v0, v1, flows, reasons=()):
     }
 
 
+def _coverage(reasons):
+    """Local dependency sets; unrecognized source faults conservatively affect all.
+
+    A missing valuation never makes an independently reconciled payout unknown.
+    Missing identity/cash authority still withholds the complete result.
+    """
+    categories = ("events", "quantity", "endpoints", "payouts", "costs", "valuation")
+    dependencies = {
+        "economic_endpoint_unavailable": {"endpoints", "valuation"},
+        "zero_quantity_value_conflict": {"quantity", "endpoints", "valuation"},
+        "quantity_bridge_mismatch": {"quantity", "costs"},
+        "pdf_xml_position_mismatch": {"quantity", "endpoints", "valuation"},
+        "pdf_position_invalid": {"quantity", "endpoints", "valuation"},
+        "pdf_position_date_missing": {"endpoints", "valuation"},
+        "pdf_position_date_invalid": {"endpoints", "valuation"},
+        "pdf_account_summary_invalid": {"valuation"},
+        "pdf_payout_row_invalid": {"payouts"},
+        "payout_identity_ambiguous": {"payouts"},
+        "pdf_xml_payout_mismatch": {"payouts"},
+        "unresolved_account_payout_attribution": {"payouts"},
+        "native_commission_unavailable": {"events", "costs"},
+        "native_money_cash_bridge_mismatch": {"events", "costs"},
+        "native_money_role_ambiguous": {"events", "costs"},
+        "native_settlement_unavailable": {"events", "quantity", "costs"},
+        "native_settlement_outside_period": {"events", "quantity", "costs"},
+        "native_account_conflict": {"events", "quantity", "costs"},
+        "repo_position_open_at_boundary": {"events", "quantity", "costs"},
+    }
+    return {
+        category: Coverage(
+            not (
+                codes := tuple(
+                    sorted(r for r in reasons if category in dependencies.get(r, categories))
+                )
+            ),
+            codes,
+        )
+        for category in categories
+    }
+
+
 def _unresolved_movements(payload, native_account, matched_cancellations):
     """Net-zero custody movements still need dated/value/flow meaning.
 
@@ -566,9 +607,14 @@ def _interval(
                     CashLeg(event_kind.lower(), day, amount, -amount, (row["ref"],), row["ref"]),
                 ),
                 attribution_basis="xml_pdf_original_bound",
+                effective_isin=isin,
+                net_payout_kopecks=amount if event_kind in {"COUPON", "DIVIDEND"} else None,
+                classification=kind,
+                classification_origin="xml_pdf_original_bound",
+                classification_status="confirmed",
             )
         )
-    for key in set(expected) | set(native_money):
+    for key in sorted(set(expected) | set(native_money)):
         isin, day, currency, _ = key
         rows = native_money[key]
         amount = sum(r["minor"] for r in rows)
@@ -608,6 +654,10 @@ def _interval(
                         ),
                     ),
                     attribution_basis="native_money_group_bridge",
+                    effective_isin=isin,
+                    classification=row["classification"],
+                    classification_origin="native_money_group_bridge",
+                    classification_status="confirmed",
                 )
             )
     positions = {p["isin"]: p for p in document["positions"]}
@@ -650,6 +700,7 @@ def _interval(
         v0 = v1 = None
         why = set(issues[isin]) | set(link_issues.get((document["document_sha256"], isin), ()))
         why.update(code for a, code in report.issues if a == account)
+        why.update(code for a, i, code in report.instrument_issues if (a, i) == (account, isin))
         if unresolved_payouts:
             why.add("unresolved_account_payout_attribution")
         if any(r["classification"] not in {"coupon", "dividend"} for r in unlinked):
@@ -661,13 +712,19 @@ def _interval(
                 if p.get("beginning_actual_quantity") is not None
                 else None
             )
-            q1 = Decimal(p["actual_quantity"])
+            q1 = Decimal(p["actual_quantity"]) if p.get("actual_quantity") is not None else None
             v0 = (
                 _minor(p["beginning_value"])
                 if p.get("beginning_value") is not None
-                else (0 if inception and q0 == 0 else None)
+                else (0 if q0 == 0 else None)
             )
-            v1 = _minor(p["ending_value"]) if p.get("ending_value") is not None else None
+            v1 = (
+                _minor(p["ending_value"])
+                if p.get("ending_value") is not None
+                else (0 if q1 == 0 else None)
+            )
+            if (q0 == 0 and v0 not in (None, 0)) or (q1 == 0 and v1 not in (None, 0)):
+                why.add("zero_quantity_value_conflict")
             observed = report.positions.get((account, isin))
             if observed is None or Decimal(observed[0]) != q1 or observed[1] != v1:
                 why.add("pdf_xml_position_mismatch")
@@ -687,10 +744,7 @@ def _interval(
         if p:
             v0total = None if v0total is None or v0 is None else v0total + v0
             v1total = None if v1total is None or v1 is None else v1total + v1
-        coverage = {
-            key: Coverage(not why, tuple(sorted(why)))
-            for key in ("events", "quantity", "endpoints", "payouts", "costs", "valuation")
-        }
+        coverage = _coverage(why)
         opening = Endpoint(start, q0, v0, v0, None, "dirty")
         closing = Endpoint(end, q1, v1, v1, None, "dirty")
         components, pnl, known, dietz, estimate = calculate_economics(
@@ -712,10 +766,12 @@ def _interval(
             def qualified(metric):
                 return replace(
                     metric,
-                    status=("provisional" if not why else "partial")
-                    if metric.value is not None and reasons
+                    status="provisional"
+                    if metric.value is not None
+                    and advisory_reasons
+                    and metric.status == "supported"
                     else metric.status,
-                    reason_codes=tuple(sorted(set(metric.reason_codes + reasons))),
+                    reason_codes=tuple(sorted(set(metric.reason_codes + advisory_reasons))),
                 )
 
             analyses[isin] = InstrumentAnalysis(
@@ -763,6 +819,7 @@ def _interval(
             }
         )
     account_reasons = {code for a, code in report.issues if a == account}
+    account_reasons.update(code for a, _, code in report.instrument_issues if a == account)
     account_reasons.update(advisory_reasons)
     if any(q != 0 for q in repo_quantity.values()):
         account_reasons.add("repo_position_open_at_boundary")
@@ -837,6 +894,17 @@ def _interval(
         "withdrawals_kopecks": None
         if any(s == "unknown" for _, _, s in external)
         else str(-sum(a for _, a, _ in external if a < 0)),
+        "income_reason_codes": {
+            name: sorted(
+                set(advisory_reasons)
+                | (
+                    {"unclassified_money"}
+                    if any(r["classification"] not in {"coupon", "dividend"} for r in unlinked)
+                    else set()
+                )
+            )
+            for name in ("coupons", "dividends")
+        },
         "coupons_kopecks": str(
             sum(
                 r["minor"]

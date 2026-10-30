@@ -4,6 +4,16 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [1.8.1] - 2026-10-30
+
+- Exact distinct-root XIRR certification supports repeated sign changes and
+  certified rational tangencies, retaining ambiguity and numerical-limit guards.
+- Source-return boundaries distinguish explicit zero from missing quantity;
+  malformed PDF identity scope, independent metric coverage, actual income
+  presentation and source-proved event identity survive proof Reload.
+- [Release notes 1.8.1](docs/release-notes-1.8.1.md) describe backup-first update
+  and fresh explicit proof replacement, without financial reimport or Close.
+
 ## [1.8.0] - 2026-10-30
 
 - #987-#991: dated personal instrument detail, native bond BUY accrued-interest

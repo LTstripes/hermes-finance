@@ -93,6 +93,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "domain/test_xirr_uniqueness.py",
     "test_returns_view_service.py",
     "test_returns_read_efficiency_service.py",
     "test_empty_manual_close.py",

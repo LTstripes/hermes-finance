@@ -393,38 +393,8 @@ def _source_view(session, account, start, end):
 
     reports = read_reports(session, source_account=account)
 
-    def report_result(proof):
-        interval = proof["interval"]
-        period = bounds(
-            date.fromisoformat(proof["covered_from"]) - timedelta(days=1),
-            date.fromisoformat(proof["covered_to"]),
-        )
-        reasons = (
-            tuple(proof["reason_codes"]) if interval is None else tuple(interval["reason_codes"])
-        )
-        return {
-            "period": period,
-            "pnl": metric(
-                None
-                if interval is None or interval["pnl"]["value"] is None
-                else int(interval["pnl"]["value"]),
-                reasons=reasons,
-                method="source_xml_pdf_interval",
-            ),
-            "rate": metric(
-                None
-                if interval is None or interval["modified_dietz"]["value"] is None
-                else Decimal(interval["modified_dietz"]["value"]),
-                reasons=reasons,
-                method="modified_dietz",
-                unit="fraction",
-            ),
-            "coupons": metric(reasons=("see_linked_instrument_payouts",)),
-            "dividends": metric(reasons=("see_linked_instrument_payouts",)),
-        }
-
     for proof in reports:
-        value = report_result(proof)
+        value = _investment_report_result(proof)
         periods.append(value["period"])
         if value["period"] == bounds(start, end):
             selected = value
@@ -433,7 +403,7 @@ def _source_view(session, account, start, end):
         key=lambda p: (p["covered_to"], p["proof_id"]),
     )
     if historical:
-        whole = report_result(historical[-1])
+        whole = _investment_report_result(historical[-1])
     if instruments.instruments:
         analysis = instruments.instruments[0].analysis
         periods.append(bounds(analysis.history_start, analysis.history_end))
@@ -450,6 +420,46 @@ def _source_view(session, account, start, end):
         "instruments": [_instrument(row, start, end, names) for row in instruments.instruments],
         "instrument_reason_codes": [],
         "proof_status": (monthly.source_proof or {}).get("status", "absent"),
+    }
+
+
+def _investment_report_result(proof):
+    interval = proof["interval"]
+    period = bounds(
+        date.fromisoformat(proof["covered_from"]) - timedelta(days=1),
+        date.fromisoformat(proof["covered_to"]),
+    )
+    reasons = tuple(proof["reason_codes"]) if interval is None else tuple(interval["reason_codes"])
+    return {
+        "period": period,
+        "pnl": metric(
+            None
+            if interval is None or interval["pnl"]["value"] is None
+            else int(interval["pnl"]["value"]),
+            reasons=reasons,
+            method="source_xml_pdf_interval",
+        ),
+        "rate": metric(
+            None
+            if interval is None or interval["modified_dietz"]["value"] is None
+            else Decimal(interval["modified_dietz"]["value"]),
+            reasons=reasons,
+            method="modified_dietz",
+            unit="fraction",
+        ),
+        **{
+            name: metric(
+                None
+                if interval is None or interval.get(name + "_kopecks") is None
+                else int(interval[name + "_kopecks"]),
+                reasons=tuple(proof["reason_codes"])
+                if interval is None
+                else tuple(interval.get("income_reason_codes", {}).get(name, ()))
+                + (("non_rub_income_unknown",) if interval.get(name + "_kopecks") is None else ()),
+                method="source_xml_actual_money",
+            )
+            for name in ("coupons", "dividends")
+        },
     }
 
 
