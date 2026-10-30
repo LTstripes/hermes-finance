@@ -769,6 +769,30 @@ def test_manual_gold_missing_valuation_keeps_realized_but_no_total_or_numeric_fa
     assert gold[0].amount.value is None
 
 
+def test_draft_only_gold_has_exact_metadata_target_without_promoting_financial_values(db):
+    component_rows(db)
+    with db.session_factory() as session:
+        closed = session.query(PositionSnapshot).order_by(PositionSnapshot.id).first()
+        ids = (closed.account_id, closed.instrument_id)
+        session.delete(closed)  # synthetic missing old observation; only DRAFT remains
+        session.commit()
+    value = read(db)
+    assert value.gold.snapshots == value.gold.histories == []
+    assert [(t.account_id, t.instrument_id) for t in value.gold.targets] == [ids]
+    assert value.gold.period_result.value is None
+    assert not any(row.category == "gold" for row in value.mixed_result.components)
+    assert set(value.gold.targets[0].model_dump()) == {"account_id", "instrument_id", "label"}
+
+
+def test_gold_target_requires_exact_gold_rub_catalogue_type(db):
+    component_rows(db)
+    with db.session_factory() as session:
+        instrument = session.query(Instrument).one()
+        instrument.currency = "USD"
+        session.commit()
+    assert read(db).gold.targets == []
+
+
 def test_owner_coupon_total_uses_native_accounts_once_not_instrument_or_monthly_explanations(
     db, monkeypatch
 ):

@@ -6663,8 +6663,12 @@ retain local unavailable reasons. No new percentage solver or quote tracker is
 introduced.
 
 One producer supplies overview summaries, lazy gold-card facts and the canonical
-AI export. Ordinary overview omits event/revision projections. A manual whole-
-history component replaces the same pair's saved unrealized addend, even when
+AI export. Ordinary overview omits event/revision projections.
+Exact `gold.targets` metadata exposes existing RUB-gold Account/Instrument pairs,
+including DRAFT-only positions, so first-time source entry does not require a
+prior CLOSED observation. It contains no value/quantity and grants no financial
+coverage; Preview and confirmation recheck the exact catalogue scope.
+The manual whole-history component replaces the same pair's saved unrealized addend, even when
 the manual total is blocked; it never adds both or silently falls back. Saved
 observations remain visible separately with their original date and basis. The
 existing canonical-account overlap exclusions still apply, and Owner attestation

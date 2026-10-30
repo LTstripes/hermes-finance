@@ -93,9 +93,16 @@ class GoldHistory(DTO):
     reason_codes: list[str]
 
 
+class GoldTarget(DTO):
+    account_id: int
+    instrument_id: int
+    label: str
+
+
 class Gold(DTO):
     snapshots: list[GoldSnapshot]
     histories: list[GoldHistory]
+    targets: list[GoldTarget]
     period_result: Metric
     reason_codes: list[str]
 

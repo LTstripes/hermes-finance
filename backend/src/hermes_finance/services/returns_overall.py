@@ -77,8 +77,14 @@ def _gold(session, months):
         .where(Instrument.instrument_type == "gold")
         .order_by(PositionSnapshot.id)
     )
-    latest = {}
+    latest, targets = {}, {}
     for position, instrument, account in rows:
+        if instrument.currency == "RUB":
+            targets[(account.id, instrument.id)] = {
+                "account_id": account.id,
+                "instrument_id": instrument.id,
+                "label": instrument.name,
+            }
         if position.reporting_month_id not in closed:
             continue
         month = closed[position.reporting_month_id]
@@ -129,6 +135,12 @@ def _gold(session, months):
     for row in read_gold_histories(session, include_events=False):
         observed = row["result"]
         instrument = session.get(Instrument, row["instrument_id"])
+        if instrument and instrument.instrument_type == "gold" and instrument.currency == "RUB":
+            targets[(row["account_id"], instrument.id)] = {
+                "account_id": row["account_id"],
+                "instrument_id": instrument.id,
+                "label": instrument.name,
+            }
         provenance = ["owner_attested_gold_history", "gold_tax_not_provided"]
         reasons = list(dict.fromkeys([*provenance, *row["reason_codes"]]))
 
@@ -187,6 +199,7 @@ def _gold(session, months):
     return {
         "snapshots": result,
         "histories": histories,
+        "targets": [row for _, row in sorted(targets.items())],
         "period_result": _unknown(
             "gold_history_results_have_individual_periods"
             if histories
