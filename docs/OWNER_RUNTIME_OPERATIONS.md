@@ -12,7 +12,7 @@ Direct operations consume the retained profile/identity/exclusion safeguards bel
 
 Stable is the published production runtime; Main is canonical Control code; Test is the persistent isolated exact-SHA Preview/UAT location; Owner holds local registry/manifests/recovery/journals; Ops holds accepted installed operations. Client task workspaces are separate. Concrete absolute mappings stay machine-local.
 
-Direct operations are normal; the Launcher shell/config/shortcuts and repository shell source are retired. Preserve shared RuntimeConfig/backup/recovery helpers whose names still mention Launcher. Prepare/Validate, Start, update and publication are separate bounded operations. A code merge or preparation proof never authorizes a runtime action. Only an owned runtime uses loopback port 8000; never kill an unrelated process by port. S contains dated installation evidence.
+Direct operations are normal; the Launcher shell/config/shortcuts and repository shell source are retired. Preserve shared RuntimeConfig/backup/recovery helpers whose names still mention Launcher. Prepare/Validate, Start, update and publication are separate bounded operations. A code merge or preparation proof never authorizes a runtime action. Ordinary runtimes use loopback port 8000; the bounded explicit Preview port exception below requires its own owned process and isolated data. Never kill an unrelated process by port. S contains dated installation evidence.
 
 <a id="o1-owner_runtime_operations-5"></a>
 ### Separate runtime roles and direct operations
@@ -65,13 +65,28 @@ From an already prepared Stable or Test checkout:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
 ```
 
-Start validates prepared proof, uses the assigned DB boundary, applies only the accepted guarded startup/schema semantics for that DB, binds `127.0.0.1:8000` and checks health. It does not install/build/update Git itself. Only one runtime owns port 8000; stop the owned runtime before switching to Test, never kill an unrelated process by port.
+Start validates prepared proof, uses the assigned DB boundary, applies only the accepted guarded startup/schema semantics for that DB, binds `127.0.0.1:8000` by default and checks health. It does not install/build/update Git itself. Only one runtime owns port 8000; stop the owned runtime before switching to Test, never kill an unrelated process by port.
 
 Readiness smoke:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
 ```
+
+<a id="o1-preview-port"></a>
+#### Explicit isolated Preview port
+
+A separately authorized full Test UI may run beside Stable through stock Start:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -PreviewPort 18869
+```
+
+`-PreviewPort` is an explicit Start parameter, not an environment variable or a profile-config knob. It accepts a non-default port from 1024 through 65535 only for a valid current OPS03 Preview boundary. Without it, ordinary/Stable, recovery and scratch keep port 8000. Preview rejects recovery/scratch combinations, inherited recovery-readiness identity, an invalid/occupied port, unavailable process inspection, missing/stale/tampered candidate boundary, production sidecar, linked/overlapping paths or files, a different configured DB, or HEAD/prepared-proof SHA disagreement. It never chooses another port, stops the occupant, or relaxes Host/Origin/loopback rules.
+
+The existing isolated DB must be a regular unlinked file with `kind=preview` sidecar. The selected checkout must be an independent clone, physically disjoint from the boundary's trusted Main/Stable code and data. The prepared interpreter/build and exact candidate remain mandatory. Old path-only OPS03 boundaries remain compatible with ordinary Start on 8000; explicit Preview admission tells the operator to repeat stock preparation from the reviewed new candidate entrypoint as described in O2. Never add SHA/digest fields to a boundary manually.
+
+Preview launches the existing standard full app through locked offline/no-sync execution. The selected port is used for availability, child settings, readiness and the printed URL. Readiness requires `/api/health`, `/api/months` and `/` containing `Hermes Finance`; every response must carry the fresh per-start nonce, actual DB file-identity token and exact checkout SHA. The listener must be the launched root or its current creation-ordered process tree, bound only to `127.0.0.1` on that selected port. The root's creation/executable identity is rechecked; another process's health/version cannot establish readiness. Recovery's additional dashboard probe remains unchanged on 8000 and is not a new Preview dependency. Only the launched process tree is cleaned up; no stop-by-port or automatic Stable stop is introduced.
 
 A source/version-preserving filesystem migration does not authorize a production schema/version upgrade. Normal future release startup follows that release's accepted schema contract.
 
@@ -232,7 +247,7 @@ Normative fields:
 | `database` | Absolute SQLite path. Must be inside `data_dir`. |
 | `open_browser` | If true, open `http://127.0.0.1:8000` after health succeeds. |
 
-v1 does **not** make host or port per-profile knobs. Bind is always `127.0.0.1:8000`. A future config that sets another host is invalid. A future config that sets another port is invalid in v1.
+v1 does **not** make host or port per-profile knobs. Its default bind remains `127.0.0.1:8000`; another host/port in that config is invalid. The separately admitted `start-local.ps1 -PreviewPort` operation above is a bounded CLI exception, not a new profile/config field.
 
 `HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN` and any other secret remain in the checkout `.env` loaded by existing `Settings`. Launcher config must not copy them.
 
@@ -363,12 +378,12 @@ Fail closed at the first failed step. Do not start `start-local.ps1`. Do not ope
     - current revision ahead of this checkout’s heads: fail;
     - current revision behind: allowed — existing `upgrade_database()` in `hermes-finance-api` will upgrade **this** file after Start;
     - cannot read SQLite / integrity_check not `ok`: fail.
-7. **Port allowed.** `127.0.0.1:8000` is free. v1 does not pick another port.
+7. **Port allowed.** The default `127.0.0.1:8000`, or the explicitly admitted Preview port above, is free. Start does not pick a fallback port.
 8. **Guarded startup.** Invoke the profile checkout’s `scripts/start-local.ps1` with working directory = checkout root. Do not reimplement frontend build, Alembic, uvicorn bind or health probes in a weaker form.
 9. **Health check.** Existing probes remain authoritative: `http://127.0.0.1:8000/api/health`, `/api/months` and `/` containing `Hermes Finance`. Health `version` should match the checkout identity shown in the UI.
 10. **Open the app.** If `open_browser` is true, open `http://127.0.0.1:8000`. Loopback only.
 
-`start-local.ps1` already forces `HERMES_FINANCE_HOST=127.0.0.1`, `HERMES_FINANCE_PORT=8000`, `HERMES_FINANCE_RELOAD=false`. The launcher must not override those to weaker values.
+`start-local.ps1` forces `HERMES_FINANCE_HOST=127.0.0.1`, `HERMES_FINANCE_RELOAD=false` and port 8000 by default. Only its validated explicit Preview parameter supplies a different child port. An inherited environment value is not admission or a global port override.
 
 
 <a id="o1-0014-launcher-runtime-profile-safety-77-6-unsafe-state-matrix"></a>
@@ -464,17 +479,17 @@ Running newer Preview code against production data is prevented by identity chec
 <a id="o1-0014-launcher-runtime-profile-safety-77-9-process-and-port-rules"></a>
 #### 9. Process and port rules
 
-v1 is **single-instance**.
+Default binding remains **single-instance on 8000**; the bounded Preview exception above permits a separate owned Test listener.
 
-- Only one profile may run at a time.
-- Bind remains `127.0.0.1:8000` for every profile.
+- Only one runtime may own port 8000.
+- Ordinary/Stable, recovery and scratch bind `127.0.0.1:8000`; only an explicitly admitted Preview Start may select a separate port.
 - If port `8000` is taken, Start fails. The launcher does not auto-kill the occupant.
-- Simultaneous Stable + Preview is **not** allowed in v1.
+- Simultaneous Stable + Preview is allowed only through the explicit isolated Preview Start contract above; default Start never switches ports.
 - `scripts/dev.ps1` (`8000` + `5173`) is outside the launcher. If a dev stack already holds `8000`, owner Start fails closed — same as today.
 
 Rationale: current production launcher, health probes, ADR 0004 Host/Origin behaviour and owner habit all assume one local app at `8000`. Dual bind (`8001` for Preview) plus “which window is production?” is a later convenience, not a v1 safety requirement.
 
-v2 *may* add an explicit Preview port only after a separate contract. It is not implied by this ADR.
+The explicit Preview port contract above is the accepted narrow exception. It does not add arbitrary host/profile/network configuration or change the copy/recovery authority boundaries.
 
 <a id="o2"></a>
 ## 2. Test, scratch, local UAT and read-only diagnosis
@@ -504,6 +519,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-previe
 ```
 
 OPS03 requires a full SHA, independent Git clone and physically separate Test data; it proves the Stable/Main/Test exclusions, composes candidate Prepare/Validate and leaves the exact candidate pinned. No follow-main, Start or direct migration occurs inside it. The historical parameter names remain unchanged; Main is the Control role, Test is Preview.
+
+For full Test beside Stable, OPS03 now writes additive `CandidateSha` and `BoundarySha256` fields. The digest binds the recorded candidate/path fields for integrity checking; current HEAD, prepared proof, sidecar, physical exclusions and runtime DB identity are independently checked at Start. It does not replace those checks.
+
+If trusted Main still has the older path-only producer, use the stock entrypoint from the **new reviewed exact candidate checkout**, keeping trusted Main as `-ControlCheckout`. The candidate must still pass the existing full-SHA/canonical-origin provenance and all OPS03 controls; Main/Stable helpers need not be modified:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File <reviewed-candidate-checkout>\scripts\prepare-preview.ps1 `
+  -CandidateSha <new-full-40-char-reviewed-sha> `
+  -PreviewCheckout <persistent-test-checkout> `
+  -PreviewDataDirectory <isolated-test-data> `
+  -PreviewDatabase <existing-isolated-test-db> `
+  -StableCheckout <stable-checkout> `
+  -StableDataDirectory <stable-data> `
+  -StableDatabase <stable-db> `
+  -ControlCheckout <trusted-main-checkout>
+```
+
+This is normal OPS03 production of a new boundary, not a hand-edited JSON or rehashed old preparation proof. A launcher/source change requires a new candidate SHA, its own review/CI and new exact-candidate Prepare/Validate. After those gates and separate Start authorization, use Test's own `scripts/start-local.ps1 -PreviewPort 18869`. Record the returned URL and owned PID/creation/code/DB binding; Stable's existing listener/binding remains separate. The operator performs any real copy/Start/owned-stop smoke; development checks use synthetic files/process/HTTP fixtures only.
 
 Populate Test only through an explicitly approved isolated copy/recovery/synthetic workflow. Never point Test at production SQLite or copy its data back to Stable. Retain needed Test artifacts before a deliberate refresh. Real-data reading requires the bounded Owner authority in D1; credentials remain excluded and development tasks have no implicit runtime authority. Current Owner checks and exact UAT scopes are in [CURRENT_STATUS](CURRENT_STATUS.md#s1).
 

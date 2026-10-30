@@ -375,6 +375,9 @@ if ($Validate) {
     Assert-Test -Condition (Test-HermesPreviewSamePath -Left (Get-HermesPreviewGitCommonDirectory -Context $context -Checkout $firstPaths.Checkout) -Right (Get-HermesPreviewGitDirectory -Context $context -Checkout $firstPaths.Checkout)) -Message "Preview Git common directory is its own Git directory"
 
     $pinPath = Join-Path $firstPaths.Checkout ".hermes-preview-boundary.json"
+    $candidatePin = Read-HermesPreviewCandidateBoundary -Checkout $firstPaths.Checkout
+    Assert-TestEqual -Expected $candidateOne -Actual $candidatePin.CandidateSha -Message "new OPS03 producer is accepted by the PreviewPort candidate-boundary consumer"
+    Assert-TestEqual -Expected (Get-HermesPreviewBoundaryDigest -Boundary $candidatePin) -Actual $candidatePin.BoundarySha256 -Message "OPS03 stamps its exact path/candidate boundary"
     $pinBefore = Get-Content -LiteralPath $pinPath -Raw
     Assert-TestEqual -Expected $firstPaths.Database -Actual (($pinBefore | ConvertFrom-Json).PreviewDatabase) -Message "OPS03 pins the exact database for Start"
     Write-TestText -Path (Join-Path $firstPaths.Checkout "wrong-db.flag") -Content "synthetic"

@@ -3,7 +3,8 @@ param(
     [switch]$ExitAfterReady,
     [switch]$RecoveryReadiness,
     [switch]$ScratchPreflight,
-    [string]$ScratchManifest
+    [string]$ScratchManifest,
+    [int]$PreviewPort
 )
 
 Set-StrictMode -Version 2.0
@@ -19,6 +20,10 @@ $frontendDir = Join-Path $repoRoot "frontend"
 $frontendDist = Join-Path $frontendDir "dist"
 $backendProcess = $null
 $exitCode = 0
+$previewRequested = $PSBoundParameters.ContainsKey("PreviewPort")
+$selectedPort = 8000
+$previewBinding = $null
+$previewProcessIdentity = $null
 
 function Get-RequiredCommand {
     param(
@@ -40,14 +45,23 @@ function Assert-PortAvailable {
     param(
         [Parameter(Mandatory = $true)]
         [int]$Port,
-        [bool]$RecoveryReadiness = $false
+        [bool]$RecoveryReadiness = $false,
+        [bool]$RequireInspection = $false
     )
 
     if ($null -eq (Get-Command "Get-NetTCPConnection" -ErrorAction SilentlyContinue)) {
+        if ($RequireInspection) { throw "Preview port inspection is unavailable." }
         return
     }
 
-    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if ($RequireInspection) {
+        try { $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop }
+        catch {
+            if ($_.FullyQualifiedErrorId -notlike "CmdletizationQuery_NotFound,*") { throw }
+            $listener = $null
+        }
+    }
+    else { $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue }
     if ($null -ne $listener) {
         if ($RecoveryReadiness) {
             Throw-HermesRecoveryReadinessFailure -Classification "port_conflict"
@@ -193,6 +207,105 @@ function Invoke-PreparedRuntimeValidation {
         }
         throw $detail
     }
+}
+
+function Get-HermesStartPort {
+    param([bool]$PreviewRequested, [int]$PreviewPort, [bool]$RecoveryReadiness, [bool]$ScratchPreflight, [string]$ScratchManifest)
+    if (-not $PreviewRequested) { return 8000 }
+    if ($PreviewPort -lt 1024 -or $PreviewPort -gt 65535 -or $PreviewPort -eq 8000) {
+        throw "PreviewPort must be an explicit non-default port from 1024 through 65535."
+    }
+    if ($RecoveryReadiness -or $ScratchPreflight -or -not [string]::IsNullOrWhiteSpace($ScratchManifest)) {
+        throw "PreviewPort cannot be combined with recovery or scratch modes."
+    }
+    return $PreviewPort
+}
+
+function Get-HermesPreviewStartBinding {
+    param([Parameter(Mandatory = $true)][string]$Checkout)
+    Assert-HermesScratchPathBoundary -Path (Join-Path $Checkout ".hermes-preview-boundary.json")
+    $pin = Read-HermesPreviewCandidateBoundary -Checkout $Checkout
+    foreach ($field in @("ControlCheckout", "StableCheckout", "StableDataDirectory", "StableDatabase", "PreviewCheckout", "PreviewDataDirectory", "PreviewDatabase")) {
+        Assert-HermesScratchPathBoundary -Path ([string]$pin.$field)
+    }
+    Assert-HermesScratchPathBoundary -Path (Join-Path $pin.PreviewDataDirectory ".hermes-data-identity.json")
+    Assert-HermesScratchInterpreterBoundary -Checkout $Checkout
+    $database = Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $Checkout
+    $context = [pscustomobject]@{ GitPath = (Get-RequiredCommand -Name "git" -InstallHint "Git is required for Preview identity."); CommandRunner = New-HermesPreviewCommandRunner }
+    Assert-HermesPreviewCleanCheckout -Context $context -Checkout $Checkout -Label "Preview checkout"
+    $head = Get-HermesPreviewObservedHead -Context $context -Checkout $Checkout
+    Assert-HermesScratchPathBoundary -Path (Join-Path $Checkout ".hermes-runtime-prepared.json")
+    $prepared = Get-Content -LiteralPath (Join-Path $Checkout ".hermes-runtime-prepared.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($head -cne $pin.CandidateSha -or $prepared.git_head -cne $pin.CandidateSha) {
+        throw "Preview candidate SHA does not match HEAD and prepared proof; repeat exact-candidate OPS03."
+    }
+    $controlCommon = Get-HermesPreviewGitCommonDirectory -Context $context -Checkout $pin.ControlCheckout
+    $stableCommon = Get-HermesPreviewGitCommonDirectory -Context $context -Checkout $pin.StableCheckout
+    Assert-HermesPreviewIndependentCheckout -Context $context -PreviewCheckout $Checkout -ControlCommonDirectory $controlCommon -StableCommonDirectory $stableCommon | Out-Null
+    # Only stat/file identity through the prepared interpreter: no app import,
+    # SQLite connection, migration, configuration output or dependency sync.
+    $result = Invoke-HermesPreviewExternalCommand -Context $context -Name "preview-file-identity" `
+        -FilePath (Join-Path $Checkout "backend\.venv\Scripts\python.exe") -WorkingDirectory (Join-Path $Checkout "backend") `
+        -ArgumentList @("-I", "-c", "import sys; sys.path.insert(0, 'src'); from pathlib import Path; from hermes_finance.services.recovery_process import file_identity_token; print(file_identity_token(Path(sys.argv[1])))", $database) -AllowFailure
+    $identity = ([string]$result.Stdout).Trim()
+    if ($result.ExitCode -ne 0 -or $identity -cnotmatch '^[0-9a-f]{64}$') { throw "Preview database file identity is unavailable." }
+    return [pscustomobject]@{ Database = $database; DatabaseIdentity = $identity; CheckoutSha = $head; Token = ([Guid]::NewGuid().ToString("N") + [Guid]::NewGuid().ToString("N")) }
+}
+
+function Get-HermesPreviewProcessIdentity {
+    param([System.Diagnostics.Process]$Backend)
+    Assert-ProcessRunning -Process $Backend -Name "Preview backend"
+    $rows = @(Get-CimInstance Win32_Process -Filter ("ProcessId=" + $Backend.Id) -ErrorAction Stop)
+    if ($rows.Count -ne 1 -or $null -eq $rows[0].CreationDate -or [string]::IsNullOrWhiteSpace($rows[0].ExecutablePath) -or
+        [Math]::Abs($rows[0].CreationDate.ToUniversalTime().Ticks - $Backend.StartTime.ToUniversalTime().Ticks) -gt 10) {
+        throw "Preview process creation identity is unavailable."
+    }
+    Assert-ProcessRunning -Process $Backend -Name "Preview backend"
+    return [pscustomobject]@{ ProcessId = $Backend.Id; CreationTicks = $rows[0].CreationDate.ToUniversalTime().Ticks; ExecutablePath = $rows[0].ExecutablePath }
+}
+
+function Test-HermesPreviewListener {
+    param([System.Diagnostics.Process]$Backend, $Identity, [int]$Port)
+    Assert-ProcessRunning -Process $Backend -Name "Preview backend"
+    $current = Get-HermesPreviewProcessIdentity -Backend $Backend
+    if ($current.CreationTicks -ne $Identity.CreationTicks -or $current.ProcessId -ne $Identity.ProcessId -or $current.ExecutablePath -ine $Identity.ExecutablePath) {
+        throw "Preview process identity changed."
+    }
+    try { $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop) }
+    catch {
+        if ($_.FullyQualifiedErrorId -notlike "CmdletizationQuery_NotFound,*") { throw }
+        $listeners = @()
+    }
+    if ($listeners.Count -eq 0) { return $false }
+    $rows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+    if (-not (Test-HermesPreviewListenerOwnership -RootProcessId $Backend.Id -RootCreationTicks $Identity.CreationTicks -RootExecutablePath $Identity.ExecutablePath -Port $Port -Listeners $listeners -ProcessRows $rows)) {
+        throw "Preview listener is foreign or its current creation ancestry cannot be proven."
+    }
+    return $true
+}
+
+function Wait-ForPreviewStack {
+    param([System.Diagnostics.Process]$Backend, $Identity, $Binding, [int]$Port)
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (-not (Test-HermesPreviewListener -Backend $Backend -Identity $Identity -Port $Port)) { Start-Sleep -Milliseconds 250; continue }
+        $ready = $true
+        foreach ($path in @("/api/health", "/api/months", "/")) {
+            try { $response = Invoke-WebRequest -Uri ("http://127.0.0.1:{0}{1}" -f $Port, $path) -UseBasicParsing -TimeoutSec 2 }
+            catch {
+                if (Test-HermesRecoveryTransientRequestFailure -Exception $_.Exception) { $ready = $false; break }
+                throw
+            }
+            if (-not (Test-HermesPreviewListener -Backend $Backend -Identity $Identity -Port $Port) -or
+                -not (Test-HermesRecoveryHeaders -Response $response -ExpectedToken $Binding.Token -ExpectedDatabaseIdentity $Binding.DatabaseIdentity -ExpectedCheckoutSha $Binding.CheckoutSha)) {
+                throw "Preview readiness identity mismatch."
+            }
+            if ($response.StatusCode -ne 200 -or ($path -eq "/" -and $response.Content -notmatch "Hermes Finance")) { throw "Preview readiness surface is unavailable." }
+        }
+        if ($ready) { return }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Preview readiness timed out."
 }
 
 function Wait-ForProductionStack {
@@ -355,6 +468,15 @@ function Stop-ProcessTree {
 }
 
 try {
+    $selectedPort = Get-HermesStartPort -PreviewRequested $previewRequested -PreviewPort $PreviewPort -RecoveryReadiness ([bool]$RecoveryReadiness) -ScratchPreflight ([bool]$ScratchPreflight) -ScratchManifest $ScratchManifest
+    if ($previewRequested) {
+        foreach ($command in @("Get-NetTCPConnection", "Get-CimInstance")) {
+            if ($null -eq (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Preview process ownership checks are unavailable." }
+        }
+        foreach ($name in @("HERMES_FINANCE_RECOVERY_READINESS_TOKEN", "HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY", "HERMES_FINANCE_RECOVERY_CHECKOUT_SHA")) {
+            if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) { throw "PreviewPort cannot inherit recovery readiness identity." }
+        }
+    }
     if ($ScratchPreflight -or -not [string]::IsNullOrWhiteSpace($ScratchManifest)) {
         if (-not $ScratchPreflight -or [string]::IsNullOrWhiteSpace($ScratchManifest) -or $RecoveryReadiness) {
             throw "Scratch preflight requires its explicit manifest and cannot use recovery readiness."
@@ -406,7 +528,8 @@ try {
 
     Invoke-PreparedRuntimeValidation -PowerShell $powershell -Checkout $repoRoot
 
-    Assert-PortAvailable -Port 8000 -RecoveryReadiness ([bool]$RecoveryReadiness)
+    if ($previewRequested) { $previewBinding = Get-HermesPreviewStartBinding -Checkout $repoRoot }
+    Assert-PortAvailable -Port $selectedPort -RecoveryReadiness ([bool]$RecoveryReadiness) -RequireInspection $previewRequested
 
     $savedEnvironment = @{}
     foreach ($name in @(
@@ -415,6 +538,9 @@ try {
         "HERMES_FINANCE_RELOAD",
         "HERMES_FINANCE_DATABASE_PATH",
         "HERMES_FINANCE_FRONTEND_DIST",
+        "HERMES_FINANCE_RECOVERY_READINESS_TOKEN",
+        "HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY",
+        "HERMES_FINANCE_RECOVERY_CHECKOUT_SHA",
         "UV_OFFLINE",
         "UV_PROJECT_ENVIRONMENT",
         "PYTHONPATH"
@@ -424,13 +550,19 @@ try {
 
     try {
         $env:HERMES_FINANCE_HOST = "127.0.0.1"
-        $env:HERMES_FINANCE_PORT = "8000"
+        $env:HERMES_FINANCE_PORT = [string]$selectedPort
         $env:HERMES_FINANCE_RELOAD = "false"
         $env:HERMES_FINANCE_FRONTEND_DIST = $frontendDist
         $env:UV_OFFLINE = "1"
         $env:UV_PROJECT_ENVIRONMENT = [IO.Path]::GetFullPath((Join-Path $backendDir ".venv"))
         $env:PYTHONPATH = ""
 
+        if ($previewRequested) {
+            $env:HERMES_FINANCE_DATABASE_PATH = $previewBinding.Database
+            $env:HERMES_FINANCE_RECOVERY_READINESS_TOKEN = $previewBinding.Token
+            $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY = $previewBinding.DatabaseIdentity
+            $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA = $previewBinding.CheckoutSha
+        }
         if ($ScratchPreflight) {
             # The backend checks the exact same binding even when called directly.
             # This check serves nothing, creates nothing and cannot run migrations.
@@ -444,7 +576,7 @@ try {
                 "--manifest", ('"' + $ScratchManifest + '"'), "--readiness-token", $scratchToken)
         }
         else {
-            $pinnedDatabase = Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot
+            $pinnedDatabase = if ($previewRequested) { $previewBinding.Database } else { Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot }
             if ($null -ne $pinnedDatabase) {
                 $env:HERMES_FINANCE_DATABASE_PATH = $pinnedDatabase
             }
@@ -454,6 +586,11 @@ try {
         if ($ScratchPreflight) {
             Write-Host "Starting Hermes Finance scratch preflight reader..." -ForegroundColor Cyan
             $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
+        }
+        elseif ($previewRequested) {
+            Write-Host "Starting Hermes Finance isolated Preview backend..." -ForegroundColor Cyan
+            $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
+            $previewProcessIdentity = Get-HermesPreviewProcessIdentity -Backend $backendProcess
         }
         else {
             Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
@@ -475,6 +612,9 @@ try {
     if ($ScratchPreflight) {
         Wait-ForScratchPreflight -Backend $backendProcess -Token $scratchToken -Binding $scratchBinding
     }
+    elseif ($previewRequested) {
+        Wait-ForPreviewStack -Backend $backendProcess -Identity $previewProcessIdentity -Binding $previewBinding -Port $selectedPort
+    }
     else {
         Wait-ForProductionStack `
         -Backend $backendProcess `
@@ -483,10 +623,13 @@ try {
         -ExpectedDatabaseIdentity $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY `
         -ExpectedCheckoutSha $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA
     }
-    Write-Host "Hermes Finance is ready: http://127.0.0.1:8000" -ForegroundColor Green
+    Write-Host "Hermes Finance is ready: http://127.0.0.1:$selectedPort" -ForegroundColor Green
     if ($ExitAfterReady) {
         if ($ScratchPreflight) {
             Write-Host "Scratch preflight readiness smoke test passed." -ForegroundColor Green
+        }
+        elseif ($previewRequested) {
+            Write-Host "Preview readiness smoke test passed." -ForegroundColor Green
         }
         else {
             Write-Host "Production readiness smoke test passed." -ForegroundColor Green
@@ -496,6 +639,10 @@ try {
         Write-Host "Press Ctrl+C to stop Hermes Finance." -ForegroundColor DarkGray
         while ($true) {
             Assert-ProcessRunning -Process $backendProcess -Name "Backend"
+            if ($previewRequested) {
+                $current = Get-HermesPreviewProcessIdentity -Backend $backendProcess
+                if ($current.CreationTicks -ne $previewProcessIdentity.CreationTicks -or $current.ExecutablePath -ine $previewProcessIdentity.ExecutablePath) { throw "Preview process identity changed." }
+            }
             Start-Sleep -Seconds 1
         }
     }

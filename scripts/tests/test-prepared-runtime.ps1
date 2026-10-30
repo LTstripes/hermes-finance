@@ -302,7 +302,8 @@ try {
         -WorkingDirectory $repoRoot `
         -Arguments @("-Checkout", $checkout, "-Validate")
     Assert-True ($staleBackendEnvironment.ExitCode -ne 0) "A mutated backend package environment must invalidate prepared state."
-    Assert-True ($staleBackendEnvironment.Output -match "backend_environment_packages_sha256") "Backend package staleness must identify the package inventory proof."
+    # Windows native error formatting may soft-wrap this identifier mid-word.
+    Assert-True (($staleBackendEnvironment.Output -replace '\s', '') -match "backend_environment_packages_sha256") "Backend package staleness must identify the package inventory proof: $($staleBackendEnvironment.Output)"
     $repairBackendEnvironment = Invoke-PowerShellFile `
         -Script (Join-Path $checkout "scripts\prepare-runtime.ps1") `
         -WorkingDirectory $repoRoot `
@@ -377,6 +378,10 @@ try {
     Assert-True ($startSource -match "127\.0\.0\.1") "Loopback binding must remain explicit."
     Assert-True ($startSource.IndexOf("Invoke-PreparedRuntimeValidation", [StringComparison]::Ordinal) -lt $startSource.IndexOf('-FilePath $uv', [StringComparison]::Ordinal)) "Prepared validation must happen before backend launch."
 
+    $portTests = Join-Path $PSScriptRoot "test-preview-port.ps1"
+    $portPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    & $portPowerShell -NoProfile -ExecutionPolicy Bypass -File $portTests
+    if ($LASTEXITCODE -ne 0) { throw "Preview port regression failed." }
     Write-Host "Prepared runtime / deterministic start regression: PASS" -ForegroundColor Green
 }
 finally {
