@@ -386,3 +386,33 @@ def test_verified_source_display_metadata_names_sold_security_without_catalogue_
     assert value.instruments[0].name == "Synthetic original title"
     with db.session_factory() as session:
         assert session.query(Instrument).count() == 0
+
+
+def test_real_synthetic_proof_overall_uses_one_summary_derivation_and_stale_never_falls_back(
+    db, monkeypatch
+):
+    from test_returns_read_efficiency_service import _append_stale_proof, _saved_investment
+
+    proofs = overall.source_investment_proofs
+    _saved_investment(db, monkeypatch)
+    derive = proofs._derive
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append(kwargs)
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", observed)
+    value = read(db)
+    assert len(calls) == 1 and calls[0]["include_xirr"] is False
+    assert value.source_accounts[0].proof_status == "current"
+    assert value.mixed_result.known_result.value == value.source_accounts[0].result.pnl.value
+    assert value.mixed_result.known_result.value is not None
+    assert value.instruments
+    _append_stale_proof(db)
+    value = read(db)
+    assert value.source_accounts[0].proof_status == "stale"
+    assert value.mixed_result.known_result.value is None
+    assert value.instruments and all(
+        pair.pnl.value is None for pair in value.instruments[0].accounts
+    )
