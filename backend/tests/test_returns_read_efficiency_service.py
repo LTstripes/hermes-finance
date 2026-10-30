@@ -511,7 +511,9 @@ def test_legacy_proof_without_display_metadata_still_validates_without_inventing
             )
 
 
-def _named_investment(db, monkeypatch, *, source_labels=(), pdf_labels=()):
+def _named_investment(
+    db, monkeypatch, *, source_labels=(), pdf_labels=(), covered_to=None, sold=False
+):
     import test_statement_import_mybroker_preflight as preflight
 
     from hermes_finance.services import source_instrument_returns as instruments
@@ -535,7 +537,60 @@ def _named_investment(db, monkeypatch, *, source_labels=(), pdf_labels=()):
             node.attrib.pop(attribute, None)
         else:
             node.set(attribute, label)
+    if sold:
+        trade = root.find(".//{MyBroker}Details[@trade_no]")
+        sell = deepcopy(trade)
+        sell.set("trade_no", "10000000002\r\n2000000002")
+        sell.set("qty", "-10")
+        sell.set("summ_trade", "1100.00")
+        sell.set("Price", "110.00")
+        sell.set("bank_tax", "0")
+        sell.set("summ_nkd", "0")
+        if source_labels:
+            sell.set("p_name", source_labels[-1])
+        for key in (
+            "db_time",
+            "save_settlement_date",
+            "save_depo_settlement_date",
+            "settlement_time",
+        ):
+            sell.set(key, sell.get(key).replace(".01.2030", ".02.2030"))
+        for parent in root.iter():
+            if trade in list(parent):
+                parent.append(sell)
+                break
+        cash = root.find(".//{MyBroker}Details[@active_name='RUB']")
+        cash.set("real_rest", "2090")
+        position = root.find(".//{MyBroker}Details[@ISIN1]")
+        for parent in root.iter():
+            if position in list(parent):
+                parent.remove(position)
+                break
+        settlement = deepcopy(root.find(".//{MyBroker}rn"))
+        settlement.set("last_update", settlement.get("last_update").replace("-01-", "-02-"))
+        operation = settlement.find("{MyBroker}oper_type")
+        operation.set("oper_type", operation.get("oper_type").replace("10000000001", "10000000002"))
+        settlement.find(".//{MyBroker}p_code[@volume]").set("volume", "1100.00")
+        settlement_group = ET.SubElement(
+            root.find(".//{MyBroker}settlement_date_Collection"),
+            "{MyBroker}settlement_date",
+            {"settlement_date": "2030-02-17T00:00:00"},
+        )
+        ET.SubElement(settlement_group, "{MyBroker}rn_Collection").append(settlement)
+        report = replace(
+            report, positions={}, closed_isins=frozenset({("1234567", "RU000A000000")})
+        )
     raw = ET.tostring(root)
+    if covered_to is not None:
+        raw = raw.replace(b"2030-01-31", str(covered_to).encode()).replace(
+            b"31.01.2030", covered_to.strftime("%d.%m.%Y").encode()
+        )
+        monkeypatch.setattr(
+            preflight,
+            "FILENAME",
+            preflight.FILENAME.replace("31.01.30", covered_to.strftime("%d.%m.%y")),
+        )
+        report = replace(report, end=covered_to)
     document = parse_mybroker(raw, preflight.FILENAME)
     report = replace(
         report, display_names=tuple(("1234567", "RU000A000000", label) for label in pdf_labels)
@@ -746,6 +801,403 @@ def test_exact_verified_source_title_reaches_existing_screen_and_source_api_rout
     assert overview.json()["instruments"][0]["name"] == detail.json()["name"] == "Exact XML title"
     assert source.json()["instruments"][0]["source_name"] == "Exact XML title"
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fault", [None, "cash_control", "unknown_money", "quantity"])
+def test_account_index_preserves_full_account_economics_controls_and_isin_candidates(fault):
+    service, document, report, money, native = _many_instrument_case()
+    if fault == "cash_control":
+        document["rub_money"][0]["ending_amount"] = "1"
+    elif fault == "unknown_money":
+        money.append({**money[-1], "classification": "unknown", "ref": "unknown-guard"})
+    elif fault == "quantity":
+        document["positions"][-1]["actual_quantity"] = "99"
+    full_analyses, index_analyses = {}, {}
+    full = service._interval(
+        document,
+        None,
+        report,
+        money,
+        {},
+        {},
+        True,
+        native_evidence=native,
+        analyses=full_analyses,
+        include_xirr=False,
+    )
+    index = service._interval(
+        document,
+        None,
+        report,
+        money,
+        {},
+        {},
+        True,
+        native_evidence=native,
+        analyses=index_analyses,
+        include_xirr=False,
+        include_instruments=False,
+    )
+    assert index == _expected_account_index(full)
+    assert len(full_analyses) == 4 and index_analyses == {}
+
+
+@pytest.mark.parametrize(
+    "fault,reason",
+    [
+        ("duplicate_position", "source_return_duplicate_position"),
+        ("cash_ownership", "duplicate cash ownership"),
+        ("foreign_money", "source_return_money_account_conflict"),
+    ],
+)
+def test_account_index_keeps_whole_security_refusals_even_when_filtering(fault, reason):
+    service, document, report, money, native = _many_instrument_case()
+    if fault == "duplicate_position":
+        document["positions"].append(document["positions"][-1])
+    elif fault == "cash_ownership":
+        money.append(money[-3])
+    else:
+        money[-1]["source_account"] = "7654321-000"
+    for include_instruments in (True, False):
+        with pytest.raises(ValueError, match=reason):
+            service._interval(
+                document,
+                None,
+                report,
+                money,
+                {},
+                {},
+                True,
+                native_evidence=native,
+                include_xirr=False,
+                include_instruments=include_instruments,
+                requested_isin=document["positions"][0]["isin"],
+            )
+
+
+def test_account_index_constructs_no_instrument_projection_or_xirr(monkeypatch):
+    service, document, report, money, native = _many_instrument_case(27)
+    analysis, rates, metric = service.InstrumentAnalysis, service._rates, service._metric
+    counts = Counter()
+
+    def analysed(*args, **kwargs):
+        counts["analyses"] += 1
+        return analysis(*args, **kwargs)
+
+    def rated(*args, **kwargs):
+        counts["rates"] += 1
+        return rates(*args, **kwargs)
+
+    def measured(*args, **kwargs):
+        counts["metrics"] += 1
+        return metric(*args, **kwargs)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("account summary computed XIRR")
+
+    monkeypatch.setattr(service, "InstrumentAnalysis", analysed)
+    monkeypatch.setattr(service, "_rates", rated)
+    monkeypatch.setattr(service, "_metric", measured)
+    monkeypatch.setattr(service, "calculate_monthly_return_chain", unexpected)
+    full = service._interval(
+        document,
+        None,
+        report,
+        money,
+        {},
+        {},
+        True,
+        native_evidence=native,
+        analyses={},
+        include_xirr=False,
+    )
+    assert counts["analyses"] == 27 and counts["rates"] == 28
+    full_metrics = counts["metrics"]
+    counts.clear()
+    index = service._interval(
+        document,
+        None,
+        report,
+        money,
+        {},
+        {},
+        True,
+        native_evidence=native,
+        analyses={},
+        include_xirr=False,
+        include_instruments=False,
+    )
+    assert counts["analyses"] == 0 and counts["rates"] == 1
+    assert counts["metrics"] < full_metrics
+    account_metrics = counts["metrics"]
+    counts.clear()
+    _, small_document, small_report, small_money, small_native = _many_instrument_case(4)
+    service._interval(
+        small_document,
+        None,
+        small_report,
+        small_money,
+        {},
+        {},
+        True,
+        native_evidence=small_native,
+        analyses={},
+        include_xirr=False,
+        include_instruments=False,
+    )
+    assert counts["metrics"] == account_metrics  # No per-instrument display metric construction.
+    assert index == _expected_account_index(full)
+
+
+def test_account_index_cache_never_seeds_instrument_summary_or_detail_and_names_stay_lazy(
+    db, monkeypatch
+):
+    _named_investment(db, monkeypatch, source_labels=("Exact XML title",))
+    derive = proofs._derive
+    requests = []
+
+    def counted(*args, **kwargs):
+        requests.append((kwargs["include_xirr"], kwargs["include_instruments"]))
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", counted)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            index = proofs.read_account_summaries(session, source_account=ACCOUNT)
+            assert index[0]["interval"]["instruments"] == [{"isin": "RU000A000000"}]
+            assert index[0]["interval"]["pnl"]["value"] == "9000"
+            assert proofs.read_report_display_candidates(
+                session, source_account=ACCOUNT, proof_id=index[0]["proof_id"]
+            )["source"] == {"RU000A000000": ("Exact XML title",)}
+            assert requests == [(False, False)]
+            index[0]["interval"]["instruments"][0]["isin"] = "RU0000000001"
+            assert proofs.read_account_summaries(session, source_account=ACCOUNT)[0]["interval"][
+                "instruments"
+            ] == [{"isin": "RU000A000000"}]
+            captured = {}
+            full_summary = proofs.read_report_summaries(
+                session, source_account=ACCOUNT, analyses=captured
+            )
+            assert captured[full_summary[0]["proof_id"]]
+            assert "pnl" in full_summary[0]["interval"]["instruments"][0]
+            assert requests == [(False, False), (False, True)]
+            detail = returns_view.read_detail(
+                session, scope=SCOPE, start=PROOF_START, end=PROOF_END, isin="RU000A000000"
+            )
+            assert detail["name"] == "Exact XML title" and detail["pnl"]["value"] == "9000"
+            assert requests == [(False, False), (False, True), (True, True)]
+        with source_read_snapshot(session):
+            full = proofs.read_reports(session, source_account=ACCOUNT)
+            before = len(requests)
+            projected = proofs.read_account_summaries(
+                session,
+                source_account=ACCOUNT,
+                opening_date=PROOF_START,
+                closing_date=PROOF_END,
+                requested_isin="RU000A000000",
+            )
+            assert projected[0]["interval"]["instruments"] == [{"isin": "RU000A000000"}]
+            assert "pnl" in full[0]["interval"]["instruments"][0]
+            assert len(requests) == before
+        row = session.scalar(
+            select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+        )
+        row.classification = "unknown" if row.classification != "unknown" else "fee"
+        session.commit()
+        stale = proofs.read_account_summaries(session, source_account=ACCOUNT)[0]
+        assert stale["status"] == "stale" and stale["interval"] is None
+
+
+@pytest.mark.parametrize(
+    "labels,expected",
+    [
+        (("Sold security title",), "Sold security title"),
+        (("First XML title", "Second XML title"), "RU000A000000"),
+    ],
+)
+def test_long_history_sold_isin_labels_short_month_only_as_metadata_without_xirr(
+    db, monkeypatch, labels, expected
+):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import source_report_preview as preview
+
+    _named_investment(
+        db,
+        monkeypatch,
+        source_labels=labels,
+        covered_to=date(2030, 3, 31),
+        sold=True,
+    )
+    start, end = date(2030, 1, 31), date(2030, 2, 28)
+    with db.session_factory() as session:
+        history = proofs.read_account_summaries(session, source_account=ACCOUNT)[0]
+        assert history["interval"]["instruments"] == [{"isin": "RU000A000000"}]
+        assert history["interval"]["pnl"]["value"] == "9000", history["interval"]
+        assert (
+            proofs.read_reports(
+                session, source_account=ACCOUNT, opening_date=start, closing_date=end
+            )
+            == []
+        )
+        assert session.scalar(select(Instrument)) is None
+    before = snapshot(db)
+    chain = preview.calculate_monthly_return_chain
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("subinterval name fallback computed XIRR")
+
+    monkeypatch.setattr(preview, "calculate_monthly_return_chain", unexpected)
+    with monkeypatch.context() as baseline_patch:
+        baseline_patch.setattr(
+            proofs, "read_latest_display_candidates", lambda *a, **k: {"source": {}, "pdf": {}}
+        )
+        with db.session_factory() as session:
+            baseline = returns_view.read_detail(
+                session, scope=SCOPE, start=start, end=end, isin="RU000A000000"
+            )
+    with db.session_factory() as session:
+        detail = returns_view.read_detail(
+            session, scope=SCOPE, start=start, end=end, isin="RU000A000000"
+        )
+    assert baseline["name"] == "RU000A000000" and detail["name"] == expected
+    assert detail["analysis"].opening_date == start and detail["analysis"].closing_date == end
+    assert {k: v for k, v in detail.items() if k != "name"} == {
+        k: v for k, v in baseline.items() if k != "name"
+    }
+    assert snapshot(db) == before
+    counts = []
+
+    def counted(*args, **kwargs):
+        counts.append(1)
+        return chain(*args, **kwargs)
+
+    with monkeypatch.context() as baseline_patch:
+        baseline_patch.setattr(
+            proofs, "read_latest_display_candidates", lambda *a, **k: {"source": {}, "pdf": {}}
+        )
+        baseline_patch.setattr(preview, "calculate_monthly_return_chain", counted)
+        with db.session_factory() as session:
+            baseline_overview = returns_view.read_overview(
+                session, scope=SCOPE, start=start, end=end
+            )
+    baseline_calls = len(counts)
+    counts.clear()
+    with monkeypatch.context() as actual_patch:
+        actual_patch.setattr(preview, "calculate_monthly_return_chain", counted)
+        with db.session_factory() as session:
+            overview = returns_view.read_overview(session, scope=SCOPE, start=start, end=end)
+    assert len(counts) == baseline_calls  # Existing whole-history work only; no name-induced XIRR.
+    assert overview["instruments"][0]["name"] == expected
+    for value in (baseline_overview, overview):
+        for row in value["instruments"]:
+            row.pop("name")
+    assert overview == baseline_overview
+    _append_stale_proof(db)
+    with db.session_factory() as session:
+        stale = returns_view.read_detail(
+            session, scope=SCOPE, start=start, end=end, isin="RU000A000000"
+        )
+    assert stale["name"] == "RU000A000000"
+
+
+def _expected_account_index(full):
+    return {
+        **{
+            key: value
+            for key, value in full.items()
+            if key
+            not in {
+                "external_flows",
+                "account_only",
+                "exceptions",
+                "unallocated_payouts",
+            }
+        },
+        "instruments": [{"isin": row["isin"]} for row in full["instruments"]],
+    }
+
+
+def test_all_accounts_cache_projects_only_exact_selected_account_rows(db, monkeypatch):
+    _named_investment(db, monkeypatch, source_labels=("Exact XML title",))
+    with db.session_factory() as session:
+        original = session.scalar(select(SourceReturnProof))
+        original_id = original.id
+        values = {
+            column.name: getattr(original, column.name)
+            for column in SourceReturnProof.__table__.columns
+            if column.name != "id"
+        }
+        plan = json.loads(original.evidence_json)
+        plan.update(source_account="7654321", native_account="7654321-000")
+        values.update(
+            source_account="7654321",
+            native_account="7654321-000",
+            request_id="index-foreign",
+            evidence_json=json.dumps(plan),
+            dependency_digest=proofs._evidence_digest(plan),
+        )
+        session.add(SourceReturnProof(**values))
+        session.commit()
+    derive = proofs._derive
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", counted)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            all_reports = proofs.read_reports(session)
+            assert len(all_reports) == 2 and len(calls) == 2
+            selected = proofs.read_account_summaries(session, source_account=ACCOUNT)
+            assert [row["proof_id"] for row in selected] == [original_id]
+            assert (
+                selected[0]["status"] == "current"
+                and selected[0]["interval"]["pnl"]["value"] == "9000"
+            )
+            captured = {}
+            alias = proofs.read_reports(session, source_account="1234567", analyses=captured)
+            assert [row["proof_id"] for row in alias] == [original_id]
+            assert set(captured) == {original_id} and captured[original_id]
+            assert proofs.read_report_display_candidates(
+                session, source_account=ACCOUNT, proof_id=original_id
+            )["source"]
+            assert len(calls) == 2
+
+
+def test_all_accounts_cache_requires_complete_canonical_scoped_selection(db, monkeypatch):
+    _saved_investment(db, monkeypatch)
+    with db.session_factory() as session:
+        original = session.scalar(select(SourceReturnProof))
+        original_id = original.id
+        values = {
+            column.name: getattr(original, column.name)
+            for column in SourceReturnProof.__table__.columns
+            if column.name != "id"
+        }
+        # A deliberately inconsistent synthetic row demonstrates why global
+        # cache scope cannot be inferred from display/source aliases alone.
+        values.update(source_account="different-row-alias", request_id="index-coverage-gap")
+        copy = SourceReturnProof(**values)
+        session.add(copy)
+        session.commit()
+        newer_id = copy.id
+    derive = proofs._derive
+    calls = []
+
+    def counted(session, row, *args, **kwargs):
+        calls.append(row.id)
+        return derive(session, row, *args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", counted)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            global_reports = proofs.read_reports(session)
+            assert [row["proof_id"] for row in global_reports] == [newer_id]
+            scoped = proofs.read_account_summaries(session, source_account="1234567")
+            assert [row["proof_id"] for row in scoped] == [original_id]
+            assert calls == [newer_id, original_id]
 
 
 def test_source_views_are_verified_once_per_snapshot_and_never_shared_mutably(db, monkeypatch):
