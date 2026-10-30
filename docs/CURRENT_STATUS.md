@@ -8,33 +8,56 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-**Accepted application code:** [#992](https://github.com/LTstripes/hermes-finance/pull/992)
-was guarded-squash merged at `3fd9200445d0c2f526ca3c3cc4864798acf2fa57` after
-exact-head review PASS and [PR CI40964202376](https://github.com/LTstripes/hermes-finance/actions/runs/40964202376)
-SUCCESS. Canonical [push CI41003084356](https://github.com/LTstripes/hermes-finance/actions/runs/41003084356)
-is SUCCESS on that exact main SHA. This includes the already accepted #987-#991.
+**Released and installed: [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0),
+`d961e788d1cfc4a902443706703632ca0c63c68b`.** Accepted application
+[#992](https://github.com/LTstripes/hermes-finance/pull/992) was guarded-squash
+merged as `3fd9200445d0c2f526ca3c3cc4864798acf2fa57`; its exact-main
+[CI41003084356](https://github.com/LTstripes/hermes-finance/actions/runs/41003084356)
+completed SUCCESS. Mechanical packaging [#993](https://github.com/LTstripes/hermes-finance/pull/993)
+synchronized release identity, locks, current expectations and notes without
+changing dependencies, financial logic or migration sources.
 
-The 1.8.0 packaging delta synchronizes manifests, locks, current health expectations
-and generic release notes without dependency-resolution, financial-logic or
-migration-source changes. Publication and installation are still separate gates.
-The last published/installed identity remains v1.7.1 below; no v1.8.0 installation
-is claimed here. Operator preflight found no Stable listener on port8000; the
-initial stopped state has no established cause. Read-only physical binding,
-0066 integrity and all79-table baseline capture passed without changing DB bytes.
+Exact packaging [PR CI41004254523](https://github.com/LTstripes/hermes-finance/actions/runs/41004254523),
+canonical [push CI41005279954](https://github.com/LTstripes/hermes-finance/actions/runs/41005279954)
+and guarded [release41006339267](https://github.com/LTstripes/hermes-finance/actions/runs/41006339267)
+completed SUCCESS. Annotated tag `afd75ebb6f102fce557c045c867822078c6d2f24`
+peels to that exact release commit; published notes were independently compared.
+GitHub reports immutable=false; platform immutability is not claimed.
 
-Main now supports persistent exact-original investment-PDF evidence after immutable
-XML Save, account/instrument RUB and eligible dated rates through ordinary readers
-after Reload, and separate historical/full-month coverage. The isolated-copy
-Save/retry/Reload financial comparison passed for the assigned scope; it is not
-Owner visual UAT, a real financial Apply/Close or blanket acceptance of other
-originals. Proof confirmation and deployment remain distinct. Code changes retire
-investment-proof currentness; fresh original-bound confirmation is required.
+Operator-local rollout on30October confirms stock backup-first OPS02,
+Prepare/Validate and Start PASS, health HTTP200/ok/1.8.0 and the owned listener
+holding the original physical database. Schema is `0067_investment_report_proofs`.
+Verified pre-upgrade0066 and current0067 recovery points retain their exact
+producing-code bundles. All old financial rows, sequences and CLOSED history,
+unrelated schema, environment and physical-data identity were preserved.
 
-Remaining rollout: exact packaging CI/review, guarded publication/readback, fresh
-verified production backup and producing-code retention, copy-only0066-to-0067
-rehearsal and bounded financial acceptance, stock OPS02/Prepare/Validate, separate
-Start and health/physical-binding/data-continuity readback. Any real history Save
-must preserve conflicts/deduplication/CLOSED and stay in the accepted scope.
+Authorized historical XML sources and their PDF identity/control evidence were
+saved through the existing source-only journal and proof host after fresh-copy
+comparison. Ordinary account/instrument readers, the UI account aliases and the
+installed UI after Reload agree in the checked scope: **42 account-instrument
+pairs have numeric RUB and Modified Dietz period results**. Period and annualized
+XIRR are numeric for 21 pairs. The other 21 stop at the conservative pre-search
+guard for more than one daily-aggregated cash-flow sign variation; no root search
+was performed for them. This does not prove multiple roots or missing inputs.
+Unknown values were not replaced with zero.
+
+Operator readback confirms financial tables and CLOSED unchanged; only the
+authorized source/proof/sequence records were added. No automatic restore,
+downgrade, financial Apply/Close, mapping/payout write, new valuation-packet
+activation or provider request occurred. This is scoped source-only/provisional
+acceptance, not Owner visual UAT or financial portfolio Close. Other originals
+and periods do not inherit it; P/C retain the supported contract.
+
+RUB and eligible Modified Dietz percentages describe the selected period. Period
+XIRR and annualized XIRR remain separate; conservative pre-search refusal and
+actual multiple-root outcomes remain unavailable with their reason. Shared account costs/taxes are not allocated to
+instruments by guesswork. Long-history endpoints do not invent intervening
+monthly valuations; the next month still needs its own appropriate original.
+
+Current next step is Owner visual review and the separately chosen monthly
+workflow. No installation or authorized historical-source Save blocker remains.
+Earlier v1.7.1 checkpoint, capability and next-action paragraphs below retain
+their historical evidence scope and do not override this current checkpoint.
 
 ## Historical v1.7.1 rollout checkpoint
 
@@ -203,12 +226,12 @@ money ownership are not guessed or filled with zero.
 
 | Layer | Current verified status |
 | --- | --- |
-| Accepted code | #992 integrated at `3fd9200445d0c2f526ca3c3cc4864798acf2fa57`, including #987-#991; exact-main [CI41003084356](https://github.com/LTstripes/hermes-finance/actions/runs/41003084356) SUCCESS. 1.8.0 packaging and deployment gates are recorded above. |
-| Published release | [v1.7.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.7.1), annotated tag `b15621986eb3b454091217fe29015b19c2582f28`, peeled `b247b5cf4cb01b3e06708b1a61e3e253608231ea`; guarded [release40825394130](https://github.com/LTstripes/hermes-finance/actions/runs/40825394130) SUCCESS. Published notes match the tagged file; no platform immutability guarantee is claimed. |
-| HONOR Stable | Operator-local 29 October 05:58 UTC readback: v1.7.1 at `b247b5cf` / 0066, running, health HTTP 200/ok; owned process bound to the original physical DB. Fresh verified 0066 backup and producing v1.7.0 code retained. All 79 tables and live DB bytes/rows/indexes/triggers/sequences/sidecar preserved. Earlier backup/recovery evidence retains its historical scope. |
+| Accepted code | #992 and packaging#993 integrated; released target `d961e788d1cfc4a902443706703632ca0c63c68b`; exact-main [CI41005279954](https://github.com/LTstripes/hermes-finance/actions/runs/41005279954) SUCCESS. Prior independent financial/source review retained for unchanged semantics. |
+| Published release | [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0), annotated tag `afd75ebb6f102fce557c045c867822078c6d2f24`, peeled `d961e788d1cfc4a902443706703632ca0c63c68b`; guarded [release41006339267](https://github.com/LTstripes/hermes-finance/actions/runs/41006339267) SUCCESS; published notes match. |
+| HONOR Stable | Operator-local30October: installed/running1.8.0 at `d961e788` /0067; health HTTP200/ok and exact original physical DB handle verified. Stock backup-first OPS02/Prepare/Validate/Start and data-continuity checks PASS. Fresh pre-upgrade and current-schema backups with producing code retained. |
 | Isolated Test | Old code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541` / isolated DB0066, stopped. New OPS03 was blocked before execution by the now-completed lifecycle Scan -Retire. Owner cancelled the separate aggregate Test on 28 October. |
 | Owner UI UAT | New visual review deferred to evening/Thursday; main monthly UAT planned for 1 November. No new visual PASS, real financial DRAFT/forecast save or complete XIRR/TWRR acceptance. Earlier v1.6.0 UI GO retains its original scope. |
-| Protected actions | The authorized v1.7.1 publication, backup-first Stable update/start and exact September R2 activation are complete. No financial/provider actions or source/financial row changes occurred. Financial Apply/save/Close remains separately gated; the earlier read-only provider diagnostic has no execution/result proof. Finance workspace-retirement schedule disabled by explicit Owner request; backups unaffected. |
+| Protected actions | Authorized publication, backup-first1.8.0 installation and bounded source-only history evidence Save/readback completed. No financial Apply/Close, mapping/payout writes, provider request or new valuation-packet activation. CLOSED and prior financial facts preserved. |
 
 Existing accepted custody-source proof remains a scoped source-only observation,
 not an independent economic payout. Source money journal does not override
@@ -216,6 +239,16 @@ manual financial rows, historical CLOSED facts or unknown NKD valuation.
 
 <a id="s2"></a>
 ## 2. What the user can do and what is already calculated
+
+**Installed in v1.8.0:** Broker statements retains saved historical XML/PDF
+results across Reload; ordinary Returns exposes the evidenced source intervals
+and instrument results. The checked42 account-instrument pairs have RUB and
+Modified Dietz percentages for the selected period. The 21 pre-search XIRR guard
+refusals remain NULL with their reason; no missing inputs or multiple roots were
+established for those cases. Annualized XIRR is not
+labelled as a period return. Historical endpoints do not fabricate intermediate
+monthly EOD values. Financial source-only, accepted reports and forecasts remain
+distinct. The v1.7.1 paragraphs below record the earlier installation scope.
 
 **Installed in v1.7.1:** #986 reuses verified source reads within
 each request, skips unused Returns history projections and removes the redundant
@@ -290,7 +323,7 @@ opening-value operands and various intervening EOD/monthly price boundaries
 are genuinely absent. No full-archive source reimport or blanket manual DELETE
 is needed or approved.
 
-**Remaining finance evidence:** one account's August 2026 cancellation/principal/
+**Earlier v1.7.1 finance-evidence snapshot:** one account's August 2026 cancellation/principal/
 cash ownership and double-payment question; September settlement/NKD/commission
 broker reply ([#814 field-definition receipt](https://github.com/LTstripes/hermes-finance/issues/814#issuecomment-6442328623),
 REPLY RECEIVED / PARTIAL: trade field meanings supplied, five Money NKD→trade
@@ -309,11 +342,26 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Pending Owner acceptance:** visual review remains planned for evening/Thursday and the main monthly UAT for 1 November. v1.7.1 publication, installation and scoped R2 readback are complete, not a visual or monthly UAT PASS. Do not repeat successful suites, migration or aggregate Test solely for handoff.
-2. **Separate #891 implementation:** the cloud work remains pending outside v1.7.1 and retains its own review/acceptance gates; this release does not deploy or accept it.
-3. **Separate #769 history:** read-only assessment of one all-time result for old history remains pending; new months remain monthly. No old monthly backfill is required by this goal. Long originals do not establish every monthly EOD or inherit September R2 acceptance; full-period completeness, missing opening operands, dated external flows and exact XIRR/TWRR remain unconfirmed.
-4. **Separately scoped finance:** real DRAFT Apply, forecast save/refresh, Close and any provider action retain their exact scope, currentness and separate authority. The deployment performed none of those actions. Preserve the verified original backup and producing code/schema pair; no automatic downgrade, cross-schema overwrite or Test-to-Stable data promotion.
-5. **Source evidence not blocking honest UI:** unresolved historical EOD outside the accepted September scope, four position discrepancies, three identity-date ambiguities, August principal, REPO [#888](https://github.com/LTstripes/hermes-finance/issues/888), NKD [#814](https://github.com/LTstripes/hermes-finance/issues/814) and remaining #767/#769 financial acceptance stay their owning tasks. Do not fill NULLs, fake gold P&L, duplicate income or re-open closed bugs; standalone month editor remains KEEP pending real consumer retirement.
+1. **Owner visual/monthly acceptance:** v1.8.0 publication, installation and
+   scoped historical source Save/reader/UI Reload checks are complete. These
+   programmatic checks are not an Owner visual or complete financial Close PASS.
+2. **Next monthly source:** use the existing monthly workflow with its own
+   appropriate original and endpoint coverage. The checked long-history result
+   does not establish every intervening monthly valuation; no old-month backfill
+   or CLOSED rewrite was performed.
+3. **Numerical limits:** keep pre-search XIRR refusals distinct from demonstrated
+   root ambiguity. Neither permits silently selecting a root or filling zeroes.
+   Preserve separate shared account costs/taxes and source-only/provisional
+   authority; do not allocate unknown items to instruments or invent zeroes.
+4. **Separate finance authority:** financial DRAFT Apply, forecast save/refresh,
+   Close and provider actions retain their own exact scope/currentness and Owner
+   decisions. Preserve verified backups and producing code; no automatic
+   downgrade, cross-schema overwrite or Test-to-Stable promotion.
+5. **Evidence outside the accepted scope:** prior #767/#769, NKD#814 and REPO#888
+   receipts retain their original source/date scope. Do not carry their old
+   occurrence counts blindly into the newly checked source set or treat this
+   scoped success as resolving every old report. #987's dated personal instrument
+   detail is shipped; no broader #891 acceptance is claimed here.
 
 <a id="s4"></a>
 ## 4. Operating and evidence boundaries
