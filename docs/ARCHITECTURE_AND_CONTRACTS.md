@@ -6553,6 +6553,38 @@ months, change PerformanceScope, import operations, write receipts or invoke
 providers. Money remains exact integer-kopeck strings; the browser does no
 financial aggregation. Detail and account/month reads are lazy.
 
+The default projection retains guarded account economics and an exact ISIN index,
+including sold instruments, but does not construct hidden per-instrument analyses,
+rates or event DTOs. Index accounts declare `details_loaded=false`; the reason
+`instrument_details_not_requested` is a deferred read, not a missing financial
+operand. The existing full producer and internal coherent export projection remain
+available, with a distinct snapshot-cache projection key. Internal cash/quantity
+validation required for account results is never skipped to achieve laziness.
+
+`GET /api/returns/income?kind=coupon|dividend` loads the paid-income drilldown only
+on disclosure. Upfront `coupon_income` and `dividend_income` totals use each
+eligible current whole-history native account once, independently of valuation
+availability. Instrument explanations and overlapping monthly/source occurrences
+are not extra addends. The drilldown uses the same counted, current dated cash
+legs as instrument economics, keyed by source operation identity rather than
+date/amount matching. Forecasts, principal redemption and sale NKD are excluded.
+Known partially attributed income remains visible with its coverage/reasons;
+missing accounts do not erase supported siblings or become zero. Income is an
+explanation of P&L, never another mixed-result operand.
+
+`GET /api/returns/instrument-card?isin=...` lazily composes the existing guarded
+Detail DTO for all exact source accounts and their available whole-history
+periods. Canonical-account mappings provide context only when unambiguous; they
+never infer identity from labels. The summary retains known supported amounts,
+local exclusions, actual valuation dates and sold zero quantities. Different
+dates are not described as a common current valuation, and account rates are not
+summed into a whole-card rate. `valuation_and_trades` is the existing valuation
+and trade contribution; coupons, dividends and redemption are separate, while
+fees (`costs`) and attributed taxes are already deducted in P&L. They must not be
+deducted again. Conditional estimates are not promoted to supported summary
+addends. The nested existing Detail preserves event prices, quantities, costs,
+settlement dates, source authority and diagnostics.
+
 `mixed_result` is distinct from the older source-only basket subtotal. Each
 component carries selected/available/included state, amount, interval and/or
 valuation date, coverage, method, authority and exclusion reason. The known RUB
@@ -6593,8 +6625,10 @@ no cash flow without quantities is promoted to a gold transaction journal.
 
 Instrument grouping uses exact ISIN and preserves account-specific periods and
 rates; neither shared names nor a common ISIN merge financial accounts. Source
-name, exact catalogue name and explicit missing-name fallback retain identity
-and provenance. Backend changes still invalidate proof currentness: a demo copy
+name, then validated exact-account/ISIN PDF metadata, then exact catalogue name
+and explicit missing-name fallback retain identity and provenance. Ambiguity
+within one basis never selects an arbitrary label; name metadata cannot grant
+financial attribution, interval coverage or currentness. Backend changes still invalidate proof currentness: a demo copy
 requires fresh Preview and explicit proof confirmation on that copy; old proof
 hashes are never rewritten. The older basket's flow-bearing crossing guard below
 is unchanged.

@@ -1,14 +1,14 @@
 """Read-only all-history presentation with separate, explicit metric bases."""
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.returns_view import DTO, Metric, Period, Result, no_store
+from hermes_finance.api.returns_view import DTO, Detail, Metric, Period, Result, no_store, read
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.services.returns_overall import read_overall
+from hermes_finance.services.returns_overall import read_income, read_instrument_card, read_overall
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -35,6 +35,7 @@ class InstrumentAccount(Result):
     scope: str
     label: str
     canonical_account_id: int | None = None
+    details_loaded: bool = True
 
 
 class OverallInstrument(DTO):
@@ -136,6 +137,7 @@ class Overall(DTO):
     gold: Gold
     mixed_result: MixedResult
     coupon_income: CouponIncome
+    dividend_income: CouponIncome
     reason_codes: list[str]
 
 
@@ -143,3 +145,105 @@ class Overall(DTO):
 def overall(response: Response, session: Session = Depends(session_for_request)):
     no_store(response)
     return read_overall(session)
+
+
+class IncomeInstrumentAccount(DTO):
+    scope: str
+    label: str
+    period: Period | None
+    amount: Metric
+
+
+class IncomeInstrument(DTO):
+    isin: str
+    name: str
+    amount: Metric
+    accounts: list[IncomeInstrumentAccount]
+
+
+class IncomeEvent(DTO):
+    scope: str
+    label: str
+    isin: str
+    name: str
+    date: date
+    amount: Metric
+
+
+class Income(DTO):
+    contract_version: Literal["returns_income_v1"]
+    kind: Literal["coupon", "dividend"]
+    summary: CouponIncome
+    instruments: list[IncomeInstrument]
+    events: list[IncomeEvent]
+    reason_codes: list[str]
+
+
+class Quantity(DTO):
+    value: str | None
+    partial: Literal[True]
+    reason_codes: list[str]
+
+
+class CardSummary(DTO):
+    quantity: Quantity
+    reported_value: Metric
+    valuation_dates: list[date]
+    pnl: Metric
+    coupons: Metric
+    dividends: Metric
+    valuation_and_trades: Metric
+    costs: Metric
+    taxes: Metric
+    redemption: Metric
+    rate: Metric
+    partial: Literal[True]
+    reason_codes: list[str]
+
+
+class CardAccount(DTO):
+    scope: str
+    label: str
+    canonical_account_id: int | None
+    period: Period | None
+    proof_status: Literal["current", "stale", "absent", "conflict"]
+    included: bool
+    exclusion_reason: str | None
+    reason_codes: list[str]
+    detail: Detail | None
+
+
+class InstrumentCard(DTO):
+    contract_version: Literal["returns_instrument_card_v1"]
+    isin: str
+    name: str
+    kind: str | None
+    summary: CardSummary
+    accounts: list[CardAccount]
+    reason_codes: list[str]
+
+
+@router.get("/income", response_model=Income)
+def income(
+    request: Request,
+    response: Response,
+    kind: Literal["coupon", "dividend"],
+    session: Session = Depends(session_for_request),
+):
+    no_store(response)
+    if len(request.query_params.getlist("kind")) != 1:
+        raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
+    return read(read_income, session, kind=kind)
+
+
+@router.get("/instrument-card", response_model=InstrumentCard)
+def instrument_card(
+    request: Request,
+    response: Response,
+    isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
+    session: Session = Depends(session_for_request),
+):
+    no_store(response)
+    if len(request.query_params.getlist("isin")) != 1:
+        raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
+    return read(read_instrument_card, session, isin=isin)

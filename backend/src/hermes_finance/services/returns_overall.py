@@ -130,15 +130,19 @@ def _gold(session, months):
     }
 
 
-def _source_accounts(session):
+def _source_accounts(session, *, include_instrument_details=True, captured_analyses=None):
     canonical = returns_view._source_scopes(session)
     labels = {a["id"]: a["label"] for a in returns_view._accounts(session, canonical)}
     accounts, grouped = [], defaultdict(list)
     for account in sorted(set(canonical.values())):
         scope = f"source:{account}"
         captured = {}
-        reports = source_investment_proofs.read_report_summaries(
-            session, source_account=account, analyses=captured
+        reports = (
+            source_investment_proofs.read_report_summaries(
+                session, source_account=account, analyses=captured
+            )
+            if include_instrument_details
+            else source_investment_proofs.read_account_summaries(session, source_account=account)
         )
         historical = [p for p in reports if p["history_from_zero"]]
         proof = (
@@ -150,20 +154,32 @@ def _source_accounts(session):
         status = proof["status"] if proof else "absent"
         reasons = list(proof["reason_codes"]) if proof else ["all_history_source_proof_absent"]
         analyses = captured.get(proof["proof_id"], {}) if proof and status == "current" else {}
-        source_names = (
-            source_investment_proofs.read_report_display_names(
+        if captured_analyses is not None:
+            captured_analyses[scope] = analyses
+        display = (
+            source_investment_proofs.read_report_display_candidates(
                 session, source_account=account, proof_id=proof["proof_id"]
             )
             if proof and status == "current"
-            else {}
+            else {"source": {}, "pdf": {}}
         )
-        keys = sorted(analyses) if status == "current" else sorted(metadata)
+        keys = (
+            sorted(analyses)
+            if include_instrument_details and status == "current"
+            else (
+                sorted({item["isin"] for item in (proof["interval"] or {}).get("instruments", [])})
+                if status == "current"
+                else sorted(metadata)
+            )
+        )
         prototypes = [
             SimpleNamespace(
                 isin=isin,
-                source_name=next(iter(observed))
-                if len(observed := metadata[isin]["names"] | set(source_names.get(isin, ()))) == 1
-                else None,
+                source_name=source_investment_proofs.resolve_display_name(
+                    isin,
+                    source_labels=metadata[isin]["names"] | set(display["source"].get(isin, ())),
+                    pdf_labels=display["pdf"].get(isin, ()),
+                ),
             )
             for isin in keys
         ]
@@ -185,17 +201,29 @@ def _source_accounts(session):
             else:
                 # Metadata can survive an unavailable proof; no older numbers
                 # or current catalogue values are substituted for its operands.
+                reason = (
+                    "instrument_details_not_requested"
+                    if not include_instrument_details and status == "current"
+                    else "all_history_source_proof_unavailable"
+                )
                 item = {
                     "period": period,
-                    "pnl": _unknown("all_history_source_proof_unavailable"),
-                    "rate": _unknown("all_history_source_proof_unavailable", rate=True),
-                    "coupons": _unknown("all_history_source_proof_unavailable"),
-                    "dividends": _unknown("all_history_source_proof_unavailable"),
+                    "pnl": _unknown(reason),
+                    "rate": _unknown(reason, rate=True),
+                    "coupons": _unknown(reason),
+                    "dividends": _unknown(reason),
                 }
                 name = row.source_name or names.get(row.isin) or row.isin
                 kind = next(iter(meta["types"])) if len(meta["types"]) == 1 else None
             grouped[row.isin].append(
-                {"scope": scope, "label": labels[scope], "name": name, "kind": kind, **item}
+                {
+                    "scope": scope,
+                    "label": labels[scope],
+                    "name": name,
+                    "kind": kind,
+                    "details_loaded": include_instrument_details and status == "current",
+                    **item,
+                }
             )
         accounts.append(
             {
@@ -254,7 +282,7 @@ def _identity_conflict(native, mappings, reverse):
     return len(mappings[native]) > 1 or any(len(reverse[a]) > 1 for a in mappings[native])
 
 
-def _coupon_income(accounts, mappings, reverse):
+def _paid_income(accounts, mappings, reverse, *, kind):
     """Known credited account coupons once, independent of valuation/P&L.
 
     These are latest current exact whole-history account operands. Instrument
@@ -267,7 +295,7 @@ def _coupon_income(accounts, mappings, reverse):
             continue
         seen.add(native)
         amount = (
-            account["result"]["coupons"]
+            account["result"][f"{kind}s"]
             if account["result"]
             else _unknown("all_history_source_proof_absent")
         )
@@ -275,9 +303,9 @@ def _coupon_income(accounts, mappings, reverse):
         if _identity_conflict(native, mappings, reverse):
             excluded = "source_account_identity_mapping_conflict"
         elif account["proof_status"] != "current":
-            excluded = "current_coupon_history_unavailable"
+            excluded = f"current_{kind}_history_unavailable"
         elif amount["value"] is None:
-            excluded = "coupon_income_unavailable"
+            excluded = f"{kind}_income_unavailable"
         else:
             excluded = None
             values.append(int(amount["value"]))
@@ -293,9 +321,9 @@ def _coupon_income(accounts, mappings, reverse):
                 "reason_codes": list(dict.fromkeys([*reasons, *([excluded] if excluded else [])])),
             }
         )
-    reasons = ["known_source_history_coupons_only", "source_only_not_financial_close"]
+    reasons = [f"known_source_history_{kind}s_only", "source_only_not_financial_close"]
     if any(not row["included"] for row in rows):
-        reasons.append("coupon_history_accounts_missing_or_excluded")
+        reasons.append(f"{kind}_history_accounts_missing_or_excluded")
     if (
         len(
             {
@@ -306,10 +334,10 @@ def _coupon_income(accounts, mappings, reverse):
         )
         > 1
     ):
-        reasons.append("coupon_account_history_periods_differ")
+        reasons.append(f"{kind}_account_history_periods_differ")
     return {
         "known_total": returns_view.metric(
-            sum(values) if values else None, reasons=reasons, method="known_source_history_coupons"
+            sum(values) if values else None, reasons=reasons, method=f"known_source_history_{kind}s"
         ),
         "partial": True,
         "selected_accounts": len(rows),
@@ -317,6 +345,10 @@ def _coupon_income(accounts, mappings, reverse):
         "accounts": rows,
         "reason_codes": reasons,
     }
+
+
+def _coupon_income(accounts, mappings, reverse):
+    return _paid_income(accounts, mappings, reverse, kind="coupon")
 
 
 def _mixed_result(session, accounts, gold, months, mappings, reverse):
@@ -463,10 +495,12 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
     }
 
 
-def read_overall(session):
+def read_overall(session, *, include_instrument_details=False):
     with source_read_snapshot(session):
         months = returns_view._months(session)
-        accounts, instruments, canonical = _source_accounts(session)
+        accounts, instruments, canonical = _source_accounts(
+            session, include_instrument_details=include_instrument_details
+        )
         mappings, reverse = _account_mappings(session, canonical)
         for instrument in instruments:
             for account in instrument["accounts"]:
@@ -492,8 +526,224 @@ def read_overall(session):
             "gold": gold,
             "mixed_result": _mixed_result(session, accounts, gold, months, mappings, reverse),
             "coupon_income": _coupon_income(accounts, mappings, reverse),
+            "dividend_income": _paid_income(accounts, mappings, reverse, kind="dividend"),
             "reason_codes": [
                 "source_only_not_financial_close",
                 "overall_aggregation_pending_review",
             ],
+        }
+
+
+def _known_sum(metrics, *, method):
+    """Retain known partial amounts, never promote estimates or unknown to zero."""
+    metrics = list(metrics)
+    values = [int(m["value"]) for m in metrics if m["value"] is not None and not m["estimate"]]
+    reasons = list(dict.fromkeys(r for m in metrics for r in m["reason_codes"]))
+    if len(values) != len(metrics):
+        reasons.append("instrument_accounts_missing_or_excluded")
+    return returns_view.metric(
+        sum(values) if values else None, reasons=reasons, method=method, estimate=False
+    )
+
+
+def _component_metric(item):
+    # A known partial credited component is useful; provisional assumptions do
+    # not become a supported addend merely because they have a numeric value.
+    return returns_view.metric(
+        item.value if item.status in {"supported", "partial"} else None,
+        reasons=item.reason_codes,
+        method="instrument_return_v2",
+        estimate=False,
+    )
+
+
+def read_instrument_card(session, isin, *, overview=None):
+    """Compose one lazy exact-ISIN card from the ordinary, guarded detail reader."""
+    with source_read_snapshot(session):
+        overview = overview if overview is not None else read_overall(session)
+        instrument = next((row for row in overview["instruments"] if row["isin"] == isin), None)
+        if instrument is None:
+            raise LookupError("returns_instrument_missing")
+        sources = {row["scope"]: row for row in overview["source_accounts"]}
+        canonical = returns_view._source_scopes(session)
+        mappings, reverse = _account_mappings(session, canonical)
+        accounts = []
+        for indexed in instrument["accounts"]:
+            source = sources[indexed["scope"]]
+            reasons = list(source["reason_codes"])
+            detail, excluded = None, None
+            native = source["scope"].removeprefix("source:")
+            if _identity_conflict(native, mappings, reverse):
+                excluded = "source_account_identity_mapping_conflict"
+            elif source["proof_status"] != "current" or not source["period"]:
+                excluded = "current_instrument_history_unavailable"
+            else:
+                period = source["period"]
+                try:
+                    detail = returns_view.read_detail(
+                        session,
+                        scope=source["scope"],
+                        start=period["start"],
+                        end=period["end"],
+                        isin=isin,
+                    )
+                except (ValueError, LookupError):
+                    excluded = "instrument_history_detail_unavailable"
+            if excluded:
+                reasons.append(excluded)
+            accounts.append(
+                {
+                    "scope": source["scope"],
+                    "label": source["label"],
+                    "canonical_account_id": indexed["canonical_account_id"],
+                    "period": source["period"],
+                    "proof_status": source["proof_status"],
+                    "included": excluded is None,
+                    "exclusion_reason": excluded,
+                    "reason_codes": reasons,
+                    "detail": detail,
+                }
+            )
+        details = [row["detail"] for row in accounts if row["included"] and row["detail"]]
+        omitted = len(details) != len(accounts)
+
+        def aggregate(name, *, component=False):
+            operands = [
+                _component_metric(row["analysis"].components[name])
+                if component
+                else _component_metric(
+                    row["analysis"].pnl if name == "pnl" else row["analysis"].components[name]
+                )
+                for row in details
+            ]
+            if omitted:
+                operands.append(_unknown("instrument_accounts_missing_or_excluded"))
+            return _known_sum(operands, method=f"known_instrument_accounts_{name}")
+
+        endpoints = [row["analysis"].closing for row in details]
+        quantities = [e.quantity for e in endpoints if e.quantity is not None]
+        reasons = ["known_instrument_accounts_only", "combined_rate_periods_and_flows_not_proven"]
+        if omitted or len(quantities) != len(endpoints):
+            reasons.append("instrument_accounts_missing_or_excluded")
+        dates = sorted({e.date for e in endpoints})
+        if len(dates) > 1:
+            reasons.append("instrument_account_valuation_dates_differ")
+        values = [
+            returns_view.metric(e.reported_value_kopecks, reasons=e.reason_codes, estimate=False)
+            for e in endpoints
+        ]
+        if omitted:
+            values.append(_unknown("instrument_accounts_missing_or_excluded"))
+        with localcontext() as context:
+            context.prec = 80
+            quantity = str(sum(quantities, Decimal(0))) if quantities else None
+        summary = {
+            "quantity": {"value": quantity, "partial": True, "reason_codes": reasons},
+            "reported_value": _known_sum(values, method="reported_endpoint_values"),
+            "valuation_dates": dates,
+            "partial": True,
+            "reason_codes": reasons,
+            "pnl": aggregate("pnl"),
+            "coupons": aggregate("coupons"),
+            "dividends": aggregate("dividends"),
+            "valuation_and_trades": aggregate("valuation_and_trades", component=True),
+            "costs": aggregate("fees", component=True),
+            "taxes": aggregate("taxes", component=True),
+            "redemption": aggregate("redemption", component=True),
+            "rate": _unknown("combined_rate_periods_and_flows_not_proven", rate=True),
+        }
+        return {
+            "contract_version": "returns_instrument_card_v1",
+            "isin": isin,
+            "name": instrument["name"],
+            "kind": instrument["kind"],
+            "summary": summary,
+            "accounts": accounts,
+            "reason_codes": reasons,
+        }
+
+
+def read_income(session, *, kind):
+    """Lazy credited-income drilldown, retaining account totals if attribution is partial."""
+    if kind not in {"coupon", "dividend"}:
+        raise ValueError("returns_income_kind_invalid")
+    with source_read_snapshot(session):
+        captured = {}
+        accounts, instruments, canonical = _source_accounts(
+            session, include_instrument_details=True, captured_analyses=captured
+        )
+        mappings, reverse = _account_mappings(session, canonical)
+        summary = _paid_income(accounts, mappings, reverse, kind=kind)
+        names = {row["isin"]: row["name"] for row in instruments}
+        grouped, events, reasons = defaultdict(list), [], []
+        for account in summary["accounts"]:
+            if not account["included"]:
+                continue
+            start, end = account["period"]["start"], account["period"]["end"]
+            seen, conflicts, event_total = {}, set(), 0
+            for isin, analysis in captured.get(account["scope"], {}).items():
+                amount = _component_metric(analysis.components[f"{kind}s"])
+                grouped[isin].append(
+                    {
+                        "scope": account["scope"],
+                        "label": account["label"],
+                        "period": account["period"],
+                        "amount": amount,
+                    }
+                )
+                for event in analysis.events:
+                    if event.kind != kind.upper() or not event.counted or not event.current:
+                        continue
+                    # A source event key, never date/amount, identifies a credited operation.
+                    legs = tuple(leg for leg in event.cash_legs if start < leg.date <= end)
+                    if not legs:
+                        reasons.append("income_event_cash_date_or_amount_unavailable")
+                        continue
+                    identity = (isin, tuple((leg.date, leg.account_cash_kopecks) for leg in legs))
+                    if event.event_key in seen and seen[event.event_key][0] != identity:
+                        conflicts.add(event.event_key)
+                        reasons.append("income_event_identity_conflict")
+                    else:
+                        seen[event.event_key] = (identity, isin, event, legs)
+            for key, (_, isin, event, legs) in seen.items():
+                if key in conflicts:
+                    continue
+                # Same operands as economics; never guess net from gross/withholding.
+                for leg in legs:
+                    event_total += leg.account_cash_kopecks
+                    events.append(
+                        {
+                            "scope": account["scope"],
+                            "label": account["label"],
+                            "isin": isin,
+                            "name": names.get(isin, isin),
+                            "date": leg.date,
+                            "amount": returns_view.metric(
+                                leg.account_cash_kopecks,
+                                reasons=event.reason_codes,
+                                method="actual_credited_income",
+                                estimate=False,
+                            ),
+                        }
+                    )
+            if account["amount"]["value"] != str(event_total):
+                reasons.append("known_account_income_not_fully_attributed")
+        rows = [
+            {
+                "isin": isin,
+                "name": names.get(isin, isin),
+                "amount": _known_sum(
+                    (row["amount"] for row in entries), method=f"known_instrument_{kind}s"
+                ),
+                "accounts": entries,
+            }
+            for isin, entries in sorted(grouped.items())
+        ]
+        return {
+            "contract_version": "returns_income_v1",
+            "kind": kind,
+            "summary": summary,
+            "instruments": rows,
+            "events": sorted(events, key=lambda row: (row["date"], row["scope"], row["isin"])),
+            "reason_codes": list(dict.fromkeys([*summary["reason_codes"], *reasons])),
         }

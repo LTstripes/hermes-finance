@@ -355,9 +355,13 @@ each exposes its dates, coverage, method, authority and exclusion reason. No
 percentage is obtained by summing or averaging component rates.
 
 All exact ISIN groups, including sold instruments and separate account contexts,
-remain reachable from Returns. Expanding a group selects its exact account and
-period before reusing the existing instrument detail; Back/Reload preserve that
-context. Capital provides the same entry while retaining unique accepted
+remain reachable from Returns. Entering an instrument opens one exact-ISIN card
+over all available account histories; individual account periods, rates and
+local gaps remain visible through the existing detail presentation. The default
+overview loads summaries and identity metadata only; instrument details load on
+entry, and credited coupon/dividend events load on disclosure. Known paid income
+is shown across included accounts, then by account, ISIN and dated operation,
+without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry while retaining unique accepted
 TWRR/XIRR and coverage diagnostics. Missing names stay explicit; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 

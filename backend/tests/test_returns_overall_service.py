@@ -36,7 +36,9 @@ def db(tmp_path, source_returns_database_factory):
 def read(db):
     before = snapshot(db)
     with db.session_factory() as session:
-        value = Overall.model_validate(overall.read_overall(session))
+        value = Overall.model_validate(
+            overall.read_overall(session, include_instrument_details=True)
+        )
     assert snapshot(db) == before
     return value
 
@@ -226,7 +228,9 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
 
     monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", reports)
     monkeypatch.setattr(
-        overall.source_investment_proofs, "read_report_display_names", lambda *a, **k: {}
+        overall.source_investment_proofs,
+        "read_report_display_candidates",
+        lambda *a, **k: {"source": {}, "pdf": {}},
     )
     return calls
 
@@ -379,8 +383,8 @@ def test_verified_source_display_metadata_names_sold_security_without_catalogue_
     source_fixture(monkeypatch)
     monkeypatch.setattr(
         overall.source_investment_proofs,
-        "read_report_display_names",
-        lambda *a, **k: {ISIN: ("Synthetic original title",)},
+        "read_report_display_candidates",
+        lambda *a, **k: {"source": {ISIN: ("Synthetic original title",)}, "pdf": {}},
     )
     value = read(db)
     assert value.instruments[0].name == "Synthetic original title"
@@ -416,6 +420,176 @@ def test_real_synthetic_proof_overall_uses_one_summary_derivation_and_stale_neve
     assert value.instruments and all(
         pair.pnl.value is None for pair in value.instruments[0].accounts
     )
+
+
+def test_default_index_does_not_request_instrument_analyses_or_detail(db, monkeypatch):
+    source_fixture(monkeypatch)
+    full = overall.source_investment_proofs.read_report_summaries
+
+    def account_only(session, *, source_account):
+        rows = full(session, source_account=source_account, analyses={})
+        for row in rows:
+            row["interval"]["instruments"] = [{"isin": ISIN}]
+        return rows
+
+    monkeypatch.setattr(
+        overall.source_investment_proofs, "read_account_summaries", account_only, raising=False
+    )
+    monkeypatch.setattr(
+        overall.source_investment_proofs,
+        "read_report_summaries",
+        lambda *a, **k: pytest.fail("hidden full instrument derivation"),
+    )
+    monkeypatch.setattr(
+        overall.returns_view, "read_detail", lambda *a, **k: pytest.fail("hidden detail fetch")
+    )
+    with db.session_factory() as session:
+        value = Overall.model_validate(overall.read_overall(session))
+    assert value.mixed_result.known_result.value == "50"
+    assert value.coupon_income.known_total.value == "50"
+    assert value.dividend_income.known_total.value == "0"
+    assert len(value.instruments) == 1
+    assert all(not row.details_loaded for row in value.instruments[0].accounts)
+    assert all(
+        "instrument_details_not_requested" in row.pnl.reason_codes
+        for row in value.instruments[0].accounts
+    )
+
+
+@pytest.mark.parametrize("basis", ["source", "pdf"])
+def test_display_basis_resolves_sold_instrument_without_financial_writes(db, monkeypatch, basis):
+    source_fixture(monkeypatch)
+    candidates = {"source": {}, "pdf": {}}
+    candidates[basis] = {ISIN: ("Synthetic verified metadata",)}
+    monkeypatch.setattr(
+        overall.source_investment_proofs,
+        "read_report_display_candidates",
+        lambda *a, **k: candidates,
+    )
+    value = read(db)
+    assert value.instruments[0].name == "Synthetic verified metadata"
+    assert value.mixed_result.known_result.value == "50"
+
+
+def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(db, monkeypatch):
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+
+    source_fixture(monkeypatch)
+    reports = overall.source_investment_proofs.read_report_summaries
+
+    def with_events(*args, **kwargs):
+        rows = reports(*args, **kwargs)
+        for analyses in kwargs["analyses"].values():
+            analysis = analyses[ISIN]
+            cash = CashLeg("income", END, 25, -25, ("synthetic",), "confirmed")
+            event = InstrumentEvent(
+                event_key="same-operation",
+                provider=PROVIDER,
+                native_source_account=kwargs["source_account"],
+                isin=ISIN,
+                kind="COUPON",
+                source_references=("synthetic",),
+                event_date=END,
+                cash_legs=(cash,),
+                net_payout_kopecks=999999,
+            )
+            from dataclasses import replace
+
+            analysis.events = (
+                event,
+                event,
+                replace(event, event_key="forecast", counted=False),
+                replace(event, event_key="principal", kind="REDEMPTION"),
+            )
+            analysis.components["coupons"].status = "partial"
+            analysis.components["coupons"].reason_codes = ("other_payout_unattributed",)
+        return rows
+
+    monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", with_events)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = overall.read_income(session, kind="coupon")
+    assert result["summary"]["known_total"]["value"] == "50"
+    assert len(result["events"]) == 2  # one operation per exact source account
+    assert [row["amount"]["value"] for row in result["events"]] == ["25", "25"]
+    assert result["instruments"][0]["amount"]["value"] == "50"
+    assert "other_payout_unattributed" in result["instruments"][0]["amount"]["reason_codes"]
+    assert snapshot(db) == before
+
+
+def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(db, monkeypatch):
+    source_fixture(monkeypatch, stale_second=True)
+    view = read(db).model_dump(mode="python")
+    calls = []
+
+    def detail(session, *, scope, start, end, isin):
+        calls.append(scope)
+
+        def metric(value):
+            return SimpleNamespace(value=value, status="supported", reason_codes=())
+
+        return {
+            "analysis": SimpleNamespace(
+                closing=SimpleNamespace(
+                    quantity=Decimal("0"), date=end, reported_value_kopecks=0, reason_codes=()
+                ),
+                pnl=metric(100),
+                components={
+                    name: metric(value)
+                    for name, value in {
+                        "coupons": 25,
+                        "dividends": 0,
+                        "valuation_and_trades": 90,
+                        "fees": 10,
+                        "taxes": 5,
+                        "redemption": 0,
+                    }.items()
+                },
+            )
+        }
+
+    monkeypatch.setattr(overall.returns_view, "read_detail", detail)
+    with db.session_factory() as session:
+        value = overall.read_instrument_card(session, ISIN, overview=view)
+    assert calls == ["source:native-a"]
+    assert value["summary"]["pnl"]["value"] == "100"
+    assert value["summary"]["quantity"]["value"] == "0"  # sold is retained
+    assert value["summary"]["rate"]["value"] is None
+    assert value["summary"]["costs"]["value"] == "10"
+    assert value["summary"]["valuation_and_trades"]["value"] == "90"
+    assert "instrument_accounts_missing_or_excluded" in value["summary"]["pnl"]["reason_codes"]
+    assert value["accounts"][1]["detail"] is None
+
+
+def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch):
+    from test_returns_read_efficiency_service import _saved_investment
+
+    _saved_investment(db, monkeypatch)
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    with db.session_factory() as value:
+        isin = overall.read_overall(value, include_instrument_details=True)["instruments"][0][
+            "isin"
+        ]
+    with TestClient(app) as client:
+        response = client.get("/api/returns/instrument-card", params={"isin": isin})
+        assert response.status_code == 200, response.text
+        assert response.headers["cache-control"] == "no-store"
+        assert (
+            response.json()["accounts"][0]["detail"]["analysis"]["contract_version"]
+            == "instrument_return_v2"
+        )
+        assert client.get("/api/returns/income?kind=coupon").status_code == 200
+        assert client.get("/api/returns/income?kind=forecast").status_code == 422
+        assert client.get("/api/returns/instrument-card?isin=wrong").status_code == 422
+    assert snapshot(db) == before
 
 
 def test_owner_coupon_total_uses_native_accounts_once_not_instrument_or_monthly_explanations(
