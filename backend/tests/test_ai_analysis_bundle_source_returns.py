@@ -498,6 +498,228 @@ def test_current_returns_metric_preserves_exact_zero_unknown_units_and_methods()
         adapter._overall_metric(metric("1", unit="unapproved_unit"))
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        (Decimal("0E-12"), "0.000000000000"),
+        ("-0E-9", "-0.000000000"),
+        ("8E+4", "80000"),
+        ("3.125E-18", "0.000000000000000003125"),
+        (
+            Decimal("7.123456789012345678901234567890123456789"),
+            "7.123456789012345678901234567890123456789",
+        ),
+    ],
+)
+def test_quantity_representation_is_fixed_point_exact_and_nullable(value, expected):
+    with localcontext() as context:
+        context.prec = 4
+        assert adapter.decimal_quantity(value) == expected
+    if value is not None:
+        assert Decimal(expected) == Decimal(value)
+        assert "e" not in expected.lower()
+    with pytest.raises(TypeError, match="exact decimal"):
+        adapter.decimal_quantity(0.25)
+
+
+def test_opaque_source_blocker_aliases_are_exact_and_not_a_general_sanitizer():
+    from hermes_finance.services import ai_financial_review as review
+
+    original = ["4_Transfers_unsupported", "5_UFSR_unsupported", "economic_endpoint_unavailable"]
+    expected = [
+        "economic_endpoint_unavailable",
+        "source_4_transfers_unsupported",
+        "source_5_ufsr_unsupported",
+    ]
+    assert adapter._reasons(original) == expected
+    assert review._reason_codes(original) == expected
+    assert original == [
+        "4_Transfers_unsupported",
+        "5_UFSR_unsupported",
+        "economic_endpoint_unavailable",
+    ]
+    warnings = review._remap_warnings(
+        [
+            {
+                "code": code,
+                "scope": "sections.source_returns",
+                "severity": "warning",
+                "message": "Synthetic source limitation",
+            }
+            for code in original
+        ],
+        extra=[],
+    )
+    assert sorted(row["code"] for row in warnings) == expected
+    metric = adapter._metric(reasons=original)
+    assert metric["value"] is None and metric["status"] == "unavailable"
+    assert metric["reason_codes"] == expected
+    assert adapter._reasons(["6_Unregistered_unsupported"]) == ["6_Unregistered_unsupported"]
+    validator = Draft202012Validator({"$defs": SCHEMA["$defs"], "$ref": "#/$defs/reason_codes"})
+    validator.validate(expected)
+    with pytest.raises(ValidationError):
+        validator.validate(adapter._reasons(["6_Unregistered_unsupported"]))
+
+
+def test_source_analysis_allows_scientific_zero_without_losing_unsupported_reasons():
+    _, doc, raw, report, money = investment_case()
+    _, analyses = _derived(doc, raw, report, money)
+    original = next(iter(analyses.values()))
+    reasons = ("4_Transfers_unsupported", "5_UFSR_unsupported")
+    analysis = replace(
+        original,
+        opening=replace(original.opening, quantity=Decimal("0E-12"), reason_codes=reasons),
+        closing=replace(original.closing, quantity=Decimal("4.250000000000000000000000000001")),
+        events=tuple(
+            replace(e, quantity_delta=Decimal("0E-12"), reason_codes=reasons)
+            for e in original.events
+        ),
+        coverage={
+            key: replace(value, complete=False, reason_codes=reasons)
+            for key, value in original.coverage.items()
+        },
+        pnl=replace(original.pnl, value=None, status="unavailable", reason_codes=reasons),
+        reason_codes=reasons,
+    )
+    exported = adapter._instrument("RU000A000007", {"name": "Synthetic decimal security"}, analysis)
+    Draft202012Validator(
+        {"$defs": SCHEMA["$defs"], "$ref": "#/$defs/source_instrument"},
+        format_checker=FormatChecker(),
+    ).validate(exported)
+    assert exported["opening"]["quantity"] == "0.000000000000"
+    assert exported["closing"]["quantity"] == "4.250000000000000000000000000001"
+    assert exported["metrics"]["pnl"]["value"] is None
+    assert exported["metrics"]["pnl"]["status"] == "unavailable"
+    expected = ["source_4_transfers_unsupported", "source_5_ufsr_unsupported"]
+    assert exported["reason_codes"] == expected
+    assert exported["opening"]["reason_codes"] == expected
+    assert all(
+        row["reason_codes"] == expected and not row["complete"]
+        for row in exported["coverage"].values()
+    )
+    assert all(
+        row["quantity_delta"] == "0.000000000000" and row["reason_codes"] == expected
+        for row in exported["events"]
+    )
+    assert original.opening.quantity == Decimal("0")
+
+
+def test_current_card_fixed_point_quantities_keep_null_and_money_units(database, monkeypatch):
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        raw = returns_overall.read_instrument_card(
+            session, overview["instruments"][0]["isin"], overview=overview
+        )
+    raw["summary"]["quantity"]["value"] = "0E-12"
+    raw["summary"]["quantity"]["reason_codes"] = ["4_Transfers_unsupported", "5_UFSR_unsupported"]
+    row = raw["accounts"][0]
+    row["detail"]["opening_quantity"] = "0E-12"
+    row["detail"]["closing_quantity"] = None
+    row["reason_codes"] = ["4_Transfers_unsupported", "5_UFSR_unsupported"]
+    before = copy.deepcopy(raw)
+    exported = adapter._overall_card(raw, {row["scope"]: "source-account-1"}, {}, {})
+    Draft202012Validator(
+        {"$defs": SCHEMA["$defs"], "$ref": "#/$defs/returns_instrument_card"},
+        format_checker=FormatChecker(),
+    ).validate(exported)
+    assert exported["summary"]["quantity"]["value"] == "0.000000000000"
+    assert exported["accounts"][0]["detail"]["opening_quantity"] == "0.000000000000"
+    assert exported["accounts"][0]["detail"]["closing_quantity"] is None
+    assert exported["accounts"][0]["reason_codes"] == [
+        "source_4_transfers_unsupported",
+        "source_5_ufsr_unsupported",
+    ]
+    assert exported["summary"]["pnl"] == adapter._overall_metric(raw["summary"]["pnl"])
+    assert raw == before
+
+
+@pytest.mark.parametrize("quantity", [None, "0E-12", "5E+3"])
+def test_existing_portfolio_quantity_uses_exact_fixed_point_representation(monkeypatch, quantity):
+    from hermes_finance.services import ai_financial_review as review
+
+    for name in ("list_position_snapshots", "list_deposit_snapshots", "list_cash_balances"):
+        monkeypatch.setattr(review, name, lambda _: [])
+    data, notes = review._portfolio_data(
+        None,
+        {"data": {"accounts": [], "instruments": [], "items": [{"quantity": quantity}]}},
+        {"cash_balances": [], "deposits": [], "valuation_freshness": {}},
+        {},
+        account_ref_by_id={},
+        instrument_ref_by_id={},
+        current_month_id=17,
+    )
+    actual = data["positions"][0]["quantity"]
+    assert actual is None if quantity is None else Decimal(actual) == Decimal(quantity)
+    assert actual is None or "e" not in actual.lower()
+    assert notes == []
+
+
+def test_gold_quantity_slots_and_independent_reasons_are_schema_safe():
+    from hermes_finance.services.returns_view import metric
+
+    history = _gold_history_fixture()
+    history["declaration"]["current_quantity"] = "4E+0"
+    history["events"][0]["grams"] = "6E+0"
+    history["events"][1]["grams"] = "2E+0"
+    history["valuation"]["quantity"] = "4E+0"
+    history["result"]["calculated_quantity"] = None
+    history["result"]["declared_calculated_quantity"] = "4E+0"
+    original_reasons = ["4_Transfers_unsupported", "5_UFSR_unsupported"]
+    history["reason_codes"] = original_reasons
+    for name in (
+        "reason_codes",
+        "total_reason_codes",
+        "realized_reason_codes",
+        "unrealized_reason_codes",
+        "decomposition_reason_codes",
+    ):
+        history["result"][name] = original_reasons
+    raw = {
+        "snapshots": [
+            {
+                "account_id": 40,
+                "instrument_id": 90,
+                "label": "Synthetic decimal gold",
+                "date": END,
+                "quantity": "0E-12",
+                "market_value": metric(0),
+                "cost_basis": metric(0),
+                "unrealized_result": metric(),
+                "cost_return": metric(unit="fraction"),
+            }
+        ],
+        "period_result": metric(reasons=original_reasons),
+        "reason_codes": original_reasons,
+    }
+    before = copy.deepcopy((raw, history))
+    exported = adapter._overall_gold(raw, [history])
+    Draft202012Validator(
+        {"$defs": SCHEMA["$defs"], "$ref": "#/$defs/returns_gold"}, format_checker=FormatChecker()
+    ).validate(exported)
+    item = exported["histories"][0]
+    assert exported["snapshots"][0]["quantity"] == "0.000000000000"
+    assert item["declaration"]["current_quantity"] == item["valuation"]["quantity"] == "4"
+    assert [row["grams"] for row in item["events"]] == ["6", "2"]
+    assert item["revisions"][0]["declaration"]["current_quantity"] == "4"
+    assert item["result"]["calculated_quantity"] is None
+    assert item["result"]["declared_calculated_quantity"] == "4"
+    expected = ["source_4_transfers_unsupported", "source_5_ufsr_unsupported"]
+    assert all(
+        item["result"][name] == expected
+        for name in (
+            "reason_codes",
+            "total_reason_codes",
+            "realized_reason_codes",
+            "unrealized_reason_codes",
+            "decomposition_reason_codes",
+        )
+    )
+    assert exported["period_result"]["value"] is None
+    assert (raw, history) == before
+
+
 def _gold_history_fixture():
     events = [
         {

@@ -42,6 +42,30 @@ EXCLUDED = [
     "hypothetical_scenarios",
 ]
 
+# Exact aliases for the two opaque MyBroker sections emitted by the source
+# parser. Keep each blocker distinct; other codes are never sanitized or dropped.
+_SOURCE_REASON_ALIASES = {
+    "4_Transfers_unsupported": "source_4_transfers_unsupported",
+    "5_UFSR_unsupported": "source_5_ufsr_unsupported",
+}
+
+
+def canonical_reason_code(code):
+    return _SOURCE_REASON_ALIASES.get(code, code)
+
+
+def _reasons(codes):
+    return sorted({canonical_reason_code(code) for code in codes})
+
+
+def decimal_quantity(value):
+    """Represent an exact quantity without exponent notation or rounding."""
+    if value is None:
+        return None
+    if isinstance(value, float):
+        raise TypeError("AI quantity requires an exact decimal")
+    return format(Decimal(value), "f")
+
 
 def _money(value):
     return (
@@ -72,7 +96,7 @@ def _metric(
         "unit": "percent" if rate else "RUB",
         "status": status
         or ("unavailable" if value is None else ("partial" if reasons else "provisional")),
-        "reason_codes": sorted(set(reasons)),
+        "reason_codes": _reasons(reasons),
         "method": method,
         "annualized": annualized,
         "approximate": True,
@@ -98,12 +122,12 @@ def _domain_metric(metric):
 def _endpoint(endpoint):
     return {
         "date": endpoint.date.isoformat(),
-        "quantity": None if endpoint.quantity is None else str(endpoint.quantity),
+        "quantity": decimal_quantity(endpoint.quantity),
         "reported_value": _money(endpoint.reported_value_kopecks),
         "economic_value": _money(endpoint.economic_value_kopecks),
         "accrued_interest": _money(endpoint.accrued_interest_kopecks),
         "valuation_basis": endpoint.valuation_basis,
-        "reason_codes": sorted(set(endpoint.reason_codes)),
+        "reason_codes": _reasons(endpoint.reason_codes),
     }
 
 
@@ -143,7 +167,7 @@ def _events(analysis):
                 "quantity_date": None
                 if event.depository_settlement_date is None
                 else event.depository_settlement_date.isoformat(),
-                "quantity_delta": str(event.quantity_delta)
+                "quantity_delta": decimal_quantity(event.quantity_delta)
                 if event.quantity_delta is not None
                 and in_window(event.depository_settlement_date or event.event_date)
                 else None,
@@ -176,7 +200,7 @@ def _events(analysis):
                     }
                     for leg in event.cash_legs
                 ],
-                "reason_codes": sorted(set(event.reason_codes)),
+                "reason_codes": _reasons(event.reason_codes),
             }
         )
     return sorted(rows, key=lambda r: (r["date"] or "", r["kind"], str(r)))
@@ -210,10 +234,10 @@ def _instrument(isin, meta, analysis, raw=None):
         "metrics": metrics,
         "components": {k: _domain_metric(v) for k, v in sorted(analysis.components.items())},
         "coverage": {
-            k: {"complete": v.complete, "reason_codes": sorted(set(v.reason_codes))}
+            k: {"complete": v.complete, "reason_codes": _reasons(v.reason_codes)}
             for k, v in sorted(analysis.coverage.items())
         },
-        "reason_codes": sorted(set(analysis.reason_codes)),
+        "reason_codes": _reasons(analysis.reason_codes),
         "assumptions": sorted(set(analysis.assumptions)),
         "events": _events(analysis),
     }
@@ -232,7 +256,7 @@ def _proof_interval(proof, analyses, metadata):
         "source_contract": source_investment_proofs.VERSION,
         "currentness": proof["status"],
         "history_from_zero": proof["history_from_zero"],
-        "reason_codes": sorted(set(proof["reason_codes"] if raw is None else raw["reason_codes"])),
+        "reason_codes": _reasons(proof["reason_codes"] if raw is None else raw["reason_codes"]),
         "account": None,
         "instruments": [],
     }
@@ -278,7 +302,7 @@ def _monthly_interval(session, account, row, flows):
         closing_date=r.closing_date,
         include_monthly_history=False,
     )
-    reasons = sorted(set(r.reason_codes + row.flags))
+    reasons = _reasons(r.reason_codes + row.flags)
     return {
         **_bounds(r.opening_date, r.closing_date),
         "source_contract": "source_monthly_returns/instrument_return_v2",
@@ -501,7 +525,7 @@ def _overall_metric(raw):
     return {
         "value": _percent(raw["value"]) if unit == "fraction" else _money(raw["value"]),
         "unit": "percent" if unit == "fraction" else "RUB",
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
         "method": raw["method"],
         "approximate": raw["estimate"],
     }
@@ -531,11 +555,11 @@ def _overall_income(raw, account_refs):
                 "proof_status": row["proof_status"],
                 "included": row["included"],
                 "exclusion_reason": row["exclusion_reason"],
-                "reason_codes": sorted(set(row["reason_codes"])),
+                "reason_codes": _reasons(row["reason_codes"]),
             }
             for row in raw["accounts"]
         ],
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
     }
 
 
@@ -561,27 +585,29 @@ def _overall_mixed(raw, account_refs):
                 "valuation_date": _overall_date(row["valuation_date"]),
                 "coverage": {
                     "status": row["coverage"]["status"],
-                    "reason_codes": sorted(set(row["coverage"]["reason_codes"])),
+                    "reason_codes": _reasons(row["coverage"]["reason_codes"]),
                 },
                 **{key: row[key] for key in ("method", "authority", "exclusion_reason")},
             }
             for index, row in enumerate(raw["components"], 1)
         ],
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
     }
 
 
 def _gold_declaration(raw):
     return {
-        name: raw[name]
-        for name in (
-            "covered_from",
-            "covered_to",
-            "complete",
-            "zero_start",
-            "current_quantity",
-            "current_quantity_date",
-        )
+        **{
+            name: raw[name]
+            for name in (
+                "covered_from",
+                "covered_to",
+                "complete",
+                "zero_start",
+                "current_quantity_date",
+            )
+        },
+        "current_quantity": decimal_quantity(raw["current_quantity"]),
     }
 
 
@@ -594,12 +620,12 @@ def _gold_events(raw, refs):
                 for name in (
                     "event_date",
                     "side",
-                    "grams",
                     "amount_basis",
                     "unit_price_rub",
                     "fee_state",
                 )
             },
+            "grams": decimal_quantity(row["grams"]),
             "amount": _money(row["amount_kopecks"]),
             "separate_fee": _money(row["separate_fee_kopecks"]),
         }
@@ -649,12 +675,12 @@ def _gold_history(raw, index, account_refs, instrument_refs):
                     "date",
                     "price_date",
                     "snapshot_date",
-                    "quantity",
                     "price_source",
                     "month_status",
                     "provisional",
                 )
             },
+            "quantity": decimal_quantity(valuation["quantity"]),
             "market_value": _money(valuation["market_value_kopecks"]),
         },
         "result": {
@@ -675,8 +701,6 @@ def _gold_history(raw, index, account_refs, instrument_refs):
             **{
                 name: result[name]
                 for name in (
-                    "calculated_quantity",
-                    "declared_calculated_quantity",
                     "as_of_date",
                     "valuation_date",
                     "valuation_basis",
@@ -686,9 +710,13 @@ def _gold_history(raw, index, account_refs, instrument_refs):
                     "method",
                 )
             },
+            "calculated_quantity": decimal_quantity(result["calculated_quantity"]),
+            "declared_calculated_quantity": decimal_quantity(
+                result["declared_calculated_quantity"]
+            ),
             "period": {name: result["period"][name] for name in ("covered_from", "covered_to")},
             **{
-                name: sorted(set(result[name]))
+                name: _reasons(result[name])
                 for name in (
                     "reason_codes",
                     "total_reason_codes",
@@ -698,7 +726,7 @@ def _gold_history(raw, index, account_refs, instrument_refs):
                 )
             },
         },
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
         "revisions": [
             {
                 "revision": row["revision"],
@@ -739,7 +767,7 @@ def _overall_gold(raw, histories):
                 "instrument_ref": instrument_refs[row["instrument_id"]],
                 "name": row["label"],
                 "date": _overall_date(row["date"]),
-                "quantity": row["quantity"],
+                "quantity": decimal_quantity(row["quantity"]),
                 **{
                     key: _overall_metric(row[key])
                     for key in ("market_value", "cost_basis", "unrealized_result", "cost_return")
@@ -752,7 +780,7 @@ def _overall_gold(raw, histories):
             for index, row in enumerate(histories, 1)
         ],
         "period_result": _overall_metric(raw["period_result"]),
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
     }
 
 
@@ -773,13 +801,13 @@ def _overall_card(raw, account_refs, source_intervals, proof_instruments):
                 "source_interval_ref": source_intervals.get(key),
                 "period": period,
                 **{name: row[name] for name in ("proof_status", "included", "exclusion_reason")},
-                "reason_codes": sorted(set(row["reason_codes"])),
+                "reason_codes": _reasons(row["reason_codes"]),
                 "detail": None
                 if detail is None
                 else {
                     "period": _overall_period(detail["period"]),
-                    "opening_quantity": detail["opening_quantity"],
-                    "closing_quantity": detail["closing_quantity"],
+                    "opening_quantity": decimal_quantity(detail["opening_quantity"]),
+                    "closing_quantity": decimal_quantity(detail["closing_quantity"]),
                     "conditional": detail["conditional"],
                     **{
                         name: _overall_metric(detail[name])
@@ -794,7 +822,7 @@ def _overall_card(raw, account_refs, source_intervals, proof_instruments):
                             "conditional_rate",
                         )
                     },
-                    "reason_codes": sorted(set(detail["reason_codes"])),
+                    "reason_codes": _reasons(detail["reason_codes"]),
                     # Existing explicit analysis/event allowlist, with independent
                     # producer Dietz/XIRR support; never serialize the UI dict.
                     "analysis": _instrument(
@@ -813,9 +841,9 @@ def _overall_card(raw, account_refs, source_intervals, proof_instruments):
         "kind": raw["kind"],
         "summary": {
             "quantity": {
-                "value": summary["quantity"]["value"],
+                "value": decimal_quantity(summary["quantity"]["value"]),
                 "partial": summary["quantity"]["partial"],
-                "reason_codes": sorted(set(summary["quantity"]["reason_codes"])),
+                "reason_codes": _reasons(summary["quantity"]["reason_codes"]),
             },
             "valuation_dates": [_overall_date(day) for day in summary["valuation_dates"]],
             **{
@@ -833,10 +861,10 @@ def _overall_card(raw, account_refs, source_intervals, proof_instruments):
                 )
             },
             "partial": summary["partial"],
-            "reason_codes": sorted(set(summary["reason_codes"])),
+            "reason_codes": _reasons(summary["reason_codes"]),
         },
         "accounts": accounts,
-        "reason_codes": sorted(set(raw["reason_codes"])),
+        "reason_codes": _reasons(raw["reason_codes"]),
     }
 
 
@@ -884,7 +912,7 @@ def returns_overall_section(session, *, source_account_refs, source_section):
             "overall": {
                 **{name: _overall_metric(overview["overall"][name]) for name in ("pnl", "rate")},
                 "partial": overview["overall"]["partial"],
-                "reason_codes": sorted(set(overview["overall"]["reason_codes"])),
+                "reason_codes": _reasons(overview["overall"]["reason_codes"]),
             },
             "mixed_result": _overall_mixed(overview["mixed_result"], source_account_refs),
             **{
@@ -897,7 +925,7 @@ def returns_overall_section(session, *, source_account_refs, source_section):
                     "period": _overall_period(row["period"]),
                     "result": _overall_result(row["result"]),
                     "proof_status": row["proof_status"],
-                    "reason_codes": sorted(set(row["reason_codes"])),
+                    "reason_codes": _reasons(row["reason_codes"]),
                     "instrument_count": row["instrument_count"],
                 }
                 for row in overview["source_accounts"]
@@ -922,11 +950,11 @@ def returns_overall_section(session, *, source_account_refs, source_section):
                     }
                     for row in overview["deposits"]["periods"]
                 ],
-                "reason_codes": sorted(set(overview["deposits"]["reason_codes"])),
+                "reason_codes": _reasons(overview["deposits"]["reason_codes"]),
             },
             "gold": _overall_gold(
                 overview["gold"], read_gold_histories(session, include_events=True)
             ),
-            "reason_codes": sorted(set(overview["reason_codes"])),
+            "reason_codes": _reasons(overview["reason_codes"]),
         }
         return {"status": "partial", "reason_codes": data["reason_codes"], "data": data}

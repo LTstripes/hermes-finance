@@ -43,6 +43,8 @@ from hermes_finance.services.ai_analysis_bundle import (
     assemble_ai_analysis_bundle,
 )
 from hermes_finance.services.ai_source_returns import (
+    canonical_reason_code,
+    decimal_quantity,
     returns_overall_section,
     source_returns_section,
 )
@@ -199,9 +201,10 @@ def _reason_codes(value: object) -> list[str]:
         return []
     return sorted(
         {
-            item
+            canonical_reason_code(item)
             for item in value
-            if isinstance(item, str) and _CODE_PATTERN.fullmatch(item) is not None
+            if isinstance(item, str)
+            and _CODE_PATTERN.fullmatch(canonical_reason_code(item)) is not None
         }
     )
 
@@ -892,7 +895,7 @@ def _portfolio_data(
             {
                 "account_ref": account_ref,
                 "instrument_ref": instrument_ref,
-                "quantity": item.get("quantity"),
+                "quantity": decimal_quantity(item.get("quantity")),
                 "average_acquisition_cost_per_unit": average_cost,
                 "market_price_per_unit": item.get("market_price_per_unit"),
                 "market_value": item.get("market_value"),
@@ -1540,6 +1543,8 @@ def _remap_warnings(
     for value in _list(package_warnings, label="package warnings"):
         warning = _mapping(value, label="package warning")
         code = warning.get("code")
+        if isinstance(code, str):
+            code = canonical_reason_code(code)
         scope = warning.get("scope")
         if not isinstance(code, str) or _CODE_PATTERN.fullmatch(code) is None:
             continue
