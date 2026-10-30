@@ -14243,6 +14243,9 @@ read snapshot, derived proof results and analyses are reused by source readers
 through copy-isolated request-local state, discarded on exit (including failure).
 The proved source-account alias map is also reused only inside that protected
 source snapshot; every caller receives its own map and the next snapshot proves it again.
+Its identity selection projects only owned filename-account metadata and an
+immutable native-scope set from the same verified views; full financial views
+remain copy-isolated and are never replaced by that projection.
 There is no cross-request cache or stale fallback.
 For schema-safe wire representation, the two opaque source blockers
 `4_Transfers_unsupported` and `5_UFSR_unsupported` retain their meaning as

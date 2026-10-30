@@ -41,9 +41,9 @@ def test_proved_scope_map_reuses_only_one_snapshot_and_returns_owned_maps(db, mo
     original = returns_view._selected_sources
     calls = []
 
-    def selected(session, account):
+    def selected(session, account, **kwargs):
         calls.append(account)
-        return original(session, account)
+        return original(session, account, **kwargs)
 
     monkeypatch.setattr(returns_view, "_selected_sources", selected)
     with db.session_factory() as session:
@@ -83,6 +83,27 @@ def test_failed_scope_read_does_not_leave_reusable_state(db, monkeypatch):
         monkeypatch.setattr(returns_view, "_selected_sources", original)
         with source_read_snapshot(session):
             assert returns_view._source_scopes(session)["1234567"] == ACCOUNT
+
+
+def test_identity_projection_never_replaces_or_exposes_cached_financial_view(db):
+    basket_source(db)
+    with db.session_factory() as session, source_read_snapshot(session):
+        projected, native = _selected_sources(session, ACCOUNT, identity_only=True)
+        assert native == {ACCOUNT}
+        descriptor = projected[0][1]
+        assert set(descriptor) == {"document", "native_scope"}
+        assert descriptor["native_scope"] == frozenset({ACCOUNT})
+        assert set(descriptor["document"]) == {"filename_account"}
+        descriptor["document"]["filename_account"] = "caller-mutation"
+        complete, actual = _selected_sources(session, ACCOUNT)
+        assert actual == native
+        assert complete[0][1]["document"]["filename_account"] == "1234567"
+        assert "money" in complete[0][1]["document"]
+        complete[0][1]["document"]["filename_account"] = "other-mutation"
+        again, _ = _selected_sources(session, ACCOUNT, identity_only=True)
+        assert again[0][1]["document"]["filename_account"] == "1234567"
+        with pytest.raises(ValueError, match="only a read-only source selection"):
+            _selected_sources(session, ACCOUNT, reserved=True, identity_only=True)
 
 
 def _saved_investment(db, monkeypatch):

@@ -24,7 +24,6 @@ from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_monthly_returns import (
     _SOURCE_SCOPE_READS,
-    _native_scope,
     _selected_sources,
     read_monthly_returns,
     source_read_snapshot,
@@ -77,7 +76,7 @@ def _read_source_scopes(session):
         aliases.update(
             a for a in accounts if isinstance(a, str) and a and not any(c.isspace() for c in a)
         )
-    selections = {a: _selected_sources(session, a) for a in aliases}
+    selections = {a: _selected_sources(session, a, identity_only=True) for a in aliases}
     canonical = {a: a for a in aliases}
     for alias, (selected, native) in selections.items():
         if not native or not selected:
@@ -93,7 +92,7 @@ def _read_source_scopes(session):
         if all(
             error is None
             and view is not None
-            and _native_scope(view["document"]) == {target}
+            and view["native_scope"] == {target}
             and alias in {target, view["document"]["filename_account"]}
             for _, view, error in selected
         ):

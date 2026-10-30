@@ -236,23 +236,37 @@ def source_read_snapshot(session):
             session.info.pop(_SOURCE_SCOPE_READS, None)
 
 
-def _read_source_view(session, original, *, reserved):
+def _read_source_view(session, original, *, reserved, identity_only=False):
     if reserved:
+        if identity_only:
+            raise ValueError("identity projection is only a read-only source selection")
         return source_intake._view(session, original)
     cache = session.info.get(_SOURCE_READ_VIEWS)
     if cache is None:
-        return source_intake.read_intake(session, original.id)
-    if original.id not in cache:
-        cache[original.id] = source_intake.read_intake(session, original.id)
-    return deepcopy(cache[original.id])
+        view = source_intake.read_intake(session, original.id)
+    else:
+        if original.id not in cache:
+            cache[original.id] = source_intake.read_intake(session, original.id)
+        view = cache[original.id]
+    if identity_only:
+        # Identity consumers receive newly owned scalar metadata only. The
+        # original verified view, mutable document and financial state never
+        # escape or get replaced by this projection in the request cache.
+        return {
+            "document": {"filename_account": view["document"]["filename_account"]},
+            "native_scope": frozenset(_native_scope(view["document"])),
+        }
+    return deepcopy(view) if cache is not None else view
 
 
-def _selected_sources(session, source_account, *, reserved=False):
+def _selected_sources(session, source_account, *, reserved=False, identity_only=False):
     """Resolve a filename alias only through its documents' single row account.
 
     This is local source selection, not a persisted Hermes account mapping.
     Every selected document must agree; no suffix matching or transitive aliases.
     """
+    if reserved and identity_only:
+        raise ValueError("identity projection is only a read-only source selection")
     selected = []
     scopes = set()
     for original in session.scalars(select(SourceIntakeOriginal).order_by(SourceIntakeOriginal.id)):
@@ -260,9 +274,11 @@ def _selected_sources(session, source_account, *, reserved=False):
             aliases = json.loads(original.native_accounts_json)
             if not isinstance(aliases, list) or source_account not in aliases:
                 continue
-            view = _read_source_view(session, original, reserved=reserved)
+            view = _read_source_view(
+                session, original, reserved=reserved, identity_only=identity_only
+            )
             document = view["document"]
-            native = _native_scope(document)
+            native = view["native_scope"] if identity_only else _native_scope(document)
             if len(native) == 1 and source_account in native | {document["filename_account"]}:
                 scopes.update(native)
             selected.append((original, view, None))
