@@ -595,6 +595,57 @@ def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, m
     )
 
 
+def test_income_keeps_known_unattributed_operations_without_inventing_an_isin(db, monkeypatch):
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+
+    source_fixture(monkeypatch)
+    reports = overall.source_investment_proofs.read_report_summaries
+
+    def with_unallocated(*args, **kwargs):
+        rows = reports(*args, **kwargs)
+        observed = rows[0]["interval"]
+        observed["coupons_kopecks"] = "35"
+        base = {
+            "reference": "native-unallocated-1",
+            "date": END,
+            "currency": "RUB",
+            "amount_kopecks": "5",
+            "classification": "coupon",
+        }
+        observed["exceptions"] = [
+            base,
+            dict(base),
+            {**base, "reference": "native-unallocated-2"},
+            {**base, "reference": "foreign", "currency": "USD"},
+            {**base, "reference": "cost", "classification": "fee"},
+            {**base, "reference": "outside", "date": START},
+        ]
+        for analyses in kwargs["analyses"].values():
+            analyses[ISIN].events = (
+                InstrumentEvent(
+                    event_key="attributed",
+                    provider=PROVIDER,
+                    native_source_account=kwargs["source_account"],
+                    isin=ISIN,
+                    kind="COUPON",
+                    source_references=(),
+                    event_date=END,
+                    cash_legs=(CashLeg("income", END, 25, -25, (), "confirmed"),),
+                ),
+            )
+        return rows
+
+    monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", with_unallocated)
+    with db.session_factory() as session:
+        value = overall.read_income(session, kind="coupon")
+    assert value["summary"]["known_total"]["value"] == "70"
+    assert value["instruments"][0]["amount"]["value"] == "50"
+    unknown = [row for row in value["events"] if row["isin"] is None]
+    assert len(unknown) == 4  # distinct same-date/amount operations, each account once
+    assert all(row["name"] is None and row["amount"]["value"] == "5" for row in unknown)
+    assert "known_account_income_not_fully_attributed" not in value["reason_codes"]
+
+
 def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch):
     from test_returns_read_efficiency_service import _saved_investment
 
@@ -628,6 +679,94 @@ def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch)
             client.get(f"/api/returns/instrument-card?isin={isin}&isin={isin}").status_code == 422
         )
     assert snapshot(db) == before
+
+
+def _manual_gold(db):
+    from hermes_finance.services.owner_manual_gold_history import (
+        apply_gold_history,
+        preview_gold_history,
+    )
+
+    component_rows(db)
+    with db.session_factory() as session:
+        position = session.query(PositionSnapshot).order_by(PositionSnapshot.id).first()
+        payload = {
+            "account_id": position.account_id,
+            "instrument_id": position.instrument_id,
+            "expected_revision": 0,
+            "covered_from": "2030-03-01",
+            "covered_to": str(END),
+            "complete": True,
+            "zero_start": True,
+            "current_quantity": "10",
+            "current_quantity_date": str(END),
+            "provenance_reference": "synthetic-only",
+            "events": [
+                {
+                    "event_id": "synthetic-buy",
+                    "event_date": "2030-03-03",
+                    "side": "BUY",
+                    "grams": "12",
+                    "amount_basis": "actual",
+                    "amount_rub": "120.00",
+                    "fee_state": "known_zero",
+                },
+                {
+                    "event_id": "synthetic-sale",
+                    "event_date": "2030-04-04",
+                    "side": "SELL",
+                    "grams": "2",
+                    "amount_basis": "actual",
+                    "amount_rub": "40.00",
+                    "fee_state": "known_zero",
+                },
+            ],
+        }
+        preview = preview_gold_history(session, payload)
+        apply_gold_history(
+            session,
+            {
+                **payload,
+                "confirmation_digest": preview["confirmation_digest"],
+                "request_id": "synthetic-root-gold",
+            },
+        )
+
+
+def test_manual_gold_total_replaces_unrealized_addend_and_overview_has_no_hidden_history(db):
+    _manual_gold(db)
+    value = read(db)
+    history = value.gold.histories[0]
+    assert history.total_result.value == "4500"
+    assert history.realized_result.value == "2000"
+    assert history.unrealized_result.value == "2500"
+    assert history.valuation_date == END
+    gold = [row for row in value.mixed_result.components if row.category == "gold"]
+    assert len(gold) == 1
+    assert gold[0].authority == "owner_attestation"
+    assert gold[0].amount.value == "4500"
+    assert value.mixed_result.known_result.value == "4500"  # no +2500 snapshot or sale proceeds
+    assert value.gold.snapshots[0].unrealized_result.value == "2500"  # explanation remains visible
+    wire = str(history.model_dump())
+    assert "synthetic-root-gold" not in wire and "synthetic-buy" not in wire
+    assert "provenance_reference" not in wire
+
+
+def test_manual_gold_missing_valuation_keeps_realized_but_no_total_or_numeric_fallback(db):
+    _manual_gold(db)
+    with db.session_factory() as session:
+        session.query(PositionSnapshot).delete()
+        session.commit()
+    value = read(db)
+    history = value.gold.histories[0]
+    assert history.realized_result.value == "2000"
+    assert history.total_result.value is history.unrealized_result.value is None
+    assert "gold_saved_valuation_unavailable" not in history.realized_result.reason_codes
+    assert "gold_saved_valuation_unavailable" in history.total_result.reason_codes
+    assert history.valuation_date is None
+    gold = [row for row in value.mixed_result.components if row.category == "gold"]
+    assert len(gold) == 1 and not gold[0].included
+    assert gold[0].amount.value is None
 
 
 def test_owner_coupon_total_uses_native_accounts_once_not_instrument_or_monthly_explanations(

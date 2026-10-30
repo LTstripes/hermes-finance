@@ -71,8 +71,31 @@ class GoldSnapshot(DTO):
     cost_return: Metric
 
 
+class GoldHistory(DTO):
+    account_id: int
+    instrument_id: int
+    label: str
+    revision: int
+    source_kind: Literal["owner_manual_gold_history"]
+    authority: Literal["owner_attestation"]
+    currentness: Literal["current", "dependency_changed"]
+    period: Period | None
+    valuation_date: date | None
+    valuation_status: Literal["draft", "closed"] | None
+    amount_basis: Literal["actual", "derived"]
+    tax_treatment: Literal["not_provided"]
+    total_result: Metric
+    realized_result: Metric
+    unrealized_result: Metric
+    buy_amount: Metric
+    sale_amount: Metric
+    separate_fees: Metric
+    reason_codes: list[str]
+
+
 class Gold(DTO):
     snapshots: list[GoldSnapshot]
+    histories: list[GoldHistory]
     period_result: Metric
     reason_codes: list[str]
 
@@ -94,7 +117,7 @@ class MixedComponent(DTO):
     valuation_date: date | None
     coverage: ComponentCoverage
     method: str
-    authority: Literal["source_only", "accepted_snapshot"]
+    authority: Literal["source_only", "accepted_snapshot", "owner_attestation"]
     exclusion_reason: str | None
 
 
@@ -164,8 +187,8 @@ class IncomeInstrument(DTO):
 class IncomeEvent(DTO):
     scope: str
     label: str
-    isin: str
-    name: str
+    isin: str | None
+    name: str | None
     date: date
     amount: Metric
 

@@ -51,6 +51,24 @@ or financial portfolio Close. Shared account costs/taxes remain separate; no
 arbitrary allocation to instruments or fabricated intermediate monthly valuations.
 Next step is Owner visual review and the separately chosen new-month workflow.
 
+### Returns continuation in review
+
+Draft [#1000](https://github.com/LTstripes/hermes-finance/pull/1000), stacked on
+[#998](https://github.com/LTstripes/hermes-finance/pull/998), develops the available-
+history known-result overview, lazy income/card reads, exact source/PDF display
+names and compact Capital entry while preserving its unique diagnostics. The
+bounded Owner-attested gold history source and additive canonical AI review
+schema1.5 are part of this candidate, not installed Stable behavior. The precise
+financial/source contracts are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-overall).
+
+Synthetic targeted checks and independent reviews belong to their exact commits;
+current candidate/CI receipts are linked on the Draft. No claim that all original
+Owner UAT items passed follows from green CI. The combined isolated Test/demo,
+fresh Preview and explicit replacement proof confirmation, actual gold entry,
+merge and Stable update remain pending their separate authorized steps. Existing
+proof hashes are never rewritten and no Owner financial data changed in this
+development stage. Deposit-statement import remains deferred.
+
 ## Historical v1.8.0 checkpoint
 
 **Released and installed: [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0),

@@ -6571,6 +6571,9 @@ date/amount matching. Forecasts, principal redemption and sale NKD are excluded.
 Known partially attributed income remains visible with its coverage/reasons;
 missing accounts do not erase supported siblings or become zero. Income is an
 explanation of P&L, never another mixed-result operand.
+Known account Money rows with unproved instrument identity retain their date,
+account and amount in the chronology with NULL ISIN/name; exact source references
+deduplicate occurrences internally and are not exposed as guessed attribution.
 
 `GET /api/returns/instrument-card?isin=...` lazily composes the existing guarded
 Detail DTO for all exact source accounts and their available whole-history
@@ -6622,6 +6625,56 @@ inferred. Consistent saved unrealized result and positive known cost may produce
 an explicitly nonannualized cost-based fraction; missing/contradictory operands
 remain unavailable. Realised or period gold return requires dated trade evidence;
 no cash flow without quantities is promoted to a gold transaction journal.
+
+#### Bounded manual gold history
+
+`owner_manual_gold_history_v1` is a separate Owner-attested source record for an
+existing exact Account and `type=gold` Instrument. It is neither S2/MyBroker
+ExecutedTrade nor another canonical financial ledger. Migration0068 adds only
+its source header, append-only revisions and request receipts; existing monthly
+economic rows and CLOSED facts are unchanged. A small history in the existing
+gold instrument accepts stable event IDs, BUY/SELL dates, Decimal grams, actual
+full RUB amounts or explicitly derived unit-price amounts, and separately known
+zero/known/unknown fees. Unknown taxes remain `not_provided`, never zero.
+
+Preview binds the exact scope, declaration, catalogue, relevant saved valuations,
+source revisions and dependent evidence. Atomic confirmation rechecks the digest
+under a writer reservation. Equal request IDs recover the original accepted
+revision; changed intent conflicts. An exact no-op does not create another
+revision. Corrections require expected revision and reason and retain prior
+revisions. Receipt GET and separate current history GET distinguish a lost
+acknowledgment from another write. This evidence command is not financial
+Apply/Close, snapshot editing, Reopen or a broker import.
+
+The producer reuses the existing saved monthly price and its actual `price_date`,
+retaining `snapshot_date` separately. DRAFT observations remain DRAFT rather than
+financial Close; a future monthly snapshot placeholder does not erase a known
+earlier dated quote. A complete from-zero declaration must
+reconcile its full dated inventory; the event prefix at the valuation date must
+match the saved grams. Later cash/fees do not enter an earlier result. At that
+explicit date, supported RUB result is `valuation + gross sale proceeds - buy
+amounts - separately charged fees`, each once. A fully exited affirmative zero
+quantity can establish a zero closing value without a quote. Missing valuation
+withholds total/unrealized amounts while supported single-purchase realized
+economics remain available for their explicit period. Multiple purchase lots do
+not invent FIFO/cost allocation: total can be supported while the decomposition
+stays unknown. Unknown relevant fees, incomplete history and quantity conflicts
+retain local unavailable reasons. No new percentage solver or quote tracker is
+introduced.
+
+One producer supplies overview summaries, lazy gold-card facts and the canonical
+AI export. Ordinary overview omits event/revision projections. A manual whole-
+history component replaces the same pair's saved unrealized addend, even when
+the manual total is blocked; it never adds both or silently falls back. Saved
+observations remain visible separately with their original date and basis. The
+existing canonical-account overlap exclusions still apply, and Owner attestation
+is a distinct authority from accepted snapshots or broker proof.
+
+New or corrected gold source evidence retires intersecting no-crossing claims;
+pure class reads bind retained revision material and inspect current effective
+events. Corrections cannot revive an old attestation through ABA, nor do
+superseded erroneous facts become permanent actual crossings. Financial CLOSED
+rows are not rewritten or reaccepted by this source operation.
 
 Instrument grouping uses exact ISIN and preserves account-specific periods and
 rates; neither shared names nor a common ISIN merge financial accounts. Source
@@ -14073,7 +14126,7 @@ later staged UAT work does not change this contract.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.4.0`
+**Schema version:** `1.5.0`
 
 **Normative schema:** [`ai_financial_review.schema.json`](schemas/ai_financial_review.schema.json)
 
@@ -14194,6 +14247,29 @@ NULL for cross-boundary events; dates remain explanatory. This projects the
 existing economics' eligibility and does not calculate another return.
 The existing local JSON download/CTA is retained; no upload, provider call or
 financial write occurs.
+
+#### Current available-history Returns in the recommended JSON
+
+Schema 1.5.0 adds optional `sections.returns_overall` and its coverage domain,
+using the same coherent read snapshot and existing producers as ordinary Returns.
+It is explicitly `current_available_history_not_limited_to_selected_month`:
+the historical report's selected `as_of_date` does not silently truncate this
+separately labelled section. Every result retains its own actual interval,
+valuation date, method, authority, inclusion and exclusion/currentness reasons;
+there is no invented common valuation date or portfolio percentage. The existing
+selected-month and source-only sections retain their meanings.
+
+The section contains the mixed known result, known paid coupon/dividend summaries
+and exact-ISIN instrument summaries/details, including sold instruments, plus
+supported manual gold results and dated facts from the same gold producer. It is a
+complete export snapshot even though UI event lists and cards load lazily. Shared
+account P&L and its income/instrument breakdown are not added twice. Source,
+accepted snapshot and Owner-attested manual evidence remain distinct authorities.
+Only explicit allowlisted financial fields are exported. Source scopes, native
+account numbers, database/history/event/snapshot IDs, paths, raw proofs and free
+form provenance references are omitted or replaced by export-local pseudonyms.
+No UI dictionary or ORM object is serialized wholesale, and no second return
+calculator is introduced.
 
 <a id="c10-ai_financial_review-1-3-top-level-contract"></a>
 #### 3. Top-level contract
@@ -14378,7 +14454,11 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
   changed financial counting semantics.
 
 Version `1.4.0` adds optional provisional `source_returns` and its coverage domain,
-without changing earlier financial fields. Version `1.2.0` adds the required `performance` section. Version `1.3.0`
+without changing earlier financial fields. Version `1.5.0` adds the optional
+current available-history Returns section and retains acceptance of historical
+1.4 instances. AI Analysis Bundle stays 1.4.0 and Portfolio Review Package stays
+1.1.0; these independent format versions are not application versions.
+Version `1.2.0` adds the required `performance` section. Version `1.3.0`
 adds optional month-local linked-pair fields to `current_capital` and
 `historical_dynamics`; the canonical exporter emits them on every generated
 report, including empty arrays. It changes no capital formula or counting

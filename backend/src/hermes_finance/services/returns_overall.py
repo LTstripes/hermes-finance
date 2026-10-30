@@ -6,7 +6,7 @@ operands added to investment P&L. The union model remains explicitly unavailable
 """
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal, localcontext
 from types import SimpleNamespace
 
@@ -67,6 +67,8 @@ def _deposits(session, months):
 
 
 def _gold(session, months):
+    from hermes_finance.services.owner_manual_gold_history import read_gold_histories
+
     closed = {month.id: month for month in months if month.status == "closed"}
     rows = session.execute(
         select(PositionSnapshot, Instrument, Account)
@@ -123,14 +125,89 @@ def _gold(session, months):
                 ),
             }
         )
+    histories = []
+    for row in read_gold_histories(session, include_events=False):
+        observed = row["result"]
+        instrument = session.get(Instrument, row["instrument_id"])
+        provenance = ["owner_attested_gold_history", "gold_tax_not_provided"]
+        reasons = list(dict.fromkeys([*provenance, *row["reason_codes"]]))
+
+        def amount(key, component=None):
+            return returns_view.metric(
+                observed[key],
+                reasons=list(
+                    dict.fromkeys(
+                        [
+                            *provenance,
+                            *(
+                                observed.get(f"{component}_reason_codes", row["reason_codes"])
+                                if component
+                                else row["reason_codes"]
+                                if observed[key] is None
+                                else []
+                            ),
+                        ]
+                    )
+                ),
+                method=observed["method"],
+                estimate=False,
+            )
+
+        interval = observed.get("period") or {}
+        opening, closing = interval.get("covered_from"), interval.get("covered_to")
+        histories.append(
+            {
+                "account_id": row["account_id"],
+                "instrument_id": row["instrument_id"],
+                "label": instrument.name if instrument else "Gold",
+                "revision": row["revision"],
+                "source_kind": row["source_kind"],
+                "authority": row["authority"],
+                "currentness": row["currentness"],
+                "period": returns_view.bounds(
+                    date.fromisoformat(opening) - timedelta(days=1), date.fromisoformat(closing)
+                )
+                if opening and closing
+                else None,
+                "valuation_date": observed.get("valuation_date")
+                if observed.get("valuation_kopecks") is not None
+                else None,
+                "valuation_status": (row.get("valuation") or {}).get("month_status"),
+                "amount_basis": observed["amount_basis"],
+                "tax_treatment": observed["tax_treatment"],
+                "total_result": amount("total_result_kopecks", "total"),
+                "realized_result": amount("realized_result_kopecks", "realized"),
+                "unrealized_result": amount("unrealized_result_kopecks", "unrealized"),
+                "buy_amount": amount("buy_amount_kopecks"),
+                "sale_amount": amount("sale_amount_kopecks"),
+                "separate_fees": amount("separate_fees_kopecks"),
+                "reason_codes": reasons,
+            }
+        )
     return {
         "snapshots": result,
-        "period_result": _unknown("gold_dated_trade_history_unavailable"),
-        "reason_codes": ["gold_period_return_unproven", "snapshot_result_not_period_return"],
+        "histories": histories,
+        "period_result": _unknown(
+            "gold_history_results_have_individual_periods"
+            if histories
+            else "gold_dated_trade_history_unavailable"
+        ),
+        "reason_codes": [
+            "gold_results_keep_individual_periods",
+            "owner_attested_source_not_financial_close",
+        ]
+        if histories
+        else ["gold_period_return_unproven", "snapshot_result_not_period_return"],
     }
 
 
-def _source_accounts(session, *, include_instrument_details=True, captured_analyses=None):
+def _source_accounts(
+    session,
+    *,
+    include_instrument_details=True,
+    captured_analyses=None,
+    captured_reports=None,
+):
     canonical = returns_view._source_scopes(session)
     labels = {a["id"]: a["label"] for a in returns_view._accounts(session, canonical)}
     accounts, grouped = [], defaultdict(list)
@@ -156,6 +233,8 @@ def _source_accounts(session, *, include_instrument_details=True, captured_analy
         analyses = captured.get(proof["proof_id"], {}) if proof and status == "current" else {}
         if captured_analyses is not None:
             captured_analyses[scope] = analyses
+        if captured_reports is not None:
+            captured_reports[scope] = proof if proof and status == "current" else None
         display = (
             source_investment_proofs.read_report_display_candidates(
                 session, source_account=account, proof_id=proof["proof_id"]
@@ -409,7 +488,11 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
 
     def include_snapshot(row, account_id):
         if not row["available"]:
-            row["exclusion_reason"] = "snapshot_component_unavailable"
+            row["exclusion_reason"] = (
+                "owner_gold_component_unavailable"
+                if row["authority"] == "owner_attestation"
+                else "snapshot_component_unavailable"
+            )
         elif unresolved:
             row["exclusion_reason"] = "source_snapshot_overlap_unproven"
         elif account_id in covered_accounts:
@@ -460,6 +543,14 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
         )
         include_snapshot(row, account_id)
     for snapshot in gold["snapshots"]:
+        if any(
+            (row["account_id"], row["instrument_id"])
+            == (snapshot["account_id"], snapshot["instrument_id"])
+            for row in gold["histories"]
+        ):
+            # Manual whole-history total replaces this same pair's unrealized
+            # explanation, even when blocked; no silent numeric fallback.
+            continue
         amount = {**snapshot["unrealized_result"], "method": "saved_snapshot_unrealized"}
         row = component(
             f"gold:{snapshot['account_id']}:{snapshot['instrument_id']}",
@@ -472,6 +563,18 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
             amount["reason_codes"],
         )
         include_snapshot(row, snapshot["account_id"])
+    for history in gold["histories"]:
+        row = component(
+            f"gold:{history['account_id']}:{history['instrument_id']}",
+            "gold",
+            history["label"],
+            history["total_result"],
+            history["period"],
+            history["valuation_date"],
+            "owner_attestation",
+            history["reason_codes"],
+        )
+        include_snapshot(row, history["account_id"])
     for rows in snapshot_accounts.values():
         if len({row["category"] for row in rows}) > 1:
             for row in rows:
@@ -668,9 +771,12 @@ def read_income(session, *, kind):
     if kind not in {"coupon", "dividend"}:
         raise ValueError("returns_income_kind_invalid")
     with source_read_snapshot(session):
-        captured = {}
+        captured, reports = {}, {}
         accounts, instruments, canonical = _source_accounts(
-            session, include_instrument_details=True, captured_analyses=captured
+            session,
+            include_instrument_details=True,
+            captured_analyses=captured,
+            captured_reports=reports,
         )
         mappings, reverse = _account_mappings(session, canonical)
         summary = _paid_income(accounts, mappings, reverse, kind=kind)
@@ -726,6 +832,46 @@ def read_income(session, *, kind):
                             ),
                         }
                     )
+            # Exact account Money operands whose instrument identity is not yet
+            # supported still belong in the paid-income chronology. They never
+            # become an ISIN attribution or another account-total addend.
+            unallocated = {}
+            for row in ((reports.get(account["scope"]) or {}).get("interval") or {}).get(
+                "exceptions", []
+            ):
+                if row["classification"] != kind or row["currency"] != "RUB":
+                    continue
+                day = row["date"]
+                day = date.fromisoformat(day) if isinstance(day, str) else day
+                if day is None or not start < day <= end or row["amount_kopecks"] is None:
+                    continue
+                identity = (day, row["amount_kopecks"])
+                reference = row["reference"]
+                if reference in unallocated and unallocated[reference] != identity:
+                    unallocated[reference] = None
+                    reasons.append("income_event_identity_conflict")
+                elif reference not in unallocated:
+                    unallocated[reference] = identity
+            for row in unallocated.values():
+                if row is None:
+                    continue
+                day, value = row
+                event_total += int(value)
+                events.append(
+                    {
+                        "scope": account["scope"],
+                        "label": account["label"],
+                        "isin": None,
+                        "name": None,
+                        "date": day,
+                        "amount": returns_view.metric(
+                            value,
+                            reasons=("payout_identity_unresolved",),
+                            method="actual_credited_income",
+                            estimate=False,
+                        ),
+                    }
+                )
             if account["amount"]["value"] != str(event_total):
                 reasons.append("known_account_income_not_fully_attributed")
         rows = [
@@ -744,6 +890,8 @@ def read_income(session, *, kind):
             "kind": kind,
             "summary": summary,
             "instruments": rows,
-            "events": sorted(events, key=lambda row: (row["date"], row["scope"], row["isin"])),
+            "events": sorted(
+                events, key=lambda row: (row["date"], row["scope"], row["isin"] or "")
+            ),
             "reason_codes": list(dict.fromkeys([*summary["reason_codes"], *reasons])),
         }

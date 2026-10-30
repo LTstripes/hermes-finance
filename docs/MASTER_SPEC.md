@@ -368,7 +368,14 @@ source/catalogue metadata may name a security, without changing the Owner catalo
 Received deposit interest remains visible for known CLOSED observations without
 inventing a capital denominator. Gold shows saved unrealized value and cost-based
 percentage with its valuation date, independently of an unavailable realised or
-period return. No gold trade journal or deposit import is introduced.
+period return. A compact manual BUY/SELL history may be confirmed inside the
+existing gold instrument, using its existing monthly price field. It preserves
+actual dates, grams, amount/fee basis, completeness and correction history;
+supported realized, unrealized and total results remain independently visible.
+Preview/confirmation records Owner evidence without rewriting CLOSED months or
+broker operations. It is not a universal transaction editor, a second price
+field or a deposit importer. Real Owner entry and visual acceptance remain
+separate authorized operations.
 
 The following selected-period capabilities remain on the lazy
 `/v2/returns/account` screen; they are not hidden monthly operands in the default.
