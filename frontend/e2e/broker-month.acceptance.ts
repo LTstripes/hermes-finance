@@ -1700,7 +1700,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(picker).toHaveValue("7452034");
   await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
   await expect(page).toHaveURL(
-    /\/v2\/returns\?.*scope=source%3A7452034.*start=2034-04-30&end=2034-05-31#returns-instruments/,
+    /\/v2\/returns\/account\?.*scope=source%3A7452034.*start=2034-04-30&end=2034-05-31#returns-instruments/,
   );
   const returnsPaper = page.getByRole("row").filter({ hasText: "RU000A000001" });
   await returnsPaper.getByRole("button").click();
