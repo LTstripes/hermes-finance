@@ -582,6 +582,12 @@ def numeric_context(v0, v1, flows):
         (1000000, 800000, (), "-0.2"),
         (1000000, 1100000, ((T1, 100000),), "0"),
         (9007199254740993, 9007199254740993, (), "0"),
+        (
+            1000000,
+            500000,
+            ((MID, -2000000), (date(2026, 9, 16), 2000000)),
+            "-0.5352752126942204352503606655",
+        ),
     ],
 )
 def test_c1_independent_arithmetic(v0, v1, flows, expected):
@@ -608,8 +614,9 @@ def test_c1_schedule_boundary_root_guards_and_strict_choices():
         (((T0, 100000),), 1000000, 1100000, "what_if_numeric_basis_invalid", 256),
         ((), 0, 0, "not_computable_xirr_no_valid_root", 256),
         (
-            ((MID, -2000000), (date(2026, 9, 16), 2000000)),
-            1000000,
+            # Same proven three-root polynomial as the actual-return guard.
+            ((date(2026, 9, 10), -530000), (date(2026, 9, 20), 950000)),
+            72000,
             500000,
             "not_computable_xirr_root_ambiguity",
             256,
