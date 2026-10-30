@@ -69,6 +69,8 @@ from hermes_finance.api.month_close_workflow import router as month_close_workfl
 from hermes_finance.api.months import router as months_router
 from hermes_finance.api.mybroker_import import router as mybroker_import_router
 from hermes_finance.api.mybroker_preflight import router as mybroker_preflight_router
+from hermes_finance.api.owner_manual_gold_history import GoldHistoryNoStoreMiddleware
+from hermes_finance.api.owner_manual_gold_history import router as owner_manual_gold_history_router
 from hermes_finance.api.payouts import router as payouts_router
 from hermes_finance.api.performance_attribution import router as performance_attribution_router
 from hermes_finance.api.performance_availability import router as performance_availability_router
@@ -152,6 +154,7 @@ def create_app(
         else Settings().reviewed_bond_valuation_path
     )
     application.add_middleware(LocalhostSecurityMiddleware)
+    application.add_middleware(GoldHistoryNoStoreMiddleware)
     if database is not None:
         application.state.database = database
     if market_data_provider is not None:
@@ -211,6 +214,7 @@ def create_app(
     application.include_router(historical_owner_flows_router)
     application.include_router(historical_portfolio_flows_router)
     application.include_router(executed_trades_router)
+    application.include_router(owner_manual_gold_history_router)
     application.include_router(historical_reconstruction_router)
     application.include_router(dashboard_router)
     application.include_router(analytics_router)
