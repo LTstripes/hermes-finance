@@ -37,7 +37,54 @@ def _json(value):
     return json.dumps(value, sort_keys=True, default=lambda x: x.isoformat())
 
 
+def display_name_for_isin(isin, labels):
+    """One bounded display label, never a name-based identity decision."""
+    if not isinstance(isin, str):
+        return None
+    names = {
+        label.strip()
+        for label in labels
+        if isinstance(label, str)
+        and 0 < len(label.strip()) <= 256
+        and not any(ord(c) < 32 for c in label)
+        and label.strip().upper() != isin.upper()
+    }
+    return next(iter(names)) if len(names) == 1 else None
+
+
+def resolve_display_name(isin, *, source_labels=(), pdf_labels=(), catalogue_name=None):
+    """Display-only precedence; ambiguity within one basis never picks a label."""
+    return (
+        display_name_for_isin(isin, source_labels)
+        or display_name_for_isin(isin, pdf_labels)
+        or display_name_for_isin(isin, (catalogue_name,))
+    )
+
+
+def _report_name_entries(entries):
+    """Allowlist optional metadata independently of financial report operands."""
+    if not isinstance(entries, (tuple, list)):
+        return ()
+    names = set()
+    for entry in entries:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 3:
+            continue
+        owner, isin, label = entry
+        if (
+            isinstance(owner, str)
+            and isinstance(isin, str)
+            and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin)
+            and display_name_for_isin(isin, (label,))
+        ):
+            names.add((owner, isin, label.strip()))
+    return tuple(sorted(names))
+
+
 def _report(report, account):
+    display_names = {}
+    for owner, isin, label in _report_name_entries(report.display_names):
+        if owner == account:
+            display_names.setdefault(isin, set()).add(label)
     return {
         "sha256": report.sha256,
         "start": str(report.start),
@@ -54,6 +101,11 @@ def _report(report, account):
         "payout_accounts": sorted(report.payout_accounts & {account}),
         "issues": [list(p) for p in report.issues if p[0] == account],
         "instrument_issues": [list(p) for p in report.instrument_issues if p[0] == account],
+        "display_names": [
+            [account, isin, label]
+            for isin, labels in sorted(display_names.items())
+            for label in sorted(labels)[:32]
+        ],
     }
 
 
@@ -75,6 +127,7 @@ def _restore_report(data):
         frozenset(data["payout_accounts"]),
         tuple(tuple(p) for p in data["issues"]),
         tuple(tuple(p) for p in data.get("instrument_issues", ())),
+        _report_name_entries(data.get("display_names", ())),
     )
 
 
@@ -540,25 +593,51 @@ def read_report_summaries(session, *, source_account=None, analyses=None):
 
 
 @coherent_read_operation
-def read_report_display_names(session, *, source_account, proof_id):
-    """Exact saved-source labels from one currently verified proof, if retained.
+def read_report_display_candidates(
+    session,
+    *,
+    source_account,
+    proof_id,
+    opening_date=None,
+    closing_date=None,
+    requested_isin=None,
+):
+    """Separate exact source/PDF display candidates from one current proof.
 
-    Older evidence has no labels. Ambiguity remains visible as multiple values;
-    a label never establishes instrument identity or financial authority.
+    Missing legacy fields remain unknown. Candidate sets retain ambiguity and
+    never establish identity. Exact projection arguments reuse detail's cache.
     """
     if not any(
         p["proof_id"] == proof_id and p["status"] == "current"
-        for p in read_report_summaries(session, source_account=source_account)
+        for p in read_reports(
+            session,
+            source_account=source_account,
+            opening_date=opening_date,
+            closing_date=closing_date,
+            requested_isin=requested_isin,
+            include_xirr=False,
+        )
     ):
-        return {}
+        return {"source": {}, "pdf": {}}
+    return _saved_display_candidates(session, proof_id, requested_isin=requested_isin)
+
+
+def _saved_display_candidates(session, proof_id, *, requested_isin=None):
+    # Both callers have already resolved this exact current proof inside their
+    # coherent read. Re-reading display metadata must not derive proof economics
+    # again, including for the standalone source-instrument reader.
     row = session.get(SourceReturnProof, proof_id)
-    metadata = json.loads(row.evidence_json)["native"].get("display_names", {})
+    if row is None or row.proof_version != VERSION:
+        return {"source": {}, "pdf": {}}
+    plan = json.loads(row.evidence_json)
+    metadata = plan["native"].get("display_names", {})
     if not isinstance(metadata, dict):
-        return {}
-    return {
+        metadata = {}
+    result = {
         isin: tuple(sorted(set(labels)))
         for isin, labels in metadata.items()
         if isinstance(isin, str)
+        and (requested_isin is None or isin == requested_isin)
         and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin)
         and isinstance(labels, list)
         and 0 < len(labels) <= 32
@@ -570,6 +649,21 @@ def read_report_display_names(session, *, source_account, proof_id):
             for label in labels
         )
     }
+    pdf = {}
+    for account, isin, label in _report_name_entries(plan["report"].get("display_names", ())):
+        if account == plan["source_account"] and (requested_isin is None or isin == requested_isin):
+            pdf.setdefault(isin, set()).add(label)
+    return {
+        "source": result,
+        "pdf": {isin: tuple(sorted(labels)) for isin, labels in pdf.items() if len(labels) <= 32},
+    }
+
+
+def read_report_display_names(session, *, source_account, proof_id, **projection):
+    """Compatibility accessor for retained XML/source labels only."""
+    return read_report_display_candidates(
+        session, source_account=source_account, proof_id=proof_id, **projection
+    )["source"]
 
 
 @coherent_read_operation
@@ -730,6 +824,11 @@ def instrument_result(
     last = date.fromisoformat(proof["covered_to"])
     views = [v for _, v, e in selected if not e]
     metadata = _identities(views)
+    display_names = (
+        _saved_display_candidates(session, proof["proof_id"], requested_isin=requested_isin)
+        if proof["status"] == "current"
+        else {"source": {}, "pdf": {}}
+    )
     chosen = analyses.get(proof["proof_id"], {})
     references = tuple(
         SourceReference(
@@ -795,7 +894,11 @@ def instrument_result(
                     )
                 )
         meta = metadata.get(isin, {"names": set(), "types": set()})
-        name = next(iter(meta["names"])) if len(meta["names"]) == 1 else None
+        name = resolve_display_name(
+            isin,
+            source_labels=meta["names"] | set(display_names["source"].get(isin, ())),
+            pdf_labels=display_names["pdf"].get(isin, ()),
+        )
         kind = next(iter(meta["types"])) if len(meta["types"]) == 1 else None
         totals = replace(
             _all_time(()),

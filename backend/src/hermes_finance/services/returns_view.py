@@ -192,8 +192,9 @@ def _instrument_metric(item, *, unit="kopecks"):
 
 
 def _display_name(name, isin):
-    name = (name or "").strip()
-    return name if name and name.upper() != isin.upper() else None
+    from hermes_finance.services.source_investment_proofs import display_name_for_isin
+
+    return display_name_for_isin(isin, (name,))
 
 
 def _catalogue_names(session, rows):

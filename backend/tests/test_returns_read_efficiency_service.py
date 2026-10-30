@@ -490,6 +490,7 @@ def test_legacy_proof_without_display_metadata_still_validates_without_inventing
         }
         plan = json.loads(original.evidence_json)
         plan["native"].pop("display_names")
+        plan["report"].pop("display_names", None)
         values.update(
             request_id="read-efficiency-legacy",
             dependency_digest=proofs._evidence_digest(plan),
@@ -508,6 +509,243 @@ def test_legacy_proof_without_display_metadata_still_validates_without_inventing
                 )
                 == {}
             )
+
+
+def _named_investment(db, monkeypatch, *, source_labels=(), pdf_labels=()):
+    import test_statement_import_mybroker_preflight as preflight
+
+    from hermes_finance.services import source_instrument_returns as instruments
+    from hermes_finance.statement_import.mybroker import parse_mybroker
+
+    service, _, raw, report, _ = investment_case()
+    root = ET.fromstring(raw)
+    for node, attribute, label in (
+        (
+            root.find(".//{MyBroker}Details[@trade_no]"),
+            "p_name",
+            source_labels[0] if source_labels else None,
+        ),
+        (
+            root.find(".//{MyBroker}Details[@ISIN1]"),
+            "active_name",
+            source_labels[-1] if source_labels else None,
+        ),
+    ):
+        if label is None:
+            node.attrib.pop(attribute, None)
+        else:
+            node.set(attribute, label)
+    raw = ET.tostring(root)
+    document = parse_mybroker(raw, preflight.FILENAME)
+    report = replace(
+        report, display_names=tuple(("1234567", "RU000A000000", label) for label in pdf_labels)
+    )
+    monkeypatch.setattr(
+        preflight,
+        "investment_case",
+        lambda: (service, document, raw, report, service._money(document, raw)),
+    )
+    # Model a source-only saved view whose S1 proposals have no security names.
+    # The native/PDF display metadata must supply names independently of them.
+    identities = instruments._identities
+
+    def unnamed(views):
+        metadata = identities(views)
+        for values in metadata.values():
+            values["names"].clear()
+        return metadata
+
+    monkeypatch.setattr(instruments, "_identities", unnamed)
+    _saved_investment(db, monkeypatch)
+    return unnamed
+
+
+@pytest.mark.parametrize(
+    "source_labels,pdf_labels,expected",
+    [
+        (("Exact XML title",), ("Different PDF wording",), "Exact XML title"),
+        ((), ("Exact PDF title",), "Exact PDF title"),
+        (("XML first", "XML second"), ("Exact PDF title",), "Exact PDF title"),
+        (("XML first", "XML second"), ("PDF first", "PDF second"), None),
+        (("RU000A000000",), ("Exact PDF title",), "Exact PDF title"),
+    ],
+)
+def test_verified_names_reach_source_reader_account_overview_and_detail(
+    db, monkeypatch, source_labels, pdf_labels, expected
+):
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _named_investment(db, monkeypatch, source_labels=source_labels, pdf_labels=pdf_labels)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source = read_instrument_returns(session, source_account=ACCOUNT)
+        overview = returns_view.read_overview(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END
+        )
+        detail = returns_view.read_detail(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END, isin="RU000A000000"
+        )
+    assert source.instruments[0].source_name == expected
+    assert source.to_dict()["instruments"][0]["source_name"] == expected
+    assert overview["instruments"][0]["name"] == detail["name"] == (expected or "RU000A000000")
+    assert detail["pnl"]["value"] == "9000"
+    assert snapshot(db) == before
+
+
+def test_display_candidates_are_scoped_current_and_do_not_repeat_detail_xirr(db, monkeypatch):
+    from hermes_finance.services import source_report_preview as preview
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _named_investment(
+        db, monkeypatch, source_labels=("Exact XML title",), pdf_labels=("PDF title",)
+    )
+    chain, derive = preview.calculate_monthly_return_chain, proofs._derive
+    calls, derivations = [], []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return chain(*args, **kwargs)
+
+    def derived(*args, **kwargs):
+        derivations.append(1)
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(preview, "calculate_monthly_return_chain", counted)
+    monkeypatch.setattr(proofs, "_derive", derived)
+    with db.session_factory() as session:
+        detail = returns_view.read_detail(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END, isin="RU000A000000"
+        )
+        assert detail["name"] == "Exact XML title"
+        assert len(calls) == 2 and len(derivations) == 1
+        source = read_instrument_returns(session, source_account=ACCOUNT)
+        assert source.instruments[0].source_name == "Exact XML title"
+        assert len(calls) == 4 and len(derivations) == 2
+        proof = proofs.read_report_summaries(session, source_account=ACCOUNT)[0]
+        assert proofs.read_report_display_candidates(
+            session, source_account="7654321-000", proof_id=proof["proof_id"]
+        ) == {"source": {}, "pdf": {}}
+    stale = _append_stale_proof(db)
+    with db.session_factory() as session:
+        assert proofs.read_report_display_candidates(
+            session, source_account=ACCOUNT, proof_id=stale
+        ) == {"source": {}, "pdf": {}}
+        assert proofs.read_report_display_candidates(
+            session, source_account=ACCOUNT, proof_id=proof["proof_id"]
+        ) == {"source": {}, "pdf": {}}
+        detail = returns_view.read_detail(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END, isin="RU000A000000"
+        )
+        assert detail["name"] == "RU000A000000" and detail["pnl"]["value"] is None
+
+
+def test_catalogue_is_exact_display_fallback_and_never_becomes_source_name(db, monkeypatch):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _named_investment(
+        db,
+        monkeypatch,
+        source_labels=("XML first", "XML second"),
+        pdf_labels=("PDF first", "PDF second"),
+    )
+    with db.session_factory() as session:
+        session.add_all(
+            [
+                Instrument(
+                    name="Exact catalogue title", instrument_type="stock", isin="RU000A000000"
+                ),
+                Instrument(
+                    name="Unrelated catalogue title", instrument_type="stock", isin="RU000A000001"
+                ),
+            ]
+        )
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source = read_instrument_returns(session, source_account=ACCOUNT)
+        detail = returns_view.read_detail(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END, isin="RU000A000000"
+        )
+        overview = returns_view.read_overview(
+            session, scope=SCOPE, start=PROOF_START, end=PROOF_END
+        )
+    assert source.instruments[0].source_name is None
+    assert detail["name"] == overview["instruments"][0]["name"] == "Exact catalogue title"
+    assert detail["pnl"]["value"] == "9000" and snapshot(db) == before
+
+
+def test_pdf_security_display_labels_only_use_valid_selected_actual_rows():
+    from test_statement_import_mybroker_preflight import investment_text
+
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    text = investment_text()
+    parsed = parse_investment_report(text, {"1234567"})
+    assert parsed.display_names == (("1234567", "RU000A000000", "Synthetic"),)
+    foreign = parse_investment_report(investment_text(account="7654321"), {"1234567"})
+    assert foreign.display_names == ()
+    # Change only the future-flow label; it never becomes retained metadata.
+    page = text.pages[0]
+    lines = list(page.lines)
+    lines[-1] = lines[-1].replace("Synthetic", "Future-only title")
+    changed = replace(text, pages=(replace(page, lines=tuple(lines)),))
+    assert parse_investment_report(changed, {"1234567"}).display_names == parsed.display_names
+    # Malformed selected actual rows do not leak a name from a failed grammar.
+    bad_lines = [line.replace("Synthetic", "x" * 257) for line in page.lines]
+    oversized = replace(text, pages=(replace(page, lines=tuple(bad_lines)),))
+    assert parse_investment_report(oversized, {"1234567"}).display_names == ()
+    encoded = proofs._report(
+        replace(
+            parsed,
+            display_names=parsed.display_names + (("7654321", "RU000A000000", "Foreign title"),),
+        ),
+        "1234567",
+    )
+    assert encoded["display_names"] == [["1234567", "RU000A000000", "Synthetic"]]
+    assert proofs._restore_report(encoded).display_names == parsed.display_names
+    missing = proofs._restore_report({**encoded, "display_names": None})
+    assert missing.display_names == ()
+    assert replace(missing, display_names=parsed.display_names) == parsed
+
+
+def test_exact_verified_source_title_reaches_existing_screen_and_source_api_routes(db, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.api.returns_overall import router as overall_router
+    from hermes_finance.api.returns_view import router as view_router
+    from hermes_finance.api.settings import session_for_request
+    from hermes_finance.api.source_instrument_returns import router as source_router
+    from hermes_finance.services import returns_overall
+
+    unnamed = _named_investment(
+        db, monkeypatch, source_labels=("Exact XML title",), pdf_labels=("Different PDF title",)
+    )
+    monkeypatch.setattr(returns_overall, "_identities", unnamed)
+    app = FastAPI()
+    for router in (overall_router, view_router, source_router):
+        app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    query = {"scope": SCOPE, "start": str(PROOF_START), "end": str(PROOF_END)}
+    with TestClient(app) as client:
+        overall = client.get("/api/returns/overall")
+        overview = client.get("/api/returns/overview", params=query)
+        detail = client.get("/api/returns/instrument", params={**query, "isin": "RU000A000000"})
+        source = client.get("/api/source-returns/instruments", params={"source_account": ACCOUNT})
+    for result in (overall, overview, detail, source):
+        assert result.status_code == 200, result.text
+        assert result.headers["cache-control"] == "no-store"
+    assert overall.json()["instruments"][0]["name"] == "Exact XML title"
+    assert overview.json()["instruments"][0]["name"] == detail.json()["name"] == "Exact XML title"
+    assert source.json()["instruments"][0]["source_name"] == "Exact XML title"
+    assert snapshot(db) == before
 
 
 def test_source_views_are_verified_once_per_snapshot_and_never_shared_mutably(db, monkeypatch):
