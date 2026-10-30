@@ -63,11 +63,21 @@ financial/source contracts are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-
 
 Synthetic targeted checks and independent reviews belong to their exact commits;
 current candidate/CI receipts are linked on the Draft. No claim that all original
-Owner UAT items passed follows from green CI. The combined isolated Test/demo,
-fresh Preview and explicit replacement proof confirmation, actual gold entry,
-merge and Stable update remain pending their separate authorized steps. Existing
-proof hashes are never rewritten and no Owner financial data changed in this
-development stage. Deposit-statement import remains deferred.
+Owner UAT items passed follows from green CI. Authorized isolated Test preparation
+now uses a consistent production backup with the previous Test recovery pair
+retained. Copy-only migration and same-original fresh Preview/explicit replacement
+proof confirmation preserve financial/CLOSED rows; existing hashes are never
+rewritten. Real-data route checks identified bounded AI wire-representation and
+repeated source-identity-copy issues; their reviewed corrections are in this
+candidate. The separately approved stock Preview-only port permits the full Test
+UI beside Stable with exact OPS03 and process/readiness binding; Stable, recovery
+and scratch retain their existing default behavior.
+
+Operator UI/route evidence remains tied to its exact tested candidate and copy;
+it does not replace Owner visual acceptance. Actual gold source entry, merge and
+Stable update still require their separate steps. No working financial rows,
+CLOSED state or Stable installation changed. Deposit-statement import remains
+deferred.
 
 ## Historical v1.8.0 checkpoint
 
