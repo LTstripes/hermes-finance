@@ -137,7 +137,7 @@ def _source_accounts(session):
     for account in sorted(set(canonical.values())):
         scope = f"source:{account}"
         captured = {}
-        reports = source_investment_proofs.read_reports(
+        reports = source_investment_proofs.read_report_summaries(
             session, source_account=account, analyses=captured
         )
         historical = [p for p in reports if p["history_from_zero"]]
@@ -150,12 +150,19 @@ def _source_accounts(session):
         status = proof["status"] if proof else "absent"
         reasons = list(proof["reason_codes"]) if proof else ["all_history_source_proof_absent"]
         analyses = captured.get(proof["proof_id"], {}) if proof and status == "current" else {}
+        source_names = (
+            source_investment_proofs.read_report_display_names(
+                session, source_account=account, proof_id=proof["proof_id"]
+            )
+            if proof and status == "current"
+            else {}
+        )
         keys = sorted(analyses) if status == "current" else sorted(metadata)
         prototypes = [
             SimpleNamespace(
                 isin=isin,
-                source_name=next(iter(metadata[isin]["names"]))
-                if len(metadata[isin]["names"]) == 1
+                source_name=next(iter(observed))
+                if len(observed := metadata[isin]["names"] | set(source_names.get(isin, ()))) == 1
                 else None,
             )
             for isin in keys

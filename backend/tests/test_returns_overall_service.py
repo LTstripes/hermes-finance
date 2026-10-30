@@ -224,7 +224,10 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
             }
         ]
 
-    monkeypatch.setattr(overall.source_investment_proofs, "read_reports", reports)
+    monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", reports)
+    monkeypatch.setattr(
+        overall.source_investment_proofs, "read_report_display_names", lambda *a, **k: {}
+    )
     return calls
 
 
@@ -368,3 +371,18 @@ def test_shared_account_across_snapshot_models_needs_disjointness_evidence(db):
     )
     assert value.deposits.interest.value == "250"
     assert value.gold.snapshots[0].unrealized_result.value == "2500"
+
+
+def test_verified_source_display_metadata_names_sold_security_without_catalogue_write(
+    db, monkeypatch
+):
+    source_fixture(monkeypatch)
+    monkeypatch.setattr(
+        overall.source_investment_proofs,
+        "read_report_display_names",
+        lambda *a, **k: {ISIN: ("Synthetic original title",)},
+    )
+    value = read(db)
+    assert value.instruments[0].name == "Synthetic original title"
+    with db.session_factory() as session:
+        assert session.query(Instrument).count() == 0
