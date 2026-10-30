@@ -229,14 +229,8 @@ def _source_accounts(session):
     return accounts, instruments, canonical
 
 
-def _mixed_result(session, accounts, gold, months, canonical):
-    """Sum only distinct known operands; never the account plus its explanation.
-
-    Native source identities distinguish source accounts. Exact accepted identity
-    mappings prove whether a canonical snapshot component overlaps one of those
-    accounts. Missing/ambiguous joins exclude just that component, not its known
-    amount or a supported sibling. No cross-authority numerical fallback exists.
-    """
+def _account_mappings(session, canonical):
+    """Exact accepted identity metadata; never a name/amount join."""
     mappings = defaultdict(set)
     for alias, account_id in session.execute(
         select(
@@ -253,6 +247,80 @@ def _mixed_result(session, accounts, gold, months, canonical):
     for native, identities in mappings.items():
         for identity in identities:
             reverse[identity].add(native)
+    return mappings, reverse
+
+
+def _identity_conflict(native, mappings, reverse):
+    return len(mappings[native]) > 1 or any(len(reverse[a]) > 1 for a in mappings[native])
+
+
+def _coupon_income(accounts, mappings, reverse):
+    """Known credited account coupons once, independent of valuation/P&L.
+
+    These are latest current exact whole-history account operands. Instrument
+    explanations, monthly overlap, forecasts and accepted copies are not addends.
+    """
+    rows, values, seen = [], [], set()
+    for account in accounts:
+        native = account["scope"].removeprefix("source:")
+        if native in seen:
+            continue
+        seen.add(native)
+        amount = (
+            account["result"]["coupons"]
+            if account["result"]
+            else _unknown("all_history_source_proof_absent")
+        )
+        reasons = list(dict.fromkeys([*account["reason_codes"], *amount["reason_codes"]]))
+        if _identity_conflict(native, mappings, reverse):
+            excluded = "source_account_identity_mapping_conflict"
+        elif account["proof_status"] != "current":
+            excluded = "current_coupon_history_unavailable"
+        elif amount["value"] is None:
+            excluded = "coupon_income_unavailable"
+        else:
+            excluded = None
+            values.append(int(amount["value"]))
+        rows.append(
+            {
+                "scope": account["scope"],
+                "label": account["label"],
+                "period": account["period"],
+                "amount": amount,
+                "proof_status": account["proof_status"],
+                "included": excluded is None,
+                "exclusion_reason": excluded,
+                "reason_codes": list(dict.fromkeys([*reasons, *([excluded] if excluded else [])])),
+            }
+        )
+    reasons = ["known_source_history_coupons_only", "source_only_not_financial_close"]
+    if any(not row["included"] for row in rows):
+        reasons.append("coupon_history_accounts_missing_or_excluded")
+    if (
+        len(
+            {
+                (row["period"]["start"], row["period"]["end"])
+                for row in rows
+                if row["included"] and row["period"]
+            }
+        )
+        > 1
+    ):
+        reasons.append("coupon_account_history_periods_differ")
+    return {
+        "known_total": returns_view.metric(
+            sum(values) if values else None, reasons=reasons, method="known_source_history_coupons"
+        ),
+        "partial": True,
+        "selected_accounts": len(rows),
+        "included_accounts": len(values),
+        "accounts": rows,
+        "reason_codes": reasons,
+    }
+
+
+def _mixed_result(session, accounts, gold, months, mappings, reverse):
+    """Distinct supported operands; no account-plus-explanation or stale fallback."""
     components, included_native = [], []
 
     def component(identity, category, label, amount, interval, valuation_date, authority, reasons):
@@ -292,9 +360,7 @@ def _mixed_result(session, accounts, gold, months, canonical):
             "source_only",
             account["reason_codes"],
         )
-        conflicting = len(mappings[native]) > 1 or any(
-            len(reverse[a]) > 1 for a in mappings[native]
-        )
+        conflicting = _identity_conflict(native, mappings, reverse)
         if conflicting:
             row["coverage"]["status"] = "conflict"
             row["exclusion_reason"] = "source_account_identity_mapping_conflict"
@@ -401,6 +467,16 @@ def read_overall(session):
     with source_read_snapshot(session):
         months = returns_view._months(session)
         accounts, instruments, canonical = _source_accounts(session)
+        mappings, reverse = _account_mappings(session, canonical)
+        for instrument in instruments:
+            for account in instrument["accounts"]:
+                native = account["scope"].removeprefix("source:")
+                account["canonical_account_id"] = (
+                    next(iter(mappings[native]))
+                    if len(mappings[native]) == 1
+                    and not _identity_conflict(native, mappings, reverse)
+                    else None
+                )
         gold = _gold(session, months)
         return {
             "contract_version": "returns_overall_v1",
@@ -414,7 +490,8 @@ def read_overall(session):
             "instruments": instruments,
             "deposits": _deposits(session, months),
             "gold": gold,
-            "mixed_result": _mixed_result(session, accounts, gold, months, canonical),
+            "mixed_result": _mixed_result(session, accounts, gold, months, mappings, reverse),
+            "coupon_income": _coupon_income(accounts, mappings, reverse),
             "reason_codes": [
                 "source_only_not_financial_close",
                 "overall_aggregation_pending_review",

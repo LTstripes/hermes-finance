@@ -416,3 +416,93 @@ def test_real_synthetic_proof_overall_uses_one_summary_derivation_and_stale_neve
     assert value.instruments and all(
         pair.pnl.value is None for pair in value.instruments[0].accounts
     )
+
+
+def test_owner_coupon_total_uses_native_accounts_once_not_instrument_or_monthly_explanations(
+    db, monkeypatch
+):
+    calls = source_fixture(monkeypatch)
+    value = read(db)
+    coupon = value.coupon_income
+    assert coupon.known_total.value == "50"
+    assert calls == ["native-a", "native-b"]
+    assert coupon.selected_accounts == coupon.included_accounts == 2
+    assert coupon.partial and "coupon_account_history_periods_differ" in coupon.reason_codes
+    assert value.mixed_result.known_result.value == "50"
+    assert all(pair.canonical_account_id is None for pair in value.instruments[0].accounts)
+
+
+def test_known_coupon_income_is_independent_of_unavailable_account_pnl_and_valuation(
+    db, monkeypatch
+):
+    source_fixture(monkeypatch)
+    original = overall.source_investment_proofs.read_report_summaries
+
+    def without_account_result(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        for row in rows:
+            row["interval"]["pnl"]["value"] = None
+            row["interval"]["modified_dietz"]["value"] = None
+        return rows
+
+    monkeypatch.setattr(
+        overall.source_investment_proofs, "read_report_summaries", without_account_result
+    )
+    value = read(db)
+    assert value.mixed_result.known_result.value is None
+    assert value.coupon_income.known_total.value == "50"
+    assert value.coupon_income.included_accounts == 2
+
+
+def test_stale_coupon_account_does_not_revive_old_value_or_hide_known_sibling(db, monkeypatch):
+    source_fixture(monkeypatch, stale_second=True)
+    coupon = read(db).coupon_income
+    assert coupon.known_total.value == "25"
+    assert (coupon.selected_accounts, coupon.included_accounts) == (2, 1)
+    assert coupon.accounts[1].amount.value is None
+    assert coupon.accounts[1].exclusion_reason == "current_coupon_history_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected", "included"),
+    [("0", "0", 2), (None, None, 0), ("900719925474099301", "1801439850948198602", 2)],
+)
+def test_coupon_zero_unknown_and_large_integer_amounts_keep_distinct_meanings(
+    db, monkeypatch, amount, expected, included
+):
+    source_fixture(monkeypatch)
+    original = overall.source_investment_proofs.read_report_summaries
+
+    def observed(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        for row in rows:
+            row["interval"]["coupons_kopecks"] = amount
+        return rows
+
+    monkeypatch.setattr(overall.source_investment_proofs, "read_report_summaries", observed)
+    coupon = read(db).coupon_income
+    assert coupon.known_total.value == expected
+    assert coupon.included_accounts == included
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_navigation_and_coupon_conflicts_use_exact_accepted_identity_not_labels(
+    db, monkeypatch, conflict
+):
+    source_fixture(monkeypatch)
+    identity_mappings(db, shared=conflict)
+    value = read(db)
+    ids = [pair.canonical_account_id for pair in value.instruments[0].accounts]
+    if conflict:
+        assert ids == [None, None]
+        assert value.coupon_income.known_total.value is None
+        assert all(
+            row.amount.value == "25" and not row.included for row in value.coupon_income.accounts
+        )
+        assert all(
+            row.exclusion_reason == "source_account_identity_mapping_conflict"
+            for row in value.coupon_income.accounts
+        )
+    else:
+        assert ids == [1, 2]
+        assert value.coupon_income.known_total.value == "50"

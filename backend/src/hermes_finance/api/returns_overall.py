@@ -34,6 +34,7 @@ class InstrumentAccount(Result):
     period: Period | None
     scope: str
     label: str
+    canonical_account_id: int | None = None
 
 
 class OverallInstrument(DTO):
@@ -106,6 +107,26 @@ class MixedResult(DTO):
     reason_codes: list[str]
 
 
+class CouponAccount(DTO):
+    scope: str
+    label: str
+    period: Period | None
+    amount: Metric
+    proof_status: Literal["current", "stale", "absent", "conflict"]
+    included: bool
+    exclusion_reason: str | None
+    reason_codes: list[str]
+
+
+class CouponIncome(DTO):
+    known_total: Metric
+    partial: Literal[True]
+    selected_accounts: int
+    included_accounts: int
+    accounts: list[CouponAccount]
+    reason_codes: list[str]
+
+
 class Overall(DTO):
     contract_version: Literal["returns_overall_v1"]
     overall: OverallResult
@@ -114,6 +135,7 @@ class Overall(DTO):
     deposits: Deposits
     gold: Gold
     mixed_result: MixedResult
+    coupon_income: CouponIncome
     reason_codes: list[str]
 
 
