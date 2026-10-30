@@ -142,9 +142,9 @@ def read_context(session):
         for periods in source_periods.values():
             periods[:] = list({(p["start"], p["end"]): p for p in periods}.values())
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
-        from hermes_finance.services.source_investment_proofs import read_reports
+        from hermes_finance.services.source_investment_proofs import read_report_headers
 
-        for proof in read_reports(session):
+        for proof in read_report_headers(session):
             key = f"source:{canonical.get(proof['source_account'], proof['source_account'])}"
             period = bounds(
                 date.fromisoformat(proof["covered_from"]) - timedelta(days=1),

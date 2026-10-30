@@ -212,7 +212,7 @@ def _payout_links(documents, money_by_document, report):
     return links, issues
 
 
-def _native(document, payload):
+def _native(document, payload, *, display_names=None):
     root = ET.fromstring(payload.decode("utf-8-sig"))
     nodes = root.findall("m:Trades/m:Report/m:Tablix2/m:Details_Collection/m:Details", NS)
     trades = [t for t in document["trades"] if t["section"] == "completed"]
@@ -220,14 +220,33 @@ def _native(document, payload):
         raise MyBrokerError("source_return_native_rows_mismatch")
     names = defaultdict(set)
     primary = defaultdict(list)
+
+    def display_name(isin, value):
+        # Optional presentation metadata only. Hashed attribution keys below
+        # retain their existing exact lexemes and never consume these labels.
+        if display_names is None or not isinstance(value, str):
+            return
+        value = value.strip()
+        if (
+            re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin or "")
+            and value
+            and len(value) <= 256
+            and not any(ord(c) < 32 for c in value)
+        ):
+            display_names.setdefault(isin, set()).add(value)
+
     for trade, node in zip(trades, nodes):
         if node.get("p_name"):
             names[digest(node.get("p_name"))].add(trade["core"]["isin"])
+            display_name(trade["core"]["isin"], node.get("p_name"))
         if trade["ids"]:
             primary[trade["ids"][0]].append(trade)
+    position_keys = {(p["source_account"], p["isin"]) for p in document["positions"]}
     for node in root.findall(".//m:Details[@ISIN1]", NS):
         if node.get("ISIN1") and node.get("active_name"):
             names[digest(node.get("active_name"))].add(node.get("ISIN1"))
+            if (node.get("acc_code"), node.get("ISIN1")) in position_keys:
+                display_name(node.get("ISIN1"), node.get("active_name"))
     cancellations = []
     for node in root.findall("m:Trades3/m:Report/m:Tablix1/m:Details_Collection/m:Details", NS):
         match = re.fullmatch(
@@ -248,9 +267,13 @@ def _native(document, payload):
     return trades, names, primary, cancellations
 
 
-def _rates(start, end, v0, v1, flows, reasons=()):
+def _rates(start, end, v0, v1, flows, reasons=(), *, include_xirr=True):
     interval = calculate_interval_return((start, v0), (end, v1), flows)
-    period = calculate_monthly_return_chain([(start, v0), (end, v1)], flows).period
+    period = (
+        calculate_monthly_return_chain([(start, v0), (end, v1)], flows).period
+        if include_xirr
+        else None
+    )
     return {
         "pnl": _metric(interval.growth_kopecks, reasons),
         "modified_dietz": _metric(
@@ -259,17 +282,25 @@ def _rates(start, end, v0, v1, flows, reasons=()):
             method="modified_dietz",
         ),
         "xirr_annualized": _metric(
-            period.xirr_annualized_return,
-            tuple(reasons) + period.xirr_reason_codes,
+            period.xirr_annualized_return if period is not None else None,
+            tuple(reasons) + period.xirr_reason_codes if period is not None else ("not_requested",),
             method="xirr",
             annualized=True,
         ),
         "xirr_period": _metric(
-            period.xirr_period_return,
-            tuple(reasons) + period.xirr_reason_codes,
+            period.xirr_period_return if period is not None else None,
+            tuple(reasons) + period.xirr_reason_codes if period is not None else ("not_requested",),
             method="money_weighted_period",
         ),
     }
+
+
+def _defer_xirr(interval):
+    """Mark omitted optional rates on an owned presentation projection only."""
+    for row in (interval, *interval["instruments"]):
+        row["xirr_annualized"] = _metric(None, ("not_requested",), method="xirr", annualized=True)
+        row["xirr_period"] = _metric(None, ("not_requested",), method="money_weighted_period")
+    return interval
 
 
 def _coverage(reasons):
@@ -419,6 +450,8 @@ def _interval(
     *,
     native_evidence=None,
     analyses=None,
+    requested_isin=None,
+    include_xirr=True,
 ):
     account = document["filename_account"]
     native_account = {r["source_account"] for r in document["money"] + document["positions"]}
@@ -750,12 +783,19 @@ def _interval(
         components, pnl, known, dietz, estimate = calculate_economics(
             opening, closing, events[isin], coverage
         )
+        # All source/event/quantity/cash checks and account valuation operands
+        # above remain complete. Only the unused instrument projection and its
+        # expensive XIRR are omitted for an exact instrument detail request.
+        if requested_isin is not None and isin != requested_isin:
+            continue
         flows = [
             (leg.date, leg.instrument_flow_kopecks, "confirmed")
             for e in events[isin]
             for leg in e.cash_legs
         ]
-        rates = _rates(start, end, v0, v1, flows, tuple(why) + advisory_reasons)
+        rates = _rates(
+            start, end, v0, v1, flows, tuple(why) + advisory_reasons, include_xirr=include_xirr
+        )
         if why:
             for key in rates:
                 rates[key]["value"] = None
@@ -837,7 +877,9 @@ def _interval(
     if any(r["currency"] != "RUB" for r in unlinked):
         external.append((end, 0, "unknown"))
         account_reasons.add("non_rub_money_valuation_unknown")
-    rates = _rates(start, end, v0total, v1total, external, account_reasons)
+    rates = _rates(
+        start, end, v0total, v1total, external, account_reasons, include_xirr=include_xirr
+    )
     known_subtotal = {
         **rates["pnl"],
         "status": "partial" if rates["pnl"]["value"] is not None else "unavailable",
@@ -873,7 +915,7 @@ def _interval(
             m["status"] = "partial"
             m["reason_codes"] = sorted(account_reasons)
     linked_rows = sum(r["ref"] in links for r in money)
-    return {
+    result = {
         "source_account": account,
         "source_sha256": document["document_sha256"],
         "opening_date": str(start),
@@ -962,6 +1004,7 @@ def _interval(
         "source_advisories": document["syntax_blockers"],
         "reason_codes": sorted(account_reasons),
     }
+    return result if include_xirr else _defer_xirr(result)
 
 
 def preview_source_reports(session, entries, originals, income_report, *, history_from_zero=False):

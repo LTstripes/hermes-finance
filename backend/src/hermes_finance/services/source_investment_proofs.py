@@ -5,6 +5,7 @@ No original cache, cash ledger, financial writer or stored calculated return.
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
@@ -254,8 +255,9 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
                 filenames[document["document_sha256"]],
             )
             captured = _captured_money(document, view)
+            display_names = {}
             trades, names, _, cancellations = _native(
-                document, payloads[document["document_sha256"]]
+                document, payloads[document["document_sha256"]], display_names=display_names
             )
             del trades
             plan = {
@@ -270,6 +272,7 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
                 "report": _report(report, account),
                 "native": {
                     "names": {k: sorted(v) for k, v in names.items()},
+                    "display_names": {k: sorted(v)[:32] for k, v in display_names.items()},
                     "cancellations": [[a, i, str(d), str(q)] for a, i, d, q in cancellations],
                     "unresolved": _unresolved_movements(
                         payloads[document["document_sha256"]], native, cancellations
@@ -332,7 +335,7 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
     }
 
 
-def _derive(session, row, plan, *, analyses=None):
+def _derive(session, row, plan, *, analyses=None, requested_isin=None, include_xirr=True):
     from hermes_finance.services.source_report_preview import _interval, _payout_links
 
     dependency, selected, _ = _snapshot(
@@ -364,37 +367,127 @@ def _derive(session, row, plan, *, analyses=None):
         plan["from_zero"],
         native_evidence=plan["native"],
         analyses=analyses,
+        requested_isin=requested_isin,
+        include_xirr=include_xirr,
     )
+
+
+def _report_rows(session, source_account=None):
+    """Latest saved row per exact scope, without validating financial evidence."""
+    query = select(SourceReturnProof).where(SourceReturnProof.proof_version == VERSION)
+    if source_account is not None:
+        query = query.where(
+            (SourceReturnProof.source_account == source_account)
+            | (SourceReturnProof.native_account == source_account)
+        )
+    rows = session.scalars(query.order_by(SourceReturnProof.id.desc()))
+    seen = set()
+    for row in rows:
+        plan = json.loads(row.evidence_json)
+        scope = _scope(plan)
+        if scope not in seen:
+            seen.add(scope)
+            yield row, plan
 
 
 @coherent_read_operation
-def read_reports(session, *, source_account=None, analyses=None):
+def read_report_headers(session, *, source_account=None):
+    """Saved navigation metadata only; no currentness or numeric claim.
+
+    A stale proof still supplies a selectable exact period. Numeric consumers
+    must use read_reports and its unchanged dependency validation.
+    """
+    return [
+        {
+            "proof_id": row.id,
+            "source_account": plan["source_account"],
+            "covered_from": plan["covered_from"],
+            "covered_to": plan["covered_to"],
+            "history_from_zero": plan["from_zero"],
+        }
+        for row, plan in _report_rows(session, source_account)
+    ]
+
+
+@coherent_read_operation
+def read_reports(
+    session,
+    *,
+    source_account=None,
+    analyses=None,
+    opening_date=None,
+    closing_date=None,
+    requested_isin=None,
+    include_xirr=True,
+):
+    if (opening_date is None) != (closing_date is None):
+        raise ValueError("investment_proof_period_incomplete")
     # Reuse derivation only inside the existing read-only coherent snapshot.
     # Copies prevent one presentation consumer from altering another's operands.
     cache = session.info.get(_SOURCE_INVESTMENT_READS)
-    if cache is not None and source_account in cache:
-        result, captured = deepcopy(cache[source_account])
+    key = (source_account, opening_date, closing_date, requested_isin, include_xirr)
+    candidates = [
+        key,
+        (source_account, opening_date, closing_date, None, include_xirr),
+        (source_account, None, None, None, include_xirr),
+    ]
+    if not include_xirr:
+        candidates.extend(
+            [
+                (source_account, opening_date, closing_date, requested_isin, True),
+                (source_account, opening_date, closing_date, None, True),
+                (source_account, None, None, None, True),
+            ]
+        )
+    cached_key = next((k for k in candidates if cache is not None and k in cache), None)
+    if cached_key is not None:
+        result, captured = cache[cached_key]
+        if opening_date is not None:
+            result = [
+                p
+                for p in result
+                if date.fromisoformat(p["covered_from"]) - timedelta(days=1) == opening_date
+                and date.fromisoformat(p["covered_to"]) == closing_date
+            ]
         if analyses is not None:
-            analyses.update(captured)
+            analyses.update(
+                deepcopy(
+                    {
+                        p["proof_id"]: {
+                            isin: analysis
+                            for isin, analysis in captured[p["proof_id"]].items()
+                            if requested_isin is None or isin == requested_isin
+                        }
+                        for p in result
+                        if p["proof_id"] in captured
+                    }
+                )
+            )
+        result = deepcopy(result)
+        if requested_isin is not None:
+            for proof in result:
+                if proof["interval"] is not None:
+                    proof["interval"]["instruments"] = [
+                        row
+                        for row in proof["interval"]["instruments"]
+                        if row["isin"] == requested_isin
+                    ]
+        if not include_xirr:
+            from hermes_finance.services.source_report_preview import _defer_xirr
+
+            for proof in result:
+                if proof["interval"] is not None:
+                    _defer_xirr(proof["interval"])
         return result
     captured = {} if cache is not None else None
-    rows = session.scalars(
-        select(SourceReturnProof)
-        .where(SourceReturnProof.proof_version == VERSION)
-        .order_by(SourceReturnProof.id.desc())
-    )
-    seen, result = set(), []
-    for row in rows:
-        if source_account is not None and source_account not in {
-            row.source_account,
-            row.native_account,
-        }:
-            continue
-        plan = json.loads(row.evidence_json)
+    result = []
+    for row, plan in _report_rows(session, source_account):
         scope = _scope(plan)
-        if scope in seen:
+        if opening_date is not None and (
+            date.fromisoformat(scope[1]) - timedelta(days=1) != opening_date
+            or date.fromisoformat(scope[2]) != closing_date
+        ):
             continue
-        seen.add(scope)
         item = {
             "proof_id": row.id,
             "source_account": scope[0],
@@ -414,7 +507,14 @@ def read_reports(session, *, source_account=None, analyses=None):
         }
         try:
             derived = {} if analyses is not None or captured is not None else None
-            item["interval"] = _derive(session, row, plan, analyses=derived)
+            item["interval"] = _derive(
+                session,
+                row,
+                plan,
+                analyses=derived,
+                requested_isin=requested_isin,
+                include_xirr=include_xirr,
+            )
             if analyses is not None:
                 analyses[row.id] = derived
             if captured is not None:
@@ -428,8 +528,48 @@ def read_reports(session, *, source_account=None, analyses=None):
             )
         result.append(item)
     if cache is not None:
-        cache[source_account] = deepcopy((result, captured))
+        cache[key] = deepcopy((result, captured))
     return result
+
+
+def read_report_summaries(session, *, source_account=None, analyses=None):
+    """Validate complete evidence and economics while deferring optional XIRR."""
+    return read_reports(
+        session, source_account=source_account, analyses=analyses, include_xirr=False
+    )
+
+
+@coherent_read_operation
+def read_report_display_names(session, *, source_account, proof_id):
+    """Exact saved-source labels from one currently verified proof, if retained.
+
+    Older evidence has no labels. Ambiguity remains visible as multiple values;
+    a label never establishes instrument identity or financial authority.
+    """
+    if not any(
+        p["proof_id"] == proof_id and p["status"] == "current"
+        for p in read_report_summaries(session, source_account=source_account)
+    ):
+        return {}
+    row = session.get(SourceReturnProof, proof_id)
+    metadata = json.loads(row.evidence_json)["native"].get("display_names", {})
+    if not isinstance(metadata, dict):
+        return {}
+    return {
+        isin: tuple(sorted(set(labels)))
+        for isin, labels in metadata.items()
+        if isinstance(isin, str)
+        and re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin)
+        and isinstance(labels, list)
+        and 0 < len(labels) <= 32
+        and all(
+            isinstance(label, str)
+            and label == label.strip()
+            and 0 < len(label) <= 256
+            and not any(ord(c) < 32 for c in label)
+            for label in labels
+        )
+    }
 
 
 @coherent_read_operation
@@ -565,7 +705,14 @@ def instrument_result(
     )
 
     analyses = {}
-    reports = read_reports(session, source_account=source_account, analyses=analyses)
+    reports = read_reports(
+        session,
+        source_account=source_account,
+        analyses=analyses,
+        opening_date=opening_date,
+        closing_date=closing_date,
+        requested_isin=requested_isin,
+    )
     if opening_date is not None:
         matches = [
             p
