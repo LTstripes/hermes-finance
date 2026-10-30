@@ -8,6 +8,15 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+The next bounded candidate is **1.8.1**: certified XIRR uniqueness plus the five
+accepted source/Returns corrections described in
+[its release notes](release-notes-1.8.1.md). It adds no schema or financial writer.
+Implementation checks and independent review are in progress; no publication,
+installation or proof replacement is claimed for that candidate here. Its rollout
+requires exact-head and exact-main CI, backup-first update and fresh original-bound
+Preview with explicit proof replacement. The installed checkpoint below remains
+the authority until those operations are verified.
+
 **Released and installed: [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0),
 `d961e788d1cfc4a902443706703632ca0c63c68b`.** Accepted application
 [#992](https://github.com/LTstripes/hermes-finance/pull/992) was guarded-squash

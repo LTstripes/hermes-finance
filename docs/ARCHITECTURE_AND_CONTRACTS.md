@@ -2350,13 +2350,30 @@ The response gives each uploaded interval its real endpoints, account growth and
 approximate period Modified Dietz, money-weighted period return and annual XIRR.
 It never fabricates interior monthly EOD or an exact TWRR. History-from-zero is an
 explicit Owner assertion checked against every observed opening quantity and RUB
-cash; only then may an explicit zero quantity supply a missing zero opening value.
-Nonzero contradictions fail. Closing positions must match the PDF RUB values and
+cash. Independently of account inception, an explicitly observed zero quantity
+at either position boundary may supply a missing zero economic value at that
+same boundary. Missing quantity never means zero; an observed nonzero value
+against zero quantity is a contradiction and withholds the full result. This
+does not prove account inception or create a missing position row.
+Closing positions must match the PDF RUB values and
 quantities; explicit closed-issue observations and a zero quantity bridge can
 establish an exited position under that inception assertion. Money/cash, native
 quantity, PDF capital and comparable reported P&L controls remain visible. Missing
 or mismatched instrument evidence withholds that full instrument metric and keeps
-known components. Source-wide malformed PDF evidence remains a visible restriction.
+known components. A malformed PDF row with one recognized ISIN restricts that
+account/ISIN and account controls; that PDF fault alone cannot contaminate other
+instruments. Independently unlinked XML Money still restricts every potentially
+affected instrument: a malformed PDF amount is no proof of its registration/ISIN
+binding, even when another PDF row for that registration happens to match.
+Unknown-scope malformed evidence remains a common restriction. The exact scope
+is preserved through proof Save and Reload. Coverage follows metric dependencies:
+missing valuation does not invalidate a separately matched actual coupon or
+dividend. Unknown cash/identity and unknown-scope source faults still withhold
+the dependent full metrics; known incomplete subtotals remain partial.
+Returns displays existing XML actual coupon/dividend totals independently of
+valuation availability. Source-proved events expose effective ISIN, actual net
+payout and classification provenance; this is not a legacy persisted link and
+never manufactures gross payout or withheld tax.
 Account-only taxes, generic fees, compensation and REPO financing are disclosed
 without arbitrary allocation to instruments; linked instrument cash/valuation is
 not a claim of complete personal after-tax return. Unknown external-flow status
@@ -5777,12 +5794,28 @@ The solver uses the date-only XIRR equation with a 365-day year and a
 deterministic bracketed Decimal search in an isolated local context. The log-rate
 bracket expands when the initial scan misses a certified unique root; numerical
 search exhaustion or an unrepresentable rate reports convergence failure, not
-proof of no root. Before accepting a visible bracket,
-it applies an exact sign-variation certificate: with
-`z = (1 + rate) ** (1 / 365)`, the equation is a polynomial in positive `z`.
-Histories with more than one coefficient sign change cannot prove a unique
-positive root and remain unavailable.  A value is returned only when this
-certificate permits at most one root and that root converges.  Otherwise the
+proof of no root. After exact same-day aggregation, day-offset gcd `g` reduces
+the equation to an integer polynomial in `z = (1 + rate) ** (-g / 365) > 0`.
+One coefficient sign variation certifies a unique simple root. Multiple sign
+variations require bounded exact integer Descartes subdivision of disjoint
+positive cells and their rational boundaries; they do not by themselves mean
+multiple rates. All cells must close before a sole root can be accepted.
+Two distinct certified roots remain ambiguous even inside one old scan cell or
+numerical tolerance neighbourhood. A fully certified single rational boundary
+root is verified against the original polynomial and converted directly; this
+includes a unique tangent/double root. An unresolved irrational repeated root
+is a numerical failure, not a claim that multiple roots were found.
+
+For newly certified simple roots, the Decimal candidate additionally requires
+an exact rational polynomial sign enclosure with log-rate error below `1e-28`;
+a rounded NPV zero alone cannot prove a rate. Degree (8192 after gcd reduction),
+coefficient/mapping bits (16384), coefficient work (2000000), subdivision nodes
+(512) and rational evaluation size (1000000 bits) are independent numerical
+limits, not financial data prerequisites or a promise to support every input
+below the degree cap. Exhaustion or failed validation reports convergence
+failure; zero roots must be proved and ambiguity means distinct roots proved.
+The legacy one-variation path retains its existing domain and iteration guard.
+Otherwise the
 response is unavailable with one of:
 
 ```text

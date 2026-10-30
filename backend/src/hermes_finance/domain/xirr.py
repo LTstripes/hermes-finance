@@ -14,6 +14,14 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 
+from hermes_finance.domain.xirr_roots import (
+    CertificationLimit,
+    polynomial_from_dates,
+    positive_root_certificate,
+    rational_sign,
+    validates_candidate,
+)
+
 _DAYS_PER_YEAR = Decimal(365)
 _ZERO = Decimal(0)
 _ROOT_TOLERANCE = Decimal("1e-28")
@@ -132,8 +140,8 @@ def _sign_variation_count(amounts: tuple[int, ...]) -> int:
     equation by a positive power of ``z`` turns it into a polynomial whose
     coefficients are these amounts in reverse order.  Descartes' rule of
     signs therefore bounds the number of positive roots by this count.  More
-    than one variation cannot prove a unique root, so callers must fail
-    closed instead of trusting a coarse scan.
+    than one variation requires an exact positive-root certificate instead
+    of trusting a coarse scan.
     """
 
     return sum((left < 0) != (right < 0) for left, right in zip(amounts, amounts[1:]))
@@ -244,7 +252,7 @@ def calculate_xirr(
 
     The search is deterministic and bracketed.  It never uses binary floats,
     an initial guess, a provider, or a silently selected root.  A caller gets
-    an unavailable result when there is no sign-changing root, convergence
+    an unavailable result when no valid root is proved, convergence
     fails, or more than one root is found in the supported domain.
     """
 
@@ -260,11 +268,28 @@ def calculate_xirr(
     amounts = tuple(amount for _, amount in normalised)
     if not any(amount < 0 for amount in amounts) or not any(amount > 0 for amount in amounts):
         return _unavailable(XirrReasonCode.NO_VALID_ROOT)
-    if _sign_variation_count(amounts) > 1:
-        return _unavailable(XirrReasonCode.ROOT_AMBIGUITY)
-
+    polynomial = None
     try:
         with localcontext(Context(prec=_SOLVER_PRECISION, rounding=ROUND_HALF_UP)):
+            if _sign_variation_count(amounts) > 1:
+                polynomial, day_gcd = polynomial_from_dates(normalised)
+                certificate = positive_root_certificate(polynomial)
+                if certificate.count == 0:
+                    return _unavailable(XirrReasonCode.NO_VALID_ROOT)
+                if certificate.count > 1:
+                    return _unavailable(XirrReasonCode.ROOT_AMBIGUITY)
+                if certificate.exact_point:
+                    num, den = certificate.exact_point
+                    if rational_sign(polynomial, num, den) != 0:
+                        return _unavailable(XirrReasonCode.CONVERGENCE_FAILED)
+                    annualized_rate = (Decimal(den) / Decimal(num)) ** (
+                        _DAYS_PER_YEAR / Decimal(day_gcd)
+                    ) - Decimal(1)
+                    if not annualized_rate.is_finite() or annualized_rate <= -1:
+                        return _unavailable(XirrReasonCode.CONVERGENCE_FAILED)
+                    return XirrResult(
+                        XirrAvailabilityStatus.AVAILABLE, XirrQuality.EXACT, annualized_rate
+                    )
             first_date = normalised[0][0]
             cash_flows_with_time = tuple(
                 (
@@ -295,7 +320,7 @@ def calculate_xirr(
 
             unique_roots = _deduplicate_roots(roots)
             if not unique_roots:
-                return _unavailable(XirrReasonCode.NO_VALID_ROOT)
+                return _unavailable(XirrReasonCode.CONVERGENCE_FAILED)
             if not converged:
                 return _unavailable(
                     XirrReasonCode.CONVERGENCE_FAILED,
@@ -303,10 +328,16 @@ def calculate_xirr(
                 )
             if len(unique_roots) > 1:
                 return _unavailable(
-                    XirrReasonCode.ROOT_AMBIGUITY,
+                    XirrReasonCode.CONVERGENCE_FAILED
+                    if polynomial is not None
+                    else XirrReasonCode.ROOT_AMBIGUITY,
                     iterations=total_iterations,
                 )
 
+            if polynomial is not None and not validates_candidate(
+                polynomial, day_gcd, unique_roots[0], _ROOT_TOLERANCE
+            ):
+                return _unavailable(XirrReasonCode.CONVERGENCE_FAILED, iterations=total_iterations)
             annualized_rate = unique_roots[0].exp() - Decimal(1)
             if not annualized_rate.is_finite() or annualized_rate <= -1:
                 return _unavailable(
@@ -319,7 +350,7 @@ def calculate_xirr(
                 annualized_rate=annualized_rate,
                 iterations=total_iterations,
             )
-    except DecimalException:
+    except (DecimalException, CertificationLimit):
         return _unavailable(XirrReasonCode.CONVERGENCE_FAILED)
 
 

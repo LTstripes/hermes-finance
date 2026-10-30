@@ -48,6 +48,7 @@ def _report(report, account):
         "closed_isins": sorted([list(p) for p in report.closed_isins if p[0] == account]),
         "payout_accounts": sorted(report.payout_accounts & {account}),
         "issues": [list(p) for p in report.issues if p[0] == account],
+        "instrument_issues": [list(p) for p in report.instrument_issues if p[0] == account],
     }
 
 
@@ -68,6 +69,7 @@ def _restore_report(data):
         frozenset(tuple(p) for p in data["closed_isins"]),
         frozenset(data["payout_accounts"]),
         tuple(tuple(p) for p in data["issues"]),
+        tuple(tuple(p) for p in data.get("instrument_issues", ())),
     )
 
 

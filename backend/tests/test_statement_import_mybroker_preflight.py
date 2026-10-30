@@ -842,7 +842,7 @@ def test_investment_pdf_bad_actual_cell_is_explicit(amount):
 
     report = parse_investment_report(investment_text(amount=amount), {"1234567"})
     assert not report.payouts
-    assert ("1234567", "pdf_payout_row_invalid") in report.issues
+    assert ("1234567", "RU000A000000", "pdf_payout_row_invalid") in report.instrument_issues
 
 
 @pytest.mark.parametrize(
@@ -989,6 +989,193 @@ def investment_case():
     return service, doc, raw, report, service._money(doc, raw)
 
 
+@pytest.mark.parametrize(
+    "quantity,value,available",
+    [
+        ("0", None, True),
+        (None, None, False),
+        ("1", None, False),
+        ("0", "1", False),
+    ],
+)
+def test_mature_account_zero_position_is_not_missing_quantity(quantity, value, available):
+    service, doc, raw, report, money = investment_case()
+    doc["rub_money"][0]["beginning_amount"] = "1000"
+    position = doc["positions"][0]
+    position["beginning_actual_quantity"] = quantity
+    position["beginning_value"] = value
+    result = service._interval(doc, raw, report, money, {}, {}, False)
+    instrument = result["instruments"][0]
+    assert (instrument["pnl"]["value"] is not None) == available
+    if available:
+        assert instrument["opening_kopecks"] == "0"
+        assert instrument["pnl"]["value"] == "9000"
+    if quantity == "0" and value == "1":
+        assert "zero_quantity_value_conflict" in instrument["reason_codes"]
+
+
+def test_zero_closing_quantity_requires_no_contradictory_value():
+    from dataclasses import replace
+
+    service, doc, raw, report, money = investment_case()
+    # A held position sold entirely during an interval on a mature account.
+    position = doc["positions"][0]
+    position.update(
+        beginning_actual_quantity="10",
+        actual_quantity="0",
+        beginning_value="1000",
+        ending_value=None,
+    )
+    trade = doc["trades"][0]
+    trade["core"]["quantity"] = "-10"
+    money[0]["minor"] = 100000
+    report = replace(report, positions={("1234567", "RU000A000000"): ("0", 0)})
+    analyses = {}
+    result = service._interval(doc, raw, report, money, {}, {}, False, analyses=analyses)
+    instrument = result["instruments"][0]
+    assert instrument["closing_kopecks"] == "0"
+    assert instrument["pnl"]["value"] == "-1000"
+    sale = next(e for e in analyses["RU000A000000"].events if e.kind == "SELL")
+    assert sale.effective_isin == sale.isin and sale.persisted_link_status is None
+    assert sale.classification_origin == "native_money_group_bridge"
+    position["ending_value"] = "1"
+    conflict = service._interval(doc, raw, report, money, {}, {}, False)["instruments"][0]
+    assert conflict["pnl"]["value"] is None
+    assert "zero_quantity_value_conflict" in conflict["reason_codes"]
+    position.update(actual_quantity=None, ending_value=None)
+    unknown = service._interval(doc, raw, report, money, {}, {}, False)["instruments"][0]
+    assert unknown["closing_kopecks"] is None and unknown["pnl"]["value"] is None
+
+
+def test_pdf_position_failure_remains_local_after_proof_serialization():
+    from dataclasses import replace
+
+    from hermes_finance.services.source_investment_proofs import _report, _restore_report
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    text = investment_text()
+    page = text.pages[0]
+    lines = list(page.lines)
+    position_index = next(i for i, line in enumerate(lines) if "1234567-000" in line)
+    lines[position_index] = lines[position_index].replace("1 100,00", "invalid")
+    bad = parse_investment_report(
+        replace(text, pages=(replace(page, lines=tuple(lines)),)), {"1234567"}
+    )
+    assert bad.instrument_issues == (("1234567", "RU000A000000", "pdf_position_invalid"),)
+    restored = _restore_report(_report(bad, "1234567"))
+    assert restored.instrument_issues == bad.instrument_issues
+    service, doc, raw, report, money = investment_case()
+    foreign = replace(
+        report, instrument_issues=(("1234567", "RU000A000001", "pdf_position_invalid"),)
+    )
+    assert (
+        service._interval(doc, raw, foreign, money, {}, {}, True)["instruments"][0]["pnl"]["value"]
+        == "9000"
+    )
+    global_error = replace(report, issues=(("1234567", "pdf_position_invalid"),))
+    assert (
+        service._interval(doc, raw, global_error, money, {}, {}, True)["instruments"][0]["pnl"][
+            "value"
+        ]
+        is None
+    )
+
+
+def test_known_payout_keeps_own_coverage_and_effective_identity_without_valuation():
+    from hermes_finance.domain.money_security import MoneySecurity
+
+    service, doc, raw, report, money = investment_case()
+    coupon = {
+        **money[0],
+        "ref": "synthetic-coupon",
+        "minor": 1000,
+        "classification": "coupon",
+        "security": MoneySecurity("1-01-12345-A", "Synthetic", "coupon"),
+    }
+    money.append(coupon)
+    doc["positions"][0]["ending_value"] = None
+    analyses = {}
+    result = service._interval(
+        doc,
+        raw,
+        report,
+        money,
+        {coupon["ref"]: ("RU000A000000", "1-01-12345-A")},
+        {},
+        True,
+        analyses=analyses,
+    )
+    a = analyses["RU000A000000"]
+    assert a.pnl.value is None and not a.coverage["valuation"].complete
+    assert a.coverage["payouts"].complete and a.components["coupons"].value == 1000
+    assert a.components["coupons"].status in {"supported", "provisional"}
+    assert "economic_endpoint_unavailable" not in a.components["coupons"].reason_codes
+    assert all(e.effective_isin == e.isin and e.persisted_link_status is None for e in a.events)
+    payout = next(e for e in a.events if e.kind == "COUPON")
+    assert payout.net_payout_kopecks == 1000 and payout.classification_status == "confirmed"
+    assert result["instruments"][0]["xirr_period"]["value"] is None
+    # Unknown-scope faults must still leave the observed payout partial.
+    report = replace_report_issue(report)
+    service._interval(
+        doc,
+        raw,
+        report,
+        money,
+        {coupon["ref"]: ("RU000A000000", "1-01-12345-A")},
+        {},
+        True,
+        analyses=analyses,
+    )
+    assert not analyses["RU000A000000"].coverage["payouts"].complete
+    assert analyses["RU000A000000"].components["coupons"].status == "partial"
+
+
+def replace_report_issue(report):
+    from dataclasses import replace
+
+    return replace(report, issues=(("1234567", "unknown_source_fault"),))
+
+
+@pytest.mark.parametrize("section", ["position", "payout"])
+def test_pdf_unidentified_or_multi_identity_financial_row_stays_account_wide(section):
+    from dataclasses import replace
+
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    for identity in ("Unknown security", "RU000A000000 RU000A000001"):
+        text = investment_text()
+        lines = list(text.pages[0].lines)
+        index = next(
+            i
+            for i, line in enumerate(lines)
+            if ("1234567-000" in line if section == "position" else "RUB 20.01.2030" in line)
+        )
+        lines[index] = lines[index].replace("RU000A000000", identity)
+        report = parse_investment_report(
+            replace(text, pages=(replace(text.pages[0], lines=tuple(lines)),)), {"1234567"}
+        )
+        code = "pdf_position_invalid" if section == "position" else "pdf_payout_row_invalid"
+        assert ("1234567", code) in report.issues
+        assert not report.instrument_issues
+
+
+@pytest.mark.parametrize("amount,valid", [("1 000,00", True), ("invalid", False)])
+def test_pdf_typed_ruble_cash_position_is_not_an_unidentified_security(amount, valid):
+    from dataclasses import replace
+
+    from hermes_finance.statement_import.investment_report import parse_investment_report
+
+    text = investment_text()
+    lines = list(text.pages[0].lines)
+    index = next(i for i, line in enumerate(lines) if "1234567-000" in line)
+    lines.insert(index, f"Российский рубль  1234567-000  RUB  {amount}  1 000,00  0,00  0,0%")
+    report = parse_investment_report(
+        replace(text, pages=(replace(text.pages[0], lines=tuple(lines)),)), {"1234567"}
+    )
+    assert (("1234567", "pdf_position_invalid") not in report.issues) == valid
+    assert not report.instrument_issues
+
+
 def saved_investment_preview(database, monkeypatch):
     from hermes_finance.services import source_intake
 
@@ -1036,6 +1223,8 @@ def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database,
             session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
         )
         assert view["selected"]["pnl"]["value"] == "9000"
+        assert view["selected"]["coupons"]["value"] == "0"
+        assert view["selected"]["dividends"]["value"] == "0"
         assert view["instruments"][0]["pnl"]["value"] == "9000"
     assert snapshot(database) == after
     repeated = run(
@@ -1080,6 +1269,13 @@ def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mu
     with database.session_factory() as session:
         report = proofs.read_reports(session)[0]
         assert report["status"] == "stale" and report["interval"] is None
+        from hermes_finance.services.returns_view import read_overview
+
+        overview = read_overview(
+            session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
+        )
+        assert overview["selected"]["coupons"]["value"] is None
+        assert overview["selected"]["dividends"]["value"] is None
         result = read_instrument_returns(session, source_account=ACCOUNT)
         assert all(
             r.analysis.pnl.value is None and r.analysis.modified_dietz.value is None

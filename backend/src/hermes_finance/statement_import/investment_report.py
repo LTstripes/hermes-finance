@@ -35,6 +35,7 @@ class InvestmentReport:
     closed_isins: frozenset[tuple[str, str]]
     payout_accounts: frozenset[str]
     issues: tuple[tuple[str, str], ...]
+    instrument_issues: tuple[tuple[str, str, str], ...] = ()
 
 
 def _day(value):
@@ -73,6 +74,7 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
     except ValueError:
         raise MyBrokerError("investment_pdf_period_invalid") from None
     payouts, closing, pnl, positions, closed, seen, issues = [], {}, {}, {}, set(), set(), []
+    instrument_issues = []
     position_dates = set()
     account, section, kind, header = None, None, None, False
     isin_pattern = r"[A-Z]{2}[A-Z0-9]{9}[0-9]"
@@ -134,13 +136,20 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                     header = True
                 elif folded in {"Акции", "Облигации"}:
                     kind = "DIVIDEND" if folded == "Акции" else "COUPON"
-                elif re.search(isin_pattern, line):
+                elif re.search(isin_pattern, line) or re.search(
+                    r"\b[A-Z]{3}\s+\d{2}\.\d{2}\.\d{4}\s+", line
+                ):
                     match = re.fullmatch(
                         rf".*?\b({isin_pattern})\s+([A-Z]{{3}})\s+(\d{{2}}\.\d{{2}}\.\d{{4}})\s+(.+)",
                         line,
                     )
                     try:
-                        if not match or not header or kind is None:
+                        if (
+                            not match
+                            or not header
+                            or kind is None
+                            or len(set(re.findall(isin_pattern, line))) != 1
+                        ):
                             raise ValueError
                         amount = _minor(re.split(r"\s{2,}", match[4])[-1])
                         day = _day(match[3])
@@ -158,8 +167,33 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                             )
                         )
                     except ValueError:
-                        issues.append((account, "pdf_payout_row_invalid"))
+                        identities = set(re.findall(isin_pattern, line))
+                        if len(identities) == 1:
+                            instrument_issues.append(
+                                (account, next(iter(identities)), "pdf_payout_row_invalid")
+                            )
+                        else:
+                            issues.append((account, "pdf_payout_row_invalid"))
             elif section == "Оценка портфеля":
+                # The report also lists a typed RUB cash row, without an ISIN.
+                # Recognize only its exact grammar; an unidentified security
+                # row must still produce an account-wide issue.
+                if line.startswith("Российский рубль "):
+                    try:
+                        cells = re.split(r"\s{2,}", line)
+                        if (
+                            len(cells) != 7
+                            or cells[0] != "Российский рубль"
+                            or not re.fullmatch(rf"{account}-[0-9]{{3}}", cells[1])
+                            or cells[2] != "RUB"
+                            or not re.fullmatch(r"[-+]?[0-9]+(?:[.,][0-9]+)?%", cells[6])
+                        ):
+                            raise ValueError
+                        for value in cells[3:6]:
+                            _minor(value)
+                    except ValueError:
+                        issues.append((account, "pdf_position_invalid"))
+                    continue
                 as_of = re.fullmatch(r"на (\d{2}\.\d{2}\.\d{4})", folded)
                 if as_of:
                     try:
@@ -174,6 +208,8 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                 )
                 if match:
                     try:
+                        if len(set(re.findall(isin_pattern, line))) != 1:
+                            raise ValueError
                         cells = re.split(r"\s{2,}", match[4])
                         quantity = parse_decimal(cells[0])
                         value = _minor(cells[4])
@@ -184,6 +220,17 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                             raise ValueError
                         positions[key] = observation
                     except (ValueError, IndexError):
+                        if len(set(re.findall(isin_pattern, line))) == 1:
+                            instrument_issues.append((account, match[1], "pdf_position_invalid"))
+                        else:
+                            issues.append((account, "pdf_position_invalid"))
+                elif re.search(isin_pattern, line) or re.search(rf"\b{account}-[0-9]{{3}}\b", line):
+                    identities = set(re.findall(isin_pattern, line))
+                    if len(identities) == 1:
+                        instrument_issues.append(
+                            (account, next(iter(identities)), "pdf_position_invalid")
+                        )
+                    else:
                         issues.append((account, "pdf_position_invalid"))
             elif section == "Закрытые сделки":
                 match = re.search(rf"\b({isin_pattern})\s+{account}-[0-9]{{3}}\b", line)
@@ -211,4 +258,5 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                 }
             )
         ),
+        tuple(sorted(set(instrument_issues))),
     )

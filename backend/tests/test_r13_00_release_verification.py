@@ -227,7 +227,7 @@ def test_release_identity_agrees_with_locked_package_and_health_version():
     project = tomllib.loads((BACKEND_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((BACKEND_ROOT / "uv.lock").read_text(encoding="utf-8"))
     package = next(p for p in lock["package"] if p["name"] == project["project"]["name"])
-    assert project["project"]["version"] == package["version"] == __version__ == "1.8.0"
+    assert project["project"]["version"] == package["version"] == __version__ == "1.8.1"
 
     frontend = BACKEND_ROOT.parent / "frontend"
     manifest = json.loads((frontend / "package.json").read_text(encoding="utf-8"))

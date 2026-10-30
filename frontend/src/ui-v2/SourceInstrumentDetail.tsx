@@ -223,7 +223,9 @@ function Events({
           {events.map((event) => (
             <tr key={event.event_key}>
               <td>
-                {coupons ? observed(event.event_date) : observed(event.trade_time)}
+                {coupons
+                  ? observed(event.event_date)
+                  : observed(event.trade_time ?? event.event_date)}
                 {coupons && <p>{event.kind === "COUPON" ? "Купон" : "Дивиденд"}</p>}
                 {!coupons && (
                   <>
@@ -251,7 +253,13 @@ function Events({
                     event.current &&
                     event.effective_isin === event.isin
                       ? "Сохранённая связь с инструментом"
-                      : `Основание: ${event.attribution_basis ?? "неизвестно"}`}
+                      : event.current &&
+                          event.effective_isin === event.isin &&
+                          ["xml_pdf_original_bound", "native_money_group_bridge"].includes(
+                            event.attribution_basis ?? "",
+                          )
+                        ? "Связь подтверждена исходными документами"
+                        : `Основание: ${event.attribution_basis ?? "неизвестно"}`}
                     <br />
                     Классификация:{" "}
                     {event.classification_status === "confirmed"

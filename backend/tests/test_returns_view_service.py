@@ -1059,3 +1059,30 @@ def test_currentness_is_reread_no_summary_cache(db):
     after = overview(db)
     assert before.instruments[0].pnl.value is not None
     assert after.selected.pnl.value is None
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_investment_actual_income_is_independent_of_missing_valuation(stale):
+    from hermes_finance.services.returns_view import _investment_report_result
+
+    proof = {
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-01-31",
+        "reason_codes": ["investment_proof_dependencies_changed"] if stale else [],
+        "interval": None
+        if stale
+        else {
+            "pnl": {"value": None},
+            "modified_dietz": {"value": None},
+            "coupons_kopecks": "1234",
+            "dividends_kopecks": "5678",
+            "reason_codes": ["economic_endpoint_unavailable"],
+        },
+    }
+    result = _investment_report_result(proof)
+    assert result["pnl"]["value"] is None and result["rate"]["value"] is None
+    assert result["coupons"]["value"] == (None if stale else "1234")
+    assert result["dividends"]["value"] == (None if stale else "5678")
+    if not stale:
+        assert result["coupons"]["reason_codes"] == []
+        assert result["dividends"]["reason_codes"] == []

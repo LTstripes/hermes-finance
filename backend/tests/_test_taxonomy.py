@@ -110,6 +110,7 @@ CI_CORE_ADDITIONAL_FILES = (
 # main candidate. Values are summed test/setup/teardown seconds per file; the
 # assignment below is recomputed deterministically by weighted bin-packing.
 CI_CORE_SHARD_WEIGHTS = {
+    "domain/test_xirr_uniqueness.py": 1.0,
     "domain/test_cash_balance.py": 0.03,
     "domain/test_coverage_goals.py": 0.05,
     "domain/test_forecast_passive_income.py": 0.05,

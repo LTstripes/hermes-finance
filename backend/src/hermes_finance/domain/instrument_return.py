@@ -206,7 +206,9 @@ def calculate_economics(opening, closing, events, coverage):
             ("provisional" if assumptions else "supported")
             if complete
             else ("partial" if selected else "unavailable"),
-            () if complete else flow_reasons,
+            ()
+            if complete
+            else coverage["payouts" if kind in {"COUPON", "DIVIDEND"} else "costs"].reason_codes,
             assumptions,
         )
     flows = [
