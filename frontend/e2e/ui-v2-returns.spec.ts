@@ -131,7 +131,7 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
     "/v2/capital/monthly-returns?source_account=SYNTH-B&bond_period=2030-04-01#bond-slice",
   );
   await expect(page).toHaveURL(
-    /\/v2\/returns\?.*scope=source%3ASYNTH-B.*start=2030-03-31.*#returns-instruments/,
+    /\/v2\/returns\/account\?.*scope=source%3ASYNTH-B.*start=2030-03-31.*#returns-instruments/,
   );
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
 });
@@ -322,9 +322,9 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
   const { calls } = await install(page);
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.goto("/v2/returns");
+    await page.goto("/v2/returns/account?scope=portfolio");
     await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
-    await expect(page.getByRole("combobox", { name: "Представление" })).toHaveValue("accepted");
+    await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Открыть отчёты месяцев" })).toBeVisible();
     const checkbox = page.getByRole("checkbox", { name: "ИИС", exact: true });
     await expect(checkbox).toBeChecked();
@@ -338,7 +338,7 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await expect(page).toHaveURL(/categories=brokerage%2Cdeposits%2Cgold/);
     await page.goBack();
     await expect(checkbox).toBeChecked();
-    await page.getByRole("combobox", { name: "Представление" }).selectOption("statements");
+    await page.goto("/v2/returns/account?scope=source:SYNTH-A");
     await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A");
     await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(

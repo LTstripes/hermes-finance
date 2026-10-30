@@ -3,6 +3,32 @@ import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const reasons: Record<string, string> = {
+  known_components_only:
+    "В известный результат входят только включённые компоненты с подтверждённой основой и отсутствием пересечений.",
+  source_only_not_financial_close:
+    "Основа — сохранённые выписки; данные не означают принятие финансового месяца.",
+  all_history_source_proof_absent: "Проверенный расчёт за всю историю отсутствует.",
+  all_history_source_proof_unavailable: "Проверенный расчёт за всю историю недоступен.",
+  instrument_name_unavailable: "Название бумаги не подтверждено; используется точный ISIN.",
+  instrument_name_conflict:
+    "В источниках различаются названия; навигация связана только по точному ISIN.",
+  known_received_interest_only: "Включены только известные фактически полученные проценты.",
+  deposit_full_history_not_proven: "Полнота истории депозитов не подтверждена.",
+  draft_deposit_interest_excluded: "Проценты из черновиков не включены в известный итог.",
+  gold_period_return_unproven: "Результат золота за период не подтверждён.",
+  snapshot_result_not_period_return:
+    "Результат сохранённого снимка не является доходностью периода.",
+  saved_snapshot_unrealized_only: "Доступен только сохранённый нереализованный результат.",
+  current_catalogue_gold_classification: "Классификация золота основана на текущем справочнике.",
+  historical_gold_classification_unproven: "Историческая классификация золота не подтверждена.",
+  gold_snapshot_cost_result_missing_or_conflicting:
+    "Стоимость, затраты или результат снимка отсутствуют либо противоречат друг другу.",
+  gold_cost_return_denominator_unavailable:
+    "Нет подтверждённых положительных затрат для процентного результата.",
+  gold_dated_trade_history_unavailable: "Подтверждённая история сделок с золотом недоступна.",
+  overall_aggregation_pending_review:
+    "Общий результат по категориям и общая процентная доходность пока не подтверждены. Доступные компоненты показаны отдельно.",
+
   historical_brokerage_iis_type_unproven:
     "Исторический тип счёта не подтверждён. Для известной части по всем выпискам включите и брокерские счета, и ИИС.",
   basket_native_identity_unproven:

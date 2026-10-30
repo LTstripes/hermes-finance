@@ -172,6 +172,11 @@ function HeadlineGrid({
           </article>
         ))}
       </section>
+      <p>
+        <Link className={styles.contextLink} to="/v2/returns">
+          Доходность в целом — вся доступная история и инструменты
+        </Link>
+      </p>
       <p className={styles.panelFootnote}>
         Ликвидные активы минус включённые обязательства = ликвидный капитал. Жильё и ипотека в
         ликвидный капитал не входят.

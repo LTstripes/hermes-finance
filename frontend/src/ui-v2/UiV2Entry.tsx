@@ -1,5 +1,5 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useSearchParams } from "react-router";
 import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
 
 import type { DataAppSection } from "./monthSelection";
@@ -13,6 +13,7 @@ const UiV2CapitalAllocationPage = lazy(() => import("./UiV2CapitalAllocationPage
 const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
 const UiV2CapitalPerformanceDetail = lazy(() => import("./UiV2CapitalPerformanceDetail"));
 const UiV2MonthlyReturnsPage = lazy(() => import("./UiV2MonthlyReturnsPage"));
+const UiV2ReturnsAccountPage = lazy(() => import("./UiV2ReturnsAccountPage"));
 const UiV2ReturnsPage = lazy(() => import("./UiV2ReturnsPage"));
 const UiV2ReportsPage = lazy(() => import("./UiV2ReportsPage"));
 const UiV2ReportPage = lazy(() => import("./UiV2ReportPage"));
@@ -137,7 +138,19 @@ export function UiV2MonthlyReturnsEntry() {
   );
 }
 
+export function UiV2ReturnsAccountEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2ReturnsAccountPage />
+    </SuspenseFrame>
+  );
+}
+
 export function UiV2ReturnsEntry() {
+  const location = useLocation();
+  const [params] = useSearchParams();
+  if (["scope", "start", "end", "period", "month", "categories"].some((key) => params.has(key)))
+    return <Navigate replace to={`/v2/returns/account${location.search}${location.hash}`} />;
   return (
     <SuspenseFrame>
       <UiV2ReturnsPage />
