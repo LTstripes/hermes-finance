@@ -345,6 +345,30 @@ Exact historical performance uses historical membership, dated cash/in-kind cove
 
 ### Returns workspace
 
+The ordinary `/v2/returns` entry opens **В целом** for all available history.
+It reads one all-history composition, without eagerly loading account/month or
+category-basket calculations. The headline **Известный результат за доступную
+историю** is a labelled mixed sum of eligible, proved nonoverlapping RUB
+components. It is neither full portfolio P&L nor a lower bound: unknown components
+may be negative. Selected, available and included components remain distinct;
+each exposes its dates, coverage, method, authority and exclusion reason. No
+percentage is obtained by summing or averaging component rates.
+
+All exact ISIN groups, including sold instruments and separate account contexts,
+remain reachable from Returns. Expanding a group selects its exact account and
+period before reusing the existing instrument detail; Back/Reload preserve that
+context. Capital provides the same entry while retaining unique accepted
+TWRR/XIRR and coverage diagnostics. Missing names stay explicit; only exact
+source/catalogue metadata may name a security, without changing the Owner catalogue.
+
+Received deposit interest remains visible for known CLOSED observations without
+inventing a capital denominator. Gold shows saved unrealized value and cost-based
+percentage with its valuation date, independently of an unavailable realised or
+period return. No gold trade journal or deposit import is introduced.
+
+The following selected-period capabilities remain on the lazy
+`/v2/returns/account` screen; they are not hidden monthly operands in the default.
+
 «Моя доходность» on this same screen selects brokerage, IIS, deposits/savings
 and physical gold, all checked initially, over one backend-selected period.
 URL/Back/Reload retain membership. Empty selection asks for a category; unknown
@@ -357,19 +381,15 @@ are not period income. Historical brokerage/IIS subtype is never inferred from
 today's account type. Existing account/class detail retains its scope. Exact
 capabilities and conservative crossing exclusions are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-selected-basket).
 
-`/v2/returns` is the ordinary **Доходность** entry in the left navigation. It
-defaults to the accepted portfolio and latest CLOSED month when available,
-even when a newer DRAFT exists, and pins the account and EOD dates in the URL.
-Explicit source URLs keep their selected basis; period options follow that basis.
-The basis explanation links to saved month records and preserves concrete NULL
-reasons. Refresh starts each active read once without a context/overview/basket
-enable cascade; fetching or failed reads never display cached results as current.
-Category checkboxes retain native keyboard semantics, visible focus and exact
-URL/Back/Reload selection. Four compact cards show the selected
-result/rate, the whole-history result with dates, credited coupons and credited
-dividends. Missing values are `—` with keyboard-accessible details. Statements
-and accepted reporting scopes are explicitly separate choices; source aliases
-never imply a financial-account mapping or portfolio aggregation.
+`/v2/returns/account` retains explicit selected account/EOD dates and existing
+source/accepted URL compatibility. The source-versus-accepted selector is removed
+from the ordinary journey; provenance and precise financial basis remain in
+explanations rather than being silently switched. CLOSED alone is not numerical
+financial acceptance. The selected scope uses its existing producer and refusal
+reasons; stale evidence never receives numeric fallback from a different basis.
+Refresh, cancellation, errors and Back/Reload retain their selection guarantees.
+The full detail still shows interval result/rate, credited coupons/dividends and
+available history separately. Unknown values remain unavailable with reasons.
 
 Monthly bars select the same period used by instruments and both top-five lists;
 their paged table alternative preserves gaps, signs and zero. Instrument search,

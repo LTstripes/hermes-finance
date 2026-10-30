@@ -6511,8 +6511,9 @@ remain visible. Grouping preserves the canonical account's union of originals
 and periods; `scope_aliases` supports equivalent old URLs. Existing effective
 exact broker-account mappings may supply a label only, never accepted authority.
 Manual/accepted accounts and PERF portfolio remain a separate basis with their
-existing URLs. With CLOSED periods, an unscoped ordinary entry selects the
-accepted portfolio; explicit source and legacy history links keep their scope.
+existing URLs. The lazy account/month screen retains its CLOSED-period default;
+the unscoped ordinary Returns entry uses the all-history composition below.
+Explicit source and legacy history links keep their scope.
 This does not create an aggregate source portfolio or make closed records
 sufficient evidence for a computable return.
 
@@ -6533,6 +6534,61 @@ Instrument names retain #971's source name → exact stored ISIN catalogue name 
 ISIN precedence in table, tops and detail. Missing names have an accessible
 explanation. No automatic lookup, catalogue/financial write or identity guessing
 is introduced by a Returns GET.
+
+<a id="c7-returns-overall"></a>
+### All-history overview and mixed known result
+
+`GET /api/returns/overall` is a no-store, read-only coherent composition over
+existing producers. It does not read the AI export, calculate hidden calendar
+months, change PerformanceScope, import operations, write receipts or invoke
+providers. Money remains exact integer-kopeck strings; the browser does no
+financial aggregation. Detail and account/month reads are lazy.
+
+`mixed_result` is distinct from the older source-only basket subtotal. Each
+component carries selected/available/included state, amount, interval and/or
+valuation date, coverage, method, authority and exclusion reason. The known RUB
+result sums only included nonoverlapping operands. It is not full portfolio P&L
+or a profit floor; excluded unknown results may be negative. A true included zero
+survives, while no included operands means NULL. The overall portfolio result
+and mixed rate stay NULL; different horizons do not establish a common rate.
+
+For each proven native source account, only the latest from-zero original-bound
+proof (existing covered-to/proof-id tie-break), current and with a supported
+producer amount, is eligible. Its whole-history result outranks its own monthly
+or instrument explanations. No account-plus-security/payout addition is made.
+There is no new monthly fallback in this slice: disjoint dates alone do not prove
+compatible economic identity or flow meaning. An absent/stale/conflicting source
+stays explicit; older or accepted numbers cannot silently fill it. Accepted
+ledger/monthly reporting remains a separate explicit lazy scope, not another
+addend or an automatic CLOSED-priority fallback.
+
+Source aliases use the existing exact native grouping. Exact effective saved
+BrokerIdentityMapping records alone support canonical Account overlap checks;
+labels, similar amounts and current account types do not. Contradictory mappings
+exclude inclusion while retaining the available amount. Distinct native source
+accounts are counted once. Snapshot components are excluded from the mixed sum
+when an included source's canonical identity is unresolved or already covers
+that account; their known values remain separately visible. Shared canonical
+accounts across deposit and gold snapshot models likewise require explicit
+disjointness. These exclusions never hide supported siblings.
+
+Deposit components contain only distinct canonical CLOSED-snapshot actual
+received interest, with period coverage and DRAFT/missing-history limitations.
+They are not deposit capital return or XIRR. Gold components retain the latest
+saved CLOSED valuation per exact account/instrument, actual price date and
+current catalogue classification as metadata. Historical class evidence is not
+inferred. Consistent saved unrealized result and positive known cost may produce
+an explicitly nonannualized cost-based fraction; missing/contradictory operands
+remain unavailable. Realised or period gold return requires dated trade evidence;
+no cash flow without quantities is promoted to a gold transaction journal.
+
+Instrument grouping uses exact ISIN and preserves account-specific periods and
+rates; neither shared names nor a common ISIN merge financial accounts. Source
+name, exact catalogue name and explicit missing-name fallback retain identity
+and provenance. Backend changes still invalidate proof currentness: a demo copy
+requires fresh Preview and explicit proof confirmation on that copy; old proof
+hashes are never rewritten. The older basket's flow-bearing crossing guard below
+is unchanged.
 
 <a id="c7-returns-selected-basket"></a>
 ### Selected investment basket: bounded first read model
