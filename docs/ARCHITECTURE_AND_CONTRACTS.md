@@ -14244,6 +14244,12 @@ through copy-isolated request-local state, discarded on exit (including failure)
 The proved source-account alias map is also reused only inside that protected
 source snapshot; every caller receives its own map and the next snapshot proves it again.
 There is no cross-request cache or stale fallback.
+For schema-safe wire representation, the two opaque source blockers
+`4_Transfers_unsupported` and `5_UFSR_unsupported` retain their meaning as
+`source_4_transfers_unsupported` and `source_5_ufsr_unsupported`. Other invalid
+codes are not silently sanitized or discarded by the source projection.
+Decimal quantities and grams use exact fixed-point notation without rounding
+or float conversion; NULL remains NULL.
 
 Event chronology can cross a selected boundary. Each cash leg explicitly states
 `included_in_interval`; amounts outside `(opening_date, closing_date]` are NULL.
