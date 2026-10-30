@@ -364,15 +364,20 @@ def main():
 
         app.add_api_route("/api/synthetic-month-state", month_state, methods=["GET"])
         app.router.routes.insert(0, app.router.routes.pop())
-        try:
-            uvicorn.run(
-                app,
-                host="127.0.0.1",
-                port=int(os.environ.get("HERMES_BOND_TEST_PORT", "18791")),
-                access_log=False,
-            )
-        finally:
-            database.engine.dispose()
+        from hermes_finance.services.database_admission import database_admission
+
+        # Match the stock CLI's admission lifetime. Concurrent read connections
+        # must borrow the runtime owner, rather than race a closing short lease.
+        with database_admission(database.database_path):
+            try:
+                uvicorn.run(
+                    app,
+                    host="127.0.0.1",
+                    port=int(os.environ.get("HERMES_BOND_TEST_PORT", "18791")),
+                    access_log=False,
+                )
+            finally:
+                database.engine.dispose()
 
 
 if __name__ == "__main__":
