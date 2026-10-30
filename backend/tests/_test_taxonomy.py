@@ -93,6 +93,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "domain/test_xirr_uniqueness.py",
     "test_returns_view_service.py",
     "test_returns_read_efficiency_service.py",
     "test_empty_manual_close.py",
@@ -110,7 +111,6 @@ CI_CORE_ADDITIONAL_FILES = (
 # main candidate. Values are summed test/setup/teardown seconds per file; the
 # assignment below is recomputed deterministically by weighted bin-packing.
 CI_CORE_SHARD_WEIGHTS = {
-    "domain/test_xirr_uniqueness.py": 1.0,
     "domain/test_cash_balance.py": 0.03,
     "domain/test_coverage_goals.py": 0.05,
     "domain/test_forecast_passive_income.py": 0.05,
