@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { goldPendingKey } from "./returns/goldHistory";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import {
@@ -517,7 +518,7 @@ test("lazy gold history summary remains visible without a snapshot and opens onl
   expect(summary).toHaveTextContent("Сведения владельца".toLocaleLowerCase("ru"));
   expect(calls).toEqual(["/api/returns/overall"]);
   expect(
-    screen.queryByText("Данные не подтверждают реализованный результат или историю сделок."),
+    screen.queryByText("Снимки не подтверждают реализованный результат или историю сделок."),
   ).toBeNull();
   fireEvent.click(within(summary).getByRole("link", { name: "Открыть историю золота" }));
   await screen.findByText("История операций пока не сохранена.");
@@ -539,4 +540,106 @@ test("lazy income retains dated payouts with unresolved instrument identity", as
   expect(await within(coupon).findByText(/Инструмент не установлен/)).toHaveTextContent(
     "ISIN не подтверждён",
   );
+});
+
+test("gold editor survives dirty and pending summary refresh and guards instrument buttons", async () => {
+  let holdRefresh = false;
+  let finishRefresh: (value: Response) => void = () => {};
+  const value = overallFixture();
+  const calls = install(value, (url) => {
+    if (url.pathname.endsWith("overall") && holdRefresh)
+      return new Promise<Response>((resolve) => {
+        finishRefresh = resolve;
+      });
+    return undefined;
+  });
+  const view = setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
+  await screen.findByRole("heading", { name: "В целом" });
+  await screen.findByText("История операций пока не сохранена.");
+  fireEvent.click(screen.getByText("Ввести или исправить историю операций"));
+  const input = screen.getByLabelText("История с");
+  fireEvent.change(input, { target: { value: "2044-01-01" } });
+  fireEvent.click(screen.getByRole("button", { name: value.instruments[0].name }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Несохранённые изменения" });
+  expect(screen.getByTestId("location")).not.toHaveTextContent("isin=");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Остаться" }));
+  holdRefresh = true;
+  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+  await waitFor(() =>
+    expect(calls.filter((path) => path === "/api/returns/overall")).toHaveLength(2),
+  );
+  expect(screen.getByLabelText("История с")).toBe(input);
+  expect(input).toHaveValue("2044-01-01");
+  expect(screen.queryByRole("region", { name: "Известный результат" })).toBeNull();
+  const changed = structuredClone(value);
+  changed.gold.targets = [];
+  await act(async () => finishRefresh(response(changed)));
+  await screen.findByRole("button", { name: value.instruments[0].name });
+  expect(screen.getByLabelText("История с")).toBe(input);
+  expect(input).toHaveValue("2044-01-01");
+  fireEvent.click(screen.getByRole("button", { name: value.instruments[0].name }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", {
+      name: "Уйти без сохранения",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("location")).toHaveTextContent("isin=RU000A000002"),
+  );
+  expect(screen.queryByRole("region", { name: "История золота владельца" })).toBeNull();
+  view.unmount();
+
+  sessionStorage.setItem(goldPendingKey(10, 20), "gold_pending_synthetic_refresh");
+  holdRefresh = false;
+  setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
+  await screen.findByRole("button", { name: "Проверить результат сохранения" });
+  const pendingEditor = screen.getByRole("region", { name: "История золота владельца" });
+  holdRefresh = true;
+  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+  expect(screen.getByRole("region", { name: "История золота владельца" })).toBe(pendingEditor);
+  await waitFor(() =>
+    expect(calls.filter((path) => path === "/api/returns/overall")).toHaveLength(4),
+  );
+  await act(async () => finishRefresh(response(value)));
+  fireEvent.click(await screen.findByRole("button", { name: value.instruments[0].name }));
+  const pendingDialog = await screen.findByRole("alertdialog", {
+    name: "Сохранение ещё не подтверждено",
+  });
+  fireEvent.click(within(pendingDialog).getByRole("button", { name: "Остаться в форме" }));
+  expect(screen.getByTestId("location")).not.toHaveTextContent("isin=");
+  expect(sessionStorage.getItem(goldPendingKey(10, 20))).toBe("gold_pending_synthetic_refresh");
+  expect(calls.some((path) => path.includes("/apply"))).toBe(false);
+});
+
+test("gold DRAFT metadata targets allow exact lazy entry without granting snapshot authority", async () => {
+  const value = overallFixture();
+  value.gold.snapshots = [];
+  value.gold.histories = [];
+  const target = { account_id: 10, instrument_id: 20, label: "Synthetic DRAFT gold" };
+  value.gold.targets = [target, { ...target }, { ...target, account_id: 0 }];
+  const calls = install(value);
+  const view = setup();
+  const link = await screen.findByRole("link", {
+    name: "Synthetic DRAFT gold: открыть историю операций",
+  });
+  expect(
+    screen.getAllByRole("link", { name: "Synthetic DRAFT gold: открыть историю операций" }),
+  ).toHaveLength(1);
+  expect(calls).toEqual(["/api/returns/overall"]);
+  fireEvent.click(link);
+  await screen.findByText("История операций пока не сохранена.");
+  expect(calls.at(-1)).toBe("/api/owner-manual-gold-history?account_id=10&instrument_id=20");
+  expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("");
+  expect(screen.queryByText(/Сохранённая оценка:/)).toBeNull();
+  expect(screen.queryByLabelText(/Новая цена/)).toBeNull();
+  view.unmount();
+
+  const excluded = overallFixture();
+  excluded.gold.targets = [];
+  const excludedCalls = install(excluded);
+  setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
+  await screen.findByRole("heading", { name: "Золото" });
+  expect(screen.queryByRole("region", { name: "История золота владельца" })).toBeNull();
+  expect(excludedCalls).toEqual(["/api/returns/overall"]);
+  expect(screen.queryByRole("link", { name: "История покупок и продаж" })).toBeNull();
 });

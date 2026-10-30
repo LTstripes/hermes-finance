@@ -89,6 +89,7 @@ export type GoldHistorySummary = {
   separate_fees: Metric;
   reason_codes: string[];
 };
+export type GoldTarget = { account_id: number; instrument_id: number; label: string };
 export type Overall = {
   contract_version: "returns_overall_v1";
   mixed_result: MixedResult;
@@ -104,6 +105,7 @@ export type Overall = {
     reason_codes: string[];
   };
   gold: {
+    targets?: GoldTarget[];
     histories?: GoldHistorySummary[];
     snapshots: {
       account_id: number;

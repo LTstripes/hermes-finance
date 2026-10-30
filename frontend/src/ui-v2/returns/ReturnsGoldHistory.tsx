@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiClientError } from "../../api/client";
 import { fromKopecks } from "../../lib/money";
 import { MonthNavigationGuard } from "../MonthNavigationGuard";
@@ -141,13 +141,21 @@ export function ReturnsGoldHistory({
   accountId,
   instrumentId,
   onConfirmed,
+  onNavigationStateChange,
+  refreshing = false,
+  revision = 0,
+  targetLabel,
 }: {
   accountId: number;
   instrumentId: number;
   onConfirmed?: () => Promise<unknown>;
+  onNavigationStateChange?: (state: { dirty: boolean; pending: boolean }) => void;
+  refreshing?: boolean;
+  revision?: number;
+  targetLabel?: string;
 }) {
   const queryClient = useQueryClient();
-  const key = ["returns", "gold-history", accountId, instrumentId];
+  const key = ["returns", "gold-history", accountId, instrumentId, revision];
   const storageKey = goldPendingKey(accountId, instrumentId);
   const query = useQuery({
     queryKey: key,
@@ -158,13 +166,24 @@ export function ReturnsGoldHistory({
   const [dirty, setDirty] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{ intent: GoldIntent; value: GoldPreview } | null>(null);
+  const [preview, setPreview] = useState<{
+    intent: GoldIntent;
+    value: GoldPreview;
+    revision: number;
+  } | null>(null);
   const [pending, setPending] = useState<string | null>(() => sessionStorage.getItem(storageKey));
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const histories = !query.isFetching && !query.isError ? query.data : undefined;
+  const histories = !refreshing && !query.isFetching && !query.isError ? query.data : undefined;
   const current = histories?.length === 1 ? histories[0] : null;
   const blocked = busy || pending !== null;
+  useEffect(() => {
+    onNavigationStateChange?.({ dirty, pending: blocked });
+  }, [dirty, blocked, onNavigationStateChange]);
+  useEffect(
+    () => () => onNavigationStateChange?.({ dirty: false, pending: false }),
+    [onNavigationStateChange],
+  );
   const unavailable =
     !histories || histories.length > 1 || (!!current && draft.expected_revision === 0);
   const change = (next: GoldIntent) => {
@@ -247,7 +266,7 @@ export function ReturnsGoldHistory({
     const intent = structuredClone(draft);
     try {
       const value = await previewGoldHistory(intent);
-      setPreview({ intent, value });
+      setPreview({ intent, value, revision });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось проверить историю");
     } finally {
@@ -255,7 +274,7 @@ export function ReturnsGoldHistory({
     }
   }
   async function confirm() {
-    if (!preview || blocked || !preview.value.can_apply) return;
+    if (!preview || preview.revision !== revision || blocked || !preview.value.can_apply) return;
     const requestId = `gold_${crypto.randomUUID().replaceAll("-", "")}`;
     try {
       sessionStorage.setItem(storageKey, requestId);
@@ -300,6 +319,11 @@ export function ReturnsGoldHistory({
         }}
       />
       <h3>История покупок и продаж золота</h3>
+      {targetLabel && (
+        <p>
+          <strong>{targetLabel}</strong>
+        </p>
+      )}
       <p>
         Отдельный источник сведений владельца для выбранного счёта и инструмента. Закрытые месяцы не
         редактируются. Оценка берётся из сохранённого снимка; новой цены здесь нет.
@@ -579,7 +603,7 @@ export function ReturnsGoldHistory({
           </fieldset>
         </form>
       </details>
-      {preview && (
+      {preview && preview.revision === revision && !refreshing && !query.isFetching && (
         <section aria-label="Предпросмотр истории золота">
           <h4>
             Предпросмотр:{" "}

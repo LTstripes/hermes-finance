@@ -1,10 +1,17 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ConfirmDialog } from "../components/ui";
 import { Link, useSearchParams } from "react-router";
 import { dateLabel, periodKey, periodLabel } from "./returns/model";
-import { capitalGoldSnapshot, capitalGoldHistorySummary, validIsin } from "./returns/navigation";
+import {
+  capitalGoldSnapshot,
+  capitalGoldHistorySummary,
+  capitalGoldTarget,
+  goldTargets,
+  validIsin,
+} from "./returns/navigation";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
-import { accountHref, getOverall } from "./returns/overall";
+import { accountHref, getOverall, type GoldTarget } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { MissingName } from "./returns/ReturnsAvailable";
 import { ReturnsInstrumentCard } from "./returns/ReturnsInstrumentCard";
@@ -40,6 +47,9 @@ const proofLabels = {
 export default function UiV2ReturnsPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
+  const [goldEditorTarget, setGoldEditorTarget] = useState<GoldTarget | null>(null);
+  const [goldNavigation, setGoldNavigation] = useState({ dirty: false, pending: false });
+  const [nextParams, setNextParams] = useState<URLSearchParams | null>(null);
   const goldRef = useRef<HTMLTableRowElement>(null);
   const query = useQuery({
     queryKey: ["returns", "overall"],
@@ -59,6 +69,14 @@ export default function UiV2ReturnsPage() {
       if (value === null) next.delete(key);
       else next.set(key, value);
     }
+    if (
+      ("isin" in updates || "detail_scope" in updates) &&
+      (goldNavigation.dirty || goldNavigation.pending)
+    ) {
+      setNextParams(next);
+      return;
+    }
+    if ("isin" in updates || "detail_scope" in updates) setGoldEditorTarget(null);
     setParams(next);
   };
   const rows =
@@ -68,7 +86,13 @@ export default function UiV2ReturnsPage() {
   const capitalRequested = params.has("capital_account");
   const goldSnapshot = data && capitalRequested ? capitalGoldSnapshot(data, params) : null;
   const goldHistory = data && capitalRequested ? capitalGoldHistorySummary(data, params) : null;
-  const goldFocus = goldHistory ?? goldSnapshot;
+  const target = useMemo(() => (data ? capitalGoldTarget(data, params) : null), [data, params]);
+  const goldFocus = goldHistory ?? goldSnapshot ?? target;
+  useEffect(() => {
+    if (goldNavigation.dirty || goldNavigation.pending) return;
+    if (target) setGoldEditorTarget(target);
+    else if (data) setGoldEditorTarget(null);
+  }, [target, data, goldNavigation.dirty, goldNavigation.pending]);
   useEffect(() => {
     if (!goldFocus) return;
     goldRef.current?.focus({ preventScroll: true });
@@ -465,6 +489,26 @@ export default function UiV2ReturnsPage() {
             </section>
             <section id="returns-gold" className={styles.panel} aria-label="Золото">
               <h2>Золото</h2>
+              {!!goldTargets(data).length && (
+                <div>
+                  <h3>Инструменты золота</h3>
+                  <p>
+                    Точный счёт и инструмент из метаданных. Наличие инструмента не подтверждает
+                    оценку или финансовое принятие.
+                  </p>
+                  <ul>
+                    {goldTargets(data).map((item) => (
+                      <li key={`${item.account_id}/${item.instrument_id}`}>
+                        <Link
+                          to={`/v2/returns?${new URLSearchParams({ capital_account: String(item.account_id), gold_instrument: String(item.instrument_id) })}#returns-gold`}
+                        >
+                          {item.label}: открыть историю операций
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {goldFocus && (
                 <p>
                   Выбран точный инструмент золота. Снимки и история владельца показаны отдельно; это
@@ -498,11 +542,22 @@ export default function UiV2ReturnsPage() {
                         >
                           <th>
                             {snapshot.label}
-                            <Link
-                              to={`/v2/returns?${new URLSearchParams({ capital_account: String(snapshot.account_id), gold_instrument: String(snapshot.instrument_id) })}#returns-gold`}
-                            >
-                              История покупок и продаж
-                            </Link>
+                            {goldTargets(data).some(
+                              (item) =>
+                                item.account_id === snapshot.account_id &&
+                                item.instrument_id === snapshot.instrument_id,
+                            ) ? (
+                              <Link
+                                to={`/v2/returns?${new URLSearchParams({ capital_account: String(snapshot.account_id), gold_instrument: String(snapshot.instrument_id) })}#returns-gold`}
+                              >
+                                История покупок и продаж
+                              </Link>
+                            ) : (
+                              <small>
+                                История операций недоступна для этого инструмента; сохранённый
+                                снимок доступен только для чтения.
+                              </small>
+                            )}
                             <small>
                               {dateLabel(snapshot.date)} · количество: {snapshot.quantity}
                             </small>
@@ -621,25 +676,17 @@ export default function UiV2ReturnsPage() {
                   </div>
                 </section>
               )}
-              {goldFocus && (
-                <Suspense fallback={<p role="status">Открываем историю золота…</p>}>
-                  <ReturnsGoldHistory
-                    key={`${goldFocus.account_id}/${goldFocus.instrument_id}`}
-                    accountId={goldFocus.account_id}
-                    instrumentId={goldFocus.instrument_id}
-                    onConfirmed={async () => {
-                      await Promise.all([
-                        queryClient.invalidateQueries({ queryKey: ["returns", "overall"] }),
-                        queryClient.invalidateQueries({ queryKey: ["performance-attribution"] }),
-                        queryClient.invalidateQueries({ queryKey: ["performance-readiness"] }),
-                      ]);
-                    }}
-                  />
-                </Suspense>
-              )}
               <p>Результат за период</p>
               <Value metric={data.gold.period_result} label="Золото: результат периода" />
-              <p>Снимки не подтверждают реализованный результат или историю сделок.</p>
+              {!data.gold.histories?.length ? (
+                <p>Снимки не подтверждают реализованный результат или историю сделок.</p>
+              ) : (
+                <p>
+                  Результаты отдельных историй владельца показаны со своими периодами и источником.
+                  Общий результат золота за единый период не подтверждён; сохранённые снимки
+                  показаны отдельно.
+                </p>
+              )}
               <Diagnostics codes={data.gold.reason_codes} />
             </section>
             <Diagnostics codes={data.reason_codes} />
@@ -649,6 +696,48 @@ export default function UiV2ReturnsPage() {
             </p>
           </>
         )}
+        {goldEditorTarget && (
+          <Suspense fallback={<p role="status">Открываем историю золота…</p>}>
+            <ReturnsGoldHistory
+              key={`${goldEditorTarget.account_id}/${goldEditorTarget.instrument_id}`}
+              accountId={goldEditorTarget.account_id}
+              instrumentId={goldEditorTarget.instrument_id}
+              targetLabel={goldEditorTarget.label}
+              onNavigationStateChange={setGoldNavigation}
+              refreshing={query.isFetching || query.isError}
+              revision={query.dataUpdatedAt}
+              onConfirmed={async () => {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["returns", "overall"] }),
+                  queryClient.invalidateQueries({ queryKey: ["performance-attribution"] }),
+                  queryClient.invalidateQueries({ queryKey: ["performance-readiness"] }),
+                ]);
+              }}
+            />
+          </Suspense>
+        )}
+        <ConfirmDialog
+          open={nextParams !== null}
+          title={
+            goldNavigation.pending ? "Сохранение ещё не подтверждено" : "Несохранённые изменения"
+          }
+          description={
+            goldNavigation.pending
+              ? "Сначала дождитесь ответа или повторного чтения результата в этой форме. Повторная отправка не выполняется."
+              : "Есть несохранённые изменения. Уйти и потерять их?"
+          }
+          cancelLabel="Остаться"
+          confirmLabel={goldNavigation.pending ? "Остаться в форме" : "Уйти без сохранения"}
+          onCancel={() => setNextParams(null)}
+          onConfirm={() => {
+            if (!goldNavigation.pending && nextParams) {
+              setGoldEditorTarget(null);
+              setGoldNavigation({ dirty: false, pending: false });
+              setParams(nextParams);
+            }
+            setNextParams(null);
+          }}
+        />
       </UiV2Shell>
     </div>
   );

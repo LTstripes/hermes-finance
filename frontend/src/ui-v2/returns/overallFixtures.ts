@@ -175,6 +175,7 @@ export function overallFixture(): Overall {
       reason_codes: ["deposit_snapshot_missing"],
     },
     gold: {
+      targets: [{ account_id: 10, instrument_id: 20, label: "Учебное золото" }],
       snapshots: [
         {
           account_id: 10,
