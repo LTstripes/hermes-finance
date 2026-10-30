@@ -36,6 +36,55 @@ def db(tmp_path, source_returns_database_factory):
 PROOF_START, PROOF_END = date(2029, 12, 31), date(2030, 1, 31)
 
 
+def test_proved_scope_map_reuses_only_one_snapshot_and_returns_owned_maps(db, monkeypatch):
+    basket_source(db)
+    original = returns_view._selected_sources
+    calls = []
+
+    def selected(session, account):
+        calls.append(account)
+        return original(session, account)
+
+    monkeypatch.setattr(returns_view, "_selected_sources", selected)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            first = returns_view._source_scopes(session)
+            assert first["1234567"] == ACCOUNT
+            captured = len(calls)
+            first["1234567"] = "caller-mutation"
+            second = returns_view._source_scopes(session)
+            assert second["1234567"] == ACCOUNT
+            assert len(calls) == captured
+        assert "returns_source_scope_reads" not in session.info
+        with source_read_snapshot(session):
+            assert returns_view._source_scopes(session)["1234567"] == ACCOUNT
+        assert len(calls) > captured
+    basket_source(db, native="7654321-000", alias="7654321")
+    with db.session_factory() as session, source_read_snapshot(session):
+        actual = returns_view._source_scopes(session)
+        assert actual["7654321"] == "7654321-000"
+        assert actual["1234567"] == ACCOUNT
+
+
+def test_failed_scope_read_does_not_leave_reusable_state(db, monkeypatch):
+    basket_source(db)
+    original = returns_view._selected_sources
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("synthetic source read failed")
+
+    with db.session_factory() as session:
+        with monkeypatch.context() as patch:
+            patch.setattr(returns_view, "_selected_sources", unavailable)
+            with pytest.raises(RuntimeError, match="synthetic source read failed"):
+                with source_read_snapshot(session):
+                    returns_view._source_scopes(session)
+        assert "returns_source_scope_reads" not in session.info
+        monkeypatch.setattr(returns_view, "_selected_sources", original)
+        with source_read_snapshot(session):
+            assert returns_view._source_scopes(session)["1234567"] == ACCOUNT
+
+
 def _saved_investment(db, monkeypatch):
     persistence = saved_investment_preview(db, monkeypatch)["persistence"]
     with db.session_factory() as session:

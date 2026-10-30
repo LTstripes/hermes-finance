@@ -23,6 +23,7 @@ from hermes_finance.services.performance_attribution import performance_attribut
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_monthly_returns import (
+    _SOURCE_SCOPE_READS,
     _native_scope,
     _selected_sources,
     read_monthly_returns,
@@ -50,6 +51,16 @@ def _months(session):
 
 
 def _source_scopes(session):
+    """Copy the proved alias map only within the current protected source read."""
+    cache = session.info.get(_SOURCE_SCOPE_READS)
+    if cache is None:
+        return _read_source_scopes(session)
+    if "canonical" not in cache:
+        cache["canonical"] = _read_source_scopes(session)
+    return dict(cache["canonical"])
+
+
+def _read_source_scopes(session):
     """Group only aliases proved by every selected document, using the reader.
 
     Unreadable, conflicting and multi-account documents preserve their entries.

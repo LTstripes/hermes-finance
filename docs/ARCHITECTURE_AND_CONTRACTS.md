@@ -14241,6 +14241,8 @@ All-history selection follows the ordinary reader's closing-date/latest-proof
 tie-break; the proof identity is internal and never exported. Within the existing
 read snapshot, derived proof results and analyses are reused by source readers
 through copy-isolated request-local state, discarded on exit (including failure).
+The proved source-account alias map is also reused only inside that protected
+source snapshot; every caller receives its own map and the next snapshot proves it again.
 There is no cross-request cache or stale fallback.
 
 Event chronology can cross a selected boundary. Each cash leg explicitly states
