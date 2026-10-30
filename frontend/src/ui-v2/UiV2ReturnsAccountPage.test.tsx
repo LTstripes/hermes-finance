@@ -103,7 +103,7 @@ test("refresh reads context, overview and basket once in parallel and exposes co
         })
       : undefined,
   );
-  setup();
+  setup("/v2/returns/account?scope=source:SYNTH-A&categories=gold");
   await screen.findByRole("region", { name: "Результат периода" });
   hold = true;
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
@@ -120,6 +120,18 @@ test("refresh reads context, overview and basket once in parallel and exposes co
   await act(async () => complete(response({}, 503)));
   await screen.findByText("Не удалось загрузить выбранную корзину.");
   expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
+});
+
+test("account opening leaves portfolio month diagnostics unrequested until disclosure", async () => {
+  const calls = install();
+  setup();
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(0);
+  expect(screen.queryByRole("region", { name: "Моя доходность" })).toBeNull();
+  const summary = screen.getByText("Дополнительная диагностика портфеля за выбранный период");
+  fireEvent.click(summary);
+  await screen.findByRole("region", { name: "Моя доходность" });
+  await waitFor(() => expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(1));
 });
 
 test("account authority is explicit in links and has no source/accepted selector", async () => {

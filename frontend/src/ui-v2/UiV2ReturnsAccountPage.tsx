@@ -230,6 +230,7 @@ function Instruments({
 
 export default function UiV2ReturnsAccountPage() {
   const [params, setParams] = useSearchParams();
+  const [basketExpanded, setBasketExpanded] = useState(() => params.has("categories"));
   const navigate = useNavigate();
   const { hash } = useLocation();
   const queryClient = useQueryClient();
@@ -406,11 +407,20 @@ export default function UiV2ReturnsAccountPage() {
             </>
           )}
         </p>
-        <ReturnsBasket
-          period={period}
-          refreshing={context.isFetching || context.isError}
-          contextError={context.isError}
-        />
+        <details
+          className={styles.diagnostics}
+          open={basketExpanded}
+          onToggle={(event) => setBasketExpanded(event.currentTarget.open)}
+        >
+          <summary>Дополнительная диагностика портфеля за выбранный период</summary>
+          {basketExpanded && (
+            <ReturnsBasket
+              period={period}
+              refreshing={context.isFetching || context.isError}
+              contextError={context.isError}
+            />
+          )}
+        </details>
         {selectionValid && (
           <div className={styles.periodLine}>
             {periodLabel(period)}
