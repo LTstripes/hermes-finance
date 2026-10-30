@@ -326,6 +326,11 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
     await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Открыть отчёты месяцев" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Моя доходность" })).toHaveCount(0);
+    await page
+      .getByText("Дополнительная диагностика портфеля за выбранный период", { exact: true })
+      .focus();
+    await page.keyboard.press("Enter");
     const checkbox = page.getByRole("checkbox", { name: "ИИС", exact: true });
     await expect(checkbox).toBeChecked();
     await checkbox.focus();
