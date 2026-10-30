@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.3.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "const": "1.3.0" },
+    "schema_version": { "const": "1.4.0" },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -29,6 +29,1071 @@
     "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } }
   },
   "$defs": {
+    "source_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "status",
+        "reason_codes",
+        "method",
+        "annualized",
+        "approximate"
+      ],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "enum": [
+            "RUB",
+            "percent"
+          ]
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "provisional",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "method": {
+          "type": "string"
+        },
+        "annualized": {
+          "type": "boolean"
+        },
+        "approximate": {
+          "const": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "unit": {
+                "const": "RUB"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "annualized": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "source_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pnl",
+        "known_subtotal",
+        "modified_dietz",
+        "xirr_annualized",
+        "xirr_period"
+      ],
+      "properties": {
+        "pnl": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "known_subtotal": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "modified_dietz": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "xirr_annualized": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "xirr_period": {
+          "$ref": "#/$defs/source_metric"
+        }
+      }
+    },
+    "source_income": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coupons",
+        "dividends"
+      ],
+      "properties": {
+        "coupons": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "dividends": {
+          "$ref": "#/$defs/source_metric"
+        }
+      }
+    },
+    "source_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "quantity",
+        "reported_value",
+        "economic_value",
+        "accrued_interest",
+        "valuation_basis",
+        "reason_codes"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "quantity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reported_value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "economic_value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accrued_interest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valuation_basis": {
+          "enum": [
+            "dirty",
+            "clean_plus_nkd",
+            "reported_unknown"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "source_cash_leg": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "account_cash",
+        "instrument_flow"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "account_cash": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instrument_flow": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "source_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "date",
+        "cash_date",
+        "quantity_date",
+        "quantity_delta",
+        "trade_amount",
+        "accrued_interest",
+        "commission",
+        "gross_payout",
+        "withheld_tax",
+        "net_payout",
+        "counted",
+        "cash_legs",
+        "reason_codes"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "BUY",
+            "SELL",
+            "COUPON",
+            "DIVIDEND",
+            "FEE",
+            "TAX",
+            "REDEMPTION",
+            "UNRESOLVED"
+          ]
+        },
+        "date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cash_date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity_date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity_delta": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trade_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accrued_interest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commission": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gross_payout": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "withheld_tax": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "net_payout": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "counted": {
+          "type": "boolean"
+        },
+        "cash_legs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_cash_leg"
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "source_components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buys",
+        "sells",
+        "coupons",
+        "dividends",
+        "redemption",
+        "fees",
+        "taxes",
+        "valuation_and_trades"
+      ],
+      "properties": {
+        "buys": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "sells": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "coupons": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "dividends": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "redemption": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "fees": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "taxes": {
+          "$ref": "#/$defs/source_metric"
+        },
+        "valuation_and_trades": {
+          "$ref": "#/$defs/source_metric"
+        }
+      }
+    },
+    "source_instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isin",
+        "name",
+        "instrument_type",
+        "opening",
+        "closing",
+        "metrics",
+        "components",
+        "coverage",
+        "reason_codes",
+        "assumptions",
+        "events"
+      ],
+      "properties": {
+        "isin": {
+          "type": "string"
+        },
+        "name": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instrument_type": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "opening": {
+          "$ref": "#/$defs/source_endpoint"
+        },
+        "closing": {
+          "$ref": "#/$defs/source_endpoint"
+        },
+        "metrics": {
+          "$ref": "#/$defs/source_metrics"
+        },
+        "components": {
+          "$ref": "#/$defs/source_components"
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "events",
+            "quantity",
+            "endpoints",
+            "payouts",
+            "costs",
+            "valuation"
+          ],
+          "properties": {
+            "events": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            },
+            "quantity": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            },
+            "endpoints": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            },
+            "payouts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            },
+            "costs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            },
+            "valuation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "complete",
+                "reason_codes"
+              ],
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "reason_codes": {
+                  "$ref": "#/$defs/reason_codes"
+                }
+              }
+            }
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_event"
+          }
+        }
+      }
+    },
+    "source_account_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opening_value",
+        "closing_value",
+        "contributions",
+        "withdrawals",
+        "metrics",
+        "income",
+        "external_flows",
+        "account_only",
+        "detail_status"
+      ],
+      "properties": {
+        "opening_value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closing_value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contributions": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "withdrawals": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metrics": {
+          "$ref": "#/$defs/source_metrics"
+        },
+        "income": {
+          "$ref": "#/$defs/source_income"
+        },
+        "external_flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "date",
+              "amount",
+              "status"
+            ],
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "amount": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "confirmed",
+                  "assumed",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        },
+        "account_only": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "amount"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "amount": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "detail_status": {
+          "enum": [
+            "known_rows_not_complete_cost_coverage",
+            "account_only_not_projected"
+          ]
+        }
+      }
+    },
+    "source_interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "opening_date",
+        "closing_date",
+        "source_contract",
+        "currentness",
+        "history_from_zero",
+        "reason_codes",
+        "account",
+        "instruments"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "opening_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "closing_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "source_contract": {
+          "type": "string"
+        },
+        "currentness": {
+          "enum": [
+            "current",
+            "stale"
+          ]
+        },
+        "history_from_zero": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "account": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/source_account_result"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instruments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_instrument"
+          }
+        }
+      }
+    },
+    "source_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "financial_account_ref",
+        "mapping_status",
+        "all_history_ref",
+        "all_history_reason_codes",
+        "selected_month",
+        "monthly_history_refs",
+        "intervals"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^source-account-[1-9][0-9]*$"
+        },
+        "financial_account_ref": {
+          "type": "null"
+        },
+        "mapping_status": {
+          "const": "not_asserted"
+        },
+        "all_history_ref": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "all_history_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "selected_month": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "opening_date",
+            "closing_date",
+            "through_date",
+            "complete_calendar_month",
+            "interval_ref",
+            "reason_codes"
+          ],
+          "properties": {
+            "opening_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "closing_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "through_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "complete_calendar_month": {
+              "type": "boolean"
+            },
+            "interval_ref": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason_codes": {
+              "$ref": "#/$defs/reason_codes"
+            }
+          }
+        },
+        "monthly_history_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intervals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_interval"
+          }
+        }
+      }
+    },
+    "source_returns_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "as_of_date",
+        "authority",
+        "financial_authority",
+        "units",
+        "reading_guide",
+        "included_components",
+        "excluded_components",
+        "accounts"
+      ],
+      "properties": {
+        "as_of_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "authority": {
+          "const": "provisional"
+        },
+        "financial_authority": {
+          "const": "none"
+        },
+        "units": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "money",
+            "rates",
+            "quantity"
+          ],
+          "properties": {
+            "money": {
+              "type": "string"
+            },
+            "rates": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "string"
+            }
+          }
+        },
+        "reading_guide": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pnl",
+            "modified_dietz",
+            "xirr_annualized",
+            "xirr_period",
+            "capital_flows",
+            "counting",
+            "unknown",
+            "periods",
+            "authority",
+            "identity",
+            "events"
+          ],
+          "properties": {
+            "pnl": {
+              "type": "string"
+            },
+            "modified_dietz": {
+              "type": "string"
+            },
+            "xirr_annualized": {
+              "type": "string"
+            },
+            "xirr_period": {
+              "type": "string"
+            },
+            "capital_flows": {
+              "type": "string"
+            },
+            "counting": {
+              "type": "string"
+            },
+            "unknown": {
+              "type": "string"
+            },
+            "periods": {
+              "type": "string"
+            },
+            "authority": {
+              "type": "string"
+            },
+            "identity": {
+              "type": "string"
+            },
+            "events": {
+              "type": "string"
+            }
+          }
+        },
+        "included_components": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excluded_components": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source_account"
+          }
+        }
+      }
+    },
+    "source_returns_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason_codes",
+        "data"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "partial",
+            "unavailable"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/source_returns_data"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/section_base"
+        }
+      ]
+    },
     "money": {
       "type": "object",
       "additionalProperties": false,
@@ -284,7 +1349,8 @@
             "iis_and_tax": { "$ref": "#/$defs/coverage_domain" },
             "user_context": { "$ref": "#/$defs/coverage_domain" },
             "budget_and_saving": { "$ref": "#/$defs/coverage_domain" },
-            "performance": { "$ref": "#/$defs/coverage_domain" }
+            "performance": { "$ref": "#/$defs/coverage_domain" },
+            "source_returns": { "$ref": "#/$defs/coverage_domain" }
           }
         }
       }
@@ -1257,7 +2323,8 @@
         "user_context": { "$ref": "#/$defs/context_section" },
         "budget_and_saving": { "$ref": "#/$defs/budget_section" },
         "data_quality": { "$ref": "#/$defs/quality_section" },
-        "performance": { "$ref": "#/$defs/performance_section" }
+        "performance": { "$ref": "#/$defs/performance_section" },
+        "source_returns": { "$ref": "#/$defs/source_returns_section" }
       }
     }
   }

@@ -13974,7 +13974,7 @@ later staged UAT work does not change this contract.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.3.0`
+**Schema version:** `1.4.0`
 
 **Normative schema:** [`ai_financial_review.schema.json`](schemas/ai_financial_review.schema.json)
 
@@ -14037,6 +14037,52 @@ In `historical_dynamics[].linked_pairs`, `debt_ref_scope` is
 and no old debt snapshot is aliased to the current one. Pair `ref` values remain
 stable wherever the same persisted pair is represented in the report.
 
+
+#### Source-only returns in the recommended JSON (#856)
+
+Schema 1.4.0 adds optional `sections.source_returns` and its coverage domain.
+The canonical assembler emits both, in the same coherent read snapshot as the
+other sections. Existing `performance` (R08/PERF04A), passive income and portfolio
+meanings do not change. This section is always provisional with
+`financial_authority=none`; it never upgrades source evidence to financial Close.
+
+`source_investment_proofs.read_reports(analyses=...)` owns XML+PDF interval P&L,
+Modified Dietz, annualized and period XIRR, boundary values, flows and currentness.
+The associated InstrumentAnalysis owns supported components, endpoints, coverage
+and dated event/cash-leg chronology. Ordinary instrument and monthly readers own
+available calendar-month observations. No formula, ledger or importer is added.
+Unsupported monthly XIRR stays NULL with `source_method_not_available`.
+
+Every source account has an export-local ordinal ref and `mapping_status=not_asserted`;
+`financial_account_ref` is NULL even when a source alias resembles an Account.
+Only the existing verified source-scope alias resolver groups source accounts.
+Raw account numbers, IDs, proof objects/hashes, native references, paths and
+originals are excluded by explicit allowlists and a strict nested schema.
+
+Intervals carry their exact opening/closing dates, source contract and currentness.
+`all_history_ref` selects the latest from-zero source interval without requiring
+intermediate monthly valuations. `monthly_history_refs` identifies only complete
+calendar-month intervals; missing monthly values remain unknown. `selected_month`
+names the requested calendar bounds, actual through-date and completion flag;
+partial coverage never claims a complete month. Source intervals ending after
+the report as-of date are excluded. A stale latest proof has no numeric fallback.
+Sold instruments remain present independently of current holdings. A separately
+known coupon/dividend survives an unavailable endpoint or full return. Component
+values/status/reasons come from the producer; absent breakdowns are not guessed.
+
+Amounts use exact RUB money objects (`kopecks / 100`); rates use exact decimal
+percentage-point strings (`Decimal fraction * 100`) with explicit method,
+annualization, approximation, status and reason codes. There is no float or
+new rounding/calculation model. Source date, not export generation time, defines
+coverage. Account-only costs/taxes/REPO financing remain separate; no allocation
+to instruments or unproved realized/unrealized or gross/tax split is asserted.
+
+The embedded reading guide explains personal return versus YTM, capital flows,
+NULL versus zero, honest period comparisons and double counting: components,
+events and overlapping intervals explain results and must not be added again.
+Account and instrument results and percentage rates must not be summed.
+The existing local JSON download/CTA is retained; no upload, provider call or
+financial write occurs.
 
 <a id="c10-ai_financial_review-1-3-top-level-contract"></a>
 #### 3. Top-level contract
@@ -14220,7 +14266,8 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
 - major: removal/rename, changed requiredness/units, changed source meaning or
   changed financial counting semantics.
 
-Version `1.2.0` adds the required `performance` section. Version `1.3.0`
+Version `1.4.0` adds optional provisional `source_returns` and its coverage domain,
+without changing earlier financial fields. Version `1.2.0` adds the required `performance` section. Version `1.3.0`
 adds optional month-local linked-pair fields to `current_capital` and
 `historical_dynamics`; the canonical exporter emits them on every generated
 report, including empty arrays. It changes no capital formula or counting

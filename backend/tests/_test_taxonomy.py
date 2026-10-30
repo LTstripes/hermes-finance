@@ -210,6 +210,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # test_statement_import_mybroker_endpoints.py by d0f5e7e. A module absent
 # from this table has no shard, so collection fails closed.
 CI_INTEGRATIONS_SHARD_WEIGHTS = {
+    "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_ai_analysis_bundle_contract.py": 3.81,
     "test_ai_analysis_bundle_export.py": 11.44,
     "test_ai_analysis_bundle_financial_review_contract.py": 6.78,
@@ -292,6 +293,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_A_SPLIT_FILES = frozenset({"test_statement_import_mybroker_endpoints.py"})
 
 CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
+    "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_ai_analysis_bundle_contract.py": 0.21,
     "test_ai_analysis_bundle_export.py": 31.16,
     "test_ai_analysis_bundle_financial_review_contract.py": 1.02,

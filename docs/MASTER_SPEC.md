@@ -681,6 +681,12 @@ Keep actual, forecast and hypothetical values visibly separate. Passive-income g
 
 Scenario Lab freezes its base and supports only the accepted single-shock families and explicit applicability evidence. Currency tags alone do not authorize FX translation; issuer exposure cannot be guessed from names. Account WHAT-IF uses finite named assumptions under C7. Instrument WHAT-IF is the supported fixed-holding stock scenario; editing prose does not enable bonds or changing-quantity total return.
 
+The recommended AI JSON includes provisional source returns with explicit dates,
+methods, limitations, sold instruments and a reading guide. Full-history source
+intervals, the selected month and available monthly history remain separate;
+[C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1-2-composition-boundary)
+owns the exact units, source authority and privacy contract.
+
 Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
 
 <a id="p6"></a>
