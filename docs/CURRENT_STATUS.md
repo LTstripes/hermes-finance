@@ -8,14 +8,50 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-The next bounded candidate is **1.8.1**: certified XIRR uniqueness plus the five
-accepted source/Returns corrections described in
-[its release notes](release-notes-1.8.1.md). It adds no schema or financial writer.
-Implementation checks and independent review are in progress; no publication,
-installation or proof replacement is claimed for that candidate here. Its rollout
-requires exact-head and exact-main CI, backup-first update and fresh original-bound
-Preview with explicit proof replacement. The installed checkpoint below remains
-the authority until those operations are verified.
+**Released and installed: [v1.8.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.1),
+`9b69282fda3de9b61f22ec39021cc3ad9c7a5107`.** Application
+[#995](https://github.com/LTstripes/hermes-finance/pull/995) adds certified XIRR
+uniqueness and the five bounded source/Returns corrections in
+[the release notes](release-notes-1.8.1.md). Independent numerical and
+financial/source/code review passed. Exact candidate
+[CI41021946662](https://github.com/LTstripes/hermes-finance/actions/runs/41021946662)
+completed SUCCESS.
+
+Follow-up [#996](https://github.com/LTstripes/hermes-finance/pull/996) restores
+unchanged optional-peer metadata and matches the synthetic bond server's admission
+lifetime to the stock CLI. Assertions, retries, timeouts and product guards remain
+unchanged. Independent delta review, all five affected browser journeys,
+[PR CI41025362024](https://github.com/LTstripes/hermes-finance/actions/runs/41025362024),
+final [push CI41026495041](https://github.com/LTstripes/hermes-finance/actions/runs/41026495041)
+and [guarded release41027714487](https://github.com/LTstripes/hermes-finance/actions/runs/41027714487)
+passed. The annotated tag peels to the exact release commit and published notes
+match the repository. GitHub reports immutable=false; platform immutability is
+not claimed.
+
+Operator-local rollout on30October confirms stock backup-first OPS02,
+Prepare/Validate, separate Start and health HTTP200/ok/1.8.1. Exact owned-process
+birth/ancestry and native file-handle identity prove the listener holds the
+original physical database. Schema remains `0067_investment_report_proofs`.
+Verified recovery points retain their producing-code bundles. Old financial rows,
+CLOSED history, unrelated schema, environment and physical identity are preserved.
+
+After fresh Preview of the same reviewed originals, explicit replacement proofs
+were saved through the existing host; old hashes were not rewritten. Exact retry,
+ordinary readers and the installed native UI after Reload agree: **42
+account-instrument pairs have numeric RUB, Modified Dietz, period XIRR and
+annualized XIRR**. Previously available rates and RUB/Modified Dietz results were
+preserved. The earlier21 pre-search refusals were an algorithm limitation, not
+missing inputs or proved multiple roots. Actual ambiguity, missing operands and
+numerical limits retain their specific unavailable outcomes under [C7](ARCHITECTURE_AND_CONTRACTS.md#c7).
+
+Only the authorized proof host and its sequence changed. No financial reimport,
+Apply/Close, mapping/payout write, valuation-packet activation or provider request
+occurred. This is scoped source-only/provisional acceptance, not Owner visual UAT
+or financial portfolio Close. Shared account costs/taxes remain separate; no
+arbitrary allocation to instruments or fabricated intermediate monthly valuations.
+Next step is Owner visual review and the separately chosen new-month workflow.
+
+## Historical v1.8.0 checkpoint
 
 **Released and installed: [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0),
 `d961e788d1cfc4a902443706703632ca0c63c68b`.** Accepted application
@@ -235,12 +271,12 @@ money ownership are not guessed or filled with zero.
 
 | Layer | Current verified status |
 | --- | --- |
-| Accepted code | #992 and packaging#993 integrated; released target `d961e788d1cfc4a902443706703632ca0c63c68b`; exact-main [CI41005279954](https://github.com/LTstripes/hermes-finance/actions/runs/41005279954) SUCCESS. Prior independent financial/source review retained for unchanged semantics. |
-| Published release | [v1.8.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.0), annotated tag `afd75ebb6f102fce557c045c867822078c6d2f24`, peeled `d961e788d1cfc4a902443706703632ca0c63c68b`; guarded [release41006339267](https://github.com/LTstripes/hermes-finance/actions/runs/41006339267) SUCCESS; published notes match. |
-| HONOR Stable | Operator-local30October: installed/running1.8.0 at `d961e788` /0067; health HTTP200/ok and exact original physical DB handle verified. Stock backup-first OPS02/Prepare/Validate/Start and data-continuity checks PASS. Fresh pre-upgrade and current-schema backups with producing code retained. |
+| Accepted code | #995 and packaging/fixture#996 integrated; released target `9b69282fda3de9b61f22ec39021cc3ad9c7a5107`; exact-main [CI41026495041](https://github.com/LTstripes/hermes-finance/actions/runs/41026495041) SUCCESS. Independent numerical and financial/source/code review PASS. |
+| Published release | [v1.8.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.1), annotated tag `0e92517561bbf67cf4c231f131ff31d447883127`, peeled `9b69282fda3de9b61f22ec39021cc3ad9c7a5107`; guarded [release41027714487](https://github.com/LTstripes/hermes-finance/actions/runs/41027714487) SUCCESS; published notes match. |
+| HONOR Stable | Operator-local30October: installed/running1.8.1 at `9b69282f` /0067; health HTTP200/ok, exact owned birth/ancestry and original physical DB handle verified. Stock backup-first OPS02/Prepare/Validate/Start and data-continuity checks PASS. Verified old/current recovery points and producing code retained. |
 | Isolated Test | Old code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541` / isolated DB0066, stopped. New OPS03 was blocked before execution by the now-completed lifecycle Scan -Retire. Owner cancelled the separate aggregate Test on 28 October. |
-| Owner UI UAT | New visual review deferred to evening/Thursday; main monthly UAT planned for 1 November. No new visual PASS, real financial DRAFT/forecast save or complete XIRR/TWRR acceptance. Earlier v1.6.0 UI GO retains its original scope. |
-| Protected actions | Authorized publication, backup-first1.8.0 installation and bounded source-only history evidence Save/readback completed. No financial Apply/Close, mapping/payout writes, provider request or new valuation-packet activation. CLOSED and prior financial facts preserved. |
+| Owner UI UAT | Operator automated native UI/Reload PASS is complete; Owner visual/new-month acceptance remains pending. No new real financial DRAFT/forecast save or complete financial-portfolio XIRR/TWRR acceptance. Earlier visual GO retains its original scope. |
+| Protected actions | Authorized1.8.1 publication, backup-first installation and fresh same-original Preview/explicit investment-proof replacement/readback completed. No financial reimport/Apply/Close, mapping/payout writes, provider request or valuation-packet activation. CLOSED and prior financial facts preserved. |
 
 Existing accepted custody-source proof remains a scoped source-only observation,
 not an independent economic payout. Source money journal does not override
@@ -249,12 +285,13 @@ manual financial rows, historical CLOSED facts or unknown NKD valuation.
 <a id="s2"></a>
 ## 2. What the user can do and what is already calculated
 
-**Installed in v1.8.0:** Broker statements retains saved historical XML/PDF
+**Installed in v1.8.1:** Broker statements retains saved historical XML/PDF
 results across Reload; ordinary Returns exposes the evidenced source intervals
 and instrument results. The checked42 account-instrument pairs have RUB and
-Modified Dietz percentages for the selected period. The 21 pre-search XIRR guard
-refusals remain NULL with their reason; no missing inputs or multiple roots were
-established for those cases. Annualized XIRR is not
+Modified Dietz percentages for the selected period. All42 pairs and both checked
+account totals now have period and annualized XIRR. The former21 pre-search
+refusals were resolved by exact uniqueness certification. Demonstrated multiple
+roots and numerical limits still remain unavailable. Annualized XIRR is not
 labelled as a period return. Historical endpoints do not fabricate intermediate
 monthly EOD values. Financial source-only, accepted reports and forecasts remain
 distinct. The v1.7.1 paragraphs below record the earlier installation scope.
@@ -351,15 +388,16 @@ observations across overlapping statements for distinct payments.
 <a id="s3"></a>
 ## 3. Next actions, in priority order
 
-1. **Owner visual/monthly acceptance:** v1.8.0 publication, installation and
-   scoped historical source Save/reader/UI Reload checks are complete. These
+1. **Owner visual/monthly acceptance:** v1.8.1 publication, installation and
+   scoped same-original proof replacement/reader/UI Reload checks are complete. These
    programmatic checks are not an Owner visual or complete financial Close PASS.
 2. **Next monthly source:** use the existing monthly workflow with its own
    appropriate original and endpoint coverage. The checked long-history result
    does not establish every intervening monthly valuation; no old-month backfill
    or CLOSED rewrite was performed.
-3. **Numerical limits:** keep pre-search XIRR refusals distinct from demonstrated
-   root ambiguity. Neither permits silently selecting a root or filling zeroes.
+3. **Numerical limits:** keep certified distinct-root ambiguity separate from
+   numerical resource/convergence failure. Neither permits selecting a first
+   root or filling zeroes.
    Preserve separate shared account costs/taxes and source-only/provisional
    authority; do not allocate unknown items to instruments or invent zeroes.
 4. **Separate finance authority:** financial DRAFT Apply, forecast save/refresh,
