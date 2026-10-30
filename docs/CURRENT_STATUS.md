@@ -1,12 +1,43 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-29**. This is the sole changing project status book. Current source
+Updated **2026-10-30**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
 are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
+
+**Accepted application code:** [#992](https://github.com/LTstripes/hermes-finance/pull/992)
+was guarded-squash merged at `3fd9200445d0c2f526ca3c3cc4864798acf2fa57` after
+exact-head review PASS and [PR CI40964202376](https://github.com/LTstripes/hermes-finance/actions/runs/40964202376)
+SUCCESS. Canonical [push CI41003084356](https://github.com/LTstripes/hermes-finance/actions/runs/41003084356)
+is SUCCESS on that exact main SHA. This includes the already accepted #987-#991.
+
+The 1.8.0 packaging delta synchronizes manifests, locks, current health expectations
+and generic release notes without dependency-resolution, financial-logic or
+migration-source changes. Publication and installation are still separate gates.
+The last published/installed identity remains v1.7.1 below; no v1.8.0 installation
+is claimed here. Operator preflight found no Stable listener on port8000; the
+initial stopped state has no established cause. Read-only physical binding,
+0066 integrity and all79-table baseline capture passed without changing DB bytes.
+
+Main now supports persistent exact-original investment-PDF evidence after immutable
+XML Save, account/instrument RUB and eligible dated rates through ordinary readers
+after Reload, and separate historical/full-month coverage. The isolated-copy
+Save/retry/Reload financial comparison passed for the assigned scope; it is not
+Owner visual UAT, a real financial Apply/Close or blanket acceptance of other
+originals. Proof confirmation and deployment remain distinct. Code changes retire
+investment-proof currentness; fresh original-bound confirmation is required.
+
+Remaining rollout: exact packaging CI/review, guarded publication/readback, fresh
+verified production backup and producing-code retention, copy-only0066-to-0067
+rehearsal and bounded financial acceptance, stock OPS02/Prepare/Validate, separate
+Start and health/physical-binding/data-continuity readback. Any real history Save
+must preserve conflicts/deduplication/CLOSED and stay in the accepted scope.
+
+## Historical v1.7.1 rollout checkpoint
+
 
 **Released and installed: [v1.7.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.7.1),
 `b247b5cf4cb01b3e06708b1a61e3e253608231ea`, after Owner acceptance and squash merge of
@@ -172,7 +203,7 @@ money ownership are not guessed or filled with zero.
 
 | Layer | Current verified status |
 | --- | --- |
-| Accepted code | #985 integrated at `b247b5cf4cb01b3e06708b1a61e3e253608231ea`, including #984/#986; exact-main [CI40824477675](https://github.com/LTstripes/hermes-finance/actions/runs/40824477675) SUCCESS. Earlier evidence retains its original scope; CI40653035431 attempt 1 recovery intermittency remains unexplained. |
+| Accepted code | #992 integrated at `3fd9200445d0c2f526ca3c3cc4864798acf2fa57`, including #987-#991; exact-main [CI41003084356](https://github.com/LTstripes/hermes-finance/actions/runs/41003084356) SUCCESS. 1.8.0 packaging and deployment gates are recorded above. |
 | Published release | [v1.7.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.7.1), annotated tag `b15621986eb3b454091217fe29015b19c2582f28`, peeled `b247b5cf4cb01b3e06708b1a61e3e253608231ea`; guarded [release40825394130](https://github.com/LTstripes/hermes-finance/actions/runs/40825394130) SUCCESS. Published notes match the tagged file; no platform immutability guarantee is claimed. |
 | HONOR Stable | Operator-local 29 October 05:58 UTC readback: v1.7.1 at `b247b5cf` / 0066, running, health HTTP 200/ok; owned process bound to the original physical DB. Fresh verified 0066 backup and producing v1.7.0 code retained. All 79 tables and live DB bytes/rows/indexes/triggers/sequences/sidecar preserved. Earlier backup/recovery evidence retains its historical scope. |
 | Isolated Test | Old code `87624e12ef9d9d63c5df5b5f13703a4e3a7e3541` / isolated DB0066, stopped. New OPS03 was blocked before execution by the now-completed lifecycle Scan -Retire. Owner cancelled the separate aggregate Test on 28 October. |
