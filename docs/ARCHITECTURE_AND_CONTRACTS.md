@@ -2313,8 +2313,9 @@ same-native Position `active_name` fields already bound by original verification
 Labels are bounded to 256 characters without C0 control characters and at most 32
 distinct values per ISIN. Ambiguity stays explicit; labels never establish identity
 or replace the unchanged hashed attribution keys. They are part of the existing
-native evidence digest, not a catalogue write. Legacy proofs without labels stay
-valid and unnamed; only fresh Preview/explicit confirmation can retain new metadata.
+native evidence digest, not a catalogue write. Legacy envelopes without labels
+remain supported and unnamed; normal code/dependency currentness checks still
+apply. Only fresh Preview/explicit confirmation can retain new metadata.
 It creates no cash, financial receipt,
 Apply/Close authority or parallel ledger. S1 revisions and CLOSED financial rows
 are untouched. One original per selected account is required for this Save;
