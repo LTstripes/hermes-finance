@@ -4,6 +4,20 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [1.8.0] - 2026-10-30
+
+- #987-#991: dated personal instrument detail, native bond BUY accrued-interest
+  handling and source-backed issue attribution, retaining ambiguity/UNKNOWN guards.
+- [#992](https://github.com/LTstripes/hermes-finance/pull/992): one Alfa investment
+  PDF corroborates existing XML payouts; explicit source-only evidence Save and
+  ordinary RUB/period-rate readers survive retry and Reload without duplicate cash.
+- Schema `0067_investment_report_proofs` extends the existing append-only proof
+  host, preserves historical financial data and requires exact current bindings.
+  Historical intervals stay distinct from monthly coverage; CLOSED is unchanged.
+- [Release notes 1.8.0](docs/release-notes-1.8.0.md) describe the combined scope
+  and backup/migration/recovery boundaries. No implicit financial Apply/Close,
+  provider action or valuation-evidence activation.
+
 ## [1.7.1] - 2026-10-29
 
 - [#984](https://github.com/LTstripes/hermes-finance/pull/984): ordinary instrument
