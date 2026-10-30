@@ -37,8 +37,8 @@ comparison. Ordinary account/instrument readers, the UI account aliases and the
 installed UI after Reload agree in the checked scope: **42 account-instrument
 pairs have numeric RUB and Modified Dietz period results**. Period and annualized
 XIRR are numeric for 21 pairs. The other 21 stop at the conservative pre-search
-guard for more than one daily-aggregated cash-flow sign variation; no root search
-was performed for them. This does not prove multiple roots or missing inputs.
+guard for more than one daily-aggregated cash-flow sign variation. All returned
+with `iterations=0`, before root search. This does not prove multiple roots or missing inputs.
 Unknown values were not replaced with zero.
 
 Operator readback confirms financial tables and CLOSED unchanged; only the
