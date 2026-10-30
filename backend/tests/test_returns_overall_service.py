@@ -471,7 +471,10 @@ def test_display_basis_resolves_sold_instrument_without_financial_writes(db, mon
     assert value.mixed_result.known_result.value == "50"
 
 
-def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(db, monkeypatch):
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(
+    db, monkeypatch, conflicting
+):
     from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
 
     source_fixture(monkeypatch)
@@ -495,9 +498,16 @@ def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(db, mo
             )
             from dataclasses import replace
 
+            duplicate = (
+                replace(
+                    event, cash_legs=(CashLeg("income", END, 26, -26, ("other",), "confirmed"),)
+                )
+                if conflicting
+                else event
+            )
             analysis.events = (
                 event,
-                event,
+                duplicate,
                 replace(event, event_key="forecast", counted=False),
                 replace(event, event_key="principal", kind="REDEMPTION"),
             )
@@ -510,8 +520,13 @@ def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(db, mo
     with db.session_factory() as session:
         result = overall.read_income(session, kind="coupon")
     assert result["summary"]["known_total"]["value"] == "50"
-    assert len(result["events"]) == 2  # one operation per exact source account
-    assert [row["amount"]["value"] for row in result["events"]] == ["25", "25"]
+    assert len(result["events"]) == (0 if conflicting else 2)
+    assert [row["amount"]["value"] for row in result["events"]] == (
+        [] if conflicting else ["25", "25"]
+    )
+    if conflicting:
+        assert "income_event_identity_conflict" in result["reason_codes"]
+        assert "known_account_income_not_fully_attributed" in result["reason_codes"]
     assert result["instruments"][0]["amount"]["value"] == "50"
     assert "other_payout_unattributed" in result["instruments"][0]["amount"]["reason_codes"]
     assert snapshot(db) == before
@@ -561,6 +576,25 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
     assert value["accounts"][1]["detail"] is None
 
 
+def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, monkeypatch):
+    source_fixture(monkeypatch)
+    identity_mappings(db, shared=True)
+    view = read(db).model_dump(mode="python")
+    monkeypatch.setattr(
+        overall.returns_view,
+        "read_detail",
+        lambda *a, **k: pytest.fail("ambiguous identity must not fetch detail"),
+    )
+    with db.session_factory() as session:
+        value = overall.read_instrument_card(session, ISIN, overview=view)
+    assert value["summary"]["pnl"]["value"] is None
+    assert not any(row["included"] for row in value["accounts"])
+    assert all(
+        row["exclusion_reason"] == "source_account_identity_mapping_conflict"
+        for row in value["accounts"]
+    )
+
+
 def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch):
     from test_returns_read_efficiency_service import _saved_investment
 
@@ -588,7 +622,11 @@ def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch)
         )
         assert client.get("/api/returns/income?kind=coupon").status_code == 200
         assert client.get("/api/returns/income?kind=forecast").status_code == 422
+        assert client.get("/api/returns/income?kind=coupon&kind=dividend").status_code == 422
         assert client.get("/api/returns/instrument-card?isin=wrong").status_code == 422
+        assert (
+            client.get(f"/api/returns/instrument-card?isin={isin}&isin={isin}").status_code == 422
+        )
     assert snapshot(db) == before
 
 
