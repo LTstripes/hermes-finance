@@ -212,7 +212,8 @@ class SourceReturnProof(Base):
     __tablename__ = "source_return_proofs"
     __table_args__ = (
         CheckConstraint(
-            "proof_version = 'source_return_custody_v1'", name="ck_source_return_proof_version"
+            "proof_version IN ('source_return_custody_v1','source_return_investment_v1')",
+            name="ck_source_return_proof_version",
         ),
         CheckConstraint("length(dependency_digest) = 64", name="ck_source_return_proof_dependency"),
         {"sqlite_autoincrement": True},

@@ -296,6 +296,8 @@ def preview_batch(
     account_bindings: list[dict] | None = None,
     requested_from: date | None = None,
     requested_to: date | None = None,
+    income_report: bytes | None = None,
+    history_from_zero: bool = False,
 ) -> dict:
     """Read-only snapshot, bounded memory; no receipts, sources or month required."""
     if not 1 <= len(originals) <= MAX_DOCUMENTS:
@@ -309,7 +311,26 @@ def preview_batch(
     ):
         raise MyBrokerError("preflight_range_invalid")
     with coherent_read_snapshot(session):
-        return _preview(session, originals, account_bindings or [], requested_from, requested_to)
+        result = _preview(session, originals, account_bindings or [], requested_from, requested_to)
+        if income_report is not None:
+            from hermes_finance.services.source_report_preview import preview_source_reports
+
+            if (
+                not income_report
+                or len(income_report) > MAX_BYTES
+                or sum(len(raw) for _, raw in originals) + len(income_report) > MAX_BATCH_BYTES
+            ):
+                raise MyBrokerError("document_size_invalid")
+            if any(e["binder_blockers"] for e in result["documents"]):
+                raise MyBrokerError("source_return_original_binder_conflict")
+            result["source_return_preview"] = preview_source_reports(
+                session,
+                result["documents"],
+                originals,
+                income_report,
+                history_from_zero=history_from_zero,
+            )
+        return result
 
 
 def _preview(session, originals, account_bindings, requested_from, requested_to):

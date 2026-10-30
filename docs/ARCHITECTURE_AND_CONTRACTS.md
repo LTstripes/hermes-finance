@@ -2203,7 +2203,7 @@ pending. No RUB assumption supplies this proof.
 
 Schema `0065_source_return_proofs` adds empty `source_return_proofs` and
 `source_return_proof_dependencies`. This does not reparse, extend or rewrite V1
-manifest/observation/review operations. A proof holds only a version, explicit
+manifest/observation/review operations. A custody-v1 proof holds only a version, explicit
 request identity, native account, all selected immutable source hashes/parsers/
 manifest heads, server-proven cancellation months and dependency digest/time.
 It holds no raw XML, filenames/paths, quantities, money, rates, positions or
@@ -2291,6 +2291,100 @@ Owner financial GO or UAT and does not authorize protected runtime operations.
 original XML files) and an optional JSON `intent`. This is a pre-import inventory;
 it neither executes BrokerMonth Preview nor creates a ReportingMonth, source,
 receipt, mapping or financial row. There is no batch Apply endpoint.
+
+An optional multipart `income_report` adds one Alfa investment-report PDF to the
+same Preview, plus the explicit boolean intent `history_from_zero` (default false).
+The PDF shares the 8 MiB per-file / 32 MiB total bounds and existing bounded text
+extractor (40 pages, no OCR/network). Only accounts selected by uploaded XML are
+read; other PDF accounts and future cash-flow tables are excluded. This is the
+investment-report family, separate from the accepted depository-income PDF Apply
+contract. A wrong family, inferred XML range or different PDF closing date fails
+explicitly. The PDF declared range must cover the entire XML interval.
+
+`source_return_preview` reuses S1, the source journal, InstrumentEvent/CashLeg
+economics, Modified Dietz and XIRR. After the existing immutable XML Save, an
+explicit **Save PDF links** can append `source_return_investment_v1` on the
+existing source-proof host (schema 0067). It retains selected-account normalized
+PDF payout/control cells, exact-native identity label hashes, cancellation
+operands and unresolved-structure descriptors, never originals, extracted text,
+paths, names or calculated returns. It creates no cash, financial receipt,
+Apply/Close authority or parallel ledger. S1 revisions and CLOSED financial rows
+are untouched. One original per selected account is required for this Save;
+multiple originals for one account remain Preview-only until disambiguated.
+
+The bounded single-use server form binds exact source hash/filename/parser and
+frozen manifest, native account, declared interval, current classifications,
+meaningful source decisions, overlapping source membership, physical database
+incarnation and the backend Python implementation (including transitive financial
+helpers). Any backend code change conservatively retires this profile. Scoped monotonic classification tokens detect
+ABA/deletion/reinsertion; unrelated later intervals and no-change XML resaves do
+not retire the proof. Legacy unscoped dependency tokens remain conservative.
+Under the held SQLite writer reservation, confirmation revalidates every account
+and appends the entire batch atomically or none. Native-material or explicit
+classification conflicts block Save. A changed proof for the same account/exact
+interval requires an explicit replacement acknowledgement; the old row remains.
+Request ID/fingerprint readback recovers a lost ACK without repeating a write.
+
+`GET /api/source-returns/investment-reports` and ordinary source monthly,
+instrument and Returns readers derive results afresh from retained XML Money
+and typed evidence after Reload. Latest proof only, with no numeric fallback
+when stale. Historical outer endpoints cannot supply interior monthly EOD.
+Exact full-month proofs can supply that month's existing estimate; a complete
+from-zero proof supplies its exact historical interval. Any code/dependency or
+database-incarnation change requires fresh original Preview and confirmation.
+No prepared valuation packet is activated by these routes.
+
+Actual XML Money is counted once. PDF payout rows corroborate ISIN via whole
+account/kind/payment-day/currency/registration groups and exact net sums, with a
+unique consistent registration-to-ISIN match across the original. No subset-sum,
+name/date/amount-only guess or new PDF cash event is permitted. Multiple Money
+occurrences of the same fixed group may match one PDF row; ambiguous, conflicting
+or incomplete groups remain unresolved. Exact native trade IDs, or an unambiguous
+full native security label for anonymous NKD, must additionally reproduce native
+settlement cash including commission. Native trade T already includes NKD; Money
+corroborates T and separate fees, not a second NKD charge. REPO cash stays separate
+from ordinary trades even on the same security/day. Redemption requires the exact
+registration/ISIN and source cancellation quantity; it remains principal.
+
+The response gives each uploaded interval its real endpoints, account growth and
+approximate period Modified Dietz, money-weighted period return and annual XIRR.
+It never fabricates interior monthly EOD or an exact TWRR. History-from-zero is an
+explicit Owner assertion checked against every observed opening quantity and RUB
+cash; only then may an explicit zero quantity supply a missing zero opening value.
+Nonzero contradictions fail. Closing positions must match the PDF RUB values and
+quantities; explicit closed-issue observations and a zero quantity bridge can
+establish an exited position under that inception assertion. Money/cash, native
+quantity, PDF capital and comparable reported P&L controls remain visible. Missing
+or mismatched instrument evidence withholds that full instrument metric and keeps
+known components. Source-wide malformed PDF evidence remains a visible restriction.
+Account-only taxes, generic fees, compensation and REPO financing are disclosed
+without arbitrary allocation to instruments; linked instrument cash/valuation is
+not a claim of complete personal after-tax return. Unknown external-flow status
+withholds account growth/rates. A known source-control discrepancy labels the
+calculated account observation partial instead of hiding every known component.
+
+Unresolved internal payout attribution does not erase known account cash growth,
+but withholds full P&L and all rates for potentially affected instruments unless
+exact source evidence excludes them. An unobserved coupon/dividend component is
+NULL, never zero; the existing linked known subtotal stays partial and visible.
+Unrecognized native security movements, including opposite movements with zero
+endpoint net quantity, withhold full account and affected instrument P&L/rates.
+Only an exact cancellation already corroborated by its principal Money is recognized
+as redemption. Native service connection timestamp rows are metadata, not movement
+proof. Other source syntax advisories remain visible and qualify computable
+projections as partial; they never grant financial source completeness. The known
+cash/valuation subtotal can remain visible when full movement meaning/value is
+unknown. No inferred zero or extra before-tax metric is introduced.
+
+Saved-history comparison is advisory: stable native keys compare all material
+fields, while Money repeats compare exact signatures and occurrence multiplicity
+across overlapping originals (maximum observed multiplicity, not their sum).
+Identityless REPO keys serve comparison only. New/repeated/conflicting observations
+are separate and never authorize replacement of accepted mappings or CLOSED rows.
+The fingerprint includes exact original bytes/filenames, PDF, inception assertion,
+source heads/manifests and captured classification revisions. Changing inputs
+retires the UI result; Reload requires another explicit Preview. Historical Preview
+does not require creating or closing old reporting months.
 
 Intent permits `account_bindings` with the existing identity-preview shape and
 optional `requested_from` / `requested_to` dates supplied together. Omitted dates

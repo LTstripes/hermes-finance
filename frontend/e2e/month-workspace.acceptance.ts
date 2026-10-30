@@ -1,5 +1,133 @@
 import { expect, type Page, test } from "@playwright/test";
 
+test("XML plus one Alfa PDF preview retains historical scope without a financial write", async ({
+  page,
+  request,
+}, info) => {
+  await page.setViewportSize({ width: 1366, height: 1000 });
+  const metric = (value: string | null) => ({ value, status: "provisional", reason_codes: [] });
+  const intervals = ["7114901", "7114902"].map((source_account) => ({
+    source_account,
+    source_sha256: source_account.repeat(8),
+    opening_date: "2038-12-31",
+    closing_date: "2039-10-31",
+    period_kind: "historical_interval",
+    history_from_zero: false,
+    pnl: metric("12345"),
+    modified_dietz: metric("0.01235"),
+    xirr_period: metric("0.02"),
+    xirr_annualized: metric("0.03"),
+    instruments: [],
+    account_only: [],
+    unallocated_payouts: [],
+    reason_codes: [],
+    reconciliation: {
+      xml_payout_occurrences: 2,
+      linked_payout_occurrences: 2,
+      cash_delta_kopecks: "0",
+      pdf_closing_delta_kopecks: "0",
+      pdf_pnl_delta_kopecks: "0",
+    },
+  }));
+  intervals[0].pnl = metric(null);
+  intervals[0].modified_dietz = metric(null);
+  intervals[0].xirr_period = metric(null);
+  intervals[0].xirr_annualized = metric(null);
+  Object.assign(intervals[0], {
+    known_subtotal: metric("12345"),
+    source_advisories: ["4_Transfers_unsupported"],
+    unresolved_movements: [{ isin: "RU000A000000", reason: "unresolved_native_security_movement" }],
+    instruments: [
+      {
+        isin: "RU000A000000",
+        pnl: metric(null),
+        known_subtotal: metric("9000"),
+        modified_dietz: metric(null),
+        xirr_period: metric(null),
+        xirr_annualized: metric(null),
+        event_count: 2,
+        reason_codes: ["unresolved_native_security_movement"],
+      },
+    ],
+  });
+  let previews = 0;
+  const writes: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && /\/(?:apply|close)(?:\?|$)/.test(new URL(r.url()).pathname))
+      writes.push(r.url());
+  });
+  await page.route("**/api/mybroker-preflight/preview", async (route) => {
+    const data = route.request().postDataBuffer()?.toString() ?? "";
+    expect((data.match(/name="income_report"/g) ?? []).length).toBe(1);
+    expect((data.match(/name="files"/g) ?? []).length).toBe(2);
+    previews++;
+    await route.fulfill({
+      json: {
+        source_return_preview: {
+          contract: "xml-pdf-source-return-preview-v1",
+          financial_apply_available: false,
+          close_available: false,
+          pdf_period: { covered_from: "2039-01-01", covered_to: "2039-10-31" },
+          pdf_payout_rows: 2,
+          source_accounts: ["7114901", "7114902"],
+          comparison: [],
+          intervals,
+        },
+      },
+    });
+  });
+  const created = await request.post("/api/months", {
+    data: { year: 2039, month: 10, snapshot_date: "2039-10-31", source: "manual" },
+  });
+  expect(created.status()).toBe(201);
+  const month = await created.json();
+  await page.goto(`/v2/close?month=${month.id}`);
+  await tile(page, /Брокерские выписки/);
+  const buffers = await Promise.all(
+    ["a", "b"].map(async (suffix) =>
+      (await request.get(`/api/synthetic-broker-source/workspace-october-${suffix}`)).body(),
+    ),
+  );
+  await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(
+    buffers.map((buffer, i) => ({
+      name: `Брокерский 711490${i + 1} (01.01.39-31.10.39).xml`,
+      mimeType: "application/xml",
+      buffer: Buffer.from(
+        buffer
+          .toString()
+          .replaceAll("7114001", "7114901")
+          .replaceAll("7114002", "7114902")
+          .replaceAll("2040", "2039"),
+      ),
+    })),
+  );
+  await expect(page.getByText(/Брокерский 711490[12].*: Сохран[её]н$/)).toHaveCount(2);
+  await page.getByText("Расшифровка купонов и дивидендов — PDF Альфы", { exact: true }).click();
+  await expect(page.locator('input[type="file"][accept=".xml"]')).toHaveCount(1);
+  await page.getByLabel("Загрузить PDF Альфы").setInputFiles({
+    name: "synthetic-report.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("synthetic"),
+  });
+  const inspect = page.getByRole("button", { name: "Проверить XML и PDF", exact: true });
+  await inspect.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Период PDF: 2039-01-01/)).toBeVisible();
+  await expect(page.getByText(/Исторический период/)).toHaveCount(2);
+  await expect(page.getByText(/Рублёвый результат счёта/).last()).toContainText("123.45");
+  await expect(page.getByText(/Рублёвый результат счёта/).first()).toContainText("Не определено");
+  await expect(page.getByText(/Дополнительные разделы исходного XML/)).toBeVisible();
+  await expect(page.getByText(/Известная часть по денежным операциям/)).toContainText("123.45");
+  await fits(page);
+  await page.screenshot({
+    path: info.outputPath("xml-pdf-historical-preview.png"),
+    fullPage: true,
+  });
+  await inspect.click();
+  await expect.poll(() => previews).toBe(2);
+  expect(writes).toEqual([]);
+});
+
 async function tile(page: Page, name: string) {
   await page
     .getByRole("navigation", { name: "Разделы месяца" })

@@ -755,6 +755,13 @@ def read_instrument_returns(
     sources = []
     gaps = []
     selected, native_scope = _selected_sources(session, source_account)
+    from hermes_finance.services.source_investment_proofs import instrument_result
+
+    investment = instrument_result(
+        session, source_account, selected, requested_isin, opening_date, closing_date
+    )
+    if investment is not None:
+        return investment
     if session.info.get(FILE_PATH_KEY) is not None:
         # The ordinary API and Returns share this path. A configured file is
         # authoritative for this call; failure cannot revive a caller's packet.

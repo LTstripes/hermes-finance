@@ -70,7 +70,10 @@ def _latest(session, source_account, native_scope=None):
         else SourceReturnProof.source_account == source_account
     )
     return session.scalar(
-        select(SourceReturnProof).where(key).order_by(SourceReturnProof.id.desc()).limit(1)
+        select(SourceReturnProof)
+        .where(key, SourceReturnProof.proof_version == "source_return_custody_v1")
+        .order_by(SourceReturnProof.id.desc())
+        .limit(1)
     )
 
 

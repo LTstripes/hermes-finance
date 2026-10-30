@@ -171,6 +171,7 @@ class SourceMonthlyReturns:
     currency: str = "RUB"
     approximate: bool = True
     source_proof: dict | None = None
+    investment_reports: tuple[dict, ...] = ()
 
     def to_dict(self):
         value = asdict(self)
@@ -716,6 +717,63 @@ def read_monthly_returns(
         )
         previous_closing = closing
         month = _next_month(month)
+    from hermes_finance.services.source_investment_proofs import read_reports
+
+    investment_reports = read_reports(session, source_account=source_account)
+    for proof in investment_reports:
+        for index, row in enumerate(rows):
+            if (str(row.result.opening_date + timedelta(days=1)), str(row.result.closing_date)) != (
+                proof["covered_from"],
+                proof["covered_to"],
+            ):
+                continue
+            interval = proof["interval"]
+
+            def amount(key):
+                return None if interval is None or interval[key] is None else int(interval[key])
+
+            reasons = (
+                tuple(proof["reason_codes"])
+                if interval is None
+                else tuple(interval["reason_codes"])
+            )
+            changed = replace(
+                row.result,
+                opening_kopecks=amount("opening_kopecks"),
+                closing_kopecks=amount("closing_kopecks"),
+                contributions_kopecks=amount("contributions_kopecks"),
+                withdrawals_kopecks=amount("withdrawals_kopecks"),
+                growth_kopecks=None
+                if interval is None or interval["pnl"]["value"] is None
+                else int(interval["pnl"]["value"]),
+                modified_dietz_return=None
+                if interval is None or interval["modified_dietz"]["value"] is None
+                else Decimal(interval["modified_dietz"]["value"]),
+                reason_codes=reasons,
+                missing_endpoint=interval is None
+                or interval["opening_kopecks"] is None
+                or interval["closing_kopecks"] is None,
+                assumptions_used=True,
+            )
+            rows[index] = replace(
+                row,
+                result=changed,
+                flags=reasons + ("source_only_xml_pdf",),
+                coupons_kopecks=amount("coupons_kopecks"),
+                dividends_kopecks=amount("dividends_kopecks"),
+                income_assumptions_used=True,
+            )
+            lower, upper = row.result.opening_date, row.result.closing_date
+            schedule = [(d, a, status) for d, a, status in schedule if not lower < d <= upper]
+            if interval is not None:
+                schedule.extend(
+                    (date.fromisoformat(f["date"]), int(f["amount_kopecks"]), f["status"])
+                    for f in interval["external_flows"]
+                )
+                if interval["pnl"]["value"] is not None:
+                    period_uncertain_months.discard(upper.replace(day=1))
+            else:
+                schedule.append((upper, 0, "unknown"))
     period = _period_totals(rows, schedule, period_uncertain_months)
     groups = []
     current = []
@@ -763,6 +821,7 @@ def read_monthly_returns(
         tuple(f for f in flows if f.status == "assumed"),
         tuple(gaps),
         source_proof=proof_status,
+        investment_reports=tuple(investment_reports),
     )
 
 

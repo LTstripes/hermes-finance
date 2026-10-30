@@ -24,6 +24,7 @@ class BatchIntent(BaseModel):
     account_bindings: list[IdentityAccountBinding] = Field(default_factory=list, max_length=100)
     requested_from: date | None = None
     requested_to: date | None = None
+    history_from_zero: bool = False
 
 
 class _MemoryUpload:
@@ -35,6 +36,7 @@ class _MemoryUpload:
 
     def __init__(self):
         self.originals = []
+        self.income_report = None
         self.intent = "{}"
         self.intent_seen = False
         self.file_count = 0
@@ -46,6 +48,7 @@ class _MemoryUpload:
         self.header_bytes = 0
         self.buffer = bytearray()
         self.filename = None
+        self.part_kind = None
 
     def on_header_begin(self):
         self.header_name = bytearray()
@@ -75,9 +78,13 @@ class _MemoryUpload:
             raise HTTPException(422, "preflight_multipart_invalid")
         name = options.get(b"name")
         if name == b"files" and b"filename" in options:
+            self.part_kind = "xml"
             self.file_count += 1
             if self.file_count > MAX_DOCUMENTS:
                 raise HTTPException(422, "preflight_batch_size_invalid")
+            self.filename = options[b"filename"].decode("utf-8")
+        elif name == b"income_report" and b"filename" in options and self.income_report is None:
+            self.part_kind = "pdf"
             self.filename = options[b"filename"].decode("utf-8")
         elif name == b"intent" and b"filename" not in options and not self.intent_seen:
             self.intent_seen = True
@@ -103,6 +110,8 @@ class _MemoryUpload:
     def on_part_end(self):
         if self.filename is None:
             self.intent = self.buffer.decode("utf-8")
+        elif self.part_kind == "pdf":
+            self.income_report = bytes(self.buffer)
         else:
             self.originals.append((self.filename, bytes(self.buffer)))
         self.buffer = bytearray()
@@ -178,6 +187,7 @@ async def _read_upload(request: Request) -> _MemoryUpload:
                                 "maxItems": MAX_DOCUMENTS,
                             },
                             "intent": {"type": "string", "default": "{}"},
+                            "income_report": {"type": "string", "format": "binary"},
                         },
                     }
                 }
@@ -198,6 +208,8 @@ async def preview(request: Request, session: Session = Depends(session_for_reque
             account_bindings=[b.model_dump() for b in requested.account_bindings],
             requested_from=requested.requested_from,
             requested_to=requested.requested_to,
+            income_report=upload.income_report,
+            history_from_zero=requested.history_from_zero,
         )
     except MyBrokerError as error:
         raise HTTPException(422, str(error)) from None
