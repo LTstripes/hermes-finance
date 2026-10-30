@@ -42,7 +42,10 @@ from hermes_finance.services.ai_analysis_bundle import (
 from hermes_finance.services.ai_analysis_bundle import (
     assemble_ai_analysis_bundle,
 )
-from hermes_finance.services.ai_source_returns import source_returns_section
+from hermes_finance.services.ai_source_returns import (
+    returns_overall_section,
+    source_returns_section,
+)
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.comments import list_monthly_comments
 from hermes_finance.services.debts import list_debts
@@ -77,10 +80,11 @@ from hermes_finance.services.positions import list_position_snapshots
 from hermes_finance.services.properties import list_property_snapshots
 from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.4.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json"
+SCHEMA_VERSION = "1.5.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -1897,11 +1901,19 @@ def assemble_ai_financial_review(
         ),
     }
 
-    sections["source_returns"] = source_returns_section(
-        session,
-        as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
-        reporting_period=reporting_period,
-    )
+    with source_read_snapshot(session):
+        source_account_refs = {}
+        sections["source_returns"] = source_returns_section(
+            session,
+            as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
+            reporting_period=reporting_period,
+            source_account_refs=source_account_refs,
+        )
+        sections["returns_overall"] = returns_overall_section(
+            session,
+            source_account_refs=source_account_refs,
+            source_section=sections["source_returns"],
+        )
 
     coverage = {
         "domains": {
@@ -1917,6 +1929,7 @@ def assemble_ai_financial_review(
             "budget_and_saving": _coverage_from_section(sections["budget_and_saving"]),
             "performance": _coverage_from_section(sections["performance"]),
             "source_returns": _coverage_from_section(sections["source_returns"]),
+            "returns_overall": _coverage_from_section(sections["returns_overall"]),
         }
     }
 
@@ -1929,6 +1942,15 @@ def assemble_ai_financial_review(
         }
         for code in sections["source_returns"]["reason_codes"]
     ]
+    extra_warnings.extend(
+        {
+            "code": code,
+            "severity": "info",
+            "scope": "sections.returns_overall",
+            "message": "Current Returns retains each component's dates and authority; the known mixed result is partial and is not full portfolio P&L.",
+        }
+        for code in sections["returns_overall"]["reason_codes"]
+    )
     if not plan_entered:
         extra_warnings.append(
             {
@@ -1956,6 +1978,14 @@ def assemble_ai_financial_review(
             "status": sections["source_returns"]["status"],
             "reason_codes": sections["source_returns"]["reason_codes"],
             "message": "Source-only observations retain per-metric limitations; they are separate from Performance v1.",
+        }
+    )
+    field_states.append(
+        {
+            "path": "sections.returns_overall",
+            "status": sections["returns_overall"]["status"],
+            "reason_codes": sections["returns_overall"]["reason_codes"],
+            "message": "Current available history is independent of the selected reporting month; per-component exclusions and unavailable rates remain explicit.",
         }
     )
     if performance_reasons:

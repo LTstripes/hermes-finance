@@ -77,6 +77,20 @@ def test_v1_3_linked_pairs_are_optional_but_canonical_fixture_emits_them() -> No
     _validate(without_linked_pairs)
 
 
+def test_v1_5_current_returns_are_optional_and_v1_4_remains_readable() -> None:
+    previous = _load(FIXTURE_PATH)
+    previous["schema_version"] = "1.4.0"
+    previous["$schema"] = previous["$schema"].replace("1.5.0", "1.4.0")
+    previous["sections"].pop("returns_overall", None)
+    previous["coverage"]["domains"].pop("returns_overall", None)
+    _validate(previous)
+
+    additive = copy.deepcopy(previous)
+    additive["schema_version"] = "1.5.0"
+    additive["$schema"] = additive["$schema"].replace("1.4.0", "1.5.0")
+    _validate(additive)
+
+
 @pytest.mark.parametrize(
     ("path", "updates"),
     [

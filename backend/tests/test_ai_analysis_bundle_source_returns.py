@@ -21,8 +21,14 @@ from test_statement_import_mybroker_preflight import (
 )
 
 from hermes_finance.main import create_app
-from hermes_finance.persistence import SourceMoneyClassification
+from hermes_finance.persistence import (
+    Account,
+    Instrument,
+    PositionSnapshot,
+    SourceMoneyClassification,
+)
 from hermes_finance.services import ai_source_returns as adapter
+from hermes_finance.services import returns_overall
 from hermes_finance.services import source_investment_proofs as proofs
 from hermes_finance.services.ai_financial_review import (
     assemble_ai_financial_review,
@@ -70,6 +76,7 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
             session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
         )
         exported = report["sections"]["source_returns"]
+        current = report["sections"]["returns_overall"]["data"]
         interval = _first(exported)
         instrument = interval["instruments"][0]
         ordinary = proofs.read_reports(session, source_account=ACCOUNT)[0]["interval"]
@@ -77,6 +84,29 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         detail = read_detail(
             session, scope=f"source:{ACCOUNT}", start=START, end=END, isin=instrument["isin"]
         )
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        card = returns_overall.read_instrument_card(session, instrument["isin"], overview=overview)
+    assert report["schema_version"] == "1.5.0"
+    assert current["scope"] == "current_available_history_not_limited_to_selected_month"
+    assert current["mixed_result"]["known_result"] == adapter._overall_metric(
+        overview["mixed_result"]["known_result"]
+    )
+    for key in ("coupon_income", "dividend_income"):
+        assert current[key]["known_total"] == adapter._overall_metric(overview[key]["known_total"])
+        assert current[key]["accounts"][0]["source_account_ref"] == "source-account-1"
+    current_card = current["instruments"][0]
+    assert current_card["isin"] == card["isin"]
+    assert current_card["summary"]["valuation_dates"] == [
+        day.isoformat() if isinstance(day, date) else day
+        for day in card["summary"]["valuation_dates"]
+    ]
+    for key in ("pnl", "rate", "coupons", "dividends", "redemption", "costs", "taxes"):
+        assert current_card["summary"][key] == adapter._overall_metric(card["summary"][key])
+    current_account = current_card["accounts"][0]
+    assert current_account["proof_status"] == "current"
+    assert current_account["source_interval_ref"] == interval["ref"]
+    assert current_account["detail"]["opening_quantity"] == detail["opening_quantity"]
+    assert current_account["detail"]["analysis"]["metrics"] == instrument["metrics"]
     assert interval["opening_date"] == str(START) and interval["closing_date"] == str(END)
     assert interval["account"]["metrics"]["pnl"]["value"]["amount"] == "90.00"
     assert Decimal(instrument["metrics"]["pnl"]["value"]["amount"]) * 100 == Decimal(
@@ -108,7 +138,13 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         )
         assert response.status_code == 200, response.text
         assert response.json()["sections"]["source_returns"] == exported
-    wire = json.dumps(exported)
+        assert response.json()["sections"]["returns_overall"]["data"] == current
+        ordinary_card = client.get(
+            "/api/returns/instrument-card", params={"isin": instrument["isin"]}
+        )
+        assert ordinary_card.status_code == 200, ordinary_card.text
+        assert ordinary_card.json()["summary"]["pnl"]["value"] == card["summary"]["pnl"]["value"]
+    wire = json.dumps({"history": exported, "current": current})
     for forbidden in (
         ACCOUNT,
         "1234567",
@@ -119,6 +155,9 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         "source_references",
         "document",
         "event_key",
+        "canonical_account_id",
+        "account_id",
+        "instrument_id",
     ):
         assert forbidden not in wire
     assert snapshot(database) == before
@@ -138,13 +177,175 @@ def test_latest_stale_scope_never_revives_numeric_month_or_history(database, mon
             row.classification = old
             session.commit()
     with database.session_factory() as session:
-        section = _section(session)
+        refs = {}
+        section = adapter.source_returns_section(
+            session, as_of_date=END, reporting_period=(2030, 1), source_account_refs=refs
+        )
+        current = adapter.returns_overall_section(
+            session, source_account_refs=refs, source_section=section
+        )["data"]
     row = _first(section)
     assert row["currentness"] == "stale" and row["reason_codes"]
     assert row["account"] is None and row["instruments"] == []
     account = section["data"]["accounts"][0]
     assert account["all_history_ref"] == row["ref"]
     assert account["selected_month"]["interval_ref"] == row["ref"]
+    assert current["source_accounts"][0]["proof_status"] == "stale"
+    assert current["mixed_result"]["known_result"]["value"] is None
+    assert current["coupon_income"]["known_total"]["value"] is None
+    assert current["dividend_income"]["known_total"]["value"] is None
+    assert all(a["detail"] is None for i in current["instruments"] for a in i["accounts"])
+
+
+def test_current_available_history_is_not_limited_to_selected_month_or_as_of(database, monkeypatch):
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 1, 15)
+        )
+    history = report["sections"]["source_returns"]["data"]
+    current = report["sections"]["returns_overall"]["data"]
+    assert history["as_of_date"] == "2030-01-15"
+    assert history["accounts"][0]["all_history_ref"] is None
+    assert current["source_accounts"][0]["period"]["end"] == str(END)
+    assert current["source_accounts"][0]["result"]["pnl"]["value"]["amount"] == "90.00"
+    account = current["instruments"][0]["accounts"][0]
+    assert account["source_interval_ref"] is None
+    assert account["detail"]["analysis"]["metrics"]["xirr_annualized"]["value"] is not None
+    assert account["detail"]["analysis"]["metrics"]["xirr_period"]["value"] is not None
+    assert snapshot(database) == before
+
+
+def test_complete_export_reuses_source_derivation_and_discards_snapshot_cache(
+    database, monkeypatch
+):
+    from hermes_finance.services.source_monthly_returns import (
+        _SOURCE_INVESTMENT_READS,
+        source_read_snapshot,
+    )
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+    original = proofs._derive
+    calls = []
+
+    def derive(*args, **kwargs):
+        calls.append(args[1].id)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", derive)
+    with database.session_factory() as session:
+        with source_read_snapshot(session):
+            _section(session)
+        baseline = len(calls)
+        assert _SOURCE_INVESTMENT_READS not in session.info
+    calls.clear()
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
+        )
+        assert _SOURCE_INVESTMENT_READS not in session.info
+    assert report["sections"]["returns_overall"]["data"]["instruments"][0]["accounts"][0]["detail"]
+    assert len(calls) == baseline
+
+
+def test_saved_gold_projection_keeps_observation_date_cost_result_and_privacy(database):
+    with database.session_factory() as session:
+        month = create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+        account = Account(name="private-account-424242", account_type="other")
+        instrument = Instrument(name="Synthetic saved gold", instrument_type="gold")
+        session.add_all([account, instrument])
+        session.flush()
+        session.add(
+            PositionSnapshot(
+                reporting_month_id=month.id,
+                account_id=account.id,
+                instrument_id=instrument.id,
+                quantity=Decimal("2"),
+                average_cost_per_unit_kopecks=5000,
+                market_price_per_unit_kopecks=7450,
+                market_value_kopecks=14900,
+                cost_basis_kopecks=10000,
+                unrealized_result_kopecks=4900,
+                price_date=date(2030, 1, 29),
+                manual_adjustment=False,
+            )
+        )
+        month.status = "closed"
+        session.commit()
+    before = snapshot(database)
+    with database.session_factory() as session:
+        section = adapter.returns_overall_section(
+            session, source_account_refs={}, source_section={"data": None}
+        )
+        ordinary = returns_overall.read_overall(session, include_instrument_details=True)
+    gold = section["data"]["gold"]
+    saved = gold["snapshots"][0]
+    assert saved["date"] == "2030-01-29" and saved["quantity"] == "2"
+    for name in ("market_value", "cost_basis", "unrealized_result", "cost_return"):
+        assert saved[name] == adapter._overall_metric(ordinary["gold"]["snapshots"][0][name])
+    assert saved["cost_return"]["value"] == "49.00"
+    assert gold["period_result"]["value"] is None
+    wire = json.dumps(section)
+    for forbidden in (
+        "private-account-424242",
+        "account_id",
+        "instrument_id",
+        "cost_basis_kopecks",
+    ):
+        assert forbidden not in wire
+    assert snapshot(database) == before
+
+
+def test_current_and_history_keep_one_snapshot_when_proof_changes_between_sections(
+    database, monkeypatch
+):
+    from hermes_finance.services import ai_financial_review as review
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
+    original = review.source_returns_section
+    written = False
+
+    def interleaved(*args, **kwargs):
+        nonlocal written
+        section = original(*args, **kwargs)
+        if not written:
+            written = True
+            with database.session_factory() as writer:
+                row = writer.scalar(
+                    select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+                )
+                row.classification = "unknown" if row.classification != "unknown" else "fee"
+                writer.commit()
+        return section
+
+    monkeypatch.setattr(review, "source_returns_section", interleaved)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
+        )
+    assert written and _first(report["sections"]["source_returns"])["currentness"] == "current"
+    assert (
+        report["sections"]["returns_overall"]["data"]["source_accounts"][0]["proof_status"]
+        == "current"
+    )
+    with database.session_factory() as session:
+        fresh = assemble_ai_financial_review(
+            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
+        )
+    assert _first(fresh["sections"]["source_returns"])["currentness"] == "stale"
+    assert (
+        fresh["sections"]["returns_overall"]["data"]["source_accounts"][0]["proof_status"]
+        == "stale"
+    )
 
 
 def _derived(doc, raw, report, money, *, from_zero=True):
@@ -258,6 +459,43 @@ def test_exact_units_large_values_precision_and_strict_privacy_schema():
     extra["sections"]["source_returns"]["data"]["accounts"][0]["native_account"] = "private-999"
     with pytest.raises(ValidationError):
         Draft202012Validator(SCHEMA).validate(extra)
+    for key in ("account_id", "instrument_id", "scope", "proof_id", "path", "raw_proof"):
+        extra = copy.deepcopy(fixture)
+        extra["sections"]["returns_overall"]["data"][key] = "private-999"
+        with pytest.raises(ValidationError):
+            Draft202012Validator(SCHEMA).validate(extra)
+    for path, key in (
+        (("source_accounts", 0), "account_id"),
+        (("mixed_result", "components", 0), "id"),
+        (("instruments", 0, "accounts", 0), "canonical_account_id"),
+        (("instruments", 0, "accounts", 0, "detail", "analysis", "events", 0), "event_key"),
+    ):
+        extra = copy.deepcopy(fixture)
+        target = extra["sections"]["returns_overall"]["data"]
+        for component in path:
+            target = target[component]
+        target[key] = "private-999"
+        with pytest.raises(ValidationError):
+            Draft202012Validator(SCHEMA).validate(extra)
+
+
+def test_current_returns_metric_preserves_exact_zero_unknown_units_and_methods():
+    from hermes_finance.services.returns_view import metric
+
+    assert adapter._overall_metric(metric(900719925474099399))["value"]["amount"] == (
+        "9007199254740993.99"
+    )
+    assert adapter._overall_metric(metric(0))["value"]["amount"] == "0.00"
+    unknown = adapter._overall_metric(metric(reasons=("source_missing",), estimate=False))
+    assert unknown["value"] is None and unknown["reason_codes"] == ["source_missing"]
+    assert not unknown["approximate"]
+    rate = adapter._overall_metric(
+        metric("0.12345678901234567890123456789", unit="fraction", method="modified_dietz")
+    )
+    assert rate["value"] == "12.345678901234567890123456789"
+    assert rate["method"] == "modified_dietz" and rate["unit"] == "percent"
+    with pytest.raises(ValueError, match="unit_unsupported"):
+        adapter._overall_metric(metric("1", unit="unapproved_unit"))
 
 
 def test_monthly_reader_fallback_schema_and_partial_cutoff(database, monkeypatch):

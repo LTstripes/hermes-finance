@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from decimal import Decimal, localcontext
 
 from hermes_finance.domain.values import RubleAmount
-from hermes_finance.services import source_investment_proofs
+from hermes_finance.services import returns_overall, source_investment_proofs
 from hermes_finance.services.returns_view import _source_scopes
 from hermes_finance.services.source_instrument_returns import (
     _identities,
@@ -329,7 +329,7 @@ def _monthly_interval(session, account, row, flows):
     }
 
 
-def source_returns_section(session, *, as_of_date, reporting_period):
+def source_returns_section(session, *, as_of_date, reporting_period, source_account_refs=None):
     """Build an additive section without joining source aliases to Account IDs."""
     with source_read_snapshot(session):
         analyses = {}
@@ -344,6 +344,9 @@ def source_returns_section(session, *, as_of_date, reporting_period):
         month_start = date(*reporting_period, 1)
         month_end = month_start.replace(day=monthrange(*reporting_period)[1])
         for ordinal, account in enumerate(accounts, 1):
+            if source_account_refs is not None:
+                # Request-local representation context only; never serialized.
+                source_account_refs[f"source:{account}"] = f"source-account-{ordinal}"
             selected, _ = _selected_sources(session, account)
             identities = _identities([v for _, v, e in selected if not e and v is not None])
             metadata = {
@@ -464,3 +467,297 @@ def _is_full_month(interval):
     first = date.fromisoformat(interval["opening_date"]) + timedelta(days=1)
     last = date.fromisoformat(interval["closing_date"])
     return first.day == 1 and last == first.replace(day=monthrange(first.year, first.month)[1])
+
+
+OVERALL_READING_GUIDE = {
+    "snapshot": "Current persisted Returns snapshot, independent of the selected reporting month and its historical as_of_date. Observation dates and intervals belong to each operand; generated_at is not a valuation date.",
+    "mixed_result": "Known included nonoverlapping components only. This is partial, not full portfolio P&L or a lower bound: omitted components may be negative. Inspect selected, available, included, exclusion_reason, dates, method and authority. There is no common portfolio rate.",
+    "counting": READING_GUIDE["counting"],
+    "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies.",
+    "gold": "Saved valuation and cost-based unrealized result only where supported by the shared reader. Cost return is nonannualized. Snapshot observations are not a dated trading history or realized return.",
+    "instruments": "Unified instrument summaries retain their own supported amount and date bounds. Every rate is exported independently with its method and availability; do not sum account rates.",
+    "unknown": READING_GUIDE["unknown"],
+    "identity": "Source account refs match source_returns within this file. Component and saved snapshot refs are local pseudonyms, not account numbers or database identities.",
+    "authority": "Per-component authority remains source_only or accepted_snapshot. This read-only presentation does not confer financial Close authority on provisional source observations.",
+}
+
+
+def _overall_date(value):
+    return value.isoformat() if isinstance(value, date) else value
+
+
+def _overall_period(value):
+    if value is None:
+        return None
+    return {key: _overall_date(value[key]) for key in ("start", "end")}
+
+
+def _overall_metric(raw):
+    """Only unit conversion; preserve the common reader's exact support/method."""
+    unit = raw["unit"]
+    if unit not in {"kopecks", "fraction"}:
+        raise ValueError("returns_overall_metric_unit_unsupported")
+    return {
+        "value": _percent(raw["value"]) if unit == "fraction" else _money(raw["value"]),
+        "unit": "percent" if unit == "fraction" else "RUB",
+        "reason_codes": sorted(set(raw["reason_codes"])),
+        "method": raw["method"],
+        "approximate": raw["estimate"],
+    }
+
+
+def _overall_result(raw):
+    if raw is None:
+        return None
+    return {
+        "period": _overall_period(raw["period"]),
+        **{key: _overall_metric(raw[key]) for key in ("pnl", "rate", "coupons", "dividends")},
+    }
+
+
+def _overall_income(raw, account_refs):
+    return {
+        "known_total": _overall_metric(raw["known_total"]),
+        "partial": raw["partial"],
+        "selected_accounts": raw["selected_accounts"],
+        "included_accounts": raw["included_accounts"],
+        "accounts": [
+            {
+                "source_account_ref": account_refs[row["scope"]],
+                "period": _overall_period(row["period"]),
+                "amount": _overall_metric(row["amount"]),
+                "proof_status": row["proof_status"],
+                "included": row["included"],
+                "exclusion_reason": row["exclusion_reason"],
+                "reason_codes": sorted(set(row["reason_codes"])),
+            }
+            for row in raw["accounts"]
+        ],
+        "reason_codes": sorted(set(raw["reason_codes"])),
+    }
+
+
+def _overall_mixed(raw, account_refs):
+    return {
+        **{key: _overall_metric(raw[key]) for key in ("known_result", "rate")},
+        **{
+            key: raw[key]
+            for key in (
+                "selected_component_count",
+                "available_component_count",
+                "included_component_count",
+            )
+        },
+        "components": [
+            {
+                "ref": f"returns-component-{index}",
+                "source_account_ref": account_refs.get(row["id"]),
+                "category": row["category"],
+                **{key: row[key] for key in ("selected", "available", "included")},
+                "amount": _overall_metric(row["amount"]),
+                "interval": _overall_period(row["interval"]),
+                "valuation_date": _overall_date(row["valuation_date"]),
+                "coverage": {
+                    "status": row["coverage"]["status"],
+                    "reason_codes": sorted(set(row["coverage"]["reason_codes"])),
+                },
+                **{key: row[key] for key in ("method", "authority", "exclusion_reason")},
+            }
+            for index, row in enumerate(raw["components"], 1)
+        ],
+        "reason_codes": sorted(set(raw["reason_codes"])),
+    }
+
+
+def _overall_gold(raw):
+    return {
+        "snapshots": [
+            {
+                "ref": f"returns-gold-snapshot-{index}",
+                "name": row["label"],
+                "date": _overall_date(row["date"]),
+                "quantity": row["quantity"],
+                **{
+                    key: _overall_metric(row[key])
+                    for key in ("market_value", "cost_basis", "unrealized_result", "cost_return")
+                },
+            }
+            for index, row in enumerate(raw["snapshots"], 1)
+        ],
+        "period_result": _overall_metric(raw["period_result"]),
+        "reason_codes": sorted(set(raw["reason_codes"])),
+    }
+
+
+def _overall_card(raw, account_refs, source_intervals, proof_instruments):
+    summary = raw["summary"]
+    accounts = []
+    for row in raw["accounts"]:
+        detail = row["detail"]
+        period = _overall_period(row["period"])
+        key = (
+            row["scope"],
+            None if period is None else (period["start"], period["end"]),
+            raw["isin"],
+        )
+        accounts.append(
+            {
+                "source_account_ref": account_refs[row["scope"]],
+                "source_interval_ref": source_intervals.get(key),
+                "period": period,
+                **{name: row[name] for name in ("proof_status", "included", "exclusion_reason")},
+                "reason_codes": sorted(set(row["reason_codes"])),
+                "detail": None
+                if detail is None
+                else {
+                    "period": _overall_period(detail["period"]),
+                    "opening_quantity": detail["opening_quantity"],
+                    "closing_quantity": detail["closing_quantity"],
+                    "conditional": detail["conditional"],
+                    **{
+                        name: _overall_metric(detail[name])
+                        for name in (
+                            "pnl",
+                            "rate",
+                            "coupons",
+                            "dividends",
+                            "buys",
+                            "sells",
+                            "conditional_pnl",
+                            "conditional_rate",
+                        )
+                    },
+                    "reason_codes": sorted(set(detail["reason_codes"])),
+                    # Existing explicit analysis/event allowlist, with independent
+                    # producer Dietz/XIRR support; never serialize the UI dict.
+                    "analysis": _instrument(
+                        raw["isin"],
+                        {"name": raw["name"], "kind": raw["kind"]},
+                        detail["analysis"],
+                        proof_instruments.get(key),
+                    ),
+                },
+            }
+        )
+    return {
+        "contract_version": raw["contract_version"],
+        "isin": raw["isin"],
+        "name": raw["name"],
+        "kind": raw["kind"],
+        "summary": {
+            "quantity": {
+                "value": summary["quantity"]["value"],
+                "partial": summary["quantity"]["partial"],
+                "reason_codes": sorted(set(summary["quantity"]["reason_codes"])),
+            },
+            "valuation_dates": [_overall_date(day) for day in summary["valuation_dates"]],
+            **{
+                name: _overall_metric(summary[name])
+                for name in (
+                    "reported_value",
+                    "pnl",
+                    "coupons",
+                    "dividends",
+                    "valuation_and_trades",
+                    "redemption",
+                    "costs",
+                    "taxes",
+                    "rate",
+                )
+            },
+            "partial": summary["partial"],
+            "reason_codes": sorted(set(summary["reason_codes"])),
+        },
+        "accounts": accounts,
+        "reason_codes": sorted(set(raw["reason_codes"])),
+    }
+
+
+def returns_overall_section(session, *, source_account_refs, source_section):
+    """Complete current snapshot, irrespective of the UI's lazy loading state."""
+    with source_read_snapshot(session):
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        source_intervals = {}
+        scope_by_ref = {value: key for key, value in source_account_refs.items()}
+        for account in (source_section["data"] or {}).get("accounts", []):
+            scope = scope_by_ref[account["ref"]]
+            for interval in account["intervals"]:
+                for instrument in interval["instruments"]:
+                    source_intervals[
+                        (
+                            scope,
+                            (interval["opening_date"], interval["closing_date"]),
+                            instrument["isin"],
+                        )
+                    ] = interval["ref"]
+        # Reuse the same request-local full proof reader already used above by
+        # source_returns. It supplies independent rate support, not new math.
+        canonical = _source_scopes(session)
+        proof_instruments = {}
+        for proof in sorted(
+            source_investment_proofs.read_reports(session), key=lambda p: p["proof_id"]
+        ):
+            if (
+                proof["status"] != "current"
+                or not proof["history_from_zero"]
+                or proof["interval"] is None
+            ):
+                continue
+            scope = "source:" + canonical.get(proof["source_account"], proof["source_account"])
+            period = (
+                (date.fromisoformat(proof["covered_from"]) - timedelta(days=1)).isoformat(),
+                proof["covered_to"],
+            )
+            for instrument in proof["interval"]["instruments"]:
+                proof_instruments[(scope, period, instrument["isin"])] = instrument
+        data = {
+            "contract_version": overview["contract_version"],
+            "scope": "current_available_history_not_limited_to_selected_month",
+            "reading_guide": dict(OVERALL_READING_GUIDE),
+            "overall": {
+                **{name: _overall_metric(overview["overall"][name]) for name in ("pnl", "rate")},
+                "partial": overview["overall"]["partial"],
+                "reason_codes": sorted(set(overview["overall"]["reason_codes"])),
+            },
+            "mixed_result": _overall_mixed(overview["mixed_result"], source_account_refs),
+            **{
+                name: _overall_income(overview[name], source_account_refs)
+                for name in ("coupon_income", "dividend_income")
+            },
+            "source_accounts": [
+                {
+                    "ref": source_account_refs[row["scope"]],
+                    "period": _overall_period(row["period"]),
+                    "result": _overall_result(row["result"]),
+                    "proof_status": row["proof_status"],
+                    "reason_codes": sorted(set(row["reason_codes"])),
+                    "instrument_count": row["instrument_count"],
+                }
+                for row in overview["source_accounts"]
+            ],
+            "instruments": [
+                _overall_card(
+                    returns_overall.read_instrument_card(session, row["isin"], overview=overview),
+                    source_account_refs,
+                    source_intervals,
+                    proof_instruments,
+                )
+                for row in overview["instruments"]
+            ],
+            "deposits": {
+                "interest": _overall_metric(overview["deposits"]["interest"]),
+                "partial": overview["deposits"]["partial"],
+                "periods": [
+                    {
+                        "period": _overall_period(row["period"]),
+                        "status": row["status"],
+                        "rows": row["rows"],
+                    }
+                    for row in overview["deposits"]["periods"]
+                ],
+                "reason_codes": sorted(set(overview["deposits"]["reason_codes"])),
+            },
+            "gold": _overall_gold(overview["gold"]),
+            "reason_codes": sorted(set(overview["reason_codes"])),
+        }
+        return {"status": "partial", "reason_codes": data["reason_codes"], "data": data}
