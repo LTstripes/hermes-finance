@@ -267,6 +267,84 @@ def _native(document, payload, *, display_names=None):
     return trades, names, primary, cancellations
 
 
+def _money_trade_token(row):
+    token = row.get("native_token", row.get("primary_id"))
+    match = re.fullmatch(
+        r"(?:Расчеты|Комиссия) по сделке ([0-9]{1,128}|B[0-9]{1,127})", row["operation"]
+    )
+    return match[1] if token is None and match else token
+
+
+def _trade_disclosure(row, primary, occurrences, *, account, isin, currency, start, end):
+    """One exact native trade's informational fields on one Money settlement.
+
+    Money remains the only cash authority. Native NKD/commission are disclosure,
+    never extra cash legs; neither a price unit nor an NKD inclusion basis is
+    established by this projection. Repeated principal occurrences are not split.
+    """
+    token = _money_trade_token(row)
+    candidates = primary.get(token, ())
+    if token is None or len(candidates) != 1 or occurrences[token] != 1:
+        return {}
+    trade = candidates[0]
+    core = trade["core"]
+    if (
+        trade.get("section") != "completed"
+        or trade.get("state") != "settled"
+        or trade.get("repo_observed")
+        or len(trade.get("ids", ())) != 2
+        or trade.get("identity") != digest([PROVIDER, account, trade["ids"]])
+        or core["source_account"] != account
+        or row["source_account"] != account
+        or core["isin"] != isin
+        or core["currency"] != currency
+        or row["currency"] != currency
+        or trade.get("settlement_date") != row["date"]
+        or any(row.get(key) not in (None, token) for key in ("native_token", "primary_id"))
+        or _money_trade_token({"operation": row["operation"]}) not in (None, token)
+    ):
+        return {}
+    try:
+        cash_date = date.fromisoformat(trade["settlement_date"])
+        depo_date = date.fromisoformat(trade["depo_settlement_date"])
+        quantity, price = Decimal(core["quantity"]), Decimal(core["price"])
+        if (
+            not start < cash_date <= end
+            or not start < depo_date <= end
+            or not quantity.is_finite()
+            or quantity == 0
+            or not price.is_finite()
+            or price < 0
+            or row["minor"] == 0
+            or (quantity > 0) != (row["minor"] < 0)
+        ):
+            return {}
+        amount, nkd, fee = (
+            None if value is None else _minor(value)
+            for value in (
+                core["trade_amount"],
+                trade.get("accrued_interest"),
+                trade.get("bank_commission"),
+            )
+        )
+        if any(value is not None and value < 0 for value in (amount, nkd, fee)):
+            return {}
+    except (ValueError, TypeError, KeyError, ArithmeticError, MyBrokerError):
+        return {}
+    return {
+        "native_identity": trade["identity"],
+        "native_ids": tuple(trade["ids"]),
+        "trade_time": core["trade_time"],
+        "cash_settlement_date": cash_date,
+        "depository_settlement_date": depo_date,
+        "quantity_delta": quantity,
+        "unit_price": price,
+        "native_trade_amount_kopecks": amount,
+        "accrued_interest_kopecks": nkd,
+        "commission_kopecks": fee,
+    }
+
+
 def _rates(start, end, v0, v1, flows, reasons=(), *, include_xirr=True):
     interval = calculate_interval_return((start, v0), (end, v1), flows)
     period = (
@@ -538,6 +616,9 @@ def _interval(
         if quantity != 0:
             issues[isin].add("repo_position_open_at_boundary")
     native_money = defaultdict(list)
+    trade_occurrences = Counter(
+        _money_trade_token(row) for row in money if row["classification"] == "trade_settlement"
+    )
     events = defaultdict(list)
     only = []
     external = []
@@ -718,6 +799,22 @@ def _interval(
                     classification=row["classification"],
                     classification_origin="native_money_group_bridge",
                     classification_status="confirmed",
+                    **(
+                        _trade_disclosure(
+                            row,
+                            primary,
+                            trade_occurrences,
+                            account=native_account,
+                            isin=isin,
+                            currency=currency,
+                            start=start,
+                            end=end,
+                        )
+                        if event_kind in {"BUY", "SELL"}
+                        and key in expected
+                        and amount == expected[key]
+                        else {}
+                    ),
                 )
             )
     positions = {p["isin"]: p for p in document["positions"]}
