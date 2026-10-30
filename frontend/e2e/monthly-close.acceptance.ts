@@ -482,10 +482,22 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
     expect(reopenedContrast).toBeGreaterThanOrEqual(4.5);
     await reopenedPrimary.click();
+    const panelWorkflow = page.waitForResponse((response) => {
+      const referer = response.request().headers().referer;
+      return (
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname === `/api/months/${old}/close-workflow` &&
+        !!referer &&
+        new URL(referer).searchParams.get("panel") === "close"
+      );
+    });
     await tile(page, /Закрыть месяц/);
-    await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Закрыть месяц", exact: true }).focus();
-    await page.keyboard.press("Enter");
+    expect((await panelWorkflow).ok()).toBe(true);
+    const closeButton = page.getByRole("button", { name: "Закрыть месяц", exact: true });
+    await expect(closeButton).toBeEnabled();
+    await closeButton.focus();
+    await expect(closeButton).toBeFocused();
+    await closeButton.press("Enter");
     await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("alertdialog")).toHaveCount(0);

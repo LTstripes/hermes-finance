@@ -6,6 +6,10 @@ test("basket actual API: all/one/none, signed source-only coverage, separate int
 }, testInfo) => {
   await page.goto("/v2/returns/account");
   const basket = page.getByRole("region", { name: "Моя доходность" });
+  await expect(basket).toHaveCount(0);
+  await page
+    .getByText("Дополнительная диагностика портфеля за выбранный период", { exact: true })
+    .press("Enter");
   await expect(basket.getByRole("checkbox")).toHaveCount(4);
   for (const box of await basket.getByRole("checkbox").all()) await expect(box).toBeChecked();
   const source = basket.getByRole("region", { name: "Известная часть по выпискам" });
