@@ -2310,7 +2310,7 @@ operands and unresolved-structure descriptors, never originals, arbitrary extrac
 text, paths, person/account names or calculated returns. Optional security-display
 metadata may retain exact-ISIN labels only from the completed Trade `p_name` and
 same-native Position `active_name` fields already bound by original verification.
-Labels are bounded to 256 characters without control characters and at most32
+Labels are bounded to 256 characters without C0 control characters and at most 32
 distinct values per ISIN. Ambiguity stays explicit; labels never establish identity
 or replace the unchanged hashed attribution keys. They are part of the existing
 native evidence digest, not a catalogue write. Legacy proofs without labels stay
