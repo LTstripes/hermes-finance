@@ -1084,6 +1084,7 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   await expect(page.getByTestId("capital-pair-21")).toContainText("1 000 000 ₽");
   await expect(page.getByTestId("capital-pair-gap")).toBeVisible();
   await expect(page.getByTestId("capital-pair-22")).toContainText("—");
+  await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
   await expect(page.getByTestId("capital-performance-bridge")).toContainText("+42 600 ₽");
   await expect(page.getByText("Разница: капитал − ипотека")).toBeVisible();
   await expect(
@@ -1158,6 +1159,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
         await expect(
           page.getByText("Нужны два закрытых отчёта для сравнения").first(),
         ).toBeVisible();
+        await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
         await expect(
           page.getByText(/Нужны два закрытых отчёта для расчёта за период/),
         ).toBeVisible();

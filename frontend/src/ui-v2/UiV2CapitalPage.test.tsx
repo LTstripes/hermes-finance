@@ -266,8 +266,11 @@ it("shows the three capital headlines in the frozen order and reads only GET", a
   expect(
     screen.getByText(/Ликвидные активы минус включённые обязательства = ликвидный капитал/i),
   ).toBeVisible();
+  fireEvent.click(
+    await screen.findByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика"),
+  );
+  await waitFor(() => expect(reads.some((read) => read.includes("scope=portfolio"))).toBe(true));
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
-  expect(reads.some((read) => read.includes("scope=portfolio"))).toBe(true);
 });
 
 it("keeps the known capital and marks partial source support", async () => {
@@ -735,8 +738,10 @@ it("refuses a non-portfolio attribution response on the portfolio panel", async 
   const panel = pair.closest("section");
   if (!panel) throw new Error("performance panel is missing");
   const bridge = within(panel).getByTestId("capital-performance-bridge");
+  await waitFor(() =>
+    expect(within(panel).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%"),
+  );
   expect(bridge).not.toHaveTextContent("+42 600 ₽");
-  expect(within(panel).getByTestId("capital-performance-xirr")).toHaveTextContent("+7,42%");
   expect(within(panel).getByTestId("capital-performance-twrr")).toHaveTextContent("+6,10%");
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
