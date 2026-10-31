@@ -51,22 +51,23 @@ or financial portfolio Close. Shared account costs/taxes remain separate; no
 arbitrary allocation to instruments or fabricated intermediate monthly valuations.
 Next step is Owner visual review and the separately chosen new-month workflow.
 
-### Owner Test acceptance and bounded AI follow-up
+### Owner-accepted UI and 1.9.0 release preparation
 
 Owner accepted the reworked isolated Test UX at `ade462a2` on31October, with one
-remaining top-table layout defect. Exact CI41184160300 and UI41184160298 passed.
-The rejection below remains history of the earlier overview, not rejection of
-this later candidate. Working Stable remains1.8.1; Owner visual acceptance does
-not itself mean the follow-up code is installed.
+top-table layout defect. Exact CI41184160300 and UI41184160298 passed. The
+rejection below remains history of the earlier overview. Stable remains1.8.1;
+Owner acceptance does not mean this candidate is installed.
 
-The next bounded candidate adds strict AI JSON2.0 payload references while
-retaining legacy1.5 API compatibility and the existing financial producers.
-Independent representation/source review and synthetic round-trip checks are in
-progress. The user prioritizes readable size reduction; further speed
-optimization is outside this slice. The accepted Test is retained for UAT and is
-not replaced during implementation. Top-table correction, final review/exact CI
-and the guarded release/backup/data-preservation steps remain outstanding.
-No financial Apply/Close or actual gold history Save is part of this follow-up.
+The 1.9.0 candidate keeps the accepted package, corrects the leaders layout and
+adds strict AI JSON2.0 typed payload references while retaining legacy1.5 API
+compatibility and the same financial producers. Independent AI/source/contract
+and synthetic top-layout pixel reviews passed. The top correction leaves
+eligibility, ranking and amounts unchanged. Current exact-candidate checks and
+review receipts belong to the task/Draft; they do not authorize PR approval or
+replace guarded integration, post-main CI, publication or backup-first update.
+The user prioritizes readable size reduction; further speed optimization is
+outside this slice. The accepted Test remains pinned during implementation.
+No financial Apply/Close, new source assumption or actual gold Save is included.
 
 ### Returns continuation in review
 
