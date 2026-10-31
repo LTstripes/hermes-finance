@@ -29,6 +29,9 @@ below. The recommended AI download requests strict format2.0 typed payload
 references; legacy1.5 remains the API default. Independent source/contract review
 and lossless saved-payload expansion verify the representation without a second
 financial calculator. Further speed optimization remains outside this slice.
+The installed recommended download also passes strict schema/reference checks;
+expansion matches the prior reviewed export apart from its generation timestamp
+and application version. The read leaves working data and the isolated Test unchanged.
 
 Operator-local31October evidence confirms a verified producing-code/database
 recovery pair, stock backup-first OPS02, Prepare/Validate and separate Start with
