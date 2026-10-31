@@ -24,8 +24,8 @@ const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
   { id: "payouts", label: "Выплаты" },
   { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
-  { id: "files", label: "Файлы" },
-  { id: "app", label: "Настройки" },
+  { id: "files", label: "Экспорт и копии" },
+  { id: "app", label: "Приложение" },
 ];
 
 export type DataMonthResolution =
@@ -67,7 +67,7 @@ function Chip({ active, label, to }: { active: boolean; label: string; to: strin
 export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; monthId?: number }) {
   const location = useLocation();
   return (
-    <nav aria-label="Разделы данных и приложения" className={dataStyles.subnav}>
+    <nav aria-label="Разделы настроек" className={dataStyles.subnav}>
       <div className={dataStyles.modeGroup}>
         <p className={dataStyles.modeLabel}>
           Проверить <span className={dataStyles.modeBadge}>Только чтение</span>
@@ -121,7 +121,7 @@ export function UiV2DataFrame({
       busy={busy}
       header={
         <>
-          <p className={styles.eyebrow}>Данные и приложение</p>
+          <p className={styles.eyebrow}>Настройки</p>
           <h1>{title}</h1>
           <p className={styles.subtitle}>{subtitle}</p>
         </>

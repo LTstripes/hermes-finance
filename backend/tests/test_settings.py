@@ -7,6 +7,25 @@ from pytest import MonkeyPatch
 from hermes_finance.settings import ENV_FILE, REPOSITORY_ROOT, Settings
 
 
+def test_return_display_names_are_private_exact_scope_labels(monkeypatch):
+    monkeypatch.setenv(
+        "HERMES_FINANCE_RETURNS_ACCOUNT_DISPLAY_NAMES",
+        '{"source:SYNTH-A":"  Учебный брокерский  "}',
+    )
+    assert Settings(_env_file=None).returns_account_display_names == {
+        "source:SYNTH-A": "Учебный брокерский"
+    }
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [{"SYNTH-A": "Name"}, {"source:A B": "Name"}, {"source:A": ""}, {"source:A": "x" * 81}],
+)
+def test_return_display_names_reject_guessed_or_unbounded_labels(labels):
+    with pytest.raises(ValueError, match="return display labels"):
+        Settings(_env_file=None, returns_account_display_names=labels)
+
+
 def test_server_defaults_to_loopback() -> None:
     settings = Settings(_env_file=None)
 

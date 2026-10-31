@@ -2916,3 +2916,49 @@ class TaxBracket(Base):
     threshold_from_kopecks: Mapped[int] = mapped_column(BigInteger, nullable=False)
     threshold_to_kopecks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     rate_bps: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class OwnerManualGoldHistory(Base):
+    """Stable, source-only Owner history identity; never a financial snapshot."""
+
+    __tablename__ = "owner_manual_gold_histories"
+    __table_args__ = (UniqueConstraint("account_id", "instrument_id", name="uq_owner_gold_scope"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OwnerManualGoldHistoryRevision(Base):
+    """Append-only full declarations, retaining superseded event facts."""
+
+    __tablename__ = "owner_manual_gold_history_revisions"
+    __table_args__ = (
+        UniqueConstraint("history_id", "revision", name="uq_owner_gold_revision"),
+        CheckConstraint("revision > 0", name="ck_owner_gold_revision_positive"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    history_id: Mapped[int] = mapped_column(
+        ForeignKey("owner_manual_gold_histories.id"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    declaration_json: Mapped[str] = mapped_column(Text, nullable=False)
+    bindings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    material_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    confirmation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OwnerManualGoldHistoryApply(Base):
+    """Immutable request receipt identifying the originally accepted revision."""
+
+    __tablename__ = "owner_manual_gold_history_applies"
+    __table_args__ = (UniqueConstraint("request_id", name="uq_owner_gold_request"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision_id: Mapped[int] = mapped_column(
+        ForeignKey("owner_manual_gold_history_revisions.id"), nullable=False
+    )
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

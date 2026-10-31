@@ -1,7 +1,9 @@
 """Fabricated original batches only; no Owner sources or reconstructed EOD."""
 
+from collections import Counter
 from copy import deepcopy
 from datetime import date
+from decimal import Decimal
 from itertools import permutations
 from xml.etree import ElementTree as ET
 
@@ -14,6 +16,7 @@ from test_statement_import_mybroker_endpoints import broker_month_xml, draft_str
 
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, MyBrokerImport
+from hermes_finance.services import source_report_preview as service
 from hermes_finance.services.mybroker_import import stage_mybroker
 from hermes_finance.services.mybroker_preflight import _difference, preview_batch
 from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, parse_mybroker
@@ -1769,3 +1772,207 @@ def test_investment_movement_guard_is_exact_and_keeps_supported_metadata(change,
         ET.tostring(root), ACCOUNT, [(ACCOUNT, "RU000A000000", date(2030, 1, 17), Decimal(-10))]
     )
     assert len(unresolved) == expected
+
+
+# Exact-reference trade disclosure uses fabricated original rows only.
+START, END = date(2029, 12, 31), date(2030, 1, 31)
+ISIN = "RU000A000000"
+
+
+def disclosure_case():
+    _, document, raw, report, money = investment_case()
+    trade = document["trades"][0]
+    row = next(row for row in money if row["classification"] == "trade_settlement")
+    token = service._money_trade_token(row)
+    return document, raw, report, money, trade, row, token
+
+
+def disclose(trade, row, token, *, candidates=None, count=1):
+    return service._trade_disclosure(
+        row,
+        {token: [trade] if candidates is None else candidates},
+        Counter({token: count}),
+        account=trade["core"]["source_account"],
+        isin=ISIN,
+        currency="RUB",
+        start=START,
+        end=END,
+    )
+
+
+@pytest.mark.parametrize("restored", [False, True])
+def test_exact_trade_enriches_one_settlement_without_changing_cash_or_results(
+    restored, monkeypatch
+):
+    document, raw, report, money, trade, row, _ = disclosure_case()
+    native = None
+    if restored:
+        _, names, _, cancellations = service._native(document, raw)
+        native = {
+            "names": {k: sorted(v) for k, v in names.items()},
+            "cancellations": [[a, i, str(d), str(q)] for a, i, d, q in cancellations],
+            "unresolved": service._unresolved_movements(raw, row["source_account"], cancellations),
+        }
+    analyses = {}
+    result = service._interval(
+        document, raw, report, money, {}, {}, True, analyses=analyses, native_evidence=native
+    )
+    analysis = analyses[ISIN]
+    buy = next(event for event in analysis.events if event.kind == "BUY")
+    assert buy.native_identity == trade["identity"]
+    assert buy.native_ids == tuple(trade["ids"])
+    assert buy.quantity_delta == Decimal(trade["core"]["quantity"])
+    assert buy.unit_price == Decimal(trade["core"]["price"])
+    assert buy.trade_time == trade["core"]["trade_time"]
+    assert buy.cash_settlement_date.isoformat() == trade["settlement_date"]
+    assert buy.depository_settlement_date.isoformat() == trade["depo_settlement_date"]
+    assert buy.native_trade_amount_kopecks == service._minor(trade["core"]["trade_amount"])
+    assert buy.accrued_interest_kopecks == service._minor(trade["accrued_interest"])
+    assert buy.commission_kopecks == service._minor(trade["bank_commission"])
+    assert buy.price_unit == "UNKNOWN" and buy.native_total_basis is None
+    assert buy.face_value is None and buy.proof_dependency is None
+    assert buy.source_references == (row["ref"],)
+    assert len(buy.cash_legs) == 1
+    assert buy.cash_legs[0].account_cash_kopecks == row["minor"]
+    fee = next(event for event in analysis.events if event.kind == "FEE")
+    assert fee.quantity_delta is None and fee.native_trade_amount_kopecks is None
+    assert fee.commission_kopecks is None
+    monkeypatch.setattr(service, "_trade_disclosure", lambda *args, **kwargs: {})
+    original_analyses = {}
+    original = service._interval(
+        document,
+        raw,
+        report,
+        money,
+        {},
+        {},
+        True,
+        analyses=original_analyses,
+        native_evidence=native,
+    )
+    assert result == original
+    original_analysis = original_analyses[ISIN]
+    assert analysis.components == original_analysis.components
+    assert analysis.pnl == original_analysis.pnl
+    assert analysis.modified_dietz == original_analysis.modified_dietz
+    assert analysis.coverage == original_analysis.coverage
+    assert len(analysis.events) == len(original_analysis.events)
+    assert [event.cash_legs for event in analysis.events] == [
+        event.cash_legs for event in original_analysis.events
+    ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "identity",
+        "isin",
+        "currency",
+        "direction",
+        "cash_date",
+        "depo_missing",
+        "depo_outside",
+        "pending",
+        "unsettled",
+        "repo",
+        "token_conflict",
+        "missing_token",
+    ],
+)
+def test_disclosure_requires_exact_native_identity_and_compatible_settlement(change):
+    _, _, _, _, trade, row, token = disclosure_case()
+    if change == "identity":
+        trade["identity"] = "different-native-identity"
+    elif change in {"isin", "currency"}:
+        trade["core"][change] = "RU000A000001" if change == "isin" else "USD"
+    elif change == "direction":
+        trade["core"]["quantity"] = "-10"
+    elif change == "cash_date":
+        trade["settlement_date"] = "2030-01-21"
+    elif change == "depo_missing":
+        trade["depo_settlement_date"] = None
+    elif change == "depo_outside":
+        trade["depo_settlement_date"] = "2030-02-01"
+    elif change == "pending":
+        trade["section"] = "pending"
+    elif change == "unsettled":
+        trade["state"] = "pending"
+    elif change == "repo":
+        trade["repo_observed"] = True
+    elif change == "token_conflict":
+        row["native_token"] = token
+        row["primary_id"] = "9999999"
+    else:
+        row.update(native_token=None, primary_id=None, operation="unlinked")
+    assert disclose(trade, row, token) == {}
+
+
+def test_wrong_account_does_not_receive_metadata():
+    _, _, _, _, trade, row, token = disclosure_case()
+    other = deepcopy(trade)
+    other["core"]["source_account"] = "7654321-000"
+    assert disclose(trade, row, token, candidates=[other]) == {}
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_repeated_or_conflicting_native_reference_is_unknown(conflicting):
+    _, _, _, _, trade, row, token = disclosure_case()
+    other = deepcopy(trade)
+    if conflicting:
+        other["core"]["quantity"] = "11"
+    assert disclose(trade, row, token, candidates=[trade, other]) == {}
+
+
+def test_multiple_principal_occurrences_never_repeat_or_distribute_trade_metadata():
+    document, raw, report, money, _, row, _ = disclosure_case()
+    duplicate = dict(row, ref="synthetic-second-principal")
+    row["minor"] //= 2
+    duplicate["minor"] -= row["minor"]
+    money.append(duplicate)
+    analyses = {}
+    service._interval(document, raw, report, money, {}, {}, True, analyses=analyses)
+    buys = [event for event in analyses[ISIN].events if event.kind == "BUY"]
+    assert len(buys) == 2
+    assert all(event.quantity_delta is None for event in buys)
+    assert all(event.native_trade_amount_kopecks is None for event in buys)
+
+
+def test_cash_bridge_conflict_keeps_native_disclosure_unknown():
+    document, raw, report, money, _, row, _ = disclosure_case()
+    row["minor"] -= 1
+    analyses = {}
+    service._interval(document, raw, report, money, {}, {}, True, analyses=analyses)
+    buy = next(event for event in analyses[ISIN].events if event.kind == "BUY")
+    assert buy.quantity_delta is None and buy.native_identity is None
+
+
+def test_sell_uses_exact_signed_quantity_and_source_amount():
+    _, _, _, _, trade, row, token = disclosure_case()
+    trade["core"]["quantity"] = "-10"
+    row["minor"] = abs(row["minor"])
+    result = disclose(trade, row, token)
+    assert result["quantity_delta"] == Decimal("-10")
+    assert result["native_trade_amount_kopecks"] == service._minor(trade["core"]["trade_amount"])
+
+
+def test_disclosure_operation_reference_fallback_and_conflicting_reference():
+    _, _, _, _, trade, row, token = disclosure_case()
+    row["operation"] = f"Расчеты по сделке {token}"
+    row["primary_id"] = None
+    assert disclose(trade, row, token)["native_identity"] == trade["identity"]
+    row["primary_id"] = token
+    row["operation"] = "Расчеты по сделке 999999999"
+    assert disclose(trade, row, token) == {}
+
+
+def test_disclosure_preserves_decimal_lexemes_and_missing_costs():
+    _, _, _, _, trade, row, token = disclosure_case()
+    trade["core"]["quantity"] = "0.123456789012345678901234567890123456789"
+    trade["core"]["price"] = "123.123456789012345678901234567890123456789"
+    trade["accrued_interest"] = None
+    trade["bank_commission"] = None
+    result = disclose(trade, row, token)
+    assert str(result["quantity_delta"]) == trade["core"]["quantity"]
+    assert str(result["unit_price"]) == trade["core"]["price"]
+    assert result["accrued_interest_kopecks"] is None
+    assert result["commission_kopecks"] is None

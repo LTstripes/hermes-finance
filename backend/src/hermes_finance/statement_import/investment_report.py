@@ -36,6 +36,7 @@ class InvestmentReport:
     payout_accounts: frozenset[str]
     issues: tuple[tuple[str, str], ...]
     instrument_issues: tuple[tuple[str, str, str], ...] = ()
+    display_names: tuple[tuple[str, str, str], ...] = ()
 
 
 def _day(value):
@@ -75,9 +76,23 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
         raise MyBrokerError("investment_pdf_period_invalid") from None
     payouts, closing, pnl, positions, closed, seen, issues = [], {}, {}, {}, set(), set(), []
     instrument_issues = []
+    display_names = set()
     position_dates = set()
     account, section, kind, header = None, None, None, False
     isin_pattern = r"[A-Z]{2}[A-Z0-9]{9}[0-9]"
+
+    def retain_display_name(line, match):
+        # Only the name cell preceding the exact ISIN in an already validated,
+        # selected-account position/actual-payout row. Never financial identity.
+        label = line[: match.start(1)].strip()
+        if (
+            label
+            and len(label) <= 256
+            and not any(ord(c) < 32 for c in label)
+            and not re.search(isin_pattern, label)
+        ):
+            display_names.add((account, match[1], label))
+
     for page_number, page in enumerate(extracted.pages, 1):
         lines = page.lines
         for line_number, original in enumerate(lines):
@@ -155,6 +170,7 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                         day = _day(match[3])
                         if not start <= day <= end or amount <= 0:
                             raise ValueError
+                        retain_display_name(line, match)
                         payouts.append(
                             InvestmentPayout(
                                 account,
@@ -215,6 +231,7 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
                         value = _minor(cells[4])
                         if not hasattr(quantity, "is_finite") or not quantity.is_finite():
                             raise ValueError
+                        retain_display_name(line, match)
                         key, observation = (account, match[1]), (str(quantity), value)
                         if key in positions:
                             raise ValueError
@@ -259,4 +276,5 @@ def parse_investment_report(extracted: ExtractedDocument, accounts: set[str]) ->
             )
         ),
         tuple(sorted(set(instrument_issues))),
+        tuple(sorted(display_names)),
     )

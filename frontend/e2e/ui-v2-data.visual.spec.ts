@@ -236,6 +236,33 @@ async function installFilesApi(page: Page) {
   return { errors, posts, unexpected, backup };
 }
 
+test("Settings sidebar remains visible and scrolls independently on a short desktop", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "One desktop ownership check");
+  await installDataApi(page);
+  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.goto("/v2/data");
+  await expect(page.getByTestId("freshness-clocks")).toBeVisible();
+  const sidebar = page.locator("aside");
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const box = await sidebar.boundingBox();
+  expect(box).not.toBeNull();
+  // Fractional document heights may round sticky containment by half a CSS pixel.
+  expect(Math.abs(box?.y ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1);
+  expect(box?.height).toBe(420);
+  expect(await sidebar.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+    true,
+  );
+  await sidebar.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(sidebar.getByText("Только на этом компьютере")).toBeVisible();
+  const main = await page.locator("#v2-main").boundingBox();
+  expect(main && box && main.x >= box.x + box.width).toBeTruthy();
+  await assertBounded(page);
+});
+
 test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", async ({
   page,
 }, testInfo) => {
@@ -245,7 +272,7 @@ test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", as
   await expect(page.getByTestId("data-month-context")).toContainText("Август 2031");
   await expect(page.getByTestId("freshness-clocks")).toBeVisible();
   await expect(page.getByTestId("freshness-family-market_quotes")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Данные", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Настройки", exact: true })).toHaveAttribute(
     "aria-current",
     "page",
   );
@@ -268,7 +295,7 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   await expect(page.getByTestId("data-month-context")).toContainText("Август 2031");
   await expect(page.getByRole("link", { name: "Экспорт и копии" })).toHaveAttribute(
     "href",
-    "/v2/data/files",
+    "/v2/data/files?month=12&from=monthly-close-v2&step=readiness&monthId=12",
   );
   await expect(page.getByRole("link", { name: "Настройки", exact: true }).first()).toHaveAttribute(
     "href",

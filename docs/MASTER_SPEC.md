@@ -339,11 +339,75 @@ Historical loading is part of the same source-first direction. A long report can
 
 Home and Capital show the selected monthly/closed-history known subtotals with coverage. An exact sum of known rows may have partial source coverage. Keep missing accounts visible and attach reasons to totals, deltas, goals and allocation; C2 owns the required-account rule. Missing calendar months are gaps, not zero points.
 
+The primary sidebar has five destinations: Мои финансы, Капитал, Доходность,
+Доход и планы, Настройки. Data, source review, exports/copies and application
+settings remain reachable inside Настройки; existing deep links keep working.
+On desktop the sidebar remains visible while the page scrolls, with its own
+scrolling at short heights and no content overlap.
+
+Capital places the existing allocation by asset class/account and largest
+positions below its main chart, followed by property and Где лежит капитал.
+The duplicated current-snapshot, changes, linked-pair and portfolio-performance
+blocks are removed from this page; their data, calculations and dedicated tools
+are retained. Instrument names lead directly to the standalone instrument page,
+preserving the holding filter on return. Home retains the changes block and
+shows readable RUB vertical axes on portfolio/passive-income graphs, including
+zero and negative observations with unchanged exact tooltips. Income and plans
+omits the embedded 12-month forecast and goals-progress blocks; their models and
+dedicated destinations are not deleted.
+
 Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
 
 ### Returns workspace
+
+The ordinary `/v2/returns` entry opens **В целом** for all available history.
+The main journey follows the compact account layout: result cards, a graph of
+supported observations, searchable instruments and leaders. Both available broker
+accounts are selected initially; a selector chooses one or both, each with its own
+proved history. The broker RUB result uses eligible nonoverlapping account
+components once. It is neither full portfolio P&L nor a profit floor. Never add
+its instrument or payout explanations again, sum rates or average different
+account periods. A changed account must select its own supported interval rather
+than retain another account's inception dates. Private runtime/browser display names are
+labels only and never alter source identity, mappings or financial records.
+
+Figures and actions lead. Do not present a technical prose wall, repeated
+provenance/caveats, a column of account/period codes, or empty blocks. Show known
+zero and missing data distinctly; omit irrelevant zero coupon rows for stocks.
+Explain a material incompleteness once in plain language, with an actionable
+detail only where necessary. Different-method percentages are secondary and
+retain method and exact dates; Modified Dietz is a period return, not annualized.
+For a sold position its weighted capital can be small over a long reporting
+window; do not silently crop that window or substitute another denominator.
+
+All exact ISIN groups, including sold instruments and separate account contexts,
+remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
+over all available account histories; individual account periods, rates and
+local gaps remain visible through the existing detail presentation. The default
+overview loads visible summaries and identity metadata only; instrument details load on
+entry, and credited coupon/dividend events load on disclosure. Known paid income
+is shown across included accounts, then by account, ISIN and dated operation,
+without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry; accepted
+TWRR/XIRR and coverage diagnostics remain in their dedicated tools. Missing names stay explicit; only exact
+source/catalogue metadata may name a security, without changing the Owner catalogue.
+
+Deposits are outside this Returns UX package and remain a separate task; their
+existing data and independent readers are preserved. Gold shows saved unrealized value and cost-based
+percentage with its valuation date, independently of an unavailable realised or
+period return. A compact manual BUY/SELL history may be confirmed inside the
+existing gold instrument, using its existing monthly price field. It preserves
+actual dates, grams, amount/fee basis, completeness and correction history;
+supported realized, unrealized and total results remain independently visible.
+Preview/confirmation records Owner evidence without rewriting CLOSED months or
+broker operations. It is not a universal transaction editor, a second price
+field or a deposit importer. Use one compact heading and exact quantities without
+insignificant trailing zeros. Real Owner entry and visual acceptance remain
+separate authorized operations.
+
+The following selected-period capabilities remain on the lazy
+`/v2/returns/account` screen; they are not hidden monthly operands in the default.
 
 «Моя доходность» on this same screen selects brokerage, IIS, deposits/savings
 and physical gold, all checked initially, over one backend-selected period.
@@ -357,19 +421,15 @@ are not period income. Historical brokerage/IIS subtype is never inferred from
 today's account type. Existing account/class detail retains its scope. Exact
 capabilities and conservative crossing exclusions are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-selected-basket).
 
-`/v2/returns` is the ordinary **Доходность** entry in the left navigation. It
-defaults to the accepted portfolio and latest CLOSED month when available,
-even when a newer DRAFT exists, and pins the account and EOD dates in the URL.
-Explicit source URLs keep their selected basis; period options follow that basis.
-The basis explanation links to saved month records and preserves concrete NULL
-reasons. Refresh starts each active read once without a context/overview/basket
-enable cascade; fetching or failed reads never display cached results as current.
-Category checkboxes retain native keyboard semantics, visible focus and exact
-URL/Back/Reload selection. Four compact cards show the selected
-result/rate, the whole-history result with dates, credited coupons and credited
-dividends. Missing values are `—` with keyboard-accessible details. Statements
-and accepted reporting scopes are explicitly separate choices; source aliases
-never imply a financial-account mapping or portfolio aggregation.
+`/v2/returns/account` retains explicit selected account/EOD dates and existing
+source/accepted URL compatibility. The source-versus-accepted selector is removed
+from the ordinary journey; provenance and precise financial basis remain in
+explanations rather than being silently switched. CLOSED alone is not numerical
+financial acceptance. The selected scope uses its existing producer and refusal
+reasons; stale evidence never receives numeric fallback from a different basis.
+Refresh, cancellation, errors and Back/Reload retain their selection guarantees.
+The full detail still shows interval result/rate, credited coupons/dividends and
+available history separately. Unknown values remain unavailable with reasons.
 
 Monthly bars select the same period used by instruments and both top-five lists;
 their paged table alternative preserves gaps, signs and zero. Instrument search,
@@ -441,7 +501,7 @@ workspace or its existing guards.
 - `/v2` and `/v2/capital` show latest closed data. A newer draft is workflow context, not confirmed financial truth.
 - Their current `month`/`step` handling contributes to a legacy return path; it does not select a historical main-data view. Do not pretend otherwise by changing only a link label. [Home](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
 - Historical closed capital facts live in `/v2/reports/:monthId`; current latest closed is deliberately handled by Home/Capital rather than duplicated in the archive. [Reports](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ReportPage.tsx)
-- Accepted #575, #569 and Performance #531 routes coexist on the frozen common tree. Shared App/entry union retains all three detail routes; Capital retains allocation/monthly-result links and the Performance summary/detail entry. Empty Home/Capital/Income actions lead to native `/v2/close`; Home's payouts/forecast action leads to native `/v2/income`. All are native `/v2` routes.
+- Accepted #575, #569 and Performance #531 detail routes remain available. The ordinary Capital page embeds existing allocation/concentration and removes duplicated summary panels; their source calculations and diagnostic destinations are retained. Empty Home/Capital/Income actions lead to native `/v2/close`. All are native `/v2` routes.
 
 
 <a id="p3-ui_v2_analytics_reconciliation-86-income"></a>
@@ -687,6 +747,12 @@ intervals, the selected month and available monthly history remain separate;
 [C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1-2-composition-boundary)
 owns the exact units, source authority and privacy contract.
 
+The recommended AI JSON download uses the versioned referenced format (C10):
+repeated source payloads are stored once with typed links; periods, occurrences,
+provenance and availability remain explicit. It is still one full-history file,
+without a concise/full selector or a second financial calculation. Legacy API
+consumers retain the v1 format through the documented compatibility route.
+
 Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
 
 <a id="p6"></a>
@@ -745,14 +811,17 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 <a id="p6-master_spec-1152-124-навигация"></a>
 #### 12.4. Навигация
 
-Рекомендуемые разделы:
+Основные разделы:
 
-- Дашборд;
-- Месяцы;
-- Счета и инструменты;
-- Цели;
-- Экспорт и резервные копии;
+- Мои финансы;
+- Капитал;
+- Доходность;
+- Доход и планы;
 - Настройки.
+
+Данные, разбор источника, экспорт/копии и настройки приложения доступны внутри
+«Настройки». Рабочие месяцы, справочники и отдельные аналитические инструменты
+сохраняют существующие адреса и переходы.
 
 ---
 

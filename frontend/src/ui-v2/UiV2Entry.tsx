@@ -1,6 +1,8 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useSearchParams } from "react-router";
 import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
+import { validIsin } from "./returns/navigation";
+import { readDisplayNames } from "./returns/dashboard";
 
 import type { DataAppSection } from "./monthSelection";
 
@@ -13,7 +15,9 @@ const UiV2CapitalAllocationPage = lazy(() => import("./UiV2CapitalAllocationPage
 const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
 const UiV2CapitalPerformanceDetail = lazy(() => import("./UiV2CapitalPerformanceDetail"));
 const UiV2MonthlyReturnsPage = lazy(() => import("./UiV2MonthlyReturnsPage"));
+const UiV2ReturnsAccountPage = lazy(() => import("./UiV2ReturnsAccountPage"));
 const UiV2ReturnsPage = lazy(() => import("./UiV2ReturnsPage"));
+const UiV2ReturnsInstrumentPage = lazy(() => import("./UiV2ReturnsInstrumentPage"));
 const UiV2ReportsPage = lazy(() => import("./UiV2ReportsPage"));
 const UiV2ReportPage = lazy(() => import("./UiV2ReportPage"));
 const UiV2ClosePage = lazy(() => import("./UiV2ClosePage"));
@@ -137,10 +141,38 @@ export function UiV2MonthlyReturnsEntry() {
   );
 }
 
+export function UiV2ReturnsAccountEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2ReturnsAccountPage />
+    </SuspenseFrame>
+  );
+}
+
 export function UiV2ReturnsEntry() {
+  const location = useLocation();
+  const [params] = useSearchParams();
+  if (["scope", "start", "end", "period", "month", "categories"].some((key) => params.has(key)))
+    return <Navigate replace to={`/v2/returns/account${location.search}${location.hash}`} />;
+  const isin = params.getAll("isin").length === 1 ? params.get("isin") : null;
+  if (validIsin(isin)) {
+    const next = new URLSearchParams(params);
+    next.delete("isin");
+    if (!next.has("back"))
+      next.set("back", params.has("capital_account") ? "/v2/capital" : "/v2/returns");
+    return <Navigate replace to={`/v2/returns/instrument/${isin}?${next}`} />;
+  }
   return (
     <SuspenseFrame>
       <UiV2ReturnsPage />
+    </SuspenseFrame>
+  );
+}
+
+export function UiV2ReturnsInstrumentEntry() {
+  return (
+    <SuspenseFrame>
+      <UiV2ReturnsInstrumentPage accountLabels={readDisplayNames()} />
     </SuspenseFrame>
   );
 }

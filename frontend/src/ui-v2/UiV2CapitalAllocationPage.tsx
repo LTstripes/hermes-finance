@@ -8,6 +8,7 @@ import {
   type RiskAllocationMetric,
   type RiskAllocationResponse,
   type RiskConcentrationMetric,
+  type RiskConcentrationItem,
   type RiskMetricSupport,
   type RiskMoneyValue,
   type RiskSupportIssue,
@@ -101,14 +102,18 @@ function Limits({
   );
 }
 
-function Allocation({
+export function Allocation({
   title,
   metric,
   account = false,
+  expanded = false,
+  onSelect,
 }: {
   title: string;
   metric: RiskAllocationMetric | undefined;
   account?: boolean;
+  expanded?: boolean;
+  onSelect?: (key: string, label: string) => void;
 }) {
   if (!metric)
     return <UiV2Notice title={`${title}: нет ответа`}>Срез отсутствует в ответе.</UiV2Notice>;
@@ -119,7 +124,7 @@ function Allocation({
     (item) => item.key === "unknown_asset_class" || item.key === "unassigned_cash",
   );
   return (
-    <details className={styles.metric}>
+    <details className={styles.metric} open={expanded || undefined}>
       <summary>
         <span className={styles.metricName}>{title}</span>
         <span>
@@ -190,13 +195,32 @@ function Allocation({
             </thead>
             <tbody>
               {metric.items.map((item) => (
-                <tr key={item.key}>
+                <tr
+                  key={item.key}
+                  data-testid={onSelect && !account ? `capital-class-${item.key}` : undefined}
+                >
                   <Td data-label={account ? "Счёт" : "Класс активов"}>
-                    {account
-                      ? item.key === "unassigned_cash"
-                        ? (ASSET_CLASS_LABELS[item.key] ?? item.label)
-                        : item.label
-                      : (ASSET_CLASS_LABELS[item.key] ?? item.label)}
+                    {onSelect ? (
+                      <button
+                        className={styles.groupButton}
+                        type="button"
+                        onClick={() => onSelect(item.key, item.label)}
+                      >
+                        {account
+                          ? item.key === "unassigned_cash"
+                            ? (ASSET_CLASS_LABELS[item.key] ?? item.label)
+                            : item.label
+                          : (ASSET_CLASS_LABELS[item.key] ?? item.label)}
+                      </button>
+                    ) : account ? (
+                      item.key === "unassigned_cash" ? (
+                        (ASSET_CLASS_LABELS[item.key] ?? item.label)
+                      ) : (
+                        item.label
+                      )
+                    ) : (
+                      (ASSET_CLASS_LABELS[item.key] ?? item.label)
+                    )}
                   </Td>
                   <Td data-label="Сумма" numeric>
                     {money(item.amount)}
@@ -215,23 +239,27 @@ function Allocation({
   );
 }
 
-function Concentration({
+export function Concentration({
   title,
   metric,
   basis,
   event = false,
+  expanded = false,
+  renderLabel,
 }: {
   title: string;
   metric: RiskConcentrationMetric | undefined;
   basis: string;
   event?: boolean;
+  expanded?: boolean;
+  renderLabel?: (item: RiskConcentrationItem) => ReactNode;
 }) {
   if (!metric)
     return <UiV2Notice title={`${title}: нет ответа`}>Срез отсутствует в ответе.</UiV2Notice>;
   const qualified =
     metric.support.status !== "supported" || metric.excluded.length > 0 || metric.is_approximate;
   return (
-    <details className={styles.metric}>
+    <details className={styles.metric} open={expanded || undefined}>
       <summary>
         <span className={styles.metricName}>{title}</span>
         <span>
@@ -282,7 +310,7 @@ function Concentration({
               {metric.items.map((item) => (
                 <tr key={item.key}>
                   <Td data-label={event ? "Событие / инструмент" : "Позиция"}>
-                    {item.label}
+                    {renderLabel ? renderLabel(item) : item.label}
                     {item.is_approximate ? " · приблизительно" : ""}
                   </Td>
                   <Td data-label="Сумма" numeric>

@@ -49,6 +49,7 @@ class Context(DTO):
     accounts: list[Account]
     scope_aliases: dict[str, str]
     source_periods: dict[str, list[Period]]
+    source_history_periods: dict[str, Period]
     default_period: Period | None
     closed_periods: list[Period]
 

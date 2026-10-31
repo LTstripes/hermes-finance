@@ -23,7 +23,7 @@ from hermes_finance.services.performance_attribution import performance_attribut
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
 from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_monthly_returns import (
-    _native_scope,
+    _SOURCE_SCOPE_READS,
     _selected_sources,
     read_monthly_returns,
     source_read_snapshot,
@@ -50,6 +50,16 @@ def _months(session):
 
 
 def _source_scopes(session):
+    """Copy the proved alias map only within the current protected source read."""
+    cache = session.info.get(_SOURCE_SCOPE_READS)
+    if cache is None:
+        return _read_source_scopes(session)
+    if "canonical" not in cache:
+        cache["canonical"] = _read_source_scopes(session)
+    return dict(cache["canonical"])
+
+
+def _read_source_scopes(session):
     """Group only aliases proved by every selected document, using the reader.
 
     Unreadable, conflicting and multi-account documents preserve their entries.
@@ -66,7 +76,7 @@ def _source_scopes(session):
         aliases.update(
             a for a in accounts if isinstance(a, str) and a and not any(c.isspace() for c in a)
         )
-    selections = {a: _selected_sources(session, a) for a in aliases}
+    selections = {a: _selected_sources(session, a, identity_only=True) for a in aliases}
     canonical = {a: a for a in aliases}
     for alias, (selected, native) in selections.items():
         if not native or not selected:
@@ -82,7 +92,7 @@ def _source_scopes(session):
         if all(
             error is None
             and view is not None
-            and _native_scope(view["document"]) == {target}
+            and view["native_scope"] == {target}
             and alias in {target, view["document"]["filename_account"]}
             for _, view, error in selected
         ):
@@ -93,6 +103,7 @@ def _source_scopes(session):
 
 def _accounts(session, canonical=None):
     canonical = _source_scopes(session) if canonical is None else canonical
+    display_names = session.info.get("returns_account_display_names", {})
     labels = {}
     for alias, account_id, name in session.execute(
         select(BrokerIdentityMapping.provider_identity, Account.id, Account.name)
@@ -109,7 +120,8 @@ def _accounts(session, canonical=None):
         [
             {
                 "id": f"source:{a}",
-                "label": f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a,
+                "label": display_names.get(f"source:{a}")
+                or (f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a),
                 "basis": "statements",
             }
             for a in sorted(set(canonical.values()))
@@ -142,9 +154,11 @@ def read_context(session):
         for periods in source_periods.values():
             periods[:] = list({(p["start"], p["end"]): p for p in periods}.values())
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
-        from hermes_finance.services.source_investment_proofs import read_reports
+        from hermes_finance.services.source_investment_proofs import read_report_headers
 
-        for proof in read_reports(session):
+        history_periods = {}
+        history_rank = {}
+        for proof in read_report_headers(session):
             key = f"source:{canonical.get(proof['source_account'], proof['source_account'])}"
             period = bounds(
                 date.fromisoformat(proof["covered_from"]) - timedelta(days=1),
@@ -152,10 +166,17 @@ def read_context(session):
             )
             if period not in source_periods.setdefault(key, []):
                 source_periods[key].append(period)
+            rank = (proof["covered_to"], proof["proof_id"])
+            if proof["history_from_zero"] and rank > history_rank.get(key, ("", 0)):
+                history_rank[key] = rank
+                history_periods[key] = period
         return {
             "accounts": _accounts(session, canonical),
             "scope_aliases": {f"source:{a}": f"source:{b}" for a, b in canonical.items() if a != b},
             "source_periods": source_periods,
+            # Selection metadata only. The ordinary reader still validates the
+            # exact proof's currentness before exposing any numerical result.
+            "source_history_periods": history_periods,
             "default_period": bounds(
                 closed[-1].period_start - timedelta(days=1), closed[-1].period_end
             )
@@ -192,8 +213,9 @@ def _instrument_metric(item, *, unit="kopecks"):
 
 
 def _display_name(name, isin):
-    name = (name or "").strip()
-    return name if name and name.upper() != isin.upper() else None
+    from hermes_finance.services.source_investment_proofs import display_name_for_isin
+
+    return display_name_for_isin(isin, (name,))
 
 
 def _catalogue_names(session, rows):

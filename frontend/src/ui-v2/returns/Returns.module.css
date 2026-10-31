@@ -489,3 +489,70 @@
     font-size: 1.25rem;
   }
 }
+
+.tableScroll {
+  overflow-x: auto;
+}
+.overallSearch {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+.overallInstrument {
+  border-top: 1px solid #dce3ea;
+  padding: 16px 0;
+}
+.page button:focus-visible,
+.page a:focus-visible {
+  outline: 3px solid #2b74c4;
+  outline-offset: 3px;
+}
+
+.page [data-capital-selected="true"] {
+  outline: 3px solid #2b74c4;
+  outline-offset: -3px;
+}
+
+.goldHistory {
+  border-top: 1px solid #c5d0dc;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.goldForm,
+.goldOperation {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #c5d0dc;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.goldForm label,
+.goldOperation label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.goldForm input:not([type="checkbox"]),
+.goldForm select {
+  width: 100%;
+  box-sizing: border-box;
+}
+.goldOperation,
+.goldForm > p {
+  grid-column: 1 / -1;
+}
+.goldFacts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px 14px;
+}
+.goldFacts dd {
+  margin: 0;
+}
+.page [data-capital-context="true"] {
+  outline: 2px solid #2b74c4;
+  outline-offset: -2px;
+}

@@ -4,8 +4,12 @@ test("basket actual API: all/one/none, signed source-only coverage, separate int
   page,
   request,
 }, testInfo) => {
-  await page.goto("/v2/returns");
+  await page.goto("/v2/returns/account");
   const basket = page.getByRole("region", { name: "Моя доходность" });
+  await expect(basket).toHaveCount(0);
+  await page
+    .getByText("Дополнительная диагностика портфеля за выбранный период", { exact: true })
+    .press("Enter");
   await expect(basket.getByRole("checkbox")).toHaveCount(4);
   for (const box of await basket.getByRole("checkbox").all()) await expect(box).toBeChecked();
   const source = basket.getByRole("region", { name: "Известная часть по выпискам" });
@@ -79,7 +83,7 @@ test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two acco
     if (r.url().includes("/api/returns/")) responses.push(r.status());
   });
   page.on("request", (r) => expect(r.method()).toBe("GET"));
-  await page.goto("/v2/returns");
+  await page.goto("/v2/returns/account");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
   await expect(page).toHaveURL(/start=2030-03-31&end=2030-04-30/);
   await expect(
@@ -154,13 +158,12 @@ test("alias history links, partial coverage, keyboard details, Back and accepted
   await expect(result).toContainText("+80 ₽");
   await page.reload();
   await expect(result).toContainText("+80 ₽");
-  await page.getByRole("combobox", { name: "Представление" }).selectOption("accepted");
-  await expect(page.getByRole("combobox", { name: "Счёт" })).toContainText("Учебный депозит");
   const acceptedScope = context.accounts.find(
     (a: { label: string }) => a.label === "Учебный депозит",
   ).id;
   await page.goto(`/v2/returns?scope=${acceptedScope}&start=2030-03-31&end=2030-06-30`);
-  await expect(page.getByRole("combobox", { name: "Представление" })).toHaveValue("accepted");
+  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue(acceptedScope);
+  await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
   await expect(result).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,

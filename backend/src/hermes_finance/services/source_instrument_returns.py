@@ -914,6 +914,30 @@ def read_instrument_returns(
             events,
             filtered=requested_isin is not None,
         )
+    if instruments:
+        from hermes_finance.services.source_investment_proofs import (
+            read_latest_display_candidates,
+            resolve_display_name,
+        )
+
+        # Apply verified whole-history labels only after all financial readers
+        # and reconciliation finish. They never enter attribution, endpoints or
+        # coverage for this independently requested subinterval.
+        display_names = read_latest_display_candidates(
+            session, source_account=source_account, requested_isin=requested_isin
+        )
+        instruments = [
+            replace(
+                row,
+                source_name=resolve_display_name(
+                    row.isin,
+                    source_labels=identities[row.isin]["names"]
+                    | set(display_names["source"].get(row.isin, ())),
+                    pdf_labels=display_names["pdf"].get(row.isin, ()),
+                ),
+            )
+            for row in instruments
+        ]
     return SourceInstrumentReturns(
         source_account,
         tuple(instruments),

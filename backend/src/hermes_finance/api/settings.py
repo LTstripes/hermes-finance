@@ -89,6 +89,9 @@ def session_for_request(request: Request) -> Generator[Session, None, None]:
             session.info["reviewed_bond_valuation_path"] = getattr(
                 request.app.state, "reviewed_bond_valuation_path", None
             )
+            session.info["returns_account_display_names"] = getattr(
+                request.app.state, "returns_account_display_names", {}
+            )
             yield session
 
 

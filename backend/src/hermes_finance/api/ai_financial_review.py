@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ def _assemble(
     *,
     forecast_version: str,
     generated_at: datetime | None,
+    format_version: Literal["1.5.0", "2.0.0"],
     session: Session = Depends(session_for_request),
 ) -> dict[str, object]:
     return assemble_ai_financial_review(
@@ -31,6 +33,7 @@ def _assemble(
         generated_at=generated_at,
         evaluated_on=moscow_today(request),
         forecast_version=forecast_version,
+        format_version=format_version,
     )
 
 
@@ -46,6 +49,7 @@ def get_ai_financial_review(
     request: Request,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     generated_at: datetime | None = Query(default=None),
+    format_version: Literal["1.5.0", "2.0.0"] = Query(default="1.5.0"),
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
@@ -53,6 +57,7 @@ def get_ai_financial_review(
             request,
             forecast_version=forecast_version,
             generated_at=generated_at,
+            format_version=format_version,
             session=session,
         )
         return Response(
@@ -72,6 +77,7 @@ def download_ai_financial_review_json(
     request: Request,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     generated_at: datetime | None = Query(default=None),
+    format_version: Literal["1.5.0", "2.0.0"] = Query(default="1.5.0"),
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
@@ -79,6 +85,7 @@ def download_ai_financial_review_json(
             request,
             forecast_version=forecast_version,
             generated_at=generated_at,
+            format_version=format_version,
             session=session,
         )
         filename = ai_financial_review_filename(as_of_date=_as_of_date(report), media="json")

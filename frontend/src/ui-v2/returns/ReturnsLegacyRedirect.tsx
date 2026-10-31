@@ -31,7 +31,7 @@ export function ReturnsLegacyRedirect() {
   return (
     <Navigate
       replace
-      to={`/v2/returns?${params}${location.hash === "#bond-slice" ? "#returns-instruments" : ""}`}
+      to={`/v2/returns/account?${params}${location.hash === "#bond-slice" ? "#returns-instruments" : ""}`}
     />
   );
 }

@@ -20,6 +20,11 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
 
     path = tmp_path / "synthetic-proof-migration.db"
     previous = "0064_month_template_provenance"
+    gold_tables = (
+        "owner_manual_gold_histories",
+        "owner_manual_gold_history_revisions",
+        "owner_manual_gold_history_applies",
+    )
     assert run_alembic(path, "upgrade", previous).returncode == 0
     database = create_database(path)
     save_service_month(database)
@@ -32,6 +37,7 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
                 for (name,) in connection.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('alembic_version','source_return_proofs','source_return_proof_dependencies')"
                 )
+                if name not in gold_tables
             }
 
     before = existing_rows()
@@ -39,6 +45,8 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
     assert revision_rows(path) == [REVISION]
     assert existing_rows() == before
     with sqlite3.connect(path) as connection:
+        for table in gold_tables:
+            assert connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM source_return_proofs").fetchone() == (0,)
         assert connection.execute(
             "SELECT COUNT(*) FROM source_return_proof_dependencies"

@@ -212,7 +212,7 @@ def _payout_links(documents, money_by_document, report):
     return links, issues
 
 
-def _native(document, payload):
+def _native(document, payload, *, display_names=None):
     root = ET.fromstring(payload.decode("utf-8-sig"))
     nodes = root.findall("m:Trades/m:Report/m:Tablix2/m:Details_Collection/m:Details", NS)
     trades = [t for t in document["trades"] if t["section"] == "completed"]
@@ -220,14 +220,33 @@ def _native(document, payload):
         raise MyBrokerError("source_return_native_rows_mismatch")
     names = defaultdict(set)
     primary = defaultdict(list)
+
+    def display_name(isin, value):
+        # Optional presentation metadata only. Hashed attribution keys below
+        # retain their existing exact lexemes and never consume these labels.
+        if display_names is None or not isinstance(value, str):
+            return
+        value = value.strip()
+        if (
+            re.fullmatch(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", isin or "")
+            and value
+            and len(value) <= 256
+            and not any(ord(c) < 32 for c in value)
+        ):
+            display_names.setdefault(isin, set()).add(value)
+
     for trade, node in zip(trades, nodes):
         if node.get("p_name"):
             names[digest(node.get("p_name"))].add(trade["core"]["isin"])
+            display_name(trade["core"]["isin"], node.get("p_name"))
         if trade["ids"]:
             primary[trade["ids"][0]].append(trade)
+    position_keys = {(p["source_account"], p["isin"]) for p in document["positions"]}
     for node in root.findall(".//m:Details[@ISIN1]", NS):
         if node.get("ISIN1") and node.get("active_name"):
             names[digest(node.get("active_name"))].add(node.get("ISIN1"))
+            if (node.get("acc_code"), node.get("ISIN1")) in position_keys:
+                display_name(node.get("ISIN1"), node.get("active_name"))
     cancellations = []
     for node in root.findall("m:Trades3/m:Report/m:Tablix1/m:Details_Collection/m:Details", NS):
         match = re.fullmatch(
@@ -248,9 +267,91 @@ def _native(document, payload):
     return trades, names, primary, cancellations
 
 
-def _rates(start, end, v0, v1, flows, reasons=()):
+def _money_trade_token(row):
+    token = row.get("native_token", row.get("primary_id"))
+    match = re.fullmatch(
+        r"(?:Расчеты|Комиссия) по сделке ([0-9]{1,128}|B[0-9]{1,127})", row["operation"]
+    )
+    return match[1] if token is None and match else token
+
+
+def _trade_disclosure(row, primary, occurrences, *, account, isin, currency, start, end):
+    """One exact native trade's informational fields on one Money settlement.
+
+    Money remains the only cash authority. Native NKD/commission are disclosure,
+    never extra cash legs; neither a price unit nor an NKD inclusion basis is
+    established by this projection. Repeated principal occurrences are not split.
+    """
+    token = _money_trade_token(row)
+    candidates = primary.get(token, ())
+    if token is None or len(candidates) != 1 or occurrences[token] != 1:
+        return {}
+    trade = candidates[0]
+    core = trade["core"]
+    if (
+        trade.get("section") != "completed"
+        or trade.get("state") != "settled"
+        or trade.get("repo_observed")
+        or len(trade.get("ids", ())) != 2
+        or trade.get("identity") != digest([PROVIDER, account, trade["ids"]])
+        or core["source_account"] != account
+        or row["source_account"] != account
+        or core["isin"] != isin
+        or core["currency"] != currency
+        or row["currency"] != currency
+        or trade.get("settlement_date") != row["date"]
+        or any(row.get(key) not in (None, token) for key in ("native_token", "primary_id"))
+        or _money_trade_token({"operation": row["operation"]}) not in (None, token)
+    ):
+        return {}
+    try:
+        cash_date = date.fromisoformat(trade["settlement_date"])
+        depo_date = date.fromisoformat(trade["depo_settlement_date"])
+        quantity, price = Decimal(core["quantity"]), Decimal(core["price"])
+        if (
+            not start < cash_date <= end
+            or not start < depo_date <= end
+            or not quantity.is_finite()
+            or quantity == 0
+            or not price.is_finite()
+            or price < 0
+            or row["minor"] == 0
+            or (quantity > 0) != (row["minor"] < 0)
+        ):
+            return {}
+        amount, nkd, fee = (
+            None if value is None else _minor(value)
+            for value in (
+                core["trade_amount"],
+                trade.get("accrued_interest"),
+                trade.get("bank_commission"),
+            )
+        )
+        if any(value is not None and value < 0 for value in (amount, nkd, fee)):
+            return {}
+    except (ValueError, TypeError, KeyError, ArithmeticError, MyBrokerError):
+        return {}
+    return {
+        "native_identity": trade["identity"],
+        "native_ids": tuple(trade["ids"]),
+        "trade_time": core["trade_time"],
+        "cash_settlement_date": cash_date,
+        "depository_settlement_date": depo_date,
+        "quantity_delta": quantity,
+        "unit_price": price,
+        "native_trade_amount_kopecks": amount,
+        "accrued_interest_kopecks": nkd,
+        "commission_kopecks": fee,
+    }
+
+
+def _rates(start, end, v0, v1, flows, reasons=(), *, include_xirr=True):
     interval = calculate_interval_return((start, v0), (end, v1), flows)
-    period = calculate_monthly_return_chain([(start, v0), (end, v1)], flows).period
+    period = (
+        calculate_monthly_return_chain([(start, v0), (end, v1)], flows).period
+        if include_xirr
+        else None
+    )
     return {
         "pnl": _metric(interval.growth_kopecks, reasons),
         "modified_dietz": _metric(
@@ -259,16 +360,46 @@ def _rates(start, end, v0, v1, flows, reasons=()):
             method="modified_dietz",
         ),
         "xirr_annualized": _metric(
-            period.xirr_annualized_return,
-            tuple(reasons) + period.xirr_reason_codes,
+            period.xirr_annualized_return if period is not None else None,
+            tuple(reasons) + period.xirr_reason_codes if period is not None else ("not_requested",),
             method="xirr",
             annualized=True,
         ),
         "xirr_period": _metric(
-            period.xirr_period_return,
-            tuple(reasons) + period.xirr_reason_codes,
+            period.xirr_period_return if period is not None else None,
+            tuple(reasons) + period.xirr_reason_codes if period is not None else ("not_requested",),
             method="money_weighted_period",
         ),
+    }
+
+
+def _defer_xirr(interval, *, include_instruments=True):
+    """Mark omitted optional rates on an owned presentation projection only."""
+    for row in (interval, *(interval["instruments"] if include_instruments else ())):
+        row["xirr_annualized"] = _metric(None, ("not_requested",), method="xirr", annualized=True)
+        row["xirr_period"] = _metric(None, ("not_requested",), method="money_weighted_period")
+    return interval
+
+
+def _account_index(interval, *, requested_isin=None):
+    """Project a previously validated full result without detailed disclosures."""
+    return {
+        **{
+            key: value
+            for key, value in interval.items()
+            if key
+            not in {
+                "external_flows",
+                "account_only",
+                "exceptions",
+                "unallocated_payouts",
+            }
+        },
+        "instruments": [
+            {"isin": row["isin"]}
+            for row in interval["instruments"]
+            if requested_isin is None or row["isin"] == requested_isin
+        ],
     }
 
 
@@ -419,6 +550,9 @@ def _interval(
     *,
     native_evidence=None,
     analyses=None,
+    requested_isin=None,
+    include_xirr=True,
+    include_instruments=True,
 ):
     account = document["filename_account"]
     native_account = {r["source_account"] for r in document["money"] + document["positions"]}
@@ -482,6 +616,9 @@ def _interval(
         if quantity != 0:
             issues[isin].add("repo_position_open_at_boundary")
     native_money = defaultdict(list)
+    trade_occurrences = Counter(
+        _money_trade_token(row) for row in money if row["classification"] == "trade_settlement"
+    )
     events = defaultdict(list)
     only = []
     external = []
@@ -566,14 +703,16 @@ def _interval(
             if kind == "trade_settlement":
                 unlinked.append(row)
                 continue
-            only.append(
-                {"kind": "account_fee", "amount_kopecks": str(amount), "reference": row["ref"]}
-            )
+            if include_instruments:
+                only.append(
+                    {"kind": "account_fee", "amount_kopecks": str(amount), "reference": row["ref"]}
+                )
             continue
         elif kind == "tax":
-            only.append(
-                {"kind": "account_tax", "amount_kopecks": str(amount), "reference": row["ref"]}
-            )
+            if include_instruments:
+                only.append(
+                    {"kind": "account_tax", "amount_kopecks": str(amount), "reference": row["ref"]}
+                )
             continue
         elif (
             kind == "unknown"
@@ -583,13 +722,14 @@ def _interval(
                 row["narrative"],
             )
         ):
-            only.append(
-                {
-                    "kind": "unallocated_compensation",
-                    "amount_kopecks": str(amount),
-                    "reference": row["ref"],
-                }
-            )
+            if include_instruments:
+                only.append(
+                    {
+                        "kind": "unallocated_compensation",
+                        "amount_kopecks": str(amount),
+                        "reference": row["ref"],
+                    }
+                )
             continue
         else:
             unlinked.append(row)
@@ -621,14 +761,15 @@ def _interval(
         if currency != "RUB" or key not in expected or amount != expected[key]:
             issues[isin].add("native_money_cash_bridge_mismatch")
         if key in repo_groups:
-            only.append(
-                {
-                    "kind": "repo_financing",
-                    "isin": isin,
-                    "amount_kopecks": str(amount),
-                    "references": [r["ref"] for r in rows],
-                }
-            )
+            if include_instruments:
+                only.append(
+                    {
+                        "kind": "repo_financing",
+                        "isin": isin,
+                        "amount_kopecks": str(amount),
+                        "references": [r["ref"] for r in rows],
+                    }
+                )
             continue
         for row in rows:
             event_kind = (
@@ -658,6 +799,22 @@ def _interval(
                     classification=row["classification"],
                     classification_origin="native_money_group_bridge",
                     classification_status="confirmed",
+                    **(
+                        _trade_disclosure(
+                            row,
+                            primary,
+                            trade_occurrences,
+                            account=native_account,
+                            isin=isin,
+                            currency=currency,
+                            start=start,
+                            end=end,
+                        )
+                        if event_kind in {"BUY", "SELL"}
+                        and key in expected
+                        and amount == expected[key]
+                        else {}
+                    ),
                 )
             )
     positions = {p["isin"]: p for p in document["positions"]}
@@ -750,12 +907,22 @@ def _interval(
         components, pnl, known, dietz, estimate = calculate_economics(
             opening, closing, events[isin], coverage
         )
+        # All source/event/quantity/cash checks and account valuation operands
+        # above remain complete. Only the unused instrument projection and its
+        # expensive XIRR are omitted for an exact instrument detail request.
+        if requested_isin is not None and isin != requested_isin:
+            continue
+        if not include_instruments:
+            instruments.append({"isin": isin})
+            continue
         flows = [
             (leg.date, leg.instrument_flow_kopecks, "confirmed")
             for e in events[isin]
             for leg in e.cash_legs
         ]
-        rates = _rates(start, end, v0, v1, flows, tuple(why) + advisory_reasons)
+        rates = _rates(
+            start, end, v0, v1, flows, tuple(why) + advisory_reasons, include_xirr=include_xirr
+        )
         if why:
             for key in rates:
                 rates[key]["value"] = None
@@ -837,7 +1004,9 @@ def _interval(
     if any(r["currency"] != "RUB" for r in unlinked):
         external.append((end, 0, "unknown"))
         account_reasons.add("non_rub_money_valuation_unknown")
-    rates = _rates(start, end, v0total, v1total, external, account_reasons)
+    rates = _rates(
+        start, end, v0total, v1total, external, account_reasons, include_xirr=include_xirr
+    )
     known_subtotal = {
         **rates["pnl"],
         "status": "partial" if rates["pnl"]["value"] is not None else "unavailable",
@@ -873,7 +1042,7 @@ def _interval(
             m["status"] = "partial"
             m["reason_codes"] = sorted(account_reasons)
     linked_rows = sum(r["ref"] in links for r in money)
-    return {
+    result = {
         "source_account": account,
         "source_sha256": document["document_sha256"],
         "opening_date": str(start),
@@ -884,10 +1053,6 @@ def _interval(
         "history_from_zero": inception,
         "opening_kopecks": None if v0total is None else str(v0total),
         "closing_kopecks": None if v1total is None else str(v1total),
-        "external_flows": [
-            {"date": str(d), "amount_kopecks": str(a), "status": status}
-            for d, a, status in external
-        ],
         "contributions_kopecks": None
         if any(s == "unknown" for _, _, s in external)
         else str(sum(a for _, a, _ in external if a > 0)),
@@ -927,27 +1092,6 @@ def _interval(
         "known_subtotal": known_subtotal,
         "unresolved_movements": movements,
         "instruments": instruments,
-        "account_only": only,
-        "exceptions": [
-            {
-                "reference": r["ref"],
-                "date": r["date"],
-                "currency": r["currency"],
-                "amount_kopecks": str(r["minor"]) if r["currency"] == "RUB" else None,
-                "classification": r["classification"],
-                "registration": r["security"].reg_number if r["security"] else None,
-            }
-            for r in unlinked
-        ],
-        "unallocated_payouts": [
-            {
-                "reference": r["ref"],
-                "amount_kopecks": str(r["minor"]),
-                "reason": "payout_identity_unresolved",
-            }
-            for r in unlinked
-            if r["classification"] in {"coupon", "dividend"}
-        ],
         "reconciliation": {
             "cash_delta_kopecks": None if cash_delta is None else str(cash_delta),
             "pdf_closing_delta_kopecks": None if pdf_delta is None else str(pdf_delta),
@@ -962,6 +1106,35 @@ def _interval(
         "source_advisories": document["syntax_blockers"],
         "reason_codes": sorted(account_reasons),
     }
+    if include_instruments:
+        result.update(
+            external_flows=[
+                {"date": str(day), "amount_kopecks": str(amount), "status": status}
+                for day, amount, status in external
+            ],
+            account_only=only,
+            exceptions=[
+                {
+                    "reference": row["ref"],
+                    "date": row["date"],
+                    "currency": row["currency"],
+                    "amount_kopecks": str(row["minor"]) if row["currency"] == "RUB" else None,
+                    "classification": row["classification"],
+                    "registration": row["security"].reg_number if row["security"] else None,
+                }
+                for row in unlinked
+            ],
+            unallocated_payouts=[
+                {
+                    "reference": row["ref"],
+                    "amount_kopecks": str(row["minor"]),
+                    "reason": "payout_identity_unresolved",
+                }
+                for row in unlinked
+                if row["classification"] in {"coupon", "dividend"}
+            ],
+        )
+    return result if include_xirr else _defer_xirr(result, include_instruments=include_instruments)
 
 
 def preview_source_reports(session, entries, originals, income_report, *, history_from_zero=False):

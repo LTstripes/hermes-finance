@@ -272,8 +272,8 @@ describe("UI v2 Data/App", () => {
   it("keeps the Data/App subnav unambiguous without a fake report-month context", async () => {
     renderPage();
 
-    const nav = await screen.findByRole("navigation", { name: /Разделы данных/ });
-    expect(within(nav).getByRole("link", { name: "Настройки" })).toHaveAttribute(
+    const nav = await screen.findByRole("navigation", { name: /Разделы настроек/ });
+    expect(within(nav).getByRole("link", { name: "Приложение" })).toHaveAttribute(
       "href",
       "/v2/data/app",
     );

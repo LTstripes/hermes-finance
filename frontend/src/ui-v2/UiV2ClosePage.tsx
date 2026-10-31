@@ -5,7 +5,10 @@ import { formatApiError } from "../api/client";
 import type { GuidedCloseActionId, GuidedCloseStep } from "../api/monthCloseWorkflow";
 import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
-import { useBrokerOriginalContext } from "../components/month-close/brokerOriginalSession";
+import {
+  useBrokerOriginalContext,
+  useBrokerOriginalSession,
+} from "../components/month-close/brokerOriginalSession";
 import {
   FinalMonthReview,
   MonthCompletionSummary,
@@ -14,28 +17,26 @@ import { IntentionalEmptyClose } from "../components/month-close/IntentionalEmpt
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
 import { isGuidedCloseStepId, routeForGuidedAction } from "../components/month-close/navigation";
 import { closeOwnerCopy } from "../components/month-close/ownerCopy";
-import { MoneyAmount } from "../components/ui";
-import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
-import { MonthNavigationGuard } from "./MonthNavigationGuard";
-import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
-import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
+import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import {
   type AlfaStatementTransientOutcome,
   parseAlfaStatementTransientOutcome,
 } from "../components/month-close/statementOutcome";
 import { useMonthCloseLifecycle } from "../components/month-close/useMonthCloseLifecycle";
-import { Button, ConfirmDialog } from "../components/ui";
+import { Button, ConfirmDialog, MoneyAmount } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { queryKeys } from "../queryClient";
+import { MonthDraftPayouts } from "./MonthDraftPayouts";
+import { MonthNavigationGuard } from "./MonthNavigationGuard";
 import {
   monthWorkspacePath,
   resolveMonthSelection,
   selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
+import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
 import { UiV2MonthSources } from "./UiV2MonthSources";
-import { MonthDraftPayouts } from "./MonthDraftPayouts";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
@@ -369,6 +370,34 @@ export default function UiV2ClosePage() {
             ) : null}
             {panel === "close" ? (
               <>
+                {!closed ? (
+                  <Button
+                    variant="primary"
+                    type="button"
+                    disabled={
+                      !workflowReady ||
+                      !workflow.readiness.can_close ||
+                      preparingClose ||
+                      lifecycleBusy ||
+                      lifecycleRecovery ||
+                      emptyClosePending
+                    }
+                    onClick={() => void prepareClose()}
+                  >
+                    {preparingClose ? "Проверяем…" : "Закрыть месяц"}
+                  </Button>
+                ) : (
+                  <div className={monthStyles.sourceNav}>
+                    <Link to="/v2">Открыть «Мои финансы»</Link>
+                    <Button
+                      type="button"
+                      disabled={lifecycleBusy || lifecycleRecovery}
+                      onClick={requestReopen}
+                    >
+                      Открыть месяц заново
+                    </Button>
+                  </div>
+                )}
                 {!workflowReady ? <UiV2Loading label="Проверяем актуальное состояние…" /> : null}
                 {workflowQuery.isError ? (
                   <UiV2Notice
@@ -433,34 +462,6 @@ export default function UiV2ClosePage() {
                     Проверь сохранённые данные месяца.
                   </UiV2Notice>
                 ) : null}
-                {!closed ? (
-                  <Button
-                    variant="primary"
-                    type="button"
-                    disabled={
-                      !workflowReady ||
-                      !workflow.readiness.can_close ||
-                      preparingClose ||
-                      lifecycleBusy ||
-                      lifecycleRecovery ||
-                      emptyClosePending
-                    }
-                    onClick={() => void prepareClose()}
-                  >
-                    {preparingClose ? "Проверяем…" : "Закрыть месяц"}
-                  </Button>
-                ) : (
-                  <div className={monthStyles.sourceNav}>
-                    <Link to="/v2">Открыть «Мои финансы»</Link>
-                    <Button
-                      type="button"
-                      disabled={lifecycleBusy || lifecycleRecovery}
-                      onClick={requestReopen}
-                    >
-                      Открыть месяц заново
-                    </Button>
-                  </div>
-                )}
                 {selectionIdentityMatches && selectedMonth && finalReviewActive ? (
                   <IntentionalEmptyClose
                     key={`${selectedMonth.id}:${selectedMonth.snapshot_date}`}

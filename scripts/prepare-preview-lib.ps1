@@ -896,6 +896,37 @@ function Assert-HermesPreviewRuntimeDatabase {
     }
 }
 
+function Get-HermesPreviewBoundaryDigest {
+    param([Parameter(Mandatory = $true)]$Boundary)
+    $values = @()
+    foreach ($field in @("ControlCheckout", "StableCheckout", "StableDataDirectory", "StableDatabase", "PreviewCheckout", "PreviewDataDirectory", "PreviewDatabase", "CandidateSha")) {
+        $values += [string]$Boundary.$field
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        return -join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($values | ConvertTo-Json -Compress))) | ForEach-Object { $_.ToString("x2") })
+    }
+    finally { $sha.Dispose() }
+}
+
+function Read-HermesPreviewCandidateBoundary {
+    param([Parameter(Mandatory = $true)][string]$Checkout)
+    $pinPath = Join-Path $Checkout ".hermes-preview-boundary.json"
+    $remediation = "PreviewPort requires a current OPS03 candidate boundary. Repeat stock prepare-preview.ps1 from the reviewed exact candidate with the trusted Main -ControlCheckout; do not edit the boundary JSON."
+    try {
+        Assert-HermesPreviewExistingFile -Path $pinPath -Label "Preview candidate boundary"
+        $pin = Get-Content -LiteralPath $pinPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($pin.CandidateSha -cnotmatch '^[0-9a-f]{40}$' -or $pin.BoundarySha256 -cnotmatch '^[0-9a-f]{64}$' -or
+            (Get-HermesPreviewBoundaryDigest -Boundary $pin) -cne $pin.BoundarySha256) { throw "Invalid candidate boundary" }
+        foreach ($field in @("ControlCheckout", "StableCheckout", "StableDataDirectory", "StableDatabase", "PreviewCheckout", "PreviewDataDirectory", "PreviewDatabase")) {
+            if ([string]::IsNullOrWhiteSpace([string]$pin.$field) -or -not [IO.Path]::IsPathRooted([string]$pin.$field)) { throw "Invalid path" }
+        }
+        if (-not (Test-HermesPreviewSamePath -Left $pin.PreviewCheckout -Right $Checkout)) { throw "Invalid checkout" }
+    }
+    catch { throw $remediation }
+    return $pin
+}
+
 function Assert-HermesPreviewPinnedRuntimeBoundary {
     param([Parameter(Mandatory = $true)][string]$Checkout)
 
@@ -1174,7 +1205,9 @@ function Invoke-HermesPreviewPreparation {
             PreviewCheckout = $resolvedPreview
             PreviewDataDirectory = $resolvedPreviewData
             PreviewDatabase = $resolvedPreviewDatabase
+            CandidateSha = $resolvedCandidate
         }
+        $boundary.BoundarySha256 = Get-HermesPreviewBoundaryDigest -Boundary $boundary
         [IO.File]::WriteAllText($pinPath, ($boundary | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 
         return [pscustomobject]@{

@@ -136,7 +136,7 @@ def test_released_0044_upgrade_preserves_closed_provenance_and_duplicates(tmp_pa
 
     scripts = ScriptDirectory.from_config(Config(str(BACKEND_ROOT / "alembic.ini")))
     revisions = list(reversed(list(scripts.iterate_revisions(REVISION, RELEASED_HEAD))))
-    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 68))
+    assert [int(r.revision[:4]) for r in revisions] == list(range(45, 69))
     for target in ["head"] if route == "direct" else [r.revision for r in revisions]:
         _upgrade(path, target)
         with sqlite3.connect(path) as c:
@@ -227,7 +227,7 @@ def test_release_identity_agrees_with_locked_package_and_health_version():
     project = tomllib.loads((BACKEND_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((BACKEND_ROOT / "uv.lock").read_text(encoding="utf-8"))
     package = next(p for p in lock["package"] if p["name"] == project["project"]["name"])
-    assert project["project"]["version"] == package["version"] == __version__ == "1.8.1"
+    assert project["project"]["version"] == package["version"] == __version__ == "1.9.0"
 
     frontend = BACKEND_ROOT.parent / "frontend"
     manifest = json.loads((frontend / "package.json").read_text(encoding="utf-8"))

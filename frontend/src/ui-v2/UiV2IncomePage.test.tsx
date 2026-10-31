@@ -280,22 +280,22 @@ afterEach(() => {
 });
 
 describe("UI v2 Income and plans", () => {
-  it("renders exactly three canonical headlines and keeps principal separate", async () => {
+  it("renders the two retained headlines, removes forecast/goals and keeps principal separate", async () => {
     const { mount, reads } = setup();
     mount();
 
     expect(await screen.findByRole("heading", { name: "Доход и планы" })).toBeVisible();
     await screen.findByTestId("income-average");
     const headlines = screen.getByRole("region", { name: "Главные показатели дохода" });
-    expect(within(headlines).getAllByRole("article")).toHaveLength(3);
+    expect(within(headlines).getAllByRole("article")).toHaveLength(2);
     expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
-    expect(screen.getByTestId("income-forecast")).toHaveTextContent("21 000 ₽");
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("8 500 ₽");
     expect(screen.getByTestId("income-upcoming-passive").parentElement).toHaveTextContent(
       "Возврат основной суммы: 100 000 ₽ · не доход",
     );
-    expect(screen.getByText("Купоны после удержаний")).toBeVisible();
-    expect(screen.getAllByText("Нет прогноза срока")).toHaveLength(2);
+    expect(screen.queryByTestId("income-forecast-panel")).toBeNull();
+    expect(screen.queryByTestId("income-goals-panel")).toBeNull();
+    expect(reads.some((read) => read.includes("/api/goals/summary"))).toBe(false);
     expect(screen.getByRole("link", { name: "Доход и планы" })).toHaveAttribute(
       "aria-current",
       "page",
@@ -313,16 +313,11 @@ describe("UI v2 Income and plans", () => {
     ).map((panel) => panel.dataset.testid);
     expect(panelOrder).toEqual([
       "income-history-panel",
-      "income-forecast-panel",
-      "income-goals-panel",
       "income-plan-panel",
       "income-ladder-panel",
       "income-handoffs-panel",
     ]);
 
-    expect(
-      within(screen.getByTestId("income-goals-panel")).getByRole("link", { name: "Все цели →" }),
-    ).toHaveAttribute("href", "/v2/income/goals?month=91");
     const handoffs = within(screen.getByTestId("income-handoffs-panel"));
     expect(handoffs.getByText("НДФЛ и ИИС по выбранному отчётному срезу.")).toBeVisible();
     expect(handoffs.getByRole("link", { name: "Открыть Налоги и ИИС →" })).toHaveAttribute(
@@ -363,7 +358,6 @@ describe("UI v2 Income and plans", () => {
     expect(screen.getByText("Апрель 2031", { exact: false })).toBeVisible();
     await screen.findByTestId("income-average");
     expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
-    expect(screen.getByTestId("income-forecast")).toHaveTextContent("21 000 ₽");
     expect(reads.filter((read) => read.includes("/api/months/91/income-plan-summary")).length).toBe(
       1,
     );
@@ -412,7 +406,7 @@ describe("UI v2 Income and plans", () => {
     planningUnavailable.mount();
     expect(await screen.findByTestId("income-average")).toHaveTextContent("15 300 ₽");
     expect(
-      within(screen.getByTestId("income-forecast-panel")).getByText("Данные временно недоступны"),
+      within(screen.getByTestId("income-plan-panel")).getByText("Данные временно недоступны"),
     ).toBeVisible();
     cleanup();
     vi.unstubAllGlobals();
@@ -422,7 +416,6 @@ describe("UI v2 Income and plans", () => {
     partial.state.budgetError = true;
     partial.mount();
     expect(await screen.findByTestId("income-average")).toHaveTextContent("15 300 ₽");
-    expect(screen.getByTestId("income-forecast")).toHaveTextContent("21 000 ₽");
     expect(
       within(screen.getByTestId("income-ladder-panel")).getByText("Данные временно недоступны"),
     ).toBeVisible();

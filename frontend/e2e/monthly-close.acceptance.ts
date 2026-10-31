@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 async function tile(page: Page, name: RegExp) {
   await page
@@ -482,10 +482,22 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
     expect(reopenedContrast).toBeGreaterThanOrEqual(4.5);
     await reopenedPrimary.click();
+    const panelWorkflow = page.waitForResponse((response) => {
+      const referer = response.request().headers().referer;
+      return (
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname === `/api/months/${old}/close-workflow` &&
+        !!referer &&
+        new URL(referer).searchParams.get("panel") === "close"
+      );
+    });
     await tile(page, /Закрыть месяц/);
-    await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Закрыть месяц", exact: true }).focus();
-    await page.keyboard.press("Enter");
+    expect((await panelWorkflow).ok()).toBe(true);
+    const closeButton = page.getByRole("button", { name: "Закрыть месяц", exact: true });
+    await expect(closeButton).toBeEnabled();
+    await closeButton.focus();
+    await expect(closeButton).toBeFocused();
+    await closeButton.press("Enter");
     await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
@@ -566,7 +578,7 @@ test("settings has one sidebar entry and diagnostics deep links keep selection, 
     await expect(page.locator("#diagnostics")).toBeFocused();
     await expect(page.getByRole("heading", { name: "Диагностика", exact: true })).toBeInViewport();
     await page.screenshot({ path: info.outputPath(`settings-diagnostics-${width}.png`) });
-    const sidebar = page.getByRole("navigation", { name: "Данные и приложение" });
+    const sidebar = page.getByRole("navigation", { name: "Основная навигация" });
     await expect(sidebar.getByRole("link", { name: "Настройки", exact: true })).toHaveCount(1);
     await expect(sidebar.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
     await sections.getByRole("link", { name: "Настройки", exact: true }).focus();

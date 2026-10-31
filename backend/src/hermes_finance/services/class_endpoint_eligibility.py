@@ -28,6 +28,7 @@ from hermes_finance.services.concurrency import ConcurrencyError
 from hermes_finance.services.executed_trades import unresolved_execution_ids
 from hermes_finance.services.mybroker_dispositions import REASON, impact
 from hermes_finance.services.mybroker_import import unresolved_class_source_ids
+from hermes_finance.services.owner_manual_gold_history import gold_crossing_evidence
 from hermes_finance.services.performance_availability import (
     _membership_at,
     _scope_membership_coverage,
@@ -71,6 +72,13 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
     execution_ids = unresolved_execution_ids(session, accounts, start, end)
     if execution_ids:
         reasons.add("mybroker_class_reconciliation_required")
+    gold_history = (
+        gold_crossing_evidence(session, accounts, start, end)
+        if asset_class == "gold"
+        else {"material": [], "crossings": []}
+    )
+    if gold_history["crossings"]:
+        reasons.add("owner_gold_known_crossing")
     months = list(
         session.scalars(
             select(ReportingMonth)
@@ -324,6 +332,8 @@ def _facts(session: Session, asset_class: str, start: date, end: date) -> dict:
                 .order_by(ExecutedTradeRevision.trade_id, ExecutedTradeRevision.revision)
             )
         ]
+    if gold_history["material"]:
+        material["owner_manual_gold_history"] = gold_history
     signature = sha256(
         json.dumps(material, default=str, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()

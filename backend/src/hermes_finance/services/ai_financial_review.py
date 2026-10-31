@@ -32,6 +32,7 @@ from hermes_finance.domain import PerformanceScope
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.values import PercentageRate, RubleAmount
 from hermes_finance.persistence import ReportingMonth
+from hermes_finance.services import ai_review_payloads
 from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.ai_analysis_bundle import (
     SCHEMA_VERSION as BUNDLE_SCHEMA_VERSION,
@@ -42,7 +43,12 @@ from hermes_finance.services.ai_analysis_bundle import (
 from hermes_finance.services.ai_analysis_bundle import (
     assemble_ai_analysis_bundle,
 )
-from hermes_finance.services.ai_source_returns import source_returns_section
+from hermes_finance.services.ai_source_returns import (
+    canonical_reason_code,
+    decimal_quantity,
+    returns_overall_section,
+    source_returns_section,
+)
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.comments import list_monthly_comments
 from hermes_finance.services.debts import list_debts
@@ -77,10 +83,11 @@ from hermes_finance.services.positions import list_position_snapshots
 from hermes_finance.services.properties import list_property_snapshots
 from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.4.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json"
+SCHEMA_VERSION = "1.5.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -145,23 +152,31 @@ class AiFinancialReviewValidationError(RuntimeError):
     """Generated AI financial review failed the declared schema."""
 
 
-def _schema_path() -> Path:
+def _schema_path(version: str = SCHEMA_VERSION) -> Path:
+    filename = (
+        "ai_financial_review.v2.schema.json"
+        if version == ai_review_payloads.VERSION
+        else "ai_financial_review.schema.json"
+    )
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "docs" / "schemas" / "ai_financial_review.schema.json"
+        candidate = parent / "docs" / "schemas" / filename
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("ai_financial_review.schema.json was not found next to the repository")
 
 
-def _schema() -> dict[str, object]:
-    return json.loads(_schema_path().read_text(encoding="utf-8"))
+def _schema(version: str = SCHEMA_VERSION) -> dict[str, object]:
+    return json.loads(_schema_path(version).read_text(encoding="utf-8"))
 
 
 def validate_ai_financial_review(report: dict[str, object]) -> None:
     """Validate an assembled report before returning it to a caller."""
     try:
-        Draft202012Validator(_schema(), format_checker=FormatChecker()).validate(report)
-    except ValidationError as error:
+        version = str(report.get("schema_version"))
+        Draft202012Validator(_schema(version), format_checker=FormatChecker()).validate(report)
+        if version == ai_review_payloads.VERSION:
+            ai_review_payloads.validate_source_payload_refs(report)
+    except (ValidationError, ai_review_payloads.PayloadReferenceError) as error:
         raise AiFinancialReviewValidationError(
             "generated AI financial review failed schema validation"
         ) from error
@@ -195,9 +210,10 @@ def _reason_codes(value: object) -> list[str]:
         return []
     return sorted(
         {
-            item
+            canonical_reason_code(item)
             for item in value
-            if isinstance(item, str) and _CODE_PATTERN.fullmatch(item) is not None
+            if isinstance(item, str)
+            and _CODE_PATTERN.fullmatch(canonical_reason_code(item)) is not None
         }
     )
 
@@ -888,7 +904,7 @@ def _portfolio_data(
             {
                 "account_ref": account_ref,
                 "instrument_ref": instrument_ref,
-                "quantity": item.get("quantity"),
+                "quantity": decimal_quantity(item.get("quantity")),
                 "average_acquisition_cost_per_unit": average_cost,
                 "market_price_per_unit": item.get("market_price_per_unit"),
                 "market_value": item.get("market_value"),
@@ -1536,6 +1552,8 @@ def _remap_warnings(
     for value in _list(package_warnings, label="package warnings"):
         warning = _mapping(value, label="package warning")
         code = warning.get("code")
+        if isinstance(code, str):
+            code = canonical_reason_code(code)
         scope = warning.get("scope")
         if not isinstance(code, str) or _CODE_PATTERN.fullmatch(code) is None:
             continue
@@ -1598,9 +1616,12 @@ def assemble_ai_financial_review(
     evaluated_on: date | None = None,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
     top_n: int = DEFAULT_TOP_N,
+    format_version: str = SCHEMA_VERSION,
 ) -> dict[str, object]:
     """Compose the canonical AI financial review from accepted read models."""
 
+    if format_version not in {SCHEMA_VERSION, ai_review_payloads.VERSION}:
+        raise ValueError("unsupported AI financial review format version")
     version = forecast_version.strip()
     if not version:
         raise ValueError("forecast_version must not be empty")
@@ -1897,11 +1918,19 @@ def assemble_ai_financial_review(
         ),
     }
 
-    sections["source_returns"] = source_returns_section(
-        session,
-        as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
-        reporting_period=reporting_period,
-    )
+    with source_read_snapshot(session):
+        source_account_refs = {}
+        sections["source_returns"] = source_returns_section(
+            session,
+            as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
+            reporting_period=reporting_period,
+            source_account_refs=source_account_refs,
+        )
+        sections["returns_overall"] = returns_overall_section(
+            session,
+            source_account_refs=source_account_refs,
+            source_section=sections["source_returns"],
+        )
 
     coverage = {
         "domains": {
@@ -1917,6 +1946,7 @@ def assemble_ai_financial_review(
             "budget_and_saving": _coverage_from_section(sections["budget_and_saving"]),
             "performance": _coverage_from_section(sections["performance"]),
             "source_returns": _coverage_from_section(sections["source_returns"]),
+            "returns_overall": _coverage_from_section(sections["returns_overall"]),
         }
     }
 
@@ -1929,6 +1959,15 @@ def assemble_ai_financial_review(
         }
         for code in sections["source_returns"]["reason_codes"]
     ]
+    extra_warnings.extend(
+        {
+            "code": code,
+            "severity": "info",
+            "scope": "sections.returns_overall",
+            "message": "Current Returns retains each component's dates and authority; the known mixed result is partial and is not full portfolio P&L.",
+        }
+        for code in sections["returns_overall"]["reason_codes"]
+    )
     if not plan_entered:
         extra_warnings.append(
             {
@@ -1956,6 +1995,14 @@ def assemble_ai_financial_review(
             "status": sections["source_returns"]["status"],
             "reason_codes": sections["source_returns"]["reason_codes"],
             "message": "Source-only observations retain per-metric limitations; they are separate from Performance v1.",
+        }
+    )
+    field_states.append(
+        {
+            "path": "sections.returns_overall",
+            "status": sections["returns_overall"]["status"],
+            "reason_codes": sections["returns_overall"]["reason_codes"],
+            "message": "Current available history is independent of the selected reporting month; per-component exclusions and unavailable rates remain explicit.",
         }
     )
     if performance_reasons:
@@ -2072,5 +2119,7 @@ def assemble_ai_financial_review(
         "field_states": field_states,
         "warnings": warnings,
     }
+    if format_version == ai_review_payloads.VERSION:
+        report = ai_review_payloads.normalize_source_payloads(report)
     validate_ai_financial_review(report)
     return report

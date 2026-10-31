@@ -286,7 +286,7 @@ describe("UI v2 Data sources", () => {
   it("shows mode-grouped Data/App subnav with native data links", async () => {
     const { mount } = setup();
     mount();
-    expect(await screen.findByRole("navigation", { name: /Разделы данных/ })).toBeTruthy();
+    expect(await screen.findByRole("navigation", { name: /Разделы настроек/ })).toBeTruthy();
     await screen.findByTestId("data-month-context");
     expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
       "href",

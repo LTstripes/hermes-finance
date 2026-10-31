@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     database_path: Path = REPOSITORY_ROOT / "data" / "finance.db"
     frontend_dist: Path = REPOSITORY_ROOT / "frontend" / "dist"
     reviewed_bond_valuation_path: Path | None = None
+    returns_account_display_names: dict[str, str] = Field(default_factory=dict)
     t_invest_read_only_token: SecretStr | None = None
 
     @field_validator("host")
@@ -34,6 +35,23 @@ class Settings(BaseSettings):
         if value != "127.0.0.1":
             raise ValueError("host must be exactly 127.0.0.1")
         return value
+
+    @field_validator("returns_account_display_names")
+    @classmethod
+    def validate_return_labels(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(
+            not key.startswith("source:")
+            or len(key) <= 7
+            or any(c.isspace() for c in key)
+            or not label.strip()
+            or len(label) > 80
+            or any(ord(c) < 32 for c in label)
+            for key, label in value.items()
+        ):
+            raise ValueError(
+                "return display labels require exact source scopes and nonempty short labels"
+            )
+        return {key: label.strip() for key, label in value.items()}
 
     @field_validator("t_invest_read_only_token", mode="before")
     @classmethod

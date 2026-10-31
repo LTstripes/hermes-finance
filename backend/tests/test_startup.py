@@ -194,7 +194,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
         "host": "127.0.0.1",
         "port": 8000,
         "reload": False,
-        "revision": "0067_investment_report_proofs",
+        "revision": "0068_owner_manual_gold_history",
         "months_status": 200,
     }
 
@@ -224,7 +224,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     cli.main()
     cli.main()
 
-    assert observed == {"revision": "0067_investment_report_proofs"}
+    assert observed == {"revision": "0068_owner_manual_gold_history"}
     assert starts == 2
 
 

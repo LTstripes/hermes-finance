@@ -22,6 +22,8 @@ import {
   UiV2MonthlyResultEntry,
   UiV2MonthlyReturnsEntry,
   UiV2ReturnsEntry,
+  UiV2ReturnsAccountEntry,
+  UiV2ReturnsInstrumentEntry,
   UiV2MonthsEntry,
   UiV2PayoutForecastEntry,
   UiV2ReportEntry,
@@ -60,6 +62,8 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/capital/monthly-result" element={<UiV2MonthlyResultEntry />} />
           <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceEntry />} />
           <Route path="v2/capital/monthly-returns" element={<UiV2MonthlyReturnsEntry />} />
+          <Route path="v2/returns/account" element={<UiV2ReturnsAccountEntry />} />
+          <Route path="v2/returns/instrument/:isin" element={<UiV2ReturnsInstrumentEntry />} />
           <Route path="v2/returns" element={<UiV2ReturnsEntry />} />
           <Route path="v2/capital/statement-return" element={<BrokerStatementReturnPage />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />

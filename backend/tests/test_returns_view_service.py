@@ -778,6 +778,68 @@ def test_unavailable_months_keep_null_total_and_all_original_reasons(db, monkeyp
     assert result.all_history.pnl.reason_codes == ["unknown_flow", "seam_mismatch"]
 
 
+def test_source_history_navigation_keeps_own_inception_and_latest_exact_header(db, monkeypatch):
+    from hermes_finance.services import source_investment_proofs
+
+    headers = [
+        {
+            "proof_id": 1,
+            "source_account": "SYNTH-A",
+            "covered_from": "2030-01-01",
+            "covered_to": "2031-09-30",
+            "history_from_zero": True,
+        },
+        {
+            "proof_id": 2,
+            "source_account": "SYNTH-B",
+            "covered_from": "2031-05-12",
+            "covered_to": "2031-09-30",
+            "history_from_zero": True,
+        },
+        {
+            "proof_id": 3,
+            "source_account": "SYNTH-B",
+            "covered_from": "2030-01-01",
+            "covered_to": "2031-10-31",
+            "history_from_zero": False,
+        },
+        {
+            "proof_id": 4,
+            "source_account": "SYNTH-B",
+            "covered_from": "2031-05-11",
+            "covered_to": "2031-09-30",
+            "history_from_zero": True,
+        },
+    ]
+    monkeypatch.setattr(source_investment_proofs, "read_report_headers", lambda session: headers)
+    monkeypatch.setattr(
+        source_investment_proofs,
+        "read_reports",
+        lambda *a, **k: pytest.fail("navigation must not derive financial results"),
+    )
+    with db.session_factory() as session:
+        context = Context.model_validate(view.read_context(session))
+    assert context.source_history_periods["source:SYNTH-A"].start == date(2029, 12, 31)
+    assert context.source_history_periods["source:SYNTH-B"].start == date(2031, 5, 10)
+    assert context.source_history_periods["source:SYNTH-B"].end == date(2031, 9, 30)
+    assert any(p.end == date(2031, 10, 31) for p in context.source_periods["source:SYNTH-B"])
+
+
+def test_runtime_display_name_changes_no_identity_mapping_or_financial_rows(db):
+    before = snapshot(db)
+    with db.session_factory() as session:
+        session.info["returns_account_display_names"] = {
+            "source:SYNTH-A": "Учебный брокерский",
+            "source:ALIAS": "Not a mapping",
+        }
+        result = view._accounts(session, {"SYNTH-A": "SYNTH-A"})
+    sources = [row for row in result if row["basis"] == "statements"]
+    assert sources == [
+        {"id": "source:SYNTH-A", "label": "Учебный брокерский", "basis": "statements"}
+    ]
+    assert snapshot(db) == before
+
+
 def test_conflicting_account_label_targets_are_not_resolved_by_same_name(db):
     from hermes_finance.persistence import Account
     from hermes_finance.statement_import.mybroker import PROVIDER

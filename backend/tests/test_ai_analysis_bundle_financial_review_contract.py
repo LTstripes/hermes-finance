@@ -4,17 +4,26 @@ from __future__ import annotations
 
 import copy
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
+from hermes_finance.services import ai_review_payloads as payloads
+from hermes_finance.services.ai_financial_review import (
+    AiFinancialReviewValidationError,
+    canonical_json,
+    validate_ai_financial_review,
+)
+
 pytestmark = [pytest.mark.import_export, pytest.mark.ci_integrations]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
 FIXTURE_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.synthetic.json"
+SCHEMAS = SCHEMA_PATH.parent
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -75,6 +84,20 @@ def test_v1_3_linked_pairs_are_optional_but_canonical_fixture_emits_them() -> No
         point.pop("linked_pairs")
 
     _validate(without_linked_pairs)
+
+
+def test_v1_5_current_returns_are_optional_and_v1_4_remains_readable() -> None:
+    previous = _load(FIXTURE_PATH)
+    previous["schema_version"] = "1.4.0"
+    previous["$schema"] = previous["$schema"].replace("1.5.0", "1.4.0")
+    previous["sections"].pop("returns_overall", None)
+    previous["coverage"]["domains"].pop("returns_overall", None)
+    _validate(previous)
+
+    additive = copy.deepcopy(previous)
+    additive["schema_version"] = "1.5.0"
+    additive["$schema"] = additive["$schema"].replace("1.4.0", "1.5.0")
+    _validate(additive)
 
 
 @pytest.mark.parametrize(
@@ -253,3 +276,159 @@ def test_planned_budget_state_controls_lines_and_allows_actual_only_rows() -> No
 
     assert budget["state"] == "not_entered"
     assert budget["lines"] == []
+
+
+@pytest.fixture
+def report():
+    return json.loads((SCHEMAS / "ai_financial_review.synthetic.json").read_text("utf-8"))
+
+
+def instrument(report):
+    return report["sections"]["source_returns"]["data"]["accounts"][0]["intervals"][0][
+        "instruments"
+    ][0]
+
+
+def test_v2_strict_fixture_expands_to_the_same_legacy_facts(report):
+    normalized = payloads.normalize_source_payloads(report)
+    validate_ai_financial_review(normalized)
+    assert payloads.expand_source_payloads(normalized) == report
+    assert json.loads(canonical_json(payloads.expand_source_payloads(normalized))) == report
+    assert normalized == json.loads(
+        (SCHEMAS / "ai_financial_review.v2.synthetic.json").read_text("utf-8")
+    )
+    validate_ai_financial_review(report)
+
+
+def test_equal_events_remain_two_occurrences_and_window_variants_stay_distinct(report):
+    row = instrument(report)
+    event = deepcopy(row["events"][0])
+    crossing = deepcopy(event)
+    crossing.update(counted=False, cash_scope="cross_boundary", quantity_delta=None)
+    for leg in crossing["cash_legs"]:
+        leg.update(account_cash=None, instrument_flow=None, included_in_interval=False)
+    row["events"] = [event, deepcopy(event), crossing]
+    normalized = payloads.normalize_source_payloads(report)
+    refs = instrument(normalized)["event_refs"]
+    assert len(refs) == 3 and refs[0] == refs[1] and refs[2] != refs[0]
+    restored = payloads.expand_source_payloads(normalized)
+    assert restored == report
+    assert len(instrument(restored)["events"]) == 3
+    assert instrument(restored)["events"][2]["producer_eligible"] is True
+    assert instrument(restored)["events"][2]["cash_legs"][0]["account_cash"] is None
+    # Sharing a payload never shares a mutable reconstructed occurrence.
+    instrument(restored)["events"][0]["reason_codes"].append("changed_by_consumer")
+    assert instrument(restored)["events"][1]["reason_codes"] == []
+    assert payloads.expand_source_payloads(normalized) == report
+    validate_ai_financial_review(normalized)
+
+
+def test_source_context_order_and_metadata_variants_are_not_entity_deduplication(report):
+    account = report["sections"]["source_returns"]["data"]["accounts"][0]
+    second = deepcopy(account["intervals"][0])
+    second["ref"] += "-alternate"
+    second["instruments"][0]["name"] = "Synthetic alternate source spelling"
+    second["instruments"][0]["assumptions"] = ["synthetic_unconfirmed_revision"]
+    account["intervals"].append(second)
+    normalized = payloads.normalize_source_payloads(report)
+    refs = [
+        row["instruments"][0]
+        for row in normalized["sections"]["source_returns"]["data"]["accounts"][0]["intervals"]
+    ]
+    assert refs[0]["instrument_ref"] != refs[1]["instrument_ref"]
+    assert refs[0]["result_ref"] != refs[1]["result_ref"]
+    assert payloads.expand_source_payloads(normalized) == report
+    reordered = deepcopy(report)
+    reordered["sections"]["source_returns"]["data"]["accounts"][0]["intervals"].reverse()
+    other = payloads.normalize_source_payloads(reordered)
+    assert other["source_payloads"] == normalized["source_payloads"]
+    assert payloads.expand_source_payloads(other) == reordered
+
+
+def test_gold_revisions_and_unknown_zero_values_are_not_traversed_or_reconciled(report):
+    from test_ai_analysis_bundle_source_returns import _gold_history_fixture
+
+    from hermes_finance.services import ai_source_returns
+
+    history = ai_source_returns._gold_history(
+        _gold_history_fixture(),
+        1,
+        {40: "returns-gold-account-1"},
+        {90: "returns-gold-instrument-1"},
+    )
+    # The stable event ref is reused by a corrected history revision. Its old
+    # actual amount remains a different fact; NULL tax never becomes zero.
+    history["revisions"][0]["events"][0]["amount"]["amount"] = "312.34"
+    assert history["events"][0]["ref"] == history["revisions"][0]["events"][0]["ref"]
+    assert history["events"][0]["amount"] != history["revisions"][0]["events"][0]["amount"]
+    report["sections"]["returns_overall"]["data"]["gold"]["histories"] = [history]
+    validate_ai_financial_review(report)
+    normalized = payloads.normalize_source_payloads(report)
+    validate_ai_financial_review(normalized)
+    assert normalized["sections"]["returns_overall"]["data"]["gold"]["histories"] == [history]
+    assert payloads.expand_source_payloads(normalized) == report
+
+
+@pytest.mark.parametrize(
+    "mutation", ["dangling", "wrong_table", "isin", "changed_payload", "orphan", "cycle"]
+)
+def test_reference_corruption_cannot_validate(report, mutation):
+    normalized = payloads.normalize_source_payloads(report)
+    row = instrument(normalized)
+    tables = normalized["source_payloads"]
+    if mutation == "dangling":
+        row["event_refs"].append("event-" + "0" * 32)
+    elif mutation == "wrong_table":
+        row["result_ref"] = row["opening_ref"]
+    elif mutation == "isin":
+        row["isin"] = "SYNTHETIC-DIFFERENT"
+    elif mutation == "changed_payload":
+        tables["events"][row["event_refs"][0]]["counted"] = False
+    elif mutation == "orphan":
+        value = deepcopy(next(iter(tables["events"].values())))
+        value["reason_codes"] = ["synthetic_orphan"]
+        tables["events"][payloads._ref("events", value)] = value
+    else:
+        tables["events"][row["event_refs"][0]]["event_refs"] = row["event_refs"]
+    with pytest.raises(AiFinancialReviewValidationError):
+        validate_ai_financial_review(normalized)
+
+
+def test_hash_collision_fails_instead_of_overwriting_distinct_facts(report, monkeypatch):
+    original = payloads._ref
+    monkeypatch.setattr(
+        payloads,
+        "_ref",
+        lambda table, value: "event-" + "0" * 32 if table == "events" else original(table, value),
+    )
+    other = deepcopy(instrument(report)["events"][0])
+    other["reason_codes"] = ["synthetic_different_revision"]
+    instrument(report)["events"].append(other)
+    with pytest.raises(payloads.PayloadReferenceError, match="collision"):
+        payloads.normalize_source_payloads(report)
+
+
+def test_unknown_fields_cannot_be_silently_dropped(report):
+    instrument(report)["future_financial_fact"] = {"amount": "17.50"}
+    with pytest.raises(payloads.PayloadReferenceError, match="unexpected"):
+        payloads.normalize_source_payloads(report)
+
+
+def test_v2_keeps_every_unchanged_v1_schema_definition_strict():
+    old = json.loads((SCHEMAS / "ai_financial_review.schema.json").read_text("utf-8"))
+    new = json.loads((SCHEMAS / "ai_financial_review.v2.schema.json").read_text("utf-8"))
+    assert new["additionalProperties"] is False
+    for name, definition in old["$defs"].items():
+        if name != "source_instrument":
+            assert new["$defs"][name] == definition, name
+
+
+def test_historical_v1_4_report_remains_losslessly_expandable(report):
+    report["schema_version"] = "1.4.0"
+    report["$schema"] = report["$schema"].replace("1.5.0", "1.4.0")
+    report["sections"].pop("returns_overall")
+    report["coverage"]["domains"].pop("returns_overall")
+    validate_ai_financial_review(report)
+    normalized = payloads.normalize_source_payloads(report)
+    validate_ai_financial_review(normalized)
+    assert payloads.expand_source_payloads(normalized) == report

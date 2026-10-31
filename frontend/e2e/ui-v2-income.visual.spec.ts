@@ -266,9 +266,9 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect(page.getByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Главные показатели дохода" }).getByRole("article"),
-  ).toHaveCount(3);
+  ).toHaveCount(2);
   await expect(page.getByTestId("income-average")).toHaveText("15 300 ₽");
-  await expect(page.getByTestId("income-forecast")).toContainText("21 000 ₽");
+  await expect(page.getByTestId("income-forecast")).toHaveCount(0);
   await expect(page.getByTestId("income-upcoming-passive")).toHaveText("8 500 ₽");
   await expect(
     page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
@@ -297,7 +297,7 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect
     .poll(() => newestHistory.evaluate((element) => getComputedStyle(element).outlineStyle))
     .not.toBe("none");
-  await expect(page.getByTestId("income-goals-panel")).toContainText("Нет прогноза срока");
+  await expect(page.getByTestId("income-goals-panel")).toHaveCount(0);
   const plan = page.getByTestId("income-plan-panel");
   await expect(plan).toContainText("План 50 000 ₽ · факт 48 000 ₽");
   await expect(plan).toContainText("Факт 3 000 ₽");
@@ -354,8 +354,6 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
       .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
   ).toEqual([
     "income-history-panel",
-    "income-forecast-panel",
-    "income-goals-panel",
     "income-plan-panel",
     "income-ladder-panel",
     "income-handoffs-panel",

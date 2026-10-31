@@ -15,6 +15,12 @@ Owner decides product direction/private UAT; Integrator owns acceptance and auth
 
 Hermes is a local single-user Windows app, loopback by default. Financial logic uses Decimal, integer minor units and ROUND_HALF_UP, never binary float. CLOSED months require explicit Reopen. Frontend is not financial authority. Preserve UNKNOWN/NULL/zero distinctions, source/receipt/currentness/writer/Close boundaries in C.
 
+User-facing screens lead with useful numbers, graphs and actions. Keep technical
+provenance and codes out of the ordinary path; explain a material gap once in
+plain language. Do not repeat caveats or render empty blocks. An instrument has
+its own page with on-entry loading and a return to the previous filters. P owns
+the detailed product rules; green checks never imply Owner UX acceptance.
+
 Owner-requested relevant data reads and ordinary presentation follow D1; secrets never enter output, real payloads never enter tracked code/CI. Reads do not authorize data writes, runtime operations or publication. Task-specific restrictions take precedence.
 
 <a id="default-execution-mode"></a><a id="task-prompt-authority"></a>

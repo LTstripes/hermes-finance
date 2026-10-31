@@ -3,6 +3,50 @@ import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const reasons: Record<string, string> = {
+  known_instrument_accounts_only:
+    "Сумма известных значений по показанным счетам; пробелы отмечены отдельно.",
+  combined_rate_periods_and_flows_not_proven:
+    "Общий процент по счетам не подтверждён: периоды и денежные потоки проверяются отдельно.",
+  source_sections_not_financially_accepted:
+    "Это аналитические данные выписки; они не заменяют данные финансового закрытия месяца.",
+  known_source_history_coupons_only:
+    "Учтены только известные полученные купоны из сохранённой истории выписок каждого включённого счёта.",
+  current_coupon_history_unavailable:
+    "Актуальная проверенная история купонов этого счёта недоступна; старые значения не подставляются.",
+  coupon_income_unavailable: "Сумма полученных купонов по этому счёту не подтверждена.",
+  coupon_history_accounts_missing_or_excluded:
+    "По части счетов история отсутствует либо счёт исключён; доступные купоны остальных счетов сохранены.",
+  coupon_account_history_periods_differ:
+    "Границы доступной истории купонов различаются по счетам и приведены отдельно.",
+  source_account_identity_mapping_conflict:
+    "Соответствие источника каноническому счёту конфликтует; компонент не включён в известный итог.",
+  source_proof_stale: "Проверка выписок устарела; требуется актуальное подтверждение.",
+  known_components_only:
+    "В известный результат входят только включённые компоненты с подтверждённой основой и отсутствием пересечений.",
+  source_only_not_financial_close:
+    "Основа — сохранённые выписки; данные не означают принятие финансового месяца.",
+  all_history_source_proof_absent: "Проверенный расчёт за всю историю отсутствует.",
+  all_history_source_proof_unavailable: "Проверенный расчёт за всю историю недоступен.",
+  instrument_name_unavailable: "Название бумаги не подтверждено; используется точный ISIN.",
+  instrument_name_conflict:
+    "В источниках различаются названия; навигация связана только по точному ISIN.",
+  known_received_interest_only: "Включены только известные фактически полученные проценты.",
+  deposit_full_history_not_proven: "Полнота истории депозитов не подтверждена.",
+  draft_deposit_interest_excluded: "Проценты из черновиков не включены в известный итог.",
+  gold_period_return_unproven: "Результат золота за период не подтверждён.",
+  snapshot_result_not_period_return:
+    "Результат сохранённого снимка не является доходностью периода.",
+  saved_snapshot_unrealized_only: "Доступен только сохранённый нереализованный результат.",
+  current_catalogue_gold_classification: "Классификация золота основана на текущем справочнике.",
+  historical_gold_classification_unproven: "Историческая классификация золота не подтверждена.",
+  gold_snapshot_cost_result_missing_or_conflicting:
+    "Стоимость, затраты или результат снимка отсутствуют либо противоречат друг другу.",
+  gold_cost_return_denominator_unavailable:
+    "Нет подтверждённых положительных затрат для процентного результата.",
+  gold_dated_trade_history_unavailable: "Подтверждённая история сделок с золотом недоступна.",
+  overall_aggregation_pending_review:
+    "Общий результат по категориям и общая процентная доходность пока не подтверждены. Доступные компоненты показаны отдельно.",
+
   historical_brokerage_iis_type_unproven:
     "Исторический тип счёта не подтверждён. Для известной части по всем выпискам включите и брокерские счета, и ИИС.",
   basket_native_identity_unproven:
@@ -46,6 +90,8 @@ const reasons: Record<string, string> = {
   partial_calendar_month: "Неполный календарный месяц не включён в сумму.",
 };
 const methods: Record<string, string> = {
+  known_source_history_coupons:
+    "Сумма купонов по уникальным счетам, рассчитанная сервером по актуальной сохранённой истории. Суммы инструментов и месячные наблюдения повторно не добавляются.",
   available_calendar_months:
     "Сумма доступных полных календарных результатов одного счёта. Это частичный итог, без процента.",
   modified_dietz: "Процент — оценка Modified Dietz за указанные даты, без пересчёта на год.",

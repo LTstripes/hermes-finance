@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "const": "1.4.0" },
+    "schema_version": { "enum": ["1.4.0", "1.5.0"] },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -29,6 +29,1509 @@
     "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } }
   },
   "$defs": {
+    "returns_gold_declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "covered_from",
+        "covered_to",
+        "complete",
+        "zero_start",
+        "current_quantity",
+        "current_quantity_date"
+      ],
+      "properties": {
+        "covered_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "covered_to": {
+          "type": "string",
+          "format": "date"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "zero_start": {
+          "type": "boolean"
+        },
+        "current_quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "current_quantity_date": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "returns_gold_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "event_date",
+        "side",
+        "grams",
+        "amount_basis",
+        "unit_price_rub",
+        "fee_state",
+        "amount",
+        "separate_fee"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-gold-history-[1-9][0-9]*-event-[1-9][0-9]*$"
+        },
+        "event_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "grams": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "amount_basis": {
+          "enum": [
+            "actual",
+            "derived_unit_price"
+          ]
+        },
+        "unit_price_rub": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fee_state": {
+          "enum": [
+            "known_zero",
+            "known",
+            "unknown"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "separate_fee": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fee_state": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "separate_fee": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "separate_fee": {
+                "$ref": "#/$defs/money"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "returns_gold_valuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "price_date",
+        "snapshot_date",
+        "quantity",
+        "price_source",
+        "month_status",
+        "provisional",
+        "market_value"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "price_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "snapshot_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "month_status": { "enum": ["closed", "draft"] },
+        "provisional": { "type": "boolean" },
+        "price_source": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "market_value": {
+          "$ref": "#/$defs/money"
+        }
+      }
+    },
+    "returns_gold_history_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_result",
+        "realized_result",
+        "unrealized_result",
+        "remaining_cost",
+        "buy_amount",
+        "sale_amount",
+        "separate_fees",
+        "net_sales",
+        "valuation",
+        "calculated_quantity",
+        "declared_calculated_quantity",
+        "as_of_date",
+        "valuation_date",
+        "valuation_basis",
+        "valuation_provisional",
+        "amount_basis",
+        "tax_treatment",
+        "method",
+        "period",
+        "reason_codes",
+        "total_reason_codes",
+        "realized_reason_codes",
+        "unrealized_reason_codes",
+        "decomposition_reason_codes"
+      ],
+      "properties": {
+        "total_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "realized_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unrealized_result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_cost": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buy_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sale_amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "separate_fees": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "net_sales": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valuation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calculated_quantity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "declared_calculated_quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "as_of_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "valuation_date": {
+          "oneOf": [
+            { "type": "string", "format": "date" },
+            { "type": "null" }
+          ]
+        },
+        "valuation_basis": {
+          "enum": [
+            "saved_snapshot_quote",
+            "owner_declared_zero_quantity",
+            null
+          ]
+        },
+        "valuation_provisional": { "type": ["boolean", "null"] },
+        "amount_basis": {
+          "enum": [
+            "actual",
+            "derived"
+          ]
+        },
+        "tax_treatment": {
+          "const": "not_provided"
+        },
+        "method": {
+          "const": "owner_gold_complete_from_zero"
+        },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "covered_from",
+            "covered_to"
+          ],
+          "properties": {
+            "covered_from": {
+              "type": "string",
+              "format": "date"
+            },
+            "covered_to": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "total_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "realized_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "unrealized_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "decomposition_reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_gold_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "account_ref",
+        "instrument_ref",
+        "contract_version",
+        "source_kind",
+        "authority",
+        "revision",
+        "currentness",
+        "events_loaded",
+        "declaration",
+        "events",
+        "valuation",
+        "result",
+        "reason_codes",
+        "revisions"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-gold-history-[1-9][0-9]*$"
+        },
+        "account_ref": {
+          "type": "string",
+          "pattern": "^returns-gold-account-[1-9][0-9]*$"
+        },
+        "instrument_ref": {
+          "type": "string",
+          "pattern": "^returns-gold-instrument-[1-9][0-9]*$"
+        },
+        "contract_version": {
+          "const": "owner_manual_gold_history_v1"
+        },
+        "source_kind": {
+          "const": "owner_manual_gold_history"
+        },
+        "authority": {
+          "const": "owner_attestation"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "currentness": {
+          "enum": [
+            "current",
+            "dependency_changed"
+          ]
+        },
+        "events_loaded": {
+          "const": true
+        },
+        "declaration": {
+          "$ref": "#/$defs/returns_gold_declaration"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_gold_event"
+          }
+        },
+        "valuation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_gold_valuation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "$ref": "#/$defs/returns_gold_history_result"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "declaration",
+              "events"
+            ],
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "declaration": {
+                "$ref": "#/$defs/returns_gold_declaration"
+              },
+              "events": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/returns_gold_event"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "returns_period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date"
+        },
+        "end": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "returns_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "reason_codes",
+        "method",
+        "approximate"
+      ],
+      "properties": {
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "enum": [
+            "RUB",
+            "percent"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "method": {
+          "type": "string"
+        },
+        "approximate": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "unit": {
+                "const": "RUB"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/money"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "returns_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period",
+        "pnl",
+        "rate",
+        "coupons",
+        "dividends"
+      ],
+      "properties": {
+        "period": {
+          "$ref": "#/$defs/returns_period"
+        },
+        "pnl": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "rate": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "coupons": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "dividends": {
+          "$ref": "#/$defs/returns_metric"
+        }
+      }
+    },
+    "returns_source_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "period",
+        "result",
+        "proof_status",
+        "reason_codes",
+        "instrument_count"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^source-account-[1-9][0-9]*$"
+        },
+        "period": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_result"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proof_status": {
+          "enum": [
+            "current",
+            "stale",
+            "absent",
+            "conflict"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "instrument_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "returns_income_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_account_ref",
+        "period",
+        "amount",
+        "proof_status",
+        "included",
+        "exclusion_reason",
+        "reason_codes"
+      ],
+      "properties": {
+        "source_account_ref": {
+          "type": "string",
+          "pattern": "^source-account-[1-9][0-9]*$"
+        },
+        "period": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "proof_status": {
+          "enum": [
+            "current",
+            "stale",
+            "absent",
+            "conflict"
+          ]
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "exclusion_reason": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_income": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_attribution",
+        "known_total",
+        "partial",
+        "selected_accounts",
+        "included_accounts",
+        "accounts",
+        "reason_codes"
+      ],
+      "properties": {
+        "event_attribution": { "const": "not_asserted" },
+        "known_total": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "partial": {
+          "const": true
+        },
+        "selected_accounts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "included_accounts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_income_account"
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "source_account_ref",
+        "category",
+        "selected",
+        "available",
+        "included",
+        "amount",
+        "interval",
+        "valuation_date",
+        "coverage",
+        "method",
+        "authority",
+        "exclusion_reason"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-component-[1-9][0-9]*$"
+        },
+        "source_account_ref": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^source-account-[1-9][0-9]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category": {
+          "enum": [
+            "brokerage",
+            "deposits",
+            "gold"
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "amount": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "interval": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valuation_date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reason_codes"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "supported",
+                "partial",
+                "unavailable",
+                "conflict"
+              ]
+            },
+            "reason_codes": {
+              "$ref": "#/$defs/reason_codes"
+            }
+          }
+        },
+        "method": {
+          "type": "string"
+        },
+        "authority": {
+          "enum": [
+            "source_only",
+            "accepted_snapshot",
+            "owner_attestation"
+          ]
+        },
+        "exclusion_reason": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "returns_mixed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "known_result",
+        "rate",
+        "selected_component_count",
+        "available_component_count",
+        "included_component_count",
+        "components",
+        "reason_codes"
+      ],
+      "properties": {
+        "known_result": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "rate": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "selected_component_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_component_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "included_component_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_component"
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_gold_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "account_ref",
+        "instrument_ref",
+        "name",
+        "date",
+        "quantity",
+        "market_value",
+        "cost_basis",
+        "unrealized_result",
+        "cost_return"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^returns-gold-snapshot-[1-9][0-9]*$"
+        },
+        "account_ref": { "type": "string", "pattern": "^returns-gold-account-[1-9][0-9]*$" },
+        "instrument_ref": { "type": "string", "pattern": "^returns-gold-instrument-[1-9][0-9]*$" },
+        "name": {
+          "type": "string"
+        },
+        "date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+        },
+        "market_value": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "cost_basis": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "unrealized_result": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "cost_return": {
+          "$ref": "#/$defs/returns_metric"
+        }
+      }
+    },
+    "returns_gold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshots",
+        "histories",
+        "period_result",
+        "reason_codes"
+      ],
+      "properties": {
+        "snapshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_gold_snapshot"
+          }
+        },
+        "histories": { "type": "array", "items": { "$ref": "#/$defs/returns_gold_history" } },
+        "period_result": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_deposits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interest",
+        "partial",
+        "periods",
+        "reason_codes"
+      ],
+      "properties": {
+        "interest": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "partial": {
+          "const": true
+        },
+        "periods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "period",
+              "status",
+              "rows"
+            ],
+            "properties": {
+              "period": {
+                "$ref": "#/$defs/returns_period"
+              },
+              "status": {
+                "enum": [
+                  "closed",
+                  "draft"
+                ]
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period",
+        "opening_quantity",
+        "closing_quantity",
+        "conditional",
+        "pnl",
+        "rate",
+        "coupons",
+        "dividends",
+        "buys",
+        "sells",
+        "conditional_pnl",
+        "conditional_rate",
+        "reason_codes",
+        "analysis"
+      ],
+      "properties": {
+        "period": {
+          "$ref": "#/$defs/returns_period"
+        },
+        "opening_quantity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closing_quantity": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conditional": {
+          "type": "boolean"
+        },
+        "pnl": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "rate": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "coupons": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "dividends": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "buys": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "sells": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "conditional_pnl": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "conditional_rate": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "analysis": {
+          "$ref": "#/$defs/source_instrument"
+        }
+      }
+    },
+    "returns_instrument_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_account_ref",
+        "source_interval_ref",
+        "period",
+        "proof_status",
+        "included",
+        "exclusion_reason",
+        "reason_codes",
+        "detail"
+      ],
+      "properties": {
+        "source_account_ref": {
+          "type": "string",
+          "pattern": "^source-account-[1-9][0-9]*$"
+        },
+        "source_interval_ref": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proof_status": {
+          "enum": [
+            "current",
+            "stale",
+            "absent",
+            "conflict"
+          ]
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "exclusion_reason": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "detail": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_detail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "returns_instrument_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity",
+        "valuation_dates",
+        "reported_value",
+        "pnl",
+        "coupons",
+        "dividends",
+        "valuation_and_trades",
+        "redemption",
+        "costs",
+        "taxes",
+        "rate",
+        "partial",
+        "reason_codes"
+      ],
+      "properties": {
+        "quantity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "partial",
+            "reason_codes"
+          ],
+          "properties": {
+            "value": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "partial": {
+              "const": true
+            },
+            "reason_codes": {
+              "$ref": "#/$defs/reason_codes"
+            }
+          }
+        },
+        "valuation_dates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "reported_value": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "pnl": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "coupons": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "dividends": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "valuation_and_trades": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "redemption": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "costs": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "taxes": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "rate": {
+          "$ref": "#/$defs/returns_metric"
+        },
+        "partial": {
+          "const": true
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_instrument_card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "isin",
+        "name",
+        "kind",
+        "summary",
+        "accounts",
+        "reason_codes"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "returns_instrument_card_v1"
+        },
+        "isin": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/returns_instrument_summary"
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_instrument_account"
+          }
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_overall_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "scope",
+        "reading_guide",
+        "overall",
+        "mixed_result",
+        "coupon_income",
+        "dividend_income",
+        "source_accounts",
+        "instruments",
+        "deposits",
+        "gold",
+        "reason_codes"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "returns_overall_v1"
+        },
+        "scope": {
+          "const": "current_available_history_not_limited_to_selected_month"
+        },
+        "reading_guide": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "snapshot",
+            "mixed_result",
+            "counting",
+            "income",
+            "gold",
+            "instruments",
+            "unknown",
+            "identity",
+            "authority"
+          ],
+          "properties": {
+            "snapshot": {
+              "type": "string"
+            },
+            "mixed_result": {
+              "type": "string"
+            },
+            "counting": {
+              "type": "string"
+            },
+            "income": {
+              "type": "string"
+            },
+            "gold": {
+              "type": "string"
+            },
+            "instruments": {
+              "type": "string"
+            },
+            "unknown": {
+              "type": "string"
+            },
+            "identity": {
+              "type": "string"
+            },
+            "authority": {
+              "type": "string"
+            }
+          }
+        },
+        "overall": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pnl",
+            "rate",
+            "partial",
+            "reason_codes"
+          ],
+          "properties": {
+            "pnl": {
+              "$ref": "#/$defs/returns_metric"
+            },
+            "rate": {
+              "$ref": "#/$defs/returns_metric"
+            },
+            "partial": {
+              "const": true
+            },
+            "reason_codes": {
+              "$ref": "#/$defs/reason_codes"
+            }
+          }
+        },
+        "mixed_result": {
+          "$ref": "#/$defs/returns_mixed"
+        },
+        "coupon_income": {
+          "$ref": "#/$defs/returns_income"
+        },
+        "dividend_income": {
+          "$ref": "#/$defs/returns_income"
+        },
+        "source_accounts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_source_account"
+          }
+        },
+        "instruments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/returns_instrument_card"
+          }
+        },
+        "deposits": {
+          "$ref": "#/$defs/returns_deposits"
+        },
+        "gold": {
+          "$ref": "#/$defs/returns_gold"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        }
+      }
+    },
+    "returns_overall_section": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/section_base" }],
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason_codes",
+        "data"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "included",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reason_codes"
+        },
+        "data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/returns_overall_data"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "source_metric": {
       "type": "object",
       "additionalProperties": false,
@@ -1366,7 +2869,8 @@
             "user_context": { "$ref": "#/$defs/coverage_domain" },
             "budget_and_saving": { "$ref": "#/$defs/coverage_domain" },
             "performance": { "$ref": "#/$defs/coverage_domain" },
-            "source_returns": { "$ref": "#/$defs/coverage_domain" }
+            "source_returns": { "$ref": "#/$defs/coverage_domain" },
+            "returns_overall": { "$ref": "#/$defs/coverage_domain" }
           }
         }
       }
@@ -2340,7 +3844,8 @@
         "budget_and_saving": { "$ref": "#/$defs/budget_section" },
         "data_quality": { "$ref": "#/$defs/quality_section" },
         "performance": { "$ref": "#/$defs/performance_section" },
-        "source_returns": { "$ref": "#/$defs/source_returns_section" }
+        "source_returns": { "$ref": "#/$defs/source_returns_section" },
+        "returns_overall": { "$ref": "#/$defs/returns_overall_section" }
       }
     }
   }

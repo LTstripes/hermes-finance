@@ -1164,19 +1164,15 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   });
   await expect(save).toBeEnabled();
   // SPA navigation must keep the actual File; a full reload deliberately does not.
-  await page.getByRole("link", { name: "Данные", exact: true }).click();
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
   await page.getByRole("button", { name: "Перейти без сохранения", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Справочники и сопоставления", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Справочники и сопоставления", exact: true }),
   ).toBeVisible();
   await page.goBack();
-  await expect(
-    page.getByRole("heading", { name: "Источники и актуальность", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByText(`Оригинал в текущем сеансе: ${file.name}`)).toBeVisible();
   await expect(save).toHaveCount(0);
@@ -1700,7 +1696,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(picker).toHaveValue("7452034");
   await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
   await expect(page).toHaveURL(
-    /\/v2\/returns\?.*scope=source%3A7452034.*start=2034-04-30&end=2034-05-31#returns-instruments/,
+    /\/v2\/returns\/account\?.*scope=source%3A7452034.*start=2034-04-30&end=2034-05-31#returns-instruments/,
   );
   const returnsPaper = page.getByRole("row").filter({ hasText: "RU000A000001" });
   await returnsPaper.getByRole("button").click();

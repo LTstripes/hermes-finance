@@ -87,7 +87,7 @@ export function DiagnosticsPanel() {
           label="Версия"
           value={state.kind === "connected" ? state.version : state.kind === "checking" ? "…" : "—"}
         />
-        <DataValue label="Адрес" value="127.0.0.1:8000" />
+        <DataValue label="Адрес интерфейса" value={window.location.host} />
         <DataValue label="Режим" value="Только локально" />
       </div>
       <div className="diagnostics-actions">

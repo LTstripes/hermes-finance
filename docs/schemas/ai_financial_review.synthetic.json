@@ -1,7 +1,7 @@
 {
-  "$schema": "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json",
+  "$schema": "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json",
   "schema_name": "hermes.finance.ai_financial_review",
-  "schema_version": "1.4.0",
+  "schema_version": "1.5.0",
   "metadata": {
     "generated_at": "2026-09-01T10:00:00Z",
     "as_of_date": "2026-08-31",
@@ -43,7 +43,8 @@
       "iis_and_tax": { "status": "partial", "reason_codes": ["salary_tax_history_incomplete"] },
       "user_context": { "status": "complete", "reason_codes": [] },
       "budget_and_saving": { "status": "partial", "reason_codes": ["planned_budget_not_entered"] },
-      "performance": { "status": "complete", "reason_codes": [] }
+      "performance": { "status": "complete", "reason_codes": [] },
+      "returns_overall": {"status": "partial", "reason_codes": ["overall_aggregation_pending_review", "source_only_not_financial_close"]}
     }
   },
   "provenance_summary": {
@@ -796,6 +797,779 @@
           "investment_performance": ["portfolio.xirr", "portfolio.twrr"],
           "value_change_after_external_flows": "portfolio.monetary_bridge.value",
           "note": "XIRR and TWRR are return metrics; the PERF04A value is a monetary value-change identity, not component profit attribution."
+        }
+      }
+    },
+    "returns_overall": {
+      "status": "partial",
+      "reason_codes": [
+        "overall_aggregation_pending_review",
+        "source_only_not_financial_close"
+      ],
+      "data": {
+        "contract_version": "returns_overall_v1",
+        "scope": "current_available_history_not_limited_to_selected_month",
+        "reading_guide": {
+          "snapshot": "Current persisted Returns snapshot, independent of the selected reporting month and its historical as_of_date. Observation dates and intervals belong to each operand; generated_at is not a valuation date.",
+          "mixed_result": "Known included nonoverlapping components only. This is partial, not full portfolio P&L or a lower bound: omitted components may be negative. Inspect selected, available, included, exclusion_reason, dates, method and authority. There is no common portfolio rate.",
+          "counting": "Coupons/dividends and costs may already be included in P&L. Components and events explain it; never add them again. Do not add account and instrument results or sum rates.",
+          "income": "Known credited coupons and dividends are explanatory income, independent of P&L availability. Account totals use the shared reader's inclusion rules; do not add instrument, monthly, forecast or accepted copies. Event attribution is not asserted: known account income may be unattributed to an instrument, and instrument events do not constitute a complete account payment ledger.",
+          "gold": "Saved snapshot cost return is nonannualized. Separate owner_manual_gold_history facts retain owner_attestation authority, completeness/zero-start declarations, event amount/fee basis and independent result reasons. Only the producer's exact as_of_date event prefix enters its result; valuation_date can be NULL. Tax treatment is not provided. Revisions are alternative history versions, never additional events or profit. Do not add snapshot unrealized results to overlapping whole-history results.",
+          "instruments": "Unified instrument summaries retain their own supported amount and date bounds. Every rate is exported independently with its method and availability; do not sum account rates.",
+          "unknown": "NULL is unknown/unavailable, not zero. Known partial income can coexist with unknown valuation or return.",
+          "identity": "Source account refs match source_returns within this file. Component and saved snapshot refs are local pseudonyms, not account numbers or database identities.",
+          "authority": "Per-component source_only, accepted_snapshot and owner_attestation authority remains explicit. This read-only presentation does not confer financial Close authority on source observations or attestations."
+        },
+        "overall": {
+          "pnl": {
+            "value": null,
+            "unit": "RUB",
+            "reason_codes": [
+              "overall_aggregation_pending_review"
+            ],
+            "method": "",
+            "approximate": false
+          },
+          "rate": {
+            "value": null,
+            "unit": "percent",
+            "reason_codes": [
+              "overall_aggregation_pending_review"
+            ],
+            "method": "",
+            "approximate": false
+          },
+          "partial": true,
+          "reason_codes": [
+            "overall_aggregation_pending_review"
+          ]
+        },
+        "mixed_result": {
+          "known_result": {
+            "value": {
+              "amount": "90.00",
+              "currency": "RUB"
+            },
+            "unit": "RUB",
+            "reason_codes": [
+              "partial_mixed_result_not_portfolio_pnl",
+              "unknown_components_may_reduce_result"
+            ],
+            "method": "known_nonoverlapping_components",
+            "approximate": true
+          },
+          "rate": {
+            "value": null,
+            "unit": "percent",
+            "reason_codes": [
+              "mixed_component_periods_and_flows_not_unified"
+            ],
+            "method": "",
+            "approximate": false
+          },
+          "selected_component_count": 1,
+          "available_component_count": 1,
+          "included_component_count": 1,
+          "components": [
+            {
+              "ref": "returns-component-1",
+              "source_account_ref": "source-account-1",
+              "category": "brokerage",
+              "selected": true,
+              "available": true,
+              "included": true,
+              "amount": {
+                "value": {
+                  "amount": "90.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "interval": {
+                "start": "2025-12-31",
+                "end": "2026-01-31"
+              },
+              "valuation_date": null,
+              "coverage": {
+                "status": "partial",
+                "reason_codes": []
+              },
+              "method": "source_cash_economics",
+              "authority": "source_only",
+              "exclusion_reason": null
+            }
+          ],
+          "reason_codes": [
+            "partial_mixed_result_not_portfolio_pnl",
+            "unknown_components_may_reduce_result"
+          ]
+        },
+        "source_accounts": [
+          {
+            "ref": "source-account-1",
+            "period": {
+              "start": "2025-12-31",
+              "end": "2026-01-31"
+            },
+            "result": {
+              "period": {
+                "start": "2025-12-31",
+                "end": "2026-01-31"
+              },
+              "pnl": {
+                "value": {
+                  "amount": "90.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "rate": {
+                "value": "9.96428571428571428571428571428571428571428571428571428571429",
+                "unit": "percent",
+                "reason_codes": [],
+                "method": "modified_dietz",
+                "approximate": true
+              },
+              "coupons": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "dividends": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              }
+            },
+            "proof_status": "current",
+            "reason_codes": [],
+            "instrument_count": 1
+          }
+        ],
+        "instruments": [
+          {
+            "contract_version": "returns_instrument_card_v1",
+            "isin": "RU000A000000",
+            "name": "Synthetic stock",
+            "kind": "stock",
+            "summary": {
+              "quantity": {
+                "value": "10",
+                "partial": true,
+                "reason_codes": []
+              },
+              "reported_value": {
+                "value": {
+                  "amount": "1100.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "reported_endpoint_value",
+                "approximate": true
+              },
+              "valuation_dates": [
+                "2026-01-31"
+              ],
+              "pnl": {
+                "value": {
+                  "amount": "90.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "rate": {
+                "value": "19.7312588401697312588401697312588401697312588401697312588402",
+                "unit": "percent",
+                "reason_codes": [],
+                "method": "modified_dietz",
+                "approximate": true
+              },
+              "coupons": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "dividends": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "valuation_and_trades": {
+                "value": {
+                  "amount": "100.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "redemption": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "taxes": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "costs": {
+                "value": {
+                  "amount": "10.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "instrument_fees_already_in_pnl",
+                "approximate": true
+              },
+              "partial": true,
+              "reason_codes": []
+            },
+            "accounts": [
+              {
+                "source_account_ref": "source-account-1",
+                "source_interval_ref": "source-account-1-interval-1",
+                "period": {
+                  "start": "2025-12-31",
+                  "end": "2026-01-31"
+                },
+                "proof_status": "current",
+                "included": true,
+                "exclusion_reason": null,
+                "reason_codes": [],
+                "detail": {
+                  "period": {
+                    "start": "2025-12-31",
+                    "end": "2026-01-31"
+                  },
+                  "opening_quantity": "0",
+                  "closing_quantity": "10",
+                  "conditional": false,
+                  "pnl": {
+                    "value": {
+                      "amount": "90.00",
+                      "currency": "RUB"
+                    },
+                    "unit": "RUB",
+                    "reason_codes": [],
+                    "method": "source_cash_economics",
+                    "approximate": true
+                  },
+                  "rate": {
+                    "value": "19.7312588401697312588401697312588401697312588401697312588402",
+                    "unit": "percent",
+                    "reason_codes": [],
+                    "method": "modified_dietz",
+                    "approximate": true
+                  },
+                  "coupons": {
+                    "value": {
+                      "amount": "0.00",
+                      "currency": "RUB"
+                    },
+                    "unit": "RUB",
+                    "reason_codes": [],
+                    "method": "source_cash_economics",
+                    "approximate": true
+                  },
+                  "dividends": {
+                    "value": {
+                      "amount": "0.00",
+                      "currency": "RUB"
+                    },
+                    "unit": "RUB",
+                    "reason_codes": [],
+                    "method": "source_cash_economics",
+                    "approximate": true
+                  },
+                  "buys": {
+                    "value": {
+                      "amount": "1000.00",
+                      "currency": "RUB"
+                    },
+                    "unit": "RUB",
+                    "reason_codes": [],
+                    "method": "source_cash_economics",
+                    "approximate": true
+                  },
+                  "sells": {
+                    "value": {
+                      "amount": "0.00",
+                      "currency": "RUB"
+                    },
+                    "unit": "RUB",
+                    "reason_codes": [],
+                    "method": "source_cash_economics",
+                    "approximate": true
+                  },
+                  "conditional_pnl": {
+                    "value": null,
+                    "unit": "RUB",
+                    "reason_codes": [
+                      "source_statement_estimate_unavailable"
+                    ],
+                    "method": "",
+                    "approximate": false
+                  },
+                  "conditional_rate": {
+                    "value": null,
+                    "unit": "percent",
+                    "reason_codes": [
+                      "source_statement_estimate_unavailable"
+                    ],
+                    "method": "",
+                    "approximate": false
+                  },
+                  "reason_codes": [],
+                  "analysis": {
+                    "isin": "RU000A000000",
+                    "name": "Synthetic stock",
+                    "instrument_type": "stock",
+                    "opening": {
+                      "date": "2025-12-31",
+                      "quantity": "0",
+                      "reported_value": {
+                        "amount": "0.00",
+                        "currency": "RUB"
+                      },
+                      "economic_value": {
+                        "amount": "0.00",
+                        "currency": "RUB"
+                      },
+                      "accrued_interest": null,
+                      "valuation_basis": "dirty",
+                      "reason_codes": []
+                    },
+                    "closing": {
+                      "date": "2026-01-31",
+                      "quantity": "10",
+                      "reported_value": {
+                        "amount": "1100.00",
+                        "currency": "RUB"
+                      },
+                      "economic_value": {
+                        "amount": "1100.00",
+                        "currency": "RUB"
+                      },
+                      "accrued_interest": null,
+                      "valuation_basis": "dirty",
+                      "reason_codes": []
+                    },
+                    "metrics": {
+                      "pnl": {
+                        "value": {
+                          "amount": "90.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "provisional",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "known_subtotal": {
+                        "value": {
+                          "amount": "90.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "partial",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "modified_dietz": {
+                        "value": "19.7312588401697312588401697312588401697312588401697312588402",
+                        "unit": "percent",
+                        "status": "provisional",
+                        "reason_codes": [],
+                        "method": "modified_dietz",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "xirr_annualized": {
+                        "value": "825.767747716320793877516387825889889747451397623132786993451",
+                        "unit": "percent",
+                        "status": "provisional",
+                        "reason_codes": [],
+                        "method": "xirr",
+                        "annualized": true,
+                        "approximate": true
+                      },
+                      "xirr_period": {
+                        "value": "20.805435469178412876076716761700675891174523938955319304619",
+                        "unit": "percent",
+                        "status": "provisional",
+                        "reason_codes": [],
+                        "method": "money_weighted_period",
+                        "annualized": false,
+                        "approximate": true
+                      }
+                    },
+                    "components": {
+                      "buys": {
+                        "value": {
+                          "amount": "1000.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "coupons": {
+                        "value": {
+                          "amount": "0.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "dividends": {
+                        "value": {
+                          "amount": "0.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "fees": {
+                        "value": {
+                          "amount": "10.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "redemption": {
+                        "value": {
+                          "amount": "0.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "sells": {
+                        "value": {
+                          "amount": "0.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "taxes": {
+                        "value": {
+                          "amount": "0.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      },
+                      "valuation_and_trades": {
+                        "value": {
+                          "amount": "100.00",
+                          "currency": "RUB"
+                        },
+                        "unit": "RUB",
+                        "status": "supported",
+                        "reason_codes": [],
+                        "method": "source_cash_economics",
+                        "annualized": false,
+                        "approximate": true
+                      }
+                    },
+                    "coverage": {
+                      "costs": {
+                        "complete": true,
+                        "reason_codes": []
+                      },
+                      "endpoints": {
+                        "complete": true,
+                        "reason_codes": []
+                      },
+                      "events": {
+                        "complete": true,
+                        "reason_codes": []
+                      },
+                      "payouts": {
+                        "complete": true,
+                        "reason_codes": []
+                      },
+                      "quantity": {
+                        "complete": true,
+                        "reason_codes": []
+                      },
+                      "valuation": {
+                        "complete": true,
+                        "reason_codes": []
+                      }
+                    },
+                    "reason_codes": [],
+                    "assumptions": [
+                      "source_only_xml_pdf"
+                    ],
+                    "events": [
+                      {
+                        "kind": "BUY",
+                        "date": "2026-01-17",
+                        "cash_date": null,
+                        "quantity_date": null,
+                        "quantity_delta": null,
+                        "trade_amount": null,
+                        "accrued_interest": null,
+                        "commission": null,
+                        "gross_payout": null,
+                        "withheld_tax": null,
+                        "net_payout": null,
+                        "counted": true,
+                        "cash_legs": [
+                          {
+                            "date": "2026-01-17",
+                            "account_cash": {
+                              "amount": "-1000.00",
+                              "currency": "RUB"
+                            },
+                            "instrument_flow": {
+                              "amount": "1000.00",
+                              "currency": "RUB"
+                            },
+                            "included_in_interval": true
+                          }
+                        ],
+                        "reason_codes": [],
+                        "producer_eligible": true,
+                        "cash_scope": "within_interval"
+                      },
+                      {
+                        "kind": "FEE",
+                        "date": "2026-01-17",
+                        "cash_date": null,
+                        "quantity_date": null,
+                        "quantity_delta": null,
+                        "trade_amount": null,
+                        "accrued_interest": null,
+                        "commission": null,
+                        "gross_payout": null,
+                        "withheld_tax": null,
+                        "net_payout": null,
+                        "counted": true,
+                        "cash_legs": [
+                          {
+                            "date": "2026-01-17",
+                            "account_cash": {
+                              "amount": "-10.00",
+                              "currency": "RUB"
+                            },
+                            "instrument_flow": {
+                              "amount": "10.00",
+                              "currency": "RUB"
+                            },
+                            "included_in_interval": true
+                          }
+                        ],
+                        "reason_codes": [],
+                        "producer_eligible": true,
+                        "cash_scope": "within_interval"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "reason_codes": []
+          }
+        ],
+        "deposits": {
+          "interest": {
+            "value": null,
+            "unit": "RUB",
+            "reason_codes": [
+              "deposit_full_history_not_proven"
+            ],
+            "method": "",
+            "approximate": false
+          },
+          "partial": true,
+          "periods": [],
+          "reason_codes": [
+            "deposit_full_history_not_proven",
+            "known_received_interest_only"
+          ]
+        },
+        "gold": {
+          "snapshots": [],
+          "histories": [],
+          "period_result": {
+            "value": null,
+            "unit": "RUB",
+            "reason_codes": [
+              "gold_dated_trade_history_unavailable"
+            ],
+            "method": "",
+            "approximate": false
+          },
+          "reason_codes": [
+            "gold_period_return_unproven",
+            "snapshot_result_not_period_return"
+          ]
+        },
+        "reason_codes": [
+          "overall_aggregation_pending_review",
+          "source_only_not_financial_close"
+        ],
+        "coupon_income": {
+          "event_attribution": "not_asserted",
+          "known_total": {
+            "value": {
+              "amount": "0.00",
+              "currency": "RUB"
+            },
+            "unit": "RUB",
+            "reason_codes": [],
+            "method": "source_cash_economics",
+            "approximate": true
+          },
+          "partial": true,
+          "selected_accounts": 1,
+          "included_accounts": 1,
+          "accounts": [
+            {
+              "source_account_ref": "source-account-1",
+              "period": {
+                "start": "2025-12-31",
+                "end": "2026-01-31"
+              },
+              "amount": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "proof_status": "current",
+              "included": true,
+              "exclusion_reason": null,
+              "reason_codes": []
+            }
+          ],
+          "reason_codes": [
+            "source_only_not_financial_close"
+          ]
+        },
+        "dividend_income": {
+          "event_attribution": "not_asserted",
+          "known_total": {
+            "value": {
+              "amount": "0.00",
+              "currency": "RUB"
+            },
+            "unit": "RUB",
+            "reason_codes": [],
+            "method": "source_cash_economics",
+            "approximate": true
+          },
+          "partial": true,
+          "selected_accounts": 1,
+          "included_accounts": 1,
+          "accounts": [
+            {
+              "source_account_ref": "source-account-1",
+              "period": {
+                "start": "2025-12-31",
+                "end": "2026-01-31"
+              },
+              "amount": {
+                "value": {
+                  "amount": "0.00",
+                  "currency": "RUB"
+                },
+                "unit": "RUB",
+                "reason_codes": [],
+                "method": "source_cash_economics",
+                "approximate": true
+              },
+              "proof_status": "current",
+              "included": true,
+              "exclusion_reason": null,
+              "reason_codes": []
+            }
+          ],
+          "reason_codes": [
+            "source_only_not_financial_close"
+          ]
         }
       }
     },

@@ -29,6 +29,7 @@ export type Instrument = Omit<Result, "period"> & {
 export type Context = {
   scope_aliases?: Record<string, string>;
   source_periods: Record<string, Period[]>;
+  source_history_periods?: Record<string, Period>;
   accounts: { id: string; label: string; basis: "statements" | "accepted" }[];
   default_period: Period | null;
   closed_periods: Period[];
@@ -167,16 +168,19 @@ export async function getDetail(scope: string, period: Period, isin: string, sig
   const params = query(scope, period);
   params.set("isin", isin);
   const value = await apiRequest<Detail>(`/api/returns/instrument?${params}`, { signal });
-  if (
-    value.scope !== scope ||
-    value.isin !== isin ||
-    !samePeriod(value.period, period) ||
-    value.analysis?.contract_version !== "instrument_return_v2" ||
-    value.analysis.opening_date !== period.start ||
-    value.analysis.closing_date !== period.end ||
-    value.analysis.opening.date !== period.start ||
-    value.analysis.closing.date !== period.end
-  )
-    throw new Error("Return context mismatch");
+  if (!detailMatchesContext(value, scope, period, isin)) throw new Error("Return context mismatch");
   return value;
+}
+
+export function detailMatchesContext(value: Detail, scope: string, period: Period, isin: string) {
+  return (
+    value.scope === scope &&
+    value.isin === isin &&
+    samePeriod(value.period, period) &&
+    value.analysis?.contract_version === "instrument_return_v2" &&
+    value.analysis.opening_date === period.start &&
+    value.analysis.closing_date === period.end &&
+    value.analysis.opening.date === period.start &&
+    value.analysis.closing.date === period.end
+  );
 }

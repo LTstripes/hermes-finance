@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-30**. This is the sole changing project status book. Current source
+Updated **2026-10-31**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -50,6 +50,71 @@ occurred. This is scoped source-only/provisional acceptance, not Owner visual UA
 or financial portfolio Close. Shared account costs/taxes remain separate; no
 arbitrary allocation to instruments or fabricated intermediate monthly valuations.
 Next step is Owner visual review and the separately chosen new-month workflow.
+
+### Owner-accepted UI and 1.9.0 release preparation
+
+Owner accepted the reworked isolated Test UX at `ade462a2` on31October, with one
+top-table layout defect. Exact CI41184160300 and UI41184160298 passed. The
+rejection below remains history of the earlier overview. Stable remains1.8.1;
+Owner acceptance does not mean this candidate is installed.
+
+The 1.9.0 candidate keeps the accepted package, corrects the leaders layout and
+adds strict AI JSON2.0 typed payload references while retaining legacy1.5 API
+compatibility and the same financial producers. Independent AI/source/contract
+and synthetic top-layout pixel reviews passed. The top correction leaves
+eligibility, ranking and amounts unchanged. Current exact-candidate checks and
+review receipts belong to the task/Draft; they do not authorize PR approval or
+replace guarded integration, post-main CI, publication or backup-first update.
+The user prioritizes readable size reduction; further speed optimization is
+outside this slice. The accepted Test remains pinned during implementation.
+No financial Apply/Close, new source assumption or actual gold Save is included.
+
+### Returns continuation in review
+
+Owner rejected the first #1000 overall UX after isolated Test inspection despite
+its successful technical checks. The technical prose, repeated caveats, empty
+blocks and embedded instrument navigation were not accepted. The same Draft is
+being reworked around the compact account layout, one/both-account selection,
+standalone instrument pages and compact gold. A retained cross-account interval
+explains the empty selected-account view; a high sold-position Modified Dietz
+value is being explained from its dated weighted capital, without fitting or
+silently replacing the percentage. Deposits remain outside this UX revision.
+Fresh exact-head checks and actual-pixel Test review are still required; earlier
+operator PASS is not Owner acceptance, merge authority or installed behavior.
+
+The same authorized Draft now also simplifies the main sidebar into one Settings
+entry, reuses allocation/concentration inside Capital, removes its duplicate
+panels, links instrument names directly, adds RUB graph axes on Home and removes
+the embedded forecast/goals panels from Income. Existing data, models and deep
+links are preserved. The changes block remains on Home and is removed from
+Capital per the clarified Owner decision. These are UI changes awaiting final
+combined exact-head CI and Test visual review, not a new installed release.
+
+Draft [#1000](https://github.com/LTstripes/hermes-finance/pull/1000), stacked on
+[#998](https://github.com/LTstripes/hermes-finance/pull/998), develops the available-
+history known-result overview, lazy income/card reads, exact source/PDF display
+names and compact Capital entry while preserving its unique diagnostics. The
+bounded Owner-attested gold history source and additive canonical AI review
+schema1.5 are part of this candidate, not installed Stable behavior. The precise
+financial/source contracts are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-overall).
+
+Synthetic targeted checks and independent reviews belong to their exact commits;
+current candidate/CI receipts are linked on the Draft. No claim that all original
+Owner UAT items passed follows from green CI. Authorized isolated Test preparation
+now uses a consistent production backup with the previous Test recovery pair
+retained. Copy-only migration and same-original fresh Preview/explicit replacement
+proof confirmation preserve financial/CLOSED rows; existing hashes are never
+rewritten. Real-data route checks identified bounded AI wire-representation and
+repeated source-identity-copy issues; their reviewed corrections are in this
+candidate. The separately approved stock Preview-only port permits the full Test
+UI beside Stable with exact OPS03 and process/readiness binding; Stable, recovery
+and scratch retain their existing default behavior.
+
+Operator UI/route evidence remains tied to its exact tested candidate and copy;
+it does not replace Owner visual acceptance. Actual gold source entry, merge and
+Stable update still require their separate steps. No working financial rows,
+CLOSED state or Stable installation changed. Deposit-statement import remains
+deferred.
 
 ## Historical v1.8.0 checkpoint
 
