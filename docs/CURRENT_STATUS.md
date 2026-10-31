@@ -8,6 +8,58 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+**Released and installed: [v1.9.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.9.0),
+`42439193f1140a93fd4f6ed74e04e846187615d3`.**
+[#998](https://github.com/LTstripes/hermes-finance/pull/998) and
+[#1000](https://github.com/LTstripes/hermes-finance/pull/1000) are merged. The final
+reviewed candidate `7d2e713a` passed
+[CI41192831353](https://github.com/LTstripes/hermes-finance/actions/runs/41192831353)
+and [UI41192831198](https://github.com/LTstripes/hermes-finance/actions/runs/41192831198).
+Its whole product tree equals the accepted merge. Exact-main
+[CI41193837366](https://github.com/LTstripes/hermes-finance/actions/runs/41193837366)
+and [guarded release41194587677](https://github.com/LTstripes/hermes-finance/actions/runs/41194587677)
+completed SUCCESS; independent tag/release readback confirms the annotated tag,
+peeled commit and published notes.
+
+The accepted compact Returns workspace, standalone instrument pages, paid-income
+drilldowns and simpler finance navigation are installed. The leaders correction
+has independent synthetic before/after pixel review and leaves eligibility,
+ranking and amounts unchanged. The earlier rejected overview remains history
+below. The recommended AI download requests strict format2.0 typed payload
+references; legacy1.5 remains the API default. Independent source/contract review
+and lossless saved-payload expansion verify the representation without a second
+financial calculator. Further speed optimization remains outside this slice.
+The installed recommended download also passes strict schema/reference checks;
+expansion matches the prior reviewed export apart from its generation timestamp
+and application version. The read leaves working data and the isolated Test unchanged.
+
+Operator-local31October evidence confirms a verified producing-code/database
+recovery pair, stock backup-first OPS02, Prepare/Validate and separate Start with
+HTTP200/ok/1.9.0. Native process birth/ancestry and open-file identity bind the
+listener to the original physical production database. Schema0068 adds exactly
+three empty manual-gold source tables; prior financial rows, CLOSED history,
+environment and data identity are preserved. The accepted isolated Test remains
+pinned at `ade462a2` and unchanged.
+
+Fresh Preview of the same originals and explicit replacement through the existing
+proof host restore current ordinary readers: the previously reviewed42
+account-instrument pairs retain numeric RUB, Modified Dietz, period XIRR and
+annualized XIRR. Known income and the instrument-card operands agree with the
+accepted Test. Display labels and source-local proof IDs are checked against
+their own declared bindings; IDs from separate physical databases are not treated
+as interchangeable. Old proof rows remain retained. No financial reimport,
+Apply/Close/Reopen, mapping/payout write, provider request or actual gold Save
+occurred.
+
+This remains scoped source-only/provisional reporting. Shared costs/taxes and
+different periods retain their limits; no common portfolio percentage is
+invented. Actual gold-history entry still requires its separate confirmation;
+deposit-statement import remains [#999](https://github.com/LTstripes/hermes-finance/issues/999).
+The release notes describe the installed capabilities, while the dated stages
+below retain their original evidence and limits.
+
+## Previous release and preparation checkpoints
+
 **Released and installed: [v1.8.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.8.1),
 `9b69282fda3de9b61f22ec39021cc3ad9c7a5107`.** Application
 [#995](https://github.com/LTstripes/hermes-finance/pull/995) adds certified XIRR
