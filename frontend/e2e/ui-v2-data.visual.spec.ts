@@ -248,7 +248,8 @@ test("Settings sidebar remains visible and scrolls independently on a short desk
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const box = await sidebar.boundingBox();
   expect(box).not.toBeNull();
-  expect(box?.y).toBe(0);
+  // Fractional document heights may round sticky containment by half a CSS pixel.
+  expect(Math.abs(box?.y ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1);
   expect(box?.height).toBe(420);
   expect(await sidebar.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
     true,
