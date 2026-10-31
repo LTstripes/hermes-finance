@@ -456,6 +456,114 @@ def test_default_index_does_not_request_instrument_analyses_or_detail(db, monkey
     )
 
 
+def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(db, monkeypatch):
+    from test_returns_read_efficiency_service import _saved_investment
+
+    _saved_investment(db, monkeypatch)
+    proofs = overall.source_investment_proofs
+    derive, calls = proofs._derive, []
+
+    def observed(*args, **kwargs):
+        calls.append(kwargs)
+        return derive(*args, **kwargs)
+
+    monkeypatch.setattr(proofs, "_derive", observed)
+    monkeypatch.setattr(
+        overall.returns_view, "read_detail", lambda *a, **k: pytest.fail("hidden card detail")
+    )
+    expected = read(db)
+    calls.clear()
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    with TestClient(app) as client:
+        response = client.get("/api/returns/overall?include_instrument_summaries=true")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    value = Overall.model_validate(response.json())
+    assert value == expected
+    assert value.instruments
+    assert all(pair.details_loaded for row in value.instruments for pair in row.accounts)
+    assert any(pair.pnl.value is not None for row in value.instruments for pair in row.accounts)
+    assert len(calls) == 1
+    assert calls[0]["include_xirr"] is False and calls[0]["include_instruments"] is True
+    assert all(
+        set(pair)
+        == {
+            "scope",
+            "label",
+            "canonical_account_id",
+            "details_loaded",
+            "period",
+            "pnl",
+            "rate",
+            "coupons",
+            "dividends",
+        }
+        for row in response.json()["instruments"]
+        for pair in row["accounts"]
+    )  # Summaries contain no analysis/events/card DTO.
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("query", ["", "?include_instrument_summaries=false"])
+def test_http_default_keeps_index_projection(db, monkeypatch, query):
+    app = FastAPI()
+    app.include_router(router)
+    calls = []
+
+    def read_projection(session, **kwargs):
+        calls.append(kwargs)
+        return overall.read_overall(session, **kwargs)
+
+    monkeypatch.setattr("hermes_finance.api.returns_overall.read_overall", read_projection)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get(f"/api/returns/overall{query}")
+    assert response.status_code == 200
+    assert calls == [{"include_instrument_details": False}]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "include_instrument_summaries=true&include_instrument_summaries=false",
+        "include_instrument_summaries=true&include_instrument_summaries=true",
+        "include_instrument_summaries=1",
+        "include_instrument_summaries=yes",
+        "include_instrument_summaries=TRUE",
+        "include_instrument_summaries=",
+    ],
+)
+def test_http_summary_projection_rejects_ambiguous_or_nonliteral_selection(db, monkeypatch, query):
+    app = FastAPI()
+    app.include_router(router)
+    monkeypatch.setattr(
+        "hermes_finance.api.returns_overall.read_overall",
+        lambda *a, **k: pytest.fail("invalid projection reached reader"),
+    )
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get(f"/api/returns/overall?{query}")
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize("basis", ["source", "pdf"])
 def test_display_basis_resolves_sold_instrument_without_financial_writes(db, monkeypatch, basis):
     source_fixture(monkeypatch)

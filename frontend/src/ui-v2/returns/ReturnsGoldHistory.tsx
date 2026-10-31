@@ -1,18 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiClientError } from "../../api/client";
+import { formatQuantity } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { MonthNavigationGuard } from "../MonthNavigationGuard";
 import { money } from "../SourceInstrumentDetail";
 import {
   applyGoldHistory,
   checkGoldHistory,
-  getGoldHistories,
-  getGoldHistory,
-  getGoldReceipt,
   GOLD_VERSION,
-  goldPendingKey,
-  previewGoldHistory,
   type GoldEventInput,
   type GoldHistory,
   type GoldIntent,
@@ -20,8 +16,14 @@ import {
   type GoldReceipt,
   type GoldResult,
   type GoldValuation,
+  getGoldHistories,
+  getGoldHistory,
+  getGoldReceipt,
+  goldPendingKey,
+  previewGoldHistory,
 } from "./goldHistory";
-import styles from "./Returns.module.css";
+import styles from "./InstrumentCard.module.css";
+
 const event = (): GoldEventInput => ({
   event_id: `g_${crypto.randomUUID().replaceAll("-", "")}`,
   event_date: "",
@@ -82,58 +84,81 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
 }
 function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuation | null }) {
+  const reasons: Record<string, string> = {
+    gold_trade_history_incomplete: "Подтвердите полноту истории операций.",
+    gold_zero_start_unproven: "Не подтверждён остаток на начало истории.",
+    gold_separate_fees_unknown: "Уточните отдельные комиссии.",
+    gold_quantity_mismatch: "Количество по операциям не совпадает с заявленным остатком.",
+    gold_snapshot_quantity_mismatch: "Количество в сохранённой оценке не совпадает с историей.",
+    gold_negative_running_quantity: "Продажа превышает количество золота на эту дату.",
+    gold_saved_valuation_unavailable: "Не хватает сохранённой оценки остатка.",
+    gold_quote_unavailable: "Не хватает сохранённой оценки остатка.",
+    gold_valuation_outside_complete_scope: "Дата оценки выходит за подтверждённую историю.",
+    gold_future_price_date: "Дата цены находится за пределами снимка.",
+    gold_cost_allocation_unproven: "Разделение результата продаж и остатка не подтверждено.",
+  };
+  const limitations = [
+    ...new Set(
+      value.reason_codes.map(
+        (code) => reasons[code] ?? "Для расчёта не хватает подтверждённых данных.",
+      ),
+    ),
+  ];
+  const facts = [
+    ["Общий результат", value.total_result_kopecks],
+    ["От продажи", value.realized_result_kopecks],
+    ["Изменение стоимости остатка", value.unrealized_result_kopecks],
+    ["Стоимость оставшегося золота при покупке", value.remaining_cost_kopecks],
+  ] as const;
   return (
     <div>
-      <dl className={styles.goldFacts}>
-        <dt>Общий результат</dt>
-        <dd>{money(value.total_result_kopecks)}</dd>
-        <dt>Реализованный результат</dt>
-        <dd>{money(value.realized_result_kopecks)}</dd>
-        <dt>Нереализованный результат</dt>
-        <dd>{money(value.unrealized_result_kopecks)}</dd>
-        <dt>Остаток затрат</dt>
-        <dd>{money(value.remaining_cost_kopecks)}</dd>
-        <dt>Отдельные комиссии</dt>
-        <dd>{money(value.separate_fees_kopecks)}</dd>
-      </dl>
-      <p>
-        Расчётный интервал: {value.period.covered_from} —{" "}
-        {value.period.covered_to ?? "граница не подтверждена"}; операции учтены по{" "}
-        {value.as_of_date}. Оценка на {value.valuation_date ?? "неподтверждённую дату"};{" "}
-        {value.valuation_basis === "owner_declared_zero_quantity"
-          ? "заявленное нулевое количество"
-          : value.valuation_basis === "saved_snapshot_quote"
-            ? "сохранённая цена"
-            : "оценка не подтверждена"}
-        .
-      </p>
-      <p>
-        Налоги не предоставлены. Основа сумм:{" "}
-        {value.amount_basis === "actual"
-          ? "фактические суммы операций"
-          : "есть суммы, выведенные из цены за грамм"}
-        .
-      </p>
-      <p>
-        {valuation
-          ? `Сохранённая оценка: ${money(valuation.market_value_kopecks)} на ${valuation.date}; снимок отчёта ${valuation.snapshot_date}; цена на ${valuation.price_date}; количество ${valuation.quantity} г.`
-          : "Подходящая сохранённая оценка недоступна."}
-      </p>
-      {(valuation?.provisional ||
-        valuation?.month_status === "draft" ||
-        value.valuation_provisional) && (
-        <p>
-          Предварительная оценка из DRAFT: сохранённая котировка на{" "}
-          {valuation?.price_date ?? value.valuation_date}. Это наблюдение чернового месяца, а не
-          принятый финансовый Close.
+      {facts.some(([, amount]) => amount !== null) && (
+        <dl className={styles.goldFacts}>
+          {facts
+            .filter(([, amount]) => amount !== null)
+            .map(([label, amount]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{money(amount)}</dd>
+              </div>
+            ))}
+        </dl>
+      )}
+      {value.total_result_kopecks === null && (
+        <p className={styles.notice}>
+          Общий результат пока не подтверждён.{" "}
+          {limitations.join(" ") || "Проверьте историю и оценку остатка."} Известные части показаны
+          отдельно.
         </p>
       )}
-      {!!value.reason_codes.length && (
-        <details>
-          <summary>Ограничения результата</summary>
-          <code>{value.reason_codes.join(", ")}</code>
-        </details>
+      {valuation && (
+        <p className={styles.muted}>
+          Оценка {money(valuation.market_value_kopecks)} на {valuation.price_date};{" "}
+          {formatQuantity(valuation.quantity)} г; снимок месяца {valuation.snapshot_date}
+          {valuation.provisional || valuation.month_status === "draft" ? " · предварительная" : ""}.
+        </p>
       )}
+      <p className={styles.muted}>
+        Операции учтены по {value.as_of_date}
+        {!valuation ? "; оценка не подтверждена" : ""}.
+      </p>
+      <details className={styles.details}>
+        <summary>Основа расчёта</summary>
+        <p>
+          История с {value.period.covered_from} по {value.period.covered_to ?? value.as_of_date}.
+          Налоги не предоставлены.{" "}
+          {value.amount_basis === "derived"
+            ? "Суммы операций выведены из цены за грамм."
+            : "Использованы фактические суммы операций."}
+        </p>
+        {value.separate_fees_kopecks !== null && (
+          <p>Отдельные комиссии: {money(value.separate_fees_kopecks)}; учтены один раз.</p>
+        )}
+        {!valuation && <p>Сохранённая оценка остатка не подтверждена.</p>}
+        {value.total_result_kopecks !== null && !!limitations.length && (
+          <p>{limitations.join(" ")}</p>
+        )}
+      </details>
     </div>
   );
 }
@@ -144,7 +169,6 @@ export function ReturnsGoldHistory({
   onNavigationStateChange,
   refreshing = false,
   revision = 0,
-  targetLabel,
 }: {
   accountId: number;
   instrumentId: number;
@@ -309,7 +333,7 @@ export function ReturnsGoldHistory({
     }
   }
   return (
-    <section className={styles.goldHistory} aria-label="История золота владельца">
+    <section className={styles.gold} aria-label="История золота владельца">
       <MonthNavigationGuard
         dirty={dirty}
         pending={blocked}
@@ -318,16 +342,7 @@ export function ReturnsGoldHistory({
           setPreview(null);
         }}
       />
-      <h3>История покупок и продаж золота</h3>
-      {targetLabel && (
-        <p>
-          <strong>{targetLabel}</strong>
-        </p>
-      )}
-      <p>
-        Отдельный источник сведений владельца для выбранного счёта и инструмента. Закрытые месяцы не
-        редактируются. Оценка берётся из сохранённого снимка; новой цены здесь нет.
-      </p>
+      <h3>История операций</h3>
       {query.isError ? (
         <p role="alert">
           Не удалось прочитать историю.{" "}
@@ -359,8 +374,9 @@ export function ReturnsGoldHistory({
             <ul>
               {current.events.map((row) => (
                 <li key={row.event_id}>
-                  {row.event_date} · {row.side === "BUY" ? "Покупка" : "Продажа"} · {row.grams} г ·{" "}
-                  {money(row.amount_kopecks)} · комиссия {money(row.separate_fee_kopecks)}
+                  {row.event_date} · {row.side === "BUY" ? "Покупка" : "Продажа"} ·{" "}
+                  {formatQuantity(row.grams)} г · {money(row.amount_kopecks)} · комиссия{" "}
+                  {money(row.separate_fee_kopecks)}
                 </li>
               ))}
             </ul>

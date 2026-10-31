@@ -789,11 +789,33 @@ it("links exact catalogue instruments from Capital and gives unsupported rows an
   const position = await screen.findByTestId("capital-holding-position-501");
   expect(within(position).getByRole("link", { name: "Доходность инструмента" })).toHaveAttribute(
     "href",
-    "/v2/returns?isin=RU000A000010&capital_account=3",
+    "/v2/returns/instrument/RU000A000010?capital_account=3&back=%2Fv2%2Fcapital",
   );
   const noIsin = screen.getByTestId("capital-holding-position-502");
   expect(within(noIsin).queryByRole("link")).toBeNull();
   expect(noIsin).toHaveTextContent("Точный ISIN не подтверждён");
+});
+
+it("restores the Capital holding filter from a safe card Back target without changing totals", async () => {
+  const { mount, state } = setup(
+    "/v2/capital?holding_kind=class&holding_value=stocks&holding_label=Акции",
+  );
+  state.instruments = state.instruments.map((instrument) => ({
+    ...instrument,
+    isin: instrument.id === 10 ? "RU000A000010" : null,
+  }));
+  mount();
+  await screen.findByTestId("capital-holding-position-501");
+  expect(screen.getByText("Фильтр: Акции")).toBeVisible();
+  expect(screen.queryByTestId("capital-holding-position-502")).toBeNull();
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  const href =
+    within(screen.getByTestId("capital-holding-position-501"))
+      .getByRole("link", { name: "Доходность инструмента" })
+      .getAttribute("href") ?? "";
+  const back = new URL(href, "http://localhost").searchParams.get("back") ?? "";
+  expect(back).toContain("holding_kind=class");
+  expect(back).toContain("holding_value=stocks");
 });
 it("accepted performance retry and diagnostic controls remain usable inside the disclosure", async () => {
   const { mount, state, reads } = setup();

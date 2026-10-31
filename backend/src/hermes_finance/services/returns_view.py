@@ -103,6 +103,7 @@ def _read_source_scopes(session):
 
 def _accounts(session, canonical=None):
     canonical = _source_scopes(session) if canonical is None else canonical
+    display_names = session.info.get("returns_account_display_names", {})
     labels = {}
     for alias, account_id, name in session.execute(
         select(BrokerIdentityMapping.provider_identity, Account.id, Account.name)
@@ -119,7 +120,8 @@ def _accounts(session, canonical=None):
         [
             {
                 "id": f"source:{a}",
-                "label": f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a,
+                "label": display_names.get(f"source:{a}")
+                or (f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a),
                 "basis": "statements",
             }
             for a in sorted(set(canonical.values()))
@@ -154,6 +156,8 @@ def read_context(session):
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
         from hermes_finance.services.source_investment_proofs import read_report_headers
 
+        history_periods = {}
+        history_rank = {}
         for proof in read_report_headers(session):
             key = f"source:{canonical.get(proof['source_account'], proof['source_account'])}"
             period = bounds(
@@ -162,10 +166,17 @@ def read_context(session):
             )
             if period not in source_periods.setdefault(key, []):
                 source_periods[key].append(period)
+            rank = (proof["covered_to"], proof["proof_id"])
+            if proof["history_from_zero"] and rank > history_rank.get(key, ("", 0)):
+                history_rank[key] = rank
+                history_periods[key] = period
         return {
             "accounts": _accounts(session, canonical),
             "scope_aliases": {f"source:{a}": f"source:{b}" for a, b in canonical.items() if a != b},
             "source_periods": source_periods,
+            # Selection metadata only. The ordinary reader still validates the
+            # exact proof's currentness before exposing any numerical result.
+            "source_history_periods": history_periods,
             "default_period": bounds(
                 closed[-1].period_start - timedelta(days=1), closed[-1].period_end
             )

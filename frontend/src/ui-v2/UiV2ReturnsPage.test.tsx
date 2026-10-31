@@ -1,25 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { goldPendingKey } from "./returns/goldHistory";
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
-import {
-  detailFixture,
-  may,
-  contextFixture,
-  overviewFixture,
-  basketFixture,
-} from "./returns/fixtures";
-import { overallFixture, incomeFixture, instrumentCardFixture } from "./returns/overallFixtures";
+import { overallFixture, incomeFixture } from "./returns/overallFixtures";
 import type { Overall } from "./returns/overall";
-import { UiV2ReturnsEntry, UiV2ReturnsAccountEntry } from "./UiV2Entry";
-// Load the page module before assertions; route-chunk compilation is outside these component tests.
-import "./UiV2ReturnsPage";
-import "./returns/ReturnsGoldHistory";
+import UiV2ReturnsPage from "./UiV2ReturnsPage";
+
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 function install(
-  value: Overall = overallFixture(),
+  value = overallFixture(),
   override?: (url: URL, init?: RequestInit) => Promise<Response> | undefined,
 ) {
   const calls: string[] = [];
@@ -30,66 +20,40 @@ function install(
       calls.push(url.pathname + url.search);
       const custom = override?.(url, init);
       if (custom) return custom;
-      if (url.pathname.endsWith("instrument-card"))
-        return Promise.resolve(response(instrumentCardFixture(url.searchParams.get("isin") ?? "")));
       if (url.pathname.endsWith("income")) {
         const kind = url.searchParams.get("kind") === "dividend" ? "dividend" : "coupon";
-        const data = incomeFixture(kind);
-        data.summary = kind === "coupon" ? value.coupon_income : value.dividend_income;
-        return Promise.resolve(response(data));
+        const income = incomeFixture(kind);
+        income.summary = kind === "coupon" ? value.coupon_income : value.dividend_income;
+        return Promise.resolve(response(income));
       }
       if (url.pathname === "/api/owner-manual-gold-history")
         return Promise.resolve(
           response({ contract_version: "owner_manual_gold_history_v1", histories: [] }),
         );
-      const period = {
-        start: url.searchParams.get("start") ?? may.start,
-        end: url.searchParams.get("end") ?? may.end,
-      };
-      return Promise.resolve(
-        response(
-          url.pathname.endsWith("overall")
-            ? value
-            : url.pathname.endsWith("context")
-              ? contextFixture
-              : url.pathname.endsWith("basket")
-                ? basketFixture(period)
-                : url.pathname.endsWith("instrument")
-                  ? detailFixture(url.searchParams.get("scope") ?? "", period)
-                  : overviewFixture(url.searchParams.get("scope") ?? "portfolio", period),
-        ),
-      );
+      return Promise.resolve(response(value));
     }),
   );
   return calls;
 }
-function Context() {
-  const location = useLocation();
-  const navigate = useNavigate();
+function Location() {
+  const l = useLocation();
   return (
-    <>
-      <output data-testid="location">
-        {location.pathname}
-        {location.search}
-        {location.hash}
-      </output>
-      <button type="button" onClick={() => navigate(-1)}>
-        Back
-      </button>
-    </>
+    <output data-testid="location">
+      {l.pathname}
+      {l.search}
+    </output>
   );
 }
-function setup(path = "/v2/returns", previous?: string) {
+function setup(path = "/v2/returns") {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <MemoryRouter initialEntries={previous ? [previous, path] : [path]}>
-        <Context />
+      <MemoryRouter initialEntries={[path]}>
+        <Location />
         <Routes>
-          <Route path="/v2/capital" element={<h1>Капитал: исходный контекст</h1>} />
-          <Route path="/v2/returns" element={<UiV2ReturnsEntry />} />
-          <Route path="/v2/returns/account" element={<UiV2ReturnsAccountEntry />} />
+          <Route path="/v2/returns" element={<UiV2ReturnsPage />} />
+          <Route path="/v2/returns/instrument/:isin" element={<h1>Отдельная карточка</h1>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -97,549 +61,180 @@ function setup(path = "/v2/returns", previous?: string) {
 }
 afterEach(() => {
   vi.unstubAllGlobals();
+  localStorage.clear();
   sessionStorage.clear();
 });
-test("default loads only all-history overall, shows known backend result with explicit included components", async () => {
+
+test("default shows exact brokerage subtotal, supported graph/list, excludes deposits and lazy detail calls", async () => {
   const calls = install();
   setup();
-  await screen.findByRole("heading", { name: "В целом" });
-  await screen.findByRole("region", { name: "Известный результат" });
-  expect(calls).toEqual(["/api/returns/overall"]);
-  expect(screen.queryByRole("combobox", { name: "Представление" })).toBeNull();
-  expect(screen.queryByRole("combobox", { name: "Период" })).toBeNull();
-  const total = screen.getByRole("region", { name: "Известный результат" });
-  expect(total).toHaveTextContent("Известный результат за доступную историю");
-  expect(total).toHaveTextContent("Полный результат может быть выше или ниже");
-  expect(total).toHaveTextContent("Общая процентная доходность не рассчитана");
-  expect(total).toHaveTextContent("Доступен отдельно — не включён");
-  expect(total).toHaveTextContent("Золото с неподтверждённым пересечением");
-  expect(total).not.toHaveTextContent("12,00%");
-  expect(screen.getByRole("button", { name: "Проданная облигация" })).toBeVisible();
-  expect(screen.getByRole("region", { name: "Депозиты" })).toHaveTextContent("0 ₽");
-  expect(screen.getByRole("region", { name: "Депозиты" })).toHaveTextContent("draft");
-  expect(screen.getByRole("region", { name: "Золото" })).toHaveTextContent("20,00%");
-  expect(screen.getByRole("region", { name: "Золото" })).toHaveTextContent("без приведения к году");
+  const total = await screen.findByRole("region", { name: "Результат" });
+  expect(total).toHaveTextContent("+8 ₽");
+  expect(screen.getByRole("combobox", { name: "Счета" })).toHaveValue("all");
+  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toBeVisible();
+  expect(screen.getByRole("table")).toHaveTextContent("Проданная облигация");
+  expect(screen.queryByRole("region", { name: "Депозиты" })).toBeNull();
+  expect(screen.queryByText("Счета и периоды")).toBeNull();
+  expect(screen.queryByText("Фактически полученные выплаты")).toBeNull();
+  expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
+  expect(screen.queryByRole("region", { name: "Доходность периода" })).toBeNull();
 });
-
-test.each(["source:SYNTH-A", "portfolio"])(
-  "old %s URL preserves authority, dates and hash on account route",
-  async (scope) => {
-    const calls = install();
-    setup(`/v2/returns?scope=${scope}&start=${may.start}&end=${may.end}#details`);
-    await waitFor(() =>
-      expect(screen.getByTestId("location")).toHaveTextContent(
-        `/v2/returns/account?scope=${scope}&start=${may.start}&end=${may.end}#details`,
-      ),
-    );
-    expect(calls.includes("/api/returns/overall")).toBe(false);
-  },
-);
-
-test("metadata-only stale account, missing snapshots and empty instruments make no numeric claims", async () => {
-  const value = overallFixture();
-  value.source_accounts = [
-    {
-      ...value.source_accounts[0],
-      result: null,
-      period: null,
-      proof_status: "stale",
-      reason_codes: ["source_proof_stale"],
-    },
-  ];
-  value.instruments = [];
-  value.gold.snapshots = [];
-  value.deposits.interest = { ...value.deposits.interest, value: null };
-  value.deposits.periods = [];
-  install(value);
+test("one account selection uses its own period and rate without averaging siblings", async () => {
+  const calls = install();
   setup();
-  await screen.findByText("Нет подтверждённых числовых значений.");
-  expect(
-    within(screen.getByRole("region", { name: "По счетам" })).getByText(/проверка устарела/),
-  ).toBeVisible();
-  expect(screen.getByText("Нет доступного индекса инструментов.")).toBeVisible();
-  expect(screen.getByRole("region", { name: "Депозиты" })).not.toHaveTextContent("0 ₽");
-  expect(screen.getByRole("region", { name: "Золото" })).toHaveTextContent(
-    "Нет доступных сохранённых снимков золота.",
+  await screen.findByRole("region", { name: "Результат" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Счета" }), {
+    target: { value: "source:SYNTH-B" },
+  });
+  expect(screen.getByRole("region", { name: "Результат" })).toHaveTextContent("−4 ₽");
+  expect(screen.getByRole("region", { name: "Доходность периода" })).toHaveTextContent("−4,00%");
+  expect(screen.getByRole("region", { name: "Доходность периода" })).toHaveTextContent(
+    "31.03.2030 — 30.04.2030",
   );
+  expect(calls).toHaveLength(1);
 });
-
-test("refresh hides stale values and exposes error before retry", async () => {
-  let fail = false;
-  install(overallFixture(), () => (fail ? Promise.resolve(response({}, 503)) : undefined));
-  setup();
-  await screen.findByRole("region", { name: "Известный результат" });
-  fail = true;
-  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
-  await screen.findByRole("alert");
-  expect(screen.queryByRole("region", { name: "Известный результат" })).toBeNull();
-  fail = false;
-  fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
-  await screen.findByRole("region", { name: "Известный результат" });
-});
-
-test("unsupported overall version is an error", async () => {
-  install({ ...overallFixture(), contract_version: "future" } as unknown as Overall);
-  setup();
-  await screen.findByRole("alert");
-  expect(screen.queryByRole("region", { name: "Известный результат" })).toBeNull();
-});
-
-test("mixed headline renders exact backend money without calculating or counting excluded components", async () => {
-  const value = overallFixture();
-  value.mixed_result.components[2].interval = may;
-  value.mixed_result.known_result = {
-    ...value.mixed_result.known_result,
-    value: "987654321098765432100",
+test("exact native account eligibility excludes conflicts, keeps source provisional numbers and known zero", async () => {
+  const data = overallFixture();
+  data.mixed_result.components[1].included = false;
+  data.mixed_result.components[1].coverage.status = "conflict";
+  data.mixed_result.components[0].amount = {
+    ...data.mixed_result.components[0].amount,
+    value: "0",
   };
-  install(value);
+  install(data);
   setup();
-  const section = await screen.findByRole("region", { name: "Известный результат" });
-  expect(section).toHaveTextContent("Известный результат за доступную историю");
-  expect(section).toHaveTextContent("9 876 543 210 987 654 321");
-  expect(section).toHaveTextContent("Включено: 2");
-  expect(section).toHaveTextContent("Снимок на 31.05.2030");
-  expect(section).toHaveTextContent("Доступен отдельно — не включён");
+  const total = await screen.findByRole("region", { name: "Результат" });
+  expect(total).toHaveTextContent("0 ₽");
+  expect(screen.getByText(/Часть истории не подтверждена/)).toBeVisible();
+  const table = screen.getByRole("table");
+  expect(table).toHaveTextContent("+12 ₽");
+  expect(table).not.toHaveTextContent("−4 ₽");
 });
-
-test.each([null, "0"])(
-  "mixed result preserves unavailable and exact zero distinctly: %s",
-  async (amount) => {
-    const value = overallFixture();
-    value.mixed_result.known_result = { ...value.mixed_result.known_result, value: amount };
-    value.mixed_result.included_component_count = amount === null ? 0 : 2;
-    install(value);
-    setup();
-    const section = await screen.findByRole("region", { name: "Известный результат" });
-    const headline = within(section).getByRole("region", { name: "Известная сумма результата" });
-    if (amount === null) expect(headline).not.toHaveTextContent("0 ₽");
-    else expect(headline).toHaveTextContent("0 ₽");
-  },
-);
-
-test("legacy month/category URL remains on the account path without changing authority", async () => {
-  const calls = install();
-  setup("/v2/returns?month=7&categories=gold#details");
-  await waitFor(() =>
-    expect(screen.getByTestId("location")).toHaveTextContent(
-      "/v2/returns/account?month=7&categories=gold",
-    ),
-  );
-  expect(calls.includes("/api/returns/overall")).toBe(false);
-});
-
-test.each([
-  "capital_account=0&gold_instrument=20",
-  "capital_account=10&gold_instrument=21",
-  "capital_account=10&gold_instrument=20&gold_instrument=20",
-])("gold identity mismatch stays explicit: %s", async (selection) => {
-  const calls = install();
-  setup(`/v2/returns?${selection}#returns-gold`);
-  await screen.findByText(/нет единственного подтверждённого соответствия/);
-  expect(document.querySelector('[data-capital-selected="true"]')).toBeNull();
-  expect(calls).toEqual(["/api/returns/overall"]);
-});
-
-test("coupon card uses server sum once, independent of instrument coupons and P&L", async () => {
-  const value = overallFixture();
-  value.coupon_income.known_total.value = "987654321";
-  value.instruments[0].accounts[0].coupons.value = "999999999999";
-  value.mixed_result.known_result.value = "800";
-  install(value);
-  setup();
-  const card = await screen.findByRole("region", { name: "Полученные купоны" });
-  expect(within(card).getByRole("region", { name: "Известная сумма купонов" })).toHaveTextContent(
-    "9 876 543,21 ₽",
-  );
-  expect(card).toHaveTextContent("включено счетов 1 из 2");
-  expect(card).toHaveTextContent("повторно не прибавляется");
-  fireEvent.click(within(card).getByText("Счета, периоды и покрытие купонов"));
-  expect(await within(card).findByText(/проверка устарела/)).toBeVisible();
-  expect(within(card).getByRole("link", { name: "Учебный счёт А" })).toHaveAttribute(
-    "href",
-    `/v2/returns/account?scope=source%3ASYNTH-A&start=${may.start}&end=${may.end}`,
-  );
-  expect(screen.getByRole("region", { name: "Известная сумма результата" })).toHaveTextContent(
-    "+8 ₽",
-  );
-});
-
-test.each([null, "0"])(
-  "partial coupon total retains true zero versus unknown: %s",
-  async (amount) => {
-    const value = overallFixture();
-    value.coupon_income.known_total.value = amount;
-    value.coupon_income.accounts[0].amount.value = amount;
-    install(value);
-    setup();
-    const card = await screen.findByRole("region", { name: "Полученные купоны" });
-    const total = within(card).getByRole("region", { name: "Известная сумма купонов" });
-    if (amount === null) expect(total).not.toHaveTextContent("0 ₽");
-    else expect(total).toHaveTextContent("0 ₽");
-    expect(card).toHaveTextContent("Частичное покрытие");
-  },
-);
-
-test("conflicting coupon sibling remains visible but cannot inflate the server's known zero", async () => {
-  const value = overallFixture();
-  value.coupon_income.known_total.value = "0";
-  value.coupon_income.accounts[0].amount.value = "0";
-  Object.assign(value.coupon_income.accounts[1], {
-    amount: { ...value.coupon_income.accounts[1].amount, value: "999000" },
-    proof_status: "conflict",
-    exclusion_reason: "source_account_identity_mapping_conflict",
-    reason_codes: ["source_account_identity_mapping_conflict"],
+test("no eligible operand remains unknown rather than zero and is not replaced by excluded gold", async () => {
+  const data = overallFixture();
+  data.mixed_result.components.forEach((c) => {
+    c.included = false;
   });
-  install(value);
-  setup();
-  const card = await screen.findByRole("region", { name: "Полученные купоны" });
-  expect(within(card).getByRole("region", { name: "Известная сумма купонов" })).toHaveTextContent(
-    "0 ₽",
-  );
-  fireEvent.click(within(card).getByText("Счета, периоды и покрытие купонов"));
-  expect(await within(card).findByText(/конфликт данных/)).toBeVisible();
-  expect(card).toHaveTextContent("9 990 ₽");
-  expect(card).toHaveTextContent("не включён");
-});
-
-test("lazy index never renders deferred metrics as financial null and opens one all-account card", async () => {
-  const value = overallFixture();
-  for (const row of value.instruments)
-    for (const account of row.accounts) {
-      account.details_loaded = false;
-      for (const key of ["pnl", "rate", "coupons", "dividends"] as const)
-        account[key] = {
-          ...account[key],
-          value: null,
-          reason_codes: ["instrument_details_not_requested"],
-        };
-    }
-  const calls = install(value);
-  setup();
-  await screen.findByRole("button", { name: "Учебная акция" });
-  const index = screen.getByRole("region", { name: "По инструментам" });
-  expect(index).toHaveTextContent("Подробности не запрошены");
-  expect(index).not.toHaveTextContent("instrument_details_not_requested");
-  expect(calls).toEqual(["/api/returns/overall"]);
-  fireEvent.click(within(index).getByRole("button", { name: "Учебная акция" }));
-  const card = await screen.findByRole("region", { name: "Карточка инструмента RU000A000002" });
-  await within(card).findByRole("heading", { name: "Учебная акция" });
-  expect(calls).toEqual(["/api/returns/overall", "/api/returns/instrument-card?isin=RU000A000002"]);
-  expect(card).toHaveTextContent("Учебный счёт А");
-  expect(card).toHaveTextContent("Учебный счёт Б");
-  expect(card).toHaveTextContent("31.05.2030");
-  expect(card).toHaveTextContent("30.04.2030");
-  expect(card).toHaveTextContent("12,00%");
-  expect(card).toHaveTextContent("−4,00%");
-  const accountDetail = within(card)
-    .getByText("Операции и расчёт: Учебный счёт А")
-    .closest("details");
-  if (!accountDetail) throw new Error("Account disclosure missing");
-  fireEvent.click(within(card).getByText("Операции и расчёт: Учебный счёт А"));
-  fireEvent.click(within(accountDetail).getByText(/Сделки и выплаты/));
-  expect(within(accountDetail).getByText("Продажа", { exact: true })).toBeVisible();
-  expect(card).toHaveTextContent("11800");
-  expect(calls).toHaveLength(2);
-});
-test("lazy card cancellation and late response never replace another ISIN", async () => {
-  let finish: (response: Response) => void = () => {};
-  let signal: AbortSignal | null | undefined;
-  const calls = install(overallFixture(), (url, init) =>
-    url.pathname.endsWith("instrument-card") && url.searchParams.get("isin") === "RU000A000002"
-      ? new Promise((resolve) => {
-          finish = resolve;
-          signal = init?.signal;
-        })
-      : undefined,
-  );
-  setup();
-  fireEvent.click(await screen.findByRole("button", { name: "Учебная акция" }));
-  await waitFor(() => expect(calls).toHaveLength(2));
-  fireEvent.click(screen.getByRole("button", { name: "К списку инструментов" }));
-  await waitFor(() => expect(signal?.aborted).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: "Проданная облигация" }));
-  const card = await screen.findByRole("region", { name: "Карточка инструмента RU000A000003" });
-  await within(card).findByRole("heading", { name: "Проданная облигация" });
-  await act(async () => finish(response(instrumentCardFixture())));
-  expect(screen.queryByRole("region", { name: "Карточка инструмента RU000A000002" })).toBeNull();
-});
-test("lazy Capital entry opens the same all-account card without selecting one account and Back returns", async () => {
-  const calls = install();
-  setup("/v2/returns?isin=RU000A000002&capital_account=3", "/v2/capital?month=91");
-  const card = await screen.findByRole("region", { name: "Карточка инструмента RU000A000002" });
-  await within(card).findByRole("heading", { name: "Учебная акция" });
-  expect(card).toHaveTextContent("карточка показывает все счета");
-  expect(card.querySelector('[data-capital-context="true"]')).toHaveTextContent("Учебный счёт А");
-  expect(
-    within(card).getByText("Операции и расчёт: Учебный счёт А").closest("details"),
-  ).not.toHaveAttribute("open");
-  expect(
-    within(card).getByText("Операции и расчёт: Учебный счёт Б").closest("details"),
-  ).not.toHaveAttribute("open");
-  expect(calls).toHaveLength(2);
-  expect(calls.some((call) => call.startsWith("/api/returns/instrument?"))).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  await screen.findByRole("heading", { name: "Капитал: исходный контекст" });
-  expect(screen.getByTestId("location")).toHaveTextContent("month=91");
-});
-test.each(["0", "-1", "3.5", "03", "9007199254740992", "3&capital_account=4"])(
-  "lazy invalid Capital context %s never chooses or hides an account",
-  async (id) => {
-    const calls = install();
-    setup(`/v2/returns?isin=RU000A000002&capital_account=${id}`);
-    const card = await screen.findByRole("region", { name: "Карточка инструмента RU000A000002" });
-    await within(card).findByText(/не подтверждён однозначно/);
-    expect(card.querySelector('[data-capital-context="true"]')).toBeNull();
-    expect(card).toHaveTextContent("Учебный счёт Б");
-    expect(calls).toHaveLength(2);
-  },
-);
-test.each(["wrong-version", "wrong-isin", "wrong-account", "wrong-analysis-period"])(
-  "lazy card rejects mismatched server context: %s",
-  async (kind) => {
-    const value = instrumentCardFixture();
-    if (kind === "wrong-version") Object.assign(value, { contract_version: "future" });
-    if (kind === "wrong-isin") value.isin = "RU000A000003";
-    if (kind === "wrong-account" && value.accounts[0].detail)
-      value.accounts[0].detail.scope = "source:WRONG";
-    if (kind === "wrong-analysis-period" && value.accounts[0].detail)
-      value.accounts[0].detail.analysis.opening.date = "1990-01-01";
-    install(overallFixture(), (url) =>
-      url.pathname.endsWith("instrument-card") ? Promise.resolve(response(value)) : undefined,
-    );
-    setup("/v2/returns?isin=RU000A000002");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить карточку");
-    expect(screen.queryByText("Все счета этого ISIN")).toBeNull();
-  },
-);
-test("lazy card keeps sold zero quantity and known sibling metrics beside a stale account", async () => {
-  const value = instrumentCardFixture();
-  value.accounts[1].detail = null;
-  value.accounts[1].proof_status = "stale";
-  value.accounts[1].included = false;
-  value.accounts[1].reason_codes = ["source_proof_stale"];
-  install(overallFixture(), (url) =>
-    url.pathname.endsWith("instrument-card") ? Promise.resolve(response(value)) : undefined,
-  );
-  setup("/v2/returns?isin=RU000A000002");
-  const card = await screen.findByRole("region", { name: "Карточка инструмента RU000A000002" });
-  await within(card).findByText(/Старые числовые значения не подставляются/);
-  expect(card).toHaveTextContent("+12 ₽");
-  expect(card).toHaveTextContent("12,00%");
-  expect(card).toHaveTextContent("0,00 ₽");
-});
-test("lazy coupon/dividend disclosures load only their own events and keep same-looking occurrences", async () => {
-  const calls = install(overallFixture(), (url) => {
-    if (!url.pathname.endsWith("income")) return undefined;
-    const kind = url.searchParams.get("kind") === "dividend" ? "dividend" : "coupon";
-    const value = incomeFixture(kind);
-    value.events = [value.events[0], { ...value.events[0] }];
-    return Promise.resolve(response(value));
+  data.source_accounts.forEach((a) => {
+    a.proof_status = "stale";
+    a.result = null;
   });
+  install(data);
   setup();
-  const coupon = await screen.findByRole("region", { name: "Полученные купоны" });
-  const dividend = screen.getByRole("region", { name: "Полученные дивиденды" });
-  expect(calls).toEqual(["/api/returns/overall"]);
-  fireEvent.click(within(coupon).getByText("Счета, периоды и покрытие купонов"));
-  await within(coupon).findByRole("heading", { name: "Фактически полученные выплаты" });
-  expect(within(coupon).getAllByText("15.05.2030")).toHaveLength(2);
-  expect(calls.filter((call) => call.includes("/income?"))).toEqual([
-    "/api/returns/income?kind=coupon",
-  ]);
-  fireEvent.click(within(dividend).getByText("Счета, периоды и покрытие дивидендов"));
-  await within(dividend).findByRole("heading", { name: "Фактически полученные выплаты" });
-  expect(calls.filter((call) => call.includes("/income?"))).toHaveLength(2);
-  fireEvent.click(within(coupon).getByRole("button", { name: "Учебная акция" }));
-  await screen.findByRole("region", { name: "Карточка инструмента RU000A000002" });
-  expect(calls.some((call) => call.startsWith("/api/returns/instrument?"))).toBe(false);
+  await screen.findByRole("combobox", { name: "Счета" });
+  expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
+  expect(screen.getAllByText("Нужно заново подтвердить выписки")).toHaveLength(2);
 });
-test("lazy closing paid-income disclosure aborts obsolete work", async () => {
-  let signal: AbortSignal | null | undefined;
-  const calls = install(overallFixture(), (url, init) =>
-    url.pathname.endsWith("income")
-      ? new Promise(() => {
-          signal = init?.signal;
-        })
-      : undefined,
-  );
+test("ambiguous or unknown account URL never silently chooses a numeric scope", async () => {
+  install();
+  setup("/v2/returns?accounts=source:SYNTH-A&accounts=source:SYNTH-B");
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
+  expect(screen.queryByRole("table")).toBeNull();
+});
+test("refresh hides previous financial values and error never retains stale totals", async () => {
+  let reject = false;
+  install(overallFixture(), () => (reject ? Promise.resolve(response({}, 503)) : undefined));
   setup();
-  const card = await screen.findByRole("region", { name: "Полученные купоны" });
-  const toggle = within(card).getByText("Счета, периоды и покрытие купонов");
-  fireEvent.click(toggle);
-  await waitFor(() => expect(calls).toHaveLength(2));
-  fireEvent.click(toggle);
-  await waitFor(() => expect(signal?.aborted).toBe(true));
-});
-test("lazy gold instrument entry loads only its exact full-history source and leaves initial facts empty", async () => {
-  const calls = install();
-  setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
-  await screen.findByRole("heading", { name: "В целом" });
-  await screen.findByRole("region", { name: "История золота владельца" });
-  await screen.findByText("История операций пока не сохранена.");
-  expect(calls).toEqual([
-    "/api/returns/overall",
-    "/api/owner-manual-gold-history?account_id=10&instrument_id=20",
-  ]);
-  expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("");
-  expect(screen.getByLabelText("Сумма операции без отдельной комиссии, ₽")).toHaveValue("");
-});
-
-test("lazy gold history summary remains visible without a snapshot and opens only its exact source", async () => {
-  const value = overallFixture();
-  const metric = value.gold.snapshots[0].unrealized_result;
-  value.gold.snapshots = [];
-  value.gold.histories = [
-    {
-      account_id: 10,
-      instrument_id: 20,
-      label: "Synthetic gold history",
-      revision: 1,
-      source_kind: "owner_manual_gold_history",
-      authority: "owner_attestation",
-      amount_basis: "actual",
-      tax_treatment: "not_provided",
-      currentness: "current",
-      period: may,
-      valuation_date: null,
-      valuation_status: null,
-      total_result: metric,
-      realized_result: metric,
-      unrealized_result: metric,
-      buy_amount: metric,
-      sale_amount: metric,
-      separate_fees: metric,
-      reason_codes: [],
-    },
-  ];
-  const calls = install(value);
-  setup();
-  const summary = await screen.findByRole("region", {
-    name: "Результаты истории золота владельца",
-  });
-  expect(summary).toHaveTextContent("Сведения владельца".toLocaleLowerCase("ru"));
-  expect(calls).toEqual(["/api/returns/overall"]);
-  expect(
-    screen.queryByText("Снимки не подтверждают реализованный результат или историю сделок."),
-  ).toBeNull();
-  fireEvent.click(within(summary).getByRole("link", { name: "Открыть историю золота" }));
-  await screen.findByText("История операций пока не сохранена.");
-  expect(calls.at(-1)).toBe("/api/owner-manual-gold-history?account_id=10&instrument_id=20");
-  expect(screen.queryByText(/Исходная сохранённая оценка:/)).toBeNull();
-});
-
-test("lazy income retains dated payouts with unresolved instrument identity", async () => {
-  install(undefined, (url) => {
-    if (!url.pathname.endsWith("income")) return undefined;
-    const data = incomeFixture("coupon");
-    data.events[0].isin = null;
-    data.events[0].name = null;
-    return Promise.resolve(response(data));
-  });
-  setup();
-  const coupon = await screen.findByRole("region", { name: "Полученные купоны" });
-  fireEvent.click(within(coupon).getByText("Счета, периоды и покрытие купонов"));
-  expect(await within(coupon).findByText(/Инструмент не установлен/)).toHaveTextContent(
-    "ISIN не подтверждён",
-  );
-});
-
-test("gold editor survives dirty and pending summary refresh and guards instrument buttons", async () => {
-  let holdRefresh = false;
-  let finishRefresh: (value: Response) => void = () => {};
-  const value = overallFixture();
-  const calls = install(value, (url) => {
-    if (url.pathname.endsWith("overall") && holdRefresh)
-      return new Promise<Response>((resolve) => {
-        finishRefresh = resolve;
-      });
-    return undefined;
-  });
-  const view = setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
-  await screen.findByRole("heading", { name: "В целом" });
-  await screen.findByText("История операций пока не сохранена.");
-  fireEvent.click(screen.getByText("Ввести или исправить историю операций"));
-  const input = screen.getByLabelText("История с");
-  fireEvent.change(input, { target: { value: "2044-01-01" } });
-  fireEvent.click(screen.getByRole("button", { name: value.instruments[0].name }));
-  const dialog = await screen.findByRole("alertdialog", { name: "Несохранённые изменения" });
-  expect(screen.getByTestId("location")).not.toHaveTextContent("isin=");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Остаться" }));
-  holdRefresh = true;
+  await screen.findByRole("region", { name: "Результат" });
+  reject = true;
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
-  await waitFor(() =>
-    expect(calls.filter((path) => path === "/api/returns/overall")).toHaveLength(2),
-  );
-  expect(screen.getByLabelText("История с")).toBe(input);
-  expect(input).toHaveValue("2044-01-01");
-  expect(screen.queryByRole("region", { name: "Известный результат" })).toBeNull();
-  const changed = structuredClone(value);
-  changed.gold.targets = [];
-  await act(async () => finishRefresh(response(changed)));
-  await screen.findByRole("button", { name: value.instruments[0].name });
-  expect(screen.getByLabelText("История с")).toBe(input);
-  expect(input).toHaveValue("2044-01-01");
-  fireEvent.click(screen.getByRole("button", { name: value.instruments[0].name }));
-  fireEvent.click(
-    within(await screen.findByRole("alertdialog")).getByRole("button", {
-      name: "Уйти без сохранения",
-    }),
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId("location")).toHaveTextContent("isin=RU000A000002"),
-  );
-  expect(screen.queryByRole("region", { name: "История золота владельца" })).toBeNull();
-  view.unmount();
-
-  sessionStorage.setItem(goldPendingKey(10, 20), "gold_pending_synthetic_refresh");
-  holdRefresh = false;
-  setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
-  await screen.findByRole("button", { name: "Проверить результат сохранения" });
-  const pendingEditor = screen.getByRole("region", { name: "История золота владельца" });
-  holdRefresh = true;
-  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
-  expect(screen.getByRole("region", { name: "История золота владельца" })).toBe(pendingEditor);
-  await waitFor(() =>
-    expect(calls.filter((path) => path === "/api/returns/overall")).toHaveLength(4),
-  );
-  await act(async () => finishRefresh(response(value)));
-  fireEvent.click(await screen.findByRole("button", { name: value.instruments[0].name }));
-  const pendingDialog = await screen.findByRole("alertdialog", {
-    name: "Сохранение ещё не подтверждено",
-  });
-  fireEvent.click(within(pendingDialog).getByRole("button", { name: "Остаться в форме" }));
-  expect(screen.getByTestId("location")).not.toHaveTextContent("isin=");
-  expect(sessionStorage.getItem(goldPendingKey(10, 20))).toBe("gold_pending_synthetic_refresh");
-  expect(calls.some((path) => path.includes("/apply"))).toBe(false);
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
 });
-
-test("gold DRAFT metadata targets allow exact lazy entry without granting snapshot authority", async () => {
-  const value = overallFixture();
-  value.gold.snapshots = [];
-  value.gold.histories = [];
-  const target = { account_id: 10, instrument_id: 20, label: "Synthetic DRAFT gold" };
-  value.gold.targets = [target, { ...target }, { ...target, account_id: 0 }];
-  const calls = install(value);
-  const view = setup();
-  const link = await screen.findByRole("link", {
-    name: "Synthetic DRAFT gold: открыть историю операций",
-  });
-  expect(
-    screen.getAllByRole("link", { name: "Synthetic DRAFT gold: открыть историю операций" }),
-  ).toHaveLength(1);
-  expect(calls).toEqual(["/api/returns/overall"]);
+test("version mismatch is an error rather than partial trusted payload", async () => {
+  install({ ...overallFixture(), contract_version: "unexpected" } as unknown as Overall);
+  setup();
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
+});
+test("card links preserve filtered context and do not load card before entry", async () => {
+  const calls = install();
+  setup("/v2/returns?accounts=source%3ASYNTH-A&q=акция");
+  await screen.findByRole("table");
+  const link = within(screen.getByRole("table")).getByRole("link", { name: "Учебная акция" });
+  expect(link.getAttribute("href")).toContain("/v2/returns/instrument/RU000A000002?back=");
+  expect(decodeURIComponent(link.getAttribute("href") ?? "")).toContain("q=акция");
+  expect(calls).toHaveLength(1);
   fireEvent.click(link);
-  await screen.findByText("История операций пока не сохранена.");
-  expect(calls.at(-1)).toBe("/api/owner-manual-gold-history?account_id=10&instrument_id=20");
-  expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("");
-  expect(screen.queryByText(/Сохранённая оценка:/)).toBeNull();
-  expect(screen.queryByLabelText(/Новая цена/)).toBeNull();
-  view.unmount();
-
-  const excluded = overallFixture();
-  excluded.gold.targets = [];
-  const excludedCalls = install(excluded);
+  await screen.findByRole("heading", { name: "Отдельная карточка" });
+});
+test("paid income loads on disclosure, filters selected accounts and retains repeated legitimate occurrences", async () => {
+  const data = overallFixture();
+  const detail = incomeFixture("coupon");
+  detail.instruments[0].accounts[0].amount.value = "3500";
+  detail.events.push({ ...detail.events[0] });
+  const calls = install(data, (url) =>
+    url.pathname.endsWith("income") ? Promise.resolve(response(detail)) : undefined,
+  );
+  setup();
+  const coupon = await screen.findByRole("region", { name: "Полученные купоны" });
+  expect(coupon).toHaveTextContent("35 ₽");
+  expect(calls).toHaveLength(1);
+  fireEvent.click(within(coupon).getByText("По инструментам", { exact: true }));
+  await waitFor(() =>
+    expect(calls.filter((c) => c.includes("income?kind=coupon"))).toHaveLength(1),
+  );
+  await within(coupon).findByRole("table");
+  expect(within(coupon).queryByText("Счета и периоды")).toBeNull();
+  expect(within(coupon).getAllByText(/15.05.2030/).length).toBeGreaterThanOrEqual(2);
+});
+test("closing income disclosure aborts obsolete request", async () => {
+  let signal: AbortSignal | null | undefined;
+  let finish: (r: Response) => void = () => {};
+  install(overallFixture(), (url, init) =>
+    url.pathname.endsWith("income")
+      ? new Promise((resolve) => {
+          signal = init?.signal;
+          finish = resolve;
+        })
+      : undefined,
+  );
+  setup();
+  const coupon = await screen.findByRole("region", { name: "Полученные купоны" });
+  const toggle = within(coupon).getByText("По инструментам", { exact: true });
+  fireEvent.click(toggle);
+  await waitFor(() => expect(signal).toBeDefined());
+  fireEvent.click(toggle);
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  await act(async () => finish(response(incomeFixture("coupon"))));
+  expect(within(coupon).queryByRole("table")).toBeNull();
+});
+test("private display labels affect selection only and gold quantities trim trailing zeros", async () => {
+  install();
+  setup();
+  await screen.findByRole("combobox", { name: "Счета" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Название: Учебный счёт А" }), {
+    target: { value: "Личный брокерский" },
+  });
+  expect(screen.getByRole("option", { name: "Личный брокерский" })).toHaveValue("source:SYNTH-A");
+  expect(localStorage.getItem("hermes.returns.account-display-names.v1")).toContain(
+    "Личный брокерский",
+  );
+  const gold = screen.getByRole("region", { name: "Золото" });
+  expect(gold).toHaveTextContent("2.5 г");
+  expect(gold).not.toHaveTextContent("2.500");
+  expect(within(gold).getAllByRole("heading")).toHaveLength(1);
+});
+test("gold exact target opens only its source and never dispatches a financial write", async () => {
+  const calls = install();
   setup("/v2/returns?capital_account=10&gold_instrument=20#returns-gold");
-  await screen.findByRole("heading", { name: "Золото" });
-  expect(screen.queryByRole("region", { name: "История золота владельца" })).toBeNull();
-  expect(excludedCalls).toEqual(["/api/returns/overall"]);
-  expect(screen.queryByRole("link", { name: "История покупок и продаж" })).toBeNull();
+  await screen.findByRole("button", { name: "Предпросмотр истории" });
+  expect(calls.filter((c) => c.includes("owner-manual-gold-history"))).toHaveLength(1);
+  expect(calls.some((c) => c.includes("instrument-card"))).toBe(false);
+  expect(calls.some((c) => c.includes("confirm"))).toBe(false);
+});
+
+test("dirty gold form blocks instrument navigation and survives summary refresh", async () => {
+  install();
+  setup("/v2/returns?capital_account=10&gold_instrument=20");
+  const quantity = await screen.findByLabelText("Заявленное количество на конец истории, г");
+  fireEvent.change(quantity, { target: { value: "3.25" } });
+  fireEvent.click(within(screen.getByRole("table")).getByRole("link", { name: "Учебная акция" }));
+  await screen.findByRole("alertdialog");
+  expect(screen.queryByRole("heading", { name: "Отдельная карточка" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Остаться$/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+  await screen.findByRole("region", { name: "Результат" });
+  expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("3.25");
 });

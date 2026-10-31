@@ -6,7 +6,7 @@ export function overallFixture(): Overall {
   const a = {
     scope: "source:SYNTH-A",
     canonical_account_id: 3,
-    details_loaded: false,
+    details_loaded: true,
     label: "Учебный счёт А",
     period: may,
     pnl: m("1200"),
@@ -82,7 +82,7 @@ export function overallFixture(): Overall {
       reason_codes: ["known_components_only"],
       components: [
         {
-          id: "brokerage:A",
+          id: a.scope,
           category: "brokerage",
           label: "Учебный счёт А: компонент",
           selected: true,
@@ -97,7 +97,7 @@ export function overallFixture(): Overall {
           exclusion_reason: null,
         },
         {
-          id: "brokerage:B",
+          id: b.scope,
           category: "brokerage",
           label: "Учебный счёт Б: компонент",
           selected: true,

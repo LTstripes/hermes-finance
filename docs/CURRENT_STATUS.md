@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-30**. This is the sole changing project status book. Current source
+Updated **2026-10-31**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -52,6 +52,17 @@ arbitrary allocation to instruments or fabricated intermediate monthly valuation
 Next step is Owner visual review and the separately chosen new-month workflow.
 
 ### Returns continuation in review
+
+Owner rejected the first #1000 overall UX after isolated Test inspection despite
+its successful technical checks. The technical prose, repeated caveats, empty
+blocks and embedded instrument navigation were not accepted. The same Draft is
+being reworked around the compact account layout, one/both-account selection,
+standalone instrument pages and compact gold. A retained cross-account interval
+explains the empty selected-account view; a high sold-position Modified Dietz
+value is being explained from its dated weighted capital, without fitting or
+silently replacing the percentage. Deposits remain outside this UX revision.
+Fresh exact-head checks and actual-pixel Test review are still required; earlier
+operator PASS is not Owner acceptance, merge authority or installed behavior.
 
 Draft [#1000](https://github.com/LTstripes/hermes-finance/pull/1000), stacked on
 [#998](https://github.com/LTstripes/hermes-finance/pull/998), develops the available-

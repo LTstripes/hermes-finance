@@ -29,6 +29,7 @@ export type Instrument = Omit<Result, "period"> & {
 export type Context = {
   scope_aliases?: Record<string, string>;
   source_periods: Record<string, Period[]>;
+  source_history_periods?: Record<string, Period>;
   accounts: { id: string; label: string; basis: "statements" | "accepted" }[];
   default_period: Period | null;
   closed_periods: Period[];

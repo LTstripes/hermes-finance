@@ -134,10 +134,10 @@ it("uses exact position/catalogue IDs and ISIN despite duplicate display names",
   });
   expect(built[0]).toMatchObject({ instrumentId: 10, isin: "RU000A000010", accountId: 3 });
   expect(holdingReturnsNavigation(built[0]).href).toBe(
-    "/v2/returns?isin=RU000A000010&capital_account=3",
+    "/v2/returns/instrument/RU000A000010?capital_account=3&back=%2Fv2%2Fcapital",
   );
   expect(holdingReturnsNavigation(built[1]).href).toBe(
-    "/v2/returns?isin=RU000A000011&capital_account=3",
+    "/v2/returns/instrument/RU000A000011?capital_account=3&back=%2Fv2%2Fcapital",
   );
 });
 it.each([0, -1, 3.5, Number.MAX_SAFE_INTEGER + 1])(

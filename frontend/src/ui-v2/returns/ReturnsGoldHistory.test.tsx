@@ -2,14 +2,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
-import { ReturnsGoldHistory } from "./ReturnsGoldHistory";
-import { GOLD_VERSION, goldPendingKey, type GoldHistory } from "./goldHistory";
+import { GOLD_VERSION, type GoldHistory, goldPendingKey } from "./goldHistory";
 import {
   goldHistoryFixture,
   goldIntentFixture,
   goldPreviewFixture,
   goldReceiptFixture,
 } from "./goldHistoryFixtures";
+import { ReturnsGoldHistory } from "./ReturnsGoldHistory";
+
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 function install(
@@ -121,7 +122,7 @@ test("gold preview binds exact intent; confirmation waits for independent GET be
   fireEvent.click(screen.getByRole("button", { name: "Предпросмотр истории" }));
   const preview = await screen.findByRole("region", { name: "Предпросмотр истории золота" });
   expect(preview).toHaveTextContent("2044-03-30");
-  expect(preview).toHaveTextContent("снимок отчёта 2044-03-31");
+  expect(preview).toHaveTextContent("снимок месяца 2044-03-31");
   expect(preview).toHaveTextContent("Налоги не предоставлены");
   fireEvent.click(within(preview).getByRole("button", { name: "Подтвердить сохранение истории" }));
   await waitFor(() => expect(api.calls.some((call) => call.path.endsWith("/50"))).toBe(true));
@@ -242,10 +243,9 @@ test("gold saved DRAFT quote keeps its actual quote date and separate snapshot d
   history.result.valuation_provisional = true;
   install({ histories: [history] });
   setup();
-  expect(await screen.findByText(/Предварительная оценка из DRAFT/)).toHaveTextContent(
-    "2044-03-30",
-  );
-  expect(screen.getByText(/Сохранённая оценка:/)).toHaveTextContent("снимок отчёта 2044-03-31");
+  const quote = await screen.findByText(/Оценка.*2044-03-30/);
+  expect(quote).toHaveTextContent("предварительная");
+  expect(quote).toHaveTextContent("снимок месяца 2044-03-31");
   expect(screen.queryByLabelText(/Новая цена/)).toBeNull();
 });
 
@@ -261,9 +261,9 @@ test("gold missing quote preserves independently known realized result without a
   history.result.unrealized_reason_codes = ["gold_quote_unavailable"];
   install({ histories: [history] });
   setup();
-  const realized = await screen.findByText("Реализованный результат");
-  expect(realized.nextElementSibling).toHaveTextContent("0 ₽");
-  expect(screen.getByText(/операции учтены по/)).toHaveTextContent(
-    "Оценка на неподтверждённую дату",
-  );
+  const realized = await screen.findByText("От продажи");
+  expect(realized.nextElementSibling).toHaveTextContent("0,00 ₽");
+  expect(screen.getByText(/Операции учтены по/)).toHaveTextContent("оценка не подтверждена");
+  expect(screen.queryByText("Изменение стоимости остатка")).toBeNull();
+  expect(screen.queryByText("Общий результат", { selector: "dt" })).toBeNull();
 });

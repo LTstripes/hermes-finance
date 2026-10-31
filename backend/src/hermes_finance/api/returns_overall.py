@@ -172,9 +172,18 @@ class Overall(DTO):
 
 
 @router.get("/overall", response_model=Overall)
-def overall(response: Response, session: Session = Depends(session_for_request)):
+def overall(
+    request: Request,
+    response: Response,
+    include_instrument_summaries: Literal["true", "false"] = "false",
+    session: Session = Depends(session_for_request),
+):
     no_store(response)
-    return read_overall(session)
+    if len(request.query_params.getlist("include_instrument_summaries")) > 1:
+        raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
+    # An explicit visible summary table may request the existing guarded
+    # instrument projection. This still defers XIRR and never reads cards.
+    return read_overall(session, include_instrument_details=include_instrument_summaries == "true")
 
 
 class IncomeInstrumentAccount(DTO):

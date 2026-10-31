@@ -123,8 +123,11 @@ export type Overall = {
   };
   reason_codes: string[];
 };
-export async function getOverall(signal: AbortSignal): Promise<Overall> {
-  const value = await apiRequest<Overall>("/api/returns/overall", { signal });
+export async function getOverall(signal: AbortSignal, summaries = false): Promise<Overall> {
+  const value = await apiRequest<Overall>(
+    `/api/returns/overall${summaries ? "?include_instrument_summaries=true" : ""}`,
+    { signal },
+  );
   if (value.contract_version !== "returns_overall_v1") throw new Error("Return contract mismatch");
   return value;
 }

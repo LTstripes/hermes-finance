@@ -72,6 +72,35 @@ function setup(path = "/v2/returns/account?scope=source:SYNTH-A") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("switching accounts replaces a foreign inception with its exact own history", async () => {
+  const own = { start: "2031-05-11", end: "2031-09-30" };
+  const calls = install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            source_periods: { ...contextFixture.source_periods, "source:SYNTH-B": [own] },
+            source_history_periods: { "source:SYNTH-B": own },
+          }),
+        )
+      : undefined,
+  );
+  setup(`/v2/returns/account?scope=source:SYNTH-A&start=${may.start}&end=${may.end}`);
+  await screen.findByRole("region", { name: "Результат периода" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Счёт" }), {
+    target: { value: "source:SYNTH-B" },
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("location")).toHaveTextContent("start=2031-05-11&end=2031-09-30"),
+  );
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(
+    calls.some(
+      (call) => call.includes("scope=source%3ASYNTH-B") && call.includes("start=2030-04-30"),
+    ),
+  ).toBe(false);
+});
+
 test("unscoped CLOSED history opens the accepted portfolio even without saved statements", async () => {
   install((url) =>
     url.pathname.endsWith("context")

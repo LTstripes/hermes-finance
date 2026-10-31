@@ -21,6 +21,7 @@ import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import { UiV2Shell } from "./UiV2Shell";
+import { readDisplayNames } from "./returns/dashboard";
 
 function Instruments({
   rows,
@@ -229,6 +230,7 @@ function Instruments({
 }
 
 export default function UiV2ReturnsAccountPage() {
+  const displayNames = readDisplayNames();
   const [params, setParams] = useSearchParams();
   const [basketExpanded, setBasketExpanded] = useState(() => params.has("categories"));
   const navigate = useNavigate();
@@ -262,7 +264,9 @@ export default function UiV2ReturnsAccountPage() {
     // Without a CLOSED default, only an explicitly selected source period may
     // drive the account result. Do not silently default to a DRAFT interval.
     const defaultPeriod =
-      params.get("period") === "history" ? sourcePeriods.at(-1) : context.data.default_period;
+      params.get("period") === "history"
+        ? (context.data.source_history_periods?.[next.get("scope") ?? ""] ?? sourcePeriods.at(-1))
+        : context.data.default_period;
     if (!params.has("start") && !params.has("end") && defaultPeriod) {
       next.set("start", defaultPeriod.start);
       next.set("end", defaultPeriod.end);
@@ -327,6 +331,24 @@ export default function UiV2ReturnsAccountPage() {
               onChange={(e) => {
                 const next = new URLSearchParams(params);
                 next.set("scope", e.target.value);
+                // A different account has its own exact proof interval. Never
+                // retain another account's inception dates as a valid selection.
+                const periods = context.data?.source_periods[e.target.value] ?? [];
+                const available = periods.some((p) => periodKey(p) === periodKey(period));
+                if (!available) {
+                  const own =
+                    context.data?.source_history_periods?.[e.target.value] ??
+                    periods.at(-1) ??
+                    context.data?.default_period;
+                  if (own) {
+                    next.set("start", own.start);
+                    next.set("end", own.end);
+                  } else {
+                    next.delete("start");
+                    next.delete("end");
+                  }
+                }
+                next.delete("isin");
                 setParams(next);
               }}
             >
@@ -342,7 +364,7 @@ export default function UiV2ReturnsAccountPage() {
                     .filter((a) => a.basis === basis)
                     .map((a) => (
                       <option key={a.id} value={a.id}>
-                        {a.label}
+                        {displayNames[a.id] || a.label}
                       </option>
                     ))}
                 </optgroup>
@@ -453,7 +475,8 @@ export default function UiV2ReturnsAccountPage() {
         {data && (
           <>
             <h2>
-              Подробности по счёту: {context.data?.accounts.find((a) => a.id === scope)?.label}
+              Подробности по счёту:{" "}
+              {displayNames[scope] || context.data?.accounts.find((a) => a.id === scope)?.label}
             </h2>
             <div className={styles.cards}>
               <section

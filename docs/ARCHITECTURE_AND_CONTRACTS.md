@@ -6550,8 +6550,10 @@ is introduced by a Returns GET.
 `GET /api/returns/overall` is a no-store, read-only coherent composition over
 existing producers. It does not read the AI export, calculate hidden calendar
 months, change PerformanceScope, import operations, write receipts or invoke
-providers. Money remains exact integer-kopeck strings; the browser does no
-financial aggregation. Detail and account/month reads are lazy.
+providers. Money remains exact integer-kopeck strings. Selecting a subset may
+sum those already eligible nonoverlapping producer components with BigInt for
+presentation; the browser does not calculate returns, infer authority, or add
+account totals to their breakdowns. Detail and account/month reads are lazy.
 
 The default projection retains guarded account economics and an exact ISIN index,
 including sold instruments, but does not construct hidden per-instrument analyses,
@@ -6560,6 +6562,24 @@ rates or event DTOs. Index accounts declare `details_loaded=false`; the reason
 operand. The existing full producer and internal coherent export projection remain
 available, with a distinct snapshot-cache projection key. Internal cash/quantity
 validation required for account results is never skipped to achieve laziness.
+
+The visible summary table explicitly opts into
+`include_instrument_summaries=true` (strict singleton literal true/false). It
+reuses the existing complete no-XIRR summary producer, returning per-ISIN account
+P&L, Modified Dietz and paid income without card/event DTOs. The default thin API
+and canonical AI snapshot keep their existing projections. Source-only estimated
+flags describe authority, not absent operands: current producer-eligible numbers
+must not be discarded solely for that flag. Instrument and paid-income coverage
+is independent of availability of the parent account P&L. Identity conflicts and
+stale proofs still exclude affected operands; no stale fallback is introduced.
+
+Context's `source_history_periods` is saved navigation metadata selecting the
+latest from-zero original-bound period per exact source account. It does not
+establish currentness; the ordinary numeric reader still verifies the proof.
+Private runtime `HERMES_FINANCE_RETURNS_ACCOUNT_DISPLAY_NAMES` is an exact-scope
+JSON display-label map, with optional browser-only display overrides. Neither
+maps, renames nor changes financial identities; the runtime setting contains no
+numeric operand and does not attest a proof. Real assignments stay outside Git.
 
 `GET /api/returns/income?kind=coupon|dividend` loads the paid-income drilldown only
 on disclosure. Upfront `coupon_income` and `dividend_income` totals use each
@@ -6575,7 +6595,8 @@ Known account Money rows with unproved instrument identity retain their date,
 account and amount in the chronology with NULL ISIN/name; exact source references
 deduplicate occurrences internally and are not exposed as guessed attribution.
 
-`GET /api/returns/instrument-card?isin=...` lazily composes the existing guarded
+The standalone `/v2/returns/instrument/:isin` page calls
+`GET /api/returns/instrument-card?isin=...`, which lazily composes the existing guarded
 Detail DTO for all exact source accounts and their available whole-history
 periods. Canonical-account mappings provide context only when unambiguous; they
 never infer identity from labels. The summary retains known supported amounts,

@@ -147,6 +147,7 @@ def create_app(
 ) -> FastAPI:
     configure_private_logging()
     application = FastAPI(title="Hermes Finance API", version=__version__)
+    application.state.returns_account_display_names = Settings().returns_account_display_names
     application.state.quote_preview_evidence = QuotePreviewEvidenceStore()
     application.state.reviewed_bond_valuation_path = (
         reviewed_bond_valuation_path

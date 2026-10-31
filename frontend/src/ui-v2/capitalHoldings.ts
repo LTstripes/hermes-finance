@@ -169,7 +169,10 @@ export function filterHoldingRows(rows: HoldingRow[], filter: HoldingFilter): Ho
   );
 }
 
-export function holdingReturnsNavigation(row: HoldingRow): {
+export function holdingReturnsNavigation(
+  row: HoldingRow,
+  back = "/v2/capital",
+): {
   href: string | null;
   reason: string | null;
 } {
@@ -183,7 +186,7 @@ export function holdingReturnsNavigation(row: HoldingRow): {
     };
   if (validIsin(row.isin))
     return {
-      href: `/v2/returns?${new URLSearchParams({ isin: row.isin, capital_account: String(accountId) })}`,
+      href: `/v2/returns/instrument/${row.isin}?${new URLSearchParams({ capital_account: String(accountId), back })}`,
       reason: null,
     };
   if (row.contextLabel === "gold" && row.isin === null)

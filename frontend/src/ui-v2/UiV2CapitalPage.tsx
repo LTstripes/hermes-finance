@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
 import { getCapitalComposition, getClosedReportComparison } from "../api/analytics";
@@ -509,6 +509,16 @@ function HoldingsBlock({
   riskReady: boolean;
   rows: HoldingRow[];
 }) {
+  const location = useLocation();
+  const backParams = new URLSearchParams(location.search);
+  if (filter) {
+    backParams.set("holding_kind", filter.kind);
+    backParams.set("holding_value", filter.value);
+    backParams.set("holding_label", filter.label);
+  } else {
+    for (const key of ["holding_kind", "holding_value", "holding_label"]) backParams.delete(key);
+  }
+  const back = `${location.pathname}${backParams.size ? `?${backParams}` : ""}`;
   const visible = filterHoldingRows(rows, filter);
   const sections: Array<{ kind: HoldingRow["kind"]; title: string }> = [
     { kind: "cash", title: "Денежные строки" },
@@ -564,8 +574,8 @@ function HoldingsBlock({
                     <div className={capitalStyles.holdingMain}>
                       <span className={capitalStyles.holdingName}>{row.name}</span>
                       {row.kind === "position" &&
-                        (holdingReturnsNavigation(row).href ? (
-                          <Link to={holdingReturnsNavigation(row).href ?? ""}>
+                        (holdingReturnsNavigation(row, back).href ? (
+                          <Link to={holdingReturnsNavigation(row, back).href ?? ""}>
                             Доходность инструмента
                           </Link>
                         ) : (
@@ -818,8 +828,26 @@ function PropertyBlock({
 }
 
 export default function UiV2CapitalPage() {
+  const [params] = useSearchParams();
   const [performanceOpen, setPerformanceOpen] = useState(false);
-  const [filter, setFilter] = useState<HoldingFilter>(null);
+  const [filter, setFilter] = useState<HoldingFilter>(() => {
+    const kind = params.get("holding_kind"),
+      value = params.get("holding_value"),
+      label = params.get("holding_label");
+    if (
+      ["holding_kind", "holding_value", "holding_label"].some(
+        (key) => params.getAll(key).length !== 1,
+      ) ||
+      !value ||
+      !label ||
+      label.length > 80
+    )
+      return null;
+    if (kind === "class" && /^[a-z_]+$/.test(value)) return { kind, value, label };
+    if (kind === "account" && (/^account:[1-9]\d*$/.test(value) || value === UNASSIGNED_CASH_KEY))
+      return { kind, value, label };
+    return null;
+  });
 
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,

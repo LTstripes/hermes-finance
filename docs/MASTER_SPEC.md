@@ -346,27 +346,38 @@ Exact historical performance uses historical membership, dated cash/in-kind cove
 ### Returns workspace
 
 The ordinary `/v2/returns` entry opens **В целом** for all available history.
-It reads one all-history composition, without eagerly loading account/month or
-category-basket calculations. The headline **Известный результат за доступную
-историю** is a labelled mixed sum of eligible, proved nonoverlapping RUB
-components. It is neither full portfolio P&L nor a lower bound: unknown components
-may be negative. Selected, available and included components remain distinct;
-each exposes its dates, coverage, method, authority and exclusion reason. No
-percentage is obtained by summing or averaging component rates.
+The main journey follows the compact account layout: result cards, a graph of
+supported observations, searchable instruments and leaders. Both available broker
+accounts are selected initially; a selector chooses one or both, each with its own
+proved history. The broker RUB result uses eligible nonoverlapping account
+components once. It is neither full portfolio P&L nor a profit floor. Never add
+its instrument or payout explanations again, sum rates or average different
+account periods. A changed account must select its own supported interval rather
+than retain another account's inception dates. Private runtime/browser display names are
+labels only and never alter source identity, mappings or financial records.
+
+Figures and actions lead. Do not present a technical prose wall, repeated
+provenance/caveats, a column of account/period codes, or empty blocks. Show known
+zero and missing data distinctly; omit irrelevant zero coupon rows for stocks.
+Explain a material incompleteness once in plain language, with an actionable
+detail only where necessary. Different-method percentages are secondary and
+retain method and exact dates; Modified Dietz is a period return, not annualized.
+For a sold position its weighted capital can be small over a long reporting
+window; do not silently crop that window or substitute another denominator.
 
 All exact ISIN groups, including sold instruments and separate account contexts,
-remain reachable from Returns. Entering an instrument opens one exact-ISIN card
+remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
 over all available account histories; individual account periods, rates and
 local gaps remain visible through the existing detail presentation. The default
-overview loads summaries and identity metadata only; instrument details load on
+overview loads visible summaries and identity metadata only; instrument details load on
 entry, and credited coupon/dividend events load on disclosure. Known paid income
 is shown across included accounts, then by account, ISIN and dated operation,
 without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry while retaining unique accepted
 TWRR/XIRR and coverage diagnostics. Missing names stay explicit; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 
-Received deposit interest remains visible for known CLOSED observations without
-inventing a capital denominator. Gold shows saved unrealized value and cost-based
+Deposits are outside this Returns UX package and remain a separate task; their
+existing data and independent readers are preserved. Gold shows saved unrealized value and cost-based
 percentage with its valuation date, independently of an unavailable realised or
 period return. A compact manual BUY/SELL history may be confirmed inside the
 existing gold instrument, using its existing monthly price field. It preserves
@@ -374,7 +385,8 @@ actual dates, grams, amount/fee basis, completeness and correction history;
 supported realized, unrealized and total results remain independently visible.
 Preview/confirmation records Owner evidence without rewriting CLOSED months or
 broker operations. It is not a universal transaction editor, a second price
-field or a deposit importer. Real Owner entry and visual acceptance remain
+field or a deposit importer. Use one compact heading and exact quantities without
+insignificant trailing zeros. Real Owner entry and visual acceptance remain
 separate authorized operations.
 
 The following selected-period capabilities remain on the lazy
