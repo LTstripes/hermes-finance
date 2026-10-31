@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
+import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
-import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import UiV2ClosePage from "./UiV2ClosePage";
 
 function LocationProbe() {
@@ -179,9 +179,11 @@ describe("native Monthly Close work mode", () => {
     const session = brokerOriginalSession(client);
     const file = new File(["synthetic"], "synthetic.xml");
     await act(async () => session.select(file, 12, ""));
-    fireEvent.click(screen.getByRole("link", { name: /^Данные$/ }));
+    fireEvent.click(screen.getByRole("link", { name: /^Настройки$/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
-    await waitFor(() => expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data"));
+    await waitFor(() =>
+      expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data/app"),
+    );
     expect(session.snapshot().file).toBe(file);
     expect(session.snapshot().confirmed).toBeNull();
   });

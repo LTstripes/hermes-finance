@@ -63,7 +63,7 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
     "href",
     "/v2/close?month=7&step=alfa_baseline",
   );
-  expect(screen.getByRole("link", { name: /^Файлы$/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /^Экспорт и копии$/ })).toHaveAttribute(
     "href",
     "/v2/data/files?month=7&from=monthly-close-v2&monthId=7&step=alfa_baseline&scope=synthetic#target",
   );
@@ -90,7 +90,7 @@ it("mounts the tool only after the Owner explicitly selects a month", async () =
   await user.selectOptions(screen.getByLabelText("Месяц базового среза"), "7");
   expect(await screen.findByText("Canonical panel month 7")).toBeInTheDocument();
   expect(getMonth).toHaveBeenCalledWith(7);
-  expect(screen.getByRole("link", { name: /^Файлы$/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /^Экспорт и копии$/ })).toHaveAttribute(
     "href",
     "/v2/data/files?from=monthly-close-v2&monthId=7&step=alfa_baseline&month=7#target",
   );

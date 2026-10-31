@@ -396,7 +396,7 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
     "href",
     "/v2/close?month=7&step=future_payouts",
   );
-  expect(screen.getByRole("link", { name: /^Файлы$/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /^Экспорт и копии$/ })).toHaveAttribute(
     "href",
     "/v2/data/files?month=7&from=monthly-close-v2&monthId=7&step=future_payouts&scope=synthetic#target",
   );

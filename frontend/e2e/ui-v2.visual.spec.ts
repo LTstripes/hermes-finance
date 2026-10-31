@@ -723,6 +723,23 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     properties: makeUiV2Properties(),
     performance: makeUiV2Performance(),
   };
+  if (zero) {
+    // Risk uses raw class keys; zero only the values, not its dimension keys.
+    for (const metric of [state.risk.allocation_by_asset_class, state.risk.allocation_by_account]) {
+      metric.denominator.amount = "0.00";
+      metric.covered_amount.amount = "0.00";
+      metric.unallocated_amount.amount = "0.00";
+      metric.coverage_pct = null;
+      for (const item of metric.items) {
+        item.amount.amount = "0.00";
+        item.share_pct = null;
+      }
+    }
+    state.risk.top_positions.denominator.amount = "0.00";
+    state.risk.top_positions.top_amount.amount = "0.00";
+    state.risk.top_positions.top_share_pct = null;
+    state.risk.top_positions.items = [];
+  }
   if (scene === "coverage" && state.comparison.current) {
     state.comparison.current.portfolio_source_coverage = {
       status: "partial",
@@ -959,32 +976,21 @@ for (const width of [1440]) {
     const explanation =
       "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.";
     await page.goto("/v2/capital");
-    await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
-    await expect(page.getByText(explanation)).toBeVisible();
-    for (const metric of ["xirr", "twrr"]) {
-      await expect(page.getByTestId(`capital-performance-${metric}`)).toContainText(
-        "Исторические данные исключены из расчёта",
-      );
-      await expect(page.getByTestId(`capital-performance-${metric}`)).not.toContainText(
-        /\d[,.]\d+%/,
-      );
-    }
-    await expect(page.getByText(/Показаны 2 приоритетные причины из 4/)).toBeVisible();
-    expect(
-      await page.getByTestId("capital-performance-xirr").evaluate((element) => ({
-        radius: getComputedStyle(element).borderRadius,
-        grid: getComputedStyle(element.parentElement as HTMLElement).display,
-      })),
-    ).toEqual({ radius: "10px", grid: "grid" });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    );
-    await capture(page, testInfo, `ui-v2-excluded-summary-${width}`);
+    await expect(page.getByTestId("capital-performance-xirr")).toHaveCount(0);
+    expect(evidence.reads.some((read) => read.includes("/api/performance"))).toBe(false);
     for (const scope of ["portfolio", "account"]) {
       await page.goto(
         `/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=${scope}${scope === "account" ? "&account_id=3" : ""}`,
       );
       await expect(page.getByText(explanation)).toBeVisible();
+      for (const metric of ["xirr", "twrr"]) {
+        await expect(page.getByTestId(`performance-detail-${metric}`)).toContainText(
+          "Исторические данные исключены из расчёта",
+        );
+        await expect(page.getByTestId(`performance-detail-${metric}`)).not.toContainText(
+          /\d[,.]\d+%/,
+        );
+      }
       await capture(page, testInfo, `ui-v2-excluded-detail-${scope}-collapsed-${width}`);
       const expand = page.getByRole("button", { name: /Все причины/ });
       await expand.focus();
@@ -1062,7 +1068,7 @@ test("ui-v2 readiness empty catalogue: honest empty state @viewport-owned", asyn
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Capital desktop: closed composition, accounts and performance stay bounded", async ({
+test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bounded", async ({
   page,
 }, testInfo) => {
   const evidence = await installCapitalApi(page);
@@ -1073,7 +1079,10 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   await expect(page.getByTestId("capital-debts")).toHaveText("− 400 000 ₽");
   await expect(page.getByTestId("capital-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
-  await expect(page.getByTestId("capital-change-list")).toBeVisible();
+  await expect(page.getByTestId("capital-change-list")).toHaveCount(0);
+  for (const name of ["По классам активов", "По счетам", "Крупнейшие позиции"]) {
+    await expect(page.getByRole("table", { name })).toBeVisible();
+  }
   await expect(page.getByTestId("capital-class-cash")).toContainText("803 900 ₽");
   await expect(page.getByTestId("capital-bucket-unassigned_cash")).toContainText(
     "Наличные без привязки к счёту",
@@ -1081,11 +1090,11 @@ test("ui-v2 Capital desktop: closed composition, accounts and performance stay b
   await expect(page.getByTestId("capital-holding-cash-702")).toContainText(
     "не входит в ликвидный капитал",
   );
-  await expect(page.getByTestId("capital-pair-21")).toContainText("1 000 000 ₽");
-  await expect(page.getByTestId("capital-pair-gap")).toBeVisible();
-  await expect(page.getByTestId("capital-pair-22")).toContainText("—");
-  await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
-  await expect(page.getByTestId("capital-performance-bridge")).toContainText("+42 600 ₽");
+  await expect(page.getByTestId("capital-pair-21")).toHaveCount(0);
+  await expect(page.getByTestId("capital-pair-gap")).toHaveCount(0);
+  await expect(page.getByTestId("capital-pair-22")).toHaveCount(0);
+  await expect(page.getByTestId("capital-performance-bridge")).toHaveCount(0);
+  expect(evidence.reads.some((read) => read.includes("/api/performance"))).toBe(false);
   await expect(page.getByText("Разница: капитал − ипотека")).toBeVisible();
   await expect(
     page.locator(".capital-composition-chart path[fill='#5f7e9e']").first(),
@@ -1115,7 +1124,7 @@ test("ui-v2 Capital partial coverage keeps the known net", async ({ page }, test
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Capital desktop long values: compact performance stay operable", async ({
+test("ui-v2 Capital desktop long values: allocation filters stay operable", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
@@ -1126,15 +1135,16 @@ test("ui-v2 Capital desktop long values: compact performance stay operable", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
-  const acceptedSummary = page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика");
-  await expect(page.getByTestId("capital-performance-xirr")).not.toBeVisible();
-  await acceptedSummary.focus();
+  const stocks = page.getByTestId("capital-class-stock").getByRole("button");
+  await stocks.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("capital-performance-xirr")).toBeVisible();
-  await expect(page.getByTestId("capital-performance-xirr")).toContainText("+7,42%");
-  await expect(page.getByTestId("capital-performance-twrr")).toContainText("+6,10%");
-  const bridge = page.getByTestId("capital-performance-bridge").locator("..");
-  await expect(bridge).not.toHaveAttribute("open", "");
+  await expect(page.getByText("Фильтр: Акции")).toBeVisible();
+  await expect(page.getByTestId("capital-holding-position-501")).toBeVisible();
+  await expect(page.getByTestId("capital-holding-position-502")).toHaveCount(0);
+  const reset = page.getByRole("button", { name: "Сбросить" });
+  await reset.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("capital-holding-position-502")).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop-long-values");
   expect(evidence.unexpected).toEqual([]);
@@ -1156,13 +1166,11 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
     } else {
       await expect(page.getByTestId("capital-net")).toBeVisible();
       if (scene === "first-closed") {
-        await expect(
-          page.getByText("Нужны два закрытых отчёта для сравнения").first(),
-        ).toBeVisible();
-        await page.getByText("Принятый портфель: TWRR / XIRR, покрытие и диагностика").click();
-        await expect(
-          page.getByText(/Нужны два закрытых отчёта для расчёта за период/),
-        ).toBeVisible();
+        await expect(page.getByTestId("capital-composition")).toHaveAttribute(
+          "data-point-count",
+          "1",
+        );
+        await expect(page.getByTestId("capital-change-list")).toHaveCount(0);
       }
       if (scene === "partial") {
         await expect(page.getByText("Данные временно недоступны").first()).toBeVisible();
@@ -1170,7 +1178,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
         await expect(page.getByTestId("capital-holding-cash-701")).toBeVisible();
         await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
         await expect(page.getByTestId("capital-holding-position-501")).toHaveCount(0);
-        await expect(page.getByTestId("capital-pair-21")).toBeVisible();
+        await expect(page.getByTestId("capital-pair-21")).toHaveCount(0);
       }
     }
     await assertBounded(page);
@@ -1189,7 +1197,7 @@ test("ui-v2 Capital interactions: filters, windows and native navigation preserv
   await expect(page.getByTestId("capital-net")).toBeVisible();
   await page.getByRole("button", { name: "3 месяца" }).click();
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "3");
-  await page.getByTestId("capital-class-stocks").click();
+  await page.getByTestId("capital-class-stock").getByRole("button").click();
   await expect(page.getByText("Фильтр: Акции")).toBeVisible();
   await expect(page.getByTestId("capital-holding-position-501")).toBeVisible();
   await page.getByRole("button", { name: "Сбросить" }).click();
