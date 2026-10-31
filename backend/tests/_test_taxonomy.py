@@ -210,6 +210,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # test_statement_import_mybroker_endpoints.py by d0f5e7e. A module absent
 # from this table has no shard, so collection fails closed.
 CI_INTEGRATIONS_SHARD_WEIGHTS = {
+    "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_ai_analysis_bundle_contract.py": 3.81,
     "test_ai_analysis_bundle_export.py": 11.44,
     "test_ai_analysis_bundle_financial_review_contract.py": 6.78,
@@ -448,6 +449,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
 
 CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
+    "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_statement_import_payout_reconciliation.py": 30.0,
     "test_ai_financial_review_linked_pairs.py": 4.00,
     "test_alfa_pro_snapshot.py": 1.02,
@@ -878,7 +880,11 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
     if relative_path is None:
         return None
     # Keep the accepted A/B groups stable when adding the bounded #711 suite.
-    added = {"test_statement_import_payout_reconciliation.py", "test_payout_draft_refresh.py"}
+    added = {
+        "test_statement_import_payout_reconciliation.py",
+        "test_payout_draft_refresh.py",
+        "test_ai_analysis_bundle_source_returns.py",
+    }
     if relative_path.as_posix() in added:
         return (
             "ci_integrations_b"

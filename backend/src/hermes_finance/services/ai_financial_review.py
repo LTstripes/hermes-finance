@@ -42,6 +42,7 @@ from hermes_finance.services.ai_analysis_bundle import (
 from hermes_finance.services.ai_analysis_bundle import (
     assemble_ai_analysis_bundle,
 )
+from hermes_finance.services.ai_source_returns import source_returns_section
 from hermes_finance.services.cash import list_cash_balances
 from hermes_finance.services.comments import list_monthly_comments
 from hermes_finance.services.debts import list_debts
@@ -78,8 +79,8 @@ from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.3.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.3.0/schema.json"
+SCHEMA_VERSION = "1.4.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.4.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -1896,6 +1897,12 @@ def assemble_ai_financial_review(
         ),
     }
 
+    sections["source_returns"] = source_returns_section(
+        session,
+        as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
+        reporting_period=reporting_period,
+    )
+
     coverage = {
         "domains": {
             "capital": _coverage_from_section(sections["current_capital"]),
@@ -1909,10 +1916,19 @@ def assemble_ai_financial_review(
             "user_context": _coverage_from_section(sections["user_context"]),
             "budget_and_saving": _coverage_from_section(sections["budget_and_saving"]),
             "performance": _coverage_from_section(sections["performance"]),
+            "source_returns": _coverage_from_section(sections["source_returns"]),
         }
     }
 
-    extra_warnings: list[dict[str, str]] = []
+    extra_warnings: list[dict[str, str]] = [
+        {
+            "code": code,
+            "severity": "info",
+            "scope": "sections.source_returns",
+            "message": "Source returns are provisional observations with separate periods and no financial authority.",
+        }
+        for code in sections["source_returns"]["reason_codes"]
+    ]
     if not plan_entered:
         extra_warnings.append(
             {
@@ -1934,6 +1950,14 @@ def assemble_ai_financial_review(
     warnings = _remap_warnings(package.get("warnings"), extra=extra_warnings)
 
     field_states = _remap_field_states(package.get("field_states"))
+    field_states.append(
+        {
+            "path": "sections.source_returns",
+            "status": sections["source_returns"]["status"],
+            "reason_codes": sections["source_returns"]["reason_codes"],
+            "message": "Source-only observations retain per-metric limitations; they are separate from Performance v1.",
+        }
+    )
     if performance_reasons:
         field_states.append(
             {

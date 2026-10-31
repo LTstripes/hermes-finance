@@ -210,6 +210,7 @@ def _native_scope(document):
 
 
 _SOURCE_READ_VIEWS = "returns_source_read_views"
+_SOURCE_INVESTMENT_READS = "returns_source_investment_reads"
 
 
 @contextmanager
@@ -224,10 +225,12 @@ def source_read_snapshot(session):
             yield
             return
         session.info[_SOURCE_READ_VIEWS] = {}
+        session.info[_SOURCE_INVESTMENT_READS] = {}
         try:
             yield
         finally:
             session.info.pop(_SOURCE_READ_VIEWS, None)
+            session.info.pop(_SOURCE_INVESTMENT_READS, None)
 
 
 def _read_source_view(session, original, *, reserved):
