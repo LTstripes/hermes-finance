@@ -27,8 +27,8 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     SourceMoneyClassification,
 )
+from hermes_finance.services import ai_review_payloads, returns_overall
 from hermes_finance.services import ai_source_returns as adapter
-from hermes_finance.services import returns_overall
 from hermes_finance.services import source_investment_proofs as proofs
 from hermes_finance.services.ai_financial_review import (
     assemble_ai_financial_review,
@@ -64,6 +64,38 @@ def _section(session, as_of=END):
 
 def _first(section):
     return section["data"]["accounts"][0]["intervals"][0]
+
+
+def test_versioned_referenced_download_preserves_legacy_default_and_read_only_facts(
+    database, monkeypatch
+):
+    from hermes_finance.api import ai_financial_review as api
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+    monkeypatch.setattr(api, "moscow_today", lambda _request: date(2030, 2, 1))
+    params = {"generated_at": "2030-02-01T00:00:00Z"}
+    before = snapshot(database)
+    with TestClient(create_app(database)) as client:
+        previous = client.get("/api/export/ai-financial-review", params=params)
+        assert previous.status_code == 200, previous.text
+        assert previous.json()["schema_version"] == "1.5.0"
+        current = client.get(
+            "/api/export/ai-financial-review/json", params={**params, "format_version": "2.0.0"}
+        )
+        assert current.status_code == 200, current.text
+        assert current.json()["schema_version"] == "2.0.0"
+        assert ai_review_payloads.expand_source_payloads(current.json()) == previous.json()
+        assert current.headers["cache-control"] == "no-store"
+        assert "attachment;" in current.headers["content-disposition"]
+        assert (
+            client.get(
+                "/api/export/ai-financial-review/json", params={"format_version": "9.0.0"}
+            ).status_code
+            == 422
+        )
+    assert snapshot(database) == before
 
 
 def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monkeypatch):

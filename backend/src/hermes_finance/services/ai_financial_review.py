@@ -32,6 +32,7 @@ from hermes_finance.domain import PerformanceScope
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
 from hermes_finance.domain.values import PercentageRate, RubleAmount
 from hermes_finance.persistence import ReportingMonth
+from hermes_finance.services import ai_review_payloads
 from hermes_finance.services.accounts import list_accounts
 from hermes_finance.services.ai_analysis_bundle import (
     SCHEMA_VERSION as BUNDLE_SCHEMA_VERSION,
@@ -151,23 +152,31 @@ class AiFinancialReviewValidationError(RuntimeError):
     """Generated AI financial review failed the declared schema."""
 
 
-def _schema_path() -> Path:
+def _schema_path(version: str = SCHEMA_VERSION) -> Path:
+    filename = (
+        "ai_financial_review.v2.schema.json"
+        if version == ai_review_payloads.VERSION
+        else "ai_financial_review.schema.json"
+    )
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "docs" / "schemas" / "ai_financial_review.schema.json"
+        candidate = parent / "docs" / "schemas" / filename
         if candidate.is_file():
             return candidate
     raise FileNotFoundError("ai_financial_review.schema.json was not found next to the repository")
 
 
-def _schema() -> dict[str, object]:
-    return json.loads(_schema_path().read_text(encoding="utf-8"))
+def _schema(version: str = SCHEMA_VERSION) -> dict[str, object]:
+    return json.loads(_schema_path(version).read_text(encoding="utf-8"))
 
 
 def validate_ai_financial_review(report: dict[str, object]) -> None:
     """Validate an assembled report before returning it to a caller."""
     try:
-        Draft202012Validator(_schema(), format_checker=FormatChecker()).validate(report)
-    except ValidationError as error:
+        version = str(report.get("schema_version"))
+        Draft202012Validator(_schema(version), format_checker=FormatChecker()).validate(report)
+        if version == ai_review_payloads.VERSION:
+            ai_review_payloads.validate_source_payload_refs(report)
+    except (ValidationError, ai_review_payloads.PayloadReferenceError) as error:
         raise AiFinancialReviewValidationError(
             "generated AI financial review failed schema validation"
         ) from error
@@ -1607,9 +1616,12 @@ def assemble_ai_financial_review(
     evaluated_on: date | None = None,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
     top_n: int = DEFAULT_TOP_N,
+    format_version: str = SCHEMA_VERSION,
 ) -> dict[str, object]:
     """Compose the canonical AI financial review from accepted read models."""
 
+    if format_version not in {SCHEMA_VERSION, ai_review_payloads.VERSION}:
+        raise ValueError("unsupported AI financial review format version")
     version = forecast_version.strip()
     if not version:
         raise ValueError("forecast_version must not be empty")
@@ -2107,5 +2119,7 @@ def assemble_ai_financial_review(
         "field_states": field_states,
         "warnings": warnings,
     }
+    if format_version == ai_review_payloads.VERSION:
+        report = ai_review_payloads.normalize_source_payloads(report)
     validate_ai_financial_review(report)
     return report

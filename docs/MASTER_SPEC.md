@@ -747,6 +747,12 @@ intervals, the selected month and available monthly history remain separate;
 [C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1-2-composition-boundary)
 owns the exact units, source authority and privacy contract.
 
+The recommended AI JSON download uses the versioned referenced format (C10):
+repeated source payloads are stored once with typed links; periods, occurrences,
+provenance and availability remain explicit. It is still one full-history file,
+without a concise/full selector or a second financial calculation. Legacy API
+consumers retain the v1 format through the documented compatibility route.
+
 Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
 
 <a id="p6"></a>

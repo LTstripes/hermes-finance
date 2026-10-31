@@ -14151,11 +14151,13 @@ later staged UAT work does not change this contract.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Schema version:** `1.5.0`
+**Recommended download schema version:** `2.0.0` (legacy API default `1.5.0` retained)
 
-**Normative schema:** [`ai_financial_review.schema.json`](schemas/ai_financial_review.schema.json)
+**Normative schemas:** [`v2`](schemas/ai_financial_review.v2.schema.json) and
+[`legacy v1.4/v1.5`](schemas/ai_financial_review.schema.json)
 
-**Synthetic fixture:** [`ai_financial_review.synthetic.json`](schemas/ai_financial_review.synthetic.json)
+**Synthetic fixtures:** [`v2`](schemas/ai_financial_review.v2.synthetic.json) and
+[`legacy v1`](schemas/ai_financial_review.synthetic.json)
 
 
 <a id="c10-ai_financial_review-1-1-purpose-and-product-role"></a>
@@ -14499,6 +14501,35 @@ adds optional month-local linked-pair fields to `current_capital` and
 `historical_dynamics`; the canonical exporter emits them on every generated
 report, including empty arrays. It changes no capital formula or counting
 semantics. The generated canonical v1.3 instance validates strictly.
+
+Version `2.0.0` changes only the source-analysis representation. The recommended
+UI download explicitly requests `format_version=2.0.0`; both existing GET routes
+retain the v1.5 default and accept an explicit v1.5 request. Unsupported format
+versions fail before assembly. The other bundle/package formats are unchanged.
+
+`source_payloads` stores exact already-allowlisted instrument metadata, endpoints,
+result blocks (metrics/components/coverage/reasons/assumptions) and interval-masked
+event payloads once. Each source instrument occurrence keeps its ISIN and typed
+refs in its original account/interval; `returns_overall` uses the same tables.
+Refs derive deterministically from the entire typed JSON value. Collisions with
+different full values fail; refs assert no source authority or operation identity.
+
+Ordered `event_refs` retain every occurrence, including two legitimate equal
+payloads. Different amounts, NULL/zero, eligibility, cash-window flags, quantities,
+methods, annualization, reasons and revision states do not merge. Account and
+interval entities are not deduplicated by matching values. Gold revision journals
+and all other sections are left intact. Payload tables are lookup values, not a
+ledger: do not sum them, combine overlapping intervals, or add account P&L to its
+instrument/payout breakdown. Existing field-state/warning paths retain their
+expanded-view semantic scope.
+
+The standalone v2 schema keeps the existing financial leaf constraints strict.
+Semantic validation additionally rejects dangling/wrong-table refs, changed
+payload hashes, ISIN conflicts and unused payloads. It reads references without
+rebuilding the full expanded report. The representation-only expansion helper
+restores v1 facts/order/multiplicity and independent mutable occurrences; it does
+not recompute, activate or attest financial data. Generation still runs existing
+currentness/source/financial controls and never substitutes stale numeric facts.
 
 Consumers dispatch on the major version and validate the exact schema declared
 by the file. The v1 contract is strict (`additionalProperties=false` in the

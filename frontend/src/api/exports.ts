@@ -1,4 +1,4 @@
-import { apiDownload, type ApiDownload } from "./client";
+import { type ApiDownload, apiDownload } from "./client";
 
 export function downloadMarkdownReport(
   monthId: number,
@@ -32,7 +32,7 @@ export function downloadAiAnalysisBundleMarkdown(signal?: AbortSignal): Promise<
 }
 
 export function downloadAiFinancialReviewJson(signal?: AbortSignal): Promise<ApiDownload> {
-  return apiDownload("/api/export/ai-financial-review/json", {
+  return apiDownload("/api/export/ai-financial-review/json?format_version=2.0.0", {
     method: "GET",
     signal,
   });

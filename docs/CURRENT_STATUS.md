@@ -51,6 +51,23 @@ or financial portfolio Close. Shared account costs/taxes remain separate; no
 arbitrary allocation to instruments or fabricated intermediate monthly valuations.
 Next step is Owner visual review and the separately chosen new-month workflow.
 
+### Owner Test acceptance and bounded AI follow-up
+
+Owner accepted the reworked isolated Test UX at `ade462a2` on31October, with one
+remaining top-table layout defect. Exact CI41184160300 and UI41184160298 passed.
+The rejection below remains history of the earlier overview, not rejection of
+this later candidate. Working Stable remains1.8.1; Owner visual acceptance does
+not itself mean the follow-up code is installed.
+
+The next bounded candidate adds strict AI JSON2.0 payload references while
+retaining legacy1.5 API compatibility and the existing financial producers.
+Independent representation/source review and synthetic round-trip checks are in
+progress. The user prioritizes readable size reduction; further speed
+optimization is outside this slice. The accepted Test is retained for UAT and is
+not replaced during implementation. Top-table correction, final review/exact CI
+and the guarded release/backup/data-preservation steps remain outstanding.
+No financial Apply/Close or actual gold history Save is part of this follow-up.
+
 ### Returns continuation in review
 
 Owner rejected the first #1000 overall UX after isolated Test inspection despite

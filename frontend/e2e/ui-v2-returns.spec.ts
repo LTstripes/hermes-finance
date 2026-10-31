@@ -12,6 +12,7 @@ import {
   may,
   overviewFixture,
 } from "../src/ui-v2/returns/fixtures";
+import { overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
 async function install(page: Page, extendedHistory = false) {
   const calls: string[] = [];
@@ -352,4 +353,105 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await page.screenshot({ path: testInfo.outputPath(`returns-statements-${width}.png`) });
   }
   expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
+});
+
+test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const body = overallFixture();
+  const original = body.instruments[0];
+  const cases = [
+    [
+      "RU000A001001",
+      "Облигация Северный учебный инфраструктурный проект выпуск двадцать один",
+      "95123456",
+    ],
+    ["RU000A001002", "Акции Учебные технологии и длинное название предприятия", "8500000"],
+    ["RU000A001003", "Фонд Международный учебный диверсифицированный портфель", "1234567"],
+    ["RU000A001004", "Облигация Учебные транспортные системы серия двадцать пять", "-87654321"],
+    ["RU000A001005", "Акции Экспериментальная промышленная корпорация", "-7654321"],
+    ["RU000A001006", "Фонд Учебный рынок", "-98765"],
+  ];
+  body.gold.targets = [];
+  body.gold.snapshots = [];
+  body.instruments = cases.map(([isin, name, value]) => ({
+    ...original,
+    isin,
+    name,
+    accounts: [{ ...original.accounts[0], pnl: { ...original.accounts[0].pnl, value } }],
+  }));
+  const calls: string[] = [];
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const request = route.request();
+      calls.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      expect(request.method()).toBe("GET");
+      expect(new URL(request.url()).pathname).toBe("/api/returns/overall");
+      await route.fulfill({ json: body });
+    },
+  );
+  for (const width of [1440, 1100]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/v2/returns");
+    const leaders = page.getByRole("region", { name: "Лидеры и отстающие" });
+    await expect(leaders.locator("ol")).toHaveCount(2);
+    await expect(leaders.locator("li")).toHaveCount(6);
+    const groups = leaders.locator("h3");
+    const positive = await groups.nth(0).boundingBox();
+    const negative = await groups.nth(1).boundingBox();
+    if (!positive || !negative) throw new Error("Missing leaders groups");
+    if (width === 1440) {
+      expect(Math.abs(positive.width - negative.width)).toBeLessThan(1);
+      expect(Math.abs(positive.y - negative.y)).toBeLessThan(1);
+      expect(negative.x).toBeGreaterThan(positive.x + positive.width);
+    } else {
+      expect(Math.abs(positive.x - negative.x)).toBeLessThan(1);
+      expect(negative.y).toBeGreaterThan(positive.y + positive.height);
+    }
+    const problems = await leaders.locator("li").evaluateAll((items) =>
+      items.flatMap((item) => {
+        const link = item.querySelector("a");
+        const amount = item.querySelector("strong");
+        const rank = item.querySelector("span");
+        if (!link || !amount || !rank) return ["missing row column"];
+        const nameBox = link.getBoundingClientRect();
+        const amountBox = amount.getBoundingClientRect();
+        const rowBox = item.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(amount);
+        return [
+          ...(range.getClientRects().length !== 1 ? ["amount wrapped"] : []),
+          ...(nameBox.right > amountBox.left - 5 ? ["name overlaps amount"] : []),
+          ...(Math.abs(amountBox.right - rowBox.right) > 1 ? ["amount not right aligned"] : []),
+          ...(amountBox.right > rowBox.right + 1 ? ["row overflow"] : []),
+        ];
+      }),
+    );
+    expect(problems).toEqual([]);
+    const firstLink = leaders.getByRole("link").first();
+    await firstLink.focus();
+    await expect(firstLink).toBeFocused();
+    await expect(firstLink).toHaveAttribute("href", /\/v2\/returns\/instrument\/RU000A001001/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await leaders.screenshot({ path: testInfo.outputPath(`returns-leaders-${width}.png`) });
+  }
+  // A single supported side uses the entire card, without an empty second block.
+  body.instruments = body.instruments.slice(0, 3);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/v2/returns");
+  const single = page.getByRole("region", { name: "Лидеры и отстающие" });
+  await expect(single.locator("ol")).toHaveCount(1);
+  await expect(single.locator("li")).toHaveCount(3);
+  await expect(single.getByText("Наибольший убыток", { exact: true })).toHaveCount(0);
+  const widths = await single.evaluate((element) => ({
+    panel: element.getBoundingClientRect().width,
+    list: element.querySelector("ol")?.getBoundingClientRect().width ?? 0,
+  }));
+  expect(widths.list).toBeGreaterThan(widths.panel * 0.9);
+  await single.screenshot({ path: testInfo.outputPath("returns-leaders-single-1440.png") });
+  expect(calls.length).toBeGreaterThanOrEqual(3);
+  expect(calls.every((call) => call === "GET /api/returns/overall")).toBe(true);
 });

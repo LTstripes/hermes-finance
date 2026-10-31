@@ -187,6 +187,29 @@ describe("UI v2 Data files", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:month-export");
   });
 
+  it("downloads the referenced full-history AI format without month scope or a write", async () => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("URL", {
+      ...NativeURL,
+      createObjectURL: vi.fn(() => "blob:ai-review"),
+      revokeObjectURL: vi.fn(),
+    });
+    const { calls, fetchMock, mount } = setup();
+    mount();
+    await user.click(await screen.findByRole("button", { name: "Выгрузить отчёт для AI" }));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    const request = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("ai-financial-review"),
+    );
+    expect(request).toBeDefined();
+    const url = new NativeURL(String(request?.[0]), "http://localhost");
+    expect([...url.searchParams.entries()]).toEqual([["format_version", "2.0.0"]]);
+    expect(calls.some(({ method }) => method !== "GET")).toBe(false);
+  });
+
   it("keeps no-month state fail-closed while full-history export and backup creation remain separate", async () => {
     const { mount } = setup({ months: [], listedBackups: [] });
     mount();

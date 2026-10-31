@@ -420,7 +420,7 @@ export default function UiV2ReturnsPage() {
                 {rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
                   <section className={styles.panel} aria-label="Лидеры и отстающие">
                     <h2>Лидеры и отстающие</h2>
-                    <div className={styles.cards}>
+                    <div className={layout.leaders}>
                       {([true, false] as const)
                         .filter((positive) =>
                           rows.some(
@@ -430,9 +430,9 @@ export default function UiV2ReturnsPage() {
                           ),
                         )
                         .map((positive) => (
-                          <div key={String(positive)}>
+                          <div className={layout.leaderGroup} key={String(positive)}>
                             <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
-                            <ol>
+                            <ol className={layout.leaderList}>
                               {rows
                                 .filter(
                                   (r) =>
@@ -445,15 +445,20 @@ export default function UiV2ReturnsPage() {
                                     (positive ? -1 : 1),
                                 )
                                 .slice(0, 5)
-                                .map((r) => (
-                                  <li key={r.isin}>
+                                .map((r, index) => (
+                                  <li className={layout.leaderRow} key={r.isin}>
+                                    <span className={layout.leaderRank} aria-hidden="true">
+                                      {index + 1}.
+                                    </span>
                                     <Link
                                       to={instrumentHref(r.isin)}
                                       onClick={(e) => guardLink(e, instrumentHref(r.isin))}
                                     >
                                       {r.name}
-                                    </Link>{" "}
-                                    {displayMetric(r.pnl, true)}
+                                    </Link>
+                                    <strong className={layout.leaderAmount}>
+                                      {displayMetric(r.pnl, true)}
+                                    </strong>
                                   </li>
                                 ))}
                             </ol>
