@@ -35,6 +35,7 @@ import { isGuidedCloseStepId } from "../components/month-close/navigation";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
+import { rubleAxisTick } from "./rubleAxis";
 import { queryKeys } from "../queryClient";
 import { uiV2GoalsPath } from "./goalRoute";
 import {
@@ -248,7 +249,13 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
         <LineChart data={data} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
           <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
           <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
-          <YAxis axisLine={false} hide tickLine={false} />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            width={82}
+            tickFormatter={rubleAxisTick}
+            tick={{ fontSize: 11, fill: "#607084" }}
+          />
           <Tooltip
             formatter={(_value, _name, item) => [
               formatMoney(item.payload.amount),
@@ -520,7 +527,13 @@ function PassiveChart({ data }: { data: PassiveIncomeHistory["points"] }) {
         <BarChart data={points} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
           <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
           <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
-          <YAxis axisLine={false} hide tickLine={false} />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            width={82}
+            tickFormatter={rubleAxisTick}
+            tick={{ fontSize: 11, fill: "#607084" }}
+          />
           <Tooltip
             formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Факт"]}
             labelFormatter={(label) => `Отчёт ${label}`}

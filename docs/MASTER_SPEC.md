@@ -339,6 +339,23 @@ Historical loading is part of the same source-first direction. A long report can
 
 Home and Capital show the selected monthly/closed-history known subtotals with coverage. An exact sum of known rows may have partial source coverage. Keep missing accounts visible and attach reasons to totals, deltas, goals and allocation; C2 owns the required-account rule. Missing calendar months are gaps, not zero points.
 
+The primary sidebar has five destinations: Мои финансы, Капитал, Доходность,
+Доход и планы, Настройки. Data, source review, exports/copies and application
+settings remain reachable inside Настройки; existing deep links keep working.
+On desktop the sidebar remains visible while the page scrolls, with its own
+scrolling at short heights and no content overlap.
+
+Capital places the existing allocation by asset class/account and largest
+positions below its main chart, followed by property and Где лежит капитал.
+The duplicated current-snapshot, changes, linked-pair and portfolio-performance
+blocks are removed from this page; their data, calculations and dedicated tools
+are retained. Instrument names lead directly to the standalone instrument page,
+preserving the holding filter on return. Home retains the changes block and
+shows readable RUB vertical axes on portfolio/passive-income graphs, including
+zero and negative observations with unchanged exact tooltips. Income and plans
+omits the embedded 12-month forecast and goals-progress blocks; their models and
+dedicated destinations are not deleted.
+
 Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
@@ -372,8 +389,8 @@ local gaps remain visible through the existing detail presentation. The default
 overview loads visible summaries and identity metadata only; instrument details load on
 entry, and credited coupon/dividend events load on disclosure. Known paid income
 is shown across included accounts, then by account, ISIN and dated operation,
-without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry while retaining unique accepted
-TWRR/XIRR and coverage diagnostics. Missing names stay explicit; only exact
+without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry; accepted
+TWRR/XIRR and coverage diagnostics remain in their dedicated tools. Missing names stay explicit; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 
 Deposits are outside this Returns UX package and remain a separate task; their
@@ -484,7 +501,7 @@ workspace or its existing guards.
 - `/v2` and `/v2/capital` show latest closed data. A newer draft is workflow context, not confirmed financial truth.
 - Their current `month`/`step` handling contributes to a legacy return path; it does not select a historical main-data view. Do not pretend otherwise by changing only a link label. [Home](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
 - Historical closed capital facts live in `/v2/reports/:monthId`; current latest closed is deliberately handled by Home/Capital rather than duplicated in the archive. [Reports](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2ReportPage.tsx)
-- Accepted #575, #569 and Performance #531 routes coexist on the frozen common tree. Shared App/entry union retains all three detail routes; Capital retains allocation/monthly-result links and the Performance summary/detail entry. Empty Home/Capital/Income actions lead to native `/v2/close`; Home's payouts/forecast action leads to native `/v2/income`. All are native `/v2` routes.
+- Accepted #575, #569 and Performance #531 detail routes remain available. The ordinary Capital page embeds existing allocation/concentration and removes duplicated summary panels; their source calculations and diagnostic destinations are retained. Empty Home/Capital/Income actions lead to native `/v2/close`. All are native `/v2` routes.
 
 
 <a id="p3-ui_v2_analytics_reconciliation-86-income"></a>
@@ -788,14 +805,17 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 <a id="p6-master_spec-1152-124-навигация"></a>
 #### 12.4. Навигация
 
-Рекомендуемые разделы:
+Основные разделы:
 
-- Дашборд;
-- Месяцы;
-- Счета и инструменты;
-- Цели;
-- Экспорт и резервные копии;
+- Мои финансы;
+- Капитал;
+- Доходность;
+- Доход и планы;
 - Настройки.
+
+Данные, разбор источника, экспорт/копии и настройки приложения доступны внутри
+«Настройки». Рабочие месяцы, справочники и отдельные аналитические инструменты
+сохраняют существующие адреса и переходы.
 
 ---
 

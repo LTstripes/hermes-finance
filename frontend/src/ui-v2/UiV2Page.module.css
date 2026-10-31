@@ -58,6 +58,12 @@
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   min-width: 0;
   padding: 28px 18px 22px;
   border-right: 1px solid #26394f;
@@ -1014,6 +1020,9 @@
   }
 
   .sidebar {
+    position: relative;
+    height: auto;
+    overflow-y: visible;
     padding: 14px 18px;
     flex-direction: row;
     flex-wrap: wrap;

@@ -64,6 +64,14 @@ silently replacing the percentage. Deposits remain outside this UX revision.
 Fresh exact-head checks and actual-pixel Test review are still required; earlier
 operator PASS is not Owner acceptance, merge authority or installed behavior.
 
+The same authorized Draft now also simplifies the main sidebar into one Settings
+entry, reuses allocation/concentration inside Capital, removes its duplicate
+panels, links instrument names directly, adds RUB graph axes on Home and removes
+the embedded forecast/goals panels from Income. Existing data, models and deep
+links are preserved. The changes block remains on Home and is removed from
+Capital per the clarified Owner decision. These are UI changes awaiting final
+combined exact-head CI and Test visual review, not a new installed release.
+
 Draft [#1000](https://github.com/LTstripes/hermes-finance/pull/1000), stacked on
 [#998](https://github.com/LTstripes/hermes-finance/pull/998), develops the available-
 history known-result overview, lazy income/card reads, exact source/PDF display

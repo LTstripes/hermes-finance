@@ -10,20 +10,12 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to:
   { id: "home", label: "Мои финансы", icon: "⌂", to: "/v2" },
   { id: "capital", label: "Капитал", icon: "◧", to: "/v2/capital" },
   { id: "returns", label: "Доходность", icon: "↗", to: "/v2/returns" },
-  { id: "data", label: "Данные", icon: "◫", to: "/v2/data" },
   { id: "income", label: "Доход и планы", icon: "◒", to: "/v2/income" },
-];
-
-const NATIVE_DATA_LINKS = [
-  { label: "Отчётные месяцы", to: "/v2/data/months" },
-  { label: "Разбор источника", to: "/v2/data/source-intake" },
-  { label: "Экспорт и копии", to: "/v2/data/files" },
-  { label: "Настройки", to: "/v2/data/app" },
+  { id: "data", label: "Настройки", icon: "⚙", to: "/v2/data/app" },
 ];
 
 const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [
   { label: "Месяц", to: "/v2/close" },
-  { label: "Счета и справочники", to: "/v2/data/catalogs" },
   { label: "История и результаты", to: "/v2/capital/performance" },
   { label: "Доход и цели", to: "/v2/income/goals" },
 ];
@@ -68,13 +60,6 @@ export function UiV2Shell({
               to={section.to}
             >
               <span aria-hidden="true">{section.icon}</span> {section.label}
-            </Link>
-          ))}
-        </nav>
-        <nav aria-label="Данные и приложение" className={styles.navigation}>
-          {NATIVE_DATA_LINKS.map((link) => (
-            <Link key={link.to} to={link.to}>
-              {link.label}
             </Link>
           ))}
         </nav>

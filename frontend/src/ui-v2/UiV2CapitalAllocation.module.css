@@ -3,6 +3,21 @@
   font-size: 12px;
 }
 
+.groupButton {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupButton:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .monthPicker {
   display: flex;
   flex-wrap: wrap;

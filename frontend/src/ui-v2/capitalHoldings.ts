@@ -37,10 +37,29 @@ export type HoldingRow = {
 
 export type HoldingFilter =
   | { kind: "class"; value: string; label: string }
+  | { kind: "risk_class"; value: string; label: string }
   | { kind: "account"; value: string; label: string }
   | null;
 
 export const UNASSIGNED_CASH_KEY = "unassigned_cash";
+
+const RISK_POSITION_TYPES = new Set(["stock", "bond", "fund", "currency", "gold", "other"]);
+export function isRiskAssetClass(value: string): boolean {
+  return (
+    RISK_POSITION_TYPES.has(value) || ["cash", "deposits", "unknown_asset_class"].includes(value)
+  );
+}
+
+/** The risk dimension uses exact current catalogue types, not canonical capital unions. */
+function riskClassMatches(row: HoldingRow, value: string): boolean {
+  if (!row.includeInCapital || !isRiskAssetClass(value)) return false;
+  if (value === "cash") return row.kind === "cash";
+  if (value === "deposits") return row.kind === "deposit";
+  if (row.kind !== "position") return false;
+  if (value === "unknown_asset_class")
+    return row.contextLabel === null || !RISK_POSITION_TYPES.has(row.contextLabel);
+  return row.contextLabel === value;
+}
 
 /** Row context label of a holding row. Row context only — never a capital fact. */
 export function holdingContextLabel(row: HoldingRow): string {
@@ -155,10 +174,14 @@ export function buildHoldingRows({
  * totals come from the backend read model. An account filter matches the
  * canonical R07-06A buckets: `unassigned_cash` covers included cash rows, and
  * `account:<id>` covers deposits and positions of that account.
+ * The risk_class dimension is separate: exact current instrument type and
+ * included rows only. It never aliases gold/funds/currency/other to gold_other.
  */
 export function filterHoldingRows(rows: HoldingRow[], filter: HoldingFilter): HoldingRow[] {
   if (filter == null) return rows;
   if (filter.kind === "class") return rows.filter((row) => row.assetClass === filter.value);
+  if (filter.kind === "risk_class")
+    return rows.filter((row) => riskClassMatches(row, filter.value));
   if (filter.value === UNASSIGNED_CASH_KEY) {
     return rows.filter((row) => row.kind === "cash" && row.includeInCapital);
   }

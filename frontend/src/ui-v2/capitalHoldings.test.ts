@@ -90,6 +90,56 @@ describe("capitalHoldings", () => {
     expect(filterHoldingRows(built, null)).toHaveLength(7);
   });
 
+  it("filters the raw risk dimension by exact type without expanding gold into the canonical other union", () => {
+    const original = rows();
+    const sample = original.find((row) => row.key === "position-501");
+    if (!sample) throw new Error("missing synthetic position");
+    const types = ["stock", "bond", "gold", "fund", "currency", "other"];
+    const positions = types.map((type) => ({
+      ...sample,
+      key: `risk-${type}`,
+      name: "Same display name",
+      contextLabel: type,
+      assetClass: assetClassForInstrumentType(type),
+    }));
+    const built = [
+      ...original.filter((row) => row.kind !== "position"),
+      ...positions,
+      { ...sample, key: "missing-type", contextLabel: null },
+      { ...sample, key: "unsupported-type", contextLabel: "not_a_supported_type" },
+      { ...sample, key: "excluded-gold", contextLabel: "gold", includeInCapital: false },
+    ];
+    const before = JSON.stringify(built);
+    for (const value of types)
+      expect(
+        filterHoldingRows(built, {
+          kind: "risk_class",
+          value,
+          label: "Untrusted display text",
+        }).map((row) => row.key),
+      ).toEqual([`risk-${value}`]);
+    expect(
+      filterHoldingRows(built, { kind: "risk_class", value: "cash", label: "Cash" }).map(
+        (row) => row.key,
+      ),
+    ).toEqual(["cash-701"]);
+    expect(
+      filterHoldingRows(built, { kind: "risk_class", value: "deposits", label: "Deposits" }).map(
+        (row) => row.key,
+      ),
+    ).toEqual(["deposit-601"]);
+    expect(
+      filterHoldingRows(built, {
+        kind: "risk_class",
+        value: "unknown_asset_class",
+        label: "Unknown",
+      }).map((row) => row.key),
+    ).toEqual(["missing-type", "unsupported-type"]);
+    for (const value of ["stocks", "bonds", "gold_other", "Stock", "missing"])
+      expect(filterHoldingRows(built, { kind: "risk_class", value, label: "Invalid" })).toEqual([]);
+    expect(JSON.stringify(built)).toBe(before);
+  });
+
   it("keeps cash out of account buckets and inside the unassigned cash bucket", () => {
     const built = rows();
     const accountThree = filterHoldingRows(built, {

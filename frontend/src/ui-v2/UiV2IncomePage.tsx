@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { getPassiveIncomeHistory } from "../api/analytics";
 import { getCashFlowLadder } from "../api/cashFlowLadder";
-import { type GoalSummary, listGoalSummary } from "../api/goals";
 import { listMonths } from "../api/months";
 import { plannedVsActual } from "../api/plannedBudget";
 import { listSavings } from "../api/savings";
@@ -14,7 +13,6 @@ import type {
   CashFlowLadderEvent,
   CashFlowLadderMonth,
   IncomePlanCoverage,
-  IncomePlanForecast,
   IncomePlanSummary,
   PassiveIncomeAverage,
   PassiveIncomeHistory,
@@ -24,7 +22,6 @@ import type {
 } from "../api/types";
 import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
-import { uiV2GoalsPath } from "./goalRoute";
 import { sortReportingMonths } from "./monthSelection";
 import { uiV2TaxIisPath } from "./taxIisRoute";
 import incomeStyles from "./UiV2Income.module.css";
@@ -105,11 +102,6 @@ function planFactCopy(row: PlanVsActualRow): string | null {
   return null;
 }
 
-function progressStyle(value: string): CSSProperties {
-  const safe = /^\d+(?:\.\d+)?$/.test(value) ? value : "0";
-  return { "--goal-progress": `${safe}%` } as CSSProperties;
-}
-
 function useNarrowViewport(maxWidthPx = 800): boolean {
   const query = `(max-width: ${maxWidthPx}px)`;
   const [narrow, setNarrow] = useState(
@@ -167,22 +159,16 @@ function Panel({
 function Headlines({
   history,
   historyReady,
-  forecast,
-  forecastReady,
   ladder,
   ladderReady,
   retryHistory,
-  retrySummary,
   retryLadder,
 }: {
   history: PassiveIncomeHistory | undefined;
   historyReady: boolean;
-  forecast: IncomePlanForecast | undefined;
-  forecastReady: boolean;
   ladder: CashFlowLadder | undefined;
   ladderReady: boolean;
   retryHistory: () => void;
-  retrySummary: () => void;
   retryLadder: () => void;
 }) {
   const averageMeasured = historyReady && history !== undefined && history.average.count_months > 0;
@@ -200,23 +186,6 @@ function Headlines({
           </>
         ) : (
           <UiV2WidgetState retry={retryHistory} />
-        )}
-      </article>
-
-      <article className={incomeStyles.metric}>
-        <p className={sharedStyles.eyebrow}>Прогноз на 12 месяцев</p>
-        {forecastReady && forecast ? (
-          <>
-            <p className={incomeStyles.metricValue} data-testid="income-forecast">
-              {money(forecast.monthly_total)} <span>/ мес</span>
-            </p>
-            <p className={incomeStyles.metricDetail}>
-              {money(forecast.annual_total)} / 12 мес ·{" "}
-              {forecast.is_approximate ? "оценка" : "расчёт"}
-            </p>
-          </>
-        ) : (
-          <UiV2WidgetState retry={retrySummary} />
         )}
       </article>
 
@@ -352,77 +321,6 @@ function FactHistoryBlock({
             </p>
           </div>
         </div>
-      )}
-    </Panel>
-  );
-}
-
-function ForecastBlock({
-  forecast,
-  ready,
-  retry,
-}: {
-  forecast: IncomePlanForecast | undefined;
-  ready: boolean;
-  retry: () => void;
-}) {
-  return (
-    <Panel
-      eyebrow="Качество и состав оценки"
-      id="income-forecast-title"
-      testId="income-forecast-panel"
-      title="Прогноз на 12 месяцев"
-    >
-      {!ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : !forecast ? (
-        <UiV2WidgetState retry={retry} />
-      ) : (
-        <>
-          <div className={incomeStyles.forecastSummary}>
-            <div>
-              <span>В месяц</span>
-              <strong>{money(forecast.monthly_total)}</strong>
-            </div>
-            <div>
-              <span>За 12 месяцев</span>
-              <strong>{money(forecast.annual_total)}</strong>
-            </div>
-            <span
-              className={incomeStyles.qualityBadge}
-              data-quality={forecast.is_approximate ? "approximate" : "exact"}
-            >
-              {forecast.is_approximate ? "Оценка" : "Расчёт"}
-            </span>
-          </div>
-          <ul className={incomeStyles.valueList}>
-            <li>
-              <span>Проценты по депозитам</span>
-              <strong>{money(forecast.breakdown.expected_deposit_interest)}</strong>
-            </li>
-            <li>
-              <span>Купоны после удержаний</span>
-              <strong>{money(forecast.breakdown.expected_coupon_net)}</strong>
-            </li>
-            <li>
-              <span>Дивидендная компонента</span>
-              <strong>{money(forecast.breakdown.expected_dividend_component)}</strong>
-            </li>
-            <li>
-              <span>Прочий доход от капитала</span>
-              <strong>{money(forecast.breakdown.other_expected_capital_income)}</strong>
-            </li>
-          </ul>
-          {forecast.warnings.length > 0 ? (
-            <ul className={incomeStyles.warningList}>
-              {forecast.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className={sharedStyles.panelFootnote}>Предупреждений нет.</p>
-          )}
-        </>
       )}
     </Panel>
   );
@@ -580,72 +478,6 @@ function LadderBlock({
             </ul>
           ) : null}
         </>
-      )}
-    </Panel>
-  );
-}
-
-function GoalsBlock({
-  goals,
-  monthId,
-  ready,
-  retry,
-}: {
-  goals: GoalSummary[];
-  monthId: number | null;
-  ready: boolean;
-  retry: () => void;
-}) {
-  const supported = goals.filter(
-    (goal) =>
-      goal.is_active &&
-      goal.achievement_forecast.current_value !== null &&
-      goal.achievement_forecast.progress_pct !== null &&
-      (goal.goal_type !== "passive_income" ||
-        (goal.achievement_forecast.passive_income_months_count ?? 0) > 0),
-  );
-  return (
-    <Panel
-      action={
-        <Link className={sharedStyles.contextLink} to={uiV2GoalsPath(monthId)}>
-          Все цели →
-        </Link>
-      }
-      eyebrow="Цели с доступным прогрессом"
-      id="income-goals-title"
-      testId="income-goals-panel"
-      title="Цели"
-      wide
-    >
-      {!ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : supported.length === 0 ? (
-        <UiV2WidgetState title="Нет активных целей с поддерживаемым прогрессом" />
-      ) : (
-        <div className={incomeStyles.goalsGrid}>
-          {supported.map((goal) => {
-            const forecast = goal.achievement_forecast;
-            return (
-              <article data-testid={`income-goal-${goal.id}`} key={goal.id}>
-                <div className={incomeStyles.goalHeader}>
-                  <h3>{goal.name}</h3>
-                  <strong>{forecast.progress_pct?.replace(".", ",")}%</strong>
-                </div>
-                <div aria-hidden="true" className={incomeStyles.goalTrack}>
-                  <span style={progressStyle(forecast.progress_pct ?? "0")} />
-                </div>
-                <p>
-                  {money(forecast.current_value)} из {money(forecast.target_value)}
-                </p>
-                <p>
-                  {forecast.estimated_achievement_date
-                    ? `Достигнуто ${formatDate(forecast.estimated_achievement_date)}`
-                    : "Нет прогноза срока"}
-                </p>
-              </article>
-            );
-          })}
-        </div>
       )}
     </Panel>
   );
@@ -855,13 +687,6 @@ export default function UiV2IncomePage() {
     queryFn: ({ signal }) => getCashFlowLadder(planningId as number, signal),
     refetchOnWindowFocus: true,
   });
-  const goalsQuery = useQuery({
-    enabled: planningId !== null,
-    queryKey: queryKeys.goalSummary(planningId),
-    queryFn: ({ signal }) =>
-      listGoalSummary(planningId as number, { forecastVersion: "v1" }, signal),
-    refetchOnWindowFocus: true,
-  });
   const budgetQuery = useQuery({
     enabled: planningId !== null,
     queryKey: queryKeys.planVsActual(planningId),
@@ -882,7 +707,6 @@ export default function UiV2IncomePage() {
     summaryQuery.data?.month.id === planningId &&
     summaryQuery.data.month.status === "closed" &&
     summaryQuery.data.forecast_version === "v1";
-  const forecastReady = summaryReady && summaryQuery.data?.forecast !== undefined;
   const coverageReady = summaryReady && summaryQuery.data?.coverage !== undefined;
   const headlineHistoryReady =
     planningId !== null &&
@@ -898,17 +722,6 @@ export default function UiV2IncomePage() {
     isQueryReady(ladderQuery) &&
     ladderQuery.data?.forecast_version === "v1" &&
     ladderQuery.data.as_of_date === latestClosed?.snapshot_date;
-  const goalsReady =
-    planningId !== null &&
-    isQueryReady(goalsQuery) &&
-    (goalsQuery.data?.every(
-      (goal) =>
-        goal.achievement_forecast.goal_id === goal.id &&
-        goal.achievement_forecast.reporting_month_id === planningId &&
-        goal.achievement_forecast.method_version === "goal_achievement_v1" &&
-        goal.achievement_forecast.source_forecast_version === null,
-    ) ??
-      false);
   const budgetReady = isQueryReady(budgetQuery);
   const savingsReady =
     isQueryReady(savingsQuery) &&
@@ -951,15 +764,12 @@ export default function UiV2IncomePage() {
           </p>
         ) : null}
         <Headlines
-          forecast={summary?.forecast}
-          forecastReady={forecastReady}
           history={headlineHistoryReady ? headlineHistoryQuery.data : undefined}
           historyReady={headlineHistoryReady}
           ladder={ladderReady ? ladderQuery.data : undefined}
           ladderReady={ladderReady}
           retryHistory={() => void headlineHistoryQuery.refetch()}
           retryLadder={() => void ladderQuery.refetch()}
-          retrySummary={() => void summaryQuery.refetch()}
         />
         <div className={incomeStyles.layout}>
           <FactHistoryBlock
@@ -970,17 +780,6 @@ export default function UiV2IncomePage() {
             retry={() => void factHistoryQuery.refetch()}
             selectedMonth={factSelection.month}
             selectionValid={factSelection.valid}
-          />
-          <ForecastBlock
-            forecast={summary?.forecast}
-            ready={forecastReady}
-            retry={() => void summaryQuery.refetch()}
-          />
-          <GoalsBlock
-            goals={goalsReady ? (goalsQuery.data ?? []) : []}
-            monthId={planningId}
-            ready={goalsReady}
-            retry={() => void goalsQuery.refetch()}
           />
           <CoveragePlanBlock
             budget={budgetReady ? (budgetQuery.data ?? []) : []}

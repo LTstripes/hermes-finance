@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { UiV2Shell } from "./UiV2Shell";
+import { UiV2DataSubnav } from "./UiV2DataShell";
 
 function LocationProbe() {
   const location = useLocation();
@@ -41,15 +42,39 @@ describe("UiV2Shell native navigation", () => {
   });
 
   it.each([
-    ["Экспорт и копии", "/v2/data/files"],
     ["Настройки", "/v2/data/app"],
-    ["Отчётные месяцы", "/v2/data/months"],
-    ["Счета и справочники", "/v2/data/catalogs"],
     ["История и результаты", "/v2/capital/performance"],
     ["Доход и цели", "/v2/income/goals"],
   ])("links %s to its native workspace", (label, href) => {
     renderShell();
     expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
+  });
+
+  it("groups data tools under one Settings navigation entry while preserving their native deep links", () => {
+    render(
+      <MemoryRouter>
+        <UiV2Shell active="data" header={<h1>Настройки</h1>}>
+          <UiV2DataSubnav active="app" />
+        </UiV2Shell>
+      </MemoryRouter>,
+    );
+    const primary = screen.getByRole("navigation", { name: "Основная навигация" });
+    expect(within(primary).getByRole("link", { name: "Настройки" })).toHaveAttribute(
+      "href",
+      "/v2/data/app",
+    );
+    expect(within(primary).queryByRole("link", { name: "Данные" })).toBeNull();
+    for (const [name, href] of [
+      ["Разбор источника", "/v2/data/source-intake"],
+      ["Экспорт и копии", "/v2/data/files"],
+      ["Отчётные месяцы", "/v2/data/months"],
+      ["Справочники и сопоставления", "/v2/data/catalogs"],
+    ])
+      expect(
+        within(screen.getByRole("navigation", { name: "Разделы настроек" })).getByRole("link", {
+          name,
+        }),
+      ).toHaveAttribute("href", href);
   });
 });

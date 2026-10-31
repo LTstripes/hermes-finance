@@ -88,6 +88,11 @@ export default function UiV2ReturnsPage() {
   );
   const instrumentHref = (isin: string) =>
     `/v2/returns/instrument/${isin}?${new URLSearchParams({ back: `${location.pathname}${location.search}` })}`;
+  const summaryAccountHref = (accountScope: string) => {
+    const next = new URLSearchParams(params);
+    next.set("accounts", accountScope);
+    return `/v2/returns?${next}`;
+  };
   const openInstrument = (isin: string) => {
     if (goldNavigation.dirty || goldNavigation.pending) setNextHref(instrumentHref(isin));
     else navigate(instrumentHref(isin));
@@ -201,7 +206,10 @@ export default function UiV2ReturnsPage() {
                     полным результатом.
                   </p>
                 )}
-                <div className={styles.cards}>
+                <div
+                  className={styles.cards}
+                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+                >
                   {result && result.amount.value !== null && (
                     <section
                       className={`${styles.card} ${styles.primaryCard}`}
@@ -242,20 +250,31 @@ export default function UiV2ReturnsPage() {
                   {accounts.map((a) => (
                     <div className={layout.account} key={a.scope}>
                       <Link
-                        to={accountHref(a.scope, a.period)}
-                        onClick={(e) => guardLink(e, accountHref(a.scope, a.period))}
+                        to={
+                          accounts.length > 1
+                            ? summaryAccountHref(a.scope)
+                            : accountHref(a.scope, a.period)
+                        }
+                        onClick={(e) =>
+                          guardLink(
+                            e,
+                            accounts.length > 1
+                              ? summaryAccountHref(a.scope)
+                              : accountHref(a.scope, a.period),
+                          )
+                        }
                       >
-                        {label(a.scope, a.label)}
+                        {accounts.length > 1 ? label(a.scope, a.label) : "Результаты по месяцам"}
                       </Link>
-                      {a.result && a.result.pnl.value !== null ? (
+                      {accounts.length > 1 && a.result && a.result.pnl.value !== null ? (
                         <strong>{displayMetric(a.result.pnl, true)}</strong>
-                      ) : (
+                      ) : !a.result || a.result.pnl.value === null ? (
                         <p>
                           {a.proof_status === "stale"
                             ? "Нужно заново подтвердить выписки"
                             : "Результат пока не подтверждён"}
                         </p>
-                      )}
+                      ) : null}
                       <small>{a.period && periodLabel(a.period)}</small>
                       {accounts.length > 1 && a.result && a.result.rate.value !== null && (
                         <small>Modified Dietz {displayMetric(a.result.rate)} за этот период</small>
@@ -264,8 +283,9 @@ export default function UiV2ReturnsPage() {
                   ))}
                 </div>
                 <p className={layout.note}>
-                  Расчёт по сохранённым выпискам. Общий процент для разных периодов счетов не
-                  складывается; выплаты уже входят в результат.
+                  Расчёт по сохранённым выпискам. Выплаты уже входят в результат.
+                  {accounts.length > 1 &&
+                    " Общий процент для разных периодов счетов не складывается."}
                 </p>
                 {chartRows.length > 0 && (
                   <section className={styles.panel} aria-label="Вклад инструментов">
@@ -344,7 +364,7 @@ export default function UiV2ReturnsPage() {
                             <th>Инструмент</th>
                             <th>Результат</th>
                             <th>Полученный доход</th>
-                            {accounts.length === 1 && <th>Modified Dietz</th>}
+                            {accounts.length === 1 && <th>Modified Dietz за период</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -386,14 +406,7 @@ export default function UiV2ReturnsPage() {
                                 )}
                               </td>
                               {accounts.length === 1 && (
-                                <td>
-                                  {r.rate.value !== null && (
-                                    <>
-                                      {displayMetric(r.rate)}
-                                      <small className={layout.muted}>За период, не годовой</small>
-                                    </>
-                                  )}
-                                </td>
+                                <td>{r.rate.value !== null && <>{displayMetric(r.rate)}</>}</td>
                               )}
                             </tr>
                           ))}
@@ -496,6 +509,19 @@ export default function UiV2ReturnsPage() {
                           <div>
                             <dt>Результат продаж</dt>
                             <dd>{displayMetric(history.realized_result, true)}</dd>
+                          </div>
+                        )}
+                        {history?.total_result.value != null &&
+                          history.unrealized_result.value != null && (
+                            <div>
+                              <dt>Рост стоимости остатка</dt>
+                              <dd>{displayMetric(history.unrealized_result, true)}</dd>
+                            </div>
+                          )}
+                        {!history && snapshot?.cost_return.value != null && (
+                          <div>
+                            <dt>К затратам по снимку</dt>
+                            <dd>{displayMetric(snapshot.cost_return)}</dd>
                           </div>
                         )}
                       </dl>
