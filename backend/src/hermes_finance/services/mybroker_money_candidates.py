@@ -192,15 +192,17 @@ def _minor(row: dict, reasons: set[str]) -> int | None:
 
 
 def _pattern_v2(operation: str, narrative: str) -> CandidateKind:
-    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.statement_import.investment_money import parse_financial_payout_security
 
     prior = _pattern(operation, narrative)
     if prior != "unsupported":
         return prior
     if operation != "Перевод" or len(narrative) > 4096:
         return "unsupported"
-    security = parse_money_security(narrative)
-    return "dividend_paid_candidate" if security and security.kind == "dividend" else "unsupported"
+    security = parse_financial_payout_security(narrative)
+    if security is not None:
+        return "dividend_paid_candidate" if security.kind == "dividend" else "coupon_paid_candidate"
+    return "unsupported"
 
 
 def _reference(import_id: int, row: dict) -> MoneyOccurrence:

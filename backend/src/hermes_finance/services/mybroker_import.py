@@ -447,6 +447,7 @@ def _prepare(
     owner_reviewed: bool = False,
     *,
     planned_bindings: list[dict] | None = None,
+    reconciled_position_ids: tuple[int, ...] = (),
 ) -> dict:
     state, registry = _state(session)
     # Only the original-bound identity planner supplies these zero-write
@@ -649,7 +650,11 @@ def _prepare(
                 PositionSnapshot.instrument_id == instrument_targets.get(position["isin"], -1),
             )
         )
-        if any(row.quantity != Decimal(position["actual_quantity"]) for row in accepted):
+        if any(
+            row.id not in reconciled_position_ids
+            and row.quantity != Decimal(position["actual_quantity"])
+            for row in accepted
+        ):
             conflicts.append("accepted_endpoint_quantity_conflict")
     # Preserve exact legacy confirmation material when there are no exclusions.
     material = {"document": document, "bindings": bindings, "state": state}

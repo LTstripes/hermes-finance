@@ -19,6 +19,16 @@ integration and installation of this new candidate remain separate decisions;
 Stable remains at the released identity below. No Owner proof or financial data
 has been changed by this preparation.
 
+A separate **1.9.2 backend candidate** supplements existing financial SOURCE
+records with original-bound section, trade, account-fee and explicitly reviewed
+broker-bonus proof. It does not reimport economic facts or add a general UI flow.
+The existing metadata-only compatibility certificate is unchanged and does not
+admit this changed Python implementation; older source-only investment
+confirmations remain subject to fresh review. Targeted synthetic checks and
+independent review cover the candidate, not publication or Owner UAT. Exact CI,
+release, runtime update and financial proof operations remain pending separately.
+Stable remains 1.9.0; this candidate preparation performs no production writes.
+
 **Released and installed: [v1.9.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.9.0),
 `42439193f1140a93fd4f6ed74e04e846187615d3`.**
 [#998](https://github.com/LTstripes/hermes-finance/pull/998) and

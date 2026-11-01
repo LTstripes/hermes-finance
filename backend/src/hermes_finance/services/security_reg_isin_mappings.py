@@ -67,10 +67,20 @@ def _upsert(session, reg_number, isin, note):
     return row, changed
 
 
-def set_mapping(session, reg_number, isin, note=None):
+def set_mapping(session, reg_number, isin, note=None, *, create_only=False):
     values = _validated(reg_number, isin, note)
     source_intake._reserve(session)
     try:
+        if create_only:
+            current = session.scalar(
+                select(SecurityRegIsinMapping).where(SecurityRegIsinMapping.reg_number == values[0])
+            )
+            if current is not None:
+                if current.isin != values[1]:
+                    raise ValueError("security_reg_mapping_conflict")
+                result = _as_dict(current)
+                session.rollback()
+                return result
         row, _ = _upsert(session, *values)
         result = _as_dict(row)
         session.commit()

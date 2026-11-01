@@ -15,6 +15,7 @@ from hermes_finance.api.source_intake import router as intake_router
 from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.broker_money import (
+    BrokerBonusReview,
     MoneyConfirmation,
     MoneyConfirmationV2,
     MoneyIntent,
@@ -120,6 +121,7 @@ class Intent(BaseModel):
     reporting_month_id: int = Field(gt=0, strict=True)
     account_id: int = Field(gt=0, strict=True)
     instrument_decisions: list[InstrumentDecision] = Field(default_factory=list, max_length=1000)
+    reconcile_position_ids: list[int] = Field(default_factory=list, max_length=1000)
 
 
 class AccountBindingDecision(BaseModel):
@@ -132,6 +134,66 @@ class Confirmation(Intent):
     confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     reviewed_account_bindings: list[AccountBindingDecision] = Field(default_factory=list)
+
+
+class StatementEvidenceIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    base_request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    broker_bonuses: list[BrokerBonusReview] = Field(default_factory=list, max_length=1)
+
+
+class StatementEvidenceConfirmation(StatementEvidenceIntent):
+    request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    confirmation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.post("/statement-evidence/preview")
+async def statement_evidence_preview(
+    file: UploadFile = File(...),
+    intent: str = Form(...),
+    session: Session = Depends(session_for_request),
+):
+    from hermes_finance.services.broker_statement_evidence import preview_statement_evidence
+
+    try:
+        requested = StatementEvidenceIntent.model_validate_json(intent)
+        return preview_statement_evidence(
+            session,
+            requested.base_request_id,
+            (file.filename or "", await _bytes(file)),
+            broker_bonuses=requested.broker_bonuses,
+        )
+    except (ValidationError, MyBrokerError, ValueError) as error:
+        raise HTTPException(
+            422,
+            "statement_evidence_intent_invalid"
+            if isinstance(error, ValidationError)
+            else str(error),
+        ) from None
+
+
+@router.post("/statement-evidence/apply")
+async def statement_evidence_apply(
+    file: UploadFile = File(...),
+    confirmation: str = Form(...),
+    session: Session = Depends(session_for_request),
+):
+    from hermes_finance.services.broker_statement_evidence import apply_statement_evidence
+
+    try:
+        requested = StatementEvidenceConfirmation.model_validate_json(confirmation)
+        return apply_statement_evidence(
+            session,
+            requested.base_request_id,
+            (file.filename or "", await _bytes(file)),
+            request_id=requested.request_id,
+            confirmation_digest=requested.confirmation_digest,
+            broker_bonuses=requested.broker_bonuses,
+        )
+    except ValidationError:
+        raise HTTPException(422, "statement_evidence_confirmation_invalid") from None
+    except (MyBrokerError, ValueError) as error:
+        raise HTTPException(409, str(error)) from None
 
 
 @router.post("/preview")

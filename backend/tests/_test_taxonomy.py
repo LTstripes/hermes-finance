@@ -221,6 +221,8 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_alfa_pro_snapshot.py": 21.61,
     "test_broker_baseline_apply.py": 6.78,
     "test_broker_identity_mappings.py": 5.93,
+    "test_broker_intake_reconciliation.py": 5.0,
+    "test_broker_statement_evidence.py": 12.0,
     "test_broker_snapshot_apply.py": 11.44,
     "test_forecast_dashboard_integration.py": 4.66,
     "test_freshness_provenance.py": 5.08,
@@ -295,6 +297,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_A_SPLIT_FILES = frozenset({"test_statement_import_mybroker_endpoints.py"})
 
 CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
+    "test_broker_intake_reconciliation.py": 5.0,
     "test_ai_analysis_bundle_contract.py": 0.21,
     "test_ai_analysis_bundle_export.py": 31.16,
     "test_ai_analysis_bundle_financial_review_contract.py": 1.02,
@@ -451,6 +454,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
 
 CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
+    "test_broker_statement_evidence.py": 12.0,
     "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_statement_import_payout_reconciliation.py": 30.0,
     "test_ai_financial_review_linked_pairs.py": 4.00,
@@ -883,10 +887,20 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         return None
     # Keep the accepted A/B groups stable when adding the bounded #711 suite.
     added = {
+        "test_broker_statement_evidence.py",
         "test_statement_import_payout_reconciliation.py",
         "test_payout_draft_refresh.py",
         "test_ai_analysis_bundle_source_returns.py",
     }
+    # New A coverage must not rebalance the historical A/B file roster; the
+    # split weight tables intentionally describe those existing groups.
+    added_a = {"test_broker_intake_reconciliation.py"}
+    if relative_path.as_posix() in added_a:
+        return (
+            "ci_integrations_a"
+            if CI_INTEGRATIONS_SHARD_WEIGHTS.get(relative_path.as_posix(), 0) > 0
+            else None
+        )
     if relative_path.as_posix() in added:
         return (
             "ci_integrations_b"
@@ -895,7 +909,11 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         )
     return _weighted_shard(
         relative_path.as_posix(),
-        {key: value for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items() if key not in added},
+        {
+            key: value
+            for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items()
+            if key not in added | added_a
+        },
         CI_INTEGRATIONS_SHARD_MARKERS,
     )
 

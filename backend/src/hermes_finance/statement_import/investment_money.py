@@ -18,7 +18,7 @@ _COUPON = re.compile(
     re.IGNORECASE,
 )
 _DIVIDEND = re.compile(
-    rf"Дивиденды за (?:[1-4] кв |[1-9] месяцев )?[0-9]{{4}} г\. по акциям (?P<issuer>{_ISSUER}) \((?P<reg>{_REG})\)\. \(Удержан налог [0-9]+(?:[.,][0-9]{{1,2}})? руб\.\)",
+    rf"Дивиденды за (?:[1-4] кв |[1-9] месяцев |(?:[12] )?полугодие )?[0-9]{{4}} г\. по акциям (?P<issuer>{_ISSUER}) \((?P<reg>{_REG})\)\. \(Удержан налог [0-9]+(?:[.,][0-9]{{1,2}})? руб\.\)",
     re.IGNORECASE,
 )
 
@@ -41,4 +41,23 @@ def parse_investment_money_security(narrative: str) -> MoneySecurity | None:
         if not re.sub(r"^(?:МКПАО|ПАО|АО|ОАО)\s*", "", match["issuer"]).strip('" '):
             return None
         return MoneySecurity(match["reg"].upper(), match["issuer"], kind)
+    return None
+
+
+def parse_financial_payout_security(narrative: str) -> MoneySecurity | None:
+    """Preserve legacy evidence plus exact native coupons and halfyear dividends.
+
+    The broader read-only investment grammar does not itself expand financial
+    acceptance to every descriptive period variant.
+    """
+    original = parse_money_security(narrative)
+    if original is not None:
+        return original
+    parsed = parse_investment_money_security(narrative)
+    if parsed is None:
+        return None
+    if parsed.kind == "coupon" or re.match(
+        r"Дивиденды за (?:[12] )?полугодие [0-9]{4} г\. ", narrative, re.IGNORECASE
+    ):
+        return parsed
     return None

@@ -107,6 +107,8 @@ def cash_reasons(source, groups, proof):
     """Equations check an independently reviewed basis; they never select it."""
     if not proof:
         return ["paid_nkd_basis_unresolved"]
+    if proof.get("proof_variant") == "bond_source_caption_v1":
+        return caption_bond_cash_reasons(source, groups, proof)
     if is_stock_proof(proof):
         return stock_cash_reasons(source, groups, proof)
     if "proof_variant" in proof or not isinstance(proof.get("claims"), dict):
@@ -160,6 +162,50 @@ def cash_reasons(source, groups, proof):
         "native_total": str(t),
     }:
         return ["trade_cash_material_changed"]
+    return []
+
+
+def caption_bond_cash_reasons(source, groups, proof):
+    """Typed original caption + complete equivalent NKD cohort, BUY or SELL."""
+    cohort = proof.get("cohort", {})
+    if (
+        source["state"] != "settled"
+        or not source["depo_settlement_date"]
+        or source["repo_observed"]
+        or source["core"]["currency"] != "RUB"
+        or proof.get("native_ids") != source["ids"]
+        or proof.get("source_identity") != source["identity"]
+        or source["identity"] not in cohort.get("trade_identities", [])
+        or cohort.get("native_total_basis") != "includes_paid_nkd"
+        or len(cohort.get("occurrences", [])) != len(cohort.get("trade_identities", []))
+    ):
+        return ["statement_bond_source_identity_conflict"]
+    qty = Decimal(source["core"]["quantity"])
+    direction = -1 if qty > 0 else 1
+    values = [exact_minor(source[k]) for k in ("accrued_interest", "bank_commission")]
+    total = exact_minor(source["core"]["trade_amount"])
+    if not qty or total is None or total <= 0 or any(v is None or v <= 0 for v in values):
+        return ["statement_bond_exact_amounts_required"]
+    nkd, fee = values
+    if (
+        cohort.get("signed_nkd_minor") != direction * nkd
+        or cohort.get("date") != source["settlement_date"]
+        or cohort.get("source_account") != source["core"]["source_account"]
+        or cohort.get("currency") != "RUB"
+    ):
+        return ["statement_bond_nkd_group_conflict"]
+    legs = [groups.get(role, []) for role in ("settlement", "paid_nkd", "commission")]
+    if any(len(rows) != 1 for rows in legs):
+        return ["statement_bond_cash_missing_or_ambiguous"]
+    rows = [rows[0] for rows in legs]
+    if any(r["date"] != source["settlement_date"] or r["currency"] != "RUB" for r in rows):
+        return ["statement_bond_cash_date_currency_conflict"]
+    if [exact_minor(r["amount"]) for r in rows] != [
+        direction * (total - nkd),
+        direction * nkd,
+        -fee,
+    ]:
+        return ["statement_bond_cash_control_mismatch"]
     return []
 
 

@@ -162,7 +162,9 @@ def _controls(document, session=None, *, source=None, account_id=None, month_id=
             kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
             for kind in ("settlement", "commission")
         }
-        if proof and "proof_variant" not in proof:
+        if proof and (
+            "proof_variant" not in proof or proof["proof_variant"] == "bond_source_caption_v1"
+        ):
             leg = proof["nkd_leg"]
             groups["paid_nkd"] = [
                 {
@@ -263,9 +265,10 @@ def _prepare(
     account_id,
     optional_hashes,
     instrument_decisions=None,
+    reconcile_position_ids=None,
 ):
     parsed = mybroker_import.parse_import_original(session, document, filename)
-    evidence = parse_identity(document, filename, incomplete_draft=True)
+    evidence = parse_identity(document, filename, incomplete_draft=True, repeated_occurrences=True)
     # Effective aliases are authority already; only unbound aliases are proposed.
     # These proposals are zero-write until Apply receives the exact reviewed set.
     existing = mybroker_identity._prepare(session, evidence, [])
@@ -289,10 +292,29 @@ def _prepare(
                 "target_name": target.name if target else None,
             }
         )
-    source = mybroker_import._prepare(session, parsed, planned_bindings=_bindings(identity))
     month = session.get(ReportingMonth, reporting_month_id, populate_existing=True)
     if month is None:
         raise MyBrokerError("reporting_month_not_found")
+    requested = reconcile_position_ids or []
+    eligible = {
+        row.id: row
+        for row in _rows(session, PositionSnapshot)
+        if row.reporting_month_id == month.id
+        and row.account_id == account_id
+        and row.price_source != NATIVE_SOURCE
+        and row.source_import_id is None
+        and row.price_date is not None
+        and row.price_date < month.period_start
+        and row.instrument_id in {i["hermes_id"] for i in identity["instruments"]}
+    }
+    if len(requested) != len(set(requested)) or set(requested) - eligible.keys():
+        raise MyBrokerError("position_reconciliation_invalid")
+    source = mybroker_import._prepare(
+        session,
+        parsed,
+        planned_bindings=_bindings(identity),
+        reconciled_position_ids=tuple(requested),
+    )
     conflicts = set(identity["conflicts"]) | set(source["conflicts"])
     if any(p["hermes_id"] != account_id for p in identity["accounts"]):
         conflicts.add("account_mapping_conflict")
@@ -359,7 +381,9 @@ def _prepare(
             )
         )
         existing = matches[0] if len(matches) == 1 else None
-        if matches and (
+        if matches and existing and existing.id in requested:
+            existing = None  # A fresh native row replaces the explicitly archived old row.
+        elif matches and (
             quantity == 0
             or existing is None
             or existing.source_row_key != row_key
@@ -390,7 +414,10 @@ def _prepare(
             )
         )
     )
-    if any(row.id not in {p["position_id"] for p in position_plan} for row in existing_positions):
+    if any(
+        row.id not in {p["position_id"] for p in position_plan} | set(requested)
+        for row in existing_positions
+    ):
         conflicts.add("existing_position_reconciliation_required")
     cash_rows = list(
         session.scalars(
@@ -490,8 +517,43 @@ def _prepare(
         "quantity_controls": quantity_controls,
         "dependency_digest": _dependencies(session),
     }
+    if requested:
+        from hermes_finance.persistence import (
+            AppliedPayoutReconciliation,
+            AppliedPayoutRevision,
+            AppliedProviderPayout,
+            PositionQuoteProvenance,
+        )
+
+        material["reconcile_position_ids"] = sorted(requested)
+        material["position_reconciliation_digest"] = digest(
+            [
+                [
+                    [str(getattr(row, c.name)) for c in row.__table__.columns]
+                    for row in _rows(session, model)
+                ]
+                for model in (
+                    AppliedProviderPayout,
+                    AppliedPayoutRevision,
+                    AppliedPayoutReconciliation,
+                    PositionQuoteProvenance,
+                )
+            ]
+        )
+        material["replaced_positions"] = [
+            {
+                "id": row.id,
+                "quantity": str(row.quantity),
+                "price_date": str(row.price_date),
+                "material_digest": digest(
+                    [str(getattr(row, c.name)) for c in row.__table__.columns]
+                ),
+            }
+            for row in (eligible[i] for i in sorted(requested))
+        ]
     return {
         **material,
+        "position_reconciliation_candidates": sorted(eligible),
         "confirmation_digest": digest(material),
         "can_apply": not conflicts,
         "bookkeeping_ready": not blockers and not conflicts,
@@ -895,6 +957,8 @@ def apply_broker_month(
         fingerprint_material.append(reviewed)
     if kwargs.get("instrument_decisions"):
         fingerprint_material.append(kwargs["instrument_decisions"])
+    if kwargs.get("reconcile_position_ids"):
+        fingerprint_material.append(sorted(kwargs["reconcile_position_ids"]))
     fingerprint = digest(fingerprint_material)
     session.rollback()
     try:
@@ -925,6 +989,7 @@ def apply_broker_month(
                 account_bindings=plan["account_bindings"],
                 confirmation_digest=plan["identity"]["confirmation_digest"],
                 incomplete_draft=True,
+                repeated_occurrences=True,
                 instrument_decisions=kwargs.get("instrument_decisions"),
             )
             # New public-proof proposals receive IDs only inside this transaction.
@@ -937,6 +1002,15 @@ def apply_broker_month(
                 proposal["hermes_id"] = staged_ids[proposal["isin"]]
             for position in plan["positions"]:
                 position["instrument_id"] = staged_ids[position["isin"]]
+            from hermes_finance.services.payout_provenance_lifecycle import archive_position_payouts
+
+            for old_id in plan.get("reconcile_position_ids", []):
+                old = session.get(PositionSnapshot, old_id)
+                period = plan["document"]["covered_to"][:7]
+                archive_position_payouts(session, old.id, period)
+                old.reporting_month_id = None
+                old.archived_from_period = period
+            session.flush()
             source = mybroker_import.stage_mybroker(
                 session,
                 mybroker_import.parse_import_original(
@@ -1001,6 +1075,11 @@ def apply_broker_month(
                 accepted_at=datetime.now(UTC),
             )
             accepted = {
+                **(
+                    {"replaced_positions": plan["replaced_positions"]}
+                    if "replaced_positions" in plan
+                    else {}
+                ),
                 # Preserve supplied, still-unread optional evidence. Source,
                 # controls and authority are recomputed from immutable S1 and
                 # current canonical facts; a pre-enrichment failure must not

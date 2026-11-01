@@ -1893,6 +1893,61 @@ Apply use the same versioned original-bound classification. It never deletes
 tax/NKD/fee economics or changes exact/indicative return readiness. A successful
 partial Apply is not financial completeness or permission to Close.
 
+The original-bound `source_bookkeeping` section-disposition variant may separately
+acknowledge the complete existing versioned structure classification of a saved
+SOURCE. It binds the immutable original hash, S1 digest, mappings, month geometry,
+source projection and monotonic dependency authority. Only the exact supported
+Positions preliminary-tax footer and Money display/control branches, including
+complete repeated occurrence inventory, remove `unparsed_source_rows` at that
+source/month grain. This neither edits S1 nor classifies any Money row, accepts a
+tax payment or grants H2/return coverage. Existing Transfers/UFSR dispositions
+retain their literal shapes and frozen coverage projection.
+
+`POST /api/broker-months/statement-evidence/preview|apply` supplements an existing
+SOURCE without reimporting positions, trades, cash or payouts. The request names
+only that base receipt and reattaches its exact original. A server-compiled Money
+v3 proof reuses existing canonical trade revisions and the month journal. Exact
+native bond captions must independently establish inclusion of NKD; complete
+BUY/SELL NKD cohorts preserve every occurrence and prove identical per-execution
+economics without assigning indistinguishable rows to guessed trade IDs. Native
+settlement, separately posted NKD and bank commission must reconcile exactly with
+their source dates/currency/direction and complete identifiers. A recognized exact
+daily account commission is owned once at account level, never allocated to trades
+or deducted from closing cash again. Missing/zero/ambiguous basis remains blocked.
+V3 here accepts trade/account-fee proof and the explicit broker-bonus occurrence
+disposition below: existing v1/v2 payouts and H2 capital
+events cannot be created, replaced or reclassified. Preview is read-only; Apply
+reserves the writer, recomputes the full plan, rejects stale/ABA contexts and
+atomically appends proof/revision/ownership, with exact-key replay and independent
+GET. A compatible backend release must precede any new proof persistence; no
+schema migration or historical receipt rewrite is required.
+
+An optional `broker_bonuses` request selects at most one exact source Money seed,
+row fingerprint, bounded reference and strict affirmative `confirmed_broker_bonus`.
+There are no client amount/date/currency/instrument fields. Server reattachment
+must prove a positive exact RUB unsupported row, no execution linkage, exact
+account/month/source, one complete unambiguous occurrence and no competing owner.
+The existing narrow promo-gift shape is a refusal guard, never automatic financial
+classification. Without explicit confirmation the row remains unresolved. A
+`broker_bonus` journal target owns that immutable occurrence permanently and binds
+the ordinary full preview/physical/currentness context; changed selection conflicts
+on replay, failure rolls back all proof/revision changes. It creates no cash,
+ICF/payout, ExternalFlow, H2 capital, instrument or tax components and leaves
+provisional intake classification unchanged. Paid cash is already in the closing
+balance. This resolves only its Money/bookkeeping obligation; Owner/portfolio cash
+coverage, tax and exact return prerequisites remain independently unknown.
+
+The bounded XML/investment-PDF payout adapter emits ordinary `broker_money_v2`
+intents, not a new writer or receipt format. It requires exact account, period,
+kind, posted date and net-amount group agreement and a unique compatible catalogue
+ISIN; conflicting registration mappings stop preparation. Financial v2 additionally
+recognizes complete native coupon wording and halfyear dividend wording; v1 and
+other dividend-period shapes stay unchanged. Existing multiplicity, overlap,
+final-net, source/currentness, reserved Apply and GET guards remain authoritative.
+Missing registration bridges can be created with an explicit create-only registry
+write; an existing different ISIN is never silently reassigned. Source cash is not
+incremented by these payouts, and missing gross/tax components remain NULL.
+
 The Money Preview requires original bytes for the complete accepted overlapping
 source union. Original observations guide specific instrument/payment/boundary
 review; they do not mint payment identity from date, amount or narrative. The server
@@ -1932,6 +1987,22 @@ failure rolls back identity/source/trade/position/cash/receipt writes. Same-inte
 request replay returns the original receipt with zero new economic rows, including
 after Close; it cannot mutate CLOSED. Overlaps reuse canonical trade identity.
 Manual or conflicting facts require explicit reconciliation rather than overwrite.
+
+An original-bound broker-month review may explicitly name older nonnative position
+IDs to replace in the same DRAFT account. The server rejects source-owned,
+same-period, other-scope and unmatched rows. Confirmation binds the old row material
+and payout/revision/reconciliation/quote-provenance graph. Reserved Apply archives
+the reviewed positions and their payout history before staging native positive
+holdings; affirmative source zero creates no holding. The existing receipt retains
+the replaced row references; failure rolls back the complete operation and replay
+adds no rows. This does not accept unresolved Money or grant Close readiness.
+
+The opt-in `mybroker-incomplete-draft-identity-v2` classifier can retain repeated
+complete Money occurrences for identity eligibility with
+`money_occurrences_unresolved`. Every ordinal and financial blocker remains.
+Default v1 parsing and frozen intake manifests are unchanged; a duplicate amount
+leaf or hidden identity still fails the exact structural checks. This proof alone
+does not establish intake finance-link authority or financial completeness.
 
 GET reads the accepted immutable S1 source and current authority/projection under
 one snapshot. Readiness and reserved server Close share the same source checks:

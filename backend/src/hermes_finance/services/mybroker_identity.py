@@ -341,6 +341,7 @@ def stage_identity(
     account_bindings: list[dict],
     confirmation_digest: str,
     incomplete_draft: bool = False,
+    repeated_occurrences: bool = False,
     instrument_decisions: list[dict] | None = None,
 ) -> dict:
     """Stage one batch inside the caller's SQLite transaction, never commit it.
@@ -356,7 +357,12 @@ def stage_identity(
         raise MyBrokerError("session_has_pending_changes")
     if session.get_bind().dialect.name != "sqlite":
         raise MyBrokerError("sqlite_writer_required")
-    evidence = parse_identity(document, filename, incomplete_draft=incomplete_draft)
+    evidence = parse_identity(
+        document,
+        filename,
+        incomplete_draft=incomplete_draft,
+        repeated_occurrences=repeated_occurrences,
+    )
     session.execute(
         update(MyBrokerImport).where(MyBrokerImport.id == -1).values(id=MyBrokerImport.id)
     )

@@ -291,7 +291,9 @@ def _visited(node, prefix, allowed, attrs, *, exact_attrs=False):
     )
 
 
-def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | None:
+def draft_structure_exceptions(
+    document: bytes, source: dict, *, repeated_occurrences: bool = False
+) -> list[str] | None:
     """Return classifications only if ALL unparsed content is bounded here.
 
     Called only after authoritative S1 parsing. None is a hard identity blocker.
@@ -351,11 +353,16 @@ def draft_structure_exceptions(document: bytes, source: dict) -> list[str] | Non
     money_facts = [
         tuple(sorted((k, v) for k, v in row.items() if k != "ordinal")) for row in source["money"]
     ]
-    if len(money_facts) != len(set(money_facts)) or any(
+    repeated_money = len(money_facts) != len(set(money_facts))
+    if (repeated_money and not repeated_occurrences) or any(
         not _number(row["amount"]) for row in source["money"]
     ):
         return None
-    exceptions = []
+    # Repeated complete rn occurrences do not hide instrument identity. They
+    # remain unresolved Money, each with its original ordinal. The exact tree
+    # checks below still reject repeated amount leaves/hidden rows. Default v1
+    # behavior is frozen for existing source-intake manifests.
+    exceptions = ["money_occurrences_unresolved"] if repeated_money else []
     for outer in _PATHS:
         wrapper = root.find("m:" + outer, NS)
         if (

@@ -53,6 +53,35 @@ SHAPES = {
         "locator": "/m:Report/m:Trades4/m:Report[@Name='5_UFSR']/m:Tablix1/m:Details_Collection/m:Details",
     },
 }
+BOOKKEEPING = {
+    "section": "source_bookkeeping",
+    "status": "READY_SAFE_STRUCTURE",
+    "pattern": "original_bound_bookkeeping_v1",
+    "financial_authority": "none",
+}
+
+
+def _shape(section):
+    return BOOKKEEPING if section == "source_bookkeeping" else SHAPES[section]
+
+
+def _valid_bookkeeping(proof, original_sha):
+    return bool(
+        isinstance(proof, dict)
+        and set(proof) == {"contract", "document_sha256", "source_digest", "exceptions"}
+        and proof["contract"] == "broker-source-bookkeeping-structure-v1"
+        and proof["document_sha256"] == original_sha
+        and isinstance(proof["source_digest"], str)
+        and len(proof["source_digest"]) == 64
+        and isinstance(proof["exceptions"], list)
+        and bool(proof["exceptions"])
+        and set(proof["exceptions"])
+        <= {
+            "positions_tax_footer_unresolved",
+            "money_controls_unresolved",
+            "money_occurrences_unresolved",
+        }
+    )
 
 
 def _source_digest(source):
@@ -73,14 +102,15 @@ def validated_proof(receipt):
     """Validate a known variant before any consumer interprets its fields."""
     p = journal.payload(receipt)
     try:
-        if set(p) != {
+        expected_keys = {
             "contract_version",
             "intent",
             "bindings",
             "sections",
             "authority_token",
             "dependency_digest",
-        }:
+        }
+        if set(p) not in (expected_keys, expected_keys | {"source_bookkeeping"}):
             return None
         if p["contract_version"] != CONTRACT:
             return None
@@ -92,10 +122,16 @@ def validated_proof(receipt):
         ) != (receipt.import_id, receipt.account_id, receipt.reporting_month_id):
             return None
         if canonical(p["sections"]) != canonical(
-            [SHAPES[s.section] for s in sorted(intent.sections, key=lambda s: s.section)]
+            [_shape(s.section) for s in sorted(intent.sections, key=lambda s: s.section)]
         ):
             return None
         b = p["bindings"]
+        has_bookkeeping = any(s.section == "source_bookkeeping" for s in intent.sections)
+        if has_bookkeeping != ("source_bookkeeping" in p) or (
+            has_bookkeeping
+            and not _valid_bookkeeping(p["source_bookkeeping"], b["original_sha256"])
+        ):
+            return None
         SectionBindings.model_validate(b)
         if set(b) != {
             "base_request_id",
@@ -220,7 +256,7 @@ def _heads(session, source_id, account_id, month_id):
             .execution_options(populate_existing=True)
         )
     )
-    histories = {s: {} for s in SHAPES}
+    histories = {s: {} for s in [*SHAPES, "source_bookkeeping"]}
     for row in rows:
         kind = journal.kind(row)
         if kind == "invalid":
@@ -273,6 +309,10 @@ def _valid_current(session, row, p):
     ):
         return False
     b = p["bindings"]
+    if "source_bookkeeping" in p and p["source_bookkeeping"]["source_digest"] != digest(
+        json.loads(source.normalized_json)
+    ):
+        return False
     if (
         journal.payload(base)["source_digest"] != b["source_digest"]
         or journal.payload(base)["projection_digest"] != b["base_projection"]
@@ -291,7 +331,7 @@ def disposition(session, source, account_id, month_id, codes):
     """Called at source grain BEFORE blocker union. No other code is removed."""
     heads, errors = _heads(session, source.id, account_id, month_id)
     removed = {
-        f"{section}_unsupported"
+        "unparsed_source_rows" if section == "source_bookkeeping" else f"{section}_unsupported"
         for section, (row, p) in heads.items()
         if _valid_current(session, row, p)
     }
@@ -484,7 +524,11 @@ def _plan(session, intent, document, filename):
     bindings = effective_bindings(session, source)
     if bindings != json.loads(source.mappings_json) or resolve(session, source):
         blockers.add("source_disposition_changed")
-    identity = mybroker_identity._prepare(session, parse_identity(document, filename), [])
+    identity = mybroker_identity._prepare(
+        session,
+        parse_identity(document, filename, incomplete_draft=True, repeated_occurrences=True),
+        [],
+    )
     blockers.update(identity["conflicts"])
     if not identity["can_stage"] or any(
         b["hermes_id"] != intent.account_id or b["mapping_id"] is None for b in identity["accounts"]
@@ -497,9 +541,24 @@ def _plan(session, intent, document, filename):
     heads, errors = _heads(session, source.id, intent.account_id, intent.reporting_month_id)
     blockers.update(errors)
     for decision in intent.sections:
-        observed = next(s for s in metadata["sections"] if s["section"] == decision.section)
-        if {**observed, "locator": SHAPES[decision.section]["locator"]} != SHAPES[decision.section]:
-            blockers.add("section_structure_unsupported")
+        if decision.section == "source_bookkeeping":
+            from hermes_finance.statement_import.mybroker_draft_structure import (
+                draft_structure_exceptions,
+            )
+
+            structure = draft_structure_exceptions(document, stored, repeated_occurrences=True)
+            if not structure or not set(structure) <= {
+                "positions_tax_footer_unresolved",
+                "money_controls_unresolved",
+                "money_occurrences_unresolved",
+            }:
+                blockers.add("section_structure_unsupported")
+        else:
+            observed = next(s for s in metadata["sections"] if s["section"] == decision.section)
+            if {**observed, "locator": SHAPES[decision.section]["locator"]} != SHAPES[
+                decision.section
+            ]:
+                blockers.add("section_structure_unsupported")
         head = heads.get(decision.section)
         if decision.expected_predecessor != (head[0].request_id if head else None):
             blockers.add("section_predecessor_conflict")
@@ -509,10 +568,17 @@ def _plan(session, intent, document, filename):
         "contract_version": CONTRACT,
         "intent": _intent(intent),
         "bindings": _bindings(session, base, source, hashlib.sha256(filename.encode()).hexdigest()),
-        "sections": [SHAPES[s.section] for s in sorted(intent.sections, key=lambda s: s.section)],
+        "sections": [_shape(s.section) for s in sorted(intent.sections, key=lambda s: s.section)],
         "authority_token": _authority_token(session, base),
         "dependency_digest": broker_months._dependencies(session),
     }
+    if any(s.section == "source_bookkeeping" for s in intent.sections):
+        p["source_bookkeeping"] = {
+            "contract": "broker-source-bookkeeping-structure-v1",
+            "document_sha256": source.document_sha256,
+            "source_digest": digest(stored),
+            "exceptions": structure or [],
+        }
     return {
         "proof": p,
         "confirmation_digest": digest(p),
