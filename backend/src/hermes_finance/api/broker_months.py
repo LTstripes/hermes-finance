@@ -15,6 +15,7 @@ from hermes_finance.api.source_intake import router as intake_router
 from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.broker_money import (
+    BrokerBonusReview,
     MoneyConfirmation,
     MoneyConfirmationV2,
     MoneyIntent,
@@ -138,6 +139,7 @@ class Confirmation(Intent):
 class StatementEvidenceIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     base_request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    broker_bonuses: list[BrokerBonusReview] = Field(default_factory=list, max_length=1)
 
 
 class StatementEvidenceConfirmation(StatementEvidenceIntent):
@@ -156,7 +158,10 @@ async def statement_evidence_preview(
     try:
         requested = StatementEvidenceIntent.model_validate_json(intent)
         return preview_statement_evidence(
-            session, requested.base_request_id, (file.filename or "", await _bytes(file))
+            session,
+            requested.base_request_id,
+            (file.filename or "", await _bytes(file)),
+            broker_bonuses=requested.broker_bonuses,
         )
     except (ValidationError, MyBrokerError, ValueError) as error:
         raise HTTPException(
@@ -183,6 +188,7 @@ async def statement_evidence_apply(
             (file.filename or "", await _bytes(file)),
             request_id=requested.request_id,
             confirmation_digest=requested.confirmation_digest,
+            broker_bonuses=requested.broker_bonuses,
         )
     except ValidationError:
         raise HTTPException(422, "statement_evidence_confirmation_invalid") from None

@@ -136,6 +136,20 @@ class AccountFeeDecision(StrictModel):
     operation: Literal["accept"] = "accept"
 
 
+class BrokerBonusReview(StrictModel):
+    """Explicit review of one exact posted row; no client economic replacement."""
+
+    seed: MoneyOccurrence
+    row_fingerprint: Digest
+    reference: Label
+    confirmed_broker_bonus: bool = Field(default=False, strict=True)
+
+
+class BrokerBonusDecision(BrokerBonusReview):
+    role: Literal["broker_bonus"] = "broker_bonus"
+    operation: Literal["accept"] = "accept"
+
+
 class MoneyIntentV3(StrictModel):
     """Server-compiled typed statement evidence; no standalone client Apply."""
 
@@ -143,12 +157,14 @@ class MoneyIntentV3(StrictModel):
     base_request_id: Label
     reporting_month_id: int = Field(gt=0, strict=True)
     account_id: int = Field(gt=0, strict=True)
-    money_decisions: list[MoneyDecision | AccountFeeDecision] = Field(
+    money_decisions: list[MoneyDecision | AccountFeeDecision | BrokerBonusDecision] = Field(
         default_factory=list, max_length=1000
     )
 
     @model_validator(mode="after")
     def statement_roles_only(self):
-        if any(d.role not in {"trade", "account_fee"} for d in self.money_decisions):
+        if any(
+            d.role not in {"trade", "account_fee", "broker_bonus"} for d in self.money_decisions
+        ):
             raise ValueError("statement_evidence_cannot_change_payouts_or_owner_capital")
         return self

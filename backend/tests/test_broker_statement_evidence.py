@@ -175,7 +175,9 @@ def add_synthetic_posting(raw, operation, narrative, amount, day="2030-01-20"):
     return ET.tostring(root)
 
 
-def existing_statement(database, *, gift=False):
+def existing_statement(
+    database, *, gift=False, gift_amount="17.23", gift_narrative=None, gift_copies=1
+):
     from test_statement_import_mybroker_metadata import metadata_xml
 
     from hermes_finance.persistence import BrokerMonthApply, Instrument
@@ -201,13 +203,15 @@ def existing_statement(database, *, gift=False):
         "2030-01-22",
     )
     if gift:
-        raw = add_synthetic_posting(
-            raw,
-            "Перевод",
-            "Выплата по поручению клиента в рамках Акция в подарок в соответствии с Правилами проведения акции.",
-            "17.23",
-            "2030-01-23",
-        )
+        for _ in range(gift_copies):
+            raw = add_synthetic_posting(
+                raw,
+                "Перевод",
+                gift_narrative
+                or "Выплата по поручению клиента в рамках Акция в подарок в соответствии с Правилами проведения акции.",
+                gift_amount,
+                "2030-01-23",
+            )
     raw = metadata_xml(raw)
     client = TestClient(create_app(database=database))
     source = _broker_month_apply(client, scope, _broker_month_preview(client, scope, raw), raw)
@@ -268,9 +272,21 @@ def accept_bookkeeping(client, scope, raw, source):
     return intent, preview.json()
 
 
-@pytest.mark.parametrize("gift", [False, True])
+def bonus_review(source):
+    from hermes_finance.statement_import.mybroker import digest
+
+    row = next(r for r in source["accepted"]["document"]["money"] if r["date"] == "2030-01-23")
+    return {
+        "seed": {"import_id": source["import_id"], "section": "money", "ordinal": row["ordinal"]},
+        "row_fingerprint": digest(row),
+        "reference": "synthetic-reviewed-broker-bonus",
+        "confirmed_broker_bonus": True,
+    }
+
+
+@pytest.mark.parametrize("gift,confirmed", [(False, False), (True, False), (True, True)])
 def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_discloses_bonus(
-    database, gift
+    database, gift, confirmed
 ):
     from sqlalchemy import select
 
@@ -278,6 +294,8 @@ def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_disclose
         BrokerMonthApply,
         CashBalance,
         ExecutedTrade,
+        ExternalFlow,
+        HistoricalOwnerFlow,
         InvestmentCashFlow,
         MyBrokerImport,
         PositionSnapshot,
@@ -285,7 +303,15 @@ def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_disclose
     from hermes_finance.services.broker_money import material
 
     client, scope, raw, source = existing_statement(database, gift=gift)
-    models = [CashBalance, ExecutedTrade, InvestmentCashFlow, MyBrokerImport, PositionSnapshot]
+    models = [
+        CashBalance,
+        ExecutedTrade,
+        InvestmentCashFlow,
+        MyBrokerImport,
+        PositionSnapshot,
+        ExternalFlow,
+        HistoricalOwnerFlow,
+    ]
     with database.session_factory() as session:
         before = {
             model.__tablename__: [material(r) for r in session.scalars(select(model))]
@@ -294,6 +320,8 @@ def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_disclose
         source_before = material(session.get(BrokerMonthApply, "synthetic-batch"))
     accept_bookkeeping(client, scope, raw, source)
     request = {"base_request_id": "synthetic-batch"}
+    if confirmed:
+        request["broker_bonuses"] = [bonus_review(source)]
     files = {"file": (FILENAME, raw, "application/xml")}
     preview = client.post(
         "/api/broker-months/statement-evidence/preview",
@@ -318,11 +346,21 @@ def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_disclose
         assert all(t["effective"] for t in result["targets"])
         assert [t["role"] for t in result["targets"]].count("trade") == 2
         assert [t["role"] for t in result["targets"]].count("account_fee") == 1
-        assert result["exceptions"] == (["money_semantics_unsupported"] if gift else [])
+        assert [t["role"] for t in result["targets"]].count("broker_bonus") == int(confirmed)
+        assert result["exceptions"] == (
+            ["money_semantics_unsupported"] if gift and not confirmed else []
+        )
+        if confirmed:
+            assert (
+                next(t["facts"]["amount"] for t in result["targets"] if t["role"] == "broker_bonus")
+                == "17.23"
+            )
     month = scope["reporting_month_id"]
     context = client.get(f"/api/months/{month}/draft-payouts").json()
-    assert context["eligible_positions"] == (0 if gift else 1)
-    assert client.get(f"/api/months/{month}/close-readiness").json()["can_close"] == (not gift)
+    assert context["eligible_positions"] == (0 if gift and not confirmed else 1)
+    assert client.get(f"/api/months/{month}/close-readiness").json()["can_close"] == (
+        not gift or confirmed
+    )
     assert all(
         t["effective"]
         for t in client.get("/api/broker-months/existing-net-payout").json()["targets"]
@@ -477,3 +515,109 @@ def test_statement_evidence_confirmation_is_bound_to_physical_database(database)
         assert _all_month_tables(clone) == before
     finally:
         clone.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unconfirmed",
+        "fingerprint",
+        "wrong_seed",
+        "ordinary_cash",
+        "coupon",
+        "zero",
+        "negative",
+        "duplicate",
+    ],
+)
+def test_bonus_proof_cannot_waive_missing_confirmation_identity_or_source_semantics(database, case):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    fixture = {"gift": True}
+    if case in {"zero", "negative"}:
+        fixture["gift_amount"] = "0.00" if case == "zero" else "-17.23"
+    elif case == "ordinary_cash":
+        fixture["gift_narrative"] = "Incoming money with no reviewed bonus basis"
+    elif case == "coupon":
+        fixture["gift_narrative"] = (
+            'погашение купона 4B02-00-12345-A-001P (Биржевые облигации АО "Synthetic") д.ф.20.01.30'
+        )
+    elif case == "duplicate":
+        fixture["gift_copies"] = 2
+    client, scope, raw, source = existing_statement(database, **fixture)
+    review = bonus_review(source)
+    if case == "unconfirmed":
+        review["confirmed_broker_bonus"] = False
+    elif case == "fingerprint":
+        review["row_fingerprint"] = "0" * 64
+    elif case == "wrong_seed":
+        review["seed"]["import_id"] += 100
+    before = _all_month_tables(database)
+    response = client.post(
+        "/api/broker-months/statement-evidence/preview",
+        files={"file": (FILENAME, raw, "application/xml")},
+        data={
+            "intent": json.dumps({"base_request_id": "synthetic-batch", "broker_bonuses": [review]})
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert _all_month_tables(database) == before
+
+
+@pytest.mark.parametrize("case", ["rollback", "changed_review_replay", "permanent_ownership"])
+def test_bonus_proof_recovery_and_cross_writer_ownership(database, monkeypatch, case):
+    from test_statement_import_mybroker_endpoints import _all_month_tables
+
+    from hermes_finance.services import broker_money
+    from hermes_finance.services.broker_money_ownership import conflicts
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    client, scope, raw, source = existing_statement(database, gift=True)
+    accept_bookkeeping(client, scope, raw, source)
+    request = {"base_request_id": "synthetic-batch", "broker_bonuses": [bonus_review(source)]}
+    files = {"file": (FILENAME, raw, "application/xml")}
+    preview = client.post(
+        "/api/broker-months/statement-evidence/preview",
+        files=files,
+        data={"intent": json.dumps(request)},
+    )
+    assert preview.status_code == 200, preview.text
+    command = {
+        **request,
+        "request_id": "reviewed-bonus-proof",
+        "confirmation_digest": preview.json()["confirmation_digest"],
+    }
+    before = _all_month_tables(database)
+    if case == "rollback":
+        stage = broker_money.stage_money
+
+        def fail_after_stage(*args, **kwargs):
+            stage(*args, **kwargs)
+            raise MyBrokerError("synthetic_bonus_failure")
+
+        monkeypatch.setattr(broker_money, "stage_money", fail_after_stage)
+    saved = client.post(
+        "/api/broker-months/statement-evidence/apply",
+        files=files,
+        data={"confirmation": json.dumps(command)},
+    )
+    assert saved.status_code == (409 if case == "rollback" else 200), saved.text
+    if case == "rollback":
+        assert _all_month_tables(database) == before
+    elif case == "changed_review_replay":
+        after = _all_month_tables(database)
+        command["broker_bonuses"][0]["reference"] = "different-review"
+        replay = client.post(
+            "/api/broker-months/statement-evidence/apply",
+            files=files,
+            data={"confirmation": json.dumps(command)},
+        )
+        assert replay.status_code == 409 and "idempotency_conflict" in replay.text
+        assert _all_month_tables(database) == after
+    else:
+        review = request["broker_bonuses"][0]
+        reference = {**review["seed"], "row_fingerprint": review["row_fingerprint"]}
+        with database.session_factory() as session:
+            assert conflicts(session, [reference], "account_funding", 999)
+            assert conflicts(session, [reference], "coupon", 999)
+            assert conflicts(session, [reference], "trade", 999)

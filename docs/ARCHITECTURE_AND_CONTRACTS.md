@@ -1914,13 +1914,28 @@ settlement, separately posted NKD and bank commission must reconcile exactly wit
 their source dates/currency/direction and complete identifiers. A recognized exact
 daily account commission is owned once at account level, never allocated to trades
 or deducted from closing cash again. Missing/zero/ambiguous basis remains blocked.
-V3 here accepts only trade/account-fee proof: existing v1/v2 payouts and H2 capital
+V3 here accepts trade/account-fee proof and the explicit broker-bonus occurrence
+disposition below: existing v1/v2 payouts and H2 capital
 events cannot be created, replaced or reclassified. Preview is read-only; Apply
 reserves the writer, recomputes the full plan, rejects stale/ABA contexts and
 atomically appends proof/revision/ownership, with exact-key replay and independent
 GET. A compatible backend release must precede any new proof persistence; no
-schema migration or historical receipt rewrite is required. An unsupported broker
-bonus remains an explicit Money/Close exception, never an assumed Owner deposit.
+schema migration or historical receipt rewrite is required.
+
+An optional `broker_bonuses` request selects at most one exact source Money seed,
+row fingerprint, bounded reference and strict affirmative `confirmed_broker_bonus`.
+There are no client amount/date/currency/instrument fields. Server reattachment
+must prove a positive exact RUB unsupported row, no execution linkage, exact
+account/month/source, one complete unambiguous occurrence and no competing owner.
+The existing narrow promo-gift shape is a refusal guard, never automatic financial
+classification. Without explicit confirmation the row remains unresolved. A
+`broker_bonus` journal target owns that immutable occurrence permanently and binds
+the ordinary full preview/physical/currentness context; changed selection conflicts
+on replay, failure rolls back all proof/revision changes. It creates no cash,
+ICF/payout, ExternalFlow, H2 capital, instrument or tax components and leaves
+provisional intake classification unchanged. Paid cash is already in the closing
+balance. This resolves only its Money/bookkeeping obligation; Owner/portfolio cash
+coverage, tax and exact return prerequisites remain independently unknown.
 
 The bounded XML/investment-PDF payout adapter emits ordinary `broker_money_v2`
 intents, not a new writer or receipt format. It requires exact account, period,

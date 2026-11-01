@@ -4,8 +4,12 @@ import json
 from calendar import monthrange
 from datetime import date
 
+from pydantic import ValidationError
+
 from hermes_finance.domain.broker_money import (
     AccountFeeDecision,
+    BrokerBonusDecision,
+    BrokerBonusReview,
     MoneyDecision,
     MoneyIntentV3,
 )
@@ -25,6 +29,48 @@ from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 CONTRACT = "broker-statement-money-evidence-v1"
 BOND = "bond_source_caption_v1"
+
+
+def reviewed_bonus(session, source, inventory, sources, review, raw):
+    """No automatic recognition: confirm only an explicitly selected native row."""
+    from hermes_finance.services.mybroker_money_candidates import _narratives
+    from hermes_finance.services.source_money_classifications import _is_promo_gift
+
+    if not isinstance(review, BrokerBonusReview):
+        review = BrokerBonusReview.model_validate(review)
+    if review.seed.import_id != source.id or not review.confirmed_broker_bonus:
+        raise MyBrokerError("exact_confirmed_broker_bonus_required")
+    reasons = set()
+    observation, refs = money._cohort(inventory, review.seed, sources, reasons)
+    if reasons or observation is None or len(refs) != 1:
+        raise MyBrokerError("broker_bonus_complete_occurrence_required")
+    row = observation["row"]
+    if (
+        review.row_fingerprint != digest(row)
+        or row["kind"] != "unsupported"
+        or observation["trade_identity"] is not None
+        or row["currency"] != "RUB"
+        or observation["amount_minor"] is None
+        or observation["amount_minor"] <= 0
+        or not str(source.covered_from) <= row["date"] <= str(source.covered_to)
+    ):
+        raise MyBrokerError("broker_bonus_source_facts_invalid")
+    # Reuse the existing narrow promo shape as a refusal guard. It grants no
+    # bonus authority by itself and never changes provisional classifications.
+    operation, narrative, _ = list(_narratives(raw))[row["ordinal"]]
+    if digest([operation, narrative]) != observation["narrative_digest"] or not _is_promo_gift(
+        operation, narrative
+    ):
+        raise MyBrokerError("broker_bonus_native_shape_required")
+    target_id = f"{source.id}:{row['ordinal']}"
+    if conflicts(session, refs, "broker_bonus", target_id):
+        raise MyBrokerError("broker_bonus_occurrence_already_owned")
+    model = BrokerBonusDecision(**review.model_dump())
+    return model, {
+        "decision": model.model_dump(mode="json"),
+        "target_id": target_id,
+        "occurrences": refs,
+    }
 
 
 def base_blockers(session, base, *, require_draft):
@@ -77,7 +123,7 @@ def _ref(source, row):
     }
 
 
-def plan_statement_money(session, base, original, *, payouts):
+def plan_statement_money(session, base, original, *, payouts, broker_bonuses=()):
     """Compile only the supplied typed evidence, never client amounts or claims.
 
     Payout identity evidence comes from the existing XML/PDF exact-group reader.
@@ -98,7 +144,7 @@ def plan_statement_money(session, base, original, *, payouts):
         reporting_month_id=base.reporting_month_id,
         account_id=base.account_id,
     )
-    _, sources, blockers = money._union(session, intent, [original])
+    inventory, sources, blockers = money._union(session, intent, [original])
     if blockers or len(sources) != 1:
         raise MyBrokerError("statement_overlapping_originals_review_required")
     decisions, groups, models = [], [], []
@@ -201,6 +247,12 @@ def plan_statement_money(session, base, original, *, payouts):
                 "occurrences": [ref],
             }
         )
+    if len(broker_bonuses) > 1:
+        raise MyBrokerError("one_broker_bonus_review_per_source_required")
+    for review in broker_bonuses:
+        model, decision = reviewed_bonus(session, source, inventory, sources, review, raw)
+        models.append(model)
+        decisions.append(decision)
     intent = intent.model_copy(update={"money_decisions": models})
     statement = {
         "contract_version": CONTRACT,
@@ -239,7 +291,7 @@ def statement_proof_blockers(session, receipt, proof):
     base = session.get(BrokerMonthApply, proof["base_request_id"], populate_existing=True)
     if reasons := base_blockers(session, base, require_draft=False):
         return reasons
-    if any(t.get("role") not in {"trade", "account_fee"} for t in proof["targets"]):
+    if any(t.get("role") not in {"trade", "account_fee", "broker_bonus"} for t in proof["targets"]):
         return ["statement_money_target_role_invalid"]
     statement = proof.get("statement_evidence", {})
     if statement.get("contract_version") != CONTRACT:
@@ -247,6 +299,38 @@ def statement_proof_blockers(session, receipt, proof):
     source = session.get(MyBrokerImport, receipt.import_id, populate_existing=True)
     if not source or statement.get("source_sha256") != source.document_sha256:
         return ["statement_money_source_changed"]
+    for target in proof["targets"]:
+        if target["role"] != "broker_bonus":
+            continue
+        reviews = [
+            d
+            for d in proof["decisions"]
+            if d["role"] == "broker_bonus"
+            and f"{d['seed']['import_id']}:{d['seed']['ordinal']}" == target["target_id"]
+        ]
+        if (
+            len(reviews) != 1
+            or not reviews[0]["confirmed_broker_bonus"]
+            or reviews[0]["row_fingerprint"] != digest(target["facts"])
+        ):
+            return ["broker_bonus_review_changed"]
+        try:
+            review = BrokerBonusDecision.model_validate(reviews[0])
+        except (ValidationError, TypeError):
+            return ["broker_bonus_review_changed"]
+        bonus_refs = [
+            o
+            for o in proof["occurrences"]
+            if o["role"] == "broker_bonus" and o["target_id"] == target["target_id"]
+        ]
+        if (
+            len(bonus_refs) != 1
+            or review.seed.import_id != source.id
+            or {k: bonus_refs[0][k] for k in ("import_id", "section", "ordinal")}
+            != review.seed.model_dump()
+            or bonus_refs[0]["row_fingerprint"] != review.row_fingerprint
+        ):
+            return ["broker_bonus_occurrence_changed"]
     for old in statement.get("instruments", []):
         if money.material(session.get(Instrument, int(old["id"]), populate_existing=True)) != old:
             return ["statement_money_instrument_changed"]
@@ -287,7 +371,7 @@ def effective_statement_occurrence(session, source_id, row):
             continue
         for target in proof["targets"]:
             if (
-                target["role"] != "account_fee"
+                target["role"] not in {"account_fee", "broker_bonus"}
                 or target["target_id"] != f"{source_id}:{row['ordinal']}"
             ):
                 continue

@@ -51,11 +51,11 @@ def owners(session, occurrences):
             continue
         proof = journal.payload(receipt)
         for occurrence in proof["occurrences"]:
-            if occurrence["role"] == "account_fee" and key(occurrence) in keys:
+            if occurrence["role"] in {"account_fee", "broker_bonus"} and key(occurrence) in keys:
                 result.append(
                     {
                         "key": list(key(occurrence)),
-                        "role": "account_fee",
+                        "role": occurrence["role"],
                         "target_id": occurrence["target_id"],
                         "row_fingerprint": occurrence["row_fingerprint"],
                     }

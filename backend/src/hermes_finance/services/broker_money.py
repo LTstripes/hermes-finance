@@ -110,7 +110,7 @@ def latest_proofs(session):
 
 
 def _target(session, role, target_id):
-    if role == "account_fee":
+    if role in {"account_fee", "broker_bonus"}:
         import_id, ordinal = map(int, target_id.split(":"))
         source = session.get(MyBrokerImport, import_id, populate_existing=True)
         row = (
@@ -1033,7 +1033,7 @@ def read_money(session, request_id):
 def stage_money(session, intent, plan, base, *, request_id, fingerprint, confirmation_digest):
     """Stage a revalidated Money plan; caller owns the reserved transaction."""
     if intent.contract_version == CONTRACT_V3 and any(
-        decision["decision"]["role"] not in {"trade", "account_fee"}
+        decision["decision"]["role"] not in {"trade", "account_fee", "broker_bonus"}
         for decision in plan["decisions"]
     ):
         raise MyBrokerError("statement_evidence_cannot_change_payouts_or_owner_capital")
@@ -1101,7 +1101,7 @@ def stage_money(session, intent, plan, base, *, request_id, fingerprint, confirm
         for occurrence in decision["occurrences"]:
             if conflicts(session, [occurrence], role, target_id):
                 raise MyBrokerError("occurrence_already_owned")
-            if role == "account_fee":
+            if role in {"account_fee", "broker_bonus"}:
                 occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
                 continue
             if role == "trade":
