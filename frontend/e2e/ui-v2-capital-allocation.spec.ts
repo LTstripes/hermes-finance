@@ -180,10 +180,11 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(page.getByLabel("Отчётный месяц")).toHaveValue("2");
     const classes = page
       .locator("details")
-      .filter({ has: page.locator("summary", { hasText: "По классам активов" }) })
-      .first();
-    await classes.locator("summary").focus();
-    await expect(classes.locator("summary")).toBeFocused();
+      .filter({ has: page.locator("summary", { hasText: "По классам активов" }) });
+    const classesSummary = classes.locator(":scope > summary");
+    await expect(classesSummary).toHaveCount(1);
+    await classesSummary.focus();
+    await expect(classesSummary).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(classes.getByRole("table", { name: "По классам активов" })).toBeVisible();
     await expect(
@@ -191,19 +192,29 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
         .getByRole("table", { name: "По классам активов" })
         .getByText("Неизвестный класс активов"),
     ).toBeVisible();
-    await expect(classes.getByText(/Покрытие известных групп ниже 100%/)).toBeVisible();
-    await expect(
-      classes.getByText(/уже показана строкой «Неизвестный класс активов»/),
-    ).toBeVisible();
+    await expect(classesSummary).toContainText("покрытие 80");
+    await expect(classes.getByText("⚠ часть сумм не распределена")).toBeVisible();
+    await classes
+      .getByRole("button", { name: "Нераспределённые суммы: По классам активов" })
+      .click();
+    await expect(page.getByRole("tooltip")).toContainText(
+      "Основа долей — полная сумма ликвидных активов. Неизвестные группы входят в неё.",
+    );
+    await page.keyboard.press("Escape");
+    const amounts = classes.locator("details");
+    const amountsSummary = amounts.locator(":scope > summary");
+    await expect(amountsSummary).toHaveText("Подробнее о суммах");
+    await amountsSummary.focus();
+    await page.keyboard.press("Enter");
+    await expect(amounts).toHaveAttribute("open", "");
+    await expect(amounts.locator("dd")).toHaveText(["100 000 ₽", "80 000 ₽", "20 000 ₽"]);
+    await expect(classes.getByRole("table", { name: "По классам активов" })).toBeVisible();
     const redemptions = page
       .locator("details")
-      .filter({ has: page.locator("summary", { hasText: "Погашения" }) })
-      .first();
-    await redemptions.locator("summary").click();
+      .filter({ has: page.locator("summary", { hasText: "Погашения" }) });
+    await redemptions.locator(":scope > summary").click();
     await expect(redemptions.getByText("Погашение облигации")).toBeVisible();
-    await expect(
-      page.getByText(/Погашение основного долга не является пассивным доходом/),
-    ).toBeVisible();
+    await expect(page.getByText(/Погашение — не доход/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
