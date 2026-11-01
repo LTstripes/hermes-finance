@@ -1,4 +1,3 @@
-import type { BrokerReconciliationResponse } from "../../api/brokerReconciliation";
 import type { BrokerPositionRow, BrokerSnapshotPreview } from "../../api/brokerSnapshot";
 import type { GuidedCloseStep } from "../../api/monthCloseWorkflow";
 import { closeOwnerCopy } from "./ownerCopy";
@@ -115,89 +114,6 @@ export function AlfaSnapshotSummary({
         </div>
       ) : null}
       {error ? <span className="muted">Подробности доступны в диагностике панели.</span> : null}
-    </aside>
-  );
-}
-
-const RECONCILIATION_STATES = [
-  "matched",
-  "differs",
-  "missing_local",
-  "missing_provider",
-  "unresolved",
-] as const;
-
-function reconciliationCounts(result: BrokerReconciliationResponse): Record<string, number> {
-  return result.rows.reduce<Record<string, number>>((counts, row) => {
-    counts[row.state] = (counts[row.state] ?? 0) + 1;
-    return counts;
-  }, {});
-}
-
-function reconciliationHasError(result: BrokerReconciliationResponse): boolean {
-  return Boolean(
-    result.error_code ||
-      result.status === "non_applicable" ||
-      result.stale ||
-      result.compatibility_state !== "compatible" ||
-      result.snapshot_status !== "complete",
-  );
-}
-
-export function ReconciliationSummary({
-  result,
-  error,
-}: {
-  result: BrokerReconciliationResponse | null;
-  error: string | null;
-}) {
-  if (!result && !error) return null;
-
-  const counts = result ? reconciliationCounts(result) : {};
-  const attentionCount = RECONCILIATION_STATES.filter((state) => state !== "matched").reduce(
-    (sum, state) => sum + (counts[state] ?? 0),
-    0,
-  );
-  const state =
-    error || (result && reconciliationHasError(result))
-      ? "error"
-      : attentionCount > 0
-        ? "partial"
-        : "success";
-  const copy =
-    state === "error"
-      ? "Сверка не признана применимой. Повтори явную проверку после устранения причины; локальные данные не изменены."
-      : state === "partial"
-        ? `Сверка выполнена: совпадает ${counts.matched ?? 0}, требуют внимания ${attentionCount}. Это только сравнение; данные не изменены.`
-        : "Сверка выполнена: все полученные строки совпадают. Это только сравнение; данные не изменены.";
-
-  return (
-    <aside
-      className="monthly-close__provider-summary"
-      aria-label="Результат сверки Alfa PRO"
-      role="status"
-    >
-      <div className="monthly-close__provider-summary-heading">
-        <strong>Сверка Alfa PRO</strong>
-        <Badge tone={alfaTone(state)}>
-          {state === "success"
-            ? "Совпадает"
-            : state === "partial"
-              ? "Требует внимания"
-              : "Не применима"}
-        </Badge>
-      </div>
-      <p>{copy}</p>
-      {result ? (
-        <div className="monthly-close__provider-summary-grid">
-          <DataValue label="Совпадает" value={counts.matched ?? 0} />
-          <DataValue label="Отличается" value={counts.differs ?? 0} />
-          <DataValue label="Нет локальной позиции" value={counts.missing_local ?? 0} />
-          <DataValue label="Нет позиции у брокера" value={counts.missing_provider ?? 0} />
-          <DataValue label="Не сопоставлено" value={counts.unresolved ?? 0} />
-        </div>
-      ) : null}
-      {error ? <span className="muted">Подробности доступны в диагностике сверки.</span> : null}
     </aside>
   );
 }
