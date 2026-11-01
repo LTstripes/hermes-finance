@@ -8,6 +8,21 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+Emergency follow-up to [#1005](https://github.com/LTstripes/hermes-finance/pull/1005):
+1.9.2 was published and installed at `f7966ac6b4f90e6b4113ec9e6eea009cf2dd2b11`.
+The Owner subsequently observed minute-long month/payment reads and local API
+errors. The process remained alive; repeated financial-proof validation in each
+read exhausted available database connections. October remained DRAFT.
+
+The **1.9.3 correction** reuses pure guard results only within one coherent,
+query-only SQLite snapshot. Every writer and every later snapshot recomputes;
+evidence, unknown values and financial acceptance rules are unchanged. Narrow
+regressions and an original-state read profile cover this correction. The Owner
+requested emergency publication/update without waiting for full suites; external
+repository protection still applies. No financial Apply, Close, reimport or schema
+migration is part of this repair. Publication and actual runtime readback are
+recorded in the correction PR; the dated release-preparation history follows.
+
 The approved favicon is integrated through
 [#1002](https://github.com/LTstripes/hermes-finance/pull/1002), exact main
 `db0f6addf28127b84b85c2b5fdc7adfa46eefd98`, with successful

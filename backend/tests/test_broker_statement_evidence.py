@@ -284,6 +284,71 @@ def bonus_review(source):
     }
 
 
+def test_repeated_snapshot_reads_are_equivalent_and_later_changes_still_block(
+    database, monkeypatch
+):
+    from sqlalchemy import event
+
+    from hermes_finance import database as database_module
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.broker_money import read_money
+
+    client, scope, raw, source = existing_statement(database)
+    accept_bookkeeping(client, scope, raw, source)
+    intent = {"base_request_id": "synthetic-batch"}
+    files = {"file": (FILENAME, raw, "application/xml")}
+    preview = client.post(
+        "/api/broker-months/statement-evidence/preview",
+        files=files,
+        data={"intent": json.dumps(intent)},
+    ).json()
+    response = client.post(
+        "/api/broker-months/statement-evidence/apply",
+        files=files,
+        data={
+            "confirmation": json.dumps(
+                {
+                    **intent,
+                    "request_id": "cached-evidence",
+                    "confirmation_digest": preview["confirmation_digest"],
+                }
+            )
+        },
+    )
+    assert response.status_code == 200, response.text
+    selects = []
+
+    def count(_connection, _cursor, statement, *_args):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(True)
+
+    event.listen(database.engine, "before_cursor_execute", count)
+    try:
+        with database.session_factory() as session, coherent_read_snapshot(session):
+            first = read_money(session, "cached-evidence")
+            first_count = len(selects)
+            again = read_money(session, "cached-evidence")
+            repeated_count = len(selects) - first_count
+            assert first == again
+            assert all(t["effective"] for t in first["targets"])
+            assert repeated_count * 3 < first_count
+            with monkeypatch.context() as uncached:
+                uncached.setattr(
+                    database_module, "snapshot_read_result", lambda s, n, k, build: build()
+                )
+                assert read_money(session, "cached-evidence") == first
+        with database.session_factory() as writer:
+            writer.get(Instrument, 1).name = "Changed after the snapshot"
+            writer.commit()
+        with database.session_factory() as reader:
+            changed = read_money(reader, "cached-evidence")
+            assert not all(t["effective"] for t in changed["targets"])
+            assert "statement_money_instrument_changed" in changed["exceptions"]
+    finally:
+        event.remove(database.engine, "before_cursor_execute", count)
+
+
 @pytest.mark.parametrize("gift,confirmed", [(False, False), (True, False), (True, True)])
 def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_discloses_bonus(
     database, gift, confirmed

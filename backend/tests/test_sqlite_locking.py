@@ -24,6 +24,50 @@ from hermes_finance.services.reporting_months import create_reporting_month
 SQLITE_DEFAULT_BUSY_TIMEOUT_MS = 5_000
 
 
+def test_snapshot_results_do_not_leak_across_failed_reads_or_writes(tmp_path: Path) -> None:
+    from hermes_finance.database import snapshot_read_result
+
+    database = create_database(tmp_path / "snapshot-result-lifetime.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with database.session_factory() as session:
+            month = create_reporting_month(
+                session, year=2030, month=5, snapshot_date=date(2030, 5, 31)
+            )
+            month_id = month.id
+            calls = []
+
+            def read():
+                calls.append(True)
+                return {"status": session.get(ReportingMonth, month_id).status, "items": []}
+
+            with pytest.raises(RuntimeError, match="aborted read"):
+                with coherent_read_snapshot(session):
+                    result = snapshot_read_result(session, "month", month_id, read)
+                    result["items"].append("caller mutation")
+                    with coherent_read_snapshot(session):
+                        assert snapshot_read_result(session, "month", month_id, read)["items"] == []
+                    assert len(calls) == 1
+                    raise RuntimeError("aborted read")
+            # Neither the failed read nor a prior value can certify a writer.
+            month = session.get(ReportingMonth, month_id)
+            month.status = "closed"
+            assert snapshot_read_result(session, "month", month_id, read)["status"] == "closed"
+            session.commit()
+            with coherent_read_snapshot(session):
+                assert snapshot_read_result(session, "month", month_id, read)["status"] == "closed"
+                assert len(calls) == 3
+            with coherent_read_snapshot(session):
+                snapshot_read_result(session, "month", month_id, read)
+                assert len(calls) == 4
+        with database.session_factory() as other, coherent_read_snapshot(other):
+            assert snapshot_read_result(other, "month", month_id, lambda: {"fresh": True}) == {
+                "fresh": True
+            }
+    finally:
+        database.engine.dispose()
+
+
 def test_new_coherent_snapshot_expires_previously_loaded_orm_state(tmp_path: Path) -> None:
     database = create_database(tmp_path / "stale-identity-map.db")
     Base.metadata.create_all(database.engine)

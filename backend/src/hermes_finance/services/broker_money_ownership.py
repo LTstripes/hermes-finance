@@ -16,6 +16,17 @@ def key(row):
 
 
 def owners(session, occurrences):
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_money_occurrence_owners",
+        tuple(sorted({key(o) for o in occurrences})),
+        lambda: _owners(session, occurrences),
+    )
+
+
+def _owners(session, occurrences):
     keys = {key(o) for o in occurrences}
     result = []
     for model, role, field in (
