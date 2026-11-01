@@ -892,6 +892,15 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         "test_payout_draft_refresh.py",
         "test_ai_analysis_bundle_source_returns.py",
     }
+    # New A coverage must not rebalance the historical A/B file roster; the
+    # split weight tables intentionally describe those existing groups.
+    added_a = {"test_broker_intake_reconciliation.py"}
+    if relative_path.as_posix() in added_a:
+        return (
+            "ci_integrations_a"
+            if CI_INTEGRATIONS_SHARD_WEIGHTS.get(relative_path.as_posix(), 0) > 0
+            else None
+        )
     if relative_path.as_posix() in added:
         return (
             "ci_integrations_b"
@@ -900,7 +909,11 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         )
     return _weighted_shard(
         relative_path.as_posix(),
-        {key: value for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items() if key not in added},
+        {
+            key: value
+            for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items()
+            if key not in added | added_a
+        },
         CI_INTEGRATIONS_SHARD_MARKERS,
     )
 
