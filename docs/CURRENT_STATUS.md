@@ -1,12 +1,23 @@
 # Current state, limitations and next actions
 
-Updated **2026-10-31**. This is the sole changing project status book. Current source
+Updated **2026-11-01**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
 are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
+
+The approved favicon is integrated through
+[#1002](https://github.com/LTstripes/hermes-finance/pull/1002), exact main
+`db0f6addf28127b84b85c2b5fdc7adfa46eefd98`, with successful
+[push CI41297584777](https://github.com/LTstripes/hermes-finance/actions/runs/41297584777).
+The separate `1.9.1` candidate adds only a pinned read-compatibility transition
+for valid `1.9.0` investment proofs, version metadata and release notes. C3 owns
+the narrow exception and unchanged source/currentness guards. Publication,
+integration and installation of this new candidate remain separate decisions;
+Stable remains at the released identity below. No Owner proof or financial data
+has been changed by this preparation.
 
 **Released and installed: [v1.9.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.9.0),
 `42439193f1140a93fd4f6ed74e04e846187615d3`.**
