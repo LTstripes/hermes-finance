@@ -1195,6 +1195,242 @@ def saved_investment_preview(database, monkeypatch):
     return result
 
 
+METADATA_PREDECESSOR = "52873e49d0a0655af1a96e6be1631c522bbca00e76ee9bd8ef09bfb5fe9ddb9e"
+
+
+def save_implementation_proof(database, monkeypatch, implementation, request_id):
+    """Issue synthetic evidence with the unchanged prior snapshot grammar."""
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_implementation_digest", lambda: implementation)
+        preview = saved_investment_preview(database, patch)
+        intent = {k: preview["persistence"][k] for k in ("form_token", "preview_digest")}
+        with database.session_factory() as session:
+            ack = proofs.confirm(session, **intent, request_id=request_id, replace_existing=True)
+            assert ack["current"]
+            reports = proofs.read_reports(session)
+    return reports
+
+
+def test_metadata_release_preserves_old_proof_results_without_writes(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.returns_view import read_overview
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    current = proofs._implementation_digest()
+    assert current != METADATA_PREDECESSOR
+    assert proofs._metadata_predecessor(current) == METADATA_PREDECESSOR
+    original = save_implementation_proof(
+        database, monkeypatch, METADATA_PREDECESSOR, "metadata-original"
+    )
+    before = snapshot(database)
+    before_bytes = database.database_path.read_bytes()
+    statements = []
+
+    def observe(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lstrip().split()[0].upper())
+
+    event.listen(database.engine, "before_cursor_execute", observe)
+    try:
+        proofs.FORMS.entries.clear()
+        with database.session_factory() as session:
+            assert proofs.read_reports(session) == original
+            assert proofs.request_status(session, "metadata-original")["current"]
+            result = read_instrument_returns(session, source_account=ACCOUNT)
+            assert result.instruments[0].analysis.pnl.value == 9000
+            assert result.instruments[0].analysis.modified_dietz.value is not None
+            view = read_overview(
+                session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
+            )
+            assert view["selected"]["pnl"]["value"] == "9000"
+            assert view["instruments"][0]["pnl"]["value"] == "9000"
+    finally:
+        event.remove(database.engine, "before_cursor_execute", observe)
+    assert not {"INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "ALTER", "DROP"} & set(
+        statements
+    )
+    assert snapshot(database) == before
+    assert database.database_path.read_bytes() == before_bytes
+
+
+@pytest.mark.parametrize("predecessor", ["0" * 64, "f" * 64])
+def test_metadata_release_rejects_unknown_prior_implementation(database, monkeypatch, predecessor):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    save_implementation_proof(database, monkeypatch, predecessor, "unknown-code")
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == "stale" and report["interval"] is None
+        assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+    assert snapshot(database) == before
+
+
+def test_metadata_release_new_proofs_remain_strict_and_transition_is_not_reversible(
+    database, monkeypatch
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    original = save_implementation_proof(
+        database, monkeypatch, proofs._implementation_digest(), "new-code"
+    )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert proofs.read_reports(session) == original
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_implementation_digest", lambda: METADATA_PREDECESSOR)
+        with database.session_factory() as session:
+            report = proofs.read_reports(session)[0]
+            assert report["status"] == "stale" and report["interval"] is None
+    assert snapshot(database) == before
+
+
+def test_metadata_release_does_not_admit_pending_old_writer_form(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_return_proofs import ProofError
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_implementation_digest", lambda: METADATA_PREDECESSOR)
+        preview = saved_investment_preview(database, patch)["persistence"]
+    before = snapshot(database)
+    with database.session_factory() as session:
+        with pytest.raises(ProofError, match="investment_proof_dependencies_changed"):
+            proofs.confirm(
+                session,
+                **{k: preview[k] for k in ("form_token", "preview_digest")},
+                request_id="old-pending-form",
+            )
+    assert snapshot(database) == before
+
+
+def test_metadata_release_latest_stale_proof_has_no_older_compatible_fallback(
+    database, monkeypatch
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.returns_view import read_overview
+
+    original = save_implementation_proof(
+        database, monkeypatch, METADATA_PREDECESSOR, "old-compatible"
+    )
+    latest = save_implementation_proof(database, monkeypatch, "f" * 64, "latest-unknown")
+    assert latest[0]["proof_id"] != original[0]["proof_id"]
+    before = snapshot(database)
+    with database.session_factory() as session:
+        reports = proofs.read_reports(session)
+        assert len(reports) == 1 and reports[0]["proof_id"] == latest[0]["proof_id"]
+        assert reports[0]["status"] == "stale" and reports[0]["interval"] is None
+        view = read_overview(
+            session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
+        )
+        assert view["selected"]["pnl"]["value"] is None
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("operation", ["copy", "replace"])
+def test_metadata_release_preserves_physical_database_binding(
+    database, monkeypatch, tmp_path, operation
+):
+    from shutil import copyfile
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.source_proof_file import file_incarnation
+
+    save_implementation_proof(database, monkeypatch, METADATA_PREDECESSOR, "physical-original")
+    before = snapshot(database)
+    identity = file_incarnation(database.database_path)
+    database.engine.dispose()
+    destination = tmp_path / "synthetic-replacement.db"
+    copyfile(database.database_path, destination)
+    if operation == "replace":
+        destination.replace(database.database_path)
+        destination = database.database_path
+    assert file_incarnation(destination) != identity
+    replacement = create_database(destination)
+    try:
+        with replacement.session_factory() as session:
+            report = proofs.read_reports(session)[0]
+            assert report["status"] == "stale" and report["interval"] is None
+        assert snapshot(replacement) == before
+    finally:
+        replacement.engine.dispose()
+
+
+@pytest.mark.parametrize("change", ["helper", "add", "delete", "version", "verifier"])
+def test_metadata_release_rejects_any_unreviewed_python_change(
+    database, monkeypatch, tmp_path, change
+):
+    from pathlib import Path
+
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    save_implementation_proof(database, monkeypatch, METADATA_PREDECESSOR, "code-original")
+    package = Path(proofs.__file__).resolve().parents[1]
+    copied = tmp_path / "synthetic-package"
+    for source in package.rglob("*.py"):
+        target = copied / source.relative_to(package)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+    policy = Path(proofs.__file__).with_name("source_investment_proofs_1_9_1.json")
+    (copied / "services" / policy.name).write_bytes(policy.read_bytes())
+    current = proofs._implementation_digest()
+    monkeypatch.setattr(proofs, "__file__", str(copied / "services/source_investment_proofs.py"))
+    assert proofs._implementation_digest() == current
+    target = {
+        "helper": copied / "statement_import/mybroker.py",
+        "add": copied / "synthetic_added.py",
+        "delete": copied / "statement_import/mybroker.py",
+        "version": copied / "__init__.py",
+        "verifier": copied / "services/source_investment_proofs.py",
+    }[change]
+    if change == "delete":
+        target.unlink()
+    else:
+        target.write_bytes((target.read_bytes() if target.exists() else b"") + b"\n# changed\n")
+    assert proofs._implementation_digest() != current
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == "stale" and report["interval"] is None
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["missing", "json", "duplicate", "extra", "predecessor", "reverse", "target", "array", "large"],
+)
+def test_metadata_release_policy_fails_closed(tmp_path, monkeypatch, invalid):
+    import json
+
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    current = proofs._implementation_digest()
+    assert proofs._metadata_predecessor(current) == METADATA_PREDECESSOR
+    monkeypatch.setattr(proofs, "__file__", str(tmp_path / "source_investment_proofs.py"))
+    edge = {"predecessor": METADATA_PREDECESSOR, "successor": current}
+    if invalid == "extra":
+        edge["also_accept"] = "f" * 64
+    elif invalid == "predecessor":
+        edge["predecessor"] = "f" * 64
+    elif invalid == "reverse":
+        edge = {"predecessor": current, "successor": METADATA_PREDECESSOR}
+    elif invalid == "target":
+        edge["successor"] = "f" * 64
+    text = json.dumps(edge)
+    if invalid == "duplicate":
+        text = text[:-1] + ', "successor": "' + current + '"}'
+    elif invalid == "json":
+        text = "{"
+    elif invalid == "array":
+        text = json.dumps(list(edge.items()))
+    elif invalid == "large":
+        text += " " * 512
+    if invalid != "missing":
+        (tmp_path / "source_investment_proofs_1_9_1.json").write_text(text, encoding="utf-8")
+    assert proofs._metadata_predecessor(current) is None
+
+
 def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database, monkeypatch):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.returns_view import read_overview
@@ -1237,19 +1473,21 @@ def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database,
 
 
 @pytest.mark.parametrize("mutation", ["classification", "aba", "overlap"])
-def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mutation):
+@pytest.mark.parametrize("prior_implementation", [None, METADATA_PREDECESSOR])
+def test_investment_persistent_currentness_no_fallback(
+    database, monkeypatch, mutation, prior_implementation
+):
     from hermes_finance.persistence import SourceMoneyClassification
     from hermes_finance.services import source_intake
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_instrument_returns import read_instrument_returns
 
-    preview = saved_investment_preview(database, monkeypatch)["persistence"]
-    with database.session_factory() as session:
-        proofs.confirm(
-            session,
-            **{k: preview[k] for k in ("form_token", "preview_digest")},
-            request_id="proof-currentness",
-        )
+    save_implementation_proof(
+        database,
+        monkeypatch,
+        prior_implementation or proofs._implementation_digest(),
+        "proof-currentness",
+    )
     if mutation == "overlap":
         root = ET.fromstring(investment_original())
         root.set("synthetic", "overlap")

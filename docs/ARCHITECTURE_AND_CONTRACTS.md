@@ -2325,7 +2325,9 @@ The bounded single-use server form binds exact source hash/filename/parser and
 frozen manifest, native account, declared interval, current classifications,
 meaningful source decisions, overlapping source membership, physical database
 incarnation and the backend Python implementation (including transitive financial
-helpers). Any backend code change conservatively retires this profile. Scoped monotonic classification tokens detect
+helpers). Backend code changes conservatively retire this profile, except the
+single directed, reviewed `1.9.0` to `1.9.1` metadata-release transition below.
+Scoped monotonic classification tokens detect
 ABA/deletion/reinsertion; unrelated later intervals and no-change XML resaves do
 not retire the proof. Legacy unscoped dependency tokens remain conservative.
 Under the held SQLite writer reservation, confirmation revalidates every account
@@ -2339,9 +2341,26 @@ instrument and Returns readers derive results afresh from retained XML Money
 and typed evidence after Reload. Latest proof only, with no numeric fallback
 when stale. Historical outer endpoints cannot supply interior monthly EOD.
 Exact full-month proofs can supply that month's existing estimate; a complete
-from-zero proof supplies its exact historical interval. Any code/dependency or
-database-incarnation change requires fresh original Preview and confirmation.
+from-zero proof supplies its exact historical interval. Any unsupported code,
+dependency or database-incarnation change requires fresh original Preview and confirmation.
 No prepared valuation packet is activated by these routes.
+
+For this one release, `source_investment_proofs_1_9_1.json` is a reviewed package
+artifact containing the exact predecessor and successor implementation digests.
+The predecessor is also pinned in the verifier. The successor must match the
+raw digest of **every** running package Python file, including the version and
+verifier; there is no file exclusion, version pattern, configurable override,
+transition chain or signature claim. Missing, malformed, ambiguous or mismatched
+policy leaves the strict gate in place. A different release needs its own decision.
+
+Read-only validation first checks the current dependency digest. Only for that
+exact transition may it also reconstruct the predecessor digest from **all live**
+physical-file, source, classification, monotonic-clock and native-scope operands.
+The saved evidence digest and native binding must still match. Unknown code,
+source changes, classification ABA, a copied/replaced database and a stale latest
+proof remain unavailable; an older proof is never selected as fallback. No saved
+proof is rewritten, re-attested or automatically replaced. New Preview/confirmation
+uses the current implementation identity; old issued forms are not transferable.
 
 Actual XML Money is counted once. PDF payout rows corroborate ISIN via whole
 account/kind/payment-day/currency/registration groups and exact net sums, with a
