@@ -6,7 +6,6 @@ import { listMonths } from "../api/months";
 import {
   getRiskAllocation,
   type RiskAllocationMetric,
-  type RiskAllocationResponse,
   type RiskConcentrationMetric,
   type RiskConcentrationItem,
   type RiskMetricSupport,
@@ -14,7 +13,7 @@ import {
   type RiskSupportIssue,
 } from "../api/riskAllocation";
 import type { ReportingMonth } from "../api/types";
-import { Table, Td, Th } from "../components/ui";
+import { HelpTip, Table, Td, Th } from "../components/ui";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
 import {
   ASSET_CLASS_LABELS,
@@ -24,20 +23,12 @@ import {
 } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
-import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
 import pageStyles from "./UiV2Page.module.css";
 import styles from "./UiV2CapitalAllocation.module.css";
 
 const TOP_N = 5;
-
-const UNSUPPORTED_DIMENSIONS: Record<string, string> = {
-  issuer: "Эмитент",
-  currency: "Валюта",
-  maturity: "Срок погашения",
-  broker: "Брокер",
-  bank: "Банк",
-};
 
 function selectedMonth(values: string[], months: ReportingMonth[]): ReportingMonth | null {
   if (values.length === 0) return sortReportingMonths(months)[0] ?? null;
@@ -75,7 +66,7 @@ function Limits({
   if (!approximate && support.reason_codes.length === 0 && excluded.length === 0) return null;
   return (
     <div className={styles.limits}>
-      {approximate ? <p>Часть сумм приблизительна по сохранённым данным.</p> : null}
+      {approximate ? <p>Часть сумм приблизительна</p> : null}
       {support.reason_codes.length > 0 ? (
         <ul>
           {support.reason_codes.map((reason) => (
@@ -115,74 +106,43 @@ export function Allocation({
   expanded?: boolean;
   onSelect?: (key: string, label: string) => void;
 }) {
-  if (!metric)
-    return <UiV2Notice title={`${title}: нет ответа`}>Срез отсутствует в ответе.</UiV2Notice>;
-  const zeroDenominator = /^0+(?:\.0+)?$/.test(metric.denominator.amount);
-  const undefinedCoverage = metric.coverage_pct === null && !zeroDenominator;
+  if (!metric) return <UiV2WidgetState title={`${title}: нет данных`} />;
   const partialCoverage = metric.coverage_pct !== null && metric.coverage_pct !== "100.00";
-  const includedUnallocated = metric.items.find(
-    (item) => item.key === "unknown_asset_class" || item.key === "unassigned_cash",
-  );
   return (
     <details className={styles.metric} open={expanded || undefined}>
       <summary>
         <span className={styles.metricName}>{title}</span>
-        <span>
-          {metric.items.length} групп ·{" "}
-          {zeroDenominator && metric.coverage_pct === null
-            ? "нулевая основа, доля не определяется"
-            : metric.coverage_pct === null
-              ? "покрытие неизвестно"
-              : `покрытие известных групп ${percent(metric.coverage_pct)}`}
-        </span>
+        {partialCoverage ? <span>покрытие {percent(metric.coverage_pct)}</span> : null}
         <Support support={metric.support} />
       </summary>
       <div className={styles.metricBody}>
-        {zeroDenominator && metric.coverage_pct === null ? (
-          <p className={styles.intro}>При нулевой основе процент покрытия не определяется.</p>
-        ) : null}
-        {undefinedCoverage ? (
-          <p className={styles.partial}>API не определил долю покрытия для этого среза.</p>
-        ) : null}
         {partialCoverage ? (
           <p className={styles.partial}>
-            Покрытие известных групп ниже 100%. Основа долей остаётся полной суммой ликвидных
-            активов из ответа.
+            ⚠ часть сумм не распределена{" "}
+            <HelpTip label={`Нераспределённые суммы: ${title}`}>
+              Основа долей — полная сумма ликвидных активов. Неизвестные группы входят в неё.
+            </HelpTip>
           </p>
         ) : null}
-        {metric.support.status !== "supported" || metric.excluded.length > 0 ? (
-          <p className={styles.partial}>
-            Доступность данных: {supportStatusLabel(metric.support.status).toLowerCase()}.
-            Ограничения и исключённые строки указаны ниже.
-          </p>
-        ) : null}
-        {includedUnallocated ? (
-          <p className={styles.intro}>
-            Не отнесённая к известным группам сумма уже показана строкой «
-            {ASSET_CLASS_LABELS[includedUnallocated.key] ?? includedUnallocated.label}» и входит в
-            основу долей. Не прибавляй её повторно.
-          </p>
-        ) : null}
-        <dl className={styles.facts}>
-          <div>
-            <dt>Основа долей · ликвидные активы</dt>
-            <dd>{money(metric.denominator)}</dd>
-          </div>
-          <div>
-            <dt>Распределено по известным группам</dt>
-            <dd>{money(metric.covered_amount)}</dd>
-          </div>
-          <div>
-            <dt>Не отнесено к известным группам · в составе основы</dt>
-            <dd>{money(metric.unallocated_amount)}</dd>
-          </div>
-        </dl>
+        <details>
+          <summary>Подробнее о суммах</summary>
+          <dl className={styles.facts}>
+            <div>
+              <dt>Основа долей · ликвидные активы</dt>
+              <dd>{money(metric.denominator)}</dd>
+            </div>
+            <div>
+              <dt>Распределено по известным группам</dt>
+              <dd>{money(metric.covered_amount)}</dd>
+            </div>
+            <div>
+              <dt>Не отнесено к известным группам · в составе основы</dt>
+              <dd>{money(metric.unallocated_amount)}</dd>
+            </div>
+          </dl>
+        </details>
         {metric.items.length === 0 ? (
-          <p className={styles.empty}>
-            {metric.support.status === "supported"
-              ? "Нет строк в этом срезе."
-              : "Строки для этого среза недоступны."}
-          </p>
+          <p className={styles.empty}>Нет данных</p>
         ) : (
           <Table className={styles.table}>
             <caption>{title}</caption>
@@ -249,35 +209,29 @@ export function Concentration({
 }: {
   title: string;
   metric: RiskConcentrationMetric | undefined;
-  basis: string;
+  basis?: string;
   event?: boolean;
   expanded?: boolean;
   renderLabel?: (item: RiskConcentrationItem) => ReactNode;
 }) {
-  if (!metric)
-    return <UiV2Notice title={`${title}: нет ответа`}>Срез отсутствует в ответе.</UiV2Notice>;
-  const qualified =
-    metric.support.status !== "supported" || metric.excluded.length > 0 || metric.is_approximate;
+  if (!metric) return <UiV2WidgetState title={`${title}: нет данных`} />;
   return (
     <details className={styles.metric} open={expanded || undefined}>
       <summary>
         <span className={styles.metricName}>{title}</span>
         <span>
-          Топ {metric.top_n} · {percent(metric.top_share_pct)} от включённого
+          Топ-{metric.top_n} · {percent(metric.top_share_pct)}
         </span>
         <Support support={metric.support} />
       </summary>
       <div className={styles.metricBody}>
-        <p className={styles.partial}>
-          Показаны только крупнейшие {metric.top_n} из включённых строк. Топ не означает полный
-          охват{event ? " будущих событий" : " портфеля"}
-          {qualified ? "; данные имеют ограничения" : ""}.
-        </p>
         <dl className={styles.facts}>
-          <div>
-            <dt>{basis}</dt>
-            <dd>{money(metric.denominator)}</dd>
-          </div>
+          {basis ? (
+            <div>
+              <dt>{basis}</dt>
+              <dd>{money(metric.denominator)}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Сумма топ {metric.top_n}</dt>
             <dd>{money(metric.top_amount)}</dd>
@@ -288,13 +242,7 @@ export function Concentration({
           </div>
         </dl>
         {metric.items.length === 0 ? (
-          <p className={styles.empty}>
-            {metric.support.status === "supported"
-              ? event
-                ? "Нет датированных событий в окне."
-                : "Нет позиций с положительной оценкой."
-              : "Срез недоступен или покрытие не подтверждено."}
-          </p>
+          <p className={styles.empty}>Нет данных</p>
         ) : (
           <Table className={styles.table}>
             <caption>{title}</caption>
@@ -339,33 +287,6 @@ export function Concentration({
   );
 }
 
-function Availability({ support }: { support: RiskAllocationResponse["support"] }) {
-  return (
-    <details className={styles.availability}>
-      <summary>Остальные измерения и ограничения</summary>
-      <p>API сообщает доступность этих измерений, но не отдаёт распределение по ним.</p>
-      <ul>
-        {Object.entries(UNSUPPORTED_DIMENSIONS).map(([key, title]) => {
-          const state = support[key];
-          return (
-            <li key={key}>
-              <strong>{title}</strong>
-              {state ? (
-                <>
-                  <Support support={state} />
-                  {state.reason_codes.map(supportReasonLabel).join(", ")}
-                </>
-              ) : (
-                " · состояние не получено"
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </details>
-  );
-}
-
 export default function UiV2CapitalAllocationPage() {
   const [params, setParams] = useSearchParams();
   const monthValues = params.getAll("month");
@@ -402,15 +323,11 @@ export default function UiV2CapitalAllocationPage() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice retry={() => void monthsQuery.refetch()} title="Не удалось загрузить месяцы">
-        Распределение скрыто до проверки списка месяцев.
-      </UiV2Notice>
+      <UiV2WidgetState retry={() => void monthsQuery.refetch()} title="Не удалось загрузить" />
     );
   } else if (monthsQuery.fetchStatus === "paused") {
     content = (
-      <UiV2Notice retry={() => void monthsQuery.refetch()} title="Список месяцев не подтверждён">
-        Повтори чтение из локального приложения.
-      </UiV2Notice>
+      <UiV2WidgetState retry={() => void monthsQuery.refetch()} title="Не удалось загрузить" />
     );
   } else if (!monthsReady) {
     content = <UiV2Loading label="Проверяем месяцы…" />;
@@ -425,23 +342,17 @@ export default function UiV2CapitalAllocationPage() {
     );
   } else if (riskQuery.isError) {
     content = (
-      <UiV2Notice retry={() => void riskQuery.refetch()} title="Не удалось загрузить распределение">
-        Данные выбранного месяца скрыты до успешного чтения.
-      </UiV2Notice>
+      <UiV2WidgetState retry={() => void riskQuery.refetch()} title="Не удалось загрузить" />
     );
   } else if (riskQuery.fetchStatus === "paused") {
     content = (
-      <UiV2Notice retry={() => void riskQuery.refetch()} title="Распределение не подтверждено">
-        Повтори чтение из локального приложения.
-      </UiV2Notice>
+      <UiV2WidgetState retry={() => void riskQuery.refetch()} title="Не удалось загрузить" />
     );
   } else if (!riskReady) {
     content = <UiV2Loading label="Проверяем распределение выбранного месяца…" />;
   } else if (!data) {
     content = (
-      <UiV2Notice retry={() => void riskQuery.refetch()} title="Ответ не совпал со снимком">
-        Данные скрыты: месяц или дата снимка в ответе отличаются от выбранных.
-      </UiV2Notice>
+      <UiV2WidgetState retry={() => void riskQuery.refetch()} title="Не удалось загрузить" />
     );
   } else {
     const portfolioEmpty =
@@ -482,16 +393,7 @@ export default function UiV2CapitalAllocationPage() {
             <strong>{money(data.liquid_assets_total)}</strong>
           </div>
         </section>
-        {portfolioEmpty ? (
-          <UiV2Notice title="Портфель пуст">
-            В выбранном снимке нет строк ликвидного портфеля. Нулевые суммы в срезах показаны только
-            там, где их вернул API.
-          </UiV2Notice>
-        ) : null}
-        <p className={styles.intro}>
-          Доли распределений и позиций относятся к ликвидным активам в базовой валюте{" "}
-          {data.base_currency}. Неизвестные и исключённые строки отмечены отдельно.
-        </p>
+        {portfolioEmpty ? <UiV2WidgetState title="Портфель пуст" /> : null}
         <h2 className={styles.groupTitle}>Распределение</h2>
         <div className={styles.grid}>
           <Allocation metric={data.allocation_by_asset_class} title="По классам активов" />
@@ -504,9 +406,7 @@ export default function UiV2CapitalAllocationPage() {
           title="Крупнейшие позиции"
         />
         <p className={styles.intro}>
-          Будущие датированные события: с {formatDate(data.as_of_date)} и следующие 12 месяцев.
-          Основа долей каждого среза — сумма включённых датированных событий, а не капитал.
-          Погашение основного долга не является пассивным доходом. События без даты сюда не входят.
+          Будущие события: с {formatDate(data.as_of_date)}, 12 месяцев. Погашение — не доход.
         </p>
         <div className={styles.grid}>
           <Concentration
@@ -522,7 +422,6 @@ export default function UiV2CapitalAllocationPage() {
             title="Погашения"
           />
         </div>
-        <Availability support={data.support ?? {}} />
       </>
     );
   }

@@ -252,7 +252,7 @@ describe("UI v2 reports archive", () => {
     state.monthsError = true;
     mount();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить отчёты");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить");
     expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
     state.monthsError = false;
     fireEvent.click(screen.getByRole("button", { name: "Повторить" }));

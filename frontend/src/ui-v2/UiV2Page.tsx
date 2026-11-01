@@ -32,9 +32,11 @@ import type {
   ReportingMonth,
 } from "../api/types";
 import { isGuidedCloseStepId } from "../components/month-close/navigation";
+import { HelpTip } from "../components/ui";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
+import { accountingStartLabel } from "./uiV2Copy";
 import { rubleAxisTick } from "./rubleAxis";
 import { queryKeys } from "../queryClient";
 import { uiV2GoalsPath } from "./goalRoute";
@@ -66,22 +68,19 @@ const PASSIVE_SOURCE_META = [
   ["other_capital_income", "Прочий доход от капитала"],
 ] as const;
 
-function configuredBoundary(value: string | null): string | null {
-  if (!value) return null;
-  const match = /^(\d{4})-(\d{2})$/.exec(value);
-  if (!match) return value;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  return month >= 1 && month <= 12 ? formatMonth(year, month) : value;
-}
-
-function passiveAverageDetail(average: PassiveIncomeAverage): string {
-  const boundary = configuredBoundary(average.configured_start_month);
-  const suffix = boundary ? ` · учёт с ${boundary}` : "";
-  if (average.count_months === 0) {
-    return `Среднее пока недоступно · 0 из ${average.target_window_months} закрытых отчётов${suffix}`;
-  }
-  return `Среднее ${money(average.average)} · ${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
+function passiveAverageDetail(average: PassiveIncomeAverage): ReactNode {
+  const boundary = accountingStartLabel(average.configured_start_month);
+  return (
+    <>
+      {average.count_months === 0
+        ? "Пока нет данных"
+        : `Среднее за ${average.target_window_months} мес: ${money(average.average)}`}{" "}
+      <HelpTip label="Период среднего дохода">
+        {average.count_months} из {average.target_window_months} закрытых отчётов
+        {boundary ? ` · учёт ${boundary}` : ""}
+      </HelpTip>
+    </>
+  );
 }
 
 function DraftAction({ draft }: { draft: ReportingMonth }) {
@@ -156,7 +155,6 @@ function KpiGrid({
                 : money(comparison.current.liquid_capital_net)}
             </p>
             <PortfolioCoverageNote coverage={comparison.current.portfolio_source_coverage} />
-            <p className={styles.metricDetail}>Активы за вычетом включённых обязательств</p>
           </>
         ) : (
           <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
@@ -178,8 +176,7 @@ function KpiGrid({
                 : moneyDelta(comparison?.liquid_capital_net_delta)}
             </p>
             <p className={styles.metricDetail} id="v2-change-definition">
-              к {formatMonth(comparison?.previous?.year ?? 0, comparison?.previous?.month ?? 0)} ·
-              изменение состояния, не инвестиционная доходность
+              к {formatMonth(comparison?.previous?.year ?? 0, comparison?.previous?.month ?? 0)}
             </p>
           </>
         ) : comparisonReady && comparison?.availability === "previous_closed_report_unavailable" ? (
@@ -244,7 +241,12 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
   }
   const gapCount = data.filter((item) => item.amount === null).length;
   return (
-    <div className={styles.chart} data-gap-count={gapCount} data-testid="v2-capital-history">
+    <div
+      className={styles.chart}
+      data-gap-count={gapCount}
+      data-point-count={points.length}
+      data-testid="v2-capital-history"
+    >
       <ResponsiveContainer height={245} width="100%">
         <LineChart data={data} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
           <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
@@ -257,12 +259,7 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
             tick={{ fontSize: 11, fill: "#607084" }}
           />
           <Tooltip
-            formatter={(_value, _name, item) => [
-              formatMoney(item.payload.amount),
-              item.payload.portfolio_source_coverage?.status === "partial"
-                ? "Капитал · покрытие частичное"
-                : "Капитал",
-            ]}
+            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Капитал"]}
             labelFormatter={(label) => `Отчёт ${label}`}
           />
           <Line
@@ -320,13 +317,7 @@ function CapitalHistoryBlock({
       ) : visible.length === 0 ? (
         <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
-        <>
-          <CapitalHistoryChart points={visible} />
-          <p className={styles.panelFootnote}>
-            Показаны последние {visible.length} закрытых отчёта. Пропуски показаны разрывами;
-            значения не интерполируются.
-          </p>
-        </>
+        <CapitalHistoryChart points={visible} />
       )}
     </section>
   );
@@ -353,10 +344,8 @@ function CompositionBlock({
     <section className={styles.panel} aria-labelledby="composition-title">
       <div className={styles.panelHeader}>
         <div>
-          <p className={styles.eyebrow}>Текущий снимок</p>
           <h2 id="composition-title">Структура активов</h2>
         </div>
-        <p className={styles.panelHint}>Только положительные ликвидные активы</p>
       </div>
       {!ready ? (
         <UiV2WidgetState retry={retry} />
@@ -441,7 +430,6 @@ function ChangeBlock({
           <p className={styles.eyebrow}>Изменение состояния</p>
           <h2 id="change-title">Где изменились суммы</h2>
         </div>
-        <p className={styles.panelHint}>Изменение состояния, не инвестиционная доходность</p>
       </div>
       {!ready ? (
         <UiV2WidgetState retry={retry} />
@@ -467,9 +455,8 @@ function ChangeBlock({
             {explanation.pairs.map((pair) => (
               <li key={pair.account_id}>
                 <details>
-                  <summary>
-                    {pair.account_name} · связанный счёт и кредитка — изменение чистого вклада
-                  </summary>
+                  <summary>{pair.account_name}</summary>
+                  <p>Связанный счёт и кредитка — изменение чистого вклада.</p>
                   <p>
                     {formatMonth(comparison.previous?.year ?? 0, comparison.previous?.month ?? 0)}:
                     счёт {money(pair.previous.account_balance)}, {pair.previous.debt_name}{" "}
@@ -498,15 +485,11 @@ function ChangeBlock({
             </strong>
             <PortfolioCoverageNote coverage={comparison.liquid_capital_net_delta_coverage} />
           </div>
-          <p className={styles.panelFootnote}>
-            Перемещение между классами может менять строки без роста капитала. Рост обязательств
-            уменьшает чистый капитал. Связь не устанавливает источник погашения.
-          </p>
           {explanation.noncomparable_account_ids.length > 0 ? (
-            <p className={styles.panelFootnote}>
+            <HelpTip label="Почему часть счетов не объединена">
               Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы
               сохранены в остальных строках.
-            </p>
+            </HelpTip>
           ) : null}
         </>
       )}
@@ -585,11 +568,6 @@ function PassiveBlock({
               <UiV2WidgetState title="Нет закрытой истории в выбранном периоде" />
             )}
             <p className={styles.panelFootnote}>{passiveAverageDetail(history.average)}</p>
-            {eligiblePoints.length > 0 ? (
-              <p className={styles.panelFootnote}>
-                На графике только отчёты, вошедшие в среднее: {eligiblePoints.length}.
-              </p>
-            ) : null}
           </div>
           <div className={styles.sourceBreakdown}>
             <p className={styles.eyebrow}>
@@ -603,7 +581,6 @@ function PassiveBlock({
                 </li>
               ))}
             </ul>
-            <p className={styles.factNote}>Только фактически полученный доход от капитала.</p>
           </div>
         </div>
       )}
@@ -649,7 +626,7 @@ function GoalsBlock({
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : supported.length === 0 ? (
-        <UiV2WidgetState title="Нет активных целей с поддерживаемым прогрессом" />
+        <UiV2WidgetState title="Нет активных целей" />
       ) : (
         <div className={styles.goalsGrid}>
           {supported.map((goal) => {
@@ -738,9 +715,7 @@ export default function UiV2Page() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
-        Финансовые показатели скрыты, пока актуальный закрытый отчёт не подтверждён.
-      </UiV2Notice>
+      <UiV2WidgetState title="Не удалось загрузить" retry={() => void monthsQuery.refetch()} />
     );
   } else if (!monthsReady) {
     content = (
@@ -753,8 +728,7 @@ export default function UiV2Page() {
       <>
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
         <UiV2Notice title="Закрой первый отчёт">
-          «Мои финансы» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
-          финансовую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
+          <Link to="/v2/close">Закрой первый месяц →</Link>
         </UiV2Notice>
       </>
     );
@@ -806,17 +780,7 @@ export default function UiV2Page() {
   }
 
   return (
-    <UiV2Shell
-      active="home"
-      busy={loading}
-      header={
-        <>
-          <p className={styles.eyebrow}>Обзор подтверждённых данных</p>
-          <h1>Мои финансы</h1>
-          <p className={styles.subtitle}>Спокойная картина капитала, дохода и целей.</p>
-        </>
-      }
-    >
+    <UiV2Shell active="home" busy={loading} header={<h1>Мои финансы</h1>}>
       {content}
     </UiV2Shell>
   );

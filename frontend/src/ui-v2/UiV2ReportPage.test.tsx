@@ -185,7 +185,7 @@ describe("UI v2 historical report", () => {
       String(historicalId),
     );
     expect(view.container.querySelector('[data-highlight-key="2031-05"]')).not.toBeNull();
-    expect(screen.getByText(/Пропуски остаются пропусками/)).toBeVisible();
+    expect(screen.queryByText(/Пропуски остаются пропусками/)).toBeNull();
     expect(screen.getByTestId("report-neighbour-previous")).toHaveAttribute(
       "href",
       "/v2/reports/89",
@@ -219,8 +219,12 @@ describe("UI v2 historical report", () => {
     expect(screen.queryByText(/XIRR/)).toBeNull();
     expect(screen.queryByText(/TWRR/)).toBeNull();
     expect(reads.some((read) => read.includes("/api/performance/"))).toBe(false);
-    expect(screen.getByRole("link", { name: "Мои финансы →" })).toHaveAttribute("href", "/v2");
-    expect(screen.getByRole("link", { name: "Капитал →" })).toHaveAttribute("href", "/v2/capital");
+    expect(
+      within(screen.getByTestId("v2-report-context")).getByRole("link", { name: "Мои финансы" }),
+    ).toHaveAttribute("href", "/v2");
+    expect(
+      within(screen.getByTestId("v2-report-context")).getByRole("link", { name: "Капитал" }),
+    ).toHaveAttribute("href", "/v2/capital");
   });
 
   it("shows the report rows of that month with the excluded-row label", async () => {
@@ -241,8 +245,8 @@ describe("UI v2 historical report", () => {
       "Синтетическая акция",
     );
     expect(
-      screen.getByText(/Итоги берутся из подтверждённой сводки, а не из суммы строк/),
-    ).toBeVisible();
+      screen.queryByText(/Итоги берутся из подтверждённой сводки, а не из суммы строк/),
+    ).toBeNull();
     expect(screen.getByTestId("report-top-positions")).toBeVisible();
     expect(screen.getByTestId("report-top-positions")).toHaveTextContent("Синтетическая облигация");
   });
@@ -272,8 +276,8 @@ describe("UI v2 historical report", () => {
     // Aggregate context only: no per-pair detail and no second subtraction.
     expect(pairs.querySelectorAll("li")).toHaveLength(3);
     expect(
-      screen.getByText(/уже входят в ликвидные активы и включённые обязательства/),
-    ).toBeVisible();
+      screen.queryByText(/уже входят в ликвидные активы и включённые обязательства/),
+    ).toBeNull();
   });
 
   it("links the historical report to native data and performance workspaces", async () => {
@@ -361,9 +365,7 @@ describe("UI v2 historical report", () => {
     };
     mount();
 
-    expect(
-      await screen.findByRole("heading", { name: "Отчёт не подтверждён в истории" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Нет снимка отчёта" })).toBeVisible();
     expect(screen.queryByTestId("report-net")).toBeNull();
   });
 
@@ -372,9 +374,7 @@ describe("UI v2 historical report", () => {
     state.compositionError = true;
     mount();
 
-    expect(
-      await screen.findByRole("heading", { name: "Данные отчёта не подтверждены" }),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Не удалось загрузить" })).toBeVisible();
     expect(screen.queryByTestId("report-net")).toBeNull();
     state.compositionError = false;
     fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
@@ -435,7 +435,9 @@ describe("UI v2 historical report", () => {
 
     expect(await screen.findByTestId("report-net")).toHaveTextContent("0 ₽");
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("0 ₽");
-    expect(screen.getByTestId("report-composition-empty")).toBeVisible();
+    expect(screen.getByTestId("report-assets")).toHaveTextContent("0 ₽");
+    expect(screen.getByTestId("report-debts")).toHaveTextContent("− 0 ₽");
+    expect(screen.queryByTestId("report-composition-empty")).toBeNull();
     fireEvent.click(
       within(screen.getByTestId("report-panel-report-composition-title")).getByRole("button", {
         name: "Доли",
@@ -454,7 +456,7 @@ describe("UI v2 historical report", () => {
     expect(history).toHaveAttribute("data-point-count", "3");
     expect(history).toHaveAttribute("data-window-first-id", "88");
     expect(history).toHaveAttribute("data-window-last-id", String(historicalId));
-    expect(screen.getByText(/окно заканчивается открытым отчётом/)).toBeVisible();
+    expect(screen.queryByText(/окно заканчивается открытым отчётом/)).toBeNull();
 
     fireEvent.click(
       within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {
@@ -473,7 +475,7 @@ describe("UI v2 historical report", () => {
       }),
     );
     expect(screen.getByTestId("report-history")).toHaveAttribute("data-point-count", "4");
-    expect(screen.getByText(/Показаны все закрытые отчёты \(4\)/)).toBeVisible();
+    expect(screen.queryByText(/Показаны все закрытые отчёты \(4\)/)).toBeNull();
   });
 
   it("regression: an older report keeps its highlight when newer closed months exceed the window", async () => {
@@ -491,7 +493,7 @@ describe("UI v2 historical report", () => {
     expect(twelve).toHaveAttribute("data-window-first-id", String(uiV2LongHistoryFirstMonthId));
     expect(twelve).toHaveAttribute("data-window-last-id", String(selected));
     expect(view.container.querySelector('[data-highlight-key="2030-12"]')).not.toBeNull();
-    expect(screen.getByText(/Показано 12 закрытых отчётов/)).toBeVisible();
+    expect(screen.queryByText(/Показано 12 закрытых отчётов/)).toBeNull();
 
     fireEvent.click(
       within(screen.getByTestId("report-panel-report-history-title")).getByRole("button", {

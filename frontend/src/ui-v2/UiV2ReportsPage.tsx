@@ -99,17 +99,14 @@ export default function UiV2ReportsPage() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
-        Список отчётов скрыт, пока подтверждённые закрытые отчёты не прочитаны.
-      </UiV2Notice>
+      <UiV2WidgetState title="Не удалось загрузить" retry={() => void monthsQuery.refetch()} />
     );
   } else if (!monthsReady) {
     content = <UiV2Loading label="Проверяем закрытые отчёты…" />;
   } else if (archive.closedCount === 0) {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
-        Архив строится только по закрытым отчётам. Черновик не выдаётся за историю.{" "}
-        <Link to="/v2/close">Перейти к закрытию месяца →</Link>
+        <Link to="/v2/close">Закрой первый месяц →</Link>
       </UiV2Notice>
     );
   } else {
@@ -216,9 +213,6 @@ export default function UiV2ReportsPage() {
         <>
           <p className={styles.eyebrow}>История подтверждённых отчётов</p>
           <h1>Отчёты</h1>
-          <p className={styles.subtitle}>
-            Подтверждённые отчёты по закрытым месяцам. Текущий отчёт всегда открыт в «Мои финансы».
-          </p>
           <p className={reportStyles.backLink}>
             <Link to="/v2">← Мои финансы</Link>
           </p>

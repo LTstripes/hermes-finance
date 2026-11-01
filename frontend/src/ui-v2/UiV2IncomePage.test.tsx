@@ -395,7 +395,10 @@ describe("UI v2 Income and plans", () => {
     mount();
 
     expect(await screen.findByTestId("income-average")).toHaveTextContent("Недоступно");
-    expect(screen.getAllByText(/Нет закрытых месяцев в выбранном периоде/)).toHaveLength(2);
+    expect(screen.getByText("Пока нет данных")).toBeVisible();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Период среднего дохода" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("0 из 12 закрытых отчётов");
     expect(screen.getByTestId("income-average")).not.toHaveTextContent("0 ₽");
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("0 ₽");
   });
@@ -499,9 +502,8 @@ describe("UI v2 Income and plans", () => {
     ];
     mount();
 
-    expect(
-      await screen.findByText("Отдельный план показывается только когда он действительно введён."),
-    ).toBeVisible();
+    expect(await screen.findByText("Жильё")).toBeVisible();
+    expect(screen.queryByText(/Отдельный план показывается/)).toBeNull();
     const plan = screen.getByTestId("income-plan-panel");
     expect(within(plan).getByText("Жильё").closest("li")).toHaveTextContent(
       "План 50 000 ₽ · факт 48 000 ₽",
@@ -528,11 +530,27 @@ describe("UI v2 Income and plans", () => {
     mount();
 
     expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Закрой первый месяц →" })).toHaveAttribute(
       "href",
       "/v2/close",
     );
     expect(screen.queryByTestId("income-average")).toBeNull();
     expect(reads).toEqual(["GET /api/months"]);
   });
+});
+
+it("keeps average-period and passive-income explanations behind help buttons", async () => {
+  const user = userEvent.setup();
+  const { mount, state } = setup();
+  state.history.average.configured_start_month = "2031-04";
+  mount();
+
+  expect(await screen.findByTestId("income-average")).toHaveTextContent("15 300 ₽");
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Период среднего дохода" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("учёт с апреля 2031");
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Что входит в пассивный доход" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("возврат основной суммы сюда не входят");
 });

@@ -20,7 +20,8 @@ import type {
   ReportingMonth,
   SavingAllocation,
 } from "../api/types";
-import { formatDate, formatMonth, formatMonthKey, formatPercent } from "../lib/format";
+import { HelpTip } from "../components/ui";
+import { formatDate, formatMonth, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
 import { uiV2TaxIisPath } from "./taxIisRoute";
@@ -35,6 +36,7 @@ import {
   UiV2WidgetState,
 } from "./UiV2StateBlocks";
 import {
+  accountingStartLabel,
   eventLabel as ownerEventLabel,
   sourceLabel as ownerSourceLabel,
   PRINCIPAL_REPAYMENT_LABEL,
@@ -70,13 +72,17 @@ function resolveFactSelection(values: string[], closedMonths: ReportingMonth[]):
   return { month, valid: month !== null };
 }
 
-function averageDetail(average: PassiveIncomeAverage): string {
-  const boundary = formatMonthKey(average.configured_start_month, { empty: "" });
-  const suffix = boundary ? ` · учёт с ${boundary}` : " · вся доступная история";
-  if (average.count_months === 0) {
-    return `Нет закрытых месяцев в выбранном периоде · 0 из ${average.target_window_months}${suffix}`;
-  }
-  return `${average.count_months} из ${average.target_window_months} закрытых отчётов${suffix}`;
+function averageDetail(average: PassiveIncomeAverage): ReactNode {
+  const boundary = accountingStartLabel(average.configured_start_month);
+  return (
+    <>
+      {average.count_months === 0 ? "Пока нет данных" : null}{" "}
+      <HelpTip label="Период среднего дохода">
+        {average.count_months} из {average.target_window_months} закрытых отчётов
+        {boundary ? ` · учёт ${boundary}` : " · вся доступная история"}
+      </HelpTip>
+    </>
+  );
 }
 
 /** Closed-month display order only. The API history payload stays oldest-first. */
@@ -176,7 +182,9 @@ function Headlines({
   return (
     <section aria-label="Главные показатели дохода" className={incomeStyles.metrics}>
       <article className={`${incomeStyles.metric} ${incomeStyles.metricPrimary}`}>
-        <p className={sharedStyles.eyebrow}>Историческое среднее</p>
+        <p className={sharedStyles.eyebrow}>
+          Среднее за {history?.average.target_window_months ?? 12} мес
+        </p>
         {historyReady && history ? (
           <>
             <p className={incomeStyles.metricValue} data-testid="income-average">
@@ -295,9 +303,6 @@ function FactHistoryBlock({
                 );
               })}
             </section>
-            <p className={sharedStyles.panelFootnote}>
-              {averageDetail(history.average)}. История не заполняет отсутствующие месяцы нулями.
-            </p>
           </div>
           <div className={incomeStyles.breakdown}>
             <p className={sharedStyles.eyebrow}>
@@ -315,10 +320,10 @@ function FactHistoryBlock({
                 <strong>{money(history.selected_report.passive_income_actual)}</strong>
               </li>
             </ul>
-            <p className={sharedStyles.panelFootnote}>
+            <HelpTip label="Что входит в пассивный доход">
               Только фактический доход от капитала. Зарплата, бонусы, вознаграждения за покупки и
               возврат основной суммы сюда не входят.
-            </p>
+            </HelpTip>
           </div>
         </div>
       )}
@@ -439,12 +444,7 @@ function LadderBlock({
             </fieldset>
           </div>
           <div id="income-ladder-content">
-            {window === 12 ? (
-              <p className={sharedStyles.panelFootnote}>
-                12 месяцев от даты снимка. Возврат основной суммы всегда показан отдельно и не
-                входит в пассивный доход.
-              </p>
-            ) : selectedWindow ? (
+            {window !== 12 && selectedWindow ? (
               <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
                 <div>
                   <span>
@@ -556,9 +556,6 @@ function CoveragePlanBlock({
                     ? money(savingTotal.breakdown.saving_allocations)
                     : "Недоступно"}
                 </strong>
-                <small>
-                  Сумма взята из сохранённого плана доходов; строки ниже приводятся без пересчёта.
-                </small>
               </div>
             </div>
           )}
@@ -570,23 +567,18 @@ function CoveragePlanBlock({
               ) : budget.length === 0 ? (
                 <p className={incomeStyles.emptyPlan}>План расходов не задан.</p>
               ) : (
-                <>
-                  <p className={incomeStyles.planFactNote}>
-                    Отдельный план показывается только когда он действительно введён.
-                  </p>
-                  <ul className={incomeStyles.valueList}>
-                    {budget.slice(0, 5).map((row) => {
-                      const copy = planFactCopy(row);
-                      if (copy === null) return null;
-                      return (
-                        <li key={`${row.expense_type}-${row.category}`}>
-                          <span>{row.category}</span>
-                          <strong className={incomeStyles.planFact}>{copy}</strong>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </>
+                <ul className={incomeStyles.valueList}>
+                  {budget.slice(0, 5).map((row) => {
+                    const copy = planFactCopy(row);
+                    if (copy === null) return null;
+                    return (
+                      <li key={`${row.expense_type}-${row.category}`}>
+                        <span>{row.category}</span>
+                        <strong className={incomeStyles.planFact}>{copy}</strong>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
             <div>
@@ -632,7 +624,6 @@ function Handoffs({ narrow, taxIisPath }: { narrow: boolean; taxIisPath: string 
             </div>
             <div>
               <h3>Сценарии</h3>
-              <p>Сценарии открываются в отдельном разделе; действий на этой странице нет.</p>
               <Link to="/v2/income/scenario-lab">Открыть сценарии →</Link>
             </div>
           </div>
@@ -737,17 +728,14 @@ export default function UiV2IncomePage() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
-        Доход и планы скрыты, пока актуальный закрытый отчёт не подтверждён.
-      </UiV2Notice>
+      <UiV2WidgetState title="Не удалось загрузить" retry={() => void monthsQuery.refetch()} />
     );
   } else if (!monthsReady) {
     content = <UiV2Loading label="Проверяем последний закрытый отчёт…" />;
   } else if (!latestClosed) {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
-        «Доход и планы» строится только по данным закрытых отчётов. Черновик не выдаётся за
-        подтверждённую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
+        <Link to="/v2/close">Закрой первый месяц →</Link>
       </UiV2Notice>
     );
   } else {
@@ -759,8 +747,7 @@ export default function UiV2IncomePage() {
         </UiV2ReportContext>
         {newerDraft ? (
           <p className={incomeStyles.draftNote} data-testid="income-draft-note">
-            {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт — плановый контекст
-            остаётся по последнему закрытому отчёту.
+            {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт.
           </p>
         ) : null}
         <Headlines
@@ -812,7 +799,6 @@ export default function UiV2IncomePage() {
       busy={!monthsReady}
       header={
         <>
-          <p className={sharedStyles.eyebrow}>Планирование по подтверждённым данным</p>
           <h1>Доход и планы</h1>
           <p className={sharedStyles.subtitle}>
             Что уже получено, на что рассчитывать и что запланировано.

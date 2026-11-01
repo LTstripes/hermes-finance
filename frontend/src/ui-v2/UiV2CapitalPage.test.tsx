@@ -263,9 +263,14 @@ it("shows the three capital headlines in the frozen order and reads only GET", a
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
   expect(screen.getByTestId("capital-debts")).toHaveTextContent("− 400 000 ₽");
-  expect(
-    screen.getByText(/Ликвидные активы минус включённые обязательства = ликвидный капитал/i),
-  ).toBeVisible();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(within(cards[0]).getByRole("button", { name: "Как считается капитал" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Ликвидные активы минус включённые обязательства = ликвидный капитал",
+  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Жильё и ипотека в ликвидный капитал не входят",
+  );
   expect(reads.some((read) => read.includes("/api/performance"))).toBe(false);
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
@@ -332,7 +337,7 @@ it("shows no capital numbers when there is no closed report yet", async () => {
   mount();
 
   expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Закрой первый месяц →" })).toHaveAttribute(
     "href",
     "/v2/close",
   );
@@ -424,7 +429,8 @@ it("switches the composition window and mode over closed reports with visible ga
 });
 
 it("presents account buckets, rows and exclusion labels without summing rows", async () => {
-  const { mount } = setup();
+  const { mount, state } = setup();
+  state.cash[0].amount.amount = "123.00";
   mount();
 
   expect(await screen.findByTestId("capital-bucket-unassigned_cash")).toHaveTextContent(
@@ -439,9 +445,13 @@ it("presents account buckets, rows and exclusion labels without summing rows", a
   expect(screen.getByTestId("capital-holding-position-503")).toHaveTextContent(
     "Синтетический фонд",
   );
-  expect(
-    screen.getByText(/Итоги берутся из подтверждённой сводки, а не из суммы строк/i),
-  ).toBeVisible();
+  expect(screen.getByTestId("capital-holding-cash-701")).toHaveTextContent("123 ₽");
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
+  expect(screen.getByRole("link", { name: "Данные отчётного месяца →" })).toHaveAttribute(
+    "href",
+    `/v2/data/months/${uiV2CapitalMonthId}`,
+  );
 });
 
 it("filters the holdings by a class row and an account bucket as presentation only", async () => {
@@ -517,9 +527,11 @@ it("shows real estate separately and hides the block when there are no property 
   expect(await screen.findByRole("heading", { name: "Недвижимость" })).toBeVisible();
   expect(screen.getByText("Синтетическая квартира")).toBeVisible();
   expect(screen.getByText("164,9%", { exact: false })).toBeVisible();
-  expect(
-    screen.getByText(/не входят в ликвидный капитал и не смешиваются с составом/i),
-  ).toBeVisible();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Сравнение капитала и ипотеки" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Недвижимость и ипотека не входят в ликвидный капитал",
+  );
 
   cleanup();
   const second = setup();
@@ -565,7 +577,7 @@ it("recovers the report list without querying a guessed snapshot", async () => {
   state.monthsError = true;
   mount();
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить отчёты");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить");
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   state.monthsError = false;
   fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
@@ -582,7 +594,11 @@ it("labels the mortgage difference with a truthful sign instead of a shortfall",
   expect(surplus).toHaveTextContent("+1 103 900 ₽");
   expect(surplus).not.toHaveTextContent(/Не хватает/);
   expect(screen.queryByText(/Не хватает до полного покрытия/)).toBeNull();
-  expect(screen.getByText(/положительная — капитала больше остатка ипотеки/)).toBeVisible();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Сравнение капитала и ипотеки" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Положительная разница — капитала больше остатка ипотеки, отрицательная — меньше",
+  );
 
   cleanup();
   const under = setup();

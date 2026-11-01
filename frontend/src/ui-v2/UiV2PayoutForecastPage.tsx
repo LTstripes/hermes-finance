@@ -70,18 +70,26 @@ import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { UiV2StatementImportSection } from "./UiV2StatementImportSection";
 
 const APPLY_FAILURE_LABELS: Record<string, string> = {
-  preview_changed: "Предпросмотр изменился. Получи свежий preview и проверь выбор ещё раз.",
+  preview_changed: "Предпросмотр изменился. Обнови его и проверь выбор.",
   closed_month: "Месяц закрыт. Сначала открой его для редактирования.",
   provider_error: "T-Invest не удалось безопасно перечитать данные. Ничего не применено.",
   validation_error: "Выбранные строки больше нельзя применить в этом состоянии.",
   persistence_error: "Не удалось сохранить выбранный набор. Все изменения отменены.",
 };
 
-const STALE_APPLY_MESSAGE =
-  "Параметры изменились после preview. Получи свежий preview для текущего месяца, версии и позиции.";
+const PAYOUT_OUTCOME_LABELS: Record<PayoutExecutionResult["outcome"], string> = {
+  CONFIRMED: "Сохранение подтверждено",
+  APPLIED_UNVERIFIED: "Сохранение не подтверждено",
+  REJECTED_NO_WRITE: "Отклонено без сохранения",
+  STALE_NO_WRITE: "Данные устарели, запрос не отправлен",
+  UNKNOWN: "Результат неизвестен",
+  NOT_SENT: "Запрос не отправлен",
+  ALREADY_PRESENT: "Уже сохранено",
+};
 
-const IDENTITY_MISMATCH_MESSAGE =
-  "Preview не соответствует запрошенному месяцу, версии и позиции. Получи свежий preview.";
+const STALE_APPLY_MESSAGE = "Параметры изменились. Обнови предпросмотр.";
+
+const IDENTITY_MISMATCH_MESSAGE = "Предпросмотр не соответствует выбранной позиции. Обнови его.";
 
 const UNCONFIRMED_READBACK_MESSAGE =
   "Применённые выплаты не подтверждены повторной загрузкой. Успех не показан.";
@@ -261,7 +269,7 @@ const PAYOUT_ATTENTION: Record<string, string> = {
   cancelled_by_provider: "Отменена провайдером",
   missing_from_provider: "Отсутствует в ответе провайдера",
   tentative: "Предварительное событие",
-  ambiguous_identity: "Неоднозначная идентичность",
+  ambiguous_identity: "Не удалось однозначно определить событие",
   unsupported: "Не поддерживается",
   unavailable: "Недоступно",
   error: "Ошибка",
@@ -346,8 +354,8 @@ function PayoutForecastTool({
     const instrument = instrumentById.get(selectedPosition.instrument_id);
     const instrumentText = instrument
       ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
-      : `#${selectedPosition.instrument_id}`;
-    return `${account?.name ?? `#${selectedPosition.account_id}`} · ${instrumentText}`;
+      : "Неизвестный инструмент";
+    return `${account?.name ?? "Неизвестный счёт"} · ${instrumentText}`;
   }, [accountById, instrumentById, selectedPosition]);
 
   function positionLabelFor(accountId: number, instrumentId: number): string {
@@ -355,8 +363,8 @@ function PayoutForecastTool({
     const instrument = instrumentById.get(instrumentId);
     const instrumentText = instrument
       ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
-      : `#${instrumentId}`;
-    return `${instrumentText} · ${account?.name ?? `#${accountId}`}`;
+      : "Неизвестный инструмент";
+    return `${instrumentText} · ${account?.name ?? "Неизвестный счёт"}`;
   }
 
   const readContext = useCallback(async (target: number, targetVersion: string) => {
@@ -911,7 +919,7 @@ function PayoutForecastTool({
         </div>
       ) : null}
       <TInvestPayoutApplySummary result={lastApplyResult} />
-      <Panel label="Будущие выплаты" title="Получить → проверить выбор → применить → результат">
+      <Panel label="Будущие выплаты" title="Прогнозные выплаты">
         <div className="toolbar">
           <Button
             disabled={
@@ -1006,18 +1014,6 @@ function PayoutForecastTool({
             </Button>
           ) : null}
         </div>
-        <p className="muted">
-          Прогнозы — ожидание, а не полученный доход. Погашение учитывается отдельно. Отсутствие
-          событий не подтверждает полное покрытие. Каждая группа сохраняется отдельно;
-          подтверждённые записи остаются при остановке.
-        </p>
-        {executionResults.some((row) => row.outcome === "UNKNOWN") ? (
-          <p>
-            Уже сохранённое событие показывает текущее состояние календаря, а не то, какой запрос
-            завершился. Нужны свежий явный предпросмотр и новое подтверждение; перезагрузка сама
-            ничего не отправляет.
-          </p>
-        ) : null}
         {actionError ? (
           <div role="alert" className="inline-alert inline-alert--warn">
             {actionError}
@@ -1032,9 +1028,11 @@ function PayoutForecastTool({
             </p>
             {executionResults.map((row, index) => (
               <p key={row.group.payload.position_snapshot_id}>
-                <strong>{row.group.label}</strong>: {row.outcome} · версия «
+                <strong>{row.group.label}</strong>: {PAYOUT_OUTCOME_LABELS[row.outcome]} · версия «
                 {row.group.payload.forecast_version}» ·{" "}
-                {activeGroup === index ? "Проверяем / применяем…" : row.message}
+                {activeGroup === index
+                  ? "Проверяем / применяем…"
+                  : row.message.replaceAll("об Apply", "о применении")}
               </p>
             ))}
           </div>
@@ -1066,6 +1064,9 @@ function PayoutForecastTool({
             {batchPreview.items.map((item) => {
               const itemLabel = positionLabelFor(item.account_id, item.instrument_id);
               const previewValue = item.preview;
+              const attention = previewValue?.rows.filter(
+                (row) => row.status !== "new" && row.status !== "unchanged",
+              );
               return (
                 <div className="payout-batch-results__group" key={item.position_snapshot_id}>
                   <div className="payout-batch-results__heading">
@@ -1080,17 +1081,18 @@ function PayoutForecastTool({
                     Доход: {payoutSubtotal(previewValue?.rows ?? [], false)} · Возврат капитала:{" "}
                     {payoutSubtotal(previewValue?.rows ?? [], true)}
                   </p>
-                  <p>
-                    {previewValue?.rows
-                      .filter((row) => row.status !== "new" && row.status !== "unchanged")
-                      .map(
-                        (row) =>
-                          `${PAYOUT_ATTENTION[row.status] ?? "Требует проверки"}${row.message ? `: ${row.message}` : ""}`,
-                      )
-                      .join(" · ")}
-                  </p>
+                  {attention?.length ? (
+                    <p>
+                      {attention
+                        .map(
+                          (row) =>
+                            `${PAYOUT_ATTENTION[row.status] ?? "Требует проверки"}${row.message ? `: ${row.message}` : ""}`,
+                        )
+                        .join(" · ")}
+                    </p>
+                  ) : null}
                   {previewValue?.rows.some((row) => row.status === "unchanged") ? (
-                    <p>ALREADY_PRESENT · Уже сохранено; повторно не отправляется.</p>
+                    <p>Уже сохранено; повторно не отправляется.</p>
                   ) : null}
                   {item.message ? <p role="status">{item.message}</p> : null}
                   <Button
@@ -1157,7 +1159,7 @@ function PayoutForecastTool({
                         role="status"
                       >
                         <TInvestBatchItemStatus item={item} />{" "}
-                        {item.message ?? "Для позиции нет доступного preview."}
+                        {item.message ?? "Нет предпросмотра для позиции."}
                       </div>
                     )}
                   </div>
@@ -1179,10 +1181,6 @@ function PayoutForecastTool({
           label="Контекст"
           title="Месяц, версия и позиция"
         >
-          <p className="muted">
-            Календарь ниже — ожидание, а не факт. Погашение — возврат капитала, а не пассивный
-            доход. Ручные факты остаются в разделе месяца #562 и здесь не дублируются.
-          </p>
           <div className="editor-grid">
             <Field htmlFor="payout-forecast-position" label="Позиция">
               <Select
@@ -1212,8 +1210,8 @@ function PayoutForecastTool({
                     : "инструмент";
                   return (
                     <option key={position.id} value={position.id}>
-                      {account?.name ?? `#${position.account_id}`} ·{" "}
-                      {instrument?.name ?? `#${position.instrument_id}`}
+                      {account?.name ?? "Неизвестный счёт"} ·{" "}
+                      {instrument?.name ?? "Неизвестный инструмент"}
                       {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
                       {formatQuantity(position.quantity)} шт.
                     </option>
@@ -1222,7 +1220,7 @@ function PayoutForecastTool({
               </Select>
             </Field>
             <div className="stack-8">
-              <span className="muted tiny">Версия прогноза (меняется в панели preview ниже)</span>
+              <span className="muted tiny">Версия прогноза</span>
               <strong>{version}</strong>
             </div>
           </div>
@@ -1239,11 +1237,7 @@ function PayoutForecastTool({
             </span>
           </div>
           {selectedPositionId && !loadingContext && positions.length === 0 ? (
-            <EmptyState
-              description="В этом месяце нет локальных PositionSnapshot. Сначала добавь позицию в месяце."
-              inline
-              title="Нет позиций"
-            />
+            <EmptyState description="Добавь позицию в этом месяце." inline title="Нет позиций" />
           ) : null}
         </Panel>
 
@@ -1269,7 +1263,7 @@ function PayoutForecastTool({
       </details>
 
       <Panel
-        action={<Badge>12 месяцев · manual + T-Invest</Badge>}
+        action={<Badge>12 месяцев · вручную и T-Invest</Badge>}
         label="Прогноз"
         title="Объединённый календарь выплат"
       >
@@ -1289,7 +1283,7 @@ function PayoutForecastTool({
         open={pendingBulk !== null}
         busy={applying}
         title="Применить выбранные группы?"
-        description={`Месяц #${monthId}, версия «${version}». ${pendingBulk?.map((group) => `${group.label}: ${group.rows.length} событий`).join("; ") ?? ""}. Группы применяются последовательно. При остановке подтверждённые изменения сохраняются; неопределённый запрос не повторяется.`}
+        description={`${formatMonth(month.year, month.month)}, версия «${version}». ${pendingBulk?.map((group) => `${group.label}: ${group.rows.length} событий`).join("; ") ?? ""}. Группы применяются последовательно. При остановке подтверждённые изменения сохраняются; неопределённый запрос не повторяется.`}
         confirmLabel={`Подтвердить выбор (${pendingBulk?.length ?? 0} групп)`}
         cancelLabel="Отмена"
         onCancel={() => setPendingBulk(null)}
@@ -1303,7 +1297,7 @@ function PayoutForecastTool({
         confirmLabel={`Применить (${pendingApply?.rows.length ?? 0})`}
         description={
           pendingApply
-            ? `Применить ${pendingApply.rows.length} прогнозных событий T-Invest в месяц #${pendingApply.previewMonthId} (версия «${pendingApply.previewVersion}»)? Календарь будет перечитан перед подтверждением.`
+            ? `Применить ${pendingApply.rows.length} прогнозных событий T-Invest за ${formatMonth(month.year, month.month)} (версия «${pendingApply.previewVersion}»)? Календарь будет перечитан перед подтверждением.`
             : ""
         }
         onCancel={() => {
@@ -1409,8 +1403,7 @@ export default function UiV2PayoutForecastPage() {
         <UiV2Loading label="Загружаем месяцы…" />
       ) : !month ? (
         <UiV2Notice title="Месяц не выбран">
-          Явный месяц отсутствует или некорректен. Выбери доступный месяц. Импорт выписки и ручные
-          выплаты остаются в своих разделах (#562/#567) и здесь не выполняются.
+          Выбери доступный месяц.
           {monthOptions.fallback
             ? ` Последний доступный: ${formatMonth(monthOptions.fallback.year, monthOptions.fallback.month)}.`
             : ""}
@@ -1446,19 +1439,12 @@ export default function UiV2PayoutForecastPage() {
             </div>
           ) : null}
           {!actualView ? (
-            <>
-              <p className="muted">
-                Импорт фактической выписки — отдельный сценарий; ручные выплаты (#562) остаются в
-                редакторе месяца. Календарь ниже показывает ожидания и применяет только поддержанные
-                прогнозные события после явного подтверждения.
-              </p>
-              <PayoutForecastTool
-                key={`${month.id}:${location.search}`}
-                monthId={month.id}
-                onApplyingChange={setPayoutWriteActive}
-                close={close && close.monthId === month.id ? close : null}
-              />
-            </>
+            <PayoutForecastTool
+              key={`${month.id}:${location.search}`}
+              monthId={month.id}
+              onApplyingChange={setPayoutWriteActive}
+              close={close && close.monthId === month.id ? close : null}
+            />
           ) : null}
           <p>
             <Link
@@ -1473,7 +1459,7 @@ export default function UiV2PayoutForecastPage() {
                   : `/v2/data/months/${month.id}?section=payouts${location.hash}`
               }
             >
-              Ручные выплаты месяца (#562) →
+              Ручные выплаты месяца →
             </Link>
           </p>
         </>
