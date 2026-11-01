@@ -8,6 +8,15 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+1.9.3 is published and installed at `f67e8031b0869c395f57317b76b3fcdae5ea144c`.
+Installed parallel month/payment reads completed promptly, but actual browser UAT
+then reproduced a separate render crash: the old Money table dereferenced legacy
+`signed_minor.settlement` on the native bond statement proof variant. The 1.9.4
+correction handles that response variant and account fee/bonus rows explicitly,
+preserves unknown values, and changes no financial writer. The same emergency
+release scope applies; final installed browser proof belongs to its PR receipt.
+Historical source-only reconfirmation is deferred until the UI is working.
+
 Emergency follow-up to [#1005](https://github.com/LTstripes/hermes-finance/pull/1005):
 1.9.2 was published and installed at `f7966ac6b4f90e6b4113ec9e6eea009cf2dd2b11`.
 The Owner subsequently observed minute-long month/payment reads and local API

@@ -91,6 +91,51 @@ const readback = (id: string): MoneyReadback => ({
   exceptions: ["money_semantics_unsupported"],
   bookkeeping_ready: false,
 });
+
+it("renders native bond proof and account postings without legacy signed-minor fields", () => {
+  const saved: MoneyReadback = {
+    ...readback("native-statement"),
+    contract_version: "broker_money_v3",
+    exceptions: [],
+    bookkeeping_ready: true,
+    current_targets: [
+      ...["-12.34", "12.34", null].map((amount, index) => ({
+        role: "trade" as const,
+        target_id: 20 + index,
+        facts: null,
+        effective: index !== 2,
+        exceptions: [],
+        cash_proof: {
+          proof_variant: "bond_source_caption_v1" as const,
+          nkd_leg: { source_amount: amount, direction: "credit" as const },
+        },
+      })),
+      {
+        role: "account_fee",
+        target_id: "10:50",
+        facts: { amount: "-1.25" },
+        effective: true,
+        exceptions: [],
+      },
+      {
+        role: "broker_bonus",
+        target_id: "10:51",
+        facts: { amount: "3.45" },
+        effective: true,
+        exceptions: [],
+      },
+    ],
+  };
+  render(<MoneyStored saved={saved} />);
+  expect(screen.getAllByText("Сделка с облигацией")).toHaveLength(3);
+  expect(screen.getByText("Комиссия по счёту")).toBeInTheDocument();
+  expect(screen.getByText("Бонус брокера")).toBeInTheDocument();
+  expect(screen.getAllByText(/НКД по выписке:.*12,34/)).toHaveLength(2);
+  expect(screen.getByText("Требуется сверка")).toBeInTheDocument();
+  expect(screen.queryByText(/подтверждены выпиской/)).not.toBeInTheDocument();
+  expect(screen.getAllByText(/Неизвестно|неизвестно/)).not.toHaveLength(0);
+  expect(screen.queryByText(/Расчёт:.*0/)).not.toBeInTheDocument();
+});
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(previewBrokerMoney).mockImplementation(async (_files, intent) => ({

@@ -112,7 +112,7 @@ export type MoneyPreview = {
   }[];
 };
 export type MoneyTarget = {
-  role: "coupon" | "dividend" | "account_funding" | "trade";
+  role: "coupon" | "dividend" | "account_funding" | "trade" | "account_fee" | "broker_bonus";
   target_id: string | number;
   facts: Record<string, string | null> | null;
   components?: Record<string, string | null>;
@@ -121,13 +121,14 @@ export type MoneyTarget = {
   h2?: { account_scope: { status: string }; portfolio_scope: { status: string } };
   trade_revision?: Record<string, string | null>;
   cash_proof?: {
-    proof_variant?: "stock_buy_separate_fee_v1";
-    signed_minor: Record<string, string>;
-    claims: { native_total_basis: string; basis_reference?: string };
+    proof_variant?: "stock_buy_separate_fee_v1" | "bond_source_caption_v1";
+    signed_minor?: Record<string, string>;
+    claims?: { native_total_basis: string; basis_reference?: string };
+    nkd_leg?: { source_amount: string | null; direction: "debit" | "credit" };
   };
 };
 export type MoneyReadback = {
-  contract_version: "broker_money_v1" | "broker_money_v2";
+  contract_version: "broker_money_v1" | "broker_money_v2" | "broker_money_v3";
   request_id: string;
   confirmation_digest: string;
   base_request_id: string;

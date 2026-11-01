@@ -29,13 +29,17 @@ const ownerClaims = [
 ];
 const identity = (row: { import_id: number; ordinal: number }) => `${row.import_id}:${row.ordinal}`;
 const roleLabel = (role: string) =>
-  role === "trade"
-    ? "НКД и комиссия покупки"
-    : role === "coupon"
-      ? "Купон"
-      : role === "dividend"
-        ? "Дивиденд"
-        : "Пополнение счёта";
+  role === "account_fee"
+    ? "Комиссия по счёту"
+    : role === "broker_bonus"
+      ? "Бонус брокера"
+      : role === "trade"
+        ? "НКД и комиссия покупки"
+        : role === "coupon"
+          ? "Купон"
+          : role === "dividend"
+            ? "Дивиденд"
+            : "Пополнение счёта";
 function minor(value: string | null | undefined) {
   if (value == null || !/^\d+$/.test(value)) return null;
   const amount = BigInt(value);
@@ -73,14 +77,22 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
               <Td>
                 {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
                   ? "Комиссия покупки акции"
-                  : roleLabel(target.role)}
+                  : target.cash_proof?.proof_variant === "bond_source_caption_v1"
+                    ? "Сделка с облигацией"
+                    : roleLabel(target.role)}
               </Td>
               <Td>
                 {target.target_id}
                 {target.role === "trade" && ` · ревизия ${target.trade_revision?.revision ?? "?"}`}
               </Td>
               <Td numeric>
-                {target.role === "trade" ? (
+                {target.role === "trade" &&
+                target.cash_proof?.proof_variant === "bond_source_caption_v1" ? (
+                  <span>
+                    НКД по выписке:{" "}
+                    {formatMoney(target.cash_proof.nkd_leg?.source_amount, { empty: "неизвестно" })}
+                  </span>
+                ) : target.role === "trade" ? (
                   <span
                     className={
                       target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
@@ -88,27 +100,32 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
                         : undefined
                     }
                   >
-                    Расчёт: {formatMoney(signedMinor(target.cash_proof?.signed_minor.settlement))},{" "}
+                    Расчёт: {formatMoney(signedMinor(target.cash_proof?.signed_minor?.settlement))},{" "}
                     {target.cash_proof?.proof_variant !== "stock_buy_separate_fee_v1" && (
                       <>
-                        НКД: {formatMoney(signedMinor(target.cash_proof?.signed_minor.paid_nkd))},{" "}
+                        НКД: {formatMoney(signedMinor(target.cash_proof?.signed_minor?.paid_nkd))},{" "}
                       </>
                     )}
-                    комиссия: {formatMoney(signedMinor(target.cash_proof?.signed_minor.commission))}
-                    . Сумма сделки:{" "}
-                    {formatMoney(signedMinor(target.cash_proof?.signed_minor.native_total))},{" "}
+                    комиссия:{" "}
+                    {formatMoney(signedMinor(target.cash_proof?.signed_minor?.commission))}. Сумма
+                    сделки:{" "}
+                    {formatMoney(signedMinor(target.cash_proof?.signed_minor?.native_total))},{" "}
                     {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1" && (
                       <>
                         брокерская комиссия B:{" "}
-                        {formatMoney(signedMinor(target.cash_proof.signed_minor.native_fee))},{" "}
+                        {formatMoney(signedMinor(target.cash_proof.signed_minor?.native_fee))},{" "}
                       </>
                     )}
                     {target.cash_proof?.proof_variant === "stock_buy_separate_fee_v1"
-                      ? `без комиссии; независимое основание: ${target.cash_proof.claims.basis_reference}`
-                      : target.cash_proof?.claims.native_total_basis === "includes_paid_nkd"
+                      ? `без комиссии; независимое основание: ${target.cash_proof.claims?.basis_reference ?? "неизвестно"}`
+                      : target.cash_proof?.claims?.native_total_basis === "includes_paid_nkd"
                         ? "включает НКД"
-                        : "не включает НКД"}
+                        : target.cash_proof?.claims?.native_total_basis === "excludes_paid_nkd"
+                          ? "не включает НКД"
+                          : "основание не указано"}
                   </span>
+                ) : target.role === "account_fee" || target.role === "broker_bonus" ? (
+                  formatMoney(target.facts?.amount, { empty: "неизвестно" })
                 ) : (
                   formatMoney(
                     minor(
@@ -131,7 +148,9 @@ export function MoneyStored({ saved }: { saved: MoneyReadback }) {
                       ),
                       { empty: "Неизвестно" },
                     )
-                  : "Не применяется"}
+                  : target.role === "broker_bonus"
+                    ? "Неизвестно"
+                    : "Не применяется"}
               </Td>
               <Td>{target.effective ? "Подтверждено" : "Требуется сверка"}</Td>
             </tr>
