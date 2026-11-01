@@ -156,11 +156,20 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await expect(
     page.getByRole("region", { name: "Главные показатели" }).getByRole("article"),
   ).toHaveCount(3);
-  await expect(page.getByText(/последние 4 закрытых отчёта/i)).toBeVisible();
+  await expect(
+    page
+      .getByRole("group", { name: "Период динамики капитала" })
+      .getByRole("button", { name: "12 месяцев" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("v2-capital-history")).toHaveAttribute("data-point-count", "4");
   await expect(page.getByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "2");
   await expect(page.getByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "4");
+  await expect(page.getByTestId("v2-capital-change")).toHaveText("+42 600 ₽");
+  await expect(page.getByTestId("v2-capital-change")).toHaveAccessibleDescription("к Май 2031");
   await expect(
-    page.getByText("Изменение состояния, не инвестиционная доходность", { exact: true }),
+    page
+      .getByRole("region", { name: "Где изменились суммы" })
+      .getByText("Изменение ликвидного капитала"),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
     "href",
@@ -220,7 +229,13 @@ test("ui-v2 Home linked pair: gross details and fixed residuals", async ({ page 
   await expect(summary).toHaveCount(1);
   await summary.click();
   await expect(page.getByText(/Синтетическая кредитка ранее/)).toBeVisible();
-  await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  const linkageHelp = page.getByRole("button", { name: "Почему часть счетов не объединена" });
+  await linkageHelp.focus();
+  await page.keyboard.press("Enter");
+  await expect(linkageHelp).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы сохранены в остальных строках.",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "issue-651-linked-pair-expanded");
   expect(evidence.unexpected).toEqual([]);
@@ -278,8 +293,17 @@ test("ui-v2 Home interactions: history windows and native navigation preserve se
   const evidence = await installApi(page);
   await page.goto("/v2?month=12&step=actual_payouts");
   await expect(page.getByTestId("v2-capital")).toBeVisible();
-  await page.getByRole("button", { name: "3 месяца" }).click();
-  await expect(page.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
+  const period = page.getByRole("group", { name: "Период динамики капитала" });
+  await period.getByRole("button", { name: "3 месяца" }).click();
+  await expect(period.getByRole("button", { name: "3 месяца" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(period.getByRole("button", { name: "12 месяцев" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(page.getByTestId("v2-capital-history")).toHaveAttribute("data-point-count", "3");
   await expect(
     page.getByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
   ).toHaveCount(0);
@@ -1508,11 +1532,23 @@ test("ui-v2 historical report contextual window: an older report keeps its highl
   await expect(history).toHaveAttribute("data-point-count", "12");
   await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
   await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);
-  await expect(page.getByText(/окно заканчивается открытым отчётом/)).toBeVisible();
+  const period = page.getByRole("group", { name: "Период истории", exact: true });
+  await expect(period.getByRole("button", { name: "12 месяцев" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-report-contextual-window-12");
 
-  await page.getByRole("button", { name: "3 месяца" }).click();
+  await period.getByRole("button", { name: "3 месяца" }).click();
+  await expect(period.getByRole("button", { name: "3 месяца" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(period.getByRole("button", { name: "12 месяцев" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(history).toHaveAttribute("data-point-count", "3");
   await expect(history).toHaveAttribute("data-window-last-id", String(olderReportId));
   await expect(history.locator('[data-highlight-key="2030-12"]')).toHaveCount(1);

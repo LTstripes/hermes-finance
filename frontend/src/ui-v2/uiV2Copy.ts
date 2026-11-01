@@ -24,3 +24,25 @@ export function eventLabel(component: string): string {
 export function sourceLabel(sourceKind: string): string {
   return SOURCE_LABELS[sourceKind] ?? UNKNOWN_SOURCE_LABEL;
 }
+
+/** Accounting boundary used only in Home and Income copy. */
+export function accountingStartLabel(value: string | null): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(value ?? "");
+  if (!match) return "";
+  const months = [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+  ];
+  const month = months[Number(match[2]) - 1];
+  return month ? `с ${month} ${match[1]}` : "";
+}

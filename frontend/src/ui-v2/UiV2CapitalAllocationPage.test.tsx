@@ -217,13 +217,22 @@ describe("UiV2CapitalAllocationPage", () => {
     expect(within(classes).getByText("Облигации")).toBeInTheDocument();
     expect(within(classes).getByText("Неизвестный класс активов")).toBeInTheDocument();
     const classDetails = classes.closest("details") as HTMLElement;
-    expect(
-      within(classDetails).getByText(/Покрытие известных групп ниже 100%/),
-    ).toBeInTheDocument();
-    expect(within(classDetails).getByText(/Доступность данных: неизвестно/)).toBeInTheDocument();
-    expect(
-      within(classDetails).getByText(/уже показана строкой «Неизвестный класс активов»/),
-    ).toBeInTheDocument();
+    expect(within(classDetails).getByText("⚠ часть сумм не распределена")).toBeInTheDocument();
+    expect(within(classDetails).getAllByText("Неизвестно").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await user.click(
+      within(classDetails).getByRole("button", {
+        name: "Нераспределённые суммы: По классам активов",
+      }),
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Основа долей — полная сумма ликвидных активов",
+    );
+    await user.keyboard("{Escape}");
+    const amountDetails = within(classDetails).getByText("Подробнее о суммах").closest("details");
+    expect(amountDetails).not.toHaveAttribute("open");
+    await user.click(within(classDetails).getByText("Подробнее о суммах"));
+    expect(amountDetails).toHaveAttribute("open");
     expect(within(classDetails).getByText(/Распределено по известным группам/)).toBeInTheDocument();
     expect(within(classes).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
     expect(
@@ -236,19 +245,20 @@ describe("UiV2CapitalAllocationPage", () => {
     await user.click(screen.getByText("Выплаты", { selector: "span" }));
     expect(screen.getByText("Основа долей · включённые выплаты")).toBeInTheDocument();
     expect(screen.getAllByText(/1\s*200\s*₽/).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Погашение основного долга не является пассивным доходом/),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/Топ не означает полный охват/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Погашение — не доход/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Топ-5/)).toHaveLength(3);
+    expect(screen.getByText("Часть сумм приблизительна")).toBeInTheDocument();
     await user.click(screen.getByText("Крупнейшие позиции", { selector: "span" }));
     expect(screen.getByRole("table", { name: "Крупнейшие позиции" })).toBeInTheDocument();
     await user.click(screen.getByText("Погашения", { selector: "span" }));
     expect(
       within(screen.getByRole("table", { name: "Погашения" })).getByText("Погашение облигации"),
     ).toBeInTheDocument();
-    await user.click(screen.getByText("Остальные измерения и ограничения"));
-    expect(screen.getByText(/API сообщает доступность этих измерений/)).toBeInTheDocument();
-    expect(screen.getByText("эмитент не указан")).toBeInTheDocument();
+    expect(screen.queryByText("Остальные измерения и ограничения")).toBeNull();
+    expect(screen.queryByText(/API сообщает/)).toBeNull();
+    const accountDetails = accounts.closest("details") as HTMLElement;
+    expect(within(accountDetails).queryByText(/покрытие/)).toBeNull();
+    expect(within(accountDetails).queryByText("⚠ часть сумм не распределена")).toBeNull();
   });
 
   it("keeps explicit zero separate from null and unavailable event data", async () => {
@@ -273,13 +283,13 @@ describe("UiV2CapitalAllocationPage", () => {
     await user.click(screen.getByText("Выплаты", { selector: "span" }));
     const payouts = screen.getByText("Выплаты", { selector: "span" }).closest("details");
     expect(payouts).not.toBeNull();
-    expect(
-      within(payouts as HTMLElement).getByText("Нет датированных событий в окне."),
-    ).toBeInTheDocument();
+    expect(within(payouts as HTMLElement).getByText("Нет данных")).toBeInTheDocument();
     expect(within(payouts as HTMLElement).getByText("—")).toBeInTheDocument();
     expect(within(payouts as HTMLElement).getAllByText(/0\s*₽/).length).toBeGreaterThan(0);
     await user.click(screen.getByText("Погашения", { selector: "span" }));
-    expect(screen.getByText("Срез недоступен или покрытие не подтверждено.")).toBeInTheDocument();
+    const redemptions = screen.getByText("Погашения", { selector: "span" }).closest("details");
+    expect(within(redemptions as HTMLElement).getByText("Нет данных")).toBeInTheDocument();
+    expect(within(redemptions as HTMLElement).getByText("Недоступно")).toBeInTheDocument();
   });
 
   it("calls the portfolio empty only for confirmed explicit zero, and marks a missing slice", async () => {
@@ -310,12 +320,9 @@ describe("UiV2CapitalAllocationPage", () => {
     const zeroDetails = screen
       .getByText("По классам активов", { selector: "span" })
       .closest("details") as HTMLElement;
-    expect(
-      within(zeroDetails).getByText(/нулевая основа, доля не определяется/),
-    ).toBeInTheDocument();
-    expect(
-      within(zeroDetails).getByText("При нулевой основе процент покрытия не определяется."),
-    ).toBeInTheDocument();
+    await user.click(within(zeroDetails).getByText("Подробнее о суммах"));
+    expect(within(zeroDetails).getAllByText(/0\s*₽/)).toHaveLength(3);
+    expect(within(zeroDetails).queryByText(/100,00%/)).toBeNull();
     expect(
       within(zeroDetails).queryByText(
         /Покрытие известных групп ниже 100%|API не определил долю покрытия|Доступность данных:/,
@@ -327,7 +334,7 @@ describe("UiV2CapitalAllocationPage", () => {
       allocation_by_asset_class: undefined,
     } as unknown as RiskAllocationResponse);
     setup();
-    expect(await screen.findByText("По классам активов: нет ответа")).toBeInTheDocument();
+    expect(await screen.findByText("По классам активов: нет данных")).toBeInTheDocument();
     expect(screen.queryByText("Портфель пуст")).toBeNull();
   });
 
@@ -361,13 +368,9 @@ describe("UiV2CapitalAllocationPage", () => {
     const accountDetails = accounts.closest("details") as HTMLElement;
     expect(within(accounts).getByText("Наличные без привязки к счёту")).toBeInTheDocument();
     expect(within(accounts).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
-    expect(
-      within(accountDetails).getByText(/уже показана строкой «Наличные без привязки к счёту»/),
-    ).toBeInTheDocument();
-    expect(
-      within(accountDetails).getByText(/Покрытие известных групп ниже 100%/),
-    ).toBeInTheDocument();
-    expect(within(accountDetails).getByText(/Доступность данных: недоступно/)).toBeInTheDocument();
+    expect(within(accounts).getByText(/20,00%/)).toBeInTheDocument();
+    expect(within(accountDetails).getByText("⚠ часть сумм не распределена")).toBeInTheDocument();
+    expect(within(accountDetails).getByText("Недоступно")).toBeInTheDocument();
     expect(within(accountDetails).queryByText(/Строки не равны всему портфелю/)).toBeNull();
   });
 
@@ -407,11 +410,11 @@ describe("UiV2CapitalAllocationPage", () => {
   it("hides a mismatched response and distinguishes loading, error and empty months", async () => {
     vi.mocked(getRiskAllocation).mockResolvedValue({ ...response(), as_of_date: "2031-02-27" });
     const mounted = setup();
-    expect(await screen.findByText("Ответ не совпал со снимком")).toBeInTheDocument();
+    expect(await screen.findByText("Не удалось загрузить")).toBeInTheDocument();
     mounted.unmount();
     vi.mocked(listMonths).mockRejectedValue(new Error("Synthetic failure"));
     setup();
-    expect(await screen.findByText("Не удалось загрузить месяцы")).toBeInTheDocument();
+    expect(await screen.findByText("Не удалось загрузить")).toBeInTheDocument();
   });
 
   it("supports keyboard focus and opening of detail summaries", async () => {

@@ -183,14 +183,16 @@ it("renders a backend pair once, with gross endpoints and a zero net delta", asy
   explanation.residual_asset_class_deltas[0].amount.amount = "52660.00";
   explanation.residual_debt_contribution_delta.amount = "-10060.00";
   mount();
-  const summary = await screen.findByText(/Synthetic funded account · связанный счёт/);
-  expect(screen.getAllByText(/Synthetic funded account · связанный счёт/)).toHaveLength(1);
+  const summary = await screen.findByText("Synthetic funded account");
+  expect(screen.getAllByText("Synthetic funded account")).toHaveLength(1);
   expect(summary.closest("li")).toHaveTextContent("0 ₽");
   fireEvent.click(summary);
   expect(screen.getByText(/Synthetic prior card/)).toHaveTextContent("счёт 100 ₽");
   expect(screen.getByText(/Synthetic current card/)).toHaveTextContent("счёт 40 ₽");
-  expect(screen.getByText(/Для части счетов нет явной связи/)).toBeVisible();
-  expect(screen.getByText(/Связь не устанавливает источник погашения/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Почему часть счетов не объединена" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Почему часть счетов не объединена" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Для части счетов нет явной связи");
+  expect(screen.queryByText(/Связь не устанавливает источник погашения/)).toBeNull();
 });
 
 it("withholds an unavailable or unreconciled explanation", async () => {
@@ -214,7 +216,9 @@ it("hides cached pair facts during refetch and shows only the fresh readback", a
   if (!state.comparison.explanation) throw new Error("Missing explanation");
   state.comparison.explanation.noncomparable_account_ids = [77];
   await act(async () => onlineManager.setOnline(true));
-  expect(await screen.findByText(/Для части счетов нет явной связи/)).toBeVisible();
+  expect(
+    await screen.findByRole("button", { name: "Почему часть счетов не объединена" }),
+  ).toBeVisible();
 });
 
 it("rejects a comparison whose previous CLOSED endpoint is stale", async () => {
@@ -248,11 +252,13 @@ it("ignores a late old comparison after a corrected readback has settled", async
   await act(async () => {
     await client.invalidateQueries({ queryKey: queryKeys.closedReportComparison });
   });
-  expect(await screen.findByText(/Для части счетов нет явной связи/)).toBeVisible();
+  expect(
+    await screen.findByRole("button", { name: "Почему часть счетов не объединена" }),
+  ).toBeVisible();
   await act(async () => {
     release();
   });
-  expect(screen.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Почему часть счетов не объединена" })).toBeVisible();
   expect(client.getQueryData(queryKeys.closedReportComparison)).toEqual(state.comparison);
 });
 
@@ -272,7 +278,7 @@ it("shows no financial snapshot when there is no closed report yet", async () =>
   state.months = [uiV2Months[1]];
   mount();
   expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Перейти к закрытию месяца →" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Закрой первый месяц →" })).toHaveAttribute(
     "href",
     "/v2/close",
   );
@@ -296,7 +302,9 @@ it("distinguishes an unavailable previous CLOSED base from a genuine zero", asyn
   expect(screen.getByText("Пока нет базы сравнения")).toBeVisible();
   expect(screen.getByTestId("v2-passive-actual")).toHaveTextContent("0 ₽");
   expect(screen.getByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "1");
-  expect(screen.getAllByText(/Среднее 0 ₽ · 1 из 12 закрытых отчётов/i)).toHaveLength(2);
+  expect(screen.getAllByText("Среднее за 12 мес: 0 ₽")).toHaveLength(2);
+  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("1 из 12 закрытых отчётов");
   expect(screen.getAllByText("0,00%")).toHaveLength(2);
   expect(screen.getByText("Нужны два закрытых отчёта для сравнения")).toBeVisible();
 });
@@ -305,15 +313,15 @@ it("uses last 3/12/all CLOSED report records without manufacturing calendar mont
   const { mount } = setup();
   mount();
   expect(await screen.findByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "2");
-  expect(screen.getByText(/последние 4 закрытых отчёта/i)).toBeVisible();
+  expect(screen.getByTestId("v2-capital-history")).toHaveAttribute("data-point-count", "4");
   fireEvent.click(screen.getByRole("button", { name: "3 месяца" }));
   expect(screen.getByRole("button", { name: "12 месяцев" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Всё время" })).toBeInTheDocument();
-  expect(screen.getByText(/последние 3 закрытых отчёта/i)).toBeVisible();
+  expect(screen.getByTestId("v2-capital-history")).toHaveAttribute("data-point-count", "3");
   expect(screen.getByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "1");
   expect(
-    screen.getByText(/Пропуски показаны разрывами; значения не интерполируются/i),
-  ).toBeVisible();
+    screen.queryByText(/Пропуски показаны разрывами; значения не интерполируются/i),
+  ).toBeNull();
 });
 
 it("keeps liabilities and negative net visible when every asset slice is zero", async () => {
@@ -352,10 +360,12 @@ it("does not present an empty passive-income window as a measured zero average",
   passiveGoal.achievement_forecast.passive_income_months_used = [];
   mount();
   expect(await screen.findByTestId("v2-passive-actual")).toHaveTextContent("17 500 ₽");
-  expect(
-    screen.getAllByText(/Среднее пока недоступно · 0 из 12 закрытых отчётов · учёт с Август 2031/i),
-  ).toHaveLength(2);
-  expect(screen.queryByText(/^Среднее 0 ₽/)).toBeNull();
+  expect(screen.getAllByText("Пока нет данных")).toHaveLength(2);
+  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "0 из 12 закрытых отчётов · учёт с августа 2031",
+  );
+  expect(screen.queryByText(/^Среднее за 12 мес: 0 ₽/)).toBeNull();
   expect(screen.queryByText("Пассивный доход", { selector: "h3" })).toBeNull();
   expect(screen.getByText("Резервный капитал")).toBeVisible();
 });
@@ -378,7 +388,12 @@ it("plots only passive-income records included by the backend average window", a
   passiveGoal.achievement_forecast.passive_income_months_used = ["2031-05", "2031-07"];
   mount();
   expect(await screen.findByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "2");
-  expect(screen.getByText("На графике только отчёты, вошедшие в среднее: 2.")).toBeVisible();
+  expect(screen.getAllByText("Среднее за 12 мес: 16 550 ₽")).toHaveLength(2);
+  expect(screen.queryByText(/На графике только отчёты/)).toBeNull();
+  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "2 из 12 закрытых отчётов · учёт с мая 2031",
+  );
 });
 
 it("keeps other Home blocks usable when one financial widget fails", async () => {
@@ -501,7 +516,7 @@ it("recovers the root report list without querying a guessed report", async () =
   const { mount, state, reads } = setup();
   state.monthsError = true;
   mount();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить отчёты");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить");
   expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   state.monthsError = false;
   fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
@@ -554,4 +569,15 @@ describe("UI v2 isolation", () => {
     expect(screen.getByRole("button", { name: "Повторить загрузку" })).toBeVisible();
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
   });
+});
+
+it("shows the configured April boundary in genitive only on disclosure", async () => {
+  const { mount, state } = setup();
+  state.passive.average.configured_start_month = "2031-04";
+  mount();
+
+  await screen.findByTestId("v2-passive-actual");
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("учёт с апреля 2031");
 });

@@ -450,7 +450,9 @@ it("runs explicit preview, then cancel leaves no write, confirm applies and rere
 
   // Apply is a separate explicit choice behind a confirm dialog.
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
-  expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+  const confirmation = await screen.findByRole("alertdialog");
+  expect(confirmation).toHaveTextContent("Август 2026");
+  expect(confirmation).not.toHaveTextContent(/месяц #/i);
   await user.click(screen.getByRole("button", { name: "Отмена" }));
   expect(applyPayouts).not.toHaveBeenCalled();
   expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
@@ -537,7 +539,7 @@ it("rejects a single preview for a foreign position/account/instrument", async (
   show("?month=7");
   await screen.findByText("Объединённый календарь выплат");
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
-  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(screen.queryByText("Новая")).not.toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
@@ -560,7 +562,7 @@ it("rejects a batch response with the wrong forecast version", async () => {
   show("?month=7");
   await screen.findByText("Объединённый календарь выплат");
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
-  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
@@ -593,7 +595,7 @@ it("rejects a batch response with a foreign embedded item identity", async () =>
   show("?month=7");
   await screen.findByText("Объединённый календарь выплат");
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
-  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
@@ -613,7 +615,7 @@ it("a refreshed batch item cannot replace another position", async () => {
   await user.click(screen.getByRole("button", { name: "Развернуть всё" }));
   const refreshButtons = screen.getAllByRole("button", { name: "Обновить preview" });
   await user.click(refreshButtons[0]);
-  expect(await screen.findByText(/не соответствует запрошенному/)).toBeInTheDocument();
+  expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(screen.getByText("Проверка завершена")).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
@@ -1022,7 +1024,7 @@ it.each(["date", "reconciliation", "counting", "manual_link"])(
     await screen.findByText("Новая");
     await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
     await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
-    expect(await screen.findByText(/APPLIED_UNVERIFIED/)).toBeInTheDocument();
+    expect(await screen.findByText(/Сохранение не подтверждено/)).toBeInTheDocument();
     expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
   },
 );
@@ -1056,7 +1058,7 @@ it("does not confirm readback after the reporting-month snapshot context changes
   await screen.findByText("Новая");
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
   await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
-  expect(await screen.findByText(/APPLIED_UNVERIFIED/)).toBeInTheDocument();
+  expect(await screen.findByText(/Сохранение не подтверждено/)).toBeInTheDocument();
   expect(screen.queryByText(/Применено выплат/)).not.toBeInTheDocument();
 });
 
@@ -1379,9 +1381,9 @@ it("bulk mixed success and ambiguous failure retains CONFIRMED, UNKNOWN and NOT_
   await screen.findByText("Выбрано событий: 3");
   await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
   await user.click(screen.getByRole("button", { name: "Подтвердить выбор (3 групп)" }));
-  await screen.findByText(/UNKNOWN/);
-  expect(screen.getByText(/CONFIRMED/)).toBeInTheDocument();
-  expect(screen.getByText(/NOT_SENT/)).toBeInTheDocument();
+  await screen.findByText(/Результат неизвестен/);
+  expect(screen.getByText(/Сохранение подтверждено/)).toBeInTheDocument();
+  expect(screen.getByText(/Запрос не отправлен · версия/)).toBeInTheDocument();
   expect(applyPayouts).toHaveBeenCalledTimes(2);
   view.unmount();
   show("?month=7");
@@ -1421,7 +1423,7 @@ it("a preview queued before Apply cannot rearm selection after UNKNOWN", async (
     refresh.click();
     confirm.click();
   });
-  await screen.findByText(/UNKNOWN/);
+  await screen.findByText(/Результат неизвестен/);
   expect(applyPayouts).toHaveBeenCalledTimes(1);
   await act(async () => {
     reply(previewFixture);
@@ -1495,8 +1497,8 @@ it("bulk blocks duplicate clicks and individual Apply until authoritative readba
     error_code: null,
     message: null,
   });
-  await screen.findByText(/CONFIRMED/);
-  expect(screen.getByText(/NOT_SENT/)).toBeInTheDocument();
+  await screen.findByText(/Сохранение подтверждено/);
+  expect(screen.getByText(/Запрос не отправлен · версия/)).toBeInTheDocument();
   expect(applyPayouts).toHaveBeenCalledTimes(1);
 });
 
@@ -1517,8 +1519,8 @@ it("bulk rejects changed local quantity before POST and leaves later groups NOT_
   );
   await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
   await user.click(screen.getByRole("button", { name: "Подтвердить выбор (2 групп)" }));
-  await screen.findByText(/STALE_NO_WRITE/);
-  expect(screen.getByText(/NOT_SENT/)).toBeInTheDocument();
+  await screen.findByText(/Данные устарели, запрос не отправлен/);
+  expect(screen.getByText(/Запрос не отправлен · версия/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
@@ -1554,7 +1556,7 @@ it("collapsed warnings remain visible and manual duplicates require explicit row
   await screen.findByText("Объединённый календарь выплат");
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText(/Возможный ручной дубль/);
-  expect(screen.getByText(/ALREADY_PRESENT/)).toBeInTheDocument();
+  expect(screen.getByText(/Уже сохранено; повторно не отправляется/)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Выбрать доступные" }));
   expect(screen.getByText("Выбрано событий: 0")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Развернуть всё" }));
@@ -1571,5 +1573,5 @@ it("collapsed warnings remain visible and manual duplicates require explicit row
     counting_decision: "count_manual",
   });
   // A receipt lacking that explicit link remains unverified, never a false success.
-  await screen.findByText(/APPLIED_UNVERIFIED/);
+  await screen.findByText(/Сохранение не подтверждено/);
 });

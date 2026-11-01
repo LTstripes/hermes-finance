@@ -122,10 +122,6 @@ function CompositionBlock({
   const [mode, setMode] = useState<CapitalCompositionMode>("amount");
   const datum =
     assetClasses.length > 0 ? buildCapitalCompositionSeries([point], assetClasses)[0] : null;
-  const positive = assetClasses.some((assetClass) => {
-    const amount = datum?.amounts[assetClass];
-    return amount != null && !isZeroAmount(amount);
-  });
   return (
     <Panel
       action={
@@ -187,16 +183,6 @@ function CompositionBlock({
               </dd>
             </div>
           </dl>
-          {positive ? null : (
-            <p className={reportStyles.muted} data-testid="report-composition-empty">
-              В этом отчёте нет положительных ликвидных активов: известные нули остаются нулями, а
-              доли не рассчитываются.
-            </p>
-          )}
-          <p className={styles.panelFootnote}>
-            Обязательства показаны отдельной строкой вычета и не входят в состав как отрицательная
-            доля. Доли считаются от ликвидных активов этого отчёта.
-          </p>
         </>
       )}
     </Panel>
@@ -288,13 +274,6 @@ function HistoryBlock({
           points={visible}
         />
       </div>
-      <p className={styles.panelFootnote}>
-        {window === "all"
-          ? `Показаны все закрытые отчёты (${visible.length}).`
-          : `Показано ${visible.length} закрытых отчётов — окно заканчивается открытым отчётом.`}{" "}
-        Пропуски остаются пропусками; значения не интерполируются. Выделенный отчёт — тот, который
-        открыт на этой странице.
-      </p>
       <div className={reportStyles.neighbours}>
         {position.previous ? (
           <NeighbourLink direction="previous" point={position.previous} />
@@ -328,9 +307,6 @@ function LinkedPairsBlock({ point }: { point: CapitalCompositionPoint }) {
           </li>
         ))}
       </ul>
-      <p className={styles.panelFootnote}>
-        Эти суммы уже входят в ликвидные активы и включённые обязательства и повторно не вычитаются.
-      </p>
     </Panel>
   );
 }
@@ -388,11 +364,6 @@ function HoldingsBlock({
           </div>
         );
       })}
-      <p className={styles.panelFootnote}>
-        Строки показаны как есть в закрытом отчёте. Итоги берутся из подтверждённой сводки, а не из
-        суммы строк. Справочники счетов и инструментов — текущие, поэтому действует оговорка о
-        методике.
-      </p>
     </Panel>
   );
 }
@@ -427,22 +398,17 @@ function TopPositionsBlock({
       ) : concentration.items.length === 0 ? (
         <p className={reportStyles.muted}>Нет позиций с положительной оценкой.</p>
       ) : (
-        <>
-          <ul className={reportStyles.positionList} data-testid="report-top-positions">
-            {concentration.items.map((item) => (
-              <li key={item.key}>
-                <span className={reportStyles.className}>{item.label}</span>
-                <strong>{money(item.amount)}</strong>
-                <span className={reportStyles.classShare}>
-                  {formatPercent(item.share_pct, { digits: 1 })}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className={styles.panelFootnote}>
-            Это не оценка риска и не инвестиционная доходность.
-          </p>
-        </>
+        <ul className={reportStyles.positionList} data-testid="report-top-positions">
+          {concentration.items.map((item) => (
+            <li key={item.key}>
+              <span className={reportStyles.className}>{item.label}</span>
+              <strong>{money(item.amount)}</strong>
+              <span className={reportStyles.classShare}>
+                {formatPercent(item.share_pct, { digits: 1 })}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </Panel>
   );
@@ -559,9 +525,7 @@ export default function UiV2ReportPage() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
-        Отчёт скрыт, пока список подтверждённых закрытых отчётов не прочитан.
-      </UiV2Notice>
+      <UiV2WidgetState title="Не удалось загрузить" retry={() => void monthsQuery.refetch()} />
     );
   } else if (!monthsReady || !target) {
     content = <UiV2Loading label="Проверяем отчёт…" />;
@@ -592,21 +556,13 @@ export default function UiV2ReportPage() {
     );
   } else if (!compositionReady) {
     content = (
-      <UiV2Notice
-        retry={() => void compositionQuery.refetch()}
-        title="Данные отчёта не подтверждены"
-      >
-        Подтверждённая история закрытых отчётов не прочитана, поэтому денежные значения этого отчёта
-        скрыты. <Link to={REPORTS_PATH}>Все отчёты →</Link>
+      <UiV2Notice retry={() => void compositionQuery.refetch()} title="Не удалось загрузить">
+        <Link to={REPORTS_PATH}>Все отчёты →</Link>
       </UiV2Notice>
     );
   } else if (!position) {
     content = (
-      <UiV2Notice
-        retry={() => void compositionQuery.refetch()}
-        title="Отчёт не подтверждён в истории"
-      >
-        Этот месяц закрыт, но его подтверждённого снимка в истории закрытых отчётов нет.{" "}
+      <UiV2Notice retry={() => void compositionQuery.refetch()} title="Нет снимка отчёта">
         <Link to={REPORTS_PATH}>Все отчёты →</Link>
       </UiV2Notice>
     );
@@ -653,10 +609,6 @@ export default function UiV2ReportPage() {
             <p className={reportStyles.muted} data-testid="report-change-unavailable">
               {NO_HISTORICAL_CHANGE_TEXT}
             </p>
-            <p className={styles.panelFootnote}>
-              Изменение состояния остаётся в «Мои финансы» и «Капитал» для двух последних закрытых
-              отчётов: <Link to="/v2">Мои финансы →</Link> · <Link to="/v2/capital">Капитал →</Link>
-            </p>
           </Panel>
           <LinkedPairsBlock point={position.point} />
           <HoldingsBlock
@@ -691,10 +643,6 @@ export default function UiV2ReportPage() {
                 <Link to="/v2/data/months">Отчётные месяцы →</Link>
               </li>
             </ul>
-            <p className={styles.panelFootnote}>
-              Данные месяца открываются для этого отчёта. В разделе доходности можно выбрать
-              отдельный интервал расчёта.
-            </p>
           </Panel>
         </div>
       </>
@@ -710,10 +658,6 @@ export default function UiV2ReportPage() {
           <h1 id="report-title" tabIndex={-1}>
             Исторический отчёт
           </h1>
-          <p className={styles.subtitle}>
-            Как выглядел отчёт выбранного закрытого месяца. Текущий отчёт всегда открыт в «Мои
-            финансы».
-          </p>
           <p className={reportStyles.backLink}>
             <Link to={REPORTS_PATH}>← Все отчёты</Link>
           </p>

@@ -22,6 +22,7 @@ import {
   CapitalCompositionChart,
   type CapitalCompositionMode,
 } from "../components/charts/CapitalCompositionChart";
+import { HelpTip } from "../components/ui";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMonth, formatPercent } from "../lib/format";
 import { unsupportedMetricReason } from "../lib/riskSupportCopy";
@@ -105,14 +106,12 @@ function HeadlineGrid({
   const current = ready ? (comparison?.current ?? null) : null;
   const retryOrNothing = ready ? undefined : retry;
   const metrics: Array<{
-    detail: string;
     eyebrow: string;
     primary?: boolean;
     testId: string;
     value: string | null;
   }> = [
     {
-      detail: "Активы за вычетом включённых обязательств",
       eyebrow: "Ликвидный капитал",
       primary: true,
       testId: "capital-net",
@@ -123,13 +122,11 @@ function HeadlineGrid({
         : null,
     },
     {
-      detail: "Деньги, депозиты, ценные бумаги и прочее ликвидное",
       eyebrow: "Ликвидные активы",
       testId: "capital-assets",
       value: current ? money(current.liquid_assets_total) : null,
     },
     {
-      detail: "Вычитаются из активов, не входят в состав",
       eyebrow: "Включённые обязательства",
       testId: "capital-debts",
       value: current ? `− ${money(current.included_debts)}` : null,
@@ -143,7 +140,15 @@ function HeadlineGrid({
             className={`${styles.metric} ${metric.primary ? styles.metricPrimary : ""}`}
             key={metric.testId}
           >
-            <p className={styles.eyebrow}>{metric.eyebrow}</p>
+            <p className={styles.eyebrow}>
+              {metric.eyebrow}
+              {metric.primary ? (
+                <HelpTip label="Как считается капитал">
+                  Ликвидные активы минус включённые обязательства = ликвидный капитал. Жильё и
+                  ипотека в ликвидный капитал не входят.
+                </HelpTip>
+              ) : null}
+            </p>
             {metric.value === null ? (
               <UiV2WidgetState retry={retryOrNothing} />
             ) : (
@@ -154,7 +159,6 @@ function HeadlineGrid({
                 {metric.primary ? (
                   <PortfolioCoverageNote coverage={current?.portfolio_source_coverage} />
                 ) : null}
-                <p className={styles.metricDetail}>{metric.detail}</p>
               </>
             )}
           </article>
@@ -164,10 +168,6 @@ function HeadlineGrid({
         <Link className={styles.contextLink} to="/v2/returns">
           Доходность в целом — вся доступная история и инструменты
         </Link>
-      </p>
-      <p className={styles.panelFootnote}>
-        Ликвидные активы минус включённые обязательства = ликвидный капитал. Жильё и ипотека в
-        ликвидный капитал не входят.
       </p>
     </>
   );
@@ -234,10 +234,6 @@ function CompositionOverTime({
             mode={mode}
             points={visible}
           />
-          <p className={styles.panelFootnote}>
-            Показаны последние {visible.length} закрытых отчёта. Пропуски остаются пропусками;
-            значения не интерполируются.
-          </p>
         </div>
       )}
     </Panel>
@@ -264,33 +260,27 @@ function AccountBuckets({
     return <p className={capitalStyles.muted}>В закрытом отчёте нет строк для этого среза.</p>;
   }
   return (
-    <>
-      <ul className={capitalStyles.bucketList}>
-        {metric.items.map((item) => (
-          <li key={item.key}>
-            <button
-              aria-pressed={filter?.kind === "account" && filter.value === item.key}
-              className={capitalStyles.bucketButton}
-              data-testid={`capital-bucket-${item.key}`}
-              onClick={() => onPickAccount(item.key, item.label)}
-              type="button"
-            >
-              <span className={capitalStyles.className}>
-                {item.key === UNASSIGNED_CASH_KEY ? "Наличные без привязки к счёту" : item.label}
-              </span>
-              <strong>{money(item.amount)}</strong>
-              <span className={capitalStyles.classShare}>
-                {formatPercent(item.share_pct, { digits: 1 })}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className={styles.panelFootnote}>
-        Наличные в этом срезе остаются без привязки к счёту. Счета ниже показывают только депозиты и
-        позиции.
-      </p>
-    </>
+    <ul className={capitalStyles.bucketList}>
+      {metric.items.map((item) => (
+        <li key={item.key}>
+          <button
+            aria-pressed={filter?.kind === "account" && filter.value === item.key}
+            className={capitalStyles.bucketButton}
+            data-testid={`capital-bucket-${item.key}`}
+            onClick={() => onPickAccount(item.key, item.label)}
+            type="button"
+          >
+            <span className={capitalStyles.className}>
+              {item.key === UNASSIGNED_CASH_KEY ? "Наличные без привязки к счёту" : item.label}
+            </span>
+            <strong>{money(item.amount)}</strong>
+            <span className={capitalStyles.classShare}>
+              {formatPercent(item.share_pct, { digits: 1 })}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -410,8 +400,7 @@ function HoldingsBlock({
         );
       })}
       <p className={styles.panelFootnote}>
-        Строки показаны как есть в закрытом отчёте. Итоги берутся из подтверждённой сводки, а не из
-        суммы строк. <Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>
+        <Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>
       </p>
     </Panel>
   );
@@ -478,11 +467,10 @@ function PropertyBlock({
               )}
             </dl>
           ) : null}
-          <p className={styles.panelFootnote}>
-            Недвижимость и ипотека не входят в ликвидный капитал и не смешиваются с составом.
-            Разница показана со знаком: положительная — капитала больше остатка ипотеки,
-            отрицательная — меньше.
-          </p>
+          <HelpTip label="Сравнение капитала и ипотеки">
+            Недвижимость и ипотека не входят в ликвидный капитал. Положительная разница — капитала
+            больше остатка ипотеки, отрицательная — меньше.
+          </HelpTip>
         </>
       )}
     </Panel>
@@ -655,17 +643,14 @@ export default function UiV2CapitalPage() {
   let content: ReactNode;
   if (monthsQuery.isError) {
     content = (
-      <UiV2Notice title="Не удалось загрузить отчёты" retry={() => void monthsQuery.refetch()}>
-        Показатели капитала скрыты, пока актуальный закрытый отчёт не подтверждён.
-      </UiV2Notice>
+      <UiV2WidgetState title="Не удалось загрузить" retry={() => void monthsQuery.refetch()} />
     );
   } else if (!monthsReady) {
     content = <UiV2Loading label="Проверяем последний закрытый отчёт…" />;
   } else if (!latestClosed) {
     content = (
       <UiV2Notice title="Закрой первый отчёт">
-        «Капитал» строится только по закрытым данным. Черновик не выдаётся за подтверждённую
-        финансовую картину. <Link to="/v2/close">Перейти к закрытию месяца →</Link>
+        <Link to="/v2/close">Закрой первый месяц →</Link>
       </UiV2Notice>
     );
   } else {
@@ -729,7 +714,6 @@ export default function UiV2CapitalPage() {
                 <Concentration
                   expanded
                   metric={riskQuery.data?.top_positions}
-                  basis="Основа долей · ликвидные активы"
                   title="Крупнейшие позиции"
                   renderLabel={(item) => {
                     const row = holdingRows.find(
