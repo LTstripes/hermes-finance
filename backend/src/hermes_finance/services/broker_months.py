@@ -162,7 +162,9 @@ def _controls(document, session=None, *, source=None, account_id=None, month_id=
             kind: [leg for leg in trade.get("cash_legs", []) if leg["kind"] == kind]
             for kind in ("settlement", "commission")
         }
-        if proof and "proof_variant" not in proof:
+        if proof and (
+            "proof_variant" not in proof or proof["proof_variant"] == "bond_source_caption_v1"
+        ):
             leg = proof["nkd_leg"]
             groups["paid_nkd"] = [
                 {

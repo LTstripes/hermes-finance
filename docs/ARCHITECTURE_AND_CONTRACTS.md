@@ -1893,6 +1893,35 @@ Apply use the same versioned original-bound classification. It never deletes
 tax/NKD/fee economics or changes exact/indicative return readiness. A successful
 partial Apply is not financial completeness or permission to Close.
 
+The original-bound `source_bookkeeping` section-disposition variant may separately
+acknowledge the complete existing versioned structure classification of a saved
+SOURCE. It binds the immutable original hash, S1 digest, mappings, month geometry,
+source projection and monotonic dependency authority. Only the exact supported
+Positions preliminary-tax footer and Money display/control branches, including
+complete repeated occurrence inventory, remove `unparsed_source_rows` at that
+source/month grain. This neither edits S1 nor classifies any Money row, accepts a
+tax payment or grants H2/return coverage. Existing Transfers/UFSR dispositions
+retain their literal shapes and frozen coverage projection.
+
+`POST /api/broker-months/statement-evidence/preview|apply` supplements an existing
+SOURCE without reimporting positions, trades, cash or payouts. The request names
+only that base receipt and reattaches its exact original. A server-compiled Money
+v3 proof reuses existing canonical trade revisions and the month journal. Exact
+native bond captions must independently establish inclusion of NKD; complete
+BUY/SELL NKD cohorts preserve every occurrence and prove identical per-execution
+economics without assigning indistinguishable rows to guessed trade IDs. Native
+settlement, separately posted NKD and bank commission must reconcile exactly with
+their source dates/currency/direction and complete identifiers. A recognized exact
+daily account commission is owned once at account level, never allocated to trades
+or deducted from closing cash again. Missing/zero/ambiguous basis remains blocked.
+V3 here accepts only trade/account-fee proof: existing v1/v2 payouts and H2 capital
+events cannot be created, replaced or reclassified. Preview is read-only; Apply
+reserves the writer, recomputes the full plan, rejects stale/ABA contexts and
+atomically appends proof/revision/ownership, with exact-key replay and independent
+GET. A compatible backend release must precede any new proof persistence; no
+schema migration or historical receipt rewrite is required. An unsupported broker
+bonus remains an explicit Money/Close exception, never an assumed Owner deposit.
+
 The bounded XML/investment-PDF payout adapter emits ordinary `broker_money_v2`
 intents, not a new writer or receipt format. It requires exact account, period,
 kind, posted date and net-amount group agreement and a unique compatible catalogue

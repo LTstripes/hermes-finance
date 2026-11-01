@@ -117,7 +117,12 @@ def settlement_principal_reasons(
                 posted += Decimal(cash_proof["nkd_leg"]["source_amount"])
             return (
                 []
-                if -posted == Decimal(core["trade_amount"])
+                if (
+                    (-posted if Decimal(core["quantity"]) > 0 else posted)
+                    if cash_proof.get("proof_variant") == "bond_source_caption_v1"
+                    else -posted
+                )
+                == Decimal(core["trade_amount"])
                 else ["settlement_principal_unresolved"]
             )
     if (
@@ -313,7 +318,9 @@ def _candidate(session: Session, context: dict, identity: str, *, cash_proof=Non
             }
         )
     settlements = leg_groups["settlement"]
-    if cash_proof and "proof_variant" not in cash_proof:
+    if cash_proof and (
+        "proof_variant" not in cash_proof or cash_proof["proof_variant"] == "bond_source_caption_v1"
+    ):
         nkd_leg = cash_proof["nkd_leg"]
         legs.append(nkd_leg)
         leg_groups["paid_nkd"].append(

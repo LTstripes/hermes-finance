@@ -60,7 +60,8 @@ from hermes_finance.statement_import.mybroker import (
 
 CONTRACT = "broker_money_v1"
 CONTRACT_V2 = "broker_money_v2"
-MONEY_CONTRACTS = {CONTRACT, CONTRACT_V2}
+CONTRACT_V3 = "broker_money_v3"
+MONEY_CONTRACTS = {CONTRACT, CONTRACT_V2, CONTRACT_V3}
 
 
 def material(row):
@@ -109,6 +110,18 @@ def latest_proofs(session):
 
 
 def _target(session, role, target_id):
+    if role == "account_fee":
+        import_id, ordinal = map(int, target_id.split(":"))
+        source = session.get(MyBrokerImport, import_id, populate_existing=True)
+        row = (
+            next(
+                (r for r in json.loads(source.normalized_json)["money"] if r["ordinal"] == ordinal),
+                None,
+            )
+            if source
+            else None
+        )
+        return {"role": role, "target_id": target_id, "facts": row}
     if role == "trade":
         trade = session.get(ExecutedTrade, target_id, populate_existing=True)
         revision = session.scalar(
@@ -319,7 +332,9 @@ def _union(session, intent, originals):
             document=document,
             filename=filename,
             account_id=intent.account_id,
-            adapter=ADAPTER_V2 if intent.contract_version == CONTRACT_V2 else ADAPTER,
+            adapter=ADAPTER_V2
+            if intent.contract_version in {CONTRACT_V2, CONTRACT_V3}
+            else ADAPTER,
         )
         stored = json.loads(source.normalized_json)
         entry["adapter"] = diagnostic.adapter
@@ -811,6 +826,10 @@ def preview_money(session, intent, originals):
 
 
 def effective_occurrence(session, source_id, row):
+    from hermes_finance.services.broker_statement_money import effective_statement_occurrence
+
+    if effective_statement_occurrence(session, source_id, row):
+        return True
     owner = session.scalar(
         select(BrokerMoneyOccurrenceOwner).where(
             BrokerMoneyOccurrenceOwner.import_id == source_id,
@@ -843,7 +862,7 @@ def effective_occurrence(session, source_id, row):
 
 def proof_blockers(session, receipt, proof, target):
     blockers = set()
-    if proof["contract_version"] == CONTRACT_V2:
+    if proof["contract_version"] in {CONTRACT_V2, CONTRACT_V3}:
         from hermes_finance.services.actual_payouts import _physical
 
         try:
@@ -853,7 +872,11 @@ def proof_blockers(session, receipt, proof, target):
             blockers.add("money_database_incarnation_unavailable")
     if proof["operation"] == "retire":
         blockers.add("money_review_retired")
-    if target["role"] == "dividend":
+    if proof["contract_version"] == CONTRACT_V3:
+        from hermes_finance.services.broker_statement_money import statement_proof_blockers
+
+        blockers.update(statement_proof_blockers(session, receipt, proof))
+    if target["role"] == "dividend" and proof["contract_version"] != CONTRACT_V3:
         from hermes_finance.services.broker_dividends import identity
 
         evidence = [
@@ -1007,6 +1030,158 @@ def read_money(session, request_id):
         }
 
 
+def stage_money(session, intent, plan, base, *, request_id, fingerprint, confirmation_digest):
+    """Stage a revalidated Money plan; caller owns the reserved transaction."""
+    if intent.contract_version == CONTRACT_V3 and any(
+        decision["decision"]["role"] not in {"trade", "account_fee"}
+        for decision in plan["decisions"]
+    ):
+        raise MyBrokerError("statement_evidence_cannot_change_payouts_or_owner_capital")
+    receipt = BrokerMonthApply(
+        request_id=request_id,
+        request_fingerprint=fingerprint,
+        confirmation_digest=confirmation_digest,
+        reporting_month_id=intent.reporting_month_id,
+        account_id=intent.account_id,
+        import_id=base.import_id,
+        # Reserve a typed, authority-free Money envelope. An invalid
+        # '{}' journal row would invalidate #800 support during H2
+        # staging, before the final proof can be sealed.
+        projection_json=canonical(
+            {
+                "contract_version": intent.contract_version,
+                "base_request_id": intent.base_request_id,
+                "operation": "accept",
+                "sources": plan["sources"],
+                "targets": [],
+                "occurrences": [],
+            }
+        ),
+        accepted_at=datetime.now(UTC),
+    )
+    session.info["broker_money_stage"] = True
+    session.info["broker_money_initial_receipt"] = (request_id, receipt.projection_json)
+    session.add(receipt)
+    session.flush()
+    target_refs, occurrence_refs = [], []
+    for index, decision in enumerate(plan["decisions"]):
+        role, target_id = decision["decision"]["role"], decision["target_id"]
+        if role in {"coupon", "dividend"} and target_id is None:
+            row = stage_native_payout(
+                session,
+                reporting_month_id=intent.reporting_month_id,
+                account_id=intent.account_id,
+                instrument_id=decision["instrument_id"],
+                flow_type=role,
+                event_date=date.fromisoformat(decision["observation"]["date"]),
+                net_amount=RubleAmount(decision["observation"]["amount_minor"]),
+                source_import_id=decision["observation"]["occurrence"]["import_id"],
+                source_row_key=digest([intent.contract_version, "payment", uuid4().hex]),
+            )
+            target_id = row.id
+        elif role == "account_funding" and decision["h2_plan"] is not None:
+            owner_intent = OwnerFlowIntent.model_validate(decision["owner_flow_intent"])
+            target_id, _, _ = h2.stage_historical_owner_flow(
+                session,
+                owner_intent,
+                decision["h2_plan"],
+                confirmation_digest=decision["h2_plan"]["confirmation_digest"],
+                request_id=digest([CONTRACT, request_id, index]),
+            )
+        elif role == "trade":
+            from hermes_finance.services.executed_trades import stage_executed_trades
+
+            stage_executed_trades(
+                session,
+                {"can_apply": True, "candidates": [decision["candidate"]]},
+                confirmation_digest=confirmation_digest,
+                request_id=digest([CONTRACT, request_id, "trade", index]),
+            )
+        target_refs.append((role, target_id))
+        for occurrence in decision["occurrences"]:
+            if conflicts(session, [occurrence], role, target_id):
+                raise MyBrokerError("occurrence_already_owned")
+            if role == "account_fee":
+                occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
+                continue
+            if role == "trade":
+                exists = session.scalar(
+                    select(ExecutedTradeOccurrence.id).where(
+                        ExecutedTradeOccurrence.import_id == occurrence["import_id"],
+                        ExecutedTradeOccurrence.section == "money",
+                        ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
+                    )
+                )
+                if exists is None:
+                    session.add(
+                        ExecutedTradeOccurrence(
+                            trade_id=target_id,
+                            import_id=occurrence["import_id"],
+                            section="money",
+                            ordinal=occurrence["ordinal"],
+                            source_fingerprint=occurrence["row_fingerprint"],
+                        )
+                    )
+                occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
+                continue
+            existing = session.scalar(
+                select(BrokerMoneyOccurrenceOwner).where(
+                    BrokerMoneyOccurrenceOwner.import_id == occurrence["import_id"],
+                    BrokerMoneyOccurrenceOwner.section == "money",
+                    BrokerMoneyOccurrenceOwner.ordinal == occurrence["ordinal"],
+                )
+            )
+            if existing is None:
+                session.add(
+                    BrokerMoneyOccurrenceOwner(
+                        **occurrence,
+                        role=role,
+                        investment_cash_flow_id=target_id
+                        if role in {"coupon", "dividend"}
+                        else None,
+                        historical_owner_flow_id=target_id if role == "account_funding" else None,
+                        accepted_request_id=request_id,
+                    )
+                )
+            occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
+    session.flush()
+    proof = {
+        "contract_version": intent.contract_version,
+        "base_request_id": intent.base_request_id,
+        "operation": "reaffirm"
+        if any(d.operation == "reaffirm" for d in intent.money_decisions)
+        else "accept",
+        "sources": plan["sources"],
+        "occurrences": occurrence_refs,
+        "targets": [_target(session, role, target_id) for role, target_id in target_refs],
+        "decisions": [d.model_dump(mode="json") for d in intent.money_decisions],
+    }
+    if intent.contract_version == CONTRACT_V3:
+        proof["statement_evidence"] = plan["statement_evidence"]
+        proof["statement_groups"] = plan["statement_groups"]
+    from hermes_finance.services.broker_money_lifecycle import next_journal_revision
+
+    if intent.contract_version in {CONTRACT_V2, CONTRACT_V3}:
+        from hermes_finance.services.actual_payouts import _physical
+
+        proof["physical_incarnation"] = _physical(session)
+        proof["dividend_evidence"] = [
+            {
+                "target_id": target_id,
+                **{k: d[k] for k in ("identity_proof", "observed_tax_kopecks", "tax_role")},
+            }
+            for (role, target_id), d in zip(target_refs, plan["decisions"], strict=True)
+            if role == "dividend" and intent.contract_version == CONTRACT_V2
+        ]
+    proof["journal_revision"] = next_journal_revision(session)
+    receipt.accepted_at = datetime.now(UTC)
+    receipt.projection_json = canonical(proof)
+    session.flush()
+    session.info.pop("broker_money_stage", None)
+    session.info.pop("broker_money_initial_receipt", None)
+    return receipt
+
+
 def apply_money(session, intent, originals, *, confirmation_digest, request_id):
     if session.new or session.dirty or session.deleted:
         raise MyBrokerError("clean_session_required")
@@ -1047,144 +1222,15 @@ def apply_money(session, intent, originals, *, confirmation_digest, request_id):
             if not plan["can_apply"]:
                 raise MyBrokerError(";".join(plan["blockers"]))
             base = session.get(BrokerMonthApply, intent.base_request_id)
-            receipt = BrokerMonthApply(
+            stage_money(
+                session,
+                intent,
+                plan,
+                base,
                 request_id=request_id,
-                request_fingerprint=fingerprint,
+                fingerprint=fingerprint,
                 confirmation_digest=confirmation_digest,
-                reporting_month_id=intent.reporting_month_id,
-                account_id=intent.account_id,
-                import_id=base.import_id,
-                # Reserve a typed, authority-free Money envelope. An invalid
-                # '{}' journal row would invalidate #800 support during H2
-                # staging, before the final proof can be sealed.
-                projection_json=canonical(
-                    {
-                        "contract_version": intent.contract_version,
-                        "base_request_id": intent.base_request_id,
-                        "operation": "accept",
-                        "sources": plan["sources"],
-                        "targets": [],
-                        "occurrences": [],
-                    }
-                ),
-                accepted_at=datetime.now(UTC),
             )
-            session.info["broker_money_stage"] = True
-            session.info["broker_money_initial_receipt"] = (request_id, receipt.projection_json)
-            session.add(receipt)
-            session.flush()
-            target_refs, occurrence_refs = [], []
-            for index, decision in enumerate(plan["decisions"]):
-                role, target_id = decision["decision"]["role"], decision["target_id"]
-                if role in {"coupon", "dividend"} and target_id is None:
-                    row = stage_native_payout(
-                        session,
-                        reporting_month_id=intent.reporting_month_id,
-                        account_id=intent.account_id,
-                        instrument_id=decision["instrument_id"],
-                        flow_type=role,
-                        event_date=date.fromisoformat(decision["observation"]["date"]),
-                        net_amount=RubleAmount(decision["observation"]["amount_minor"]),
-                        source_import_id=decision["observation"]["occurrence"]["import_id"],
-                        source_row_key=digest([intent.contract_version, "payment", uuid4().hex]),
-                    )
-                    target_id = row.id
-                elif role == "account_funding" and decision["h2_plan"] is not None:
-                    owner_intent = OwnerFlowIntent.model_validate(decision["owner_flow_intent"])
-                    target_id, _, _ = h2.stage_historical_owner_flow(
-                        session,
-                        owner_intent,
-                        decision["h2_plan"],
-                        confirmation_digest=decision["h2_plan"]["confirmation_digest"],
-                        request_id=digest([CONTRACT, request_id, index]),
-                    )
-                elif role == "trade":
-                    from hermes_finance.services.executed_trades import stage_executed_trades
-
-                    stage_executed_trades(
-                        session,
-                        {"can_apply": True, "candidates": [decision["candidate"]]},
-                        confirmation_digest=confirmation_digest,
-                        request_id=digest([CONTRACT, request_id, "trade", index]),
-                    )
-                target_refs.append((role, target_id))
-                for occurrence in decision["occurrences"]:
-                    if conflicts(session, [occurrence], role, target_id):
-                        raise MyBrokerError("occurrence_already_owned")
-                    if role == "trade":
-                        exists = session.scalar(
-                            select(ExecutedTradeOccurrence.id).where(
-                                ExecutedTradeOccurrence.import_id == occurrence["import_id"],
-                                ExecutedTradeOccurrence.section == "money",
-                                ExecutedTradeOccurrence.ordinal == occurrence["ordinal"],
-                            )
-                        )
-                        if exists is None:
-                            session.add(
-                                ExecutedTradeOccurrence(
-                                    trade_id=target_id,
-                                    import_id=occurrence["import_id"],
-                                    section="money",
-                                    ordinal=occurrence["ordinal"],
-                                    source_fingerprint=occurrence["row_fingerprint"],
-                                )
-                            )
-                        occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
-                        continue
-                    existing = session.scalar(
-                        select(BrokerMoneyOccurrenceOwner).where(
-                            BrokerMoneyOccurrenceOwner.import_id == occurrence["import_id"],
-                            BrokerMoneyOccurrenceOwner.section == "money",
-                            BrokerMoneyOccurrenceOwner.ordinal == occurrence["ordinal"],
-                        )
-                    )
-                    if existing is None:
-                        session.add(
-                            BrokerMoneyOccurrenceOwner(
-                                **occurrence,
-                                role=role,
-                                investment_cash_flow_id=target_id
-                                if role in {"coupon", "dividend"}
-                                else None,
-                                historical_owner_flow_id=target_id
-                                if role == "account_funding"
-                                else None,
-                                accepted_request_id=request_id,
-                            )
-                        )
-                    occurrence_refs.append({**occurrence, "role": role, "target_id": target_id})
-            session.flush()
-            proof = {
-                "contract_version": intent.contract_version,
-                "base_request_id": intent.base_request_id,
-                "operation": "reaffirm"
-                if any(d.operation == "reaffirm" for d in intent.money_decisions)
-                else "accept",
-                "sources": plan["sources"],
-                "occurrences": occurrence_refs,
-                "targets": [_target(session, role, target_id) for role, target_id in target_refs],
-                "decisions": [d.model_dump(mode="json") for d in intent.money_decisions],
-            }
-            from hermes_finance.services.broker_money_lifecycle import next_journal_revision
-
-            if intent.contract_version == CONTRACT_V2:
-                from hermes_finance.services.actual_payouts import _physical
-
-                proof["physical_incarnation"] = _physical(session)
-                proof["dividend_evidence"] = [
-                    {
-                        "target_id": target_id,
-                        **{k: d[k] for k in ("identity_proof", "observed_tax_kopecks", "tax_role")},
-                    }
-                    for (role, target_id), d in zip(target_refs, plan["decisions"], strict=True)
-                    if role == "dividend"
-                ]
-            proof["journal_revision"] = next_journal_revision(session)
-            receipt.accepted_at = datetime.now(UTC)
-            receipt.projection_json = canonical(proof)
-            session.flush()
-            session.info.pop("broker_money_stage", None)
-            session.info.pop("broker_money_initial_receipt", None)
             session.commit()
     except BaseException:
         session.info.pop("broker_money_stage", None)

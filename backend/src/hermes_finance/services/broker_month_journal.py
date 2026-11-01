@@ -7,7 +7,8 @@ from hermes_finance.domain.broker_sections import CONTRACT as SECTIONS
 SOURCE = "broker_month_v1"
 MONEY = "broker_money_v1"
 MONEY_V2 = "broker_money_v2"
-MONEY_KINDS = {MONEY, MONEY_V2}
+MONEY_V3 = "broker_money_v3"
+MONEY_KINDS = {MONEY, MONEY_V2, MONEY_V3}
 DEPENDENCY = "broker_money_dependency_v1"
 PAYOUT = "broker_payout_reconciliation_v1"
 PAYOUT_DEPENDENCY = "broker_payout_dependency_v1"

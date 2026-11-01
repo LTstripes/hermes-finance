@@ -128,3 +128,27 @@ class MoneyIntentV2(StrictModel):
 class MoneyConfirmationV2(MoneyIntentV2):
     request_id: Label
     confirmation_digest: Digest
+
+
+class AccountFeeDecision(StrictModel):
+    role: Literal["account_fee"]
+    seed: MoneyOccurrence
+    operation: Literal["accept"] = "accept"
+
+
+class MoneyIntentV3(StrictModel):
+    """Server-compiled typed statement evidence; no standalone client Apply."""
+
+    contract_version: Literal["broker_money_v3"] = "broker_money_v3"
+    base_request_id: Label
+    reporting_month_id: int = Field(gt=0, strict=True)
+    account_id: int = Field(gt=0, strict=True)
+    money_decisions: list[MoneyDecision | AccountFeeDecision] = Field(
+        default_factory=list, max_length=1000
+    )
+
+    @model_validator(mode="after")
+    def statement_roles_only(self):
+        if any(d.role not in {"trade", "account_fee"} for d in self.money_decisions):
+            raise ValueError("statement_evidence_cannot_change_payouts_or_owner_capital")
+        return self

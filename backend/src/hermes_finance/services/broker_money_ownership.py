@@ -41,6 +41,36 @@ def owners(session, occurrences):
                         else row.row_fingerprint,
                     }
                 )
+    # Typed account fees and equivalent NKD cohorts own source occurrences in
+    # the existing append-only receipt journal, without fictitious trade edges.
+    from hermes_finance.persistence import BrokerMonthApply
+    from hermes_finance.services import broker_month_journal as journal
+
+    for receipt in session.scalars(select(BrokerMonthApply)):
+        if journal.kind(receipt) != journal.MONEY_V3:
+            continue
+        proof = journal.payload(receipt)
+        for occurrence in proof["occurrences"]:
+            if occurrence["role"] == "account_fee" and key(occurrence) in keys:
+                result.append(
+                    {
+                        "key": list(key(occurrence)),
+                        "role": "account_fee",
+                        "target_id": occurrence["target_id"],
+                        "row_fingerprint": occurrence["row_fingerprint"],
+                    }
+                )
+        for group in proof.get("statement_groups", []):
+            for occurrence in group["occurrences"]:
+                if key(occurrence) in keys:
+                    result.append(
+                        {
+                            "key": list(key(occurrence)),
+                            "role": "trade_group",
+                            "target_id": group["group_id"],
+                            "row_fingerprint": occurrence["row_fingerprint"],
+                        }
+                    )
     return result
 
 

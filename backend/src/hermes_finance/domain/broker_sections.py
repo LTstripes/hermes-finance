@@ -7,7 +7,7 @@ from pydantic import ConfigDict, Field, model_validator
 from hermes_finance.domain.historical_endpoints import Digest, Label, StrictModel
 
 CONTRACT = "mybroker-section-disposition-v1"
-Section = Literal["4_Transfers", "5_UFSR"]
+Section = Literal["4_Transfers", "5_UFSR", "source_bookkeeping"]
 
 
 class SectionDecision(StrictModel):
@@ -21,7 +21,7 @@ class SectionIntent(StrictModel):
     import_id: int = Field(gt=0, strict=True)
     reporting_month_id: int = Field(gt=0, strict=True)
     account_id: int = Field(gt=0, strict=True)
-    sections: list[SectionDecision] = Field(min_length=1, max_length=2)
+    sections: list[SectionDecision] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")
     def unique_sections(self):

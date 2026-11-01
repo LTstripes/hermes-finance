@@ -222,6 +222,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_broker_baseline_apply.py": 6.78,
     "test_broker_identity_mappings.py": 5.93,
     "test_broker_intake_reconciliation.py": 5.0,
+    "test_broker_statement_evidence.py": 12.0,
     "test_broker_snapshot_apply.py": 11.44,
     "test_forecast_dashboard_integration.py": 4.66,
     "test_freshness_provenance.py": 5.08,
@@ -453,6 +454,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_B_SPLIT_FILES = frozenset({"test_statement_import_source_cash_coverage.py"})
 
 CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
+    "test_broker_statement_evidence.py": 12.0,
     "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_statement_import_payout_reconciliation.py": 30.0,
     "test_ai_financial_review_linked_pairs.py": 4.00,
@@ -885,6 +887,7 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
         return None
     # Keep the accepted A/B groups stable when adding the bounded #711 suite.
     added = {
+        "test_broker_statement_evidence.py",
         "test_statement_import_payout_reconciliation.py",
         "test_payout_draft_refresh.py",
         "test_ai_analysis_bundle_source_returns.py",
