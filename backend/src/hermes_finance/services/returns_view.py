@@ -432,6 +432,7 @@ def _source_view(session, account, start, end):
     names = _catalogue_names(session, instruments.instruments)
     return {
         "selected": selected,
+        "breakdown": instruments.breakdown,
         "all_history": whole,
         "available_months_total": _available_months(history, first, last, whole)
         if monthly.months
@@ -553,6 +554,7 @@ def read_overview(session, *, scope, start, end):
             )
             view = {
                 "selected": _accepted_result(session, scope, start, end),
+                "breakdown": None,
                 "all_history": whole,
                 "available_months_total": None,
                 "selected_available_months_total": None,

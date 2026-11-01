@@ -74,17 +74,31 @@
   font-size: 13px;
 }
 .barTrack {
+  position: relative;
   height: 12px;
   background: #edf1f5;
   border-radius: 4px;
   overflow: hidden;
 }
+.barTrack::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #7d8da0;
+}
 .bar {
+  position: absolute;
+  left: 50%;
+  transform: scaleX(0.5);
+  transform-origin: left;
   height: 100%;
   background: #40816d;
   border-radius: 4px;
 }
 .negative {
+  transform: translateX(-50%) scaleX(0.5);
   background: #b8646c;
 }
 .barRow strong {

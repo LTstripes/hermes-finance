@@ -18,6 +18,7 @@ import styles from "./returns/Returns.module.css";
 import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
 import { ReturnsBasket } from "./returns/ReturnsBasket";
 import { ReturnsDetail } from "./returns/ReturnsDetail";
+import { ReturnsBreakdown } from "./returns/ReturnsBreakdown";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import { UiV2Shell } from "./UiV2Shell";
@@ -535,6 +536,11 @@ export default function UiV2ReturnsAccountPage() {
                 <small>За выбранный период</small>
               </section>
             </div>
+            {data.breakdown ? (
+              <ReturnsBreakdown value={data.breakdown} total={data.selected.pnl} />
+            ) : (
+              <p className={styles.basisNote}>Разложение результата за этот период недоступно.</p>
+            )}
             <ReturnsHistory
               key={`${scope}/${periodKey(period)}`}
               rows={data.history}

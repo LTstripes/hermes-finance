@@ -556,3 +556,29 @@
   outline: 2px solid #2b74c4;
   outline-offset: -2px;
 }
+
+.breakdown {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin: 18px 0 0;
+}
+.breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+.breakdown dt {
+  color: #526378;
+}
+.breakdown dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.breakdownTotal {
+  border-top: 1px solid #c5d0dc;
+  padding-top: 12px;
+  font-weight: 700;
+}

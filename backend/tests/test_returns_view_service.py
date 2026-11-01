@@ -502,6 +502,36 @@ def api_overview(db, start=START, end=END):
     return Overview.model_validate(response.json())
 
 
+@pytest.mark.parametrize("closing", ["1100", "9007199254740993"])
+def test_overview_api_reuses_selected_reader_breakdown_without_an_extra_read(
+    db, monkeypatch, closing
+):
+    save(db, trades=(), stock=("10", "10", "1000", closing), bond=None)
+    before = snapshot(db)
+    calls = []
+    reader = view.read_instrument_returns
+
+    def read_once(*args, **kwargs):
+        result = reader(*args, **kwargs)
+        calls.append((kwargs, result.breakdown))
+        return result
+
+    monkeypatch.setattr(view, "read_instrument_returns", read_once)
+    result = api_overview(db)
+    assert len(calls) == 1
+    selection, breakdown = calls[0]
+    assert selection == {
+        "source_account": ACCOUNT,
+        "opening_date": START,
+        "closing_date": END,
+        "include_monthly_history": False,
+    }
+    assert result.breakdown == breakdown
+    assert result.breakdown is not None
+    assert result.breakdown.total_kopecks == result.selected.pnl.value
+    assert snapshot(db) == before
+
+
 def test_api_monthly_advisory_survives_income_recomposition_without_changing_values(
     db, monkeypatch
 ):
@@ -1083,6 +1113,7 @@ def test_invalid_scope_never_falls_back_and_accepted_reader_keeps_null(db):
     result = overview(db, scope="portfolio")
     assert result.selected.pnl.value is result.selected.rate.value is None
     assert result.instruments == []
+    assert result.breakdown is None
     assert result.selected.pnl.method == "PERF04A"
     assert result.selected.rate.unit == "percentage_points"
 

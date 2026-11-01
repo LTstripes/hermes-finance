@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import InstrumentAnalysis
 from hermes_finance.services import returns_basket, returns_view
+from hermes_finance.services.source_instrument_returns import ReturnBreakdown
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -83,6 +84,7 @@ class AvailableMonths(DTO):
 
 class Overview(DTO):
     scope: str
+    breakdown: ReturnBreakdown | None
     selected: Result
     all_history: Result | None
     available_months_total: AvailableMonths | None

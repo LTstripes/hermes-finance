@@ -943,6 +943,7 @@ def instrument_result(
         SourceInstrumentReturns,
         _all_time,
         _identities,
+        _with_return_breakdown,
     )
 
     analyses = {}
@@ -1089,11 +1090,17 @@ def instrument_result(
     native = next(
         (v["document"]["money"][0]["source_account"] for v in views if v["document"]["money"]), None
     )
-    return SourceInstrumentReturns(
+    result = SourceInstrumentReturns(
         source_account,
         tuple(instruments),
         tuple(income),
         tuple(gaps),
         native_source_account=native,
         reconciliation=reconciliation,
+    )
+    # Reuse account rows from the selected proof without another derivation.
+    return _with_return_breakdown(
+        result,
+        views,
+        account_rows=interval["account_only"] if reconciliation is not None else (),
     )

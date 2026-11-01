@@ -397,6 +397,41 @@ def _derived(doc, raw, report, money, *, from_zero=True):
     return proof, analyses
 
 
+@pytest.mark.parametrize("value", [0, None])
+def test_returns_presentation_components_do_not_change_ai_analysis_contract(value):
+    from hermes_finance.domain.instrument_return import Metric
+
+    _, doc, raw, report, money = investment_case()
+    _, analyses = _derived(doc, raw, report, money)
+    isin, analysis = next(iter(analyses.items()))
+    original = adapter._instrument(isin, {}, analysis)
+    presentation = Metric(
+        value,
+        "supported" if value is not None else "unavailable",
+        () if value is not None else ("breakdown_incomplete",),
+    )
+    enriched = replace(
+        analysis,
+        components={
+            **analysis.components,
+            **dict.fromkeys(
+                ("payouts", "price_and_trades", "commissions", "paid_nkd"),
+                presentation,
+            ),
+        },
+    )
+    projected = adapter._instrument(isin, {}, enriched)
+
+    assert projected == original
+    assert set(projected["components"]) == set(SCHEMA["$defs"]["source_components"]["properties"])
+    Draft202012Validator(
+        {"$ref": "#/$defs/source_instrument", "$defs": SCHEMA["$defs"]},
+        format_checker=FormatChecker(),
+    ).validate(projected)
+    assert enriched.components["paid_nkd"] == presentation
+    assert "paid_nkd" not in analysis.components
+
+
 def test_sold_position_zero_is_preserved_and_not_filtered_by_current_holdings():
     _, doc, raw, report, money = investment_case()
     doc["positions"][0].update(
