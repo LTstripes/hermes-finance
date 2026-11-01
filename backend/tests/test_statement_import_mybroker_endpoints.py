@@ -4395,9 +4395,21 @@ def test_draft_consumed_money_cannot_hide_duplicate_or_unrepresentable_amount(da
         assert _all_month_tables(database) == before
         return
     reviewed = _broker_month_preview(client, scope, raw)
-    assert not reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
-    assert _broker_month_apply(client, scope, reviewed, raw).status_code == 409
+    # Complete repeated rn rows no longer hide identity. The accepted v2
+    # structural separation permits an incomplete SOURCE, retaining BOTH cash
+    # occurrences. It grants no Money ownership or accounting completeness.
+    assert reviewed["can_apply"] and not reviewed["bookkeeping_ready"]
     assert _all_month_tables(database) == before
+    accepted = _broker_month_apply(client, scope, reviewed, raw)
+    assert accepted.status_code == 200, accepted.text
+    assert not accepted.json()["bookkeeping_ready"]
+    assert len(accepted.json()["accepted"]["document"]["money"]) == 2
+    assert not client.get(f"/api/months/{scope['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    after = _all_month_tables(database)
+    assert len(after["cash_balances"]) == 1
+    assert not after["investment_cash_flows"]
 
 
 @pytest.mark.parametrize("outer", ["Trades3", "Trades4"])
