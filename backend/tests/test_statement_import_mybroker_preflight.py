@@ -1196,6 +1196,16 @@ def saved_investment_preview(database, monkeypatch):
 
 
 METADATA_PREDECESSOR = "52873e49d0a0655af1a96e6be1631c522bbca00e76ee9bd8ef09bfb5fe9ddb9e"
+METADATA_SUCCESSOR = "4e5684f657dbb8ec8faff58f1a7ad42e65296e0b91665aedcbf686b11a536400"
+
+
+@pytest.fixture
+def certified_metadata_runtime(monkeypatch):
+    """Historical 1.9.1 edge, never certification of this changed implementation."""
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    assert proofs._metadata_predecessor(METADATA_SUCCESSOR) == METADATA_PREDECESSOR
+    monkeypatch.setattr(proofs, "_implementation_digest", lambda: METADATA_SUCCESSOR)
 
 
 def save_implementation_proof(database, monkeypatch, implementation, request_id):
@@ -1213,7 +1223,9 @@ def save_implementation_proof(database, monkeypatch, implementation, request_id)
     return reports
 
 
-def test_metadata_release_preserves_old_proof_results_without_writes(database, monkeypatch):
+def test_metadata_release_preserves_old_proof_results_without_writes(
+    database, monkeypatch, certified_metadata_runtime
+):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.returns_view import read_overview
     from hermes_finance.services.source_instrument_returns import read_instrument_returns
@@ -1255,7 +1267,9 @@ def test_metadata_release_preserves_old_proof_results_without_writes(database, m
 
 
 @pytest.mark.parametrize("predecessor", ["0" * 64, "f" * 64])
-def test_metadata_release_rejects_unknown_prior_implementation(database, monkeypatch, predecessor):
+def test_metadata_release_rejects_unknown_prior_implementation(
+    database, monkeypatch, predecessor, certified_metadata_runtime
+):
     from hermes_finance.services import source_investment_proofs as proofs
 
     save_implementation_proof(database, monkeypatch, predecessor, "unknown-code")
@@ -1268,7 +1282,7 @@ def test_metadata_release_rejects_unknown_prior_implementation(database, monkeyp
 
 
 def test_metadata_release_new_proofs_remain_strict_and_transition_is_not_reversible(
-    database, monkeypatch
+    database, monkeypatch, certified_metadata_runtime
 ):
     from hermes_finance.services import source_investment_proofs as proofs
 
@@ -1286,7 +1300,9 @@ def test_metadata_release_new_proofs_remain_strict_and_transition_is_not_reversi
     assert snapshot(database) == before
 
 
-def test_metadata_release_does_not_admit_pending_old_writer_form(database, monkeypatch):
+def test_metadata_release_does_not_admit_pending_old_writer_form(
+    database, monkeypatch, certified_metadata_runtime
+):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_return_proofs import ProofError
 
@@ -1305,7 +1321,7 @@ def test_metadata_release_does_not_admit_pending_old_writer_form(database, monke
 
 
 def test_metadata_release_latest_stale_proof_has_no_older_compatible_fallback(
-    database, monkeypatch
+    database, monkeypatch, certified_metadata_runtime
 ):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.returns_view import read_overview
@@ -1329,7 +1345,7 @@ def test_metadata_release_latest_stale_proof_has_no_older_compatible_fallback(
 
 @pytest.mark.parametrize("operation", ["copy", "replace"])
 def test_metadata_release_preserves_physical_database_binding(
-    database, monkeypatch, tmp_path, operation
+    database, monkeypatch, tmp_path, operation, certified_metadata_runtime
 ):
     from shutil import copyfile
 
@@ -1338,6 +1354,8 @@ def test_metadata_release_preserves_physical_database_binding(
     from hermes_finance.source_proof_file import file_incarnation
 
     save_implementation_proof(database, monkeypatch, METADATA_PREDECESSOR, "physical-original")
+    with database.session_factory() as session:
+        assert proofs.request_status(session, "physical-original")["current"]
     before = snapshot(database)
     identity = file_incarnation(database.database_path)
     database.engine.dispose()
@@ -1365,7 +1383,11 @@ def test_metadata_release_rejects_any_unreviewed_python_change(
 
     from hermes_finance.services import source_investment_proofs as proofs
 
-    save_implementation_proof(database, monkeypatch, METADATA_PREDECESSOR, "code-original")
+    save_implementation_proof(
+        database, monkeypatch, proofs._implementation_digest(), "code-original"
+    )
+    with database.session_factory() as session:
+        assert proofs.request_status(session, "code-original")["current"]
     package = Path(proofs.__file__).resolve().parents[1]
     copied = tmp_path / "synthetic-package"
     for source in package.rglob("*.py"):
@@ -1405,7 +1427,7 @@ def test_metadata_release_policy_fails_closed(tmp_path, monkeypatch, invalid):
 
     from hermes_finance.services import source_investment_proofs as proofs
 
-    current = proofs._implementation_digest()
+    current = METADATA_SUCCESSOR
     assert proofs._metadata_predecessor(current) == METADATA_PREDECESSOR
     monkeypatch.setattr(proofs, "__file__", str(tmp_path / "source_investment_proofs.py"))
     edge = {"predecessor": METADATA_PREDECESSOR, "successor": current}
@@ -1429,6 +1451,21 @@ def test_metadata_release_policy_fails_closed(tmp_path, monkeypatch, invalid):
     if invalid != "missing":
         (tmp_path / "source_investment_proofs_1_9_1.json").write_text(text, encoding="utf-8")
     assert proofs._metadata_predecessor(current) is None
+
+
+def test_financial_backend_cannot_inherit_metadata_only_proof_compatibility(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    current = proofs._implementation_digest()
+    assert current != METADATA_SUCCESSOR
+    assert proofs._metadata_predecessor(current) is None
+    save_implementation_proof(database, monkeypatch, METADATA_PREDECESSOR, "prior-financial-code")
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == "stale" and report["interval"] is None
+        assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+    assert snapshot(database) == before
 
 
 def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database, monkeypatch):
