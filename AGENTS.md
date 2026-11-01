@@ -43,6 +43,8 @@ Worker may commit/push its assigned branch. Main alone is canonical/releasable; 
 
 ## Verification and completion
 
+For cosmetic-only work, use the [cosmetic scope rule](docs/DEVELOPMENT.md#proportionate-cosmetic-changes).
+
 Use D4's proportional checks and actual exact-candidate evidence; required independent review/UAT remains independent. Never report pending checks as passed. Return exact baseline/target/candidate, branch/workspace, changed files/stat, actual checks/limits and final HEAD/remote/working-tree readback. Use existing issue/PR receipts, no new ledger. CBM is optional; no used/skipped report, compulsory index or model telemetry.
 
 Historical AGENTS provenance: [pre-consolidation rules](https://github.com/LTstripes/hermes-finance/blob/ae302939d8f6fea4c0b15d854d62a8289c007502/AGENTS.md). Archived client adapters are history; D6 is the current routing home.
