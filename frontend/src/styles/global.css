@@ -1439,10 +1439,6 @@ th.num {
   min-width: 0;
 }
 
-.monthly-close {
-  max-width: 900px;
-}
-
 .monthly-close__provider-summary {
   display: grid;
   gap: 10px;
