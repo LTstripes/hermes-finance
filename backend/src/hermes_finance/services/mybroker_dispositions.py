@@ -230,6 +230,17 @@ def effective_bindings(session, source, *, dispositions=None):
 
 def accepted_account_binding(session, source, alias):
     """Validate the original account of every support occurrence, including Money-only files."""
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "mybroker_accepted_account_binding",
+        (source.id, source.mappings_json, alias),
+        lambda: _accepted_account_binding(session, source, alias),
+    )
+
+
+def _accepted_account_binding(session, source, alias):
     recorded = [
         b
         for b in json.loads(source.mappings_json)

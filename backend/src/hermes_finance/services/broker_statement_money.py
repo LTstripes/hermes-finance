@@ -288,6 +288,17 @@ def plan_statement_money(session, base, original, *, payouts, broker_bonuses=())
 
 
 def statement_proof_blockers(session, receipt, proof):
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_statement_proof_blockers",
+        (receipt.request_id, digest(proof)),
+        lambda: _statement_proof_blockers(session, receipt, proof),
+    )
+
+
+def _statement_proof_blockers(session, receipt, proof):
     base = session.get(BrokerMonthApply, proof["base_request_id"], populate_existing=True)
     if reasons := base_blockers(session, base, require_draft=False):
         return reasons

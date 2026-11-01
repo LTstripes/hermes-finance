@@ -693,6 +693,17 @@ def _canonical_projection_matches(session, candidate):
 
 
 def _readiness(session, receipt):
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_receipt_readiness",
+        digest([str(getattr(receipt, column.name)) for column in receipt.__table__.columns]),
+        lambda: _uncached_readiness(session, receipt),
+    )
+
+
+def _uncached_readiness(session, receipt):
     accepted = journal.payload(receipt)
     kind = journal.kind(receipt)
     if kind == "invalid":
@@ -820,6 +831,17 @@ def _readiness(session, receipt):
 
 def _account_readiness(session, month_id, account_id):
     """Retained receipt authority is account-wide, as at global Close."""
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_account_readiness",
+        (month_id, account_id),
+        lambda: _uncached_account_readiness(session, month_id, account_id),
+    )
+
+
+def _uncached_account_readiness(session, month_id, account_id):
     receipts = session.scalars(
         select(BrokerMonthApply)
         .where(

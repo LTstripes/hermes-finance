@@ -861,6 +861,17 @@ def effective_occurrence(session, source_id, row):
 
 
 def proof_blockers(session, receipt, proof, target):
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_money_proof_blockers",
+        (receipt.request_id, digest([proof, target])),
+        lambda: _proof_blockers(session, receipt, proof, target),
+    )
+
+
+def _proof_blockers(session, receipt, proof, target):
     blockers = set()
     if proof["contract_version"] in {CONTRACT_V2, CONTRACT_V3}:
         from hermes_finance.services.actual_payouts import _physical

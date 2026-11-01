@@ -1,5 +1,6 @@
 import sqlite3
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
@@ -12,8 +13,26 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
 _READ_SNAPSHOT_DEPTH = "hermes_finance_coherent_read_snapshot_depth"
+_READ_SNAPSHOT_CACHE = "hermes_finance_coherent_read_snapshot_cache"
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def snapshot_read_result(
+    session: Session, namespace: str, key: object, build: Callable[[], _R]
+) -> _R:
+    """Reuse pure derived reads only inside one owned immutable SQL snapshot.
+
+    Writers and ordinary Sessions always recompute. The outer snapshot owns and
+    discards the cache; callers receive copies so they cannot mutate its evidence.
+    """
+    cache = session.info.get(_READ_SNAPSHOT_CACHE)
+    if cache is None or _has_pending_orm_mutations(session):
+        return build()
+    cache_key = (namespace, key)
+    if cache_key not in cache:
+        cache[cache_key] = deepcopy(build())
+    return deepcopy(cache[cache_key])
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +241,7 @@ def coherent_read_snapshot(session: Session) -> Iterator[None]:
         event.listen(session, "before_commit", reject_inner_commit)
         starting_changes = driver_connection.total_changes
         session.info[_READ_SNAPSHOT_DEPTH] = 1
+        session.info[_READ_SNAPSHOT_CACHE] = {}
         depth_set = True
 
         yield
@@ -265,6 +285,7 @@ def coherent_read_snapshot(session: Session) -> Iterator[None]:
     finally:
         if depth_set:
             session.info.pop(_READ_SNAPSHOT_DEPTH, None)
+            session.info.pop(_READ_SNAPSHOT_CACHE, None)
 
 
 def coherent_read_operation(
