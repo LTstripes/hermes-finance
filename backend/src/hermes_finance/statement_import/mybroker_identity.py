@@ -17,17 +17,27 @@ ASSET_TYPES = {"Акции": "stock", "Облигации": "bond"}
 ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]", re.ASCII)
 
 
-def parse_identity(document: bytes, filename: str, *, incomplete_draft: bool = False) -> dict:
+def parse_identity(
+    document: bytes,
+    filename: str,
+    *,
+    incomplete_draft: bool = False,
+    repeated_occurrences: bool = False,
+) -> dict:
     source = parse_mybroker(document, filename)  # family, bounds, rows, unchanged original hash
     root = ET.fromstring(document.decode("utf-8-sig"))
     conflicts = set(source["syntax_blockers"]) & {"unparsed_source_rows", "unknown_section"}
     structural = None
+    structural_contract = "mybroker-incomplete-draft-identity-v1"
     if incomplete_draft and "unparsed_source_rows" in conflicts:
         from hermes_finance.statement_import.mybroker_draft_structure import (
             draft_structure_exceptions,
         )
 
         structural = draft_structure_exceptions(document, source)
+        if structural is None and repeated_occurrences:
+            structural = draft_structure_exceptions(document, source, repeated_occurrences=True)
+            structural_contract = "mybroker-incomplete-draft-identity-v2"
         if structural is not None:
             conflicts.remove("unparsed_source_rows")
     conflicts.update(source["endpoint_conflicts"])
@@ -146,7 +156,7 @@ def parse_identity(document: bytes, filename: str, *, incomplete_draft: bool = F
         **(
             {
                 "draft_structure": {
-                    "contract": "mybroker-incomplete-draft-identity-v1",
+                    "contract": structural_contract,
                     "document_sha256": source["document_sha256"],
                     "exceptions": structural,
                     "financial_authority": "none",

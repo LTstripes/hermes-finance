@@ -1933,6 +1933,22 @@ request replay returns the original receipt with zero new economic rows, includi
 after Close; it cannot mutate CLOSED. Overlaps reuse canonical trade identity.
 Manual or conflicting facts require explicit reconciliation rather than overwrite.
 
+An original-bound broker-month review may explicitly name older nonnative position
+IDs to replace in the same DRAFT account. The server rejects source-owned,
+same-period, other-scope and unmatched rows. Confirmation binds the old row material
+and payout/revision/reconciliation/quote-provenance graph. Reserved Apply archives
+the reviewed positions and their payout history before staging native positive
+holdings; affirmative source zero creates no holding. The existing receipt retains
+the replaced row references; failure rolls back the complete operation and replay
+adds no rows. This does not accept unresolved Money or grant Close readiness.
+
+The opt-in `mybroker-incomplete-draft-identity-v2` classifier can retain repeated
+complete Money occurrences for identity eligibility with
+`money_occurrences_unresolved`. Every ordinal and financial blocker remains.
+Default v1 parsing and frozen intake manifests are unchanged; a duplicate amount
+leaf or hidden identity still fails the exact structural checks. This proof alone
+does not establish intake finance-link authority or financial completeness.
+
 GET reads the accepted immutable S1 source and current authority/projection under
 one snapshot. Readiness and reserved server Close share the same source checks:
 all positions and cash must still match, mappings/source authority must remain

@@ -221,6 +221,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_alfa_pro_snapshot.py": 21.61,
     "test_broker_baseline_apply.py": 6.78,
     "test_broker_identity_mappings.py": 5.93,
+    "test_broker_intake_reconciliation.py": 5.0,
     "test_broker_snapshot_apply.py": 11.44,
     "test_forecast_dashboard_integration.py": 4.66,
     "test_freshness_provenance.py": 5.08,
@@ -295,6 +296,7 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
 CI_INTEGRATIONS_A_SPLIT_FILES = frozenset({"test_statement_import_mybroker_endpoints.py"})
 
 CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
+    "test_broker_intake_reconciliation.py": 5.0,
     "test_ai_analysis_bundle_contract.py": 0.21,
     "test_ai_analysis_bundle_export.py": 31.16,
     "test_ai_analysis_bundle_financial_review_contract.py": 1.02,

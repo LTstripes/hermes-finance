@@ -316,6 +316,7 @@ export function BrokerMonthReview({
     original = file,
     selected = accountId,
     decisions: InstrumentDecision[] = session.snapshot().decisions,
+    reconcilePositionIds: number[] = [],
   ) {
     if (!original || readOnly || journalPending || session.snapshot().pending) return;
     invalidateReview();
@@ -376,6 +377,7 @@ export function BrokerMonthReview({
         {
           reporting_month_id: monthId,
           account_id: Number(target),
+          ...(reconcilePositionIds.length ? { reconcile_position_ids: reconcilePositionIds } : {}),
           ...(decisions.length ? { instrument_decisions: decisions } : {}),
         },
         abort.signal,
@@ -584,6 +586,35 @@ export function BrokerMonthReview({
         !journalPending ? (
           <>
             <BrokerMonthSummary preview={preview} filename={file?.name ?? "Имя файла неизвестно"} />
+            {!preview.reconcile_position_ids?.length &&
+              !!preview.position_reconciliation_candidates?.length && (
+                <div>
+                  <p>
+                    В месяце есть позиции с прежней датой. Можно обновить их остатками из этой
+                    выписки. Прежние записи и история выплат сохранятся.
+                  </p>
+                  <Button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void inspect(
+                        file,
+                        accountId,
+                        session.snapshot().decisions,
+                        preview.position_reconciliation_candidates,
+                      )
+                    }
+                  >
+                    Обновить имеющиеся позиции по выписке
+                  </Button>
+                </div>
+              )}
+            {!!preview.reconcile_position_ids?.length && (
+              <p>
+                При сохранении будут обновлены имеющиеся позиции:{" "}
+                {preview.reconcile_position_ids.length}. Прежние записи сохранятся в истории.
+              </p>
+            )}
             {preview.account_bindings.length ? (
               <>
                 <AccountAliases preview={preview} />

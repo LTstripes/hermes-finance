@@ -120,6 +120,7 @@ class Intent(BaseModel):
     reporting_month_id: int = Field(gt=0, strict=True)
     account_id: int = Field(gt=0, strict=True)
     instrument_decisions: list[InstrumentDecision] = Field(default_factory=list, max_length=1000)
+    reconcile_position_ids: list[int] = Field(default_factory=list, max_length=1000)
 
 
 class AccountBindingDecision(BaseModel):

@@ -325,6 +325,9 @@ export class BrokerOriginalSession {
           {
             reporting_month_id: plan.reporting_month_id,
             account_id: plan.account_id,
+            ...(plan.reconcile_position_ids?.length
+              ? { reconcile_position_ids: plan.reconcile_position_ids }
+              : {}),
             ...(plan.instrument_decisions?.length
               ? { instrument_decisions: plan.instrument_decisions }
               : {}),
