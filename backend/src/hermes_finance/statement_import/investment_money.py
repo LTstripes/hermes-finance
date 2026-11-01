@@ -42,3 +42,22 @@ def parse_investment_money_security(narrative: str) -> MoneySecurity | None:
             return None
         return MoneySecurity(match["reg"].upper(), match["issuer"], kind)
     return None
+
+
+def parse_financial_payout_security(narrative: str) -> MoneySecurity | None:
+    """Preserve legacy evidence plus exact native coupons and halfyear dividends.
+
+    The broader read-only investment grammar does not itself expand financial
+    acceptance to every descriptive period variant.
+    """
+    original = parse_money_security(narrative)
+    if original is not None:
+        return original
+    parsed = parse_investment_money_security(narrative)
+    if parsed is None:
+        return None
+    if parsed.kind == "coupon" or re.match(
+        r"Дивиденды за (?:[12] )?полугодие [0-9]{4} г\. ", narrative, re.IGNORECASE
+    ):
+        return parsed
+    return None

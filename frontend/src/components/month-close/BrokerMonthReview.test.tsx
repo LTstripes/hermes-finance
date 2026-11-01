@@ -161,39 +161,6 @@ function show(closed = false) {
   );
   return userEvent.setup();
 }
-
-it("reviews replacement explicitly and retains exact IDs through an unknown POST outcome and GET", async () => {
-  known();
-  vi.mocked(previewBrokerMonth)
-    .mockResolvedValueOnce({
-      ...preview,
-      can_apply: false,
-      conflicts: ["existing_position_reconciliation_required"],
-      position_reconciliation_candidates: [21, 22],
-    })
-    .mockResolvedValueOnce({ ...preview, reconcile_position_ids: [21, 22] });
-  vi.mocked(applyBrokerMonth).mockRejectedValueOnce(new Error("connection lost"));
-  const { user } = mounted();
-  await upload(user);
-  await user.click(
-    await screen.findByRole("button", { name: "Обновить имеющиеся позиции по выписке" }),
-  );
-  await waitFor(() =>
-    expect(previewBrokerMonth).toHaveBeenLastCalledWith(
-      expect.any(File),
-      { reporting_month_id: 1, account_id: 7, reconcile_position_ids: [21, 22] },
-      expect.any(AbortSignal),
-    ),
-  );
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
-    }),
-  );
-  await waitFor(() => expect(readBrokerMonth).toHaveBeenCalled());
-  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
-  expect(vi.mocked(applyBrokerMonth).mock.calls[0][1].reconcile_position_ids).toEqual([21, 22]);
-});
 async function inspect(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("option", { name: "Synthetic broker" });
   await user.upload(

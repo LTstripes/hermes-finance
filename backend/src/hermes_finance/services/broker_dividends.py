@@ -5,9 +5,11 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from hermes_finance.domain.money_security import parse_money_security
 from hermes_finance.persistence import BrokerIdentityMapping, Instrument, SecurityRegIsinMapping
 from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+from hermes_finance.statement_import.investment_money import (
+    parse_financial_payout_security as parse_money_security,
+)
 from hermes_finance.statement_import.mybroker import digest
 
 

@@ -1893,6 +1893,17 @@ Apply use the same versioned original-bound classification. It never deletes
 tax/NKD/fee economics or changes exact/indicative return readiness. A successful
 partial Apply is not financial completeness or permission to Close.
 
+The bounded XML/investment-PDF payout adapter emits ordinary `broker_money_v2`
+intents, not a new writer or receipt format. It requires exact account, period,
+kind, posted date and net-amount group agreement and a unique compatible catalogue
+ISIN; conflicting registration mappings stop preparation. Financial v2 additionally
+recognizes complete native coupon wording and halfyear dividend wording; v1 and
+other dividend-period shapes stay unchanged. Existing multiplicity, overlap,
+final-net, source/currentness, reserved Apply and GET guards remain authoritative.
+Missing registration bridges can be created with an explicit create-only registry
+write; an existing different ISIN is never silently reassigned. Source cash is not
+incremented by these payouts, and missing gross/tax components remain NULL.
+
 The Money Preview requires original bytes for the complete accepted overlapping
 source union. Original observations guide specific instrument/payment/boundary
 review; they do not mint payment identity from date, amount or narrative. The server

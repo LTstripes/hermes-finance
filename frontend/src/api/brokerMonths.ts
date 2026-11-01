@@ -11,7 +11,6 @@ export type BrokerMonthIntent = {
   reporting_month_id: number;
   account_id: number;
   instrument_decisions?: InstrumentDecision[];
-  reconcile_position_ids?: number[];
 };
 export type PublicIdentityResult = {
   isin: string;
@@ -41,7 +40,6 @@ export type BrokerMonthPreview = BrokerMonthIntent & {
   contract_version: "broker_month_v1";
   confirmation_digest: string;
   account_bindings: AccountBindingDecision[];
-  position_reconciliation_candidates?: number[];
   account_aliases: (AccountBindingDecision & {
     origins: ("filename_account" | "acc_code")[];
     target_name: string | null;
