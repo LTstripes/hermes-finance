@@ -222,9 +222,62 @@ test("partial component account sets are labelled known constituents without imp
   );
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
-  expect(screen.getByRole("heading", { name: "Известные составляющие" })).toBeVisible();
-  expect(screen.queryByRole("heading", { name: "Из чего сложился результат" })).toBeNull();
-  expect(screen.getByText(/не являются точным разложением показанного результата/)).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
+  expect(screen.getByText("Данных для полного разложения пока недостаточно.")).toBeVisible();
   expect(screen.getAllByText("42,77 ₽").length).toBeGreaterThan(0);
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
+});
+
+test("standalone instrument explains paid income greater than its exact total", async () => {
+  const card = instrumentCardFixture();
+  card.accounts = [card.accounts[0]];
+  const detail = card.accounts[0].detail;
+  if (!detail) throw new Error("missing synthetic detail");
+  for (const metric of [
+    card.summary.pnl,
+    card.summary.coupons,
+    card.summary.dividends,
+    card.summary.valuation_and_trades,
+    card.summary.redemption,
+    card.summary.costs,
+    card.summary.taxes,
+  ])
+    Object.assign(metric, { value: "0", estimate: false, reason_codes: [] });
+  card.summary.pnl.value = detail.pnl.value = "400";
+  detail.pnl.estimate = false;
+  card.summary.coupons.value = "1000";
+  card.summary.dividends.value = "500";
+  card.summary.valuation_and_trades.value = "-1100";
+  const metric = (value: string) => ({
+    value,
+    status: "supported" as const,
+    reason_codes: [],
+    assumptions: [],
+  });
+  detail.analysis.pnl = metric("400");
+  for (const key of Object.keys(detail.analysis.components))
+    Object.assign(
+      detail.analysis.components[key as keyof typeof detail.analysis.components],
+      metric("0"),
+    );
+  Object.assign(detail.analysis.components, {
+    valuation_and_trades: metric("-1100"),
+    coupons: metric("1000"),
+    dividends: metric("500"),
+    payouts: metric("1500"),
+    price_and_trades: metric("-800"),
+    commissions: metric("100"),
+    paid_nkd: metric("200"),
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.getByText("+15 ₽")).toBeVisible();
+  expect(region.getByText("+4 ₽")).toBeVisible();
+  expect(region.getByText("Комиссии")).toBeVisible();
+  expect(region.getByText("Уплаченный НКД")).toBeVisible();
+  expect(region.queryByText(/недостаточно/)).toBeNull();
 });

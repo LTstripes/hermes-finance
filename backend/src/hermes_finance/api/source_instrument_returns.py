@@ -12,6 +12,7 @@ from hermes_finance.domain.instrument_return import AccountReconciliation, Instr
 from hermes_finance.services.source_instrument_returns import (
     InstrumentIncome,
     InstrumentReturnGap,
+    ReturnBreakdown,
     SourceInstrumentReturn,
     read_instrument_returns,
 )
@@ -27,6 +28,7 @@ class SourceInstrumentReturnsResponse(BaseModel):
     unresolved_events: tuple[InstrumentEvent, ...]
     account_reconciliation_events: tuple[InstrumentEvent, ...]
     reconciliation: AccountReconciliation | None
+    breakdown: ReturnBreakdown | None
     instruments: tuple[SourceInstrumentReturn, ...]
     income: tuple[InstrumentIncome, ...]
     gaps: tuple[InstrumentReturnGap, ...]

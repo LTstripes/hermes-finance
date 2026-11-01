@@ -232,7 +232,21 @@ def _instrument(isin, meta, analysis, raw=None):
         "opening": _endpoint(analysis.opening),
         "closing": _endpoint(analysis.closing),
         "metrics": metrics,
-        "components": {k: _domain_metric(v) for k, v in sorted(analysis.components.items())},
+        # Returns presentation may add components; the AI contract keeps its
+        # original allowlist and the producer's values/support for each field.
+        "components": {
+            name: _domain_metric(analysis.components[name])
+            for name in (
+                "buys",
+                "coupons",
+                "dividends",
+                "fees",
+                "redemption",
+                "sells",
+                "taxes",
+                "valuation_and_trades",
+            )
+        },
         "coverage": {
             k: {"complete": v.complete, "reason_codes": _reasons(v.reason_codes)}
             for k, v in sorted(analysis.coverage.items())

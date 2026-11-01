@@ -3,6 +3,7 @@ import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
+import type { ReturnBreakdown } from "./breakdown";
 
 export type Period = { start: string; end: string };
 export type Metric = {
@@ -36,6 +37,7 @@ export type Context = {
 };
 export type Overview = {
   scope: string;
+  breakdown?: ReturnBreakdown | null;
   selected: Result;
   all_history: Result | null;
   available_months_total?: AvailableMonths | null;

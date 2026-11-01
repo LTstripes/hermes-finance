@@ -513,3 +513,37 @@ test("without CLOSED months source intervals remain selectable without silently 
   });
   await screen.findByRole("region", { name: "Результат периода" });
 });
+
+test("account breakdown explains payouts above total using only the selected overview", async () => {
+  const calls = install((url) => {
+    if (!url.pathname.endsWith("overview")) return undefined;
+    expect(url.searchParams.get("scope")).toBe("source:SYNTH-A");
+    expect(url.searchParams.get("start")).toBe(may.start);
+    expect(url.searchParams.get("end")).toBe(may.end);
+    const value = overviewFixture();
+    value.selected.pnl.value = "400";
+    value.breakdown = {
+      payouts_kopecks: "1500",
+      price_and_trades_kopecks: "-800",
+      commissions_kopecks: "100",
+      paid_nkd_kopecks: "200",
+      taxes_kopecks: "0",
+      other_kopecks: "0",
+      total_kopecks: "400",
+      complete: true,
+    };
+    return Promise.resolve(response(value));
+  });
+  setup("/v2/returns/account?scope=source:SYNTH-A&start=2030-04-30&end=2030-05-31");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.getByText("+15 ₽")).toBeVisible();
+  expect(region.getByText("+4 ₽")).toBeVisible();
+  expect(region.getByText("Уплаченный НКД")).toBeVisible();
+  expect(region.queryByText(/недостаточно/)).toBeNull();
+  expect(calls.filter((call) => call.startsWith("/api/returns/overview?"))).toHaveLength(1);
+  expect(
+    calls.every(
+      (call) => call === "/api/returns/context" || call.startsWith("/api/returns/overview?"),
+    ),
+  ).toBe(true);
+});

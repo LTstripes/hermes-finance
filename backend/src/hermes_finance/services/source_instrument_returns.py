@@ -16,6 +16,7 @@ from hermes_finance.domain.instrument_return import (
     AccountReconciliation,
     InstrumentAnalysis,
     InstrumentEvent,
+    Metric,
     chain_monthly,
 )
 from hermes_finance.persistence import ExecutedTrade
@@ -99,6 +100,20 @@ class SourceInstrumentReturn:
 
 
 @dataclass(frozen=True)
+class ReturnBreakdown:
+    """Exact presentation operands over the existing economic result, never a new P&L."""
+
+    payouts_kopecks: str | None
+    price_and_trades_kopecks: str | None
+    commissions_kopecks: str | None
+    paid_nkd_kopecks: str | None
+    taxes_kopecks: str | None
+    other_kopecks: str | None
+    total_kopecks: str | None
+    complete: bool
+
+
+@dataclass(frozen=True)
 class SourceInstrumentReturns:
     source_account: str
     instruments: tuple[SourceInstrumentReturn, ...]
@@ -111,9 +126,21 @@ class SourceInstrumentReturns:
     authority: str = "provisional"
     financial_authority: str = "none"
     currency: str = "RUB"
+    breakdown: ReturnBreakdown | None = None
 
     def to_dict(self):
-        return asdict(self)
+        result = asdict(self)
+        # The native source API keeps its existing component names; its new root
+        # breakdown is the presentation bridge. Returns detail uses the service DTO.
+        for instrument in result["instruments"]:
+            for analysis in (
+                instrument["analysis"],
+                *(row["analysis"] for row in instrument["months"]),
+            ):
+                if analysis:
+                    for name in ("payouts", "price_and_trades", "commissions", "paid_nkd"):
+                        analysis["components"].pop(name, None)
+        return result
 
 
 def _quantity(value):
@@ -718,6 +745,163 @@ def _all_time(months):
     )
 
 
+def _breakdown_analysis(analysis, money_roles):
+    """Reclassify counted cash once, preserving settlement dates and missing operands."""
+    start, end = analysis.opening_date, analysis.closing_date
+    embedded_fees, paid_nkd = 0, 0
+    nkd_known = True
+    costs_complete = analysis.coverage["costs"].complete
+    for event in analysis.events:
+        if not event.counted or event.kind not in {"BUY", "SELL"}:
+            continue
+        inside = [leg for leg in event.cash_legs if start < leg.date <= end]
+        embedded_fees += sum(
+            leg.instrument_flow_kopecks for leg in inside if leg.role == "commission"
+        )
+        if event.kind != "BUY":
+            continue
+        explicit_nkd = [leg for leg in event.cash_legs if leg.role == "nkd"]
+        if explicit_nkd:
+            paid_nkd += sum(
+                leg.instrument_flow_kopecks for leg in explicit_nkd if start < leg.date <= end
+            )
+        principal = [leg for leg in event.cash_legs if leg.role == "principal"]
+        selected_principal = [leg for leg in principal if start < leg.date <= end]
+        if selected_principal and not explicit_nkd:
+            if event.accrued_interest_kopecks is None or len(selected_principal) != len(principal):
+                nkd_known = False
+            else:
+                paid_nkd += event.accrued_interest_kopecks
+        for leg in inside:
+            if leg.role == "native_money":
+                # Original-bound Money owns cash, not the informational native trade NKD.
+                is_nkd = money_roles.get(leg.ownership)
+                if is_nkd is None:
+                    nkd_known = False
+                    continue
+                if is_nkd:
+                    paid_nkd += leg.instrument_flow_kopecks
+            elif leg.role not in {"principal", "commission", "nkd"}:
+                nkd_known = False
+    if not costs_complete or not nkd_known:
+        paid_nkd = None
+    components = dict(analysis.components)
+
+    def combine(names, adjustment=0):
+        operands = [components[name] for name in names]
+        values = [metric.value for metric in operands]
+        value = None if adjustment is None or None in values else sum(values) + adjustment
+        reasons = tuple(sorted({r for metric in operands for r in metric.reason_codes}))
+        assumptions = tuple(sorted({a for metric in operands for a in metric.assumptions}))
+        complete = value is not None and all(
+            metric.status in {"supported", "provisional"} for metric in operands
+        )
+        if complete:
+            status = (
+                "provisional"
+                if assumptions or any(m.status == "provisional" for m in operands)
+                else "supported"
+            )
+        else:
+            status = "unavailable" if value is None else "partial"
+        if value is None:
+            reasons = tuple(sorted(set(reasons) | {"breakdown_incomplete"}))
+        return Metric(value, status, reasons, assumptions)
+
+    components["payouts"] = combine(("coupons", "dividends"))
+    components["commissions"] = combine(("fees",), embedded_fees if costs_complete else None)
+    components["paid_nkd"] = Metric(
+        paid_nkd,
+        "supported" if paid_nkd is not None else "unavailable",
+        () if paid_nkd is not None else ("breakdown_incomplete",),
+    )
+    components["price_and_trades"] = combine(
+        ("valuation_and_trades", "redemption"),
+        None if paid_nkd is None or not costs_complete else embedded_fees + paid_nkd,
+    )
+    return replace(analysis, components=components)
+
+
+def _with_return_breakdown(result, views, *, account_rows=()):
+    from hermes_finance.services.source_money_classifications import _is_nkd, source_reference
+
+    money_roles = {}
+    for view in views:
+        saved = {r["source_reference"]: r for r in view["money_classifications"]}
+        for raw in view["document"].get("money", []):
+            row = saved.get(source_reference(view["id"], raw))
+            if row is not None:
+                ref = f"{view['document']['document_sha256']}:money:{raw['ordinal']}"
+                money_roles[ref] = _is_nkd(row["operation"] + " " + row["narrative"])
+    instruments = tuple(
+        replace(
+            row,
+            analysis=_breakdown_analysis(row.analysis, money_roles) if row.analysis else None,
+            months=tuple(
+                replace(month, analysis=_breakdown_analysis(month.analysis, money_roles))
+                if month.analysis
+                else month
+                for month in row.months
+            ),
+        )
+        for row in result.instruments
+    )
+    analyses = [row.analysis for row in instruments if row.analysis is not None]
+
+    def aggregate(name):
+        values = [row.components[name].value for row in analyses]
+        return sum(values) if values and None not in values else None
+
+    reconciliation = result.reconciliation
+    total = reconciliation.account_growth.value if reconciliation else None
+    other = reconciliation.account_only_result.value if reconciliation else None
+    values = [
+        aggregate(name)
+        for name in ("payouts", "price_and_trades", "commissions", "paid_nkd", "taxes")
+    ]
+    # Keep proven account costs in their own expense rows without allocating them to ISINs.
+    account_costs = {
+        kind: -sum(int(row["amount_kopecks"]) for row in account_rows if row["kind"] == name)
+        for kind, name in (("FEE", "account_fee"), ("TAX", "account_tax"))
+    }
+    if reconciliation:
+        for event in result.account_reconciliation_events:
+            if event.kind in account_costs and not event.reason_codes:
+                account_costs[event.kind] += sum(
+                    leg.instrument_flow_kopecks
+                    for leg in event.cash_legs
+                    if reconciliation.opening_date < leg.date <= reconciliation.closing_date
+                )
+    for index, kind in ((2, "FEE"), (4, "TAX")):
+        if values[index] is not None:
+            values[index] += account_costs[kind]
+    if other is not None:
+        other += sum(account_costs.values())
+    complete = bool(
+        reconciliation
+        and reconciliation.complete
+        and total is not None
+        and other is not None
+        and None not in values
+        and all(all(c.complete for c in row.coverage.values()) for row in analyses)
+        and values[0] + values[1] - values[2] - values[3] - values[4] + other == total
+    )
+
+    def wire(value):
+        return None if value is None else str(value)
+
+    return replace(
+        result,
+        instruments=instruments,
+        breakdown=ReturnBreakdown(
+            *(wire(value) for value in values),
+            wire(other),
+            wire(total),
+            complete,
+        ),
+    )
+
+
 @coherent_read_operation
 def read_instrument_returns(
     session,
@@ -938,7 +1122,7 @@ def read_instrument_returns(
             )
             for row in instruments
         ]
-    return SourceInstrumentReturns(
+    result = SourceInstrumentReturns(
         source_account,
         tuple(instruments),
         income,
@@ -952,3 +1136,4 @@ def read_instrument_returns(
             e for e in events if e.attribution_basis == "account_only"
         ),
     )
+    return _with_return_breakdown(result, views)

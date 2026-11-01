@@ -3,21 +3,15 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { money } from "../SourceInstrumentDetail";
-import {
-  cardContributions,
-  cardHasCompleteBreakdown,
-  cardOperations,
-  cardQuantityStatus,
-  contributionWidth,
-  hasAmount,
-  nonzeroAmount,
-} from "./cardPresentation";
+import { instrumentBreakdown } from "./breakdown";
+import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
 import { getInstrumentCard } from "./cards";
 import styles from "./InstrumentCard.module.css";
 import { dateLabel, displayMetric, periodLabel } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
+import { ReturnsBreakdown } from "./ReturnsBreakdown";
 import { Explanation } from "./ReturnsInfo";
 
 export function ReturnsInstrumentCard({
@@ -72,14 +66,7 @@ export function ReturnsInstrumentCard({
   const filtered = operations.filter(
     (row) => operationFilter === "all" || row.side === operationFilter,
   );
-  const contributions = data ? cardContributions(data.summary) : [];
   const quantityStatus = data ? cardQuantityStatus(data) : null;
-  const completeBreakdown = data ? cardHasCompleteBreakdown(data) : false;
-  const maximum = contributions.reduce((result, row) => {
-    const n = BigInt(row.value);
-    const magnitude = n < 0n ? -n : n;
-    return magnitude > result ? magnitude : result;
-  }, 0n);
   const payouts =
     data?.accounts
       .flatMap((account) =>
@@ -180,43 +167,7 @@ export function ReturnsInstrumentCard({
               что позиция полностью продана.
             </p>
           )}
-          {!hasAmount(data.summary.pnl) && (
-            <p className={styles.notice}>
-              Общий результат пока не подтверждён. Известные выплаты и операции показаны ниже;
-              причины приведены по соответствующим счетам.
-            </p>
-          )}
-          {contributions.length > 0 && (
-            <section className={styles.panel} aria-label="Разложение результата">
-              <h2>{completeBreakdown ? "Из чего сложился результат" : "Известные составляющие"}</h2>
-              {!completeBreakdown && (
-                <p className={styles.notice}>
-                  Часть данных по счетам не подтверждена. Составляющие могут охватывать разные счета
-                  и не являются точным разложением показанного результата.
-                </p>
-              )}
-              <div className={styles.bridge}>
-                {contributions.map((row) => (
-                  <div className={styles.barRow} key={row.label}>
-                    <span>{row.label}</span>
-                    <div className={styles.barTrack} aria-hidden="true">
-                      <div
-                        className={`${styles.bar} ${BigInt(row.value) < 0n ? styles.barLoss : ""}`}
-                        style={{ width: `${contributionWidth(row.value, maximum)}%` }}
-                      />
-                    </div>
-                    <strong className={styles.amount}>
-                      {displayMetric({ ...row.metric, value: row.value }, true)}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-              <p className={styles.muted}>
-                Стоимость и сделки — изменение оценки с учётом покупок и продаж. Выплаты и расходы
-                показаны отдельно; повторно добавлять их к результату или вычитать из него не нужно.
-              </p>
-            </section>
-          )}
+          <ReturnsBreakdown value={instrumentBreakdown(data)} total={data.summary.pnl} />
           {!!data.accounts.length && (
             <section className={styles.panel} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>

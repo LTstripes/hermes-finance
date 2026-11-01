@@ -1910,3 +1910,252 @@ def test_verbal_nkd_requires_proven_purchase_link_and_is_counted_once(
         assert result.return_percent is None
         assert "unrecognized_money" in result.flags
     assert snapshot(db) == before
+
+
+# Synthetic cash economics: paid income can exceed the net economic result.
+def breakdown_analysis(*, native_money=False, missing_costs=False):
+    from hermes_finance.domain.instrument_return import (
+        CashLeg,
+        Coverage,
+        Endpoint,
+        InstrumentAnalysis,
+        InstrumentEvent,
+        calculate_economics,
+    )
+
+    first, last, day = date(2030, 3, 31), date(2030, 4, 30), date(2030, 4, 15)
+    opening = Endpoint(first, Decimal(0), 0, 0, 0, "dirty")
+    closing = Endpoint(last, Decimal(1), 9000, 9000, 0, "dirty")
+    coverage = {
+        name: Coverage(True)
+        for name in ("events", "quantity", "endpoints", "payouts", "costs", "valuation")
+    }
+    if missing_costs:
+        coverage["costs"] = Coverage(False, ("trade_components_missing",))
+
+    def event(key, kind, cash, role, **kwargs):
+        return InstrumentEvent(
+            event_key=key,
+            provider="synthetic",
+            native_source_account="SYNTH-A",
+            isin=BOND,
+            effective_isin=BOND,
+            kind=kind,
+            event_date=day,
+            source_references=(key,),
+            cash_legs=(CashLeg(role, day, cash, -cash, (key,), key),),
+            **kwargs,
+        )
+
+    if native_money:
+        events = (
+            event("principal", "BUY", -9800, "native_money"),
+            event("nkd", "BUY", -200, "native_money"),
+            event("fee", "FEE", -100, "native_money"),
+        )
+    else:
+        buy = event("principal", "BUY", -10000, "principal", accrued_interest_kopecks=200)
+        events = (
+            service.replace(
+                buy,
+                cash_legs=buy.cash_legs + (CashLeg("commission", day, -100, 100, ("fee",), "fee"),),
+            ),
+        )
+    events += (
+        event("coupon", "COUPON", 1000, "coupon"),
+        event("dividend", "DIVIDEND", 500, "dividend"),
+    )
+    components, pnl, subtotal, rate, estimate = calculate_economics(
+        opening, closing, events, coverage
+    )
+    return InstrumentAnalysis(
+        opening_date=first,
+        closing_date=last,
+        history_start=first,
+        history_end=last,
+        history_complete_since_acquisition=True,
+        events=events,
+        opening=opening,
+        closing=closing,
+        components=components,
+        pnl=pnl,
+        known_subtotal=subtotal,
+        modified_dietz=rate,
+        coverage=coverage,
+        source_references=(),
+        reason_codes=(),
+        assumptions=(),
+        statement_estimate=estimate,
+    )
+
+
+@pytest.mark.parametrize("native_money", [False, True])
+def test_breakdown_payouts_exceed_total_and_components_reconcile(native_money):
+    original = breakdown_analysis(native_money=native_money)
+    result = service._breakdown_analysis(original, {"principal": False, "nkd": True})
+    c = result.components
+    assert result.pnl == original.pnl
+    assert result.modified_dietz == original.modified_dietz
+    assert c["payouts"].value == 1500 > result.pnl.value == 400
+    assert c["price_and_trades"].value == -800
+    assert c["commissions"].value == 100
+    assert c["paid_nkd"].value == 200
+    assert (
+        c["payouts"].value
+        + c["price_and_trades"].value
+        - c["commissions"].value
+        - c["paid_nkd"].value
+        - c["taxes"].value
+    ) == result.pnl.value
+    assert "paid_nkd" not in original.components
+
+
+@pytest.mark.parametrize("missing", ["costs", "nkd_role", "nkd_value"])
+def test_breakdown_unknown_is_not_zero(missing):
+    original = breakdown_analysis(
+        native_money=missing == "nkd_role", missing_costs=missing == "costs"
+    )
+    if missing == "nkd_value":
+        original = service.replace(
+            original,
+            events=tuple(
+                service.replace(event, accrued_interest_kopecks=None) for event in original.events
+            ),
+        )
+    result = service._breakdown_analysis(original, {})
+    assert result.components["paid_nkd"].value is None
+    assert result.components["price_and_trades"].value is None
+    assert result.components["payouts"].value == 1500
+    assert result.pnl == original.pnl
+
+
+def test_account_breakdown_reconciles_without_allocating_account_only_cash():
+    from hermes_finance.domain.instrument_return import AccountReconciliation, Metric
+
+    analysis = breakdown_analysis()
+    result = service.SourceInstrumentReturns(
+        "SYNTH-A",
+        (
+            service.SourceInstrumentReturn(
+                BOND, "Synthetic bond", "bond", (), service._all_time(()), analysis
+            ),
+        ),
+        (),
+        (),
+        reconciliation=AccountReconciliation(
+            analysis.opening_date,
+            analysis.closing_date,
+            Metric(375, "supported"),
+            analysis.pnl,
+            Metric(-25, "supported"),
+            Metric(0, "supported"),
+            True,
+            (),
+        ),
+    )
+    breakdown = service._with_return_breakdown(result, []).breakdown
+    assert breakdown.complete
+    wire = service._with_return_breakdown(result, []).to_dict()
+    assert wire["breakdown"]["payouts_kopecks"] == "1500"
+    assert "paid_nkd" not in wire["instruments"][0]["analysis"]["components"]
+    assert "paid_nkd" not in result.instruments[0].analysis.components
+    assert breakdown.total_kopecks == "375"
+    assert breakdown.other_kopecks == "-25"
+    with_fee = service._with_return_breakdown(
+        result,
+        [],
+        account_rows=({"kind": "account_fee", "amount_kopecks": "-25"},),
+    ).breakdown
+    assert with_fee.complete
+    assert with_fee.commissions_kopecks == "125"
+    assert with_fee.other_kopecks == "0"
+    assert (
+        int(breakdown.payouts_kopecks)
+        + int(breakdown.price_and_trades_kopecks)
+        - int(breakdown.commissions_kopecks)
+        - int(breakdown.paid_nkd_kopecks)
+        - int(breakdown.taxes_kopecks)
+        + int(breakdown.other_kopecks)
+    ) == 375
+
+
+def test_saved_source_breakdown_retains_payouts_larger_than_net_result(db):
+    save(
+        db,
+        bond=None,
+        trades=(),
+        stock=("10", "10", "1000", "900"),
+        extra=(("Дивиденды", f"Payment {ISIN}", "150"),),
+    )
+    before = snapshot(db)
+    analysis = by_isin(read(db))[ISIN].analysis
+    c = analysis.components
+    assert c["payouts"].value == 15000
+    assert c["price_and_trades"].value == -10000
+    assert c["commissions"].value == c["paid_nkd"].value == 0
+    assert analysis.pnl.value == 5000
+    assert c["payouts"].value + c["price_and_trades"].value == analysis.pnl.value
+    assert snapshot(db) == before
+
+
+def test_breakdown_nkd_uses_cash_dates_and_does_not_repeat_on_split_principal():
+    from hermes_finance.domain.instrument_return import CashLeg
+
+    original = breakdown_analysis()
+    buy = original.events[0]
+    day = buy.cash_legs[0].date
+    split = (
+        CashLeg("principal", day, -4000, 4000, ("one",), "one"),
+        CashLeg("principal", day, -6000, 6000, ("two",), "two"),
+        buy.cash_legs[1],
+    )
+    analysis = service.replace(original, events=(service.replace(buy, cash_legs=split),))
+    assert service._breakdown_analysis(analysis, {}).components["paid_nkd"].value == 200
+    outside = service.replace(split[0], date=original.opening_date)
+    analysis = service.replace(
+        original, events=(service.replace(buy, cash_legs=(outside, *split[1:])),)
+    )
+    assert service._breakdown_analysis(analysis, {}).components["paid_nkd"].value is None
+    explicit = CashLeg("nkd", original.opening_date, -200, 200, ("nkd",), "nkd")
+    analysis = service.replace(
+        original, events=(service.replace(buy, cash_legs=(*split, explicit)),)
+    )
+    assert service._breakdown_analysis(analysis, {}).components["paid_nkd"].value == 0
+
+
+def test_breakdown_sale_nkd_is_not_paid_again_and_sale_commission_is_separate():
+    from hermes_finance.domain.instrument_return import CashLeg, calculate_economics
+
+    original = breakdown_analysis()
+    buy = original.events[0]
+    day = buy.cash_legs[0].date
+    sale = service.replace(
+        buy,
+        kind="SELL",
+        event_key="sale",
+        accrued_interest_kopecks=400,
+        cash_legs=(
+            CashLeg("principal", day, 5000, -5000, ("sale",), "sale"),
+            CashLeg("commission", day, -30, 30, ("sale-fee",), "sale-fee"),
+        ),
+    )
+    events = original.events + (sale,)
+    components, pnl, _, _, _ = calculate_economics(
+        original.opening, original.closing, events, original.coverage
+    )
+    analysis = service.replace(original, events=events, components=components, pnl=pnl)
+    result = service._breakdown_analysis(analysis, {})
+    c = result.components
+    assert c["paid_nkd"].value == 200
+    assert c["commissions"].value == 130
+    assert c["price_and_trades"].value == 4200
+    assert (
+        (
+            c["payouts"].value
+            + c["price_and_trades"].value
+            - c["commissions"].value
+            - c["paid_nkd"].value
+        )
+        == result.pnl.value
+        == 5370
+    )
