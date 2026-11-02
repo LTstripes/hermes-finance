@@ -2,11 +2,9 @@ import type { GuidedCloseActionId, GuidedCloseStepId } from "../../api/monthClos
 
 const STEP_IDS = new Set<GuidedCloseStepId>([
   "month_setup",
-  "alfa_baseline",
   "market_quotes",
   "actual_payouts",
   "future_payouts",
-  "broker_reconciliation",
   "readiness",
   "final_review_close",
   "next_month_outlook",
@@ -77,11 +75,9 @@ export function withSelectedReturnMonth(params: URLSearchParams, monthId: number
 const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
   open_month: (monthId) => `/v2/data/months/${monthId}`,
   set_snapshot_date: (monthId) => `/v2/data/months/${monthId}?section=general`,
-  open_alfa_preview: (monthId) => `/v2/data/alfa-baseline?month=${monthId}`,
   open_quote_preview: (monthId) => `/v2/data/months/${monthId}?section=positions#month-quotes`,
   choose_statement_file: (monthId) => `/v2/data/payouts?month=${monthId}#statement-import`,
   open_payout_batch_preview: (monthId) => `/v2/data/payouts?month=${monthId}`,
-  open_reconciliation_preview: (monthId) => `/v2/data/reconciliation?month=${monthId}`,
   open_freshness: (monthId) => `/v2/data?month=${monthId}`,
   open_final_review: (monthId) =>
     monthlyCloseReturnPath({

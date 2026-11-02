@@ -1,6 +1,8 @@
 # ADR 0013 — Broker snapshot boundary and Alfa PRO security
 
-**Status:** Accepted  
+**Status:** Superseded
+
+Alfa Pro functionality was removed by [#1036](https://github.com/LTstripes/hermes-finance/issues/1036). This ADR is retained as decision history. Accepted records and generic broker identity/source handling remain supported under [C4](../ARCHITECTURE_AND_CONTRACTS.md#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19).
 **Date:** 2026-08-19  
 **Release line:** `r06` / 0.6.x  
 **Task:** R06-02 / issue #74

@@ -19,7 +19,6 @@
     "audit:visual": "node scripts/run-visual-audit.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test:e2e:capital-allocation": "playwright test --project=capital-allocation",
-    "test:e2e:alfa": "playwright test --project=alfa",
     "test:e2e:broker-month": "playwright test --project=broker-month",
     "test:e2e:chromium": "playwright test --project=chromium",
     "test:e2e:iis": "playwright test --project=iis",

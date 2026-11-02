@@ -232,7 +232,6 @@ class FinalMonthReviewOut(BaseModel):
     actual_passive_income: MoneyValue
     important_future_events: ImportantFutureEventsOut
     provider_summary: list[dict[str, object]]
-    reconciliation_availability: dict[str, object]
     freshness_summary: WorkflowFreshnessOut
     close_readiness: CloseReadinessOut
     manual_review_cards: list[ManualReviewCardOut]
@@ -601,7 +600,6 @@ def _final_review_out(
         ),
         important_future_events=_important_future_events_out(review.cash_flow_ladder),
         provider_summary=[_value_out(item) for item in review.provider_summary],
-        reconciliation_availability=_value_out(review.reconciliation_availability),
         freshness_summary=_freshness_out(review.freshness),
         close_readiness=_close_readiness_out(review.readiness),
         manual_review_cards=cards,

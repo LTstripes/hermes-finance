@@ -13,11 +13,9 @@ import type {
 
 export type GuidedCloseStepId =
   | "month_setup"
-  | "alfa_baseline"
   | "market_quotes"
   | "actual_payouts"
   | "future_payouts"
-  | "broker_reconciliation"
   | "readiness"
   | "final_review_close"
   | "next_month_outlook";
@@ -25,11 +23,9 @@ export type GuidedCloseStepId =
 export type GuidedCloseActionId =
   | "open_month"
   | "set_snapshot_date"
-  | "open_alfa_preview"
   | "open_quote_preview"
   | "choose_statement_file"
   | "open_payout_batch_preview"
-  | "open_reconciliation_preview"
   | "open_freshness"
   | "open_final_review"
   | "confirm_close"
@@ -66,7 +62,7 @@ export type WorkflowFreshnessFamily = {
   family_id:
     | "market_quotes"
     | "t_invest_payouts"
-    | "alfa_pro_positions"
+    | "broker_positions"
     | "alfa_statement_payouts"
     | "manual_month_data"
     | "deposit_cash_snapshots";
@@ -106,11 +102,6 @@ export type WorkflowProviderSummary = {
   evidence_scope: string;
   reason_codes: string[];
   evidence_summary: Record<string, unknown>;
-};
-
-export type WorkflowReconciliationAvailability = {
-  available: boolean;
-  reason_code: string | null;
 };
 
 export type FinalMonthReview = {
@@ -175,7 +166,6 @@ export type FinalMonthReview = {
     known_event_count: number;
   };
   provider_summary: WorkflowProviderSummary[];
-  reconciliation_availability: WorkflowReconciliationAvailability;
   freshness_summary: WorkflowFreshness;
   close_readiness: CloseReadiness;
   manual_review_cards: ManualReviewCard[];

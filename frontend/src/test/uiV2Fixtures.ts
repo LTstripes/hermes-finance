@@ -400,13 +400,6 @@ export function makeUiV2Workflow({
       why: "Дата снимка сохранена. Она может отличаться от конца отчётного месяца.",
     },
     {
-      id: "alfa_baseline",
-      title: "Сверить состав портфеля",
-      action: "open_alfa_preview",
-      label: "Открыть предпросмотр Alfa",
-      why: "Проверь, что позиции и остатки соответствуют выбранной дате. Загрузка и применение данных требуют отдельных подтверждений.",
-    },
-    {
       id: "market_quotes",
       title: "Проверить оценку активов",
       action: "open_quote_preview",
@@ -426,13 +419,6 @@ export function makeUiV2Workflow({
       action: "open_payout_batch_preview",
       label: "Открыть календарь выплат",
       why: "Будущие выплаты — ожидания, а не полученный доход.",
-    },
-    {
-      id: "broker_reconciliation",
-      title: "Проверить расхождения портфеля",
-      action: "open_reconciliation_preview",
-      label: "Открыть сверку",
-      why: "Сравнение не меняет сохранённые данные.",
     },
     {
       id: "readiness",
@@ -461,7 +447,7 @@ export function makeUiV2Workflow({
     order: index + 1,
     title: definition.title,
     state: closed || index === 0 ? "completed" : index === 1 ? "warning" : "ready",
-    applicability: index === 8 && !closed ? "not_applicable" : "mandatory",
+    applicability: index === 6 && !closed ? "not_applicable" : "mandatory",
     gate: "advisory",
     affects_close: false,
     why: definition.why,
@@ -476,9 +462,9 @@ export function makeUiV2Workflow({
     diagnostics: {},
   }));
   if (blocked) {
-    steps[6] = { ...steps[6], state: "blocked", gate: "must_resolve", affects_close: true };
+    steps[4] = { ...steps[4], state: "blocked", gate: "must_resolve", affects_close: true };
   }
-  if (closed) steps[8] = { ...steps[8], state: "ready" };
+  if (closed) steps[6] = { ...steps[6], state: "ready" };
   const items = [
     {
       severity: "warning" as const,
@@ -507,8 +493,8 @@ export function makeUiV2Workflow({
     contract_version: "monthly_close_workflow_v1",
     generated_at: "2031-09-01T09:00:00Z",
     month: { ...month },
-    recommended_step_id: closed ? "next_month_outlook" : blocked ? "readiness" : "alfa_baseline",
-    progress: { completed_or_skipped: closed ? 8 : 1, total_applicable: closed ? 9 : 8 },
+    recommended_step_id: closed ? "next_month_outlook" : blocked ? "readiness" : "market_quotes",
+    progress: { completed_or_skipped: closed ? 6 : 1, total_applicable: closed ? 7 : 6 },
     steps,
     readiness: {
       can_close: !blocked,
@@ -571,10 +557,6 @@ export function makeUiV2Workflow({
             known_event_count: 0,
           },
           provider_summary: [],
-          reconciliation_availability: {
-            available: false,
-            reason_code: "reconciliation_not_run",
-          },
           freshness_summary: freshness,
           close_readiness: {
             year: month.year,

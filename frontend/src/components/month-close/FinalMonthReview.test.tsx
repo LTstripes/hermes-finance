@@ -83,7 +83,6 @@ function review(): FinalMonthReview {
       known_event_count: 1,
     },
     provider_summary: [],
-    reconciliation_availability: { available: false, reason_code: "reconciliation_not_run" },
     freshness_summary: {
       available: true,
       evaluated_on: "2025-05-01",

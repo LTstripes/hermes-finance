@@ -214,13 +214,11 @@ def test_fixture_answers_core_portfolio_review_questions() -> None:
     assert family_ids == {
         "market_quotes",
         "t_invest_payouts",
-        "alfa_pro_positions",
         "alfa_statement_payouts",
         "manual_month_data",
         "deposit_cash_snapshots",
     }
     assert any(family["status"] == "mixed" for family in freshness["families"])
-    assert any(family["status"] == "unknown" for family in freshness["families"])
 
     warning_codes = {warning["code"] for warning in fixture["warnings"]}
     assert {

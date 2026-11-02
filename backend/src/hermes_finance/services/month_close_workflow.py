@@ -34,8 +34,6 @@ from hermes_finance.persistence import (
     AppliedProviderPayout,
     AppliedStatementEvent,
     AppliedStatementEventRevision,
-    BrokerBaselineApply,
-    BrokerBaselineApplyItem,
     CashBalance,
     Debt,
     DepositSnapshot,
@@ -83,11 +81,9 @@ WORKFLOW_CONTRACT_VERSION = "monthly_close_workflow_v1"
 
 _STEP_DEFINITIONS = (
     (GuidedCloseStepId.MONTH_SETUP, "Открыть отчётный месяц"),
-    (GuidedCloseStepId.ALFA_BASELINE, "Сверить состав портфеля Alfa"),
     (GuidedCloseStepId.MARKET_QUOTES, "Обновить рыночные цены"),
     (GuidedCloseStepId.ACTUAL_PAYOUTS, "Проверить фактические выплаты"),
     (GuidedCloseStepId.FUTURE_PAYOUTS, "Обновить будущие выплаты"),
-    (GuidedCloseStepId.BROKER_RECONCILIATION, "Проверить портфель после обновлений"),
     (GuidedCloseStepId.READINESS, "Проверить качество данных и готовность"),
     (GuidedCloseStepId.FINAL_REVIEW_CLOSE, "Проверить итог и закрыть месяц"),
     (GuidedCloseStepId.NEXT_MONTH_OUTLOOK, "Что известно о следующем месяце"),
@@ -95,11 +91,9 @@ _STEP_DEFINITIONS = (
 
 _ACTION_LABELS = {
     GuidedCloseActionId.SET_SNAPSHOT_DATE: "Указать дату снимка",
-    GuidedCloseActionId.OPEN_ALFA_PREVIEW: "Получить данные Alfa PRO",
     GuidedCloseActionId.OPEN_QUOTE_PREVIEW: "Получить котировки",
     GuidedCloseActionId.CHOOSE_STATEMENT_FILE: "Выбрать PDF Alfa",
     GuidedCloseActionId.OPEN_PAYOUT_BATCH_PREVIEW: "Проверить все позиции T-Invest",
-    GuidedCloseActionId.OPEN_RECONCILIATION_PREVIEW: "Проверить снимок Alfa",
     GuidedCloseActionId.OPEN_FRESHNESS: "Открыть свежесть и provenance",
     GuidedCloseActionId.OPEN_FINAL_REVIEW: "Перейти к итогам",
     GuidedCloseActionId.CONFIRM_CLOSE: "Закрыть месяц",
@@ -118,7 +112,6 @@ class FinalMonthReview:
     readiness: CloseReadiness
     freshness: FreshnessProvenanceSummary | None
     provider_summary: tuple[dict[str, object], ...]
-    reconciliation_availability: dict[str, object]
     manual_review_cards: tuple[dict[str, object], ...]
     manual_attention: tuple[dict[str, object], ...]
     evidence_version: str
@@ -178,119 +171,6 @@ def _selected_evidence_summary(**counts: int) -> dict[str, object]:
         "coverage_scope": GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY.value,
         **counts,
     }
-
-
-def _latest_baseline_apply(session: Session, month_id: int) -> BrokerBaselineApply | None:
-    return session.scalar(
-        select(BrokerBaselineApply)
-        .where(BrokerBaselineApply.reporting_month_id == month_id)
-        .order_by(BrokerBaselineApply.confirmed_at.desc(), BrokerBaselineApply.id.desc())
-    )
-
-
-def _alfa_baseline_step(session: Session, month: object) -> GuidedCloseStep:
-    if getattr(month, "snapshot_date") is None:
-        return _provider_step_read_only(
-            step_id=GuidedCloseStepId.ALFA_BASELINE,
-            why="Без даты снимка нельзя проверить сохранённое подтверждение Alfa.",
-            reason_code=GuidedCloseReasonCode.SNAPSHOT_DATE_REQUIRED.value,
-            action_id=GuidedCloseActionId.OPEN_ALFA_PREVIEW,
-        )
-
-    applied = _latest_baseline_apply(session, getattr(month, "id"))
-    if applied is None:
-        return _provider_step_read_only(
-            step_id=GuidedCloseStepId.ALFA_BASELINE,
-            why=(
-                "Сохранённого подтверждения Alfa в core-контракте нет; "
-                "проверка запускается только явным действием."
-            ),
-            reason_code=GuidedCloseReasonCode.BASELINE_NOT_APPLIED.value,
-            action_id=GuidedCloseActionId.OPEN_ALFA_PREVIEW,
-        )
-
-    items = list(
-        session.scalars(
-            select(BrokerBaselineApplyItem)
-            .where(
-                BrokerBaselineApplyItem.reporting_month_id == getattr(month, "id"),
-                BrokerBaselineApplyItem.baseline_apply_id == applied.id,
-            )
-            .order_by(BrokerBaselineApplyItem.id)
-        )
-    )
-    if not items:
-        return _step(
-            step_id=GuidedCloseStepId.ALFA_BASELINE,
-            state=GuidedCloseStepState.READY,
-            applicability=GuidedCloseApplicability.CONDITIONAL,
-            gate=GuidedCloseGate.OWNER_DECISION,
-            affects_close=False,
-            why="Подтверждение Alfa не содержит сохранённых выбранных позиций.",
-            reason_codes=(GuidedCloseReasonCode.BASELINE_COVERAGE_NOT_PERSISTED.value,),
-            primary_action=_action(
-                GuidedCloseActionId.OPEN_ALFA_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
-            ),
-            evidence_summary=_unavailable_evidence(
-                GuidedCloseReasonCode.BASELINE_COVERAGE_NOT_PERSISTED.value
-            ),
-        )
-
-    snapshot_ids = {item.position_snapshot_id for item in items}
-    snapshots = {
-        snapshot.id: snapshot
-        for snapshot in session.scalars(
-            select(PositionSnapshot).where(PositionSnapshot.id.in_(snapshot_ids))
-        )
-    }
-    position_missing = 0
-    quantity_changed = 0
-    for item in items:
-        snapshot = snapshots.get(item.position_snapshot_id)
-        if snapshot is None or snapshot.reporting_month_id != getattr(month, "id"):
-            position_missing += 1
-        elif snapshot.quantity != item.quantity:
-            quantity_changed += 1
-
-    date_changed = applied.baseline_date != getattr(month, "snapshot_date")
-    stale_count = len(items) if date_changed else position_missing + quantity_changed
-    matching_count = len(items) - stale_count
-    reason_codes: list[str] = []
-    if position_missing:
-        reason_codes.append(GuidedCloseReasonCode.BASELINE_POSITION_MISSING.value)
-    if quantity_changed:
-        reason_codes.append(GuidedCloseReasonCode.BASELINE_QUANTITY_CHANGED.value)
-    if date_changed:
-        reason_codes.append(GuidedCloseReasonCode.BASELINE_DATE_CHANGED.value)
-    reason_tuple = _unique_reason_codes(reason_codes)
-    stale = bool(reason_tuple)
-    return _step(
-        step_id=GuidedCloseStepId.ALFA_BASELINE,
-        state=derive_step_state(stale_or_partial=stale, completed=not stale),
-        applicability=GuidedCloseApplicability.CONDITIONAL,
-        gate=GuidedCloseGate.OWNER_DECISION,
-        affects_close=False,
-        why=(
-            "Сохранённое выбранное подтверждение Alfa больше не совпадает с текущим месяцем "
-            "или позициями."
-            if stale
-            else "Сохранены выбранные позиции Alfa; это не подтверждение полного покрытия провайдера."
-        ),
-        reason_codes=(
-            reason_tuple if stale else (GuidedCloseReasonCode.BASELINE_SELECTED_ROWS_PRESENT.value,)
-        ),
-        primary_action=_action(
-            GuidedCloseActionId.OPEN_ALFA_PREVIEW, GuidedCloseActionTarget.OPEN_PANEL
-        ),
-        completion_basis=GuidedCloseCompletionBasis.DOMAIN_FACT if not stale else None,
-        evidence_scope=GuidedCloseEvidenceScope.SELECTED_ROWS_ONLY,
-        evidence_summary=_selected_evidence_summary(
-            selected_count=len(items),
-            matching_count=matching_count,
-            stale_count=stale_count,
-        ),
-        stale=GuidedCloseStale(is_stale=stale, reason_codes=reason_tuple),
-    )
 
 
 def _latest_statement_revisions(
@@ -1123,7 +1003,6 @@ def _manual_attention(readiness: CloseReadiness) -> tuple[dict[str, object], ...
 
 def _provider_summary(steps: tuple[GuidedCloseStep, ...]) -> tuple[dict[str, object], ...]:
     provider_ids = {
-        GuidedCloseStepId.ALFA_BASELINE,
         GuidedCloseStepId.MARKET_QUOTES,
         GuidedCloseStepId.ACTUAL_PAYOUTS,
         GuidedCloseStepId.FUTURE_PAYOUTS,
@@ -1212,10 +1091,6 @@ def build_final_month_review(
         readiness=readiness,
         freshness=freshness,
         provider_summary=_provider_summary(steps),
-        reconciliation_availability={
-            "available": False,
-            "reason_code": GuidedCloseReasonCode.RECONCILIATION_NOT_RUN.value,
-        },
         manual_review_cards=cards,
         manual_attention=_manual_attention(readiness),
         evidence_version=_evidence_version(month, readiness, freshness, cards, ladder),
@@ -1395,7 +1270,6 @@ def build_month_close_workflow(
             completion_basis=None if month_blocked else GuidedCloseCompletionBasis.DOMAIN_FACT,
         )
         provider_steps = (
-            _alfa_baseline_step(session, month),
             (
                 _market_quote_step(freshness, session=session, month_id=month.id)
                 if freshness is not None
@@ -1408,15 +1282,6 @@ def build_month_close_workflow(
             ),
             _actual_payouts_step(session, month),
             _future_payouts_step(session, month),
-            _provider_step_read_only(
-                step_id=GuidedCloseStepId.BROKER_RECONCILIATION,
-                why=(
-                    "Проверка Alfa доступна только по явной команде и не сохраняется "
-                    "этим read model."
-                ),
-                reason_code="reconciliation_not_run",
-                action_id=GuidedCloseActionId.OPEN_RECONCILIATION_PREVIEW,
-            ),
         )
         steps = (
             month_step,

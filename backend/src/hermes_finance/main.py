@@ -15,8 +15,6 @@ from hermes_finance.api.broker_identity_mappings import (
     router as broker_identity_mappings_router,
 )
 from hermes_finance.api.broker_months import router as broker_months_router
-from hermes_finance.api.broker_reconciliation import router as broker_reconciliation_router
-from hermes_finance.api.broker_snapshot import router as broker_snapshot_router
 from hermes_finance.api.broker_statement_provisional import (
     router as broker_statement_provisional_router,
 )
@@ -142,7 +140,6 @@ def create_app(
     static_dir: Path | None = None,
     market_data_provider: object | None = None,
     payout_provider: object | None = None,
-    broker_snapshot_provider: object | None = None,
     reviewed_bond_valuation_path: Path | None = None,
 ) -> FastAPI:
     configure_private_logging()
@@ -162,8 +159,6 @@ def create_app(
         application.state.market_data_provider = market_data_provider
     if payout_provider is not None:
         application.state.payout_provider = payout_provider
-    if broker_snapshot_provider is not None:
-        application.state.broker_snapshot_provider = broker_snapshot_provider
 
     @application.middleware("http")
     async def recovery_readiness_identity(request: Request, call_next):
@@ -194,9 +189,7 @@ def create_app(
     application.include_router(portfolio_xirr_router)
     application.include_router(portfolio_twrr_router)
     application.include_router(class_returns_router)
-    application.include_router(broker_snapshot_router)
     application.include_router(broker_identity_mappings_router)
-    application.include_router(broker_reconciliation_router)
     application.include_router(statement_import_router)
     application.include_router(mybroker_import_router)
     application.include_router(mybroker_preflight_router)

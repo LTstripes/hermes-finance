@@ -123,9 +123,6 @@ _WARNING_MESSAGES = {
     FUTURE_DATED_VALUATION: (
         "At least one valuation is dated after the selected reporting snapshot and is unavailable for this period."
     ),
-    "alfa_pro_observation_not_persisted": (
-        "Alfa PRO observation time is not persisted, so freshness cannot be classified."
-    ),
     "personal_tax_unknown": (
         "At least one expected income amount does not include a known personal-tax treatment."
     ),
@@ -144,7 +141,6 @@ _INFO_WARNINGS = {
     "authoritative_market_value_change_unavailable",
     "cash_flow_adjusted_return_unavailable",
     "deposit_projection_approximate",
-    "alfa_pro_observation_not_persisted",
 }
 
 

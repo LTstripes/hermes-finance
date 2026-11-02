@@ -84,12 +84,10 @@ export function selectDiagnosticMonth(months: ReportingMonth[]): ReportingMonth 
 
 export type DataAppSection =
   | "sources"
-  | "reconciliation"
   | "months"
   | "catalogs"
   | "files"
   | "app"
-  | "alfa-baseline"
   | "payouts"
   | "source-intake";
 
@@ -100,23 +98,19 @@ export function dataAppPath(
   hash = "",
 ): string {
   const base =
-    section === "alfa-baseline"
-      ? "/v2/data/alfa-baseline"
-      : section === "payouts"
-        ? "/v2/data/payouts"
-        : section === "source-intake"
-          ? "/v2/data/source-intake"
-          : section === "sources"
-            ? "/v2/data"
-            : section === "reconciliation"
-              ? "/v2/data/reconciliation"
-              : section === "months"
-                ? "/v2/data/months"
-                : section === "catalogs"
-                  ? "/v2/data/catalogs"
-                  : section === "files"
-                    ? "/v2/data/files"
-                    : "/v2/data/app";
+    section === "payouts"
+      ? "/v2/data/payouts"
+      : section === "source-intake"
+        ? "/v2/data/source-intake"
+        : section === "sources"
+          ? "/v2/data"
+          : section === "months"
+            ? "/v2/data/months"
+            : section === "catalogs"
+              ? "/v2/data/catalogs"
+              : section === "files"
+                ? "/v2/data/files"
+                : "/v2/data/app";
   const params = new URLSearchParams(search);
   if (monthId != null && !params.has("month")) params.set("month", String(monthId));
   const query = params.toString();

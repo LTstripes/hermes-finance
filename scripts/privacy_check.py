@@ -137,11 +137,9 @@ _SYNTHETIC_LITERALS = {
         "97286efb3adeadd4cca3e7ae78872f4b82bc5a36a902dd8fbc2ffcd2f1bddb45",
     ),
     (
-        "backend/tests/test_alfa_pro_probe.py",
         "ef56588f62f4c4a02a7d8327d88add1c7eb2a62a8557cc0b742b1bbf005f3ff2",
     ),
     (
-        "backend/tests/test_alfa_pro_snapshot.py",
         "c9976babfd5a7bcb1425ebbda365f2a8d27a4e67fe91a9690a991c3ac70cc1bd",
     ),
     (

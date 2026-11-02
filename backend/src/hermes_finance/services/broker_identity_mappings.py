@@ -6,23 +6,12 @@ No backfill from market mappings, statements, names, tickers or IIAType.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hermes_finance.broker_data.dto import BrokerSnapshot
-from hermes_finance.broker_data.reconciliation.dto import (
-    AccountMappingInput,
-    AccountMatchStatus,
-    AccountReconciliationRow,
-    InstrumentMappingInput,
-    InstrumentMatchStatus,
-    InstrumentReconciliationRow,
-    OwnerMappingInput,
-)
 from hermes_finance.persistence import Account, BrokerIdentityMapping, Instrument
 from hermes_finance.services.accounts import AccountNotFoundError
 from hermes_finance.services.instruments import InstrumentNotFoundError
@@ -39,27 +28,12 @@ class BrokerIdentityMappingStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
-class IdentityClassification(StrEnum):
-    REUSED = "reused"
-    DETERMINISTIC_ISIN = "deterministic_isin"
-    EXPLICIT = "explicit"
-    NEW = "new"
-    AMBIGUOUS = "ambiguous"
-    CONFLICT = "conflict"
-    PROVIDER_IDENTITY_ABSENT = "provider_identity_absent"
-
-
 class BrokerIdentityMappingConflictError(ValueError):
     """Fail-closed uniqueness or request/registry disagreement."""
 
 
 class BrokerIdentityMappingNotFoundError(LookupError):
     pass
-
-
-_EXPLICIT_REASON = "explicit owner mapping"
-_ISIN_REASON = "exact unique ISIN match"
-_ABSENT_REASON = "effective mapping provider identity is not in this snapshot"
 
 
 def _utcnow() -> datetime:
@@ -355,229 +329,3 @@ def remap_mapping(
     session.refresh(replacement)
     session.refresh(current)
     return replacement
-
-
-def compose_owner_mapping(
-    session: Session,
-    *,
-    provider: str,
-    request: OwnerMappingInput,
-) -> OwnerMappingInput:
-    """Concatenate effective registry rows with the request mapping.
-
-    Identical repeats are idempotent in the existing matcher. Distinct Hermes
-    targets for one provider identity become matcher conflicts (fail-closed).
-    """
-
-    if not provider or not str(provider).strip():
-        return request
-    effective = list_effective_mappings(session, provider=provider)
-    accounts = [
-        AccountMappingInput(
-            hermes_account_id=row.hermes_target_id,
-            provider_account_id=row.provider_identity,
-        )
-        for row in effective
-        if row.subject_kind == BrokerIdentitySubjectKind.ACCOUNT.value
-    ]
-    instruments = [
-        InstrumentMappingInput(
-            hermes_instrument_id=row.hermes_target_id,
-            provider_instrument_id=row.provider_identity,
-        )
-        for row in effective
-        if row.subject_kind == BrokerIdentitySubjectKind.INSTRUMENT.value
-    ]
-    return OwnerMappingInput(
-        accounts=(*accounts, *request.accounts),
-        instruments=(*instruments, *request.instruments),
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class PreviewIdentityLabels:
-    accounts: dict[str, IdentityClassification]
-    instruments: dict[str, IdentityClassification]
-    absent_accounts: tuple[AccountReconciliationRow, ...]
-    absent_instruments: tuple[InstrumentReconciliationRow, ...]
-
-
-def _request_account_map(request: OwnerMappingInput) -> dict[str, int]:
-    resolved: dict[str, int] = {}
-    for item in request.accounts:
-        previous = resolved.get(item.provider_account_id)
-        if previous is not None and previous != item.hermes_account_id:
-            resolved[item.provider_account_id] = previous
-            continue
-        resolved[item.provider_account_id] = item.hermes_account_id
-    return resolved
-
-
-def _request_instrument_map(request: OwnerMappingInput) -> dict[str, int]:
-    resolved: dict[str, int] = {}
-    for item in request.instruments:
-        previous = resolved.get(item.provider_instrument_id)
-        if previous is not None and previous != item.hermes_instrument_id:
-            resolved[item.provider_instrument_id] = previous
-            continue
-        resolved[item.provider_instrument_id] = item.hermes_instrument_id
-    return resolved
-
-
-def classify_preview_identities(
-    *,
-    snapshot: BrokerSnapshot,
-    account_rows: tuple[AccountReconciliationRow, ...],
-    instrument_rows: tuple[InstrumentReconciliationRow, ...],
-    session: Session,
-    request: OwnerMappingInput,
-) -> PreviewIdentityLabels:
-    effective_rows = list_effective_mappings(session, provider=snapshot.provider)
-    effective_accounts = {
-        row.provider_identity: row.hermes_target_id
-        for row in effective_rows
-        if row.subject_kind == BrokerIdentitySubjectKind.ACCOUNT.value
-    }
-    effective_instruments = {
-        row.provider_identity: row.hermes_target_id
-        for row in effective_rows
-        if row.subject_kind == BrokerIdentitySubjectKind.INSTRUMENT.value
-    }
-    request_accounts = _request_account_map(request)
-    request_instruments = _request_instrument_map(request)
-    snapshot_account_ids = {account.provider_account_id for account in snapshot.accounts}
-    snapshot_instrument_ids = {
-        position.provider_instrument_id
-        for position in snapshot.positions
-        if position.provider_instrument_id
-    }
-
-    account_labels: dict[str, IdentityClassification] = {}
-    for row in account_rows:
-        account_labels[row.provider_account_id] = _classify_account(
-            row,
-            effective=effective_accounts,
-            request=request_accounts,
-            snapshot_ids=snapshot_account_ids,
-        )
-
-    instrument_labels: dict[str, IdentityClassification] = {}
-    for row in instrument_rows:
-        if row.provider_instrument_id is None:
-            continue
-        instrument_labels[row.provider_instrument_id] = _classify_instrument(
-            row,
-            effective=effective_instruments,
-            request=request_instruments,
-            snapshot_ids=snapshot_instrument_ids,
-        )
-
-    absent_accounts: list[AccountReconciliationRow] = []
-    for row in effective_rows:
-        if row.subject_kind != BrokerIdentitySubjectKind.ACCOUNT.value:
-            continue
-        if row.provider_identity in snapshot_account_ids:
-            continue
-        absent_accounts.append(
-            AccountReconciliationRow(
-                provider_account_id=row.provider_identity,
-                hermes_account_id=row.hermes_target_id,
-                status=AccountMatchStatus.UNMATCHED,
-                reason=_ABSENT_REASON,
-            )
-        )
-        account_labels[row.provider_identity] = IdentityClassification.PROVIDER_IDENTITY_ABSENT
-
-    absent_instruments: list[InstrumentReconciliationRow] = []
-    for row in effective_rows:
-        if row.subject_kind != BrokerIdentitySubjectKind.INSTRUMENT.value:
-            continue
-        if row.provider_identity in snapshot_instrument_ids:
-            continue
-        absent_instruments.append(
-            InstrumentReconciliationRow(
-                provider_instrument_id=row.provider_identity,
-                isin=row.observed_isin,
-                ticker=None,
-                display_name=None,
-                hermes_instrument_id=row.hermes_target_id,
-                status=InstrumentMatchStatus.UNMATCHED,
-                reason=_ABSENT_REASON,
-            )
-        )
-        instrument_labels[row.provider_identity] = IdentityClassification.PROVIDER_IDENTITY_ABSENT
-
-    return PreviewIdentityLabels(
-        accounts=account_labels,
-        instruments=instrument_labels,
-        absent_accounts=tuple(absent_accounts),
-        absent_instruments=tuple(absent_instruments),
-    )
-
-
-def _classify_account(
-    row: AccountReconciliationRow,
-    *,
-    effective: dict[str, int],
-    request: dict[str, int],
-    snapshot_ids: set[str],
-) -> IdentityClassification:
-    pid = row.provider_account_id
-    registry_target = effective.get(pid)
-    request_target = request.get(pid)
-    if (
-        request_target is not None
-        and registry_target is not None
-        and request_target != registry_target
-    ):
-        return IdentityClassification.CONFLICT
-    if row.status is AccountMatchStatus.CONFLICT:
-        return IdentityClassification.CONFLICT
-    if pid in effective and pid not in snapshot_ids:
-        return IdentityClassification.PROVIDER_IDENTITY_ABSENT
-    if row.status is AccountMatchStatus.MATCHED:
-        if registry_target is not None and registry_target == row.hermes_account_id:
-            return IdentityClassification.REUSED
-        return IdentityClassification.EXPLICIT
-    return IdentityClassification.NEW
-
-
-def _classify_instrument(
-    row: InstrumentReconciliationRow,
-    *,
-    effective: dict[str, int],
-    request: dict[str, int],
-    snapshot_ids: set[str],
-) -> IdentityClassification:
-    pid = row.provider_instrument_id
-    if pid is None:
-        if row.status is InstrumentMatchStatus.AMBIGUOUS:
-            return IdentityClassification.AMBIGUOUS
-        if row.status is InstrumentMatchStatus.CONFLICT:
-            return IdentityClassification.CONFLICT
-        if row.status is InstrumentMatchStatus.MATCHED and row.reason == _ISIN_REASON:
-            return IdentityClassification.DETERMINISTIC_ISIN
-        if row.status is InstrumentMatchStatus.MATCHED:
-            return IdentityClassification.EXPLICIT
-        return IdentityClassification.NEW
-    registry_target = effective.get(pid)
-    request_target = request.get(pid)
-    if (
-        request_target is not None
-        and registry_target is not None
-        and request_target != registry_target
-    ):
-        return IdentityClassification.CONFLICT
-    if row.status is InstrumentMatchStatus.CONFLICT:
-        return IdentityClassification.CONFLICT
-    if row.status is InstrumentMatchStatus.AMBIGUOUS:
-        return IdentityClassification.AMBIGUOUS
-    if pid in effective and pid not in snapshot_ids:
-        return IdentityClassification.PROVIDER_IDENTITY_ABSENT
-    if row.status is InstrumentMatchStatus.MATCHED:
-        if registry_target is not None and registry_target == row.hermes_instrument_id:
-            return IdentityClassification.REUSED
-        if row.reason == _ISIN_REASON:
-            return IdentityClassification.DETERMINISTIC_ISIN
-        return IdentityClassification.EXPLICIT
-    return IdentityClassification.NEW

@@ -20,7 +20,13 @@ from hermes_finance.domain import (
     PriceSource,
 )
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base, PositionQuoteProvenance, PositionSnapshot
+from hermes_finance.persistence import (
+    Base,
+    BrokerBaselineApply,
+    BrokerBaselineApplyItem,
+    PositionQuoteProvenance,
+    PositionSnapshot,
+)
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.applied_payouts import create_applied_payout
 from hermes_finance.services.applied_statement_events import (
@@ -151,20 +157,16 @@ def test_empty_month_has_no_score_and_manual_is_not_stale(tmp_path: Path) -> Non
         session, month.id, today=TODAY, generated_at=GENERATED_AT
     )
     payload = summary.families
-    assert len(payload) == 6
+    assert len(payload) == 5
     assert summary.reporting_month.snapshot_date == SNAPSHOT_DATE
     assert summary.quote_valuation_target_date == TODAY
     assert summary.evaluated_on == TODAY
     quotes = _family(summary, FreshnessFamilyId.MARKET_QUOTES)
     assert quotes.status is FreshnessStatus.MISSING
     assert quotes.coverage.stale_count == 0
-    alfa = _family(summary, FreshnessFamilyId.ALFA_PRO_POSITIONS)
-    assert alfa.status is FreshnessStatus.UNKNOWN
-    assert alfa.providers == ()
-    assert "alfa_pro" not in summary.providers
-    assert FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED in {
-        reason.code for reason in alfa.reasons
-    }
+    assert all(
+        family.family_id is not FreshnessFamilyId.BROKER_POSITIONS for family in summary.families
+    )
     manual = _family(summary, FreshnessFamilyId.MANUAL_MONTH_DATA)
     assert manual.status is FreshnessStatus.MISSING
     assert all(reason.code is not FreshnessReasonCode.QUOTE_STALE for reason in summary.reasons)
@@ -327,7 +329,7 @@ def test_manual_override_keeps_history_and_stops_quote_freshness(tmp_path: Path)
     assert quotes.status is not FreshnessStatus.STALE
 
 
-def test_t_invest_only_month_does_not_claim_alfa_pro_provider(tmp_path: Path) -> None:
+def test_t_invest_only_month_does_not_claim_broker_baseline(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month, account, _deposit_account, stock, _fund = _seed_month(session)
     snapshot = _t_invest_snapshot(
@@ -339,15 +341,11 @@ def test_t_invest_only_month_does_not_claim_alfa_pro_provider(tmp_path: Path) ->
     )
     _add_quote_provenance(session, snapshot, price_date=date(2026, 8, 25))
     summary = build_freshness_provenance_summary(session, month.id, today=TODAY)
-    alfa = _family(summary, FreshnessFamilyId.ALFA_PRO_POSITIONS)
-    assert "alfa_pro" not in summary.providers
-    assert alfa.providers == ()
+    assert all(
+        family.family_id is not FreshnessFamilyId.BROKER_POSITIONS for family in summary.families
+    )
     assert FreshnessReasonCode.MULTIPLE_PROVIDERS not in _codes(summary)
     assert set(summary.providers) == {"t_invest"}
-    assert alfa.status is FreshnessStatus.UNKNOWN
-    assert FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED in {
-        reason.code for reason in alfa.reasons
-    }
 
 
 def test_payouts_and_statements_are_not_stale_by_event_age(tmp_path: Path) -> None:
@@ -431,7 +429,6 @@ def test_payouts_and_statements_are_not_stale_by_event_age(tmp_path: Path) -> No
     assert FreshnessReasonCode.STATEMENT_NOT_FRESHNESS_CLASSIFIED in _codes(summary)
     assert FreshnessReasonCode.MULTIPLE_PROVIDERS in _codes(summary)
     assert set(summary.providers) == {"alfa_depository_income_report", "t_invest"}
-    assert "alfa_pro" not in summary.providers
 
 
 def test_cash_without_edit_timestamp_is_unavailable_clock_not_stale(tmp_path: Path) -> None:
@@ -529,7 +526,6 @@ def test_api_returns_summary_and_404(tmp_path: Path) -> None:
     assert set(families) == {
         "market_quotes",
         "t_invest_payouts",
-        "alfa_pro_positions",
         "alfa_statement_payouts",
         "manual_month_data",
         "deposit_cash_snapshots",
@@ -538,15 +534,8 @@ def test_api_returns_summary_and_404(tmp_path: Path) -> None:
     quote_item = families["market_quotes"]["items"][0]
     assert quote_item["source_date"] == "2026-08-10"
     assert quote_item["import_apply_time"].startswith("2026-08-21")
-    assert families["alfa_pro_positions"]["status"] == "unknown"
-    assert families["alfa_pro_positions"]["providers"] == []
-    assert "alfa_pro" not in body["providers"]
     assert "multiple_providers" not in {reason["code"] for reason in body["reasons"]}
     assert any(reason["code"] == "quote_stale" for reason in body["reasons"])
-    assert any(
-        reason["code"] == "alfa_pro_observation_not_persisted"
-        for reason in families["alfa_pro_positions"]["reasons"]
-    )
     forbidden = {"freshness_score", "freshness_pct", "overall_freshness", "freshness_percent"}
 
     def _walk(value: object) -> None:
@@ -559,3 +548,65 @@ def test_api_returns_summary_and_404(tmp_path: Path) -> None:
                 _walk(child)
 
     _walk(body)
+
+
+def test_retired_provider_baseline_history_stays_readable_and_unchanged(tmp_path: Path) -> None:
+    session, database = session_for(tmp_path)
+    month, account, _deposit_account, stock, _fund = _seed_month(session)
+    snapshot = _t_invest_snapshot(
+        session,
+        month_id=month.id,
+        account_id=account.id,
+        instrument_id=stock.id,
+        price_date=TODAY,
+    )
+    baseline = BrokerBaselineApply(
+        provider="alfa_pro",
+        reporting_month_id=month.id,
+        baseline_date=SNAPSHOT_DATE,
+        source_as_of=FETCHED_AT,
+        captured_at=FETCHED_AT,
+        confirmed_at=APPLIED_AT,
+        apply_fingerprint="synthetic-retired-provider",
+    )
+    session.add(baseline)
+    session.flush()
+    item = BrokerBaselineApplyItem(
+        reporting_month_id=month.id,
+        baseline_apply_id=baseline.id,
+        position_snapshot_id=snapshot.id,
+        action="created",
+        quantity=snapshot.quantity,
+    )
+    session.add(item)
+    session.commit()
+    original = (
+        snapshot.quantity,
+        snapshot.market_price_per_unit_kopecks,
+        baseline.apply_fingerprint,
+    )
+    with TestClient(create_app(database)) as client:
+        response = client.get(f"/api/months/{month.id}/freshness-provenance")
+        assert response.status_code == 200
+        family = next(
+            row for row in response.json()["families"] if row["family_id"] == "broker_positions"
+        )
+        assert family["status"] == "not_applicable"
+        assert family["providers"] == ["alfa_pro"]
+        assert family["coverage"]["row_count"] == 1
+        assert family["items"][0]["source_kind"] == "alfa_pro"
+        assert family["items"][0]["source_datetime"].startswith("2026-08-20")
+        assert family["items"][0]["import_apply_time"].startswith("2026-08-21")
+        workflow = client.get(f"/api/months/{month.id}/close-workflow").json()
+        assert {step["id"] for step in workflow["steps"]}.isdisjoint(
+            {"alfa_baseline", "broker_reconciliation"}
+        )
+    session.expire_all()
+    assert session.get(BrokerBaselineApply, baseline.id) is not None
+    assert session.get(BrokerBaselineApplyItem, item.id) is not None
+    assert (
+        snapshot.quantity,
+        snapshot.market_price_per_unit_kopecks,
+        baseline.apply_fingerprint,
+    ) == original
+    session.close()

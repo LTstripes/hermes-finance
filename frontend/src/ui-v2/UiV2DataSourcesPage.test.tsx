@@ -273,10 +273,10 @@ describe("UI v2 Data sources", () => {
     expect(within(manual).getByText("Время применения не зафиксировано")).toBeTruthy();
   });
 
-  it("labels applied Alfa PRO baselines without converting them to current", async () => {
+  it("labels applied broker history without converting them to current", async () => {
     const { mount } = setup();
     mount();
-    const alfa = await screen.findByTestId("freshness-family-alfa_pro_positions");
+    const alfa = await screen.findByTestId("freshness-family-broker_positions");
     expect(within(alfa).getByText("Происхождение: Получено из Alfa PRO")).toBeTruthy();
     expect(within(alfa).getByText("Сохранено — можно продолжать")).toBeTruthy();
     expect(within(alfa).getAllByText("Свежесть по дате не оценивается").length).toBeGreaterThan(0);
@@ -288,9 +288,9 @@ describe("UI v2 Data sources", () => {
     mount();
     expect(await screen.findByRole("navigation", { name: /Разделы настроек/ })).toBeTruthy();
     await screen.findByTestId("data-month-context");
-    expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Разбор источника" })).toHaveAttribute(
       "href",
-      "/v2/data/reconciliation?month=12",
+      "/v2/data/source-intake?month=12",
     );
     expect(screen.getByRole("link", { name: "Проверка данных →" })).toHaveAttribute(
       "href",
@@ -309,9 +309,9 @@ describe("UI v2 Data sources", () => {
       "href",
       "/v2/close?month=12&step=market_quotes",
     );
-    expect(screen.getByRole("link", { name: "Сверка портфеля" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Разбор источника" })).toHaveAttribute(
       "href",
-      `/v2/data/reconciliation?month=12&from=${origin}&step=market_quotes&monthId=12`,
+      `/v2/data/source-intake?month=12&from=${origin}&step=market_quotes&monthId=12`,
     );
     expect(reads.filter((item) => item.includes("freshness-provenance"))).toEqual([
       "GET /api/months/12/freshness-provenance",

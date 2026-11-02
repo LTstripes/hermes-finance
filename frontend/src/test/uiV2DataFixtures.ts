@@ -153,8 +153,8 @@ export function makeUiV2Freshness(
         ],
       },
       {
-        family_id: "alfa_pro_positions",
-        title: "Позиции Alfa PRO",
+        family_id: "broker_positions",
+        title: "Сохранённые позиции брокера",
         status: "not_applicable",
         providers: ["alfa_pro"],
         coverage: {
@@ -169,21 +169,21 @@ export function makeUiV2Freshness(
         },
         reasons: [
           {
-            code: "alfa_pro_baseline_present",
+            code: "broker_baseline_present",
             severity: "info",
-            message: "В месяце есть подтверждённый владельцем текущий срез Alfa PRO.",
+            message: "В месяце есть подтверждённый владельцем сохранённый срез брокера.",
           },
           {
-            code: "alfa_pro_observation_not_freshness_classified",
+            code: "broker_observation_not_freshness_classified",
             severity: "info",
             message:
-              "Время наблюдения Alfa PRO сохранено; confirmed_at — время применения, не актуальность.",
+              "Время наблюдения брокера сохранено; confirmed_at — время применения, не актуальность.",
           },
         ],
         items: [
           {
-            item_kind: "alfa_pro_baseline",
-            label: "Текущий срез Alfa PRO",
+            item_kind: "broker_baseline",
+            label: "Сохранённый срез брокера",
             freshness_status: "not_applicable",
             source_kind: "alfa_pro",
             source_timestamp_kind: "source_as_of",
@@ -192,7 +192,7 @@ export function makeUiV2Freshness(
             fetched_at: "2031-08-18T09:05:00+00:00",
             import_apply_time: "2031-08-18T09:10:00+00:00",
             local_edit_time: null,
-            reason_codes: ["alfa_pro_observation_not_freshness_classified"],
+            reason_codes: ["broker_observation_not_freshness_classified"],
             account_name: null,
             instrument_name: null,
           },

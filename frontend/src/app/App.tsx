@@ -5,14 +5,12 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "
 import { createQueryClient } from "../queryClient";
 import { ReturnsLegacyRedirect } from "../ui-v2/returns/ReturnsLegacyRedirect";
 import {
-  UiV2AlfaBaselineEntry,
   UiV2CapitalAllocationEntry,
   UiV2CapitalEntry,
   UiV2CloseEntry,
   UiV2DataAppEntry,
   UiV2DataCatalogsEntry,
   UiV2DataFilesEntry,
-  UiV2DataReconciliationEntry,
   UiV2DataSourcesEntry,
   UiV2Entry,
   UiV2GoalsEntry,
@@ -38,6 +36,11 @@ function MonthRedirect() {
   const { monthId } = useParams();
   const { search, hash } = useLocation();
   return <Navigate replace to={`/v2/data/months/${monthId}${search}${hash}`} />;
+}
+
+function RetiredDataRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate replace to={`/v2/data${search}${hash}`} />;
 }
 
 function MonthCloseRedirect() {
@@ -70,8 +73,8 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/data/source-intake" element={<UiV2SourceIntakeEntry />} />
           <Route path="v2/data/months" element={<UiV2MonthsEntry />} />
           <Route path="v2/data/months/:monthId" element={<UiV2MonthEditorEntry />} />
-          <Route path="v2/data/reconciliation" element={<UiV2DataReconciliationEntry />} />
-          <Route path="v2/data/alfa-baseline" element={<UiV2AlfaBaselineEntry />} />
+          <Route path="v2/data/reconciliation" element={<RetiredDataRedirect />} />
+          <Route path="v2/data/alfa-baseline" element={<RetiredDataRedirect />} />
           <Route path="v2/data/payouts" element={<UiV2PayoutForecastEntry />} />
           <Route path="v2/data/catalogs" element={<UiV2DataCatalogsEntry />} />
           <Route path="v2/data/files" element={<UiV2DataFilesEntry />} />
@@ -87,10 +90,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
             element={<Navigate replace to="/v2/capital/allocation" />}
           />
           <Route path="freshness" element={<Navigate replace to="/v2/data" />} />
-          <Route
-            path="reconciliation"
-            element={<Navigate replace to="/v2/data/reconciliation" />}
-          />
+          <Route path="reconciliation" element={<RetiredDataRedirect />} />
           <Route path="months" element={<Navigate replace to="/v2/data/months" />} />
           <Route path="months/:monthId/close" element={<MonthCloseRedirect />} />
           <Route path="months/:monthId" element={<MonthRedirect />} />
