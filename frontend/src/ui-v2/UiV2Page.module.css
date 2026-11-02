@@ -121,6 +121,13 @@
   font-weight: 700;
 }
 
+/* White text on #355a80: 7.18:1; left marker also distinguishes the current page. */
+.navigation a[aria-current="page"] {
+  background: #355a80;
+  color: #ffffff;
+  box-shadow: inset 4px 0 0 #c9e2ff;
+}
+
 .sidebarNote,
 .legacyLinks {
   padding: 0 8px;

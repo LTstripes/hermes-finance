@@ -18,7 +18,7 @@ test("known net payout API→desktop: supported source, tax NULL, exited stock, 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(
-    `/v2/capital/performance?start=2029-12-31&end=2030-01-31&scope=account&account_id=${account.id}&view=accounts`,
+    `/v2/returns/account?diagnostics=performance&start=2029-12-31&end=2030-01-31&scope=account:${account.id}&view=accounts`,
   );
   const block = page.getByRole("region", { name: "Известные выплаты по бумаге" });
   await block.getByRole("button", { name: "Выбрать бумагу и период" }).click();

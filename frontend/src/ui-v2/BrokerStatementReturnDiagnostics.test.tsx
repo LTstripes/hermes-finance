@@ -11,7 +11,7 @@ import {
   listStatementSources,
   statementMoney,
 } from "../api/brokerStatementReturn";
-import BrokerStatementReturnPage from "./BrokerStatementReturnPage";
+import BrokerStatementReturnDiagnostics from "./BrokerStatementReturnDiagnostics";
 
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../api/brokerStatementReturn", async (original) => ({
@@ -97,7 +97,7 @@ function setup() {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <BrokerStatementReturnPage />
+        <BrokerStatementReturnDiagnostics />
       </MemoryRouter>
     </QueryClientProvider>,
   );

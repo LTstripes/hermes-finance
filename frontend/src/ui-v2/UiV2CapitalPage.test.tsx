@@ -222,10 +222,7 @@ function setup(path = "/v2/capital") {
           <LocationProbe />
           <Routes>
             <Route path="v2/capital" element={<UiV2CapitalPage />} />
-            <Route
-              path="v2/capital/performance"
-              element={<h1>Диагностика принятого портфеля</h1>}
-            />
+            <Route path="v2/returns" element={<h1>Диагностика принятого портфеля</h1>} />
             <Route path="months/:monthId" element={<h1>Month detail</h1>} />
           </Routes>
         </MemoryRouter>

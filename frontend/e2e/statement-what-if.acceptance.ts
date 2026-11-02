@@ -14,7 +14,7 @@ test("synthetic desktop: real context → explicit choices → 211 RUB / 2.01% �
     await request.get("/api/broker-statement-returns?account_id=1&request_id=synthetic-batch")
   ).json();
   expect(actual.rate_fraction).toBeNull();
-  await page.goto("/v2/capital/statement-return");
+  await page.goto("/v2/returns/account?scope=portfolio&diagnostics=statement");
   await page.getByLabel("Брокерский счёт").selectOption("1");
   await page.getByLabel("Принятая выписка").selectOption("synthetic-batch");
   await expect(page.getByText(/H2 не может подтвердить назначение/)).toBeVisible();

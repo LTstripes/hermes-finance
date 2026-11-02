@@ -3,12 +3,11 @@ import { useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router";
 
 import { createQueryClient } from "../queryClient";
-import BrokerStatementReturnPage from "../ui-v2/BrokerStatementReturnPage";
+import { ReturnsLegacyRedirect } from "../ui-v2/returns/ReturnsLegacyRedirect";
 import {
   UiV2AlfaBaselineEntry,
   UiV2CapitalAllocationEntry,
   UiV2CapitalEntry,
-  UiV2CapitalPerformanceEntry,
   UiV2CloseEntry,
   UiV2DataAppEntry,
   UiV2DataCatalogsEntry,
@@ -19,8 +18,6 @@ import {
   UiV2GoalsEntry,
   UiV2IncomeEntry,
   UiV2MonthEditorEntry,
-  UiV2MonthlyResultEntry,
-  UiV2MonthlyReturnsEntry,
   UiV2ReturnsEntry,
   UiV2ReturnsAccountEntry,
   UiV2ReturnsInstrumentEntry,
@@ -59,13 +56,13 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2" element={<UiV2Entry />} />
           <Route path="v2/capital" element={<UiV2CapitalEntry />} />
           <Route path="v2/capital/allocation" element={<UiV2CapitalAllocationEntry />} />
-          <Route path="v2/capital/monthly-result" element={<UiV2MonthlyResultEntry />} />
-          <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceEntry />} />
-          <Route path="v2/capital/monthly-returns" element={<UiV2MonthlyReturnsEntry />} />
+          <Route path="v2/capital/monthly-result" element={<ReturnsLegacyRedirect />} />
+          <Route path="v2/capital/performance" element={<ReturnsLegacyRedirect />} />
+          <Route path="v2/capital/monthly-returns" element={<ReturnsLegacyRedirect />} />
           <Route path="v2/returns/account" element={<UiV2ReturnsAccountEntry />} />
           <Route path="v2/returns/instrument/:isin" element={<UiV2ReturnsInstrumentEntry />} />
           <Route path="v2/returns" element={<UiV2ReturnsEntry />} />
-          <Route path="v2/capital/statement-return" element={<BrokerStatementReturnPage />} />
+          <Route path="v2/capital/statement-return" element={<ReturnsLegacyRedirect />} />
           <Route path="v2/reports" element={<UiV2ReportsEntry />} />
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
@@ -84,7 +81,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabEntry />} />
           <Route path="v1" element={<Navigate replace to="/v2" />} />
-          <Route path="analytics" element={<Navigate replace to="/v2/capital/performance" />} />
+          <Route path="analytics" element={<ReturnsLegacyRedirect />} />
           <Route
             path="analytics/risk-allocation"
             element={<Navigate replace to="/v2/capital/allocation" />}

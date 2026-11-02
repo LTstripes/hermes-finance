@@ -25,6 +25,24 @@ function renderShell() {
 }
 
 describe("UiV2Shell native navigation", () => {
+  it.each([
+    "/v2/returns",
+    "/v2/returns/account?scope=portfolio",
+    "/v2/returns/instrument/RU000A000001",
+  ])("marks the Returns parent current at %s", (path) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <UiV2Shell header={<h1>Синтетическая страница</h1>}>Контент</UiV2Shell>
+      </MemoryRouter>,
+    );
+    const navigation = screen.getByRole("navigation", { name: "Основная навигация" });
+    expect(within(navigation).getByRole("link", { name: "Доходность" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(navigation.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+  });
+
   it("keeps Close keyboard-operable and every shell link in v2", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -38,14 +56,12 @@ describe("UiV2Shell native navigation", () => {
     for (const link of screen.getAllByRole("link")) {
       expect(link.getAttribute("href")).toMatch(/^(\/v2(?:\/|$)|#)/);
     }
+    expect(screen.queryByRole("link", { name: "История и результаты" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Доход и цели" })).not.toBeInTheDocument();
     expect(screen.queryByText(/предыдущем интерфейсе/i)).not.toBeInTheDocument();
   });
 
-  it.each([
-    ["Настройки", "/v2/data/app"],
-    ["История и результаты", "/v2/capital/performance"],
-    ["Доход и цели", "/v2/income/goals"],
-  ])("links %s to its native workspace", (label, href) => {
+  it.each([["Настройки", "/v2/data/app"]])("links %s to its native workspace", (label, href) => {
     renderShell();
     expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
     expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();

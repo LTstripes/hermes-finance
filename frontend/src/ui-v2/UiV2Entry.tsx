@@ -1,6 +1,6 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router";
-import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
+import { ReturnsMonthRedirect } from "./returns/ReturnsMonthRedirect";
 import { validIsin } from "./returns/navigation";
 import { readDisplayNames } from "./returns/dashboard";
 
@@ -12,9 +12,6 @@ const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 const UiV2Page = lazy(() => import("./UiV2Page"));
 const UiV2CapitalPage = lazy(() => import("./UiV2CapitalPage"));
 const UiV2CapitalAllocationPage = lazy(() => import("./UiV2CapitalAllocationPage"));
-const UiV2MonthlyResultPage = lazy(() => import("./UiV2MonthlyResultPage"));
-const UiV2CapitalPerformanceDetail = lazy(() => import("./UiV2CapitalPerformanceDetail"));
-const UiV2MonthlyReturnsPage = lazy(() => import("./UiV2MonthlyReturnsPage"));
 const UiV2ReturnsAccountPage = lazy(() => import("./UiV2ReturnsAccountPage"));
 const UiV2ReturnsPage = lazy(() => import("./UiV2ReturnsPage"));
 const UiV2ReturnsInstrumentPage = lazy(() => import("./UiV2ReturnsInstrumentPage"));
@@ -115,33 +112,10 @@ export function UiV2CapitalAllocationEntry() {
   );
 }
 
-export function UiV2MonthlyResultEntry() {
-  return (
-    <SuspenseFrame>
-      <UiV2MonthlyResultPage />
-    </SuspenseFrame>
-  );
-}
-
-export function UiV2CapitalPerformanceEntry() {
-  return (
-    <SuspenseFrame>
-      <UiV2CapitalPerformanceDetail />
-    </SuspenseFrame>
-  );
-}
-
-export function UiV2MonthlyReturnsEntry() {
-  const [params] = useSearchParams();
-  if (params.get("diagnostics") !== "1") return <ReturnsLegacyRedirect />;
-  return (
-    <SuspenseFrame>
-      <UiV2MonthlyReturnsPage />
-    </SuspenseFrame>
-  );
-}
-
 export function UiV2ReturnsAccountEntry() {
+  const [params] = useSearchParams();
+  if (params.has("month") && !params.has("start") && !params.has("end"))
+    return <ReturnsMonthRedirect />;
   return (
     <SuspenseFrame>
       <UiV2ReturnsAccountPage />
@@ -152,6 +126,8 @@ export function UiV2ReturnsAccountEntry() {
 export function UiV2ReturnsEntry() {
   const location = useLocation();
   const [params] = useSearchParams();
+  if (params.has("month") && !params.has("start") && !params.has("end"))
+    return <ReturnsMonthRedirect />;
   if (["scope", "start", "end", "period", "month", "categories"].some((key) => params.has(key)))
     return <Navigate replace to={`/v2/returns/account${location.search}${location.hash}`} />;
   const isin = params.getAll("isin").length === 1 ? params.get("isin") : null;

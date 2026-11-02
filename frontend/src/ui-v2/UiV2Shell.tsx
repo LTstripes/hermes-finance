@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import styles from "./UiV2Page.module.css";
@@ -14,11 +14,7 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to:
   { id: "data", label: "Настройки", icon: "⚙", to: "/v2/data/app" },
 ];
 
-const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [
-  { label: "Месяц", to: "/v2/close" },
-  { label: "История и результаты", to: "/v2/capital/performance" },
-  { label: "Доход и цели", to: "/v2/income/goals" },
-];
+const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [{ label: "Месяц", to: "/v2/close" }];
 
 /**
  * Shared UI v2 shell: dark sidebar, one native section marked as the current
@@ -31,13 +27,20 @@ export function UiV2Shell({
   header,
   sidebarExtra,
 }: {
-  /** No native section is marked current on the contextual history routes. */
+  /** Explicit section for contextual routes outside a native section. */
   active?: UiV2Section;
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;
   sidebarExtra?: ReactNode;
 }) {
+  const { pathname } = useLocation();
+  const current =
+    NATIVE_SECTIONS.find((section) =>
+      section.id === "home"
+        ? pathname === "/v2" || pathname === "/"
+        : pathname === section.to || pathname.startsWith(`${section.to}/`),
+    )?.id ?? active;
   return (
     <div className={styles.shell}>
       <a className={styles.skipLink} href="#v2-main">
@@ -55,7 +58,7 @@ export function UiV2Shell({
         <nav aria-label="Основная навигация" className={styles.navigation}>
           {NATIVE_SECTIONS.map((section) => (
             <Link
-              aria-current={active === section.id ? "page" : undefined}
+              aria-current={current === section.id ? "page" : undefined}
               key={section.id}
               to={section.to}
             >

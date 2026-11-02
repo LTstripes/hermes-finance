@@ -32,8 +32,6 @@ import { sortReportingMonths } from "./monthSelection";
 import { ObservedValuationCapture } from "./ObservedValuationCapture";
 import { PerformancePreparation } from "./PerformancePreparation";
 import styles from "./UiV2CapitalPerformance.module.css";
-import pageStyles from "./UiV2Page.module.css";
-import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyDeltaText as moneyDelta } from "./valueFormat";
 
@@ -389,13 +387,21 @@ function ReadinessBody({
   );
 }
 
-/**
- * Leaf Performance detail (PUI-03). Mounted by the Integrator at
- * `/v2/capital/performance`; tests mount it directly with a MemoryRouter.
- * No client-side financial math; class view consumes accepted #535 only.
- */
-export default function UiV2CapitalPerformanceDetail() {
-  const [params, setParams] = useSearchParams();
+export default function ReturnsPerformanceDiagnostics() {
+  const [urlParams, setParams] = useSearchParams();
+  const params = useMemo(() => {
+    const next = new URLSearchParams(urlParams);
+    const scope = next.get("scope");
+    if (
+      next.getAll("scope").length === 1 &&
+      scope?.startsWith("account:") &&
+      !next.has("account_id")
+    ) {
+      next.set("account_id", scope.slice(8));
+      next.set("scope", "account");
+    }
+    return next;
+  }, [urlParams]);
   const [manualStart, setManualStart] = useState("");
   const [manualEnd, setManualEnd] = useState("");
   const classesView = params.get("view") === "classes";
@@ -465,6 +471,12 @@ export default function UiV2CapitalPerformanceDetail() {
       if (value === null || value === "") next.delete(key);
       else next.set(key, value);
     }
+    if (next.get("scope") === "account" && next.has("account_id")) {
+      next.set("scope", `account:${next.get("account_id")}`);
+      next.delete("account_id");
+    }
+    if ("start" in patch || "end" in patch) next.delete("month");
+    next.set("diagnostics", "performance");
     void setParams(next, { preventScrollReset: true });
   };
 
@@ -573,27 +585,8 @@ export default function UiV2CapitalPerformanceDetail() {
       : "Портфель";
 
   return (
-    <UiV2Shell
-      active="capital"
-      header={
-        <>
-          <p className={pageStyles.eyebrow}>Капитал · Доходность</p>
-          <h1>Доходность</h1>
-          <Link to="/v2/capital/statement-return">Предварительная доходность по выписке</Link>
-          <br />
-          <Link to="/v2/capital/monthly-returns">Доходность по месяцам</Link>
-          <Link to="/v2/capital/monthly-returns#bond-slice">Облигации: история и купоны</Link>
-          <p className={pageStyles.subtitle}>
-            {context
-              ? `${formatDate(context.start)} — ${formatDate(context.end)} · ${scopeLabel}`
-              : "Выберите интервал и охват"}
-          </p>
-          <p className={styles.periodLine}>
-            <Link to="/v2/capital">← Капитал</Link>
-          </p>
-        </>
-      }
-    >
+    <section aria-label="Точная доходность и подготовка данных">
+      <h2>Точная доходность и подготовка данных</h2>
       <section aria-label="Период и охват">
         <fieldset className={styles.viewControl}>
           <legend>Разрез доходности</legend>
@@ -738,6 +731,6 @@ export default function UiV2CapitalPerformanceDetail() {
       {context && context.view === "accounts" ? (
         <PerformancePreparation accounts={accounts} context={context} />
       ) : null}
-    </UiV2Shell>
+    </section>
   );
 }

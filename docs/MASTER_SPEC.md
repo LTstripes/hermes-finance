@@ -360,6 +360,7 @@ Performance separates capability from data readiness and separates portfolio, ac
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
 
+<a id="returns-workspace"></a>
 ### Returns workspace
 
 The ordinary `/v2/returns` entry opens **В целом** for all available history.
@@ -390,7 +391,7 @@ overview loads visible summaries and identity metadata only; instrument details 
 entry, and credited coupon/dividend events load on disclosure. Known paid income
 is shown across included accounts, then by account, ISIN and dated operation,
 without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry; accepted
-TWRR/XIRR and coverage diagnostics remain in their dedicated tools. Missing names stay explicit; only exact
+TWRR/XIRR and coverage diagnostics remain in the account details. Missing names stay explicit; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 
 Deposits are outside this Returns UX package and remain a separate task; their
@@ -455,15 +456,30 @@ disclosure with account cash, reasons and references. A name match alone does no
 make them this instrument's operations; pending trades with a native binding
 remain in its history with their uncounted status.
 
-Old `/v2/capital/monthly-returns` links enter the same Returns screen, preserving
-source account, ISIN and selected bond interval. A legacy bond-slice URL with no
+The retired `/v2/capital/performance`, `/v2/capital/monthly-returns`,
+`/v2/capital/monthly-result` and `/v2/capital/statement-return` routes replace their
+history entry with `/v2/returns`, or its account/instrument context. Internal
+links use Returns directly. Explicit `account_id` becomes the existing
+`account:<id>` scope; source account, ISIN and selected bond interval survive. A legacy bond-slice URL with no
 `bond_period` means **full source history**, not the latest CLOSED month.
 For a history longer than 12 months, the selected past month remains visible
 in the chart/table after period changes, Back and Reload; cards and top five
-use that exact same period. Explicit `diagnostics=1` retains the existing
-technical workspace, opened through “Подробнее о данных”.
+use that exact same period. An explicit `month=<id>` resolves the exact CLOSED
+report to its calendar boundaries through a read; invalid, missing, repeated or
+DRAFT month IDs never substitute the latest report.
 
-The diagnostic bond block on `/v2/capital/monthly-returns?diagnostics=1` shows each native
+The sidebar has one Returns item and one Income/plans item; “Рабочие разделы”
+contains only Month. The current parent remains marked on nested routes and is
+visually distinguished with a left marker and WCAG AA text contrast.
+
+The overview links to account diagnostics through “Подробнее о данных”.
+“Подробнее о данных” on `/v2/returns/account` lazily opens the existing source
+confirmation/bond tools or accepted XIRR/TWRR preparation and observed captures.
+The separate-statement result and its scenario are a nested disclosure there.
+These tools retain their existing explicit identity, currentness, write guards
+and financial authority; `diagnostics` can open a disclosure but never a retired page.
+
+The diagnostic bond block in the account details shows each native
 account separately: reported quantity/value and their EOD boundary, dated trades
 with source price units/NKD/commission, actual coupon rows and source references.
 Account, bond and month selection travel in the page URL for Back/Reload. Missing
@@ -481,12 +497,12 @@ workspace or its existing guards.
 <a id="p3-ui_v2_analytics_reconciliation-25-2-semantic-guardrails"></a>
 #### 2. Semantic guardrails
 
-1. **Monetary result for a reporting month is not XIRR/TWRR or profit earned during that month.** [Dashboard result service](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/backend/src/hermes_finance/services/dashboard.py) and [DTO/chart](../frontend/src/ui-v2/UiV2MonthlyResultPage.tsx) combine cash income recorded in the selected month with unrealized result from open-position snapshots. The latter is not the month-over-month change in unrealized result. Keep both components separately labelled; do not rename their displayed sum to "earned this month".
+1. **Monetary result for a reporting month is not XIRR/TWRR or profit earned during that month.** [Dashboard result service](https://github.com/LTstripes/hermes-finance/blob/10d545882041593f37d65cf8f56b42b3a18ccebd/backend/src/hermes_finance/services/dashboard.py) and [Dashboard DTO](../backend/src/hermes_finance/services/dashboard.py) combine cash income recorded in the selected month with unrealized result from open-position snapshots. The latter is not the month-over-month change in unrealized result. Keep both components separately labelled; do not rename their displayed sum to "earned this month".
 2. Account results and instrument-class results are not identical scopes. Cash events without an instrument can appear by account but not by class. A cash-income-only class has no current market/cost/unrealized evidence; preserve its null values and unavailable total, not invented zeros. Class grouping here is `instrument_type`, not a new Performance asset-class taxonomy. [S3]
 3. Capital delta is a change of state, not investment return. Home/Capital already label the distinction; class transfers may change rows without increasing capital. [Home](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2Page.tsx), [Capital](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalPage.tsx)
-4. The exact monetary bridge after external flows is not P&L, "earned" or class/instrument return attribution. Preserve the existing labels, exactness gate, scope, currency and interval. [Performance detail](../frontend/src/ui-v2/UiV2CapitalPerformanceDetail.tsx), [Capital](../frontend/src/ui-v2/UiV2CapitalPage.tsx)
+4. The exact monetary bridge after external flows is not P&L, "earned" or class/instrument return attribution. Preserve the existing labels, exactness gate, scope, currency and interval. [Performance details](../frontend/src/ui-v2/ReturnsPerformanceDiagnostics.tsx), [Capital](../frontend/src/ui-v2/UiV2CapitalPage.tsx)
 5. Allocation/concentration is not class performance. Risk allocation describes denominators, support, holdings and future payout/redemption concentration; #534/#535/#540 own the delivered bounded class-specific rate capability in C7. [Allocation](../frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx), [Performance plan](archive/2026-10-18/docs/performance/PERFORMANCE_UI_V2_PLAN.md)
-6. Current v2 Home/Capital and Income planning use latest closed data; historical facts and draft work have separate destinations. D2 below approves not recreating the old global selected-month planning mode, not deleting local factual or workflow context. The new allocation detail has its own local month selector, including drafts; the monetary-result detail selects closed months only. [Allocation detail](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx), [Monthly result](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx)
+6. Current v2 Home/Capital and Income planning use latest closed data; historical facts and draft work have separate destinations. D2 below approves not recreating the old global selected-month planning mode, not deleting local factual or workflow context. The new allocation detail has its own local month selector, including drafts; the [Returns report shortcut](#returns-workspace) selects closed months only. [Allocation detail](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2CapitalAllocationPage.tsx), [Monthly result](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx)
 
 <a id="p3-ui_v2_analytics_reconciliation-86"></a>
 ### Current route, period and scope rules
@@ -514,10 +530,7 @@ workspace or its existing guards.
 <a id="p3-ui_v2_analytics_reconciliation-86-monetary-result-detail-delivered-by-575"></a>
 #### Monetary-result detail delivered by #575
 
-- `/v2/capital/monthly-result?month=<id>` is a local read-only closed-report selector, latest or older closed, not a global Home/Capital mode.
-- No `month`: explicitly identify latest closed. Invalid/deleted/draft/reopened explicit target: explain, do not silently substitute latest closed.
-- Bounded `view=accounts|classes`, correct back/refresh and native return. Exact-month links from historical Reports.
-- [Registered route](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/app/App.tsx) and [page](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx) use the existing Dashboard DTO only. No new financial formulas or class-return scope. This is accepted source on accepted implementation, not aggregate UAT.
+The original #575 Dashboard presentation is historical [accepted source](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2MonthlyResultPage.tsx). Current navigation and exact report-ID compatibility belong to the [Returns workspace](#returns-workspace); the standalone page is retired.
 
 
 <a id="p3-ui_v2_analytics_reconciliation-86-allocation-detail-and-iis-writes-delivered"></a>
@@ -530,7 +543,7 @@ workspace or its existing guards.
 <a id="p3-ui_v2_analytics_reconciliation-86-performance"></a>
 #### Performance
 
-- Accepted #529 owns exact period/scope/action contracts; accepted #531 supplies portfolio/account detail at `/v2/capital/performance` on this common tree.
+- Accepted #529 owns exact period/scope/action contracts; accepted #531 supplies the portfolio/account detail now embedded in the [Returns account details](#returns-workspace).
 - Accepted #532/#533 supply evidence preparation/capture on the same tree. Canonical CI retains `performance-real-backend.spec.ts`: unavailable -> XIRR-only -> explicitly observed synthetic PRE/POST -> TWRR, correction invalidation and stale-token rejection.
 - Historical Performance periods remain required under the accepted Performance scope. D2 does not waive them.
 - Bounded class-return API/UI is delivered under C7 C1–C5/no-crossing rules. It does not replace the separate monthly monetary result. Current acceptance/UAT evidence belongs in S2.
@@ -607,11 +620,10 @@ The bounded UX decisions do not bypass D5 acceptance/integration/release gates.
 <a id="p3-performance_ui_v2_contract-34-32-delivered-detail-and-preparation-routes"></a>
 #### 3.2. Delivered detail and preparation routes
 
-- `/v2/capital/performance`: интервал, scope, две метрики, одна таблица по счетам, раскрываемые основания/методика.
-- `/v2/capital/performance/data`: контекстная проверка данных и только реально реализованные действия. Действия доступны только в принятом объёме C6; отсутствие нужной authority сохраняет read-only/UNKNOWN.
+- [Подробности Returns](#returns-workspace): интервал, scope, две метрики, одна таблица по счетам, раскрываемые основания/методика и контекстная проверка данных. Действия доступны только в принятом объёме C6; отсутствие нужной authority сохраняет read-only/UNKNOWN.
 - «По счетам / По классам» используют принятые ограниченные class C1–C5/no-crossing правила, без обещания доходности всех классов.
 
-URL-параметры: `start`, `end` (ISO dates), `scope=portfolio|account`, `account_id` только для account, `view=accounts|classes` для detail. Это локальный контекст, не глобальные настройки приложения. Открытие account row сохраняет даты. Возврат из проверки восстанавливает тот же контекст.
+URL-параметры подробностей: `start`, `end` (ISO dates), `scope=portfolio|account:<id>`, `view=accounts|classes`, `diagnostics=performance` для раскрытия. Сервисам по-прежнему передаются их существующие `scope=portfolio|account` и `account_id`; UI не меняет финансовый охват. Это локальный контекст, не глобальные настройки приложения. Открытие account row сохраняет даты. Возврат из проверки восстанавливает тот же контекст.
 
 Отсутствующие start/end допускают документированный дефолт. Частично заданные, повторённые, malformed, одинаковые или перевёрнутые даты — ошибка контекста, не тихая замена. Неизвестный/удалённый счёт и недопустимые scope/account сочетания не заменяются портфелем. Explicit dates, ставшие недоступными после reopen/delete/restore, остаются выбранными с объяснением, а не перескакивают на другой интервал.
 

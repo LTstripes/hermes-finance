@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router";
 import { listAccounts } from "../api/accounts";
 import {
   formatStatementPercent,
@@ -11,9 +10,8 @@ import {
 } from "../api/brokerStatementReturn";
 import { formatApiError } from "../api/client";
 import { formatDate } from "../lib/format";
-import styles from "./BrokerStatementReturnPage.module.css";
+import styles from "./BrokerStatementReturnDiagnostics.module.css";
 import { BrokerStatementWhatIfPanel } from "./BrokerStatementWhatIfPanel";
-import { UiV2Shell } from "./UiV2Shell";
 
 const REASONS: Record<string, string> = {
   account_crossing_coverage_unproved:
@@ -44,8 +42,12 @@ const REASONS: Record<string, string> = {
   not_computable_xirr_convergence_failed: "Численный расчёт не сошёлся с требуемой точностью.",
 };
 
-export default function BrokerStatementReturnPage() {
-  const [account, setAccount] = useState("");
+export default function BrokerStatementReturnDiagnostics({
+  accountId,
+}: {
+  accountId?: number;
+} = {}) {
+  const [account, setAccount] = useState(accountId === undefined ? "" : String(accountId));
   const [request, setRequest] = useState("");
   const accounts = useQuery({
     queryKey: ["statement-return-accounts"],
@@ -83,15 +85,8 @@ export default function BrokerStatementReturnPage() {
   const data = matches && !result.isFetching && !result.isError ? candidate : null;
   const error = accounts.error ?? sources.error ?? result.error;
   return (
-    <UiV2Shell
-      active="capital"
-      header={
-        <>
-          <Link to="/v2/capital/performance">← Доходность</Link>
-          <h1>Доходность по выписке</h1>
-        </>
-      }
-    >
+    <section aria-label="Доходность по отдельной выписке">
+      <h2>Доходность по отдельной выписке</h2>
       <div className={styles.content}>
         <p>
           Предварительная доходность выбранного счёта по оценкам брокера и подтверждённым движениям
@@ -240,6 +235,6 @@ export default function BrokerStatementReturnPage() {
           />
         )}
       </div>
-    </UiV2Shell>
+    </section>
   );
 }

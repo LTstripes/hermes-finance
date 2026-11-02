@@ -407,10 +407,7 @@ test("late account response cannot populate the new scope; error hides cached fi
   await screen.findByRole("alert");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByRole("link", { name: "Открыть диагностику выписок" })).toHaveAttribute(
-    "href",
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=SYNTH-B",
-  );
+  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
 });
 
 test("legacy bond deep link preserves exact account and month", async () => {
@@ -504,10 +501,7 @@ test("without CLOSED months source intervals remain selectable without silently 
   expect(screen.getByTestId("location")).not.toHaveTextContent("end=");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByRole("link", { name: "Открыть диагностику выписок" })).toHaveAttribute(
-    "href",
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=SYNTH-A",
-  );
+  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
   fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
     target: { value: `${may.start}/${may.end}` },
   });

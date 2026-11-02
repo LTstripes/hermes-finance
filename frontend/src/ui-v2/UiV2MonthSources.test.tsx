@@ -118,7 +118,7 @@ it("keeps both accounts, calendar scope, precise review and the accepted bond li
   );
   expect(screen.getByRole("link", { name: "Облигации и доходность · ACCOUNT-B" })).toHaveAttribute(
     "href",
-    "/v2/capital/monthly-returns?source_account=ACCOUNT-B&bond_period=2031-08-01#bond-slice",
+    "/v2/returns/account?scope=source%3AACCOUNT-B&start=2031-07-31&end=2031-08-31#returns-instruments",
   );
   fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #2" }));
   expect(onReview).toHaveBeenCalledWith(2);

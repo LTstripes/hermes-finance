@@ -4641,7 +4641,7 @@ Routes (all read-only, including POST preview):
   Optional `expected_fingerprint` on GET/export requires the viewed evidence;
   changed evidence returns a fresh unavailable DTO with `statement_preview_stale`.
 
-Desktop route `/v2/capital/statement-return` is linked from the performance page.
+The desktop consumer is the separate-statement disclosure in the [Returns account details](MASTER_SPEC.md#returns-workspace).
 Account/source query identities and response identities must agree. Switching
 account clears the selected source; pending/failed refresh hides the old result
 and export. The export link pins the displayed fingerprint. It cannot export an
@@ -6195,7 +6195,7 @@ H2 dependency inventory including absences, permanent ownership, metadata and
 relevant coupon/Money/section/flow material. Assumptions are separately canonicalized
 and hashed; result binds both plus full provenance and schedule.
 
-The panel lives below the existing S3 result on `/v2/capital/statement-return`.
+The panel lives below the existing S3 result in the [Returns account details](MASTER_SPEC.md#returns-workspace).
 Actual availability/reasons stay visible with the scenario. Native facts, accepted
 H2, optional candidate, per-channel choices, selected assumptions and actual
 limitations remain distinct. Full member references and diagnostic inventory expand.

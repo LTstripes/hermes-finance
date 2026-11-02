@@ -87,7 +87,7 @@ for (const width of [1366]) {
         await route.fulfill({ json: row });
       });
       await page.goto(
-        `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+        `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=portfolio&view=classes`,
       );
       const stock = page.getByTestId("class-return-stock");
       const bond = page.getByTestId("class-return-bond");
@@ -263,7 +263,7 @@ for (const width of [1366]) {
       await route.fulfill({ json });
     });
     await page.goto(
-      `/v2/capital/performance?start=${start}&end=${end}&scope=account&account_id=1&prepare_account=1&prepare_reason=cash_history#performance-preparation`,
+      `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=account:1&prepare_account=1&prepare_reason=cash_history#performance-preparation`,
     );
     const add = page.getByRole("button", { name: "Добавить операцию" });
     await expect(add).toBeVisible();
@@ -409,7 +409,7 @@ for (const width of [1366]) {
       }
     });
     await page.goto(
-      `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+      `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=portfolio&view=classes`,
     );
     const prepare = page.locator("summary", { hasText: "Подготовить подтверждения классов" });
     await prepare.focus();

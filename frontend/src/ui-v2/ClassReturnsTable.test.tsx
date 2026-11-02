@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClassReturns } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { classReturnsFixture } from "../test/classReturnsFixture";
-import UiV2CapitalPerformanceDetail from "./UiV2CapitalPerformanceDetail";
+import ReturnsPerformanceDiagnostics from "./ReturnsPerformanceDiagnostics";
 
 const START = "2031-05-31";
 const END = "2031-07-31";
-const PATH = `/v2/capital/performance?start=${START}&end=${END}&scope=portfolio&view=classes`;
+const PATH = `/v2/returns/account?start=${START}&end=${END}&scope=portfolio&view=classes`;
 
 function LocationProbe() {
   const location = useLocation();
@@ -60,7 +60,7 @@ function setup(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <LocationProbe />
-        <UiV2CapitalPerformanceDetail />
+        <ReturnsPerformanceDiagnostics />
       </MemoryRouter>
     </QueryClientProvider>,
   );

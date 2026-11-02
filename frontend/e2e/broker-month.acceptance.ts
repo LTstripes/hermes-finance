@@ -210,7 +210,7 @@ test("statement returns show native EOD facts, NKD caveat, exact export and stal
   const value = await (await request.get(`/api/broker-statement-returns?${params}`)).json();
   expect(value.status).toBe("indicative");
   expect(value.bond_nkd_basis).toBe("unknown");
-  await page.goto("/v2/capital/statement-return");
+  await page.goto("/v2/returns/account?scope=portfolio&diagnostics=statement");
   await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(account.id));
   await page.getByLabel("Принятая выписка").selectOption("synthetic-statement-return");
   await expect(page.getByText("2,80%", { exact: true })).toBeVisible();

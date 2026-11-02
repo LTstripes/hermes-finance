@@ -290,7 +290,7 @@ describe("UI v2 historical report", () => {
     ).toHaveAttribute("href", `/v2/data/months/${historicalId}`);
     expect(within(handoff).getByRole("link", { name: "Доходность →" })).toHaveAttribute(
       "href",
-      "/v2/capital/performance",
+      "/v2/returns",
     );
     expect(within(handoff).getByRole("link", { name: "Отчётные месяцы →" })).toHaveAttribute(
       "href",

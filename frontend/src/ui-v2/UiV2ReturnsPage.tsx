@@ -23,6 +23,8 @@ const ReturnsGoldHistory = lazy(() =>
   import("./returns/ReturnsGoldHistory").then((m) => ({ default: m.ReturnsGoldHistory })),
 );
 
+const RETURNS_DATA_HREF = "/v2/returns/account?scope=portfolio&diagnostics=performance";
+
 export default function UiV2ReturnsPage() {
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -555,6 +557,12 @@ export default function UiV2ReturnsPage() {
             )}
           </>
         )}
+        <details className={styles.diagnostics}>
+          <summary>Подробнее о данных</summary>
+          <Link to={RETURNS_DATA_HREF} onClick={(event) => guardLink(event, RETURNS_DATA_HREF)}>
+            Проверить данные расчёта
+          </Link>
+        </details>
         {goldEditorTarget && (
           <Suspense fallback={<p role="status">Открываем историю золота…</p>}>
             <ReturnsGoldHistory
