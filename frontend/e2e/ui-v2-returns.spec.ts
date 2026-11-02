@@ -460,10 +460,14 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
 
 for (const retired of ["performance", "monthly-returns", "monthly-result", "statement-return"]) {
   test(`retired ${retired}: Returns navigation @viewport-owned`, async ({ page }) => {
-    await page.route("**/api/**", async (route) => {
-      expect(route.request().method()).toBe("GET");
-      await route.fulfill({ json: overallFixture() });
-    });
+    await page.route(
+      (url) => url.pathname.startsWith("/api/"),
+      async (route) => {
+        expect(route.request().method()).toBe("GET");
+        expect(new URL(route.request().url()).pathname).toBe("/api/returns/overall");
+        await route.fulfill({ json: overallFixture() });
+      },
+    );
     await page.goto(`/v2/capital/${retired}`);
     await expect(page).toHaveURL(/\/v2\/returns$/);
     const nav = page.getByRole("navigation", { name: "Основная навигация" });

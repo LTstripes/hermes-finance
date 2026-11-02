@@ -2200,7 +2200,15 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     await expect(region).not.toContainText("999");
     if (afterReload) {
       await page.goto(`/v2/returns?month=${monthId}`);
+      // goto waits for the document, not the month read and its history replacement.
+      await expect(page).toHaveURL(
+        `/v2/returns/account?month=${monthId}&start=2037-11-30&end=2037-12-31&scope=portfolio`,
+      );
+      await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
       await page.goBack();
+      await expect(page).toHaveURL(calendarPage);
+      await expect(region).toContainText("Полнота неизвестна; известная часть:");
+      await expect(region).toContainText("0 выплат");
       await page.reload();
       await expect(region).toContainText("Полнота неизвестна; известная часть:");
       await expect(region).toContainText("0 выплат");

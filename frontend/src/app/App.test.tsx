@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -96,7 +97,11 @@ describe("App", () => {
     window.history.pushState({}, "", from);
     vi.stubGlobal("fetch", mockFetchRouter({}));
 
-    render(<App />);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
 
     await waitFor(() =>
       expect(window.location.pathname + window.location.search + window.location.hash).toBe(to),
@@ -165,6 +170,37 @@ describe("App", () => {
     expect(window.location.pathname + window.location.search + window.location.hash).toBe(target);
     await act(async () => window.history.back());
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe(before));
+  });
+
+  it("resolves a delayed CLOSED report before Back and preserves the calendar URL on reload", async () => {
+    let finishMonths: () => void = () => {};
+    const months = new Promise<void>((resolve) => {
+      finishMonths = resolve;
+    });
+    const fetch = mockFetchRouter({
+      "GET /api/months": () => months.then(() => jsonResponse(sampleMonths)),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const calendar = "/v2/data/payouts?month=1&from=monthly-close-v2&monthId=1&step=future_payouts";
+    const returns = "/v2/returns/account?month=1&start=2026-05-31&end=2026-06-30&scope=portfolio";
+    window.history.pushState({}, "", calendar);
+    window.history.pushState({}, "", "/v2/returns?month=1");
+    const view = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    expect(await screen.findByText("Проверяем выбранный месяц…")).toBeVisible();
+    expect(window.location.pathname + window.location.search).toBe("/v2/returns?month=1");
+    await act(async () => finishMonths());
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(returns));
+    await screen.findByRole("link", { name: "В целом — вся доступная история" });
+    await act(async () => window.history.back());
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(calendar));
+    view.unmount();
+    render(<App />);
+    expect(window.location.pathname + window.location.search).toBe(calendar);
+    expect(fetch.mock.calls.every(([, init]) => (init?.method ?? "GET") === "GET")).toBe(true);
   });
 
   describe("legacy month editor compatibility", () => {
