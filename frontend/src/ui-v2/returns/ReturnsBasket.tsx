@@ -2,13 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { apiRequest } from "../../api/client";
-import { displayMetric, type Period, periodLabel, validDate } from "./model";
+import { type AccountLink, displayMetric, type Period, periodLabel, validDate } from "./model";
 import styles from "./Returns.module.css";
 import { Explanation, Info } from "./ReturnsInfo";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export const basketCategories = ["brokerage", "iis", "deposits", "gold"] as const;
 const labels = ["Брокерские счета", "ИИС", "Депозиты и накопительные", "Физическое золото"];
-type Cell = { period: Period; value_kopecks: string | null; reason_codes: string[] };
+type Cell = {
+  valuation_date: string | null;
+  period: Period;
+  value_kopecks: string | null;
+  reason_codes: string[];
+};
 type Subtotal = {
   value_kopecks: string | null;
   covered_cells: number;
@@ -26,6 +32,9 @@ export type Basket = {
   source_subtotal: Subtotal;
   deposit_received_interest: Subtotal;
   components: {
+    period: Period | null;
+    valuation_date: string | null;
+    account_link?: AccountLink | null;
     id: string;
     label: string;
     category: string;
@@ -158,8 +167,7 @@ export function ReturnsBasket({
                 счёт-месяцев
               </p>
               <small>
-                Предварительный результат. Личный итог после всех налогов не подтверждён. Брокерские
-                / ИИС: тип в истории не подтверждён.
+                Предварительный результат. Личный итог после всех налогов не подтверждён.
               </small>
             </section>
             <section className={styles.card} aria-label="Полученные депозитные проценты">
@@ -186,11 +194,20 @@ export function ReturnsBasket({
                 <h3>
                   {component.category === "brokerage_iis"
                     ? "Брокерские / ИИС"
-                    : component.category === "deposits"
-                      ? "Депозиты и накопительные"
-                      : "Физическое золото"}
+                    : component.category === "brokerage"
+                      ? "Брокерский"
+                      : component.category === "iis"
+                        ? "ИИС"
+                        : component.category === "deposits"
+                          ? "Депозиты и накопительные"
+                          : "Физическое золото"}
                   : {component.label}
                 </h3>
+                <ReturnsResultMeta
+                  period={component.period}
+                  valuationDate={component.valuation_date}
+                  accountLink={component.account_link}
+                />
                 <p>
                   {component.basis === "statements"
                     ? "Предварительно по выпискам; один экономический счёт."
@@ -217,6 +234,7 @@ export function ReturnsBasket({
                     <li key={cell.period.start}>
                       {periodLabel(cell.period)}:{" "}
                       {cell.value_kopecks === null ? "Не учтён" : money(cell.value_kopecks)}
+                      <ReturnsResultMeta period={cell.period} valuationDate={cell.valuation_date} />
                       <Explanation
                         codes={cell.reason_codes}
                         context={{ month: periodLabel(cell.period), account: component.label }}

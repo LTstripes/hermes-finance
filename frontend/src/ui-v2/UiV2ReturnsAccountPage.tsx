@@ -23,6 +23,7 @@ import { ReturnsBreakdown } from "./returns/ReturnsBreakdown";
 import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
+import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
 
 const ReturnsSourceDiagnostics = lazy(() => import("./ReturnsSourceDiagnostics"));
@@ -514,9 +515,13 @@ export default function UiV2ReturnsAccountPage() {
                       <Value metric={data.selected.pnl} label="Результат периода" signed />
                     </div>
                     <Value metric={data.selected.rate} label="Доходность периода" />
-                    <small>{periodLabel(data.selected.period)}</small>
                   </>
                 )}
+                <ReturnsResultMeta
+                  period={data.selected.period}
+                  valuationDate={data.selected.valuation_date}
+                  accountLink={data.account_link}
+                />
               </section>
               <section
                 className={styles.card}
@@ -534,11 +539,13 @@ export default function UiV2ReturnsAccountPage() {
                         signed
                       />
                     </div>
-                    <small>
-                      {data.all_history
-                        ? periodLabel(data.all_history.period)
-                        : "Границы истории не установлены"}
-                    </small>
+                    {data.all_history && (
+                      <ReturnsResultMeta
+                        period={data.all_history.period}
+                        valuationDate={data.all_history.valuation_date}
+                      />
+                    )}
+                    {!data.all_history && <small>Границы истории не установлены</small>}
                   </>
                 )}
               </section>

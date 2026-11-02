@@ -33,6 +33,8 @@ const actual: BrokerStatementReturn = {
   method: "broker_statement_mwr_period_v1",
   scope: "account",
   account_id: 1,
+  period: { start: "2030-08-31", end: "2030-09-30" },
+  valuation_date: "2030-09-30",
   t0: "2030-08-31",
   t1: "2030-09-30",
   currency: "RUB",

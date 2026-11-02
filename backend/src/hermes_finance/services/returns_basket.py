@@ -16,6 +16,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
     SourceMoneyClassification,
 )
+from hermes_finance.services.returns_account_link import account_link
 from hermes_finance.services.returns_view import _source_scopes, bounds, metric
 from hermes_finance.services.source_money_classifications import is_broker_transfer
 from hermes_finance.services.source_monthly_returns import (
@@ -45,9 +46,10 @@ def _calendar_cells(start, end):
         cursor = following
 
 
-def _cell(start, end, value=None, reasons=()):
+def _cell(start, end, value=None, reasons=(), valuation_date=None):
     return {
         "period": bounds(start, end),
+        "valuation_date": valuation_date,
         "value_kopecks": None if value is None else str(value),
         "reason_codes": list(dict.fromkeys(reasons)),
     }
@@ -55,7 +57,16 @@ def _cell(start, end, value=None, reasons=()):
 
 def _component(identity, label, category, basis, method, cells):
     return dict(
-        id=identity, label=label, category=category, basis=basis, method=method, cells=cells
+        id=identity,
+        label=label,
+        category=category,
+        basis=basis,
+        method=method,
+        cells=cells,
+        period=bounds(cells[0]["period"]["start"], cells[-1]["period"]["end"]) if cells else None,
+        valuation_date=max(
+            (c["valuation_date"] for c in cells if c["valuation_date"]), default=None
+        ),
     )
 
 
@@ -106,8 +117,11 @@ def _sources(session, categories, cells, deposit_accounts):
         ids = mappings.get(key, set())
         represented.update(ids)
         overlaps.update(ids & deposit_accounts)
+        link = account_link(session, key, canonical)
+        if link["status"] == "linked" and link["account_type"] not in categories:
+            continue
         reasons = []
-        if not {"brokerage", "iis"} <= set(categories):
+        if link["status"] != "linked" and not {"brokerage", "iis"} <= set(categories):
             reasons.append("historical_brokerage_iis_type_unproven")
         if (
             not selected
@@ -147,7 +161,7 @@ def _sources(session, categories, cells, deposit_accounts):
         ]
         projected = []
         for start, end in cells:
-            codes, value = list(reasons), None
+            codes, value, valuation = list(reasons), None, None
             if monthly:
                 matches = rows.get((start, end), [])
                 if len(matches) != 1:
@@ -158,6 +172,15 @@ def _sources(session, categories, cells, deposit_accounts):
                     row = matches[0]
                     codes.extend((*row.result.reason_codes, *row.flags))
                     value = row.result.growth_kopecks
+                    valuation = (
+                        row.result.closing_date
+                        if row.result.closing_kopecks is not None
+                        else (
+                            row.result.opening_date
+                            if row.result.opening_kopecks is not None
+                            else None
+                        )
+                    )
                     if value is None:
                         codes.append("calendar_month_unavailable")
                 if any(start < f.event_date <= end for f in monthly.flows) or any(
@@ -165,17 +188,18 @@ def _sources(session, categories, cells, deposit_accounts):
                 ):
                     value = None
                     codes.append("basket_crossing_reconciliation_unavailable")
-            projected.append(_cell(start, end, value, codes))
+            projected.append(_cell(start, end, value, [*codes, *link["reason_codes"]], valuation))
         components.append(
             _component(
                 f"source:{key}",
-                key,
-                "brokerage_iis",
+                link["label"],
+                link["account_type"] or "brokerage_iis",
                 "statements",
                 "source_no_crossing_calendar_months",
                 projected,
             )
         )
+        components[-1]["account_link"] = link
     return components, represented, overlaps
 
 

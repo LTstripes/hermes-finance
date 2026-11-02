@@ -1,6 +1,7 @@
 /** Fabricated overall DTOs only; no runtime account data. */
-import { m, may, april, detailFixture } from "./fixtures";
-import type { InstrumentCard, Income, IncomeKind } from "./cards";
+
+import type { Income, IncomeKind, InstrumentCard } from "./cards";
+import { april, detailFixture, m, may } from "./fixtures";
 import type { Overall } from "./overall";
 export function overallFixture(): Overall {
   const a = {
@@ -9,6 +10,7 @@ export function overallFixture(): Overall {
     details_loaded: true,
     label: "Учебный счёт А",
     period: may,
+    valuation_date: may.end,
     pnl: m("1200"),
     rate: m("0.12", "fraction"),
     coupons: m("0"),
@@ -20,6 +22,7 @@ export function overallFixture(): Overall {
     canonical_account_id: 4,
     label: "Учебный счёт Б",
     period: april,
+    valuation_date: april.end,
     pnl: m("-400"),
     rate: m("-0.04", "fraction"),
   };
@@ -35,6 +38,7 @@ export function overallFixture(): Overall {
           scope: a.scope,
           label: a.label,
           period: may,
+          valuation_date: may.end,
           amount: m("700"),
           proof_status: "current",
           included: true,
@@ -54,6 +58,7 @@ export function overallFixture(): Overall {
           scope: a.scope,
           label: a.label,
           period: may,
+          valuation_date: may.end,
           amount: m("3500"),
           proof_status: "current",
           included: true,
@@ -64,6 +69,7 @@ export function overallFixture(): Overall {
           scope: b.scope,
           label: b.label,
           period: april,
+          valuation_date: april.end,
           amount: m(null),
           proof_status: "stale",
           included: false,
@@ -90,6 +96,7 @@ export function overallFixture(): Overall {
           included: true,
           amount: a.pnl,
           interval: may,
+          period: may,
           valuation_date: null,
           coverage: { status: "supported", reason_codes: [] },
           method: "source_account_reconciliation",
@@ -105,6 +112,7 @@ export function overallFixture(): Overall {
           included: true,
           amount: b.pnl,
           interval: april,
+          period: april,
           valuation_date: null,
           coverage: { status: "supported", reason_codes: [] },
           method: "source_account_reconciliation",
@@ -120,6 +128,7 @@ export function overallFixture(): Overall {
           included: false,
           amount: m("-20000"),
           interval: null,
+          period: null,
           valuation_date: may.end,
           coverage: { status: "partial", reason_codes: ["synthetic_overlap_unproven"] },
           method: "saved_unrealized",
@@ -138,8 +147,10 @@ export function overallFixture(): Overall {
       scope: account.scope,
       label: account.label,
       period: account.period,
+      valuation_date: account.valuation_date,
       result: {
         period: account.period,
+        valuation_date: account.valuation_date,
         pnl: account.pnl,
         rate: account.rate,
         coupons: account.coupons,
@@ -236,6 +247,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
         label: "Учебный счёт А",
         canonical_account_id: 3,
         period: may,
+        valuation_date: may.end,
         proof_status: "current",
         included: true,
         exclusion_reason: null,
@@ -247,6 +259,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
         label: "Учебный счёт Б",
         canonical_account_id: 4,
         period: april,
+        valuation_date: april.end,
         proof_status: "current",
         included: true,
         exclusion_reason: null,

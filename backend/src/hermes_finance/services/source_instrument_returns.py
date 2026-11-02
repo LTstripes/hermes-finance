@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 from collections import defaultdict
@@ -68,6 +69,8 @@ class InstrumentReturnTotals:
     income_complete: bool
     flags: tuple[str, ...]
     approximate: bool
+    period: dict | None = None
+    valuation_date: date | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,6 +100,9 @@ class SourceInstrumentReturn:
     months: tuple[InstrumentReturnMonth, ...]
     all_time: InstrumentAllTime
     analysis: InstrumentAnalysis | None = None
+    period: dict | None = None
+    valuation_date: date | None = None
+    account_link: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -127,12 +133,49 @@ class SourceInstrumentReturns:
     financial_authority: str = "none"
     currency: str = "RUB"
     breakdown: ReturnBreakdown | None = None
+    account_link: dict | None = None
 
     def to_dict(self):
         result = asdict(self)
         # The native source API keeps its existing component names; its new root
         # breakdown is the presentation bridge. Returns detail uses the service DTO.
         for instrument in result["instruments"]:
+            analysis = instrument["analysis"]
+            instrument["account_link"] = self.account_link
+            instrument["period"] = (
+                {"start": analysis["opening_date"], "end": analysis["closing_date"]}
+                if analysis
+                else None
+            )
+            instrument["valuation_date"] = (
+                analysis["closing"]["date"]
+                if analysis and analysis["closing"]["reported_value_kopecks"] is not None
+                else (
+                    analysis["opening"]["date"]
+                    if analysis and analysis["opening"]["reported_value_kopecks"] is not None
+                    else None
+                )
+            )
+            for row in instrument["months"]:
+                start = row["month"] - timedelta(days=1)
+                end = row["month"].replace(
+                    day=calendar.monthrange(row["month"].year, row["month"].month)[1]
+                )
+                row["period"] = {"start": start, "end": end}
+                row["valuation_date"] = (
+                    end
+                    if row["closing_value_kopecks"] is not None
+                    else (start if row["opening_value_kopecks"] is not None else None)
+                )
+            months = instrument["months"]
+            instrument["all_time"]["period"] = (
+                {"start": months[0]["period"]["start"], "end": months[-1]["period"]["end"]}
+                if months
+                else None
+            )
+            instrument["all_time"]["valuation_date"] = max(
+                (r["valuation_date"] for r in months if r["valuation_date"]), default=None
+            )
             for analysis in (
                 instrument["analysis"],
                 *(row["analysis"] for row in instrument["months"]),
@@ -944,8 +987,11 @@ def read_instrument_returns(
     investment = instrument_result(
         session, source_account, selected, requested_isin, opening_date, closing_date
     )
+    from hermes_finance.services.returns_account_link import account_link
+
+    link = account_link(session, source_account)
     if investment is not None:
-        return investment
+        return replace(investment, account_link=link)
     if session.info.get(FILE_PATH_KEY) is not None:
         # The ordinary API and Returns share this path. A configured file is
         # authoritative for this call; failure cannot revive a caller's packet.
@@ -1128,6 +1174,7 @@ def read_instrument_returns(
         income,
         tuple(gaps),
         native_source_account=native_account,
+        account_link=link,
         reconciliation=reconciliation,
         unresolved_events=tuple(
             e for e in events if e.isin is None and e.attribution_basis != "account_only"

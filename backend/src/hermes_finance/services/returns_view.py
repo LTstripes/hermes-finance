@@ -14,7 +14,6 @@ from sqlalchemy import select
 from hermes_finance.domain import PerformanceScope, RubleAmount
 from hermes_finance.persistence import (
     Account,
-    BrokerIdentityMapping,
     Instrument,
     InvestmentCashFlow,
     ReportingMonth,
@@ -27,6 +26,7 @@ from hermes_finance.services.performance_availability import (
     _scope_membership_coverage,
 )
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
+from hermes_finance.services.returns_account_link import account_link
 from hermes_finance.services.source_instrument_returns import (
     ReturnBreakdown,
     read_instrument_returns,
@@ -37,7 +37,6 @@ from hermes_finance.services.source_monthly_returns import (
     read_monthly_returns,
     source_read_snapshot,
 )
-from hermes_finance.statement_import.mybroker import PROVIDER
 
 
 def metric(value=None, *, reasons=(), method="", unit="kopecks", estimate=True):
@@ -113,24 +112,13 @@ def _read_source_scopes(session):
 def _accounts(session, canonical=None):
     canonical = _source_scopes(session) if canonical is None else canonical
     display_names = session.info.get("returns_account_display_names", {})
-    labels = {}
-    for alias, account_id, name in session.execute(
-        select(BrokerIdentityMapping.provider_identity, Account.id, Account.name)
-        .join(Account, Account.id == BrokerIdentityMapping.hermes_account_id)
-        .where(
-            BrokerIdentityMapping.provider == PROVIDER,
-            BrokerIdentityMapping.subject_kind == "account",
-            BrokerIdentityMapping.status == "effective",
-        )
-    ):
-        if alias in canonical:
-            labels.setdefault(canonical[alias], set()).add((account_id, name))
+    links = {a: account_link(session, a, canonical) for a in set(canonical.values())}
     return (
         [
             {
                 "id": f"source:{a}",
-                "label": display_names.get(f"source:{a}")
-                or (f"{next(iter(labels[a]))[1]} · {a}" if len(labels.get(a, ())) == 1 else a),
+                "label": display_names.get(f"source:{a}") or links[a]["label"],
+                "account_link": links[a],
                 "basis": "statements",
             }
             for a in sorted(set(canonical.values()))
@@ -267,6 +255,11 @@ def _instrument(row, start, end, catalogue_names):
         or row.isin,
         "kind": row.instrument_type,
         "period": bounds(start, end),
+        "valuation_date": analysis.closing.date
+        if analysis.closing.reported_value_kopecks is not None
+        else (
+            analysis.opening.date if analysis.opening.reported_value_kopecks is not None else None
+        ),
         "pnl": _instrument_metric(analysis.pnl),
         "rate": _instrument_metric(analysis.modified_dietz, unit="fraction"),
         "coupons": _instrument_metric(analysis.components["coupons"]),
@@ -280,6 +273,9 @@ def _monthly(row):
     reasons = (*result.reason_codes, *row.flags)
     return {
         "period": bounds(result.opening_date, result.closing_date),
+        "valuation_date": result.closing_date
+        if result.closing_kopecks is not None
+        else (result.opening_date if result.opening_kopecks is not None else None),
         "pnl": metric(result.growth_kopecks, reasons=reasons, method="source_monthly"),
         "rate": metric(
             result.modified_dietz_return,
@@ -308,6 +304,18 @@ def _period_result(period, start, end, months):
     flags = _period_flags(months, start, end)
     return {
         "period": bounds(start, end),
+        "valuation_date": max(
+            (
+                r.result.closing_date
+                if r.result.closing_kopecks is not None
+                else r.result.opening_date
+                for r in months
+                if start <= r.result.opening_date
+                and r.result.closing_date <= end
+                and (r.result.closing_kopecks is not None or r.result.opening_kopecks is not None)
+            ),
+            default=None,
+        ),
         "pnl": metric(
             period.growth_kopecks,
             reasons=(*period.growth_reason_codes, *flags),
@@ -375,6 +383,14 @@ def _available_months(history, start, end, full):
         cursor = following
     return {
         "period": bounds(start, end),
+        "valuation_date": max(
+            (
+                r.get("valuation_date")
+                for r in history
+                if r["period"] in included and r.get("valuation_date")
+            ),
+            default=None,
+        ),
         "partial": True,
         "pnl": metric(
             sum(values) if values else None, reasons=reasons, method="available_calendar_months"
@@ -416,6 +432,9 @@ def _source_view(session, account, start, end):
         reconciliation = instruments.reconciliation
         selected = {
             "period": bounds(start, end),
+            "valuation_date": end
+            if reconciliation and reconciliation.account_growth.value is not None
+            else None,
             "pnl": metric(
                 reconciliation.account_growth.value
                 if reconciliation.account_growth.status in {"supported", "provisional"}
@@ -481,6 +500,11 @@ def _investment_report_result(proof):
     reasons = tuple(proof["reason_codes"]) if interval is None else tuple(interval["reason_codes"])
     return {
         "period": period,
+        "valuation_date": period["end"]
+        if interval and interval.get("closing_kopecks") is not None
+        else (
+            period["start"] if interval and interval.get("opening_kopecks") is not None else None
+        ),
         "pnl": metric(
             None
             if interval is None or interval["pnl"]["value"] is None
@@ -606,6 +630,7 @@ def _accepted_result(session, scope, start, end, income=None):
     income = _accepted_income(session, scope, start, end) if income is None else income
     return {
         "period": bounds(start, end),
+        "valuation_date": end if pnl.value is not None or rate.value is not None else None,
         "pnl": metric(
             pnl.value.kopecks if pnl.value is not None else None,
             reasons=pnl.reason_codes,
@@ -648,6 +673,7 @@ def _accepted_history(session, scope, closed):
             history.append(
                 {
                     "period": bounds(start, end),
+                    "valuation_date": None,
                     "pnl": metric(method="PERF04A", **missing),
                     "rate": metric(method="twrr", unit="percentage_points", **missing),
                     "coupons": metric(**missing),
@@ -697,7 +723,15 @@ def read_overview(session, *, scope, start, end):
                 "instrument_reason_codes": ["accepted_instrument_breakdown_unavailable"],
                 "proof_status": "not_applicable",
             }
-        return {"scope": scope, **view}
+        link = (
+            account_link(session, resolved.removeprefix("source:"))
+            if scope.startswith("source:")
+            else None
+        )
+        for item in [view["selected"], view["all_history"], *view["history"], *view["instruments"]]:
+            if item is not None:
+                item["account_link"] = link
+        return {"scope": scope, "account_link": link, **view}
 
 
 def read_detail(session, *, scope, start, end, isin):
@@ -719,6 +753,7 @@ def read_detail(session, *, scope, start, end, isin):
         analysis = row.analysis
         return {
             "scope": scope,
+            "account_link": account_link(session, resolved.removeprefix("source:")),
             "analysis": analysis,
             **_instrument(row, start, end, _catalogue_names(session, (row,))),
             "opening_quantity": None

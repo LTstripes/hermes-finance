@@ -25,7 +25,9 @@ export function selectedAccounts(data: Overall, scope: string) {
 }
 export function brokerageResult(data: Overall, scope: string) {
   const components = data.mixed_result.components.filter(
-    (c) => c.category === "brokerage" && (scope === "all" || c.id === scope),
+    (c) =>
+      ["brokerage", "iis", "brokerage_iis"].includes(c.category) &&
+      (scope === "all" || c.id === scope),
   );
   return {
     amount: knownMoney(components.filter((c) => c.included).map((c) => c.amount)),
@@ -49,7 +51,10 @@ export function instrumentSummary(data: Overall, row: OverallInstrument, scope: 
     (a) =>
       data.source_accounts.some((s) => s.scope === a.scope && s.proof_status === "current") &&
       !data.mixed_result.components.some(
-        (c) => c.category === "brokerage" && c.id === a.scope && c.coverage.status === "conflict",
+        (c) =>
+          ["brokerage", "iis", "brokerage_iis"].includes(c.category) &&
+          c.id === a.scope &&
+          c.coverage.status === "conflict",
       ),
   );
   const values = eligible.filter((a) => a.details_loaded);

@@ -7,12 +7,13 @@ import { instrumentBreakdown } from "./breakdown";
 import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
 import { getInstrumentCard } from "./cards";
 import styles from "./InstrumentCard.module.css";
-import { dateLabel, displayMetric, periodLabel } from "./model";
+import { dateLabel, displayMetric } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
 import { Explanation } from "./ReturnsInfo";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function ReturnsInstrumentCard({
   isin,
@@ -193,7 +194,11 @@ export function ReturnsInstrumentCard({
                           <Link to={accountHref(account.scope, account.period)}>
                             {accountLabels[account.scope] ?? account.label}
                           </Link>
-                          {account.period && <small>{periodLabel(account.period)}</small>}
+                          <ReturnsResultMeta
+                            period={account.period}
+                            valuationDate={account.valuation_date}
+                            accountLink={account.account_link}
+                          />
                           {!account.included && <small>Не включён в общий результат</small>}
                         </td>
                         {account.detail ? (

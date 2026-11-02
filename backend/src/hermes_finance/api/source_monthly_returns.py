@@ -1,5 +1,6 @@
 """Read-only provisional monthly returns for one native source account."""
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.broker_statement_provisional import ProvisionalRoute
 from hermes_finance.api.mybroker_import import _bytes
+from hermes_finance.api.returns_view import AccountLink, Period
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.monthly_return_chain import PeriodReturnTotals
 from hermes_finance.services import source_investment_proofs as investment_proofs
@@ -27,7 +29,16 @@ from hermes_finance.statement_import.mybroker import MyBrokerError
 router = APIRouter(prefix="/api/source-returns", tags=["source-returns"])
 
 
+@dataclass(frozen=True, kw_only=True)
+class PeriodTotalsResponse(PeriodReturnTotals):
+    start: date | None
+    end: date | None
+    valuation_date: date | None
+
+
 class MonthlyReturnResponse(BaseModel):
+    period: Period
+    valuation_date: date | None
     model_config = ConfigDict(extra="forbid")
 
     opening_date: date
@@ -66,8 +77,10 @@ class SourceMonthlyReturnsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_account: str
+    account_link: AccountLink | None
+    valuation_date: date | None
     months: tuple[MonthlyReturnResponse, ...]
-    period: PeriodReturnTotals
+    period: PeriodTotalsResponse
     segments: list[SourceReturnSegment]
     flows: tuple[SourceReturnFlow, ...]
     defaults_applied: tuple[SourceReturnFlow, ...]

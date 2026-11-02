@@ -289,15 +289,26 @@ def instrument(report):
     ][0]
 
 
-def test_v2_strict_fixture_expands_to_the_same_legacy_facts(report):
-    normalized = payloads.normalize_source_payloads(report)
+@pytest.mark.parametrize("format_version", ["2.0.0", "2.1.0"])
+def test_v2_strict_fixture_expands_to_the_same_legacy_facts(report, format_version):
+    normalized = payloads.normalize_source_payloads(report, format_version=format_version)
     validate_ai_financial_review(normalized)
     assert payloads.expand_source_payloads(normalized) == report
     assert json.loads(canonical_json(payloads.expand_source_payloads(normalized))) == report
-    assert normalized == json.loads(
-        (SCHEMAS / "ai_financial_review.v2.synthetic.json").read_text("utf-8")
-    )
+    expected = json.loads((SCHEMAS / "ai_financial_review.v2.synthetic.json").read_text("utf-8"))
+    expected["schema_version"] = format_version
+    expected["$schema"] = payloads.SCHEMA_URI.replace(payloads.VERSION, format_version)
+    assert normalized == expected
     validate_ai_financial_review(report)
+
+
+@pytest.mark.parametrize("format_version", ["2.0.0", "2.1.0"])
+def test_v2_schema_uri_must_match_the_declared_version(report, format_version):
+    normalized = payloads.normalize_source_payloads(report, format_version=format_version)
+    other_version = "2.1.0" if format_version == "2.0.0" else "2.0.0"
+    normalized["$schema"] = payloads.SCHEMA_URI.replace(payloads.VERSION, other_version)
+    with pytest.raises(AiFinancialReviewValidationError):
+        validate_ai_financial_review(normalized)
 
 
 def test_equal_events_remain_two_occurrences_and_window_variants_stay_distinct(report):

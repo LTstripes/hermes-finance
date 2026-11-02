@@ -1,6 +1,7 @@
 import { type AvailableMonths, periodLabel } from "./model";
-import { Explanation, Info, Value } from "./ReturnsInfo";
 import styles from "./Returns.module.css";
+import { Explanation, Info, Value } from "./ReturnsInfo";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function MissingName({ name, isin }: { name: string; isin: string }) {
   return name === isin ? (
@@ -19,7 +20,7 @@ export function ReturnsAvailable({ value }: { value: AvailableMonths }) {
       <div className={styles.mainValue}>
         <Value metric={value.pnl} label="За доступные месяцы" signed />
       </div>
-      <small>{periodLabel(value.period)}</small>
+      <ReturnsResultMeta period={value.period} valuationDate={value.valuation_date} />
       <Info label="Покрытие доступных месяцев">
         <p>Частичный итог одного счёта в рублях. Выплаты уже включены. Процент не рассчитан.</p>
         {value.included.map((p) => (

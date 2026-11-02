@@ -223,6 +223,7 @@ def _source_accounts(
 ):
     canonical = returns_view._source_scopes(session)
     labels = {a["id"]: a["label"] for a in returns_view._accounts(session, canonical)}
+    links = {a: returns_view.account_link(session, a, canonical) for a in set(canonical.values())}
     accounts, grouped = [], defaultdict(list)
     for account in sorted(set(canonical.values())):
         scope = f"source:{account}"
@@ -298,7 +299,7 @@ def _source_accounts(
                 )
                 item = {
                     key: instrument[key]
-                    for key in ("period", "pnl", "rate", "coupons", "dividends")
+                    for key in ("period", "valuation_date", "pnl", "rate", "coupons", "dividends")
                 }
                 name, kind = instrument["name"], instrument["kind"]
             else:
@@ -311,6 +312,7 @@ def _source_accounts(
                 )
                 item = {
                     "period": period,
+                    "valuation_date": None,
                     "pnl": _unknown(reason),
                     "rate": _unknown(reason, rate=True),
                     "coupons": _unknown(reason),
@@ -322,6 +324,7 @@ def _source_accounts(
                 {
                     "scope": scope,
                     "label": labels[scope],
+                    "account_link": links[account],
                     "name": name,
                     "kind": kind,
                     "details_loaded": include_instrument_details and status == "current",
@@ -332,8 +335,10 @@ def _source_accounts(
             {
                 "scope": scope,
                 "label": labels[scope],
+                "account_link": links[account],
                 "period": period,
-                "result": result,
+                "valuation_date": result["valuation_date"] if result else None,
+                "result": {**result, "account_link": links[account]} if result else None,
                 "proof_status": status,
                 "reason_codes": reasons,
                 "instrument_count": len(keys),
@@ -417,6 +422,8 @@ def _paid_income(accounts, mappings, reverse, *, kind):
                 "scope": account["scope"],
                 "label": account["label"],
                 "period": account["period"],
+                "valuation_date": account["valuation_date"],
+                "account_link": account["account_link"],
                 "amount": amount,
                 "proof_status": account["proof_status"],
                 "included": excluded is None,
@@ -468,6 +475,7 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
             "included": False,
             "amount": amount,
             "interval": interval,
+            "period": interval,
             "valuation_date": valuation_date,
             "coverage": {
                 "status": "partial" if amount["value"] is not None else "unavailable",
@@ -487,14 +495,15 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
         )
         row = component(
             account["scope"],
-            "brokerage",
+            account["account_link"]["account_type"] or "brokerage_iis",
             account["label"],
             amount,
             account["period"],
-            None,
+            account["valuation_date"],
             "source_only",
             account["reason_codes"],
         )
+        row["account_link"] = account["account_link"]
         conflicting = _identity_conflict(native, mappings, reverse)
         if conflicting:
             row["coverage"]["status"] = "conflict"
@@ -631,13 +640,7 @@ def read_overall(session, *, include_instrument_details=False):
         mappings, reverse = _account_mappings(session, canonical)
         for instrument in instruments:
             for account in instrument["accounts"]:
-                native = account["scope"].removeprefix("source:")
-                account["canonical_account_id"] = (
-                    next(iter(mappings[native]))
-                    if len(mappings[native]) == 1
-                    and not _identity_conflict(native, mappings, reverse)
-                    else None
-                )
+                account["canonical_account_id"] = account["account_link"]["financial_account_id"]
         gold = _gold(session, months)
         return {
             "contract_version": "returns_overall_v1",
@@ -742,6 +745,8 @@ def read_instrument_card(session, isin, *, overview=None):
                     "label": source["label"],
                     "canonical_account_id": indexed["canonical_account_id"],
                     "period": source["period"],
+                    "valuation_date": detail["valuation_date"] if detail else None,
+                    "account_link": source["account_link"],
                     "proof_status": source["proof_status"],
                     "included": excluded is None,
                     "exclusion_reason": excluded,

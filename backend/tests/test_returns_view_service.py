@@ -165,8 +165,19 @@ def test_basket_accepted_duplicate_and_current_type_edit_never_change_historical
     with db.session_factory() as session:
         session.get(Account, identity).account_type = "iis"
         session.commit()
-    assert basket_api(db, "brokerage,iis") == result
-    assert basket_api(db, "iis").known_partial_subtotal_kopecks is None
+    updated = basket_api(db, "brokerage,iis")
+    expected = result.model_copy(deep=True)
+    expected.components[0].category = "iis"
+    expected.components[0].label = f"ИИС {ACCOUNT}"
+    expected.components[0].account_link.account_type = "iis"
+    expected.components[0].account_link.label = f"ИИС {ACCOUNT}"
+    assert updated == expected
+    assert updated.known_partial_subtotal_kopecks == result.known_partial_subtotal_kopecks
+    assert updated.components[0].cells == result.components[0].cells
+    assert updated.components[0].account_link.account_type == "iis"
+    assert updated.components[0].account_link.financial_account_id == identity
+    assert basket_api(db, "iis").known_partial_subtotal_kopecks == "10000"
+    assert basket_api(db, "brokerage").known_partial_subtotal_kopecks is None
 
 
 def deposit_cell(db, *, month=4, interest=300, balance=100000, account_id=None, closed=True):
@@ -865,7 +876,19 @@ def test_runtime_display_name_changes_no_identity_mapping_or_financial_rows(db):
         result = view._accounts(session, {"SYNTH-A": "SYNTH-A"})
     sources = [row for row in result if row["basis"] == "statements"]
     assert sources == [
-        {"id": "source:SYNTH-A", "label": "Учебный брокерский", "basis": "statements"}
+        {
+            "id": "source:SYNTH-A",
+            "label": "Учебный брокерский",
+            "basis": "statements",
+            "account_link": {
+                "source_account_id": "SYNTH-A",
+                "financial_account_id": None,
+                "account_type": None,
+                "label": "SYNTH-A",
+                "status": "unlinked",
+                "reason_codes": ["source_account_identity_unproven"],
+            },
+        }
     ]
     assert snapshot(db) == before
 
@@ -924,7 +947,8 @@ def test_source_context_groups_only_proved_aliases_keeps_ranges_and_accepted_com
         compatible = view.read_overview(session, scope=deposit_scope, start=START, end=END)
     sources = [a for a in context.accounts if a.basis == "statements"]
     assert len(sources) == 1 and sources[0].id == SCOPE
-    assert sources[0].label == f"Synthetic brokerage · {ACCOUNT}"
+    assert sources[0].label == f"Брокерский {ACCOUNT}"
+    assert sources[0].account_link.status == "linked"
     assert context.scope_aliases == {"source:1234567": SCOPE}
     assert {p.end.month for p in context.source_periods[SCOPE]} == {4, 6}
     assert any(a.id == deposit_scope and a.basis == "accepted" for a in context.accounts)
@@ -1179,3 +1203,108 @@ def test_investment_actual_income_is_independent_of_missing_valuation(stale):
     if not stale:
         assert result["coupons"]["reason_codes"] == []
         assert result["dividends"]["reason_codes"] == []
+
+
+def test_explicit_account_ids_keep_equal_values_and_individual_dates(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    basket_source(db, native="109", alias="109", month=4)
+    basket_source(db, native="662", alias="662", month=5)
+    ids = {}
+    with db.session_factory() as session:
+        for native, kind in [("109", "iis"), ("662", "brokerage")]:
+            account = Account(name="Synthetic equal label", account_type=kind)
+            session.add(account)
+            session.flush()
+            ids[native] = account.id
+            session.add(
+                BrokerIdentityMapping(
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=native,
+                    hermes_account_id=account.id,
+                    status="effective",
+                    confirmed_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        context = Context.model_validate(view.read_context(session))
+        for native, start, end, label in [
+            ("109", date(2030, 3, 31), date(2030, 4, 30), "ИИС 109"),
+            ("662", date(2030, 4, 30), date(2030, 5, 31), "Брокерский 662"),
+        ]:
+            account = next(a for a in context.accounts if a.id == f"source:{native}")
+            assert account.account_link.financial_account_id == ids[native]
+            assert account.label == label
+            result = Overview.model_validate(
+                view.read_overview(session, scope=account.id, start=start, end=end)
+            )
+            assert result.selected.pnl.value == "10000"
+            assert result.selected.period.start == start
+            assert result.selected.period.end == result.selected.valuation_date == end
+            assert result.selected.account_link == account.account_link
+            assert result.account_link == account.account_link
+            from hermes_finance.api.source_monthly_returns import SourceMonthlyReturnsResponse
+
+            native_result = SourceMonthlyReturnsResponse.model_validate(
+                read_monthly_returns(session, source_account=native).to_dict()
+            )
+            assert native_result.account_link == account.account_link
+            assert native_result.period.start == start
+            assert native_result.period.end == native_result.valuation_date == end
+            assert native_result.months[0].period.start == start
+            assert (
+                native_result.months[0].period.end == native_result.months[0].valuation_date == end
+            )
+    for category, native in [("iis", "109"), ("brokerage", "662")]:
+        result = basket_api(db, category, end="2030-05-31")
+        source = [c for c in result.components if c.basis == "statements"]
+        assert len(source) == 1
+        assert source[0].account_link.source_account_id == native
+        assert source[0].account_link.financial_account_id == ids[native]
+        assert result.known_partial_subtotal_kopecks == "10000"
+    assert snapshot(db) == before
+
+
+def test_missing_and_ambiguous_mapping_never_guess_from_equal_values(db):
+    from hermes_finance.persistence import Account
+    from hermes_finance.services.returns_account_link import account_link
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    for native in ("109", "662"):
+        basket_source(db, native=native, alias=native)
+    with db.session_factory() as session:
+        for native in ("109", "662"):
+            missing = account_link(session, native)
+            assert missing["status"] == "unlinked"
+            assert missing["financial_account_id"] is missing["account_type"] is None
+            assert missing["reason_codes"] == ["source_account_mapping_missing"]
+        account = Account(name="Synthetic ambiguous", account_type="iis")
+        session.add(account)
+        session.flush()
+        for native in ("109", "662"):
+            session.add(
+                BrokerIdentityMapping(
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=native,
+                    hermes_account_id=account.id,
+                    status="effective",
+                    confirmed_at=datetime.now(UTC),
+                )
+            )
+        session.commit()
+    with db.session_factory() as session:
+        for native in ("109", "662"):
+            link = account_link(session, native)
+            assert link["status"] == "unlinked"
+            assert link["financial_account_id"] is link["account_type"] is None
+            assert link["reason_codes"] == ["source_account_mapping_ambiguous"]
+    result = basket_api(db, "iis")
+    assert result.known_partial_subtotal_kopecks is None
+    assert all(
+        c.account_link.status == "unlinked" for c in result.components if c.basis == "statements"
+    )

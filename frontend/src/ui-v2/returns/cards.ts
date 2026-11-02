@@ -1,5 +1,11 @@
 import { apiRequest } from "../../api/client";
-import { type Detail, type Metric, type Period, detailMatchesContext } from "./model";
+import {
+  type AccountLink,
+  type Detail,
+  detailMatchesContext,
+  type Metric,
+  type Period,
+} from "./model";
 import { validDetailPeriod, validIsin } from "./navigation";
 import type { CouponIncome } from "./overall";
 
@@ -24,6 +30,8 @@ export type InstrumentCard = {
     reason_codes: string[];
   };
   accounts: {
+    valuation_date: string | null;
+    account_link?: AccountLink | null;
     scope: string;
     label: string;
     canonical_account_id: number | null;

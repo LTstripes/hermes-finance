@@ -36,6 +36,8 @@ function statementFixture(account = 1): BrokerStatementReturn {
     method: "broker_statement_mwr_period_v1",
     scope: "account",
     account_id: account,
+    period: { start: "2026-08-31", end: "2026-09-30" },
+    valuation_date: "2026-09-30",
     t0: "2026-08-31",
     t1: "2026-09-30",
     currency: "RUB",

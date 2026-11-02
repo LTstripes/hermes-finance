@@ -146,3 +146,41 @@ test("ABA late response and selected-period change cannot display an obsolete ba
   await waitFor(() => expect(calls.at(-1)?.searchParams.get("start")).toBe(april.start));
   expect(screen.getByTestId("url")).toHaveTextContent(`start=${april.start}`);
 });
+
+test("an explicit IIS link shows its account id and valuation, without unknown-type fallback", async () => {
+  setup("/v2/returns?start=2030-04-30&end=2030-05-31&categories=iis", () =>
+    Promise.resolve(
+      response({
+        ...basketFixture(may, "iis"),
+        known_partial_subtotal_kopecks: "100",
+        components: [
+          {
+            id: "source:109",
+            label: "ИИС 109",
+            category: "iis",
+            basis: "statements",
+            period: may,
+            valuation_date: may.end,
+            method: "source_no_crossing_calendar_months",
+            account_link: {
+              source_account_id: "109",
+              financial_account_id: 1,
+              account_type: "iis",
+              label: "ИИС 109",
+              status: "linked",
+              reason_codes: [],
+            },
+            cells: [
+              { period: may, valuation_date: may.end, value_kopecks: "100", reason_codes: [] },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  await screen.findByText("+1 ₽");
+  fireEvent.click(screen.getByText("Покрытие и причины по категориям"));
+  expect(screen.getByText("ИИС 109")).toBeVisible();
+  expect(screen.getAllByText(/Оценка на 31.05.2030/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/тип в истории не подтверждён/)).toBeNull();
+});
