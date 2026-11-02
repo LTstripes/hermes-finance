@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { Link } from "react-router";
 import type {
   InstrumentAnalysis,
@@ -46,65 +47,14 @@ export const statusLabel = (value: InstrumentMetric<unknown>["status"]) =>
     partial: "неполный компонент",
     unavailable: "недоступно",
   })[value];
-const labels: Record<string, string> = {
-  exact_t_invest_mapping_required:
-    "Нужно принятое сопоставление T-Invest в справочнике. Автоматический поиск не запускается.",
-  exact_instrument_required:
-    "Нужно подтвердить точную карточку инструмента; новый ISIN не принимается автоматически.",
-  quantity_absent_or_ambiguous:
-    "На выбранную дату нет однозначного количества по этому счёту и ISIN.",
-  quantity_unknown: "Количество не подтверждено. Выбери дату конца точной сохранённой выписки.",
-  quantity_date_unproven: "Дата количества не подтверждена как конец отчётного дня.",
-  overlapping_quantity_conflict:
-    "Выписки расходятся в количестве. Нужно разобрать исходные доказательства.",
-  endpoint_unsettled:
-    "Расчёты на границе не завершены; это количество нельзя использовать для preview.",
-  account_binding_conflict: "Привязки счёта противоречат друг другу. Проверь разбор источников.",
-  actual_provider_identity_unproven:
-    "Совпадение с actual — только кандидат. Идентичность выплаты провайдера не доказана.",
-  actual_attribution_unresolved:
-    "Есть неуточнённые фактические выплаты. Будущий доход не подтверждён.",
-  duplicate_provider_identity:
-    "Повторная или неоднозначная идентичность события исключена из future.",
-  error: "Не удалось получить ответ провайдера. Запрос можно повторить явно.",
-  bond_valuation_basis_unknown: "Нужна dirty-оценка или clean-оценка с НКД на обеих границах.",
-  face_value_assumed: "Номинал сделки принят с допущением; нужен датированный источник.",
-  trade_face_value_missing:
-    "Нет номинала на дату сделки; сумма прочитана по правилу MyBroker с НКД.",
-  income_assumed: "Классификация выплаты основана на правиле по умолчанию.",
-  missing_endpoint: "Нет подтверждённой стоимости или количества на границе периода.",
-  missing_quantity: "Нет количества на границе; отсутствие позиции не означает ноль.",
-  instrument_type_unknown: "Тип инструмента не подтверждён.",
-  trade_nkd_basis_unknown: "Не подтверждено, входит ли НКД в сумму сделки.",
-  trade_nkd_basis_conflict: "Источники противоречат друг другу о составе НКД сделки.",
-  trade_missing_settlement: "Нужна дата фактического денежного или депозитарного расчёта.",
-  trade_identity_unresolved: "Не установлена полная нативная идентичность сделки.",
-  trade_components_missing: "Не хватает составляющих суммы сделки.",
-  unmatched_trade_money: "Не установлена принадлежность денежной строки сделке.",
-  trade_money_cash_conflict: "Сумма сделки расходится с денежными строками.",
-  quantity_events_incomplete: "Не все движения количества подтверждены.",
-  quantity_reconciliation_mismatch: "Количество не сверено с учтёнными движениями.",
-  source_period_inferred: "Период выписки выведен из операций; даты остатков не подтверждены.",
-  incomplete_source_coverage: "Источники не покрывают весь выбранный период.",
-  payout_link_unresolved_no_match: "Нужно точное сопоставление выплаты с инструментом.",
-  payout_link_stale: "Сохранённое сопоставление выплаты требует повторной проверки.",
-  unattributed_income: "Есть выплата без подтверждённого инструмента.",
-  unallocated_instrument_cost: "Не установлена принадлежность расхода инструменту.",
-  unrecognized_money: "Есть нераспознанная денежная операция.",
-  repo_trade_unsupported: "Экономика REPO не поддерживается этим расчётом.",
-  redemption_amortization_unsupported: "Не подтверждена экономика погашения или амортизации.",
-  "4_Transfers_unsupported": "Есть неразобранные переводы или аннулирование бумаг.",
-  "5_UFSR_unsupported": "Служебная секция источника не распознана полностью.",
-  unparsed_source_rows: "Не все структуры выписки распознаны.",
-  non_positive_dietz_denominator: "Нет положительной базы для Modified Dietz.",
-};
+
 export function Reasons({ codes }: { codes: string[] }) {
   const unique = [...new Set(codes)];
   return unique.length ? (
     <div>
       <ul className={styles.reasons}>
         {unique.map((code) => (
-          <li key={code}>{labels[code] ?? "Нужно проверить источник операции."}</li>
+          <li key={code}>{reasonCopy(code, { surface: "instrument" }).message}</li>
         ))}
       </ul>
       <details className={styles.note}>

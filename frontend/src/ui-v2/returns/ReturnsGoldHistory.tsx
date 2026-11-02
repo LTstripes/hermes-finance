@@ -1,3 +1,4 @@
+import { reasonCopy } from "../../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiClientError } from "../../api/client";
@@ -84,25 +85,8 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
 }
 function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuation | null }) {
-  const reasons: Record<string, string> = {
-    gold_trade_history_incomplete: "Подтвердите полноту истории операций.",
-    gold_zero_start_unproven: "Не подтверждён остаток на начало истории.",
-    gold_separate_fees_unknown: "Уточните отдельные комиссии.",
-    gold_quantity_mismatch: "Количество по операциям не совпадает с заявленным остатком.",
-    gold_snapshot_quantity_mismatch: "Количество в сохранённой оценке не совпадает с историей.",
-    gold_negative_running_quantity: "Продажа превышает количество золота на эту дату.",
-    gold_saved_valuation_unavailable: "Не хватает сохранённой оценки остатка.",
-    gold_quote_unavailable: "Не хватает сохранённой оценки остатка.",
-    gold_valuation_outside_complete_scope: "Дата оценки выходит за подтверждённую историю.",
-    gold_future_price_date: "Дата цены находится за пределами снимка.",
-    gold_cost_allocation_unproven: "Разделение результата продаж и остатка не подтверждено.",
-  };
   const limitations = [
-    ...new Set(
-      value.reason_codes.map(
-        (code) => reasons[code] ?? "Для расчёта не хватает подтверждённых данных.",
-      ),
-    ),
+    ...new Set(value.reason_codes.map((code) => reasonCopy(code, { surface: "gold" }).message)),
   ];
   const facts = [
     ["Общий результат", value.total_result_kopecks],
@@ -144,6 +128,7 @@ function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuat
       </p>
       <details className={styles.details}>
         <summary>Основа расчёта</summary>
+        {!!value.reason_codes.length && <code>{value.reason_codes.join(", ")}</code>}
         <p>
           История с {value.period.covered_from} по {value.period.covered_to ?? value.as_of_date}.
           Налоги не предоставлены.{" "}

@@ -1,3 +1,4 @@
+import { reasonCopy } from "../../lib/reasonCopy";
 import { useEffect, useRef, useState } from "react";
 import {
   contextMatches,
@@ -404,7 +405,7 @@ export function BrokerProvisionalEstimate({
                 <p>
                   {result.status === "needs_assumptions"
                     ? "Выбери все необходимые допущения и режим графика."
-                    : `Расчёт заблокирован: ${result.reason_codes.join(", ")}`}
+                    : `Расчёт заблокирован: ${result.reason_codes.map((code) => reasonCopy(code).message).join("; ")}`}
                 </p>
               )}
               <h4>Выбранные допущения</h4>
@@ -431,6 +432,7 @@ export function BrokerProvisionalEstimate({
           <details>
             <summary>Полный контекст и fingerprints</summary>
             <pre>{JSON.stringify(context, null, 2)}</pre>
+            {result && <code>{result.reason_codes.join(", ")}</code>}
           </details>
         </>
       )}

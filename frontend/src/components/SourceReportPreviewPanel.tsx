@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useEffect, useRef, useState } from "react";
 import { ApiClientError, formatApiError } from "../api/client";
 import {
@@ -282,6 +283,12 @@ export function SourceReportPreviewPanel({
               . Предыдущая запись останется в истории.
             </label>
           )}
+          {!!result.persistence.reason_codes.length && (
+            <details>
+              <summary>Подробности сохранения</summary>
+              <code>{result.persistence.reason_codes.join(", ")}</code>
+            </details>
+          )}
           {result.persistence.available ? (
             <Button
               disabled={
@@ -293,8 +300,9 @@ export function SourceReportPreviewPanel({
             </Button>
           ) : (
             <p>
-              Сохранение: {result.persistence.reason_codes.join(", ")}. Если XML ещё не сохранён,
-              используйте существующую загрузку выше и повторите Preview.
+              Сохранение:{" "}
+              {result.persistence.reason_codes.map((code) => reasonCopy(code).message).join("; ")}.
+              Если XML ещё не сохранён, используйте существующую загрузку выше и повторите Preview.
             </p>
           )}
         </>

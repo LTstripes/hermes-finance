@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useEffect, useRef, useState } from "react";
 import { formatApiError } from "../api/client";
 import {
@@ -143,14 +144,21 @@ export function SourceReturnProofPanel({
         </p>
       ) : proof?.status === "stale" ? (
         <p role="status">
-          Подтверждение устарело: {proof.reason_codes.join(", ")}. До новой проверки действуют
-          обычные причины NULL.
+          Подтверждение устарело:{" "}
+          {proof.reason_codes.map((code) => reasonCopy(code).message).join("; ")}. До новой проверки
+          действуют обычные причины NULL.
         </p>
       ) : (
         <p>
           Оригиналы можно проверить один раз и отдельно подтвердить сохранение доказательства
           источника.
         </p>
+      )}
+      {!!proof?.reason_codes?.length && (
+        <details>
+          <summary>Подробности</summary>
+          <code>{proof.reason_codes.join(", ")}</code>
+        </details>
       )}
       <p>
         Сохраняется только доказательство источника. XML, рассчитанные суммы и проценты не

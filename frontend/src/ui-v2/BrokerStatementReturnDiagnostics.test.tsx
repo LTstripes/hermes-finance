@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -156,12 +156,25 @@ it("shows null with native facts and missing-flow reason, never guessed zero", a
   const user = setup();
   await choose(user);
   expect(await screen.findByText("Недоступна")).toBeVisible();
+  expect(screen.getAllByText(/Не подтверждён полный список датированных/)).toHaveLength(1);
   expect(
-    screen.getByText("Не подтверждён полный список датированных пополнений и выводов счёта."),
+    within(screen.getByRole("list", { name: "Причины недоступности" })).getByText(
+      "Не подтверждён полный список датированных пополнений и выводов счёта.",
+    ),
   ).toBeVisible();
+  expect(screen.getByText(/Фактический S3: Недоступна/)).toBeVisible();
   expect(screen.queryByText("0,00%")).not.toBeInTheDocument();
-  expect(screen.getByText(/H2 не может подтвердить назначение/)).toBeVisible();
-  expect(screen.getByText(/Не подтверждено основание: future_h2_code/)).toBeVisible();
+  expect(
+    within(screen.getByRole("list", { name: "Причины недоступности" })).getByText(
+      /H2 не может подтвердить назначение/,
+    ),
+  ).toBeVisible();
+  expect(
+    within(screen.getByRole("list", { name: "Причины недоступности" })).getByText(
+      "Значение сейчас недоступно",
+    ),
+  ).toBeVisible();
+  expect(screen.getByText(/future_h2_code/)).not.toBeVisible();
   expect(screen.getAllByText(/10\s000,00 ₽/)).toHaveLength(2);
 });
 it("rejects wrong account, period, endpoint and annualization responses", async () => {

@@ -10,37 +10,9 @@ import {
 } from "../api/payouts";
 import { Button, Table, Td, Th } from "../components/ui";
 import { formatDate, formatMoney } from "../lib/format";
-import { brokerSourceTitle } from "../lib/ownerCopy";
+import { reasonCopy } from "../lib/reasonCopy";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
-
-const REASONS: Record<string, string> = {
-  financial_draft_required: "Сначала сохрани финансовый DRAFT из проверенной выписки.",
-  closed_month: "Месяц закрыт; обновление доступно после явного открытия заново.",
-  draft_changed: "DRAFT или сопоставление изменились. Обнови чтение и проверь данные.",
-  preview_changed: "Данные изменились во время запроса. Обнови чтение.",
-  source_projection_changed:
-    "Количество или стоимость отличаются от принятой выписки; нужна сверка DRAFT.",
-  mapping_ambiguous: "Найдено несколько UID. Выбери точное сопоставление в справочнике бумаг.",
-  mapping_unavailable:
-    "UID не найден или провайдер недоступен; проверь сопоставление и настройки Т-Инвест.",
-  mapping_excluded: "Бумага исключена из обновления; проверь её сопоставление в справочнике.",
-  saved_provider_identity_changed:
-    "Сохранённые прогнозы используют другой UID. Сначала проверь прежние события в календаре выплат.",
-  mapping_exact_identity_required:
-    "Провайдер не подтвердил точные ISIN, тип и валюту; нужна ручная проверка.",
-  actual_payout_review_required:
-    "Есть связь с фактической выплатой. Проверь существующую сверку выплат.",
-  payout_identity_review_required:
-    "Возможный дубликат или отменённая выплата. Нужна ручная проверка.",
-  provider_error:
-    "Провайдер не вернул подтверждённый ответ. Сохранённые прогнозы остаются доступны.",
-  provider_empty:
-    "Провайдер не вернул событий. Это не подтверждает отсутствие будущих выплат; сохранённые прогнозы остаются доступны.",
-  refresh_unconfirmed: "Результат запроса не подтверждён. Обнови чтение сохранённых прогнозов.",
-  readback_unconfirmed: "Запись отправлена, но её чтение не подтверждено. Обнови чтение.",
-  position_not_positive: "Положительная позиция в принятом DRAFT отсутствует.",
-};
 
 export function MonthDraftPayouts({
   monthId,
@@ -237,6 +209,15 @@ export function MonthDraftPayouts({
     calendar.data
       ?.flatMap((month) => month.items)
       .filter((item) => item.source_kind === "provider") ?? [];
+  const canResolveReason =
+    !closed &&
+    !disabled &&
+    !busy &&
+    !unconfirmed &&
+    !reading &&
+    !context.isError &&
+    context.data?.status === "draft" &&
+    context.data.reporting_month_id === monthId;
   const issues =
     result?.items.filter((item) => item.reason_codes.length) ??
     context.data?.items.filter((item) => item.reason_codes.length) ??
@@ -290,14 +271,37 @@ export function MonthDraftPayouts({
               {issues.map((item) => (
                 <li key={item.position_snapshot_id}>
                   {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
-                  {item.reason_codes.map((code) => (
-                    <span key={code}>
-                      {REASONS[code] ??
-                        brokerSourceTitle(code) ??
-                        "Проверь бумагу и ответ провайдера."}{" "}
-                      <code>{code}</code>{" "}
-                    </span>
-                  ))}
+                  {item.reason_codes.map((code) => {
+                    const copy = reasonCopy(code, {
+                      surface: "draftPayouts",
+                      closed,
+                      actions: {
+                        instrumentMapping: {
+                          available: canResolveReason,
+                          href: "/v2/data/catalogs",
+                        },
+                        payouts: {
+                          available: canResolveReason,
+                          href: `/v2/data/payouts?month=${monthId}`,
+                        },
+                      },
+                    });
+                    return (
+                      <p key={code}>
+                        {copy.message}
+                        {copy.action && (
+                          <>
+                            {" "}
+                            <Link to={copy.action.href}>{copy.action.label}</Link>
+                          </>
+                        )}
+                      </p>
+                    );
+                  })}
+                  <details>
+                    <summary>Подробности</summary>
+                    <code>{item.reason_codes.join(", ")}</code>
+                  </details>
                 </li>
               ))}
             </ul>

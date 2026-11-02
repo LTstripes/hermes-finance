@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useEffect, useRef, useState } from "react";
 import {
   type BrokerStatementReturn,
@@ -148,7 +149,7 @@ export function BrokerStatementWhatIfPanel({ actual }: { actual: BrokerStatement
         {actual.status === "unavailable"
           ? "Недоступна"
           : formatStatementPercent(actual.rate_fraction)}
-        . Причины: {actual.reason_codes.join(", ") || "нет"}.
+        .
       </p>
       <label>
         Неизменённый оригинал XML
@@ -296,7 +297,7 @@ export function BrokerStatementWhatIfPanel({ actual }: { actual: BrokerStatement
                 <p>
                   {result.status === "needs_assumptions"
                     ? "Выбери все необходимые допущения и режим графика."
-                    : `Расчёт заблокирован: ${result.reason_codes.join(", ")}`}
+                    : `Расчёт заблокирован: ${result.reason_codes.map((code) => reasonCopy(code).message).join("; ")}`}
                 </p>
               )}
               <h3>Выбранные допущения</h3>
@@ -323,6 +324,7 @@ export function BrokerStatementWhatIfPanel({ actual }: { actual: BrokerStatement
           <details>
             <summary>Полный диагностический состав и fingerprints</summary>
             <pre>{JSON.stringify(context, null, 2)}</pre>
+            {result && <code>{result.reason_codes.join(", ")}</code>}
           </details>
         </>
       )}

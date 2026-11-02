@@ -1,3 +1,4 @@
+import { reasonCopy } from "./reasonCopy";
 export const GOAL_TYPES = [
   "passive_income",
   "capital",
@@ -29,19 +30,12 @@ export const GOAL_CALCULATION_MODE_LABELS: Record<string, string> = {
   custom: "Другой способ расчёта",
 };
 
-export const GOAL_REASON_LABELS: Record<string, string> = {
-  no_trajectory_model: "Недостаточно данных, чтобы надёжно спрогнозировать будущую дату.",
-  goal_inactive: "Цель сейчас неактивна.",
-  unsupported_goal_type: "Для этого типа цели автоматический расчёт пока не поддерживается.",
-  unsupported_calculation_mode: "Для выбранного способа расчёта прогноз пока не поддерживается.",
-};
-
 export function goalCalculationModeLabel(value: string): string {
   return GOAL_CALCULATION_MODE_LABELS[value] ?? "Другой способ расчёта";
 }
 
 export function goalReasonLabel(value: string): string {
-  return GOAL_REASON_LABELS[value] ?? "Для текущих параметров дополнительный прогноз недоступен.";
+  return reasonCopy(value, { surface: "goal" }).message;
 }
 
 export function defaultCalculationMode(goalType: string): string {

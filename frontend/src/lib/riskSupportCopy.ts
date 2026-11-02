@@ -1,3 +1,4 @@
+import { reasonCopy } from "./reasonCopy";
 /**
  * Owner-facing copy for the R07-06A allocation/concentration support model.
  *
@@ -16,21 +17,6 @@ export const ASSET_CLASS_LABELS: Record<string, string> = {
   other: "Прочее",
   unknown_asset_class: "Неизвестный класс активов",
   unassigned_cash: "Наличные без привязки к счёту",
-};
-
-export const REASON_LABELS: Record<string, string> = {
-  bank_identity_not_persisted: "банк не указан для этих данных",
-  broker_identity_not_persisted: "брокер не указан для этих данных",
-  cash_not_account_linked: "наличные не связаны со счётом",
-  currency_conversion_not_supported: "пересчёт валюты для этого среза не поддерживается",
-  currency_not_persisted: "валюта не указана",
-  deposit_forecast_not_concentratable: "по оценке депозита нет датированного события",
-  instrument_not_persisted: "инструмент не указан для события",
-  instrument_type_not_authoritative: "класс инструмента не подтверждён сохранёнными данными",
-  issuer_not_persisted: "эмитент не указан",
-  maturity_not_persisted: "срок погашения не указан",
-  no_dated_payouts: "датированных событий в окне нет",
-  unsupported_position_valuation: "оценка позиции непригодна для расчёта",
 };
 
 export const SOURCE_KIND_LABELS: Record<string, string> = {
@@ -60,7 +46,7 @@ export function supportStatusTone(status: SupportStatus): "ok" | "missing" | "un
 }
 
 export function supportReasonLabel(reason: string): string {
-  return REASON_LABELS[reason] ?? "дополнительное ограничение данных";
+  return reasonCopy(reason, { surface: "risk" }).message;
 }
 
 export function sourceKindLabel(value: string): string {

@@ -1,3 +1,4 @@
+import { reasonCopy } from "../../lib/reasonCopy";
 import { Link } from "react-router";
 
 import type {
@@ -83,10 +84,7 @@ function summaryCount(summary: Record<string, unknown>, key: string): string | n
 }
 
 function reasonLabel(reasonCode: string | null): string {
-  if (reasonCode === "optional_empty") return "Не заполнено · не блокирует закрытие";
-  if (reasonCode === "no_position_snapshots") return "Нет позиций для отдельной проверки";
-  if (reasonCode === "snapshot_date_required") return "Сначала укажи дату снимка";
-  return reasonCode ? "Данные пока недоступны" : "Нет данных";
+  return reasonCode ? reasonCopy(reasonCode, { surface: "finalReview" }).message : "Нет данных";
 }
 
 function isZeroMoney(value: unknown): boolean {

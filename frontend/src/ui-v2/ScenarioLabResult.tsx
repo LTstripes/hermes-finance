@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import {
   shockTypeOf,
   type DepositEvaluation,
@@ -77,22 +78,6 @@ const METRIC_LABELS: Record<string, string> = {
   future_redemption_real_value: "Реальная стоимость будущих погашений",
   future_total_cash_flow_real_value: "Реальная стоимость будущих потоков",
   inflation_adjusted_goal_coverage: "Покрытие цели с учётом инфляции",
-};
-
-const REASON_LABELS: Record<string, string> = {
-  fx_translation_basis_unavailable:
-    "Нет авторитетной базы валютного пересчёта: точный стресс-результат не рассчитывается",
-  missing_currency: "Валюта инструмента отсутствует или некорректна",
-  instrument_type_not_authoritative:
-    "Тип инструмента — не авторитетный признак акций (без look-through в фонды)",
-  no_deterministic_income_relationship: "У сценария нет детерминированной связи с этим доходом",
-  no_fund_lookthrough: "Фонды не раскрываются до акций (без look-through)",
-  no_future_capital_trajectory: "Траектория будущего капитала не моделируется",
-  goal_price_basis_not_defined: "Для цели не задана ценовая база",
-  no_live_fx_lookup: "Живой валютный курс не запрашивается",
-  no_inferred_fx_exposure: "Валютная экспозиция не достраивается по косвенным признакам",
-  no_hedge_inference: "Хеджирование не предполагается",
-  no_ticker_name_issuer_domicile_inference: "Эмитент и страна не выводятся из тикера или названия",
 };
 
 const ASSUMPTION_LABELS: Record<string, string> = {
@@ -865,7 +850,7 @@ function supportReasonsText(
 ): string {
   if (!support?.reason_codes || support.reason_codes.length === 0) return "—";
   return support.reason_codes
-    .map((code) => (REASON_LABELS[code] ? `${REASON_LABELS[code]} (${code})` : code))
+    .map((code) => reasonCopy(code, { surface: "scenario" }).message)
     .join("; ");
 }
 

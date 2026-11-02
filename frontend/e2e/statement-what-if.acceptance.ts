@@ -17,7 +17,9 @@ test("synthetic desktop: real context → explicit choices → 211 RUB / 2.01% �
   await page.goto("/v2/returns/account?scope=portfolio&diagnostics=statement");
   await page.getByLabel("Брокерский счёт").selectOption("1");
   await page.getByLabel("Принятая выписка").selectOption("synthetic-batch");
-  await expect(page.getByText(/H2 не может подтвердить назначение/)).toBeVisible();
+  const unresolvedMoney = page.getByText(/H2 не может подтвердить назначение/);
+  await expect(unresolvedMoney).toHaveCount(1);
+  await expect(unresolvedMoney).toBeVisible();
   await page.getByRole("region", { name: "Результат по выписке" }).screenshot({
     path: info.outputPath("synthetic-what-if-actual-s3-1440.png"),
   });
