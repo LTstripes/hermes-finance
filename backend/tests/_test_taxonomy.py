@@ -109,6 +109,8 @@ CI_CORE_ADDITIONAL_FILES = (
     "test_source_account_history_service.py",
     "test_october_returns_service.py",
     "test_source_money_classifications_service.py",
+    "test_reopen_confirmations_service.py",
+    "test_money_preparation_service.py",
 )
 
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
@@ -418,7 +420,7 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
     "test_statement_import_mybroker_endpoints.py::test_trade_money_accepted_revision_and_occurrence_cannot_be_rewritten": 4.36,
     "test_statement_import_mybroker_endpoints.py::test_trade_money_catalogue_a_b_a_retires_proof_and_requires_reviewed_reaffirm": 2.59,
     "test_statement_import_mybroker_endpoints.py::test_trade_money_equations_cannot_supply_independent_basis": 4.82,
-    "test_statement_import_mybroker_endpoints.py::test_trade_money_fresh_repeat_is_revision_noop_and_reopen_does_not_reaffirm": 3.10,
+    "test_statement_import_mybroker_endpoints.py::test_trade_money_fresh_repeat_and_unchanged_reopen_preserve_confirmation": 3.10,
     "test_statement_import_mybroker_endpoints.py::test_trade_money_indistinguishable_nkd_and_unparsed_source_stay_blocked": 0.70,
     "test_statement_import_mybroker_endpoints.py::test_trade_money_native_controls_cannot_be_waived": 3.44,
     "test_statement_import_mybroker_endpoints.py::test_trade_money_other_money_and_opaque_sections_block_close_after_accepted_trade": 0.99,

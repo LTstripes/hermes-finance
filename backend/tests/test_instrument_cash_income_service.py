@@ -27,6 +27,7 @@ from hermes_finance.persistence import (
     ReportingMonth,
 )
 from hermes_finance.services.broker_identity_mappings import revoke_mapping
+from hermes_finance.services.broker_money import read_money
 from hermes_finance.services.instrument_cash_income import known_instrument_cash_income
 from hermes_finance.services.reporting_months import create_reporting_month
 from hermes_finance.services.statement_import_apply import StatementApplyAction
@@ -339,25 +340,36 @@ def test_active_pdf_cannot_revive_retired_money_authority(database):
                 ),
             ),
         ).success
+        before = read(session, intent, bond)
+        assert before["known_booked_net"]["coupon"] == "120.00"
+        assert before["events"][0]["provenance"] == [
+            "accepted_money_coupon",
+            "typed_depository",
+        ]
+        actual = session.get(InvestmentCashFlow, target)
+        # This unidentified payout can overlap the accepted coupon. An unrelated
+        # zero dividend would not retire its authority under scoped dependencies.
         session.add(
             InvestmentCashFlow(
-                account_id=intent.account_id,
+                account_id=actual.account_id,
                 instrument_id=None,
-                reporting_month_id=intent.reporting_month_id,
-                event_date=date(2030, 1, 20),
-                flow_type="dividend",
+                reporting_month_id=actual.reporting_month_id,
+                event_date=actual.event_date,
+                flow_type=actual.flow_type,
                 source="manual",
-                gross_amount_kopecks=0,
+                gross_amount_kopecks=actual.net_amount_kopecks,
                 tax_amount_kopecks=0,
                 commission_amount_kopecks=0,
-                net_amount_kopecks=0,
+                net_amount_kopecks=actual.net_amount_kopecks,
             )
         )
         session.commit()
+        assert not read_money(session, "money-accepted")["targets"][0]["effective"]
         result = read(session, intent, bond)
         assert result["known_booked_net"]["coupon"] is None
         assert result["events"][0]["proof_state"] == "retired_or_unmatched"
         assert result["events"][0]["provenance"] == ["typed_depository"]
+        assert returns_income(database, intent)["accepted_income"]["net_kopecks"] is None
 
 
 def test_proven_zero_foreign_components_and_exact_account_isolation(database):

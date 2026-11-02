@@ -1499,7 +1499,10 @@ unresolved competitors of that month's own actuals retain their unknown state in
 CLOSED calendar reads. Later actuals do not reinterpret unrelated earlier CLOSED
 forecast projections; accepted paid-copy projections keep their existing authority.
 Readiness uses the coherent offline predicate before and after Close.
-Normal Close preserves settlement; Reopen changes the dependency generation.
+Normal Close and an unchanged Reopen preserve accepted settlement. Only changed
+financial/source dependencies or month geometry retire their dependent confirmations;
+an unchanged DRAFT Reopen is idempotent (#1013). Historical endpoint/class-coverage
+and pending header-command guards retain their separate contracts.
 
 The Month panel uses offline `payout-obligations`, `payout-preview`,
 `payout-apply` and existing receipt GET. Evidence-bound review precedes Confirm.
@@ -1993,7 +1996,12 @@ attachment must contain one matching initial link revision for that exact target
 Later PDF revisions, retractions or contradictions retain monotonic retirement.
 Lifecycle retirement follows the affected target and reporting period (including
 old scope when a row moves), so cash/payout/PDF changes in another month of the
-same account do not retire independent accepted Money.
+same account do not retire independent accepted Money. Within the same account,
+a separate ICF is a potential payout dependency only when kind, posted date and
+net amount match and its instrument is the selected instrument or is unknown
+(NULL). Unknown instrument identity fails closed for that overlap; a different
+known instrument, kind, date or amount is independent. Old and new values are
+considered on edits, and resolving the ambiguity cannot revive retired proof.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply
@@ -3565,8 +3573,10 @@ earlier revisions stay immutable.
 
 Candidate rebuild, canonical GET, source-account readiness and reserved Close
 revalidate the same receipt and reconciliation. A source union/target/catalogue
-change or reopening retires authority monotonically; restoring old values or
-replaying an old request cannot reaffirm it. New explicit review is required.
+change retires dependent authority monotonically; restoring old values or
+replaying an old request cannot reaffirm it. An unchanged Reopen preserves the
+accepted operation proof (#1013); changed month geometry still retires it.
+New explicit review is required after an actual dependency change.
 One supported trade does not clear opaque Money, unparsed UFSR/REPO/transfer
 sections or other source gaps. C1, portfolio scope and exact returns remain
 unavailable. Synthetic Close evidence does not establish real-account Close.
@@ -11800,6 +11810,23 @@ retired links, cannot be revived by forecast refresh. No ICF, ECF, reconciliatio
 source receipt or CLOSED month is rewritten. Provider announced amounts do not
 prove personal net/tax, including when legacy calendar DTO names contain `net`.
 
+#### Bounded Money decision preparation (#1030)
+
+Offline `POST /api/broker-months/money-prepare` accepts an empty `broker_money_v2`
+intent and the complete original XML union. It prepares coupon/dividend choices
+only from supported full narratives, positive exact RUB credits and existing
+instrument identifiers/crosswalks; supported account funding reuses H2 review.
+Direction and confirmed account participants distinguish own-account transfers.
+Unknown, ambiguous/multiple, unsupported or mismatched rows remain
+`needs_confirmation`; internal transfers require the existing explicit link proof.
+Preparation writes nothing and does not overwrite supplied manual decisions.
+It never creates Owner claims. Its returned ordinary Money Preview retains all
+integrity, reconciliation, ownership, CLOSED and currentness gates. New facts
+still require reviewed claims and the existing reserved Apply/GET protocol.
+Equal PDF/XML payout facts are disclosed as candidates for explicit same-event
+confirmation, never automatically recognized or deduplicated by amount/date.
+No rules editor, new ledger or financial writer is introduced.
+
 #### Actual settlement authority
 
 ICF remains the sole actual net fact; APP/ECF remain forecasts. The existing
@@ -11820,7 +11847,8 @@ rows do not create a new obligation on their own. CLOSED views stay historical.
 The immutable receipt records which DRAFT future projections it covered. Normal
 Close preserves those projections; an already CLOSED copy gains no new paid
 authority. Retirement requires every covered historical scope to be editable.
-Reopen changes the reviewed forecast-month generation, even before a first link;
+An unchanged Reopen preserves the reviewed forecast-month evidence, including
+before a first link (#1013). Material geometry changes still advance its generation;
 generation changes in months outside the reviewed candidate set do not stale it.
 A subsequent Close never resets an invalidated generation. Historical paid
 projections require the frozen reviewed scope's journal to still match the
