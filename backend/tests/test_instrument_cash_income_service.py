@@ -385,6 +385,10 @@ def test_proven_zero_foreign_components_and_exact_account_isolation(database):
         assert saved.success, saved
         zero = read(session, intent, stock.id)
         assert zero["known_booked_net"]["dividend"] == "0.00"
+        accepted = returns_income(database, intent)
+        assert accepted["selected"]["dividends"]["value"] == "0"
+        assert accepted["accepted_income"]["net_kopecks"] == "0"
+        assert accepted["accepted_income"]["tax_kopecks"] is None
         session.add(
             InvestmentCashFlow(
                 account_id=intent.account_id,
@@ -498,3 +502,185 @@ def test_unavailable_coupon_reader_is_partial_not_fabricated_zero(database, monk
         assert "coupon_authority_unavailable" in result["reason_codes"]
         assert result["known_booked_net"]["coupon"] is None
         assert result["events"][0]["booked_net"] == "120.00"
+
+
+def returns_income(database, intent):
+    from hermes_finance.services.returns_view import read_overview
+
+    before = sqlite_blob(database)
+    with database.session_factory() as session:
+        result = read_overview(session, scope=f"account:{intent.account_id}", start=A, end=B)
+    assert sqlite_blob(database) == before
+    return result
+
+
+def test_returns_accepted_coupon_is_exact_without_valuation_or_rate(database):
+    _, intent, _, _, _ = setup(database, ("120.37", "120.37"), distinct=True)
+    result = returns_income(database, intent)
+    assert result["selected"]["pnl"]["value"] is result["selected"]["rate"]["value"] is None
+    coupon = result["selected"]["coupons"]
+    assert coupon["value"] == "24074"
+    assert coupon["estimate"] is False
+    assert "whole_interval_coverage_unknown" in coupon["reason_codes"]
+    income = result["accepted_income"]
+    assert income["partial"] is True
+    assert income["net_kopecks"] == "24074"
+    assert income["gross_kopecks"] is income["tax_kopecks"] is None
+    assert income["instruments"][0]["coupons_kopecks"] == "24074"
+    assert result["breakdown"].payouts_kopecks == "24074"
+    assert result["breakdown"].complete is False
+
+
+def test_returns_xml_pdf_and_accepted_flow_are_one_net_payment(database):
+    client, intent, _, saved, _ = setup(database)
+    target = saved["targets"][0]["target_id"]
+    pdf = money_coupon_pdf(net="120,00")
+    with database.session_factory() as session:
+        row = pdf_preview(session, pdf, intent.account_id).rows[0]
+        assert pdf_apply(
+            session,
+            pdf,
+            intent.account_id,
+            (
+                selection_from_row(
+                    row,
+                    action=StatementApplyAction.LINK_EXISTING,
+                    existing_cash_flow_id=target,
+                    expected_candidate_ids=(target,),
+                ),
+            ),
+        ).success
+        row = pdf_preview(session, pdf, intent.account_id).rows[0]
+        assert pdf_apply(session, pdf, intent.account_id, (selection_from_row(row),)).success
+    result = returns_income(database, intent)
+    assert result["accepted_income"]["net_kopecks"] == "12000"
+    assert result["accepted_income"]["tax_kopecks"] is None
+    response = client.get(
+        "/api/returns/overview",
+        params={
+            "scope": f"account:{intent.account_id}",
+            "start": str(A),
+            "end": str(B),
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    wire = response.json()
+    assert wire["selected"]["coupons"]["value"] == "12000"
+    assert wire["breakdown"]["payouts_kopecks"] == "12000"
+    assert wire["accepted_income"]["instruments"][0]["net_kopecks"] == "12000"
+    assert "cash_flow_id" not in str(wire)
+
+
+def test_returns_accepted_dividend_keeps_tax_separate_and_never_taxes_net_twice(database):
+    _, _, intent, _, _ = _money_setup(database, money_batch_xml(coupons=("120",)))
+    # Build a typed source with explicit gross, withheld tax and final net.
+    pdf = build_income_report_pdf(
+        [
+            {
+                "isin": ISIN,
+                "payment_kind": "выплата дивидендов",
+                "security_name": "Synthetic equity",
+                "record_date": "15.01.2030",
+                "payment_date": "20.01.2030",
+                "quantity": "10",
+                "per_unit": "12,00",
+                "gross": "120,00",
+                "net": "104,40",
+                "tax": "15,60",
+                "tax_rate": "13",
+            }
+        ]
+    )
+    with database.session_factory() as session:
+        row = pdf_preview(session, pdf, intent.account_id).rows[0]
+        assert pdf_apply(session, pdf, intent.account_id, (selection_from_row(row),)).success
+    result = returns_income(database, intent)
+    income = result["accepted_income"]
+    assert income["net_kopecks"] == "10440"
+    assert income["gross_kopecks"] == "12000"
+    assert income["tax_kopecks"] == "1560"
+    assert result["selected"]["dividends"]["value"] == "10440"
+    assert result["breakdown"].payouts_kopecks == "10440"
+    assert result["breakdown"].taxes_kopecks is None  # tax is already in net
+
+
+def test_returns_existing_pnl_is_not_increased_by_known_payouts(monkeypatch):
+    from types import SimpleNamespace
+
+    from hermes_finance.domain import RubleAmount
+    from hermes_finance.services import returns_view
+
+    monkeypatch.setattr(
+        returns_view,
+        "performance_attribution_for_interval",
+        lambda *args, **kwargs: SimpleNamespace(value=RubleAmount(777), reason_codes=()),
+    )
+    monkeypatch.setattr(
+        returns_view,
+        "twrr_for_interval",
+        lambda *args, **kwargs: SimpleNamespace(value=None, reason_codes=("rate_unavailable",)),
+    )
+    income = {
+        "coupons_kopecks": "12000",
+        "dividends_kopecks": None,
+        "reason_codes": ["whole_interval_coverage_unknown"],
+    }
+    result = returns_view._accepted_result(None, "account:1", A, B, income)
+    assert result["pnl"]["value"] == "777"
+    assert result["rate"]["value"] is None
+    assert result["coupons"]["value"] == "12000"
+
+
+def test_returns_no_accepted_events_never_claims_confirmed_absence(database):
+    _, intent, _, _, _ = setup(database)
+    from hermes_finance.services.returns_view import read_overview
+
+    before = sqlite_blob(database)
+    with database.session_factory() as session:
+        result = read_overview(
+            session, scope=f"account:{intent.account_id}", start=date(2030, 1, 17), end=B
+        )
+    assert result["selected"]["coupons"]["value"] is None
+    assert result["accepted_income"]["net_kopecks"] is None
+    assert result["accepted_income"]["partial"] is True
+    assert "whole_interval_coverage_unknown" in result["accepted_income"]["reason_codes"]
+    assert result["breakdown"] is None
+    assert sqlite_blob(database) == before
+
+
+def test_returns_portfolio_uses_dated_membership_without_current_flag_fallback(database):
+    from sqlalchemy import delete
+
+    from hermes_finance.persistence import Account, AccountPerformanceScopeMembership
+    from hermes_finance.services.returns_view import read_overview
+
+    _, intent, _, _, _ = setup(database)
+    with database.session_factory() as session:
+        session.execute(
+            delete(AccountPerformanceScopeMembership).where(
+                AccountPerformanceScopeMembership.account_id == intent.account_id
+            )
+        )
+        # Today's switch is not historical evidence for the selected interval.
+        session.get(Account, intent.account_id).include_in_returns = True
+        session.commit()
+        unknown = read_overview(session, scope="portfolio", start=A, end=B)
+        assert unknown["accepted_income"]["net_kopecks"] is None
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=intent.account_id, effective_from=A, include_in_returns=True
+            )
+        )
+        session.commit()
+        included = read_overview(session, scope="portfolio", start=A, end=B)
+        assert included["accepted_income"]["net_kopecks"] == "12000"
+        membership = session.scalar(
+            select(AccountPerformanceScopeMembership).where(
+                AccountPerformanceScopeMembership.account_id == intent.account_id
+            )
+        )
+        membership.include_in_returns = False
+        session.commit()
+        excluded = read_overview(session, scope="portfolio", start=A, end=B)
+        assert excluded["accepted_income"]["net_kopecks"] is None

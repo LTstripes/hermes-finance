@@ -1,6 +1,6 @@
-import { Link } from "react-router";
-import { reasonCopy, type ReasonContext } from "../../lib/reasonCopy";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { Link } from "react-router";
+import { type ReasonContext, reasonCopy } from "../../lib/reasonCopy";
 import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
@@ -20,6 +20,8 @@ const methods: Record<string, string> = {
     "Результат всего счёта за указанные даты, включая денежный остаток и операции счёта, по существующему расчёту выписок.",
   instrument_return_v2:
     "Результат бумаги за указанные даты с учётом сделок, выплат и расходов по существующему расчёту.",
+  "known-booked-net-payouts":
+    "Точная сумма известных принятых выплат после удержаний. Покрытие периода частичное; это не оценка. Выплаты уже включены в результат.",
   credited_payments:
     "Фактически зачисленные выплаты. Будущее расписание сюда не входит; выплаты не прибавляются к результату повторно.",
   PERF04A: "Изменение стоимости после внешних пополнений и снятий, по подтверждённым отчётам.",

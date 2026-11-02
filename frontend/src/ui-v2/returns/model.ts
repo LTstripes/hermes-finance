@@ -35,9 +35,28 @@ export type Context = {
   default_period: Period | null;
   closed_periods: Period[];
 };
+export type AcceptedIncomeAmounts = {
+  net_kopecks: string | null;
+  gross_kopecks: string | null;
+  tax_kopecks: string | null;
+  fees_kopecks: string | null;
+  coupons_kopecks: string | null;
+  dividends_kopecks: string | null;
+};
+export type AcceptedIncome = AcceptedIncomeAmounts & {
+  partial: true;
+  reason_codes: string[];
+  instruments: (AcceptedIncomeAmounts & {
+    id: string;
+    account: string;
+    name: string;
+    isin: string | null;
+  })[];
+};
 export type Overview = {
   scope: string;
   breakdown?: ReturnBreakdown | null;
+  accepted_income?: AcceptedIncome | null;
   selected: Result;
   all_history: Result | null;
   available_months_total?: AvailableMonths | null;

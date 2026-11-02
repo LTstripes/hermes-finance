@@ -386,7 +386,11 @@ overview loads visible summaries and identity metadata only; instrument details 
 entry, and credited coupon/dividend events load on disclosure. Known paid income
 is shown across included accounts, then by account, ISIN and dated operation,
 without adding it again to P&L. Back/Reload preserve context. Capital provides the same entry; accepted
-TWRR/XIRR and coverage diagnostics remain in the account details. Missing names stay explicit; only exact
+TWRR/XIRR and coverage diagnostics remain in the account details. Accepted account
+and portfolio views also show known accepted coupon/dividend net payments by
+instrument, independently of unavailable P&L or percentage. Mark their coverage
+as partial once, without an estimate label. Gross and withheld tax are separate
+explanations; unknown tax stays a dash and is never deducted from net again. Missing names stay explicit; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 
 Deposits are outside this Returns UX package and remain a separate task; their
