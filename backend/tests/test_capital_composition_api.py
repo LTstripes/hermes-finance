@@ -893,3 +893,24 @@ def test_monthly_capital_bridge_api_keeps_unexplained_separate(client, end, resi
     summary = client.get(f"/api/months/{feb}/summary")
     assert summary.status_code == 200, summary.text
     assert summary.json()["capital_change"] == change
+
+
+def test_optional_capital_explanation_failure_preserves_closed_comparison(client, monkeypatch):
+    from hermes_finance.services import monthly_capital_change as capital_change_service
+
+    jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
+    feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
+    _create_cash(client, jan, "1000.01")
+    _create_cash(client, feb, "1007.02")
+    for month_id in (jan, feb):
+        response = close_fixture_month_http(client, month_id)
+        assert response.status_code == 200, response.text
+    expected = _comparison(client)
+    assert expected["capital_change"]["breakdown"] is not None
+
+    def broken_external_result(*args, **kwargs):
+        raise ArithmeticError("synthetic optional attribution failure")
+
+    monkeypatch.setattr(capital_change_service, "_external_net", broken_external_result)
+    expected["capital_change"] = None
+    assert _comparison(client) == expected

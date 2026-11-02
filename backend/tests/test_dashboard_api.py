@@ -645,3 +645,45 @@ def test_dashboard_first_month_has_null_deltas(client: TestClient) -> None:
     assert body["kpis"]["liquid_capital_delta"] is None
     assert body["summary"]["passive_income_delta"] is None
     assert any("предыдущего месяца" in w for w in body["warnings"])
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "dashboard", "close-workflow"])
+@pytest.mark.parametrize("error_type", [ValueError, RuntimeError])
+def test_optional_capital_explanation_failure_preserves_month_reads(
+    client: TestClient, monkeypatch, caplog, endpoint, error_type
+) -> None:
+    from hermes_finance.services import monthly_capital_change as capital_change_service
+
+    _, month_id = _seed_two_months(client)
+    path = f"/api/months/{month_id}/{endpoint}"
+    before = client.get(path)
+    assert before.status_code == 200, before.text
+
+    def broken_source_result(*args, **kwargs):
+        raise error_type("SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS")
+
+    monkeypatch.setattr(capital_change_service, "_investment_result", broken_source_result)
+    after = client.get(path)
+    assert after.status_code == 200, after.text
+    expected, actual = before.json(), after.json()
+    if endpoint == "close-workflow":
+        # The Month workspace needs this response on a cold entry/Reload.
+        assert actual["month"] == expected["month"]
+        assert actual["final_review"] == expected["final_review"]
+        assert actual["readiness"] == expected["readiness"]
+    else:
+        expected_summary = expected["summary"] if endpoint == "dashboard" else expected
+        assert expected_summary["capital_change"]["breakdown"] is not None
+        expected_summary["capital_change"] = None
+        assert actual == expected
+    assert "Capital-change explanation unavailable" in caplog.text
+    assert "SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS" not in caplog.text
+
+    # Recovery uses fresh reads; the failure does not poison the Session/cache.
+    monkeypatch.undo()
+    recovered = client.get(path)
+    assert recovered.status_code == 200, recovered.text
+    if endpoint != "close-workflow":
+        body = recovered.json()
+        summary = body["summary"] if endpoint == "dashboard" else body
+        assert summary["capital_change"]["breakdown"] is not None

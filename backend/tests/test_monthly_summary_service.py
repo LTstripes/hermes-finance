@@ -615,3 +615,36 @@ def test_capital_bridge_does_not_promote_account_or_unknown_scope_funding(tmp_pa
     finally:
         session.close()
         database.engine.dispose()
+
+
+@pytest.mark.parametrize("failure", ["maintenance", "snapshot_mutation", "snapshot_cleanup", "sql"])
+def test_optional_capital_explanation_does_not_hide_database_guards(tmp_path, monkeypatch, failure):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from hermes_finance.database import (
+        DatabaseMaintenanceError,
+        ReadSnapshotCleanupError,
+        ReadSnapshotMutationError,
+    )
+    from hermes_finance.services import monthly_capital_change as capital_change_service
+
+    errors = {
+        "maintenance": DatabaseMaintenanceError,
+        "snapshot_mutation": ReadSnapshotMutationError,
+        "snapshot_cleanup": ReadSnapshotCleanupError,
+        "sql": SQLAlchemyError,
+    }
+    error_type = errors[failure]
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session, 2031, 1)
+
+        def refused_calculation(*args, **kwargs):
+            raise error_type("synthetic database boundary failure")
+
+        monkeypatch.setattr(capital_change_service, "_monthly_capital_change", refused_calculation)
+        with pytest.raises(error_type, match="synthetic database boundary failure"):
+            monthly_summary(session, month_id)
+    finally:
+        session.close()
+        database.engine.dispose()

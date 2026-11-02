@@ -4,12 +4,19 @@ No persistence, new return kernel, inferred transfer pairing or source acceptanc
 Explained components are known subtotals; missing facts stay in unexplained.
 """
 
+import logging
 from datetime import timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import coherent_read_operation
+from hermes_finance.database import (
+    DatabaseMaintenanceError,
+    ReadSnapshotCleanupError,
+    ReadSnapshotMutationError,
+    coherent_read_operation,
+)
 from hermes_finance.domain.liquid_capital import LiquidCapitalResult
 from hermes_finance.domain.monthly_summary import MonthlyCapitalChange, explain_capital_change
 from hermes_finance.domain.values import RubleAmount
@@ -31,6 +38,8 @@ from hermes_finance.services.source_monthly_returns import (
     read_monthly_returns,
     source_read_snapshot,
 )
+
+_LOG = logging.getLogger(__name__)
 
 
 def _same_capital_roster(session, accounts, day):
@@ -189,6 +198,38 @@ def _investment_result(session, accounts, current, previous, liquid, previous_li
 
 @coherent_read_operation
 def monthly_capital_change(
+    session: Session,
+    *,
+    current: ReportingMonth,
+    previous: ReportingMonth | None,
+    liquid: LiquidCapitalResult,
+    previous_liquid: LiquidCapitalResult | None,
+) -> MonthlyCapitalChange | None:
+    """Keep this optional explanation from breaking established financial reads."""
+    try:
+        return _monthly_capital_change(
+            session,
+            current=current,
+            previous=previous,
+            liquid=liquid,
+            previous_liquid=previous_liquid,
+        )
+    except (
+        DatabaseMaintenanceError,
+        ReadSnapshotCleanupError,
+        ReadSnapshotMutationError,
+        SQLAlchemyError,
+    ):
+        # A failed database/read-only boundary must never look like a valid read.
+        raise
+    except Exception as error:
+        # Do not expose source payloads or exception text in logs/API responses.
+        # NULL means unavailable; zero/partial operands would invent an explanation.
+        _LOG.warning("Capital-change explanation unavailable (%s)", type(error).__name__)
+        return None
+
+
+def _monthly_capital_change(
     session: Session,
     *,
     current: ReportingMonth,

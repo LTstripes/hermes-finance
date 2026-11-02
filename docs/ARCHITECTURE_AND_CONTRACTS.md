@@ -692,6 +692,11 @@ Components are explicitly `known_subtotals`, not assertions of complete history.
 Start/end reuse liquid_capital; partial endpoint coverage retains its reason.
 Missing endpoints, non-month-end snapshots or calendar gaps withhold the bridge.
 Existing summary delta and closed-to-closed comparison semantics are unchanged.
+The explanation is optional: a calculation exception withholds
+`capital_change` as NULL while existing summary, dashboard, Month workflow and
+closed-comparison fields remain available. No failed component becomes zero.
+Database, maintenance and read-only snapshot guard failures still propagate;
+diagnostics record the exception class only, never source payloads or exception text.
 
 External net reuses canonical ExternalFlow portfolio classifications only when
 its dated performance roster exactly matches the included capital-account set.
