@@ -29,6 +29,8 @@ const matches = (item: BrokerSource, original: Original) =>
 export function BrokerSourcesIntake({
   month,
   disabled = false,
+  reportXmlFiles,
+  onXmlFilesChange,
   onSaved,
   onReview,
   onPendingChange,
@@ -36,6 +38,8 @@ export function BrokerSourcesIntake({
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
   disabled?: boolean;
+  reportXmlFiles?: File[];
+  onXmlFilesChange?: (files: File[]) => void;
   onSaved: (file: File, intake: SourceIntake) => void;
   onReview: (id: number) => void;
   onPendingChange?: (pending: boolean) => void;
@@ -111,7 +115,10 @@ export function BrokerSourcesIntake({
         result.items.some((item) => item.kind === "mybroker_xml" && matches(item, original)),
       )
       .map((original) => original.file);
-    if (savedXml.length) setXmlFiles(savedXml);
+    if (savedXml.length) {
+      setXmlFiles(savedXml);
+      onXmlFilesChange?.(savedXml);
+    }
     client.setQueryData(["broker-sources", month.id], result);
     await client.invalidateQueries({ queryKey: ["source-intakes"] });
   }
@@ -333,7 +340,7 @@ export function BrokerSourcesIntake({
           <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
             <legend>{copy.investmentReport}</legend>
             <SourceReportPreviewPanel
-              xmlFiles={xmlFiles}
+              xmlFiles={reportXmlFiles ?? xmlFiles}
               onPendingChange={setProofPending}
               onSaved={() => {
                 void client.invalidateQueries({ queryKey: ["source-returns"] });

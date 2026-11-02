@@ -211,3 +211,14 @@ it("keeps technical source panels collapsed on ordinary entry", async () => {
     screen.getByText("Подробности разбора и сохранение месяца").closest("details"),
   ).not.toHaveAttribute("open");
 });
+
+it("retains historical XML intake behind details without a second investment-report form", async () => {
+  mount("/v2/close?month=12", false, [], false);
+  await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
+  const upload = screen.getByLabelText("XML-файлы");
+  expect(upload).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробности"));
+  expect(upload).toBeVisible();
+  expect(upload).toBeEnabled();
+  expect(screen.queryByLabelText("Загрузить PDF Альфы")).not.toBeInTheDocument();
+});

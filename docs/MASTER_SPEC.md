@@ -67,8 +67,9 @@ Findings are warnings and never create a new Close blocker. Technical source,
 Money, positions, estimates and journal tables stay in collapsed **Подробности**.
 The payout PDF descriptor survives Reload; financial acceptance still needs the exact
 original and explicit selected-row Prepare/Apply. It is separate from the optional
-investment-report PDF below. The details retain saved originals for the
-selected period/account, exceptions, recognized instruments and quantities,
+investment-report PDF below. The details retain the existing XML intake for
+historical/partial originals and exact-original reselection, plus saved originals
+for the selected period/account, exceptions, recognized instruments and quantities,
 corrections, explicit T-Invest preview and the available preliminary result.
 Source-only Save and strict financial Preview/Apply remain distinct internal
 stages. Verified saved uploads can supply the same in-memory original to strict

@@ -8,6 +8,7 @@ import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { BrokerSourcesIntake } from "../components/month-close/BrokerSourcesIntake";
 import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
+import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
 import { ConfirmDialog } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
@@ -46,6 +47,7 @@ export function UiV2MonthSources({
   useEffect(() => {
     if (reviewExpanded) document.getElementById("month-source-review")?.focus();
   }, [reviewExpanded]);
+  const [reportXmlFiles, setReportXmlFiles] = useState<File[]>([]);
   const savedFiles = useRef(new Map<number, File>());
   const savedSources = useRef(new Map<number, SourceIntake>());
   type SourceSelection = { id: number; file?: File; account: string; snapshot: SourceIntake };
@@ -56,10 +58,11 @@ export function UiV2MonthSources({
   );
   const [nextAccount, setNextAccount] = useState<string | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
+  const [historicalUploadPending, setHistoricalUploadPending] = useState(false);
   useEffect(() => {
-    onPendingChange?.(uploadPending);
+    onPendingChange?.(uploadPending || historicalUploadPending);
     return () => onPendingChange?.(false);
-  }, [uploadPending, onPendingChange]);
+  }, [uploadPending, historicalUploadPending, onPendingChange]);
   const [journalDirty, setJournalDirty] = useState(false);
   const [pdfDirty, setPdfDirty] = useState(false);
   useEffect(() => {
@@ -69,6 +72,9 @@ export function UiV2MonthSources({
   const reportDirty = useCallback((dirty: boolean) => setJournalDirty(dirty), []);
   const reportUploadPending = useCallback((pending: boolean) => {
     setUploadPending(pending);
+  }, []);
+  const reportHistoricalPending = useCallback((pending: boolean) => {
+    setHistoricalUploadPending(pending);
   }, []);
   const { command: journalCommand } = useSourceIntakeRecovery();
   // Raw URL values distinguish invalid/duplicate scopes, including A→invalid→A.
@@ -245,6 +251,18 @@ export function UiV2MonthSources({
       setNextSource(target);
     else chooseSource(target);
   }
+  function rememberSource(file: File, intake: SourceIntake) {
+    savedFiles.current.set(intake.id, file);
+    savedSources.current.set(intake.id, intake);
+    // Reselecting this exact original supplies bytes without replacing
+    // the user's unsaved currency/identity form after Reload.
+    const selectedId = client.getQueryData<number>(["source-intake-selection", month.id, account]);
+    if (selectedId === intake.id)
+      setReview((previous) => ({
+        ...previous,
+        selection: { id: intake.id, file, snapshot: intake, preserveDraft: true },
+      }));
+  }
   const renderSources = (items: SourceIntake[], label: string) => (
     <ul className={styles.sources} aria-label={label}>
       {items.map((intake) => (
@@ -285,7 +303,9 @@ export function UiV2MonthSources({
           <div className={styles.actions}>
             <button
               type="button"
-              disabled={changingScope || unresolved || pdfDirty}
+              disabled={
+                changingScope || unresolved || uploadPending || historicalUploadPending || pdfDirty
+              }
               onClick={() => openSource(intake.id)}
             >
               {month.status === "closed" ? "Просмотреть разбор" : "Разобрать и исправить"} #
@@ -357,25 +377,12 @@ export function UiV2MonthSources({
           <BrokerSourcesIntake
             key={month.id}
             month={month}
+            reportXmlFiles={reportXmlFiles}
+            onXmlFilesChange={setReportXmlFiles}
             onDirtyChange={setPdfDirty}
             onPendingChange={reportUploadPending}
-            disabled={unresolved || uploadWouldDiscard}
-            onSaved={(file, intake) => {
-              savedFiles.current.set(intake.id, file);
-              savedSources.current.set(intake.id, intake);
-              // Reselecting this exact original supplies bytes without replacing
-              // the user's unsaved currency/identity form after Reload.
-              const selectedId = client.getQueryData<number>([
-                "source-intake-selection",
-                month.id,
-                account,
-              ]);
-              if (selectedId === intake.id)
-                setReview((previous) => ({
-                  ...previous,
-                  selection: { id: intake.id, file, snapshot: intake, preserveDraft: true },
-                }));
-            }}
+            disabled={unresolved || uploadWouldDiscard || historicalUploadPending}
+            onSaved={rememberSource}
             onReview={openSource}
           />
           <details>
@@ -438,6 +445,23 @@ export function UiV2MonthSources({
                 <Link to="/v2/data/source-intake">общем журнале источников</Link>.
               </p>
             </details>
+            {month.status !== "closed" && (
+              <section aria-label="XML других периодов и повторный выбор оригинала">
+                <h3>XML других периодов и повторный выбор оригинала</h3>
+                <SourceIntakeUpload
+                  key={month.id}
+                  compact
+                  showReports={false}
+                  onFilesChange={setReportXmlFiles}
+                  knownSources={list.data}
+                  onPendingChange={reportHistoricalPending}
+                  disabled={unresolved || uploadWouldDiscard || uploadPending || pdfDirty}
+                  reviewDisabled={unresolved || uploadPending || pdfDirty}
+                  onSaved={rememberSource}
+                  onReview={openSource}
+                />
+              </section>
+            )}
             {list.isPending ? (
               <UiV2Loading label="Читаем источники месяца…" />
             ) : list.isError ? (
@@ -453,7 +477,7 @@ export function UiV2MonthSources({
                   Счёт источника месяца
                   <select
                     aria-label="Счёт источника месяца"
-                    disabled={uploadPending || pdfDirty}
+                    disabled={uploadPending || historicalUploadPending || pdfDirty}
                     value={account}
                     onChange={(event) => {
                       const value = event.target.value;

@@ -88,6 +88,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
       (await request.get(`/api/synthetic-broker-source/workspace-october-${suffix}`)).body(),
     ),
   );
+  await openDisclosure(page, "Подробности");
   await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(
     buffers.map((buffer, i) => ({
       name: `Брокерский 711490${i + 1} (01.01.39-31.10.39).xml`,
@@ -102,6 +103,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
     })),
   );
   await expect(page.getByText(/Брокерский 711490[12].*: Сохран[её]н$/)).toHaveCount(2);
+  await openDisclosure(page, "Подробности сверки XML с инвестиционным отчётом");
   await page.getByText("Расшифровка купонов и дивидендов — PDF Альфы", { exact: true }).click();
   await expect(page.locator('input[type="file"][accept=".xml"]')).toHaveCount(1);
   await page.getByLabel("Загрузить PDF Альфы").setInputFiles({
@@ -128,7 +130,38 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
   expect(writes).toEqual([]);
 });
 
-async function tile(page: Page, name: string) {
+async function openDisclosure(page: Page, name: string) {
+  const summary = page.getByText(name, { exact: true });
+  await expect(summary).toBeVisible();
+  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
+    await summary.click();
+  await expect(summary.locator("..")).toHaveAttribute("open", "");
+}
+
+async function uploadMonthFiles(
+  page: Page,
+  files: { name: string; mimeType: string; buffer: Buffer }[],
+) {
+  const uploaded = page.waitForResponse(
+    (response) =>
+      /\/api\/months\/\d+\/broker-sources$/.test(new URL(response.url()).pathname) &&
+      response.request().method() === "POST",
+  );
+  const input = page.getByLabel("Выбрать файлы", { exact: true });
+  await expect(input).toBeVisible();
+  await expect(input).toBeEnabled();
+  await input.setInputFiles(files);
+  const response = await uploaded;
+  expect(response.ok()).toBe(true);
+  const ack = await response.json();
+  expect(ack.financial_effects).toBe(0);
+  expect(ack.results).toHaveLength(files.length);
+  await expect(input).toBeEnabled();
+  await expect(page.getByText("Проверяем сохранённые файлы…", { exact: true })).toHaveCount(0);
+  return ack;
+}
+
+async function tile(page: Page, name: string | RegExp) {
   await page
     .getByRole("navigation", { name: "Разделы месяца" })
     .getByRole("link", { name })
@@ -176,7 +209,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await open.click();
   await expect(page.getByRole("navigation", { name: "Разделы месяца" })).toBeVisible();
   await expect(page.locator("#month-work-area")).toHaveCount(0);
-  await expect(page.getByLabel("XML-файлы")).toHaveCount(0);
+  await expect(page.getByLabel("Выбрать файлы", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("october-entry.png"), fullPage: true });
 
   await tile(page, /Зарплата и другие доходы/);
@@ -262,7 +295,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
       (await request.get(`/api/synthetic-broker-source/workspace-october-${suffix}`)).body(),
     ),
   );
-  await page.getByLabel("XML-файлы", { exact: true }).setInputFiles([
+  const uploaded = await uploadMonthFiles(page, [
     {
       name: "Брокерский 7114001 (01.10.40-31.10.40).xml",
       mimeType: "application/xml",
@@ -275,8 +308,25 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
       buffer: buffers[1],
     },
   ]);
-  await expect(page.getByText("broken.xml: Не сохранен", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Брокерский 711400[12].*: Сохранен$/)).toHaveCount(2);
+  expect(uploaded.results[1]).toMatchObject({
+    index: 1,
+    item: null,
+    error: { code: expect.any(String) },
+  });
+  expect(uploaded.results.filter((row: { error: unknown }) => row.error === null)).toHaveLength(2);
+  for (const [index, alias] of [
+    [0, "7114001"],
+    [2, "7114002"],
+  ] as const) {
+    expect(uploaded.results[index].item.source_accounts).toEqual([`${alias}-000`]);
+    expect(uploaded.results[index].item.intake_id).toEqual(expect.any(Number));
+  }
+  await expect(
+    page.getByText("Не удалось сохранить файл; проверь его в подробностях.", { exact: true }),
+  ).toBeVisible();
+  const savedFiles = page.getByRole("list", { name: "Сохранённые файлы", exact: true });
+  await expect(savedFiles.getByRole("listitem")).toHaveCount(2);
+  await openDisclosure(page, "Подробности");
   // Upload ACK also retires the pending-write history sentinel. Wait for its
   // asynchronous POP before starting a new account navigation (as after Save).
   await expect
@@ -284,16 +334,23 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     .toBeUndefined();
   for (const alias of ["7114001", "7114002"]) {
     if (alias === "7114002") {
-      await page.getByLabel("XML-файлы", { exact: true }).setInputFiles({
-        name: "Брокерский 7114002 (01.10.40-31.10.40).xml",
-        mimeType: "application/xml",
-        buffer: buffers[1],
-      });
-      await expect(page.getByText(/Брокерский 7114002.*: Сохранен$/)).toBeVisible();
+      const duplicate = await uploadMonthFiles(page, [
+        {
+          name: "Брокерский 7114002 (01.10.40-31.10.40).xml",
+          mimeType: "application/xml",
+          buffer: buffers[1],
+        },
+      ]);
+      expect(duplicate.results[0].duplicate).toBe(true);
+      expect(duplicate.items).toHaveLength(2);
+      await expect(page.getByText("Этот файл уже загружен.", { exact: true })).toBeVisible();
       await expect
         .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
         .toBeUndefined();
-      const uploadedB = page.getByRole("button", { name: /Открыть разбор загрузки #/ });
+      const uploadedB = savedFiles
+        .getByRole("listitem")
+        .filter({ hasText: "Выписка счёта 7114002-000." })
+        .getByRole("button", { name: /^(Исправить|Проверить)$/ });
       await uploadedB.click();
       await expect(
         page.getByRole("alertdialog", { name: "Открыть другую выписку?" }),
@@ -334,6 +391,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
       page.getByText(/Сохранённый результат подтверждён независимым чтением/),
     ).toBeVisible();
     await page.waitForLoadState("networkidle");
+    await openDisclosure(page, "Подробности инструментов и предварительных выплат");
     for (const name of ["Synthetic stock", "Synthetic bond"]) {
       await page.getByRole("button", { name, exact: true }).click();
       await expect(page.getByText(/Наблюдаемое количество: 10 на 2040-10-31/)).toBeVisible();
@@ -481,6 +539,13 @@ for (const width of [1280, 1440, 1920])
       await page.screenshot({ path: info.outputPath("deposit-edit.png"), fullPage: true });
       await table.getByRole("button", { name: "Отмена", exact: true }).click();
       await tile(page, /Брокерские выписки/);
+      const sourceDetails = page.getByText("Подробности", { exact: true });
+      await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
+      await expect(page.getByLabel("Выбрать файлы", { exact: true })).toBeVisible();
+      await fits(page);
+      await sourceDetails.focus();
+      await page.keyboard.press("Enter");
+      await expect(sourceDetails.locator("..")).toHaveAttribute("open", "");
       await expect(page.getByRole("region", { name: "Состояние источников месяца" })).toContainText(
         /Полных месячных оригиналов:/,
       );
