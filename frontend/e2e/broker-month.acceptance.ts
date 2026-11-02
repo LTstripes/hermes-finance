@@ -289,7 +289,9 @@ test("statement returns show native EOD facts, NKD caveat, exact export and stal
   expect(stale.reason_codes).toContain("statement_preview_stale");
   await page.getByRole("button", { name: "Обновить результат" }).click();
   await expect(page.getByText("Недоступна", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Не подтверждён полный список датированных/)).toBeVisible();
+  const missingCrossings = page.getByText(/Не подтверждён полный список датированных/);
+  await expect(missingCrossings).toHaveCount(1);
+  await expect(missingCrossings).toBeVisible();
   await expect(page.getByText("10 280,00 ₽").first()).toBeVisible();
   await page.screenshot({
     path: info.outputPath("statement-return-unavailable-1280-125.png"),

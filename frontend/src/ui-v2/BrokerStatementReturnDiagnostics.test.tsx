@@ -156,9 +156,13 @@ it("shows null with native facts and missing-flow reason, never guessed zero", a
   const user = setup();
   await choose(user);
   expect(await screen.findByText("Недоступна")).toBeVisible();
+  expect(screen.getAllByText(/Не подтверждён полный список датированных/)).toHaveLength(1);
   expect(
-    screen.getByText("Не подтверждён полный список датированных пополнений и выводов счёта."),
+    within(screen.getByRole("list", { name: "Причины недоступности" })).getByText(
+      "Не подтверждён полный список датированных пополнений и выводов счёта.",
+    ),
   ).toBeVisible();
+  expect(screen.getByText(/Фактический S3: Недоступна/)).toBeVisible();
   expect(screen.queryByText("0,00%")).not.toBeInTheDocument();
   expect(
     within(screen.getByRole("list", { name: "Причины недоступности" })).getByText(

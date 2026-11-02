@@ -149,7 +149,6 @@ export function BrokerStatementWhatIfPanel({ actual }: { actual: BrokerStatement
         {actual.status === "unavailable"
           ? "Недоступна"
           : formatStatementPercent(actual.rate_fraction)}
-        . Причины: {actual.reason_codes.map((code) => reasonCopy(code).message).join("; ") || "нет"}
         .
       </p>
       <label>
