@@ -152,9 +152,7 @@ export function useMonthCloseLifecycle(
       if (latest.month.status === "closed") {
         setLifecycleError("Месяц уже закрыт в другой вкладке. Состояние обновлено.");
       } else if (!closeIsAllowed(latest)) {
-        setLifecycleError(
-          "Состояние готовности изменилось. Проверь актуальные блокеры и предупреждения.",
-        );
+        setLifecycleError("Состояние месяца изменилось. Обнови данные и повтори действие.");
       } else {
         setPendingLifecycle("close");
       }
@@ -191,7 +189,7 @@ export function useMonthCloseLifecycle(
         setLifecycleError(
           latest.month.status === "closed"
             ? "Месяц уже закрыт в другой вкладке. Состояние обновлено."
-            : "Состояние готовности изменилось. Проверь актуальные блокеры и предупреждения.",
+            : "Состояние месяца изменилось. Обнови данные и повтори действие.",
         );
         return;
       }

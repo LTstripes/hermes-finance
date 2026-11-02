@@ -372,7 +372,15 @@ def test_broker_month_unsupported_money_partial_draft_blocks_readiness_and_close
     assert not client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
     readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
     assert not readiness["can_close"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert any(
+        item["code"] == "money_semantics_unsupported" and item["severity"] == "hard_blocker"
+        for item in readiness["items"]
+    )
+    before_close = _all_month_tables(database)
+    rejected = client.post(f"/api/months/{intent['reporting_month_id']}/close")
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["error"]["code"] == "money_semantics_unsupported"
+    assert _all_month_tables(database) == before_close
     with database.session_factory() as session:
         assert session.scalar(select(ReportingMonth)).status == "draft"
         assert session.scalar(select(func.count()).select_from(InvestmentCashFlow)) == 0
@@ -472,11 +480,11 @@ def test_broker_month_all_receipts_block_account_preview_get_and_close(database,
     assert clean["can_apply"] and not clean["bookkeeping_ready"]
     assert "optional_evidence_unsupported" in clean["exceptions"]
     readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
-    assert not readiness["can_close"]
+    assert readiness["can_close"]
     assert any(i["code"] == "optional_evidence_unsupported" for i in readiness["items"])
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
     with database.session_factory() as session:
-        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "closed"
         assert session.scalar(select(func.count()).select_from(MyBrokerImport)) == 1
         assert session.scalar(select(func.count()).select_from(CashBalance)) == 1
         assert session.scalar(select(func.count()).select_from(PositionSnapshot)) == 1
@@ -497,6 +505,12 @@ def test_broker_month_changed_projection_atomically_prevents_close(database):
     readback = client.get("/api/broker-months/synthetic-batch").json()
     assert "source_projection_changed" in readback["exceptions"]
     assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+
+    workflow = client.get(f"/api/months/{intent['reporting_month_id']}/close-workflow").json()
+    assert not workflow["readiness"]["can_close"]
+    steps = {step["id"]: step for step in workflow["steps"]}
+    assert steps["readiness"]["state"] == "blocked"
+    assert steps["final_review_close"]["primary_action"] is None
 
 
 @pytest.mark.parametrize("source_first", [True, False])
@@ -579,23 +593,39 @@ def test_broker_month_two_native_ids_with_same_economics_stay_distinct(database)
         assert session.scalar(select(func.count()).select_from(ExecutedTrade)) == 2
 
 
-def test_broker_month_conflicting_later_source_blocks_close_without_rewriting_rows(database):
+@pytest.mark.parametrize("endpoint_only", [False, True])
+def test_broker_month_conflicting_later_source_blocks_close_without_rewriting_rows(
+    database, endpoint_only
+):
     intent = _broker_month_setup(database)
     xml = broker_month_xml()
     client = TestClient(create_app(database=database))
     reviewed = _broker_month_preview(client, intent, xml)
     assert _broker_month_apply(client, intent, reviewed, xml).status_code == 200
     conflicting = xml.replace(b'real_volume="1000.00"', b'real_volume="1000.01"')
+    if endpoint_only:
+        conflicting = positions_only(conflicting)
     with database.session_factory() as session:
         raw = preview(session, conflicting)
         assert raw["can_apply"]
         apply(session, conflicting, raw)
-    assert (
-        "overlapping_endpoint_conflict"
-        in client.get("/api/broker-months/synthetic-batch").json()["exceptions"]
+    readback = client.get("/api/broker-months/synthetic-batch").json()
+    assert "overlapping_endpoint_conflict" in readback["exceptions"]
+    # Endpoint-only conflicts must block even without changed trade evidence.
+    expected_code = (
+        "overlapping_endpoint_conflict" if endpoint_only else "canonical_trade_projection_changed"
     )
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert ("canonical_trade_projection_changed" in readback["exceptions"]) is not endpoint_only
+    assert not client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    before_close = _all_month_tables(database)
+    response = client.post(f"/api/months/{intent['reporting_month_id']}/close")
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == expected_code
+    assert _all_month_tables(database) == before_close
     with database.session_factory() as session:
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
         assert session.scalar(select(PositionSnapshot)).market_value_kopecks == 100000
 
 
@@ -720,10 +750,10 @@ def test_broker_month_balanced_endpoints_do_not_clear_unresolved_trade_principal
         "settlement_principal_unresolved"
         in client.get("/api/broker-months/synthetic-batch").json()["exceptions"]
     )
-    assert not client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+    assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
         "can_close"
     ]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
 
 
 @pytest.mark.parametrize("missing_date", ["save_depo_settlement_date", "save_settlement_date"])
@@ -747,11 +777,11 @@ def test_broker_month_new_trade_missing_settlement_blocks_preview_get_and_close(
     assert "actual_settlement_missing" in readback["exceptions"]
     assert not readback["bookkeeping_ready"]
     readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
-    assert not readiness["can_close"]
+    assert readiness["can_close"]
     assert any(i["code"] == "actual_settlement_missing" for i in readiness["items"])
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
     with database.session_factory() as session:
-        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "closed"
 
 
 def test_broker_month_affirmative_sold_out_position_is_source_zero_not_a_holding(database):
@@ -850,7 +880,7 @@ def test_broker_month_missing_security_inventory_is_not_affirmative_zero(databas
     assert "security_inventory_unproven" in plan["exceptions"]
     assert _broker_month_apply(client, intent, plan, xml).status_code == 200
     assert not client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
 
 
 def positions_only(document: bytes) -> bytes:
@@ -2100,7 +2130,12 @@ def test_stock_fee_invalid_native_material_blocks_without_writes(database, kwarg
                 request_id="stock-invalid-material",
             )
         assert before == _all_month_tables(database)
-    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+    # Unsupported NKD rows remain blocking; incomplete native controls are advisory.
+    expected_close_status = 422 if kwargs.get("nkd") else 200
+    assert (
+        client.post(f"/api/months/{intent.reporting_month_id}/close").status_code
+        == expected_close_status
+    )
 
 
 @pytest.mark.parametrize("failure", ["stale", "rollback", "unproved", "bond_claims", "opaque"])
@@ -2368,7 +2403,7 @@ def test_stock_fee_native_ownership_boundaries_block_apply_and_close(database, s
                 request_id="stock-native-refused",
             )
         assert before == _all_month_tables(database)
-    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+    assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 200
 
 
 def trade_money_xml(
@@ -2506,7 +2541,9 @@ def test_trade_money_reviewed_basis_revision_get_scoped_close_no_double_cash(
         ]
         if prior_month_buy:
             assert initial["trade_choices"][0]["core"]["trade_time"][:10] == "2029-12-31"
-        assert client.post(f"/api/months/{intent.reporting_month_id}/close").status_code == 422
+        assert not client.get(f"/api/months/{intent.reporting_month_id}/close-readiness").json()[
+            "can_close"
+        ]
         requested = _trade_decide(session, intent, originals, inclusive=inclusive)
         plan = preview_money(session, requested, originals)
         assert plan["can_apply"], plan["blockers"]
@@ -3831,13 +3868,13 @@ def test_broker_month_draft_structural_exceptions_preserve_s1_get_replay_close(
         == 200
     )
     readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
-    assert not readiness["can_close"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert readiness["can_close"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
     with database.session_factory() as session:
         source = session.scalar(select(MyBrokerImport))
         assert source.normalized_json == frozen_source_json
         assert source.parser_version == "mybroker-s1-v2"
-        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "closed"
         assert session.scalar(select(CashBalance)).amount_kopecks == 40000
         positions = list(session.scalars(select(PositionSnapshot)))
         assert len(positions) == (2 if bond else 1)
@@ -4329,8 +4366,19 @@ def test_draft_old_s1_receipt_stays_immutable_and_unsafe_overlap_still_blocks_cl
     readback = client.get("/api/broker-months/synthetic-batch").json()
     assert "4_Transfers_unsupported" in readback["exceptions"]
     assert not readback["bookkeeping_ready"]
-    assert client.post(f"/api/months/{scope['reporting_month_id']}/close").status_code == 422
+    # The unsafe original changes accepted trade evidence; this is an integrity
+    # failure, independently of the advisory structural/source findings.
+    assert "canonical_trade_projection_changed" in readback["exceptions"]
+    assert not client.get(f"/api/months/{scope['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
+    before_close = _all_month_tables(database)
+    response = client.post(f"/api/months/{scope['reporting_month_id']}/close")
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "canonical_trade_projection_changed"
+    assert _all_month_tables(database) == before_close
     with database.session_factory() as session:
+        assert session.get(ReportingMonth, scope["reporting_month_id"]).status == "draft"
         source = session.get(MyBrokerImport, accepted_source["import_id"])
         assert (
             source.normalized_json,
@@ -4404,7 +4452,7 @@ def test_draft_consumed_money_cannot_hide_duplicate_or_unrepresentable_amount(da
     assert accepted.status_code == 200, accepted.text
     assert not accepted.json()["bookkeeping_ready"]
     assert len(accepted.json()["accepted"]["document"]["money"]) == 2
-    assert not client.get(f"/api/months/{scope['reporting_month_id']}/close-readiness").json()[
+    assert client.get(f"/api/months/{scope['reporting_month_id']}/close-readiness").json()[
         "can_close"
     ]
     after = _all_month_tables(database)

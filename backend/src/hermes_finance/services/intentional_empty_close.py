@@ -14,6 +14,7 @@ from hermes_finance.persistence import IntentionalEmptyCloseReceipt, ReportingMo
 from hermes_finance.services.reporting_months import (
     CLOSE_EMPTY_MANUAL_MONTH_CODE,
     CloseGuardError,
+    close_completeness_warnings,
     close_hard_guards,
     get_reporting_month,
     reserve_close_writer,
@@ -129,10 +130,10 @@ def close_intentionally_empty_month(
         session.refresh(month)
         if month.status != "draft" or month.source != "manual":
             raise CloseGuardError("empty_close_not_manual_draft", "A MANUAL DRAFT is required", 409)
-        blockers = close_hard_guards(month, session)
-        other = [pair for pair in blockers if pair[0] != CLOSE_EMPTY_MANUAL_MONTH_CODE]
-        if other:
-            raise CloseGuardError(*other[0])
+        guards = close_hard_guards(month, session)
+        if guards:
+            raise CloseGuardError(*guards[0])
+        blockers = close_completeness_warnings(month, session)
         current = empty_close_identity(session, month)
         supplied = EmptyCloseIdentity.model_validate(
             command.model_dump(include=set(EmptyCloseIdentity.model_fields))

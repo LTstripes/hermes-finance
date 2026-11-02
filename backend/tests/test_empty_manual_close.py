@@ -99,26 +99,25 @@ def clone_templates(session, family="all", amount=12345):
 
 @pytest.mark.parametrize("family", ["all", "income", "expense", "saving"])
 @pytest.mark.parametrize("amount", [0, 12345])
-def test_real_clone_templates_block_readiness_and_authoritative_close(db, family, amount):
+def test_real_clone_templates_remain_unconfirmed_after_close(db, family, amount):
     with db.session_factory() as session:
         target = clone_templates(session, family, amount)
         target_id = target.id
         assert not has_month_actual_facts(session, target)
-        assert not build_close_readiness(session, target_id, today=date(2030, 2, 28)).can_close
-        with pytest.raises(CloseGuardError) as error:
-            close_reporting_month(session, target_id)
-        assert error.value.code == "empty_manual_month"
+        assert build_close_readiness(session, target_id, today=date(2030, 2, 28)).can_close
+
     with TestClient(create_app(db)) as client:
         readiness = client.get(f"/api/months/{target_id}/close-readiness").json()
-        assert not readiness["can_close"]
+        assert readiness["can_close"]
         assert "empty_manual_month" in [item["code"] for item in readiness["items"]]
         workflow = client.get(f"/api/months/{target_id}/close-workflow").json()
-        assert not workflow["readiness"]["can_close"]
+        assert workflow["readiness"]["can_close"]
         blocked = client.post(f"/api/months/{target_id}/close")
-        assert blocked.status_code == 422
-        assert blocked.json()["error"]["code"] == "empty_manual_month"
+        assert blocked.status_code == 200
+        assert blocked.json()["status"] == "closed"
     with db.session_factory() as session:
-        assert session.get(ReportingMonth, target_id).status == "draft"
+        assert session.get(ReportingMonth, target_id).status == "closed"
+        assert not has_month_actual_facts(session, session.get(ReportingMonth, target_id))
 
 
 @pytest.mark.parametrize("family", ["income", "expense", "saving"])
@@ -225,10 +224,10 @@ def test_http_clone_confirmation_requires_amount_and_preserves_zero(db, family):
         url = f"/api/{path}/{row_id}"
         note = client.patch(url, json={"notes": "Still a template"})
         assert note.status_code == 200, note.text
-        assert not client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
+        assert client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
         invalid = client.patch(url, json={field: {"amount": "-1.00", "currency": "RUB"}})
         assert invalid.status_code == 422
-        assert not client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
+        assert client.get(f"/api/months/{month_id}/close-readiness").json()["can_close"]
         confirmed = client.patch(url, json={field: {"amount": "0.00", "currency": "RUB"}})
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()[field]["amount"] == "0.00"
@@ -481,12 +480,14 @@ def test_empty_header_notes_plan_catalogue_forecast_and_source_journal_are_not_a
         save_intake(session, document=fixture(), filename=FILENAME, request_id="journal-only")
         before = economic_counts(session)
         assert not has_month_actual_facts(session, month)
-        with pytest.raises(CloseGuardError) as error:
-            close_reporting_month(session, month.id)
-        assert error.value.code == "empty_manual_month"
-        assert economic_counts(session) == before
+        assert close_reporting_month(session, month.id).status == "closed"
+        # The lifecycle change appends one existing source-proof ABA token only.
+        assert economic_counts(session) == {
+            **before,
+            "source_return_proof_dependencies": before["source_return_proof_dependencies"] + 1,
+        }
         session.refresh(month)
-        assert month.status == "draft"
+        assert month.status == "closed"
 
 
 def test_net_zero_postings_are_presence_not_a_zero_total(db):
@@ -584,7 +585,7 @@ def test_reopen_clone_delete_cannot_inherit_consent_but_receipt_survives(db):
         )
         assert clone.status == "draft" and not has_month_actual_facts(session, clone)
         reopened = reopen_reporting_month(session, month.id)
-        assert not build_close_readiness(session, reopened.id, today=DAY).can_close
+        assert build_close_readiness(session, reopened.id, today=DAY).can_close
         assert close_intentionally_empty_month(session, month.id, command).id == receipt.id
         assert reopened.status == "draft"  # replay ACK never executes Close again
         stale = command.model_copy(update={"request_id": "new-key"})
@@ -592,8 +593,6 @@ def test_reopen_clone_delete_cannot_inherit_consent_but_receipt_survives(db):
             close_intentionally_empty_month(session, month.id, stale)
         with pytest.raises(CloseGuardError):
             close_intentionally_empty_month(session, clone.id, stale)
-        with pytest.raises(CloseGuardError):
-            close_reporting_month(session, reopened.id)
         delete_reporting_month(session, reopened.id)
         assert read_intentional_empty_close(session, month.id, command.request_id).id == receipt.id
 
@@ -624,14 +623,12 @@ def test_other_guards_rechecked_inside_writer(db, monkeypatch):
             return (("source_receipt_changed", "Source receipt changed"),)
 
         monkeypatch.setattr(broker_months, "broker_month_close_blockers", source_blocker)
-        assert not build_close_readiness(session, month.id, today=DAY).intentional_empty_close[
+        assert build_close_readiness(session, month.id, today=DAY).intentional_empty_close[
             "eligible"
         ]
-        with pytest.raises(CloseGuardError) as error:
-            close_intentionally_empty_month(session, month.id, command)
-        assert error.value.code == "source_receipt_changed"
-        assert month.status == "draft"
-        assert session.scalar(select(func.count()).select_from(IntentionalEmptyCloseReceipt)) == 0
+        close_intentionally_empty_month(session, month.id, command)
+        assert month.status == "closed"
+        assert session.scalar(select(func.count()).select_from(IntentionalEmptyCloseReceipt)) == 1
 
 
 def test_duplicate_concurrent_command_has_one_audit(db):
@@ -748,7 +745,7 @@ def test_accepted_canonical_source_actuals_count_only_while_current(database, fa
         assert not has_month_actual_facts(session, month)
 
 
-def test_real_source_obligation_blocks_intentional_close_and_http(database):
+def test_real_source_obligation_is_retained_after_intentional_close_and_http(database):
     from test_statement_import_mybroker import FILENAME, fixture
 
     from hermes_finance.services.source_intake import PENDING, save_intake
@@ -765,21 +762,26 @@ def test_real_source_obligation_blocks_intentional_close_and_http(database):
             reporting_month_id=month.id,
         )
         readiness = build_close_readiness(session, month.id, today=DAY)
-        assert not readiness.can_close
-        assert not readiness.intentional_empty_close["eligible"]
+        assert readiness.can_close
+        assert readiness.intentional_empty_close["eligible"]
         assert PENDING in [item.code for item in readiness.items]
         before = economic_counts(session)
-        with pytest.raises(CloseGuardError) as error:
-            close_intentionally_empty_month(session, month.id, command)
-        assert error.value.code != "empty_manual_month"
+        close_intentionally_empty_month(session, month.id, command)
         with TestClient(create_app(database)) as client:
             response = client.post(
                 f"/api/months/{month.id}/close-intentionally-empty",
                 json=command.model_dump(mode="json"),
             )
-            assert response.status_code == 422
-        assert economic_counts(session) == before
-        assert session.scalar(select(func.count()).select_from(IntentionalEmptyCloseReceipt)) == 0
+            assert response.status_code == 200
+        # The lifecycle change appends one existing source-proof ABA token only.
+        assert economic_counts(session) == {
+            **before,
+            "source_return_proof_dependencies": before["source_return_proof_dependencies"] + 1,
+        }
+        assert session.scalar(select(func.count()).select_from(IntentionalEmptyCloseReceipt)) == 1
+        assert PENDING in [
+            item.code for item in build_close_readiness(session, month.id, today=DAY).items
+        ]
 
 
 def test_unsaved_fact_cannot_satisfy_close(db):
@@ -847,16 +849,12 @@ def test_http_matrix_typed_errors_readonly_workflow_and_lost_ack(db, monkeypatch
     app = create_app(db)
     with TestClient(app) as client:
         readiness = client.get(f"/api/months/{month_id}/close-readiness").json()
-        assert not readiness["can_close"]
+        assert readiness["can_close"]
         option = readiness["intentional_empty_close"]
         assert option["eligible"]
         workflow = client.get(f"/api/months/{month_id}/close-workflow").json()
-        assert not workflow["readiness"]["can_close"]
+        assert workflow["readiness"]["can_close"]
         assert "empty_manual_month" in workflow["readiness"]["reason_codes"]
-        blocked = client.post(f"/api/months/{month_id}/close")
-        assert (
-            blocked.status_code == 422 and blocked.json()["error"]["code"] == "empty_manual_month"
-        )
         payload = {k: v for k, v in option.items() if k != "eligible"} | {
             "reason": "Intentionally empty",
             "request_id": "http-1",

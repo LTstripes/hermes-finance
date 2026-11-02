@@ -1,7 +1,7 @@
 """Read-only monthly close readiness (R07-04 / issue #136).
 
 Readiness is advisory. Authoritative close remains ``POST /api/months/{id}/close``.
-``can_close`` is derived only from hard guards that close already enforces.
+Completeness findings remain warnings before and after Close (#1010).
 This module does not call providers, write provenance, or invent required fields.
 """
 
@@ -36,7 +36,11 @@ from hermes_finance.services.freshness_provenance import (
 )
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.payout_calendar import PayoutCalendarSource, merged_payout_calendar
-from hermes_finance.services.reporting_months import close_hard_guards, get_reporting_month
+from hermes_finance.services.reporting_months import (
+    close_completeness_warnings,
+    close_hard_guards,
+    get_reporting_month,
+)
 from hermes_finance.services.salary import salary_tax_snapshot_for_month
 from hermes_finance.services.salary_tax_context import SalaryTaxHistoryIncompleteError
 
@@ -142,14 +146,22 @@ def _one_year_after(day: date) -> date:
         return day.replace(year=day.year + 1, month=2, day=28)
 
 
-def _hard_blocker_items(month, session: Session) -> list[CloseReadinessItem]:
+def _completeness_items(month, session: Session) -> list[CloseReadinessItem]:
+    warnings = close_completeness_warnings(month, session)
+    guards = close_hard_guards(month, session)
+    guard_codes = {code for code, _ in guards}
+    findings = warnings + tuple(pair for pair in guards if pair[0] not in {c for c, _ in warnings})
     return [
         _item(
-            severity=CloseReadinessSeverity.HARD_BLOCKER,
+            severity=(
+                CloseReadinessSeverity.HARD_BLOCKER
+                if code in guard_codes
+                else CloseReadinessSeverity.WARNING
+            ),
             code=code,
             message=message,
         )
-        for code, message in close_hard_guards(month, session)
+        for code, message in findings
     ]
 
 
@@ -422,7 +434,7 @@ def build_close_readiness(
 
     with session.no_autoflush:
         month = get_reporting_month(session, month_id)
-        items = _hard_blocker_items(month, session)
+        items = _completeness_items(month, session)
         items.extend(_salary_tax_items(session, month))
         items.extend(_active_account_snapshot_items(session, month))
         if month.snapshot_date is not None:
@@ -450,7 +462,11 @@ def build_close_readiness(
 
 
 def _empty_close_option(session, month, items):
-    if not any(item.code == CloseReadinessCode.EMPTY_MANUAL_MONTH for item in items):
+    if (
+        month.status != "draft"
+        or month.snapshot_date is None
+        or not any(item.code == CloseReadinessCode.EMPTY_MANUAL_MONTH for item in items)
+    ):
         return None
     from hermes_finance.services.intentional_empty_close import POLICY_VERSION, empty_close_identity
 

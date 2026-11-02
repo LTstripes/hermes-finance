@@ -68,6 +68,7 @@ function setup(path = "/v2/close") {
     finalizeWrite: null as null | ((status: "closed" | "draft") => void),
     persistedResponse: null as null | ((status: ReportingMonthStatus) => ReportingMonth),
     lostAck: false,
+    failedWrite: false,
     failedReads: false,
     failedStatus: 503,
   };
@@ -96,6 +97,11 @@ function setup(path = "/v2/close") {
     const lifecycleMatch = /^\/api\/months\/(\d+)\/(close|reopen)$/.exec(url.pathname);
     if (lifecycleMatch && method === "POST") {
       state.writes.push(lifecycleMatch[2]);
+      if (state.failedWrite)
+        return jsonResponse(
+          { error: { code: "internal_error", message: "Synthetic storage failure", details: [] } },
+          500,
+        );
       const expectedStatus = lifecycleMatch[2] === "close" ? "closed" : "draft";
       state.workflow =
         expectedStatus === "closed"
@@ -589,5 +595,71 @@ describe("native Monthly Close work mode", () => {
     ).toBeVisible();
     expect(screen.queryByRole("button", { name: "Закрыть месяц" })).toBeNull();
     expect(state.writes).toEqual([]);
+  });
+
+  it("closes with source warnings and unfinished steps and retains them after reload", async () => {
+    const { mount, state, client } = setup("/v2/close?month=12&panel=close");
+    state.workflow = readyForClose();
+    state.workflow.progress.completed_or_skipped = 0;
+    state.workflow.readiness.warning_count = 2;
+    state.workflow.readiness.reason_codes = [
+      "source_intake_pending",
+      "active_account_snapshot_missing",
+    ];
+    if (!state.workflow.final_review.available) throw new Error("Synthetic review missing");
+    state.workflow.final_review.close_readiness.items = [
+      {
+        code: "source_intake_pending",
+        severity: "warning",
+        message: "Выписка ещё не сверена.",
+        context: {},
+      },
+      {
+        code: "active_account_snapshot_missing",
+        severity: "warning",
+        message: "Не все остатки заполнены.",
+        context: {},
+      },
+    ];
+    const future = state.workflow.steps.find((step) => step.id === "future_payouts");
+    if (!future) throw new Error("Synthetic payout step missing");
+    future.state = "warning";
+    future.completion_basis = null;
+    const view = mount();
+    const close = await screen.findByRole("button", { name: "Закрыть месяц" });
+    expect(close).toBeEnabled();
+    expect(screen.getAllByText("Выписка ещё не сверена.")[0]).toBeVisible();
+    expect(screen.getByText(/Закрытие не подтверждает полноту данных/)).toBeVisible();
+    expect(screen.queryByText(/Подтверждено шагов/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Закрыть намеренно пустой период…" })).toBeNull();
+    fireEvent.click(close);
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    await screen.findByRole("button", { name: "Открыть месяц заново" });
+    expect(state.writes).toEqual(["close"]);
+    view.unmount();
+    client.clear();
+    mount();
+    await screen.findByRole("button", { name: "Открыть месяц заново" });
+    expect(screen.getAllByText("Не все остатки заполнены.")[0]).toBeVisible();
+    expect(screen.getByText("Месяц закрыт по вашему решению. Замечания сохранены.")).toBeVisible();
+    expect(
+      state.workflow.steps.find((step) => step.id === "future_payouts")?.completion_basis,
+    ).toBeNull();
+    expect(state.writes).toEqual(["close"]);
+  });
+
+  it("does not show successful Close when saving fails", async () => {
+    const { mount, state } = setup("/v2/close?month=12&panel=close");
+    state.workflow = readyForClose();
+    state.failedWrite = true;
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Внутренняя ошибка приложения");
+    expect(screen.getByRole("button", { name: "Проверить состояние месяца" })).toBeVisible();
+    expect(state.workflow.month.status).toBe("draft");
+    expect(screen.queryByRole("button", { name: "Открыть месяц заново" })).toBeNull();
+    expect(screen.queryByText("Месяц закрыт по вашему решению. Замечания сохранены.")).toBeNull();
+    expect(state.writes).toEqual(["close"]);
   });
 });

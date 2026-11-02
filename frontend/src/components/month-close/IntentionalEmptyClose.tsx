@@ -272,6 +272,8 @@ export function IntentionalEmptyClose({
     }
   }
 
+  if (!available && !pending && !error && !outcome && !option) return null;
+
   return (
     <section aria-label="Намеренно пустой период">
       {available && !pending && !blocked.current ? (

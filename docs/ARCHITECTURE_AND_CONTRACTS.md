@@ -1445,24 +1445,60 @@ V1 durable intake is not an implemented versioned reparse engine. Preserve exact
 
 An intact original, S1 source acceptance, journal capture, financial DRAFT, independent readback and Close are different stages. Preview is zero-write. Preserve frozen bytes/hash/parser/authority filename, every source occurrence ordinal and the complete observed set. Journal-only Save adds zero economic effects and does not persist raw XML. Financial Apply revalidates dependencies inside its one reserved transaction. ACK followed by failed GET is GET-only recovery; uncertain ACK is not proof of success or failure.
 
-Close classification is precise: required month/snapshot geometry and date rules, existing financial conflicts and applicable unresolved source/intake/receipt guards are blocking. An ordinary active-account snapshot absence is a nonblocking warning with a partial known subtotal. Stale valuation is freshness, not missing source coverage. Cash-boundary/in-kind/performance prerequisites remain separate; Close does not attest them. Bound intake obligations survive defer/unbind/rebind and forbid delete→recreate erasure. Unknown section economics never becomes a zero movement.
+<a id="c3-user-close-warnings"></a>
+### User-decided Close and completeness warnings (#1010)
+
+[Owner decision #1010](https://github.com/LTstripes/hermes-finance/issues/1010):
+ordinary Close may be requested at any time for the selected DRAFT. Missing
+snapshot dates, empty/manual or incomplete source data, unresolved controls,
+incomplete source/intake/receipt evidence, missing T-Invest forecasts and unfinished
+workflow steps are warnings, never prerequisites for Close. Both Close commands
+reserve the SQLite writer, refresh loaded dependencies and recheck persisted source
+authority under that reservation before committing. Conflicting source endpoints,
+changed accepted financial projections, invalid receipt/journal chains and
+incompatible or deferred current journal identities remain errors: a strict
+receipt cannot launder the current journal choice. Unsupported monetary semantics
+(`money_semantics_unsupported`) also remain blocking; incomplete evidence does not
+waive this financial guarantee. A lost accepted finance link requires a fresh
+explicit link even after financial ABA; a missing first link is a completeness
+warning. Concurrent journal/financial writes must finish before these checks, and
+failures roll back
+the entire command. Wrong identity, pending unsaved ORM mutations and technical
+storage failures also remain errors. Failed or uncertain writes
+never prove success: the UI confirms the exact status by independent GET and uses
+GET-only recovery after an uncertain acknowledgement.
+
+Close records the user decision, not an attestation of accuracy or completeness.
+It neither confirms templates/legacy UNKNOWN nor writes missing economic facts,
+zeros, source acceptance or reconciliation evidence. Readiness and closed workflow
+continue to derive the same findings from retained data; only the Close action is
+completed by the status transition. Unfinished provider/check stages keep their
+actual state and evidence. Corrections use existing editors after explicit Reopen;
+there is no parallel completeness ledger. Bound intake obligations survive
+unbind/rebind, and financial Apply, source acceptance, cash-boundary/in-kind and
+performance eligibility retain their independent authority requirements.
+Stale valuation remains freshness, distinct from missing source coverage.
 
 ### Source-owned payout Close boundary (#711)
 
 The [0066 contract](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6408677266),
 [qualification](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6408766906)
 and [retirement amendment](https://github.com/LTstripes/hermes-finance/issues/711#issuecomment-6409530686)
-add a pure predicate to the existing shared broker-month Close guard. Only an
+add a pure predicate to the shared broker-month completeness findings. Under
+[the current Close policy](#c3-user-close-warnings), these findings are warnings. Only an
 accepted source economic DRAFT with a current Money coupon/dividend and unresolved
 persisted competing future forecast creates this obligation. All forecast versions
 are examined. UI flags, a manual source label and journal unbinding cannot bypass it.
-Existing stale-source guards retain their authority.
+Existing stale-source findings retain their source-authority meaning.
 
 New reasons are `source_payout_identity_unresolved`,
 `source_payout_settlement_stale` and `source_payout_duplicate_claim`.
-Manual-only, source-only/provisional, unrelated and CLOSED scopes, absent forecasts
-and missing provider responses do not acquire this additional hard blocker.
-Readiness and reserved authoritative Close use the same coherent offline predicate.
+Manual-only, source-only/provisional and unrelated scopes, absent forecasts and
+missing provider responses do not acquire this additional finding. Existing
+unresolved competitors of that month's own actuals retain their unknown state in
+CLOSED calendar reads. Later actuals do not reinterpret unrelated earlier CLOSED
+forecast projections; accepted paid-copy projections keep their existing authority.
+Readiness uses the coherent offline predicate before and after Close.
 Normal Close preserves settlement; Reopen changes the dependency generation.
 
 The Month panel uses offline `payout-obligations`, `payout-preview`,
@@ -1497,39 +1533,23 @@ semantics; explicit zero income create/update remains a saved fact.
 Migration `0064_month_template_provenance` adds nullable origin columns without
 backfilling or changing amounts. Legacy NULL/unknown versions cannot establish
 actual presence for these three families: their old writer did not distinguish
-cloned settings from confirmed facts. A legacy MANUAL DRAFT with only those rows
-therefore needs explicit amount confirmation, another accepted fact, or the
-existing intentional-empty command. This is no inference from `received_at`,
+cloned settings from confirmed facts. Those rows remain unconfirmed until explicit
+amount confirmation; an intentional-empty receipt records intent, not actual
+facts. This is no inference from `received_at`,
 amount or recurrence, and does not reinterpret CLOSED history or totals.
 
-No actual facts yields hard blocker `empty_manual_month` in `close_hard_guards`,
-readiness, workflow/Final Review and ordinary HTTP Close. Partial months retain
-the previous completeness warnings; XML and all-account snapshots are optional.
-Existing CLOSED history and non-MANUAL policies are unchanged. Both Close commands
-reserve the existing SQLite writer, refresh cached dependencies and repeat all
-guards before commit. Pending unsaved ORM edits are rejected; they cannot become
-saved facts as a side effect of Close.
+Under [the current Close policy](#c3-user-close-warnings), no actual facts yields
+warning `empty_manual_month` before and after Close. The presence/provenance rules
+above identify this gap without preventing ordinary Close or confirming templates.
 
-Readiness additively exposes nullable `intentional_empty_close`: exact `month_id`,
-`year`, calendar `month`, `snapshot_date`, `expected_identity`, the typed command
-`close_intentionally_empty_manual_month`, policy `intentional_empty_manual_month_v1`
-and `eligible`. Ordinary `can_close` stays false. Eligibility means only the empty
-guard has an alternative; other blockers still require resolution. The identity
-digest binds the persisted header incarnation/revision (including creation/update
-times, source/status/period bounds) and latest successful empty-Close receipt, plus the existing request database/restore
-epoch. Process restart, database replacement and restore retire uncommitted tokens;
-original-intent receipt readback remains durable.
-It is not an economic completeness attestation. Header ABA, Reopen and clone
-retire confirmation; newly present facts and source guards are re-read under the
-writer even when the header identity has not changed.
-
-`POST /api/months/{id}/close-intentionally-empty` accepts that exact identity,
-command/policy version, a unique `request_id` and a nonblank reason (1–2000 chars).
-It bypasses only `empty_manual_month`. Wrong/stale identity, a non-MANUAL DRAFT,
-new actual facts or any other hard guard rejects atomically. Normal empty Close
-returns HTTP 422 with typed `error.code=empty_manual_month`; identity/fact/request
-conflicts return 409. Invalid command/reason fields return the existing 422 envelope.
-The existing ordinary Close request/response shape is retained.
+The existing `close-intentionally-empty` command and immutable receipts remain
+compatible for existing callers and recovery. Readiness may expose its exact
+period/header identity for an empty MANUAL DRAFT with a snapshot date. This is
+optional; ordinary Close needs no reasoned empty-period command. The legacy command
+still checks its typed identity, reason, request key and actual-fact absence under
+the writer, but completeness findings do not prevent it. Invalid/stale intent and
+newly present facts remain command errors. Ordinary Close keeps its request and
+response shape.
 
 A successful intentional Close atomically changes status and appends one
 `intentional_empty_close_receipts` audit: request/digest, exact period and expected
@@ -1546,16 +1566,10 @@ POST retry returns the same immutable receipt without another Close or audit;
 reusing a key for different intent conflicts. A receipt's `result_status=closed`
 is the historical command result, not the current month status after Reopen or
 deletion. Re-read month/readiness separately; new Close requires fresh consent.
-The Month final review uses this typed command through a separate reason/period
-confirmation; it never automatically falls back from ordinary Close. Server
-eligibility and all hard blockers are reread before confirmation and dispatch.
-The exact immutable request is stored in browser session storage before POST;
-unavailable storage prevents dispatch. Pending/lost ACK, failed receipt/current
-month readback and Back/Reload allow only GET recovery with the same request ID.
-A missing receipt alone does not authorize another POST. Only a typed definitive
-command rejection retires the failed intent. Receipt identity/reason/policy and
-current month identity/status must match before reporting success; historical
-receipt after Reopen never recloses the month. Owner Test UAT is a separate gate.
+The Month final review offers ordinary Close with warnings. It retains recovery
+of previously stored intentional-empty requests by the existing receipt GET and
+current-month readback; those pending intents are never silently replayed or
+replaced. Historical receipt status after Reopen never recloses the month.
 
 Migration `0063_intentional_empty_close` adds only an initially empty audit table,
 index and immutability triggers. It does not reinterpret/backfill historical months,
@@ -1696,7 +1710,8 @@ classified as either new safe pattern.
 Both classifications derive zero movements. Connection times are validated but
 not returned, constrained to the reporting month or used as transaction dates;
 period scope and coverage remain unknown. The envelope retains S1 source warnings
-and does not disposition any source/account/Close blockers. Money daily controls,
+and does not disposition source/account findings. See the
+[Close policy](#c3-user-close-warnings). Money daily controls,
 unknown economics, REPO and unexpected UFSR/Transfers remain unresolved. Any
 consumer authority to relax a specific section blocker needs a separate decision
 and review; this classifier grants none.
@@ -1883,7 +1898,7 @@ payout or ledger. A source evidence reference is required; an entered reference
 or matching equation alone is not independent brokerage fee-basis proof.
 Unknown dividends, opaque Money and unsupported source sections remain
 visible scoped exceptions. An incomplete DRAFT is allowed; unresolved
-evidence blocks its covered account at Close.
+evidence remains a warning under [the Close policy](#c3-user-close-warnings).
 
 The [incomplete DRAFT identity separation](#c4-mybroker_identity-7-incomplete-draft-structural-separation)
 allows only server-validated Positions/Money structural side branches to remain
@@ -2005,12 +2020,12 @@ leaf or hidden identity still fails the exact structural checks. This proof alon
 does not establish intake finance-link authority or financial completeness.
 
 GET reads the accepted immutable S1 source and current authority/projection under
-one snapshot. Readiness and reserved server Close share the same source checks:
-all positions and cash must still match, mappings/source authority must remain
-valid, intersecting evidence must have no material unresolved conflicts. Receipt-derived hard
-guards apply to accounts explicitly covered by source-owned receipts. Independent
-bound-intake guards also apply before any financial receipt, under the C3 journal contract;
-unrelated account/manual behavior remains outside those scoped obligations.
+one snapshot. Readiness and reserved server Close share the same source checks;
+[the Close policy](#c3-user-close-warnings) separates incomplete evidence from lost
+persisted authority. Accepted positions/cash and mappings/source authority are
+rechecked for accounts covered by source-owned receipts; bound intake retains its
+independent journal/finance-link authority. Unrelated account/manual behavior
+remains outside those scoped obligations.
 Supplied optional evidence remains attached to its receipt. Source/control and
 authority failures are recomputed rather than frozen: successful compatible
 canonical enrichment clears its temporary projection blocker. Preview and GET
@@ -2020,8 +2035,9 @@ ordinary months keep existing behavior. Account readiness does not attest whole
 portfolio coverage: `coverage_state=unknown`, exact XIRR/TWRR remain unavailable.
 
 Optional documents are absent by default. Supplied documents without an accepted
-typed reader are hashed and disclosed as `optional_evidence_unsupported`, blocking
-Close rather than producing guessed corroboration. Dedicated optional adapters
+typed reader are hashed and disclosed as `optional_evidence_unsupported`, a
+completeness warning under [the Close policy](#c3-user-close-warnings). They never
+produce guessed corroboration. Dedicated optional adapters
 remain deferred. The desktop route currently accepts the original XML only.
 
 Migration 0057 adds an empty append-only ownership receipt table with source/month/
@@ -2158,7 +2174,7 @@ compatibility as well as the source-fact refusal.
 | Broker reconciliation / statement preparation | Nullable local evidence preserved; old component-based linking/apply checks unchanged |
 | Quote preview/apply, position/payout manual CRUD | Native facts cannot be overwritten; quote preview excludes native totals |
 | Month clone | Native EOD positions are not carried to a different source date; actual payouts were never cloned |
-| Monthly Close | Existing global workflow and other-account/nonbroker blockers remain; no new source-only readiness exemption |
+| Monthly Close | See [user-decided Close](#c3-user-close-warnings); source authority remains separate |
 | Exact valuation / class eligibility / XIRR normal and historical fallback | Native totals do not establish exact economic basis or promote solver quality |
 
 No new source completeness assertion or source Close orchestration is supplied.
@@ -2660,8 +2676,8 @@ or financial acceptance. Values are never interpreted, summed or substituted.
 The envelope reports `financial_authority=none` and unresolved tax/Money
 classifications. S1 parser, normalized JSON, fingerprints, source warnings and
 legacy receipts stay unchanged; `unparsed_source_rows` remains a source exception
-and a server GET/Close blocker. Unknown tax/bond NKD, fee basis, native cash and
-settlement ownership retain their existing controls. Real scratch, Apply and
+in server GET and [Close warnings](#c3-user-close-warnings). Unknown tax/bond NKD,
+fee basis, native cash and settlement ownership retain their existing controls. Real scratch, Apply and
 independent GET/UAT require their separate Owner gates.
 
 
@@ -2757,8 +2773,8 @@ under its single writer reservation. New card/mapping IDs feed that same atomic
 source-DRAFT transaction; official provenance is retained in its receipt. No
 metadata-only commit or partial financial posting is added. Independent GET and
 acknowledged-commit GET-only recovery remain the existing session flow; committed
-same-key replay does not require the transient public cache. Unknown Money still
-blocks Close/returns under the existing contracts.
+same-key replay does not require the transient public cache. Unknown Money retains
+its returns eligibility limits and [Close warnings](#c3-user-close-warnings).
 
 Scope: one original per existing review session; the existing <=8-document batch
 preflight stays advisory and unchanged. Navigation retains the original under the
@@ -9234,7 +9250,10 @@ Opening gross учитывается ровно один раз.
 
 Само наличие строки `reporting_month` со статусом `draft` не доказывает, что отсутствие `SALARY` означает известный ноль: данные могли быть ещё не внесены.
 
-Для закрытого месяца сумма `SALARY gross` определяется как сумма всех его `IncomeType.SALARY` entries. Если таких entries нет, это считается **известным нулём**, потому что `closed` является явным пользовательским подтверждением завершённости месяца.
+Для закрытого месяца известная сумма `SALARY gross` требует сохранённых
+`IncomeType.SALARY` entries с `actual_fact_origin=saved_actual_v1`, в том числе
+явно записанного нуля. Отсутствие таких записей оставляет историю неполной:
+[Close не подтверждает полноту данных](#c3-user-close-warnings).
 
 Если ранее закрытый месяц сделан `reopen` и снова имеет статус `draft`, он немедленно перестаёт быть known month для расчётов последующих месяцев. До повторного `close` ненулевой salary-tax расчёт, зависящий от него, обязан возвращать `salary_tax_history_incomplete`.
 
@@ -10335,7 +10354,7 @@ components.
 
 | Rule family | Emitted code(s) | Predicate and evidence | Accepted source |
 | --- | --- | --- | --- |
-| Close guard | Existing hard-guard code, currently `snapshot_date_required` | The authoritative close-readiness contract returns a hard blocker. | #136 `close_readiness` / `close_hard_guards` |
+| Close completeness | Existing reason codes, including `snapshot_date_required` | Advisory under the [Close policy](#c3-user-close-warnings). | `close_readiness` / `close_completeness_warnings` |
 | Important freshness | Existing warning reason code, for example `quote_stale`, `quote_unavailable`, or `mapped_quote_not_applied` | A #139 family reason has warning severity. Informational missing-data reasons do not become warnings. | #139 `freshness_provenance` |
 | Payout reconciliation | `unresolved_payout_reconciliation` | The accepted merged payout calendar has a positive unresolved manual/provider reconciliation count. This is an advisory warning and does not change close behavior. | #136/#137 `close_readiness` and `merged_payout_calendar` |
 | Cash-flow concentration | `upcoming_payout_concentration`, `redemption_concentration` | The top accepted dated payout or redemption item is at least `50.00%` of that metric's exact denominator. Redemption remains principal. Approximate or degraded source data downgrades the item to `info`. | #137/#169 `risk_allocation` |
@@ -12146,7 +12165,7 @@ retired proof and requires current exact evidence under the existing rules.
 The guided Month consumer evaluates active legacy APP/ECF links separately from
 actual settlement currentness. APP-only settlement needs no ECF; retained retired
 links are not active legacy dependencies. Unresolved actual competitors retain
-an advisory reconciliation warning without extending the hard Close scope.
+an advisory reconciliation warning under [the Close policy](#c3-user-close-warnings).
 
 R1 acceptance → R2 retirement → R3 reaffirmation preserves R1.retired_request_id=R2;
 R3 binds that exact terminal predecessor and retirement. LIVE replacement stamps

@@ -296,13 +296,12 @@ function ReadinessDetails({
       <div className="final-review__status-grid">
         <DataValue
           label="Закрытие"
-          value={review.close_readiness.can_close ? "Можно закрыть" : "Есть блокеры"}
+          value={review.month_header.status === "closed" ? "Месяц закрыт" : "По вашему решению"}
         />
-        <DataValue label="Блокеров" value={itemsBySeverity("hard_blocker").length} />
         <DataValue label="Предупреждений" value={itemsBySeverity("warning").length} />
         <DataValue
           label="Свежесть"
-          value={review.freshness_summary.available ? "Проверена" : "Недоступна"}
+          value={review.freshness_summary.available ? "Есть результаты" : "Недоступна"}
           meta={
             review.freshness_summary.evaluated_on
               ? `На ${formatDate(review.freshness_summary.evaluated_on)}`

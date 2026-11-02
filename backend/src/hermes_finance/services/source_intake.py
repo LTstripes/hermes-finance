@@ -572,6 +572,36 @@ def _link_authority(session, original, state, request_id):
     }
 
 
+def _close_integrity_reasons(session, original, state, link, events, month_id):
+    from hermes_finance.services import broker_month_journal as journal
+
+    if link is not None:
+        return set()
+    reasons = set()
+    if any(row.operation == "finance_link" for row in events):
+        # Changed decisions and financial ABA retire explicit acceptance,
+        # even if the economic values have since become equal again.
+        reasons.add(PENDING)
+    for receipt in session.scalars(
+        select(BrokerMonthApply)
+        .join(MyBrokerImport, MyBrokerImport.id == BrokerMonthApply.import_id)
+        .where(
+            BrokerMonthApply.reporting_month_id == month_id,
+            BrokerMonthApply.account_id == state["account_id"],
+            MyBrokerImport.document_sha256 == original.document_sha256,
+        )
+    ):
+        if journal.kind(receipt) != journal.SOURCE:
+            continue
+        try:
+            _link_authority(session, original, state, receipt.request_id)
+        except MyBrokerError as error:
+            # A strict receipt cannot launder a different/deferred current
+            # journal identity or a changed persisted projection.
+            reasons.add(str(error))
+    return reasons
+
+
 def _assessment(proposal, state, head_seq, override_revision):
     from hermes_finance.services.public_security_registry import current_denomination_observation
 
@@ -729,7 +759,9 @@ def _view(session, original, *, include_money_classifications=True):
         "financial_authority": "none",
         "finance_link": link,
         "bookkeeping_ready": bool(link) and not reasons,
-        "can_close": bool(link) and not reasons,
+        "can_close": not _close_integrity_reasons(
+            session, original, state, link, events, state["reporting_month_id"]
+        ),
         "history": [
             {
                 "seq": r.seq,
@@ -927,9 +959,8 @@ def apply_review(
         raise
 
 
-def scoped_status(session, month_id, account_id=None):
-    """One resolver used by Close, completeness and actual-return consumers."""
-    ids = set(
+def _scoped_ids(session, month_id, account_id=None):
+    return set(
         session.scalars(
             select(SourceIntakeRevision.original_id).where(
                 SourceIntakeRevision.reporting_month_id == month_id,
@@ -941,6 +972,36 @@ def scoped_status(session, month_id, account_id=None):
             )
         )
     )
+
+
+def close_integrity_guards(session, month_id):
+    """A missing first link is advisory; a lost accepted link cannot be reused."""
+    reasons = set()
+    for intake_id in sorted(_scoped_ids(session, month_id)):
+        try:
+            original = session.get(SourceIntakeOriginal, intake_id)
+            view = _view(session, original)
+            reasons.update(
+                _close_integrity_reasons(
+                    session,
+                    original,
+                    view["state"],
+                    view["finance_link"],
+                    _events(session, intake_id),
+                    month_id,
+                )
+            )
+        except (MyBrokerError, ValueError, KeyError, TypeError):
+            reasons.add("source_intake_journal_invalid")
+    return tuple(
+        (code, "MyBroker: сохранённая привязка источника требует новой сверки.")
+        for code in sorted(reasons)
+    )
+
+
+def scoped_status(session, month_id, account_id=None):
+    """One resolver used by Close, completeness and actual-return consumers."""
+    ids = _scoped_ids(session, month_id, account_id)
     reasons, accounts, heads = set(), set(), []
     for intake_id in sorted(ids):
         try:

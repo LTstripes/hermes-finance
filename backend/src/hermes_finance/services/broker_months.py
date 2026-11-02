@@ -859,14 +859,14 @@ def _uncached_account_readiness(session, month_id, account_id):
 
 
 def broker_month_close_blockers(session, month_id):
-    """One shared pure read for readiness and reserved authoritative Close."""
+    """Retained source findings for advisory readiness, including CLOSED history."""
     from hermes_finance.services.actual_payouts import close_blockers
 
     result = list(close_blockers(session, month_id))
     from hermes_finance.services.source_intake import scoped_status
 
     for code in scoped_status(session, month_id)["reason_codes"]:
-        result.append((code, "Сохранённый разбор MyBroker требует сверки с принятым DRAFT."))
+        result.append((code, "Выписка ещё не сверена с данными месяца."))
     for receipt in session.scalars(
         select(BrokerMonthApply)
         .where(BrokerMonthApply.reporting_month_id == month_id)
@@ -887,6 +887,32 @@ def broker_month_close_blockers(session, month_id):
             if pair not in result:
                 result.append(pair)
     return tuple(result)
+
+
+def broker_month_close_integrity_guards(session, month_id):
+    """Recheck persisted writer authority; missing source evidence stays advisory."""
+    from hermes_finance.services.source_intake import close_integrity_guards
+
+    integrity_codes = {
+        "money_semantics_unsupported",
+        "overlapping_endpoint_conflict",
+        "source_projection_changed",
+        "source_authority_changed",
+        "accepted_mapping_changed",
+        "account_binding_changed",
+        "instrument_metadata_changed",
+        "broker_month_receipt_invalid",
+        "canonical_trade_projection_changed",
+        "canonical_trade_authority_unavailable",
+        "source_disposition_changed",
+        "section_authority_chain_conflict",
+    }
+    # Use the same source predicate as advisory reads, while the caller holds
+    # the writer. Do not promote incomplete controls or unresolved payouts.
+    findings = broker_month_close_blockers(session, month_id)
+    return tuple(pair for pair in findings if pair[0] in integrity_codes) + close_integrity_guards(
+        session, month_id
+    )
 
 
 def read_broker_month(session, request_id):

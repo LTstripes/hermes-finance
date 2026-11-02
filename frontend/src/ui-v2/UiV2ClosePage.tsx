@@ -434,15 +434,13 @@ export default function UiV2ClosePage() {
                     />
                     <p>
                       {closed
-                        ? "Данные зафиксированы"
-                        : `Подтверждено шагов: ${workflow.progress.completed_or_skipped} из ${workflow.progress.total_applicable}`}{" "}
-                      ·{" "}
-                      {workflow.readiness.can_close
-                        ? "Готов к закрытию"
-                        : `Требует внимания: ${workflow.readiness.hard_blocker_count}`}
+                        ? "Месяц закрыт по вашему решению. Замечания сохранены."
+                        : "Можно закрыть с предупреждениями. Закрытие не подтверждает полноту данных."}
                     </p>
                     {workflow.final_review.close_readiness.items
-                      .filter((item) => item.severity === "hard_blocker")
+                      .filter(
+                        (item) => item.severity === "hard_blocker" || item.severity === "warning",
+                      )
                       .map((item) => (
                         <p role="status" key={`${item.code}:${item.message}`}>
                           {closeOwnerCopy(item.message)}
@@ -467,12 +465,7 @@ export default function UiV2ClosePage() {
                     key={`${selectedMonth.id}:${selectedMonth.snapshot_date}`}
                     month={selectedMonth}
                     onPendingChange={setEmptyClosePending}
-                    available={Boolean(
-                      workflowIdentityMatches &&
-                        workflowReady &&
-                        !closed &&
-                        workflow.readiness.reason_codes.includes("empty_manual_month"),
-                    )}
+                    available={false}
                   />
                 ) : null}
                 <details>
@@ -568,7 +561,7 @@ export default function UiV2ClosePage() {
         danger={pendingLifecycle === "close"}
         description={
           pendingLifecycle === "close"
-            ? "Зафиксировать данные выбранного месяца?"
+            ? "Закрыть выбранный месяц с текущими данными? Замечания сохранятся. Для исправлений можно открыть месяц заново."
             : "Открыть месяц для исправлений?"
         }
         onCancel={cancelLifecycle}

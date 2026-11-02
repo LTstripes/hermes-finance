@@ -71,7 +71,10 @@ test("ui-v2 final review keeps broker blockers, evidence and keyboard details @v
     await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
     await expect(
       page.getByRole("region", { name: "Рабочая область: Закрыть месяц" }),
-    ).toContainText(`Требует внимания: ${items.length}`);
+    ).toContainText("Готовность, свежесть и источники");
+    await expect(
+      page.getByText("Предупреждений", { exact: true }).locator("..").locator("strong"),
+    ).toHaveText("0");
     await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
     const summary = page.getByText("Показать причины и диагностику", { exact: true });
     const details = summary.locator("..");

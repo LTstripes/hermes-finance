@@ -462,7 +462,6 @@ def test_scoped_close_future_unknown_paid_and_closed_preservation(database, sett
     from hermes_finance.persistence import ReportingMonth
     from hermes_finance.services.actual_payouts import close_blockers
     from hermes_finance.services.reporting_months import (
-        CloseGuardError,
         close_reporting_month,
         create_reporting_month,
     )
@@ -478,10 +477,9 @@ def test_scoped_close_future_unknown_paid_and_closed_preservation(database, sett
                 str(r.event_date) for r in session.scalars(select(InvestmentCashFlow))
             ],
         }
-        before = database_bytes(database)
-        with pytest.raises(CloseGuardError):
-            close_reporting_month(session, intent["reporting_month_id"])
-        assert database_bytes(database) == before
+        assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+            "can_close"
+        ]
         manual = create_reporting_month(
             session, year=2030, month=3, snapshot_date=date(2030, 3, 31)
         )
@@ -1108,7 +1106,7 @@ def test_selected_forecast_month_reopen_before_first_link_invalidates_preview(da
 
 @pytest.mark.parametrize("operation", ["link", "retire"])
 @pytest.mark.parametrize("settlement", ["near"], indirect=True)
-def test_reserved_close_race_cannot_commit_closed_unresolved_settlement(
+def test_user_close_race_preserves_settlement_and_closed_write_guard(
     database, settlement, operation
 ):
     from threading import Barrier
@@ -1145,21 +1143,18 @@ def test_reserved_close_race_cannot_commit_closed_unresolved_settlement(
         closed, result = list(pool.map(write, ["close", "settlement"]))
     with database.session_factory() as session:
         rows = list(session.scalars(select(AppliedPayoutReconciliation)))
-        assert len(rows) == 1
-        if closed == "closed":
-            assert rows[0].retired_request_id is None
-            assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "closed"
-            assert actual_payouts.future_states(session, intent["reporting_month_id"]) == {
-                ("ecf", intent["expected_cash_flow_id"]): "paid"
-            }
-            if operation == "retire":
-                assert "payout_involved_scope_requires_reopen" in result
-                assert session.get(BrokerMonthApply, "racing-settlement") is None
-        else:
-            assert isinstance(result, dict)
-            assert "source_payout_" in closed
-            assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "draft"
+        assert closed == "closed"
+        assert session.get(ReportingMonth, intent["reporting_month_id"]).status == "closed"
+        if isinstance(result, dict):
+            assert len(rows) == 1
             assert (rows[0].retired_request_id is not None) == (operation == "retire")
+        else:
+            assert "payout_involved_scope_requires_reopen" in result
+            assert session.get(BrokerMonthApply, "racing-settlement") is None
+            assert len(rows) == (1 if operation == "retire" else 0)
+        states = actual_payouts.future_states(session, intent["reporting_month_id"])
+        paid = bool(rows) and rows[0].retired_request_id is None
+        assert (states.get(("ecf", intent["expected_cash_flow_id"])) == "paid") == paid
 
 
 @pytest.mark.parametrize(
@@ -1793,3 +1788,34 @@ def test_retired_closed_ecf_requires_current_currency_and_horizon(database, sett
     get = client.get("/api/broker-months/eligibility-R1").json()
     assert get["accepted"] == r1["accepted"]
     assert get["relations"][0]["retired_request_id"] == "eligibility-R2"
+
+
+@pytest.mark.parametrize("settlement", ["near"], indirect=True)
+def test_unresolved_source_payout_warning_survives_user_close(database, settlement):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+    from hermes_finance.services.actual_payouts import future_states
+
+    client, intent = settlement
+    month_id = intent["reporting_month_id"]
+    before = client.get(f"/api/months/{month_id}/close-readiness").json()
+    assert any(
+        item["code"] == "source_payout_identity_unresolved" and item["severity"] == "warning"
+        for item in before["items"]
+    )
+    response = client.post(f"/api/months/{month_id}/close")
+    assert response.status_code == 200, response.text
+    with TestClient(create_app(database)) as reloaded:
+        current = reloaded.get(f"/api/months/{month_id}/close-readiness").json()
+        assert current["status"] == "closed"
+        assert any(
+            item["code"] == "source_payout_identity_unresolved" and item["severity"] == "warning"
+            for item in current["items"]
+        )
+    with database.session_factory() as session:
+        assert list(session.scalars(select(AppliedPayoutReconciliation))) == []
+        assert (
+            future_states(session, month_id)[("ecf", intent["expected_cash_flow_id"])]
+            == "unresolved"
+        )

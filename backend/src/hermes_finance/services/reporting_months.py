@@ -18,7 +18,7 @@ class ClosedReportingMonthError(ValueError):
 
 
 CLOSE_SNAPSHOT_DATE_REQUIRED_CODE = "snapshot_date_required"
-CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE = "snapshot_date is required before closing a reporting month"
+CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE = "Дата снимка не указана; часть итогов недоступна."
 CLOSE_EMPTY_MANUAL_MONTH_CODE = "empty_manual_month"
 CLOSE_EMPTY_MANUAL_MONTH_MESSAGE = "В ручном месяце нет сохранённых финансовых фактов."
 
@@ -30,30 +30,35 @@ class CloseGuardError(ValueError):
         super().__init__(message)
 
 
-def close_hard_guards(
+def close_completeness_warnings(
     reporting_month: ReportingMonth, session: Session | None = None
 ) -> tuple[tuple[str, str], ...]:
-    """Return ``(code, message)`` pairs that the authoritative close already rejects.
-
-    Manual DRAFTs require at least one actual saved fact (#952). Legacy account
-    completeness remains advisory; source-owned readiness is still mandatory.
-    """
-    snapshot_date = getattr(reporting_month, "snapshot_date", None)
-    if snapshot_date is None:
-        return ((CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE),)
+    """Read existing completeness findings without attesting or changing any facts."""
+    warnings = []
+    if getattr(reporting_month, "snapshot_date", None) is None:
+        warnings.append((CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE))
     if session is not None:
         from hermes_finance.services.broker_months import broker_month_close_blockers
         from hermes_finance.services.month_actual_facts import has_month_actual_facts
 
-        blockers = list(broker_month_close_blockers(session, reporting_month.id))
+        warnings.extend(broker_month_close_blockers(session, reporting_month.id))
         if (
-            reporting_month.status == ReportingMonthStatus.DRAFT.value
-            and reporting_month.source == ReportingMonthSource.MANUAL.value
+            reporting_month.source == ReportingMonthSource.MANUAL.value
             and not has_month_actual_facts(session, reporting_month)
         ):
-            blockers.append((CLOSE_EMPTY_MANUAL_MONTH_CODE, CLOSE_EMPTY_MANUAL_MONTH_MESSAGE))
-        return tuple(blockers)
-    return ()
+            warnings.append((CLOSE_EMPTY_MANUAL_MONTH_CODE, CLOSE_EMPTY_MANUAL_MONTH_MESSAGE))
+    return tuple(warnings)
+
+
+def close_hard_guards(
+    reporting_month: ReportingMonth, session: Session | None = None
+) -> tuple[tuple[str, str], ...]:
+    """Reject lost persisted authority, independently of advisory completeness."""
+    if session is None:
+        return ()
+    from hermes_finance.services.broker_months import broker_month_close_integrity_guards
+
+    return broker_month_close_integrity_guards(session, reporting_month.id)
 
 
 def _period_bounds(year: int, month: int) -> tuple[date, date]:
