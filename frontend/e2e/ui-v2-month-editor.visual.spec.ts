@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { makeUiV2Workflow } from "../src/test/uiV2Fixtures";
 import { event, ISIN, source } from "../src/test/sourceInstrumentFixtures";
+import { makeUiV2Workflow } from "../src/test/uiV2Fixtures";
 
 const closed = {
   id: 7,
@@ -1062,6 +1062,12 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     );
   expect(order.indexOf("brokers")).toBeLessThan(order.indexOf("positions"));
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  const instrumentDetails = page.getByText("Подробности инструментов и предварительных выплат", {
+    exact: true,
+  });
+  await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
+  await instrumentDetails.click();
+  await expect(instrumentDetails.locator("..")).toHaveAttribute("open", "");
   await page.getByText("Наблюдения выплат источника", { exact: true }).click();
   await expect(page.getByRole("region", { name: "Наблюдения выплат источника" })).toContainText(
     "Налог: неизвестен",
@@ -1084,11 +1090,14 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     fullPage: true,
   });
   await page.reload();
+  await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
+  await instrumentDetails.click();
+  await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
   await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
   expect(previewBodies).toHaveLength(1);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
-  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await page.getByLabel("Сохранённый разбор").selectOption("1");
   await page.getByLabel("Валюта предложения счёта").fill("RUB");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
@@ -1099,7 +1108,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await page.goBack();
   await expect(page).toHaveURL(/panel=brokers/);
-  await page.getByText("Исправления и сохранение месяца", { exact: true }).click();
+  await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
@@ -1108,7 +1117,9 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     "1 720",
   );
   await expect(page.locator("#month-draft-payouts")).toBeVisible();
-  await expect(page.getByText("Исправления и сохранение месяца", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Подробности разбора и сохранение месяца", { exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("month-saved-draft-payouts.png"),
@@ -1128,6 +1139,8 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  await instrumentDetails.click();
+  await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
   expect(previewBodies).toHaveLength(1);
   expect(writes).toEqual(["/api/source-returns/payout-preview"]);
@@ -1205,6 +1218,11 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/close?month=7&panel=brokers");
+    const sourceDetails = page.getByText("Подробности", { exact: true });
+    await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
+    await sourceDetails.focus();
+    await page.keyboard.press("Enter");
+    await expect(sourceDetails.locator("..")).toHaveAttribute("open", "");
     await expect(
       page.getByRole("list", { name: "Источники и исключения месяца" }).getByRole("listitem"),
     ).toHaveCount(1);

@@ -23,27 +23,60 @@ async function monthPanel(page: Page, panel: "brokers" | "payouts" | "close") {
 async function uploadOriginal(
   page: Page,
   file: { name: string; mimeType: string; buffer: Buffer },
+  historical = false,
 ) {
   if (
     !new URL(page.url()).searchParams.has("panel") ||
     new URL(page.url()).searchParams.get("panel") !== "brokers"
   )
     await monthPanel(page, "brokers");
-  const uploaded = page.waitForResponse(
-    (r) => r.url().endsWith("/api/broker-months/intakes") && r.request().method() === "POST",
-  );
-  await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(file);
-  const ack = await (await uploaded).json();
-  const review = page.getByRole("button", {
-    name: `Открыть разбор загрузки #${ack.intake_id}`,
-    exact: true,
-  });
-  await expect(review).toBeEnabled();
-  await review.click();
+  let intakeId: number;
+  if (historical) {
+    await openDisclosure(page, "Подробности");
+    const uploaded = page.waitForResponse(
+      (r) => r.url().endsWith("/api/broker-months/intakes") && r.request().method() === "POST",
+    );
+    await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(file);
+    const response = await uploaded;
+    expect(response.ok()).toBe(true);
+    intakeId = (await response.json()).intake_id;
+    await page
+      .getByRole("button", { name: `Открыть разбор загрузки #${intakeId}`, exact: true })
+      .click();
+  } else {
+    const uploaded = page.waitForResponse(
+      (r) =>
+        /\/api\/months\/\d+\/broker-sources$/.test(new URL(r.url()).pathname) &&
+        r.request().method() === "POST",
+    );
+    const input = page.getByLabel("Выбрать файлы", { exact: true });
+    await expect(input).toBeVisible();
+    await expect(input).toBeEnabled();
+    await input.setInputFiles(file);
+    const response = await uploaded;
+    expect(response.ok()).toBe(true);
+    const ack = await response.json();
+    expect(ack.financial_effects).toBe(0);
+    expect(ack.results).toHaveLength(1);
+    expect(ack.results[0].error).toBeNull();
+    intakeId = ack.results[0].item.intake_id;
+    expect(intakeId).toEqual(expect.any(Number));
+    // The saved-source list identifies this exact original even when two
+    // uploads have the same account. Opening it carries the retained File.
+    await openDisclosure(page, "Подробности");
+    const review = page.getByRole("button", {
+      name: `Разобрать и исправить #${intakeId}`,
+      exact: true,
+    });
+    await expect(review).toBeEnabled();
+    await review.click();
+  }
   const changeSource = page.getByRole("button", { name: "Открыть выписку", exact: true });
   if (await changeSource.isVisible()) await changeSource.click();
+  await showSourceReview(page);
   await page.getByRole("button", { name: "Проверить изменения", exact: true }).click();
 }
+
 function expectFinancialInventoryUnchanged(
   actual: { table_digests: Record<string, string> },
   before: { table_digests: Record<string, string> },
@@ -53,13 +86,18 @@ function expectFinancialInventoryUnchanged(
       expect(actual.table_digests[name], name).toBe(digest);
   }
 }
-async function showSourceReview(page: Page) {
-  const summary = page.getByText("Исправления и сохранение месяца", { exact: true });
+async function openDisclosure(page: Page, name: string) {
+  const summary = page.getByText(name, { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
+  await expect(summary.locator("..")).toHaveAttribute("open", "");
+}
+async function showSourceReview(page: Page) {
+  await openDisclosure(page, "Подробности разбора и сохранение месяца");
 }
 async function selectSourceAccount(page: Page, value: string) {
+  await openDisclosure(page, "Подробности");
   await page.getByLabel("Счёт источника месяца", { exact: true }).selectOption(value);
   const confirm = page.getByRole("button", { name: "Сменить счёт", exact: true });
   if (await confirm.isVisible()) await confirm.click();
@@ -67,6 +105,7 @@ async function selectSourceAccount(page: Page, value: string) {
 async function reloadWorkspace(page: Page) {
   await page.reload();
   if (new URL(page.url()).searchParams.get("panel") === "brokers") {
+    await openDisclosure(page, "Подробности");
     await showSourceReview(page);
   }
 }
@@ -114,6 +153,10 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   const sources = page.getByRole("region", { name: "Брокерские выписки", exact: true });
   await expect(sources.getByRole("heading", { name: "Брокерские выписки" })).toBeVisible();
   await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toBeHidden();
+  await expect(sources.getByText("Подробности", { exact: true }).locator("..")).not.toHaveAttribute(
+    "open",
+  );
+  await openDisclosure(page, "Подробности");
   await expect(sources.getByText(/Для выбранного счёта выписок этого периода нет/)).toBeVisible();
   const manual = async () =>
     Promise.all(
@@ -158,6 +201,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
         row.opening_date === "2035-09-30" && row.closing_date === "2035-10-31",
     ),
   ).toEqual([]);
+  await openDisclosure(page, "Подробности предварительного результата");
   const monthlyReturn = page.getByRole("region", { name: "Предварительная доходность месяца" });
   const unavailable = monthlyReturn.getByText(/нет доказанных границ этого месяца/);
   await expect(unavailable).toBeVisible();
@@ -170,6 +214,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await expect(missingClosing).toHaveText(
     "Нет полного месячного оригинала. Нужны остатки на 2035-10-31; историческое пересечение не доказывает конец месяца.",
   );
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   const instruments = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(instruments.getByText("RU000A000000 · Акция")).toBeVisible();
   await expect(instruments.getByText("RU000A000001 · Облигация")).toBeVisible();
@@ -191,6 +236,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   ).toBeVisible();
   await expect(instruments.getByText(/^Источник:.*количество: 10 на 2035-09-30/)).toBeVisible();
   await selectSourceAccount(page, "7113502");
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await dates.selectOption("2035-09-30");
   await expect(instruments.getByText(/Наблюдаемое количество: 25 на 2035-09-30/)).toBeVisible();
   await page.goBack();
@@ -198,6 +244,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await page.goBack();
   await expect(picker).toHaveValue("7113501");
   await reloadWorkspace(page);
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await expect(picker).toHaveValue("7113501");
   await expect(dates).toHaveValue("2035-09-30");
   await expect(
@@ -549,7 +596,13 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   expect((await replay.json()).duplicate).toBe(true);
   await reloadWorkspace(page);
   await monthPanel(page, "brokers");
-  await expect(page.getByText(/Сохранённые источники доступны для чтения/)).toBeVisible();
+  await showSourceReview(page);
+  await expect(
+    page.getByText(
+      "Месяц закрыт. Доступно чтение сохранённого источника; импорт его не изменяет.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(page.getByLabel("Оригинальный XML MyBroker")).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("closed-1280.png"), fullPage: true });
 
@@ -968,7 +1021,7 @@ test("exceptions-first known account needs only original plus explicit source-DR
     if (/\/api\/broker-months\/[A-Za-z0-9_-]+$/.test(r.url()) && r.method() === "GET") reads++;
   });
   await page.goto("/v2/close?month=8&step=final_review_close");
-  await uploadOriginal(page, file);
+  await uploadOriginal(page, file, true);
   await expect(page.getByText(/Период XML не совпадает с открытым DRAFT/)).toBeVisible();
   await expect(page.getByLabel("Брокерский счёт", { exact: true })).toHaveValue("");
   await page.screenshot({
@@ -1484,7 +1537,12 @@ test("durable full source observations survive reload and reviewed currency over
   let savePosts = 0;
   page.on("request", (req) => {
     if (req.method() === "POST" && req.url().endsWith("/api/broker-months/apply")) economicPosts++;
-    if (req.method() === "POST" && req.url().endsWith("/api/broker-months/intakes")) savePosts++;
+    if (
+      req.method() === "POST" &&
+      (req.url().endsWith("/api/broker-months/intakes") ||
+        /\/api\/months\/\d+\/broker-sources$/.test(new URL(req.url()).pathname))
+    )
+      savePosts++;
   });
   await page.goto(`/v2/close?month=${month.id}&step=final_review_close`);
   await uploadOriginal(page, file);
@@ -1709,6 +1767,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(page.getByText(/Снимок 01.06.2034/)).toBeVisible();
   await monthPanel(page, "brokers");
   const sourcePanel = page.getByRole("region", { name: "Брокерские выписки", exact: true });
+  await openDisclosure(page, "Подробности");
   let failedRead = false;
   await page.route(/\/api\/broker-months\/intakes\/\d+$/, async (route) => {
     if (!failedRead && route.request().method() === "GET") {
@@ -1769,6 +1828,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     .locator("..");
   await expect(position.getByText("Количество: 2 → 2", { exact: true })).toBeVisible();
   await page.goBack();
+  await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
   await page.getByRole("link", { name: /Снимок и общие данные/ }).click();
   await page.getByLabel("Дата снимка", { exact: true }).fill("2034-05-31");
@@ -1877,7 +1937,9 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(page.getByText(/Переключение счёта отложено/)).toContainText("8562034");
   await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue(String(sourceB.id));
   await expect(journal.getByLabel("Валюта предложения счёта")).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Бумаги и выплаты" })).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Бумаги и выплаты", includeHidden: true }),
+  ).toHaveCount(0);
   await page
     .locator("#month-source-review")
     .screenshot({ path: info.outputPath("month-scope-pending-history-get-1440.png") });

@@ -14,10 +14,10 @@ import {
   type StatementRow,
 } from "../api/statementImport";
 import type { Account, Instrument } from "../api/types";
-import type { AlfaStatementTransientOutcome } from "./month-close/statementOutcome";
 import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { fromKopecks } from "../lib/money";
+import type { AlfaStatementTransientOutcome } from "./month-close/statementOutcome";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type StatementDecision = {
@@ -254,6 +254,8 @@ function readyForBulkSelect(row: StatementRow, target: StatementTargetPeriod | n
 }
 
 type Props = {
+  /** Exact original supplied by the unified month upload. Remount for a new file. */
+  initialFile?: File;
   accounts: Account[];
   instruments: Instrument[];
   readOnly?: boolean;
@@ -282,6 +284,7 @@ type Props = {
 };
 
 export function StatementImportPanel({
+  initialFile,
   accounts,
   instruments,
   readOnly = false,
@@ -293,7 +296,7 @@ export function StatementImportPanel({
   onApplyingChange,
 }: Props) {
   const target: StatementTargetPeriod | null = targetPeriod;
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(initialFile ?? null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({});
   const [instrumentMappings, setInstrumentMappings] = useState<Record<string, string>>({});
@@ -715,17 +718,19 @@ export function StatementImportPanel({
           повторного открытия месяца.
         </div>
       ) : null}
-      <div className="editor-grid">
-        <Field htmlFor="statement-file" label="PDF отчёта Alfa">
-          <input
-            id="statement-file"
-            type="file"
-            accept="application/pdf"
-            disabled={applying}
-            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
-          />
-        </Field>
-      </div>
+      {!initialFile && (
+        <div className="editor-grid">
+          <Field htmlFor="statement-file" label="PDF отчёта Alfa">
+            <input
+              id="statement-file"
+              type="file"
+              accept="application/pdf"
+              disabled={applying}
+              onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+            />
+          </Field>
+        </div>
+      )}
       <div className="toolbar">
         <Button onClick={() => void inspect()} disabled={busy || !file}>
           Проверить отчёт

@@ -41,6 +41,8 @@ type Upload = {
 /** Shared multi-file source-only intake. No identity acceptance or financial Apply. */
 export function SourceIntakeUpload({
   compact = false,
+  showReports = true,
+  onFilesChange,
   onPendingChange,
   onSaved,
   onReview,
@@ -49,6 +51,8 @@ export function SourceIntakeUpload({
   disabled = false,
 }: {
   compact?: boolean;
+  showReports?: boolean;
+  onFilesChange?: (files: File[]) => void;
   onPendingChange?: (value: boolean) => void;
   onSaved?: (file: File, intake: SourceIntake) => void;
   onReview?: (intakeId: number) => void;
@@ -268,20 +272,25 @@ export function SourceIntakeUpload({
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             setPreviewFiles(files);
+            onFilesChange?.(files);
             event.target.value = "";
             void upload(files);
           }}
         />
       </label>
-      <SourceReportPreviewPanel
-        xmlFiles={previewFiles}
-        onPendingChange={setProofPending}
-        onSaved={() => {
-          void client.invalidateQueries({ queryKey: ["source-returns"] });
-          void client.invalidateQueries({ queryKey: ["returns"] });
-        }}
-      />
-      <SavedInvestmentReports />
+      {showReports && (
+        <>
+          <SourceReportPreviewPanel
+            xmlFiles={previewFiles}
+            onPendingChange={setProofPending}
+            onSaved={() => {
+              void client.invalidateQueries({ queryKey: ["source-returns"] });
+              void client.invalidateQueries({ queryKey: ["returns"] });
+            }}
+          />
+          <SavedInvestmentReports />
+        </>
+      )}
       <details className={styles.note}>
         <summary>Подробнее о сохранении выписок</summary>
         <p>

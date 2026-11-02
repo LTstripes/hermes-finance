@@ -2248,6 +2248,45 @@ The public lookup remains opt-in/session-local; journal reads never fetch data.
 <a id="c3-source_intake-8-api-and-transaction-boundaries"></a>
 #### API and transaction boundaries
 
+The month-level broker-file facade is `POST /api/months/{month_id}/broker-sources`
+(multipart `files`, `request_id`) and `GET` on the same path. Each file keeps its
+own existing Save transaction; a rejected sibling does not roll back successful
+files. XML requires an exact calendar-month original. XML `source_accounts` lists
+the exact distinct native row `acc_code` identities from positions, RUB cash,
+Money and trades; only an original with no observed row account falls back to
+its filename alias. No suffix is added, removed or inferred. This presentation
+does not equate filename and row identities or change their mapping requirements.
+Duplicate discovery revalidates the existing original identity and attachment,
+with no no-op revision or classification refresh. GET reconstructs the result
+from the journal without financial writes. `file_saved`, `needs_decision` and `financial_data_accepted`
+remain distinct; confirmation findings are warnings, never new Close blockers.
+The facade also accepts the existing depository income-payment PDF family using
+the same Inspect/Prepare services. All parsed payment dates must be known and
+inside the selected month; a foreign period or unsupported PDF fails only that
+file. The stored interval is the observed payment-date range, never invented
+calendar coverage or a declared report period. No account or mapping is inferred.
+
+For this facade only, explicit source-only Save may append a bounded PDF descriptor
+in the existing source_intake_revisions journal (source_intake_v1 envelope, manifest
+operation, pdf_descriptor contract broker_income_pdf_v1). It stores SHA-256, byte
+length, filename digest, target month, native depository-account references, payment
+date range and normalized row fingerprints/counts. It has no XML original, observation,
+financial binding, currency policy or money amounts. Raw PDF, extracted text, original
+filename/path and beneficiary details remain forbidden. The descriptor does not enter
+XML review, estimates or Close guards and creates no additional storage or ledger.
+Its envelope/digest and document identity are rechecked; a duplicate cannot rebind or
+append a no-op revision. CLOSED rejects Save under the same writer reservation.
+
+GET reconstructs PDF progress without the original and without writes. It reports
+financial_data_accepted only when all stored row fingerprints are covered by active
+statement events for the exact document and month whose linked cash flows still
+match accepted statement revisions. Partial acceptance, revision, retraction or stale
+links cannot become full acceptance. Intake does not run Apply or retain transient
+mappings. The existing explicit selected-row /statement-import/prepare and /apply
+protocols still require the original; their financial authority and atomic guards
+are unchanged. GET includes filename_digest alongside document_sha256 so a lost
+upload response can be resolved against the same original identity.
+
 All routes are under `/api/broker-months/intakes`:
 
 | Route | Effect |

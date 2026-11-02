@@ -15,6 +15,7 @@ from hermes_finance.api.broker_identity_mappings import (
     router as broker_identity_mappings_router,
 )
 from hermes_finance.api.broker_months import router as broker_months_router
+from hermes_finance.api.broker_sources import router as broker_sources_router
 from hermes_finance.api.broker_statement_provisional import (
     router as broker_statement_provisional_router,
 )
@@ -194,6 +195,7 @@ def create_app(
     application.include_router(mybroker_import_router)
     application.include_router(mybroker_preflight_router)
     application.include_router(broker_months_router)
+    application.include_router(broker_sources_router)
     application.include_router(source_intake_result_router)
     application.include_router(source_instrument_returns_router)
     application.include_router(source_payout_preview_router)

@@ -1,4 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+async function openDisclosure(page: Page, name: string) {
+  const summary = page.getByText(name, { exact: true });
+  await expect(summary).toBeVisible();
+  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
+    await summary.click();
+  await expect(summary.locator("..")).toHaveAttribute("open", "");
+}
 
 test("API Decimal boundary rates render identically in Month and Returns after Back/Reload", async ({
   page,
@@ -36,6 +44,7 @@ test("API Decimal boundary rates render identically in Month and Returns after B
   ]) {
     fraction = value;
     await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
+    await openDisclosure(page, "Подробности предварительного результата");
     const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
     await expect(card).toContainText(expected);
     await card.getByText("Источники расчёта", { exact: true }).click();
@@ -47,6 +56,7 @@ test("API Decimal boundary rates render identically in Month and Returns after B
     await page.reload();
     await expect(monthly).toContainText(expected);
     await page.goBack();
+    await openDisclosure(page, "Подробности предварительного результата");
     await expect(card).toContainText(expected);
   }
   await page.getByRole("region", { name: "Предварительная доходность месяца" }).screenshot({
@@ -120,6 +130,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   ]);
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
+  await openDisclosure(page, "Подробности предварительного результата");
   const summary = page.getByRole("region", {
     name: "Предварительная доходность месяца",
     exact: true,
@@ -137,8 +148,10 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(selected).toContainText("31.03.2030 — 30.04.2030");
   await expect(history).toContainText("+1 200 ₽");
   await page.goBack();
+  await openDisclosure(page, "Подробности предварительного результата");
   await expect(summary).toContainText("600 ₽");
   await page.reload();
+  await openDisclosure(page, "Подробности предварительного результата");
   await expect(summary).toContainText("600 ₽");
   expect(writes).toEqual([
     "/api/source-returns/proofs/preview",
@@ -149,6 +162,8 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   );
   await request.post("/api/synthetic-proof-aba");
   await page.reload();
+  await openDisclosure(page, "Подробности предварительного результата");
+  await expect(summary).toBeVisible();
   await expect(summary).not.toContainText("600 ₽");
   await summary.getByText("Подробнее о предварительном расчёте", { exact: true }).click();
   await expect(summary).toContainText("Подтверждение источника устарело");
@@ -313,6 +328,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   await page.goto(
     `/v2/close?month=${month.id}&source_account=2222222&instrument_isin=${stock}&panel=brokers`,
   );
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   const panel = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(panel.getByRole("region", { name: `Инструмент ${stock}` })).toBeVisible();
   await expect(page.getByText(/Снимок 01.06.2030/)).toBeVisible();
@@ -381,7 +397,9 @@ test("Month instruments and explicit source payout preview keep two accounts, da
     (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
   ).toHaveLength(requestsAfterA);
 
+  await openDisclosure(page, "Подробности");
   await page.getByLabel("Счёт источника месяца").selectOption("3333333");
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await expect(panel.getByText(/Выбранный счёт: 3333333 · нативный: 3333333-000/)).toBeVisible();
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
   await expect(panel.getByLabel("Дата количества из выписки")).toHaveValue("2030-05-31");
@@ -436,6 +454,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   const providerCount = (await (await request.get("/api/synthetic-month-state")).json())
     .provider_requests.length;
   await page.reload();
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
   await expect(
     panel.getByRole("table", { name: "Actual для сверки · включая события после даты количества" }),
@@ -445,6 +464,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   ).toHaveLength(providerCount);
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
   await page.goBack();
+  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";

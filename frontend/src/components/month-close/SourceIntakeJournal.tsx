@@ -307,6 +307,7 @@ export function SourceIntakeJournal({
     setReviewed(null);
     requestId.current = null;
     await client.invalidateQueries({ queryKey: ["source-intakes", monthId] });
+    await client.invalidateQueries({ queryKey: ["broker-sources", monthId] });
     // All old financial confirmations must be reviewed again after a journal command.
     if (epoch.current === version) onChanged();
     void client.invalidateQueries({
