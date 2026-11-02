@@ -90,13 +90,34 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
     (row: { closing_date: string }) => row.closing_date === "2030-04-30",
   );
   const may = get.months.find((row: { closing_date: string }) => row.closing_date === "2030-05-31");
+  const june = get.months.find(
+    (row: { closing_date: string }) => row.closing_date === "2030-06-30",
+  );
+  expect(get.source_proof.status).toBe("current");
   expect(april.growth_kopecks).toBe(60000);
   expect(may.growth_kopecks).toBeNull();
+  expect(june.growth_kopecks).toBe(60000);
   await page.reload();
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "За доступные месяцы", exact: true }),
-  ).toContainText("600 ₽");
+  await expect(page.getByRole("combobox", { name: "Счёт", exact: true })).toHaveValue(
+    "source:1234567-000",
+  );
+  // The retired monthly table contained April and June rows of 600 ₽ each.
+  // This card is their history subtotal, not the selected April result.
+  const history = page.getByRole("region", { name: "За доступные месяцы", exact: true });
+  await expect(history).toContainText("За доступные месяцы · 2 из 5");
+  await expect(history).toContainText("+1 200 ₽");
+  await expect(history).not.toContainText("%");
+  await history.getByLabel("Подробнее: Покрытие доступных месяцев", { exact: true }).click();
+  await expect(history.getByText(/^Учтён:/)).toHaveText([
+    "Учтён: 31.03.2030 — 30.04.2030",
+    "Учтён: 31.05.2030 — 30.06.2030",
+  ]);
+  await expect(history.getByText(/^Не учтён:/)).toHaveText([
+    "Не учтён: 28.02.2030 — 31.03.2030",
+    "Не учтён: 30.04.2030 — 31.05.2030",
+    "Не учтён: 30.06.2030 — 31.07.2030",
+  ]);
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   const summary = page.getByRole("region", {
@@ -111,6 +132,10 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await page.getByText("Подробнее о данных", { exact: true }).click();
 
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
+  const selected = page.getByRole("region", { name: "Результат периода", exact: true });
+  await expect(selected).toContainText("+600 ₽");
+  await expect(selected).toContainText("31.03.2030 — 30.04.2030");
+  await expect(history).toContainText("+1 200 ₽");
   await page.goBack();
   await expect(summary).toContainText("600 ₽");
   await page.reload();
@@ -127,6 +152,17 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(summary).not.toContainText("600 ₽");
   await summary.getByText("Подробнее о предварительном расчёте", { exact: true }).click();
   await expect(summary).toContainText("Подтверждение источника устарело");
+  const stale = await (
+    await request.get("/api/source-returns/monthly?source_account=1234567")
+  ).json();
+  expect(stale.source_proof.status).toBe("stale");
+  for (const closing of ["2030-04-30", "2030-06-30"]) {
+    const row = stale.months.find(
+      (item: { closing_date: string }) => item.closing_date === closing,
+    );
+    expect(row.growth_kopecks).toBeNull();
+    expect(row.modified_dietz_return).toBeNull();
+  }
   await summary.screenshot({ path: info.outputPath("source-proof-stale-month.png") });
 });
 
