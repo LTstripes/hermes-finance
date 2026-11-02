@@ -149,10 +149,7 @@ function Exceptions({ codes }: { codes: string[] }) {
   if (!codes.length) return null;
   return (
     <div role="alert" className={styles.exceptions}>
-      <p>
-        Черновик неполный. Есть неразобранные движения или изменённые доказательства. Закрытие
-        покрытого брокерского счёта заблокировано.
-      </p>
+      <p>Черновик неполный. Есть неразобранные движения или изменённые доказательства.</p>
       <details>
         <summary>Причины и недостающие доказательства</summary>
         <ul>
@@ -638,7 +635,7 @@ export function BrokerMonthReview({
                   : "Сохранённый источник месяца."}{" "}
                 {previous.bookkeeping_ready
                   ? "Брокерский компонент готов к общей проверке."
-                  : "Черновик неполный; Close заблокирован."}
+                  : "Черновик неполный; замечания сохранены."}
               </p>
               {previous.accepted.document ? (
                 <SourceInventory document={previous.accepted.document} />

@@ -894,6 +894,8 @@ def broker_month_close_integrity_guards(session, month_id):
     from hermes_finance.services.source_intake import close_integrity_guards
 
     integrity_codes = {
+        "money_semantics_unsupported",
+        "overlapping_endpoint_conflict",
         "source_projection_changed",
         "source_authority_changed",
         "accepted_mapping_changed",

@@ -135,6 +135,23 @@ def _close(client: TestClient, month_id: int) -> None:
     _ok(close_fixture_month_http(client, month_id), status=200)
 
 
+def _save_zero_salary(client: TestClient, month_id: int) -> None:
+    # Close no longer attests that an absent salary is a known zero.
+    _ok(
+        client.post(
+            "/api/incomes",
+            json={
+                "reporting_month_id": month_id,
+                "income_type": "salary",
+                "name": "Synthetic explicitly known zero salary",
+                "gross_amount": _money("0.00"),
+                "tax_amount": _money("0.00"),
+                "net_amount": _money("0.00"),
+            },
+        )
+    )
+
+
 def _table_counts(database: Database) -> dict[str, int]:
     with database.session_factory() as session:
         return {
@@ -435,6 +452,8 @@ def _seed_issue_285_august_fixture(client: TestClient) -> int:
     for month in range(1, 9):
         month_id = _create_month(client, 2026, month)
         month_ids[month] = month_id
+        if month < 8:
+            _save_zero_salary(client, month_id)
         if month == 4:
             _ok(
                 client.post(
@@ -2252,7 +2271,9 @@ def test_iis_complete_and_partial_metadata_are_both_present(
     )
 
 
-def _seed_salary_month(client: TestClient, *, close_january: bool, net: str) -> None:
+def _seed_salary_month(
+    client: TestClient, *, close_january: bool, net: str, known_zero_january: bool = True
+) -> None:
     january = _create_month(client, 2026, 1)
     february = _create_month(client, 2026, 2)
     _ok(
@@ -2269,6 +2290,8 @@ def _seed_salary_month(client: TestClient, *, close_january: bool, net: str) -> 
         )
     )
     if close_january:
+        if known_zero_january:
+            _save_zero_salary(client, january)
         _close(client, january)
     _close(client, february)
 
@@ -2310,11 +2333,14 @@ def test_selected_month_salary_tax_is_consistent_when_nets_match(
     assert review_selected["calculated_net"]["value"] == _money("87000.00")
 
 
+@pytest.mark.parametrize("close_january", [False, True])
 def test_selected_month_salary_tax_is_unavailable_when_history_incomplete(
-    app_context: tuple[TestClient, Database],
+    app_context: tuple[TestClient, Database], close_january: bool
 ) -> None:
     client, _database = app_context
-    _seed_salary_month(client, close_january=False, net="86000.00")
+    _seed_salary_month(
+        client, close_january=close_january, known_zero_january=False, net="86000.00"
+    )
 
     response = _export(client)
     assert response.status_code == 200, response.text

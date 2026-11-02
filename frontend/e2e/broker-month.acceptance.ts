@@ -336,13 +336,24 @@ test("exact structural exceptions permit reviewed incomplete DRAFT and GET, whil
   });
   expect(saved.exceptions).toContain("unparsed_source_rows");
   expect(saved.accepted.document.syntax_blockers).toContain("unparsed_source_rows");
+  const readiness = await (await request.get("/api/months/6/close-readiness")).json();
+  expect(readiness.can_close).toBe(true);
+  expect(readiness.items).toContainEqual(
+    expect.objectContaining({ code: "unparsed_source_rows", severity: "warning" }),
+  );
   await monthPanel(page, "close");
-  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
-  expect((await request.post("/api/months/6/close")).status()).toBe(422);
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
+  const closed = await request.post("/api/months/6/close");
+  expect(closed.status()).toBe(200);
+  expect((await (await request.get("/api/months/6")).json()).status).toBe("closed");
+  const retained = await (await request.get("/api/months/6/close-readiness")).json();
+  expect(retained.items).toContainEqual(
+    expect.objectContaining({ code: "unparsed_source_rows", severity: "warning" }),
+  );
   await reloadWorkspace(page);
   await monthPanel(page, "brokers");
   await showSourceReview(page);
-  await expect(page.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+  await expect(page.getByText(/Черновик неполный; замечания сохранены/)).toBeVisible();
   await page.screenshot({
     path: info.outputPath("incomplete-structure-get-1280.png"),
     fullPage: true,
@@ -543,10 +554,15 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   ).toBeVisible();
   const blocked = await (await request.get("/api/months/2/close-workflow")).json();
   expect(blocked.readiness.can_close).toBe(false);
-  expect(JSON.stringify(blocked.readiness)).toContain("money_semantics_unsupported");
+  expect(blocked.final_review.close_readiness.items).toContainEqual(
+    expect.objectContaining({ code: "money_semantics_unsupported", severity: "hard_blocker" }),
+  );
   await monthPanel(page, "close");
   await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
-  expect((await request.post("/api/months/2/close")).status()).toBe(422);
+  const denied = await request.post("/api/months/2/close");
+  expect(denied.status()).toBe(422);
+  expect((await denied.json()).error.code).toBe("money_semantics_unsupported");
+  expect((await (await request.get("/api/months/2")).json()).status).toBe("draft");
   await page.screenshot({ path: info.outputPath("partial-money-1280.png"), fullPage: true });
 });
 
@@ -682,6 +698,8 @@ test("desktop Money accepts atomic batches and reload retains earlier coupons/H2
   await expect(stored).not.toContainText("Требуется сверка");
   const rejected = await request.post("/api/months/3/close");
   expect(rejected.status()).toBe(422);
+  expect((await rejected.json()).error.code).toBe("money_semantics_unsupported");
+  expect((await (await request.get("/api/months/3")).json()).status).toBe("draft");
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";
   });
@@ -1522,14 +1540,29 @@ test("durable full source observations survive reload and reviewed currency over
     before.counts.source_return_proof_dependencies + 1,
   );
   expect(economicPosts).toBe(0);
+  const readiness = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
+  expect(readiness.can_close).toBe(true);
+  expect(readiness.items).toContainEqual(
+    expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
+  );
   const close = await request.post(`/api/months/${month.id}/close`);
-  expect(close.ok()).toBe(false);
+  expect(close.status()).toBe(200);
+  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("closed");
+  const retained = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
+  expect(retained.items).toContainEqual(
+    expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
+  );
+  const closedInventory = await (await request.get("/api/synthetic-broker-inventory")).json();
+  for (const [table, digest] of Object.entries(after.table_digests)) {
+    if (table !== "reporting_months")
+      expect(closedInventory.table_digests[table], table).toBe(digest);
+  }
   expect(
     (await (await request.get(`/api/broker-months/intakes/${intake.id}`)).json()).state.overrides,
   ).toEqual({ RU000A008815: "USD" });
 });
 
-test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload, corrections and negative Close", async ({
+test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload, corrections and Close with warnings", async ({
   page,
   request,
 }, info) => {
@@ -1832,11 +1865,24 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await selectSourceAccount(page, "8562034");
   await reloadWorkspace(page);
   await expect(picker).toHaveValue("8562034");
+  const readiness = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
+  expect(readiness.can_close).toBe(true);
+  expect(readiness.items).toContainEqual(
+    expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
+  );
   await monthPanel(page, "close");
-  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeDisabled();
-  const denied = await request.post(`/api/months/${month.id}/close`);
-  expect(denied.ok()).toBe(false);
-  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("draft");
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeEnabled();
+  const closed = await request.post(`/api/months/${month.id}/close`);
+  expect(closed.status()).toBe(200);
+  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("closed");
+  const retained = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
+  expect(retained.items).toContainEqual(
+    expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
+  );
+  await reloadWorkspace(page);
+  await expect(
+    page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
+  ).toBeVisible();
   expect(await manual()).toEqual(before);
   expect(await (await request.get("/api/instruments")).json()).toEqual(instrumentsBefore);
   expect(financialPosts).toEqual([]);
@@ -1848,7 +1894,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
     .toBe(true);
   await page.screenshot({
-    path: info.outputPath("month-two-accounts-negative-close-1440.png"),
+    path: info.outputPath("month-two-accounts-close-warnings-1440.png"),
     fullPage: true,
   });
 });
@@ -2183,8 +2229,18 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     expect(workflowResponse.status()).toBe(200);
     const workflow = await workflowResponse.json();
     const future = workflow.steps.find((s: { id: string }) => s.id === "future_payouts");
-    expect(future.reason_codes).toEqual(["month_closed_read_only"]);
+    expect(future.reason_codes).toEqual(["payout_reconciliation_changed"]);
+    expect(future.state).toBe("warning");
     expect(future.affects_close).toBe(false);
+    expect(future.primary_action).toBeNull();
+    expect(future.secondary_actions).toEqual([]);
+    const finalReview = workflow.steps.find((s: { id: string }) => s.id === "final_review_close");
+    expect(finalReview.reason_codes).toEqual(["month_closed_read_only"]);
+    const denied = await request.patch(`/api/months/${monthId}`, {
+      data: { snapshot_date: "2037-12-30" },
+    });
+    expect(denied.status()).toBe(409);
+    expect((await (await request.get(`/api/months/${monthId}`)).json()).status).toBe("closed");
     await expect(
       page.getByRole("heading", { name: "Месяц · Декабрь 2037", exact: true }),
     ).toBeVisible();

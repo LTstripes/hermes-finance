@@ -423,9 +423,17 @@ def test_existing_source_enrichment_preserves_payout_cash_and_facts_and_disclose
     month = scope["reporting_month_id"]
     context = client.get(f"/api/months/{month}/draft-payouts").json()
     assert context["eligible_positions"] == (0 if gift and not confirmed else 1)
-    assert client.get(f"/api/months/{month}/close-readiness").json()["can_close"] == (
-        not gift or confirmed
-    )
+    readiness = client.get(f"/api/months/{month}/close-readiness").json()
+    assert readiness["can_close"] == (not gift or confirmed)
+    if gift and not confirmed:
+        assert any(
+            item["code"] == "money_semantics_unsupported" and item["severity"] == "hard_blocker"
+            for item in readiness["items"]
+        )
+        rejected = client.post(f"/api/months/{month}/close")
+        assert rejected.status_code == 422, rejected.text
+        assert rejected.json()["error"]["code"] == "money_semantics_unsupported"
+        assert client.get(f"/api/months/{month}").json()["status"] == "draft"
     assert all(
         t["effective"]
         for t in client.get("/api/broker-months/existing-net-payout").json()["targets"]

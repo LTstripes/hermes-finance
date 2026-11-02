@@ -197,7 +197,7 @@ it("one explicit summary button saves partial source-DRAFT and confirms only aft
   await screen.findByText(/Сохранённый результат подтверждён независимым чтением/);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
   expect(readBrokerMonth).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+  expect(screen.getByText(/Черновик неполный; замечания сохранены/)).toBeVisible();
 });
 
 it("discloses every new alias and sends the exact batch decision only after explicit confirmation", async () => {
@@ -347,7 +347,7 @@ it("a refreshed source GET overrides earlier ready Apply readback", async () => 
   await user.click(
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
   );
-  await screen.findByText(/Черновик неполный; Close заблокирован/);
+  await screen.findByText(/Черновик неполный; замечания сохранены/);
   expect(screen.queryByText(/Брокерский компонент готов к общей проверке/)).not.toBeInTheDocument();
 });
 
@@ -394,7 +394,7 @@ it.each([true, false])(
       screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
     );
     await screen.findByText(/Сохранённый источник месяца/);
-    expect(screen.getByText(/Черновик неполный; Close заблокирован/)).toBeVisible();
+    expect(screen.getByText(/Черновик неполный; замечания сохранены/)).toBeVisible();
     expect(
       screen.queryByText(/Брокерский компонент готов к общей проверке/),
     ).not.toBeInTheDocument();

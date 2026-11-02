@@ -1454,12 +1454,15 @@ snapshot dates, empty/manual or incomplete source data, unresolved controls,
 incomplete source/intake/receipt evidence, missing T-Invest forecasts and unfinished
 workflow steps are warnings, never prerequisites for Close. Both Close commands
 reserve the SQLite writer, refresh loaded dependencies and recheck persisted source
-authority under that reservation before committing. Changed accepted financial
-projections, invalid receipt/journal chains and incompatible or deferred current
-journal identities remain errors: a strict receipt cannot launder the current
-journal choice. A lost accepted finance link requires a fresh explicit link even
-after financial ABA; a missing first link is a completeness warning. Concurrent
-journal/financial writes must finish before these checks, and failures roll back
+authority under that reservation before committing. Conflicting source endpoints,
+changed accepted financial projections, invalid receipt/journal chains and
+incompatible or deferred current journal identities remain errors: a strict
+receipt cannot launder the current journal choice. Unsupported monetary semantics
+(`money_semantics_unsupported`) also remain blocking; incomplete evidence does not
+waive this financial guarantee. A lost accepted finance link requires a fresh
+explicit link even after financial ABA; a missing first link is a completeness
+warning. Concurrent journal/financial writes must finish before these checks, and
+failures roll back
 the entire command. Wrong identity, pending unsaved ORM mutations and technical
 storage failures also remain errors. Failed or uncertain writes
 never prove success: the UI confirms the exact status by independent GET and uses
