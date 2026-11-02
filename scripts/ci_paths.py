@@ -21,11 +21,14 @@ from docs_only_ci import (
     ordinary_doc_path,
 )
 
-AREAS = ("backend", "frontend", "browser", "release", "windows")
-# The browser journeys and production startup consume both product trees.
-# Windows release/recovery tests consume backend code, but not frontend leaves.
+AREAS = ("backend", "frontend", "browser", "visual", "release", "windows")
+# Real-backend journeys consume backend source/migrations and the frontend.
+# Standalone backend tests do not change those journeys. Mocked visual tests use
+# frontend inputs; unknown/shared inputs still select every area.
+# Keep the existing release and Windows ownership for all backend changes.
 BACKEND_AREAS = frozenset({"backend", "browser", "release", "windows"})
-FRONTEND_AREAS = frozenset({"frontend", "browser", "windows"})
+BACKEND_TEST_AREAS = frozenset({"backend", "release", "windows"})
+FRONTEND_AREAS = frozenset({"frontend", "browser", "visual", "windows"})
 # Dependency/build/toolchain changes are shared, even under a product tree.
 PRODUCT_PREFIXES = {
     "backend/src/": BACKEND_AREAS,
@@ -35,6 +38,33 @@ PRODUCT_PREFIXES = {
     "frontend/public/": FRONTEND_AREAS,
     "frontend/e2e/": FRONTEND_AREAS,
 }
+
+# Some browser seeds import backend test modules as reusable fixtures. Keep
+# these audited families (and every non-test/helper/resource path) on browser.
+# The import-closure regression detects new dependencies outside these families.
+BROWSER_TEST_PREFIXES = (
+    "test_close_readiness",
+    "test_historical_",
+    "test_instrument_",
+    "test_payout_",
+    "test_r08_",
+    "test_scratch_",
+    "test_source_",
+    "test_statement_import_",
+)
+
+
+def backend_test_areas(path: str) -> frozenset[str]:
+    """Only standalone top-level test modules may omit browser journeys."""
+    relative = path.removeprefix("backend/tests/")
+    if (
+        "/" not in relative
+        and relative.startswith("test_")
+        and relative.endswith(".py")
+        and not relative.startswith(BROWSER_TEST_PREFIXES)
+    ):
+        return BACKEND_TEST_AREAS
+    return BACKEND_AREAS
 
 
 def selected_areas(records: list[DiffRecord] | None) -> frozenset[str]:
@@ -65,6 +95,8 @@ def selected_areas(records: list[DiffRecord] | None) -> frozenset[str]:
             continue
         for prefix, areas in PRODUCT_PREFIXES.items():
             if record.new_path.startswith(prefix):
+                if prefix == "backend/tests/":
+                    areas = backend_test_areas(record.new_path)
                 selected.update(areas)
                 break
         else:

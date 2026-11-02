@@ -636,6 +636,25 @@ Use the executable sources for current jobs, filters, selections and timeouts:
 
 Do not copy matrix counts, shard lists, timeout values or selected Windows node counts into this handbook. Update their executable owner and relevant contract checks together. D4 owns verification policy: required coverage must remain complete, ambiguous classification must fail conservatively, ordinary PR cancellation must not cancel canonical/protected work, and exact-head evidence must identify the code it checked. Desktop coverage follows the [desktop policy](#d4-verification_policy-1-12-ui-платформа-и-визуальная-приёмка).
 
+For ordinary PRs, the area classifier selects G04/real-backend journeys for
+frontend changes and backend source/migration changes. Standalone backend-test-only
+PRs retain backend, release and Windows coverage but omit browser journeys. Shared
+backend test fixtures/helpers and their imported test families retain browser
+coverage; an import-closure regression guards these dependencies. The
+mocked visual audit follows frontend inputs; shared/unknown paths, unsafe Git
+records, unavailable classification or missing outputs retain full coverage.
+Both endpoint and PR-owned diffs are checked so a base advance cannot hide an
+input. The UI evidence workflow retains its separate frontend path filter.
+
+Add the existing `ci:full` label to a PR to request all product jobs, including
+browser and visual checks. The label event starts CI; the full visual run keeps
+all viewports/scenarios without duplicate-evidence omission. Canonical main
+pushes remain full, and release verification does not consult PR area outputs.
+The required `ci-ok` gate waits for every CI job, reports actual results in its
+log and summary (including `skipped`), and rejects failures/cancellations. An
+omitted job is not evidence that its suite passed. Repository protection and
+release safety requirements remain unchanged.
+
 The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. Canonical main pushes and release gates retain full verification.
 
 

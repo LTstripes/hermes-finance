@@ -57,6 +57,7 @@ jobs:
       backend: ${{ steps.classify.outputs.backend }}
       frontend: ${{ steps.classify.outputs.frontend }}
       browser: ${{ steps.classify.outputs.browser }}
+      visual: ${{ steps.classify.outputs.visual }}
       release: ${{ steps.classify.outputs.release }}
       windows: ${{ steps.classify.outputs.windows }}
 
@@ -401,7 +402,8 @@ jobs:
 
   visual-audit-paths:
     name: Visual audit path filter
-    if: github.event_name == 'pull_request'
+    needs: docs-only-classify
+    if: always() && !cancelled() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -421,11 +423,19 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CLASSIFICATION_RESULT: ${{ needs.docs-only-classify.result }}
+          VISUAL_AREA: ${{ needs.docs-only-classify.outputs.visual }}
         run: |
+          set -euo pipefail
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
           echo "Changed paths:"
           cat "$RUNNER_TEMP/changed-files.txt"
           should_run=$(python3 scripts/visual_audit_paths.py --from-file "$RUNNER_TEMP/changed-files.txt")
+          # Retain the legacy frontend filter and fail closed on unknown/shared
+          # inputs, classifier failures or missing outputs.
+          if [ "$CLASSIFICATION_RESULT" != "success" ] || [ "$VISUAL_AREA" != "false" ]; then
+            should_run=true
+          fi
           echo "run=$should_run" >> "$GITHUB_OUTPUT"
           # PR-owned files only. A missing base or merge-base fails closed to
           # "not a duplicate" so CI keeps the full audit.
@@ -448,7 +458,10 @@ jobs:
     needs: visual-audit-paths
     if: >-
       always() &&
+      !cancelled() &&
       (github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true' ||
+      needs.visual-audit-paths.result != 'success' ||
+      needs.visual-audit-paths.outputs.run != 'false' ||
       contains(github.event.pull_request.labels.*.name, 'ci:full'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -482,13 +495,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           DUPLICATE_PATHS: ${{ needs.visual-audit-paths.outputs.duplicate_paths }}
+          FORCE_FULL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           omit=false
-          if [ "$EVENT_NAME" = "pull_request" ] && [ "$DUPLICATE_PATHS" = "true" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$DUPLICATE_PATHS" = "true" ] && [ "$FORCE_FULL" != "true" ]; then
             if git fetch --no-tags --depth 1 origin \
               "+refs/pull/${PR_NUMBER}/head:refs/pull-head" \
               "+refs/pull/${PR_NUMBER}/merge:refs/pull-merge"; then
@@ -797,6 +811,14 @@ jobs:
           import sys
 
           results = json.loads(os.environ["NEEDS_JSON"])
+          lines = ["| Job | Result |", "| --- | --- |"]
+          for name, job in sorted(results.items()):
+              print(f"{name}: {job['result']}")
+              lines.append(f"| {name} | {job['result']} |")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as stream:
+                  stream.write("## CI job results\n\n" + "\n".join(lines) + "\n")
           bad = {name: job["result"] for name, job in results.items()
                  if job["result"] not in {"success", "skipped"}}
           if bad:

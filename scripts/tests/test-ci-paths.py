@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ci_paths import (
     AREAS,
     BACKEND_AREAS,
+    BACKEND_TEST_AREAS,
     FRONTEND_AREAS,
     classify_repo,
     selected_areas,
@@ -76,14 +79,24 @@ def record(path: str, **overrides: object) -> DiffRecord:
 
 
 class SelectionTests(unittest.TestCase):
+    def test_backend_test_only_pr_omits_heavy_browser_and_visual(self) -> None:
+        selected = selected_areas([record("backend/tests/test_accounts.py")])
+        self.assertEqual(selected, frozenset({"backend", "release", "windows"}))
+
+    def test_frontend_source_selects_both_heavy_areas(self) -> None:
+        selected = selected_areas([record("frontend/src/App.tsx")])
+        self.assertTrue({"browser", "visual"}.issubset(selected))
+
     def test_product_owners_keep_both_runtime_consumers(self) -> None:
         for path in (
             "backend/src/app.py",
-            "backend/tests/test_api.py",
             "backend/migrations/README",
         ):
             with self.subTest(path=path):
                 self.assertEqual(selected_areas([record(path)]), BACKEND_AREAS)
+        self.assertEqual(
+            selected_areas([record("backend/tests/test_api.py")]), BACKEND_TEST_AREAS
+        )
         for path in (
             "frontend/src/App.tsx",
             "frontend/public/logo.svg",
@@ -112,6 +125,50 @@ class SelectionTests(unittest.TestCase):
             ),
             FRONTEND_AREAS,
         )
+
+    def test_browser_fixture_import_closure_keeps_browser_coverage(self) -> None:
+        # Inspect source only; never import/execute financial fixtures. Include
+        # nested imports and traverse shared backend test helpers transitively.
+        modules = {path.stem: path for path in (ROOT / "backend/tests").glob("*.py")}
+        pending = list((ROOT / "frontend/e2e").rglob("*.py"))
+        config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
+        for name in re.findall(r"-m uvicorn ([a-z_]+):", config):
+            if name in modules:
+                pending.append(modules[name])
+        seen: set[Path] = set()
+        while pending:
+            path = pending.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                elif isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                else:
+                    continue
+                for name in names:
+                    module = modules.get(name.split(".")[0])
+                    if module is None:
+                        continue
+                    relative = module.relative_to(ROOT).as_posix()
+                    with self.subTest(consumer=path.name, dependency=relative):
+                        self.assertIn("browser", selected_areas([record(relative)]))
+                    pending.append(module)
+
+    def test_backend_shared_fixture_and_configuration_inputs_keep_browser(self) -> None:
+        for path in (
+            "backend/tests/conftest.py",
+            "backend/tests/_statement_pdf.py",
+            "backend/tests/fixtures/synthetic.json",
+            "backend/tests/payout_browser_fixture.py",
+            "backend/tests/test_statement_import_apply.py",
+            "backend/tests/test_instrument_trades_service.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(selected_areas([record(path)]), BACKEND_AREAS)
 
     def test_shared_build_dependency_release_and_unknown_inputs_are_full(self) -> None:
         for path in (
@@ -229,6 +286,7 @@ class GitTests(unittest.TestCase):
                 "backend=false",
                 "frontend=true",
                 "browser=true",
+                "visual=true",
                 "release=false",
                 "windows=true",
             ],
@@ -236,6 +294,18 @@ class GitTests(unittest.TestCase):
         backend = self.commit("backend/src/app.py", b"synthetic backend\n")
         self.assertEqual(classify_repo(self.repo, self.base, backend), FULL)
         self.assertEqual(classify_repo(self.repo, self.base, frontend), FRONTEND_AREAS)
+
+    def test_standalone_backend_test_and_shared_fixture_actual_diffs(self) -> None:
+        head = self.commit("backend/tests/test_accounts.py", b"synthetic test module\n")
+        self.assertEqual(classify_repo(self.repo, self.base, head), BACKEND_TEST_AREAS)
+        docs = self.commit("README.md", b"synthetic docs\n")
+        self.assertEqual(classify_repo(self.repo, self.base, docs), BACKEND_TEST_AREAS)
+        fixture = self.commit("backend/tests/_statement_pdf.py", b"synthetic helper\n")
+        self.assertEqual(classify_repo(self.repo, docs, fixture), BACKEND_AREAS)
+        source = self.commit(
+            "backend/src/hermes_finance/services/accounts.py", b"synthetic service\n"
+        )
+        self.assertEqual(classify_repo(self.repo, fixture, source), BACKEND_AREAS)
 
     def test_safety_inputs_from_actual_git_diffs(self) -> None:
         for path in (
@@ -333,6 +403,7 @@ class WorkflowTests(unittest.TestCase):
         areas: dict[str, str] | None = None,
         labels: tuple[str, ...] = (),
         visual_run: str = "false",
+        visual_result: str = "success",
         cancelled: bool = False,
     ) -> bool:
         expr = self.condition(job)
@@ -346,6 +417,7 @@ class WorkflowTests(unittest.TestCase):
             "needs.docs-only-classify.result": result,
             "needs.docs-only-classify.outputs.mode": mode,
             "needs.visual-audit-paths.outputs.run": visual_run,
+            "needs.visual-audit-paths.result": visual_result,
         }
         values.update(
             {
@@ -363,7 +435,7 @@ class WorkflowTests(unittest.TestCase):
     def test_linux_job_conditions_for_every_area_and_failure_state(self) -> None:
         for job in ("backend-quality", "backend-tests", "frontend", "g04-browser"):
             owner = OWNERS[job]
-            for selected in (FRONTEND_AREAS, BACKEND_AREAS, FULL):
+            for selected in (FRONTEND_AREAS, BACKEND_AREAS, BACKEND_TEST_AREAS, FULL):
                 areas = {area: str(area in selected).lower() for area in AREAS}
                 with self.subTest(job=job, selected=selected):
                     self.assertEqual(self.runs(job, areas=areas), owner in selected)
@@ -425,6 +497,114 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(path=path, job=job):
                     self.assertTrue(self.runs(job, areas=areas))
 
+    def test_classifier_to_heavy_job_acceptance_matrix(self) -> None:
+        for paths, browser, visual in (
+            (("backend/tests/test_accounts.py",), False, False),
+            (("docs/DEVELOPMENT.md",), False, False),
+            (("frontend/src/App.tsx",), True, True),
+            (("backend/src/hermes_finance/api/accounts.py",), True, False),
+            (("backend/src/hermes_finance/services/accounts.py",), True, False),
+            (("backend/migrations/versions/9999_synthetic.py",), True, False),
+            (("backend/tests/test_api.py", "frontend/src/App.tsx"), True, True),
+            (("backend/uv.lock",), True, True),
+            (("scripts/ci_paths.py",), True, True),
+            (("unknown/input",), True, True),
+        ):
+            selected = selected_areas([record(path) for path in paths])
+            areas = {area: str(area in selected).lower() for area in AREAS}
+            mode = "full" if selected else "docs-only"
+            with self.subTest(paths=paths):
+                self.assertEqual(self.runs("g04-browser", mode=mode, areas=areas), browser)
+                self.assertEqual(
+                    self.runs("visual-audit", visual_run=areas["visual"]), visual
+                )
+
+    def test_visual_gate_fails_closed_and_cancellation_is_respected(self) -> None:
+        for result in ("failure", "cancelled", "skipped", ""):
+            self.assertTrue(self.runs("visual-audit", visual_result=result))
+        for output in ("", "garbage", "true", "TRUE"):
+            self.assertTrue(self.runs("visual-audit", visual_run=output))
+        for event in ("pull_request", "push"):
+            self.assertFalse(self.runs("visual-audit", event=event, cancelled=True))
+        visual_filter = self.job("visual-audit-paths")
+        self.assertIn("needs: docs-only-classify", visual_filter)
+        self.assertIn("set -euo pipefail", visual_filter)
+        self.assertIn(
+            "CLASSIFICATION_RESULT: $" + "{{ needs.docs-only-classify.result }}", visual_filter
+        )
+        self.assertIn(
+            "VISUAL_AREA: $" + "{{ needs.docs-only-classify.outputs.visual }}", visual_filter
+        )
+        self.assertIn(
+            'if [ "$CLASSIFICATION_RESULT" != "success" ] || [ "$VISUAL_AREA" != "false" ]; then',
+            visual_filter,
+        )
+        visual_job = self.job("visual-audit")
+        self.assertIn(
+            "FORCE_FULL: $" + "{{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}",
+            visual_job,
+        )
+        self.assertIn('[ "$FORCE_FULL" != "true" ]', visual_job)
+        self.assertNotIn("continue-on-error", visual_job)
+
+    def test_visual_shell_fallback_and_full_label_without_network(self) -> None:
+        bash = shutil.which("bash")
+        if bash is None:
+            git = shutil.which("git")
+            candidate = Path(git or "").parent.parent / "bin/bash.exe"
+            if candidate.is_file():
+                bash = str(candidate)
+        if bash is None:
+            self.skipTest("Bash unavailable for workflow shell regression")
+        filter_job = self.job("visual-audit-paths")
+        decision = filter_job.split('          if [ "$CLASSIFICATION_RESULT"', 1)[1]
+        decision = 'if [ "$CLASSIFICATION_RESULT"' + decision.split(
+            '          echo "run=$should_run"', 1
+        )[0]
+        for result, area, legacy, expected in (
+            ("success", "false", "false", "false"),
+            ("success", "false", "true", "true"),
+            ("success", "true", "false", "true"),
+            ("success", "", "false", "true"),
+            ("success", "garbage", "false", "true"),
+            ("failure", "false", "false", "true"),
+            ("skipped", "false", "false", "true"),
+            ("", "false", "false", "true"),
+        ):
+            with self.subTest(result=result, area=area, legacy=legacy):
+                output = subprocess.check_output(
+                    [bash, "-c", decision + '\nprintf "%s" "$should_run"'],
+                    env={
+                        **os.environ,
+                        "CLASSIFICATION_RESULT": result,
+                        "VISUAL_AREA": area,
+                        "should_run": legacy,
+                    },
+                    text=True,
+                )
+                self.assertEqual(output, expected)
+        identity = self.job("visual-audit").split(
+            "          set -euo pipefail\n", 1
+        )[1].split("\n      - name: Run synthetic visual audit", 1)[0]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            output_file = Path(directory) / "outputs"
+            completed = subprocess.run(
+                [bash, "-c", 'git() { echo "unexpected git" >&2; return 1; }\n' + identity],
+                env={
+                    **os.environ,
+                    "EVENT_NAME": "pull_request",
+                    "DUPLICATE_PATHS": "true",
+                    "FORCE_FULL": "true",
+                    "GITHUB_OUTPUT": str(output_file),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            self.assertEqual(output_file.read_text().strip(), "omit=false")
+
     def test_full_label_bypasses_docs_area_and_visual_filters(self) -> None:
         for job in (*OWNERS, "visual-audit"):
             with self.subTest(job=job):
@@ -480,6 +660,34 @@ class WorkflowTests(unittest.TestCase):
                 )
                 with self.subTest(job=job, result=result):
                     self.assertEqual(completed.returncode == 0, result in {"success", "skipped"})
+                    self.assertIn(f"{job}: {result}", completed.stdout)
+
+    def test_ci_ok_summary_preserves_skips_and_failure_results(self) -> None:
+        final = self.job("ci-ok")
+        script = textwrap.dedent(final.split("python3 - <<'PY'\n", 1)[1]).split("\nPY", 1)[0]
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            summary = Path(directory) / "summary.md"
+            results = {
+                "privacy": {"result": "success"},
+                "visual-audit": {"result": "skipped"},
+                "g04-browser": {"result": "failure"},
+            }
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "NEEDS_JSON": json.dumps(results),
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                },
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            content = summary.read_text(encoding="utf-8")
+            for name, job in results.items():
+                self.assertIn(f"| {name} | {job['result']} |", content)
+            self.assertIn("g04-browser", completed.stderr)
 
     def test_wiring_preserves_triggers_and_full_shared_inputs(self) -> None:
         trigger = self.workflow.split("jobs:", 1)[0]
