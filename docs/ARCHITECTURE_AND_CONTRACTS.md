@@ -1996,7 +1996,12 @@ attachment must contain one matching initial link revision for that exact target
 Later PDF revisions, retractions or contradictions retain monotonic retirement.
 Lifecycle retirement follows the affected target and reporting period (including
 old scope when a row moves), so cash/payout/PDF changes in another month of the
-same account do not retire independent accepted Money.
+same account do not retire independent accepted Money. Within the same account,
+a separate ICF is a potential payout dependency only when kind, posted date and
+net amount match and its instrument is the selected instrument or is unknown
+(NULL). Unknown instrument identity fails closed for that overlap; a different
+known instrument, kind, date or amount is independent. Old and new values are
+considered on edits, and resolving the ambiguity cannot revive retired proof.
 
 Preview confirmation binds original bytes, selected account/month, identity/source
 revisions, financial dependencies and supplied optional-document hashes. Apply

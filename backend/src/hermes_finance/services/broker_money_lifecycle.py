@@ -91,17 +91,16 @@ def _payout_affects(row, target):
         return False
     if row.id == target["target_id"]:
         return True
-    # The selected fact and potential overlapping payouts are dependencies;
-    # another instrument/date/amount in the same account is independent.
+    # An unknown instrument cannot rule out overlap. Keep old and new identity
+    # values so assigning an instrument cannot revive a retired confirmation.
     facts = target["facts"]
-    return facts is not None and all(
-        facts[field] in {str(value) for value in _values(row, field)}
-        for field in (
-            "account_id",
-            "instrument_id",
-            "flow_type",
-            "event_date",
-            "net_amount_kopecks",
+    instruments = _values(row, "instrument_id")
+    return (
+        facts is not None
+        and (None in instruments or facts["instrument_id"] in {str(value) for value in instruments})
+        and all(
+            facts[field] in {str(value) for value in _values(row, field)}
+            for field in ("account_id", "flow_type", "event_date", "net_amount_kopecks")
         )
     )
 

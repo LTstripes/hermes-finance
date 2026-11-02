@@ -1,7 +1,8 @@
 """Synthetic, dependency-scoped confirmation preservation across month reopen."""
 
-from datetime import date
+from datetime import date, timedelta
 
+import pytest
 from sqlalchemy import select
 from test_statement_import_mybroker import FILENAME
 from test_statement_import_mybroker import database as database
@@ -129,9 +130,67 @@ def test_reopen_and_one_forecast_edit_preserve_independent_confirmations(databas
     assert database_bytes(database) == before
 
 
-def test_operation_overlap_edit_retires_only_its_dependent_money_target(database):
-    from datetime import timedelta
+@pytest.mark.parametrize(
+    "difference",
+    [
+        "instrument",
+        "date",
+        "net",
+        "kind",
+        "unknown_date",
+        "unknown_net",
+        "unknown_kind",
+        "unknown_zero_dividend",
+    ],
+)
+def test_independent_payout_preserves_money_confirmations(database, difference):
+    _, xml, intent, instrument, _ = _money_setup(database)
+    originals = [(FILENAME, xml)]
+    with database.session_factory() as session:
+        other = Instrument(
+            name="Synthetic independent bond", instrument_type="bond", currency="RUB"
+        )
+        session.add(other)
+        session.commit()
+        saved = _money_apply(
+            session, _money_decide(session, intent, originals, instrument), originals
+        )
+        selected = next(t for t in saved["targets"] if t["role"] == "coupon")
+        actual = session.get(InvestmentCashFlow, selected["target_id"])
+        independent = InvestmentCashFlow(
+            reporting_month_id=actual.reporting_month_id,
+            account_id=actual.account_id,
+            instrument_id=None if difference.startswith("unknown_") else instrument,
+            flow_type=actual.flow_type,
+            event_date=actual.event_date,
+            net_amount_kopecks=actual.net_amount_kopecks,
+            gross_amount_kopecks=actual.net_amount_kopecks,
+            tax_amount_kopecks=0,
+            commission_amount_kopecks=0,
+            currency="RUB",
+            source="synthetic-manual",
+        )
+        if difference == "instrument":
+            independent.instrument_id = other.id
+        elif difference.endswith("date"):
+            independent.event_date += timedelta(days=1)
+        elif difference.endswith("net"):
+            independent.net_amount_kopecks += 1
+        else:
+            independent.flow_type = "dividend"
+            if difference == "unknown_zero_dividend":
+                independent.event_date = date(2030, 1, 20)
+                independent.gross_amount_kopecks = independent.net_amount_kopecks = 0
+        session.add(independent)
+        session.commit()
+        assert all(t["effective"] for t in read_money(session, "money-accepted")["targets"])
+        session.delete(independent)
+        session.commit()
+        assert all(t["effective"] for t in read_money(session, "money-accepted")["targets"])
 
+
+@pytest.mark.parametrize("identified", [True, False])
+def test_operation_overlap_edit_retires_only_its_dependent_money_target(database, identified):
     _, xml, intent, instrument, _ = _money_setup(database)
     originals = [(FILENAME, xml)]
     with database.session_factory() as session:
@@ -143,7 +202,7 @@ def test_operation_overlap_edit_retires_only_its_dependent_money_target(database
         independent = InvestmentCashFlow(
             reporting_month_id=intent.reporting_month_id,
             account_id=intent.account_id,
-            instrument_id=instrument,
+            instrument_id=instrument if identified else None,
             flow_type="coupon",
             event_date=actual.event_date + timedelta(days=1),
             net_amount_kopecks=actual.net_amount_kopecks,
