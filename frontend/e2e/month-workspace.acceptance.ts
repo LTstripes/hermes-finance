@@ -89,6 +89,17 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
     ),
   );
   await openDisclosure(page, "Подробности");
+  await expect(page.getByText("Проверяем сохранённые выписки…", { exact: true })).toHaveCount(0);
+  let sourceReadHeld = false;
+  let releaseSourceRead = () => {};
+  const sourceReadGate = new Promise<void>((resolve) => {
+    releaseSourceRead = resolve;
+  });
+  await page.route("**/api/broker-months/intakes?**", async (route) => {
+    sourceReadHeld = true;
+    await sourceReadGate;
+    await route.continue();
+  });
   await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(
     buffers.map((buffer, i) => ({
       name: `Брокерский 711490${i + 1} (01.01.39-31.10.39).xml`,
@@ -106,14 +117,25 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
   await openDisclosure(page, "Подробности сверки XML с инвестиционным отчётом");
   await page.getByText("Расшифровка купонов и дивидендов — PDF Альфы", { exact: true }).click();
   await expect(page.locator('input[type="file"][accept=".xml"]')).toHaveCount(1);
-  await page.getByLabel("Загрузить PDF Альфы").setInputFiles({
+  // Per-file Save labels precede the final list GET. Keyboard activation must
+  // wait until the relocated PDF form is enabled, not merely present.
+  const pdfInput = page.getByLabel("Загрузить PDF Альфы");
+  await expect.poll(() => sourceReadHeld).toBe(true);
+  await expect(pdfInput).toBeDisabled();
+  expect(previews).toBe(0);
+  releaseSourceRead();
+  await expect(pdfInput).toBeEnabled();
+  await pdfInput.setInputFiles({
     name: "synthetic-report.pdf",
     mimeType: "application/pdf",
     buffer: Buffer.from("synthetic"),
   });
   const inspect = page.getByRole("button", { name: "Проверить XML и PDF", exact: true });
+  await expect(inspect).toBeEnabled();
   await inspect.focus();
+  await expect(inspect).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect.poll(() => previews).toBe(1);
   await expect(page.getByText(/Период PDF: 2039-01-01/)).toBeVisible();
   await expect(page.getByText(/Исторический период/)).toHaveCount(2);
   await expect(page.getByText(/Рублёвый результат счёта/).last()).toContainText("123.45");

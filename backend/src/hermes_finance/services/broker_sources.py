@@ -20,7 +20,16 @@ def _month(session, month_id, *, editable=False):
 
 
 def _item(view, filename_digest=None):
-    accounts = sorted(set(view["document"].get("source_accounts", [])))
+    document = view["document"]
+    # Native row identities are independent of the filename alias. The stored
+    # parser document does not carry the identity planner's source_accounts.
+    accounts = sorted(
+        {
+            row["source_account"]
+            for row in document["positions"] + document["rub_money"] + document["money"]
+        }
+        | {row["core"]["source_account"] for row in document["trades"]}
+    )
     if not accounts and view["document"].get("filename_account"):
         accounts = [view["document"]["filename_account"]]
     exceptions = [code for code in view["exceptions"] if code != source_intake.PENDING]

@@ -1522,11 +1522,12 @@ def test_legacy_intake_without_warning_key_reattaches_without_manifest_upgrade(
     assert _tables(database) == before
 
 
-def test_month_broker_sources_xml_partial_success_and_get_recovery(database):
+@pytest.mark.parametrize("native_suffix", ["-000", "-XML-NATIVE"])
+def test_month_broker_sources_xml_partial_success_and_get_recovery(database, native_suffix):
     scope = _broker_month_setup(database)
     client = TestClient(create_app(database=database))
     path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
-    xml = broker_month_xml()
+    xml = broker_month_xml().replace(b"1234567-000", f"1234567{native_suffix}".encode())
     second = xml.replace(b"1234567", b"7654321")
     before = _all_month_tables(database)
     response = client.post(
@@ -1542,6 +1543,8 @@ def test_month_broker_sources_xml_partial_success_and_get_recovery(database):
     batch = response.json()
     assert [row["error"] is None for row in batch["results"]] == [True, True, False]
     assert len({row["slot"] for row in batch["items"]}) == 2
+    for index, alias in enumerate(("1234567", "7654321")):
+        assert batch["results"][index]["item"]["source_accounts"] == [f"{alias}{native_suffix}"]
     assert _all_month_tables(database) == before
     # Lost response recovery is read-only and survives a fresh application.
     restored = TestClient(create_app(database=database)).get(path).json()
@@ -1554,6 +1557,7 @@ def test_month_broker_sources_xml_partial_success_and_get_recovery(database):
     )
     assert duplicate.status_code == 200, duplicate.text
     assert duplicate.json()["results"][0]["duplicate"]
+    assert duplicate.json()["results"][0]["item"]["source_accounts"] == [f"1234567{native_suffix}"]
     assert _tables(database) == after
     assert client.post(f"/api/months/{scope['reporting_month_id']}/close").status_code == 200
     rejected = client.post(
@@ -1562,6 +1566,39 @@ def test_month_broker_sources_xml_partial_success_and_get_recovery(database):
         data={"request_id": "synthetic-closed"},
     )
     assert rejected.status_code == 409
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_month_broker_sources_preserves_all_native_accounts_or_quiet_filename(database, quiet):
+    from test_statement_import_mybroker import fixture
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
+    root = ET.fromstring(fixture(quiet=True) if quiet else broker_month_xml())
+    if not quiet:
+        for section, alias in (
+            ("Positions", "POSITION"),
+            ("Trades2", "MONEY"),
+            ("Trades", "TRADE"),
+        ):
+            for node in root.find(f"{{MyBroker}}{section}").iter():
+                if "acc_code" in node.attrib:
+                    node.set("acc_code", "CASH" if node.get("active_name") == "RUB" else alias)
+    xml = ET.tostring(root, encoding="utf-8")
+    before = _all_month_tables(database)
+    response = client.post(
+        path,
+        files={"files": (FILENAME, xml, "application/xml")},
+        data={"request_id": "synthetic-native-accounts"},
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()["results"][0]
+    assert row["error"] is None
+    expected = ["1234567"] if quiet else ["CASH", "MONEY", "POSITION", "TRADE"]
+    assert row["item"]["source_accounts"] == expected
+    assert client.get(path).json()["items"][0]["source_accounts"] == expected
+    assert _all_month_tables(database) == before
 
 
 def test_month_broker_sources_rejects_foreign_period_and_filename_identity(database):

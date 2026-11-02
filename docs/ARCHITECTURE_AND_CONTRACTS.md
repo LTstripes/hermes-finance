@@ -2243,10 +2243,14 @@ The public lookup remains opt-in/session-local; journal reads never fetch data.
 The month-level broker-file facade is `POST /api/months/{month_id}/broker-sources`
 (multipart `files`, `request_id`) and `GET` on the same path. Each file keeps its
 own existing Save transaction; a rejected sibling does not roll back successful
-files. XML requires an exact calendar-month original. Duplicate discovery
-revalidates the existing original identity and attachment, with no no-op revision
-or classification refresh. GET reconstructs the result from the journal without
-financial writes. `file_saved`, `needs_decision` and `financial_data_accepted`
+files. XML requires an exact calendar-month original. XML `source_accounts` lists
+the exact distinct native row `acc_code` identities from positions, RUB cash,
+Money and trades; only an original with no observed row account falls back to
+its filename alias. No suffix is added, removed or inferred. This presentation
+does not equate filename and row identities or change their mapping requirements.
+Duplicate discovery revalidates the existing original identity and attachment,
+with no no-op revision or classification refresh. GET reconstructs the result
+from the journal without financial writes. `file_saved`, `needs_decision` and `financial_data_accepted`
 remain distinct; confirmation findings are warnings, never new Close blockers.
 The facade also accepts the existing depository income-payment PDF family using
 the same Inspect/Prepare services. All parsed payment dates must be known and
