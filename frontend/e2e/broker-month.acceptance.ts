@@ -1541,21 +1541,24 @@ test("durable full source observations survive reload and reviewed currency over
   );
   expect(economicPosts).toBe(0);
   const readiness = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
-  expect(readiness.can_close).toBe(true);
+  // The preceding source-inbox journey accepted unsupported Money in this month.
+  // This separate journal review cannot waive that receipt's monetary guarantee.
+  expect(readiness.can_close).toBe(false);
   expect(readiness.items).toContainEqual(
     expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
   );
-  const close = await request.post(`/api/months/${month.id}/close`);
-  expect(close.status()).toBe(200);
-  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("closed");
-  const retained = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
-  expect(retained.items).toContainEqual(
-    expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
+  expect(readiness.items).toContainEqual(
+    expect.objectContaining({ code: "money_semantics_unsupported", severity: "hard_blocker" }),
   );
-  const closedInventory = await (await request.get("/api/synthetic-broker-inventory")).json();
+  const close = await request.post(`/api/months/${month.id}/close`);
+  expect(close.status()).toBe(422);
+  expect((await close.json()).error.code).toBe("money_semantics_unsupported");
+  expect((await (await request.get(`/api/months/${month.id}`)).json()).status).toBe("draft");
+  const retained = await (await request.get(`/api/months/${month.id}/close-readiness`)).json();
+  expect(retained.items).toEqual(readiness.items);
+  const rejectedInventory = await (await request.get("/api/synthetic-broker-inventory")).json();
   for (const [table, digest] of Object.entries(after.table_digests)) {
-    if (table !== "reporting_months")
-      expect(closedInventory.table_digests[table], table).toBe(digest);
+    expect(rejectedInventory.table_digests[table], table).toBe(digest);
   }
   expect(
     (await (await request.get(`/api/broker-months/intakes/${intake.id}`)).json()).state.overrides,

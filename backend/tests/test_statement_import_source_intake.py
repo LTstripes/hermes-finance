@@ -120,11 +120,22 @@ def review(client, view, xml, requested, request_id="decision-1", *, link=False)
     return response
 
 
-def test_intake_full_inventory_reload_default_override_no_economic_writes(database):
+@pytest.mark.parametrize("accepted_unsupported_source", [False, True])
+def test_intake_full_inventory_reload_default_override_no_economic_writes(
+    database, accepted_unsupported_source
+):
     scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    if accepted_unsupported_source:
+        # The preceding source-inbox e2e accepts unsupported Money in this month.
+        # A separate intake and currency review cannot retire that receipt.
+        accepted_xml = broker_month_xml(unsupported=True)
+        plan = _broker_month_preview(client, scope, accepted_xml)
+        assert plan["can_apply"], plan
+        assert "money_semantics_unsupported" in plan["exceptions"]
+        applied = _broker_month_apply(client, scope, plan, accepted_xml)
+        assert applied.status_code == 200, applied.text
     xml = _source_inbox_xml(database)
-    app = create_app(database=database)
-    client = TestClient(app)
     before = _all_month_tables(database)
     view = save(client, xml, scope)
     assert len(view["proposals"]) == 13
@@ -152,6 +163,48 @@ def test_intake_full_inventory_reload_default_override_no_economic_writes(databa
     again = save(client, xml, scope, "save-again")
     assert [o["id"] for o in again["observations"]] == [o["id"] for o in view["observations"]]
     assert again["state"]["overrides"] == {missing: "USD"}
+
+    month_url = f"/api/months/{scope['reporting_month_id']}"
+    readiness = client.get(f"{month_url}/close-readiness").json()
+    assert readiness["can_close"] is (not accepted_unsupported_source)
+    assert any(
+        item["code"] == source_intake.PENDING and item["severity"] == "warning"
+        for item in readiness["items"]
+    )
+    assert [item["code"] for item in readiness["items"] if item["severity"] == "hard_blocker"] == (
+        ["money_semantics_unsupported"] if accepted_unsupported_source else []
+    )
+    before_close = _tables(database)
+    closed = client.post(f"{month_url}/close")
+    if accepted_unsupported_source:
+        assert closed.status_code == 422, closed.text
+        assert closed.json()["error"]["code"] == "money_semantics_unsupported"
+        assert client.get(month_url).json()["status"] == "draft"
+        assert _tables(database) == before_close
+    else:
+        assert closed.status_code == 200, closed.text
+        assert client.get(month_url).json()["status"] == "closed"
+        after_close = _tables(database)
+        # Closing updates reporting_months; its append-only proof trigger adds one token.
+        volatile = {"reporting_months", "source_return_proof_dependencies"}
+        assert {k: v for k, v in after_close.items() if k not in volatile} == {
+            k: v for k, v in before_close.items() if k not in volatile
+        }
+        before_tokens = before_close["source_return_proof_dependencies"]
+        after_tokens = after_close["source_return_proof_dependencies"]
+        assert after_tokens[: len(before_tokens)] == before_tokens
+        assert len(after_tokens) == len(before_tokens) + 1
+    retained = client.get(f"{month_url}/close-readiness").json()
+    assert [
+        item
+        for item in retained["items"]
+        if item["code"] in {source_intake.PENDING, "money_semantics_unsupported"}
+    ] == [
+        item
+        for item in readiness["items"]
+        if item["code"] in {source_intake.PENDING, "money_semantics_unsupported"}
+    ]
+    assert client.get(f"{BASE}/{view['id']}").json()["state"]["overrides"] == {missing: "USD"}
 
 
 @pytest.mark.parametrize("unsupported", [False, True])
