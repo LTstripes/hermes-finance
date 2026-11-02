@@ -31,6 +31,11 @@ from hermes_finance.services.source_money_classifications import (
     source_reference,
     transfer_classification,
 )
+from hermes_finance.services.source_return_evidence import (
+    bound_import,
+    effective_bonus,
+    effective_section_blockers,
+)
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 from hermes_finance.statement_import.mybroker_return_structure import (
@@ -334,6 +339,7 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
     }
     counts = defaultdict(int)
     result = []
+    financial_source = bound_import(session, view)
     for row in view["document"].get("money", []):
         event_date = date.fromisoformat(row["date"])
         reference = source_reference(view["id"], row)
@@ -417,6 +423,17 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
             )
             continue
         included, status = external, saved.status
+        if (
+            classification in {"unknown", "external_deposit"}
+            and (saved.origin, saved.status) == ("default_rule", "assumed")
+            and effective_bonus(session, financial_source, row)
+        ):
+            classification, included, status = "broker_bonus", False, "confirmed"
+            gaps.append(
+                SourceReturnGap(
+                    "broker_bonus_confirmed", view["id"], event_date.replace(day=1), reference
+                )
+            )
         # Preserve the Python provisional-choice compatibility surface for default
         # rows only; an explicit persisted classification is always authoritative.
         requirement = f"candidate:{row['ordinal']}:{digest(row)[:12]}"
@@ -514,9 +531,16 @@ def read_monthly_returns(
                     "4_Transfers_unsupported",
                     "5_UFSR_unsupported",
                 }
+            original_blockers = blockers.copy()
+            if blockers.intersection(
+                {"unparsed_source_rows", "4_Transfers_unsupported", "5_UFSR_unsupported"}
+            ):
+                blockers = effective_section_blockers(
+                    session, bound_import(session, view), blockers
+                )
             financial_blockers = _FINANCIAL_COMPLETENESS_BLOCKERS.intersection(
                 (*blockers, *document.get("endpoint_blockers", []))
-            )
+            ) | (blockers - original_blockers)
             period_inferred = "period_inferred_from_content" in document.get("warnings", [])
             if period_inferred:
                 financial_blockers.add("source_period_inferred")
@@ -716,6 +740,8 @@ def read_monthly_returns(
                 ),
             )
         flags = list(calculated.reason_codes)
+        if any(gap.code == "broker_bonus_confirmed" and gap.month == month for gap in gaps):
+            flags.append("broker_bonus_confirmed")
         if opening is not None and previous_closing is not None and opening != previous_closing:
             flags.append("seam_mismatch")
         # Inferred periods already have one explained gap per intake/month.

@@ -6523,7 +6523,17 @@ Invalid external-flow currency/amount/direction refuses. Bound CLOSED months
 require Reopen. These choices change only provisional interpretation, never
 financial receipts, recognized observations or Close authority.
 
-Monthly GET reads saved classifications without reattaching originals. External
+Monthly GET reads saved classifications without reattaching originals. For an
+exact SHA/normalized-document/coverage match to a financial import, it also
+revalidates the existing source/month section dispositions and exact Money bonus
+proof. Only effective section exemptions remove their own blockers. A current
+`broker_bonus` occurrence can interpret the same default/assumed unknown or
+promo-deposit row as internal account income (`broker_bonus_confirmed`), never
+Owner funding or an additional payout/cash fact. Explicit user choices remain
+authoritative. Retired, stale, wrong-source/ordinal/fingerprint or conflicting
+proofs retain the saved classification, including UNKNOWN;
+these reads write no classification, receipt or financial row. Operations and
+unresolved structures retain the source-period impact rules below. External
 deposits/withdrawals enter the schedule with their persisted status;
 `coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
 per month, without adding it again as investor flow. The monthly
@@ -6679,9 +6689,25 @@ must not be discarded solely for that flag. Instrument and paid-income coverage
 is independent of availability of the parent account P&L. Identity conflicts and
 stale proofs still exclude affected operands; no stale fallback is introduced.
 
-Context's `source_history_periods` is saved navigation metadata selecting the
-latest from-zero original-bound period per exact source account. It does not
-establish currentness; the ordinary numeric reader still verifies the proof.
+Context's `source_history_periods` selects the latest from-zero original-bound
+start through the newest saved original's month per exact source account;
+a later non-from-zero proof header alone does not extend that history. This navigation
+metadata establishes no currentness. The shared `source_account_history_v1`
+projection extends the latest from-zero proof only with disjoint, consecutive
+calendar-month observations, verified matching account-value seams and complete
+dated external schedules. Existing exact whole-interval proof remains primary.
+It reuses the direct interval Dietz kernel on the original opening, latest
+closing and union of dated flows in (opening, closing]; monthly percentages and
+P&L subtotals are not inputs. Overlapping source occurrences retain the monthly
+reader's deduplication and multiplicity checks. Missing/stale base, missing months,
+unknown flows or mismatched seams withhold dependent results with explicit
+`history_*` reasons; no old numeric proof is revived. A known income subtotal
+remains independent of a valuation gap. This ephemeral account projection is
+shared by account Returns, the overall overview and AI export; instrument
+breakdowns retain their own supported periods, and combined XIRR remains
+unavailable. It grants no financial/Close authority. Stored proofs and compatibility
+gates remain unchanged; changed Python implementation can require fresh
+original-bound confirmation under the existing currentness rules.
 Private runtime `HERMES_FINANCE_RETURNS_ACCOUNT_DISPLAY_NAMES` is an exact-scope
 JSON display-label map, with optional browser-only display overrides. Neither
 maps, renames nor changes financial identities; the runtime setting contains no
@@ -14349,7 +14375,9 @@ originals are excluded by explicit allowlists and a strict nested schema.
 
 Intervals carry their exact opening/closing dates, source contract and currentness.
 `all_history_ref` selects the latest from-zero source interval without requiring
-intermediate monthly valuations. `monthly_history_refs` identifies only complete
+intermediate monthly valuations, including the shared
+[account-history extension](#c7-returns-overall) when supported.
+`monthly_history_refs` identifies only complete
 calendar-month intervals; missing monthly values remain unknown. `selected_month`
 names the requested calendar bounds, actual through-date and completion flag;
 partial coverage never claims a complete month. Source intervals ending after

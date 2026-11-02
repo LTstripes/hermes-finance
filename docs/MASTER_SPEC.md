@@ -365,6 +365,9 @@ its instrument or payout explanations again, sum rates or average different
 account periods. A changed account must select its own supported interval rather
 than retain another account's inception dates. Private runtime/browser display names are
 labels only and never alter source identity, mappings or financial records.
+Account history continues through newer saved months under the
+[C7 continuity contract](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-overall);
+missing evidence remains a visible gap, independently of Close.
 
 Figures and actions lead. Do not present a technical prose wall, repeated
 provenance/caveats, a column of account/period codes, or empty blocks. Show known

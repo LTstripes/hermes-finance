@@ -267,7 +267,9 @@ def _proof_interval(proof, analyses, metadata):
     raw = proof["interval"]
     result = {
         **_bounds(start, end),
-        "source_contract": source_investment_proofs.VERSION,
+        "source_contract": "source_account_history_v1"
+        if proof.get("derived_history")
+        else source_investment_proofs.VERSION,
         "currentness": proof["status"],
         "history_from_zero": proof["history_from_zero"],
         "reason_codes": _reasons(proof["reason_codes"] if raw is None else raw["reason_codes"]),
@@ -289,7 +291,9 @@ def _proof_interval(proof, analyses, metadata):
             k: _metric(raw[k + "_kopecks"], reasons=raw.get("income_reason_codes", {}).get(k, ()))
             for k in ("coupons", "dividends")
         },
-        "detail_status": "known_rows_not_complete_cost_coverage",
+        "detail_status": "account_only_not_projected"
+        if proof.get("derived_history")
+        else "known_rows_not_complete_cost_coverage",
         "external_flows": [
             {"date": f["date"], "amount": _money(f["amount_kopecks"]), "status": f["status"]}
             for f in raw["external_flows"]
@@ -416,6 +420,25 @@ def source_returns_section(session, *, as_of_date, reporting_period, source_acco
                 key = ((r.opening_date + timedelta(days=1)).isoformat(), r.closing_date.isoformat())
                 if key not in intervals:
                     intervals[key] = _monthly_interval(session, account, row, monthly.flows)
+            from hermes_finance.services.source_account_history import (
+                extend_history,
+                latest_history,
+            )
+
+            base = latest_history(
+                [
+                    p
+                    for p in proofs
+                    if canonical.get(p["source_account"], p["source_account"]) == account
+                ]
+            )
+            extended = extend_history(base, monthly, through=as_of_date)
+            if extended is not None and extended.get("derived_history"):
+                key = (extended["covered_from"], extended["covered_to"])
+                # An exact saved proof for this entire interval remains primary.
+                if key not in intervals:
+                    intervals[key] = _proof_interval(extended, {}, metadata)
+                    proof_order[key] = extended["proof_id"]
             ordered = sorted(
                 intervals.values(), key=lambda i: (i["opening_date"], i["closing_date"])
             )
