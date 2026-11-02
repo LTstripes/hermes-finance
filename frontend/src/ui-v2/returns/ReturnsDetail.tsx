@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { SourceInstrumentDetail } from "../SourceInstrumentDetail";
 import { analysisBreakdown } from "./breakdown";
 import { type Detail, getDetail, type Period } from "./model";
-import { ReturnsBreakdown } from "./ReturnsBreakdown";
 import styles from "./Returns.module.css";
 import { MissingName } from "./ReturnsAvailable";
+import { ReturnsBreakdown } from "./ReturnsBreakdown";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function ReturnsDetail({
   scope,
@@ -46,6 +47,11 @@ export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
         {d.name} <MissingName name={d.name} isin={d.isin} />
       </h3>
       {d.name !== d.isin && <small>{d.isin}</small>}
+      <ReturnsResultMeta
+        period={d.period}
+        valuationDate={d.valuation_date}
+        accountLink={d.account_link}
+      />
       <ReturnsBreakdown value={analysisBreakdown([d.analysis], d.pnl)} total={d.pnl} />
       <SourceInstrumentDetail
         analysis={{ ...d.analysis, components }}

@@ -1,4 +1,5 @@
 import { apiMultipart, apiRequest } from "./client";
+import type { ReturnAccountLink, ReturnPeriod } from "./returnAccount";
 
 export type SourceReturnProof = {
   status: "absent" | "current" | "stale";
@@ -80,6 +81,9 @@ export type ReturnGap = {
   isin?: string | null;
 };
 export type PeriodTotals = {
+  start: string | null;
+  end: string | null;
+  valuation_date: string | null;
   contributions_kopecks: number | null;
   withdrawals_kopecks: number | null;
   growth_kopecks: number | null;
@@ -94,6 +98,8 @@ export type PeriodTotals = {
   xirr_reason_codes: string[];
 };
 export type MonthlyReturn = {
+  period: ReturnPeriod;
+  valuation_date: string | null;
   opening_date: string;
   closing_date: string;
   opening_kopecks: number | null;
@@ -121,6 +127,8 @@ export type SourceReturnFlow = {
   classification: string;
 };
 export type SourceMonthlyReturns = {
+  account_link: ReturnAccountLink | null;
+  valuation_date: string | null;
   source_proof?: SourceReturnProof | null;
   source_account: string;
   months: MonthlyReturn[];
@@ -133,6 +141,8 @@ export type SourceMonthlyReturns = {
   approximate: true;
 };
 export type InstrumentTotals = {
+  period: ReturnPeriod | null;
+  valuation_date: string | null;
   buys_cost_kopecks: number | null;
   sells_proceeds_kopecks: number | null;
   price_effect_kopecks: number | null;
@@ -266,6 +276,7 @@ export type InstrumentAnalysis<Money = number> = {
   };
 };
 export type SourceInstrumentReturns = {
+  account_link: ReturnAccountLink | null;
   source_account: string;
   native_source_account: string | null;
   unresolved_events: InstrumentEvent[];
@@ -289,6 +300,9 @@ export type SourceInstrumentReturns = {
     isin: string | null;
   }>;
   instruments: Array<{
+    period: ReturnPeriod | null;
+    valuation_date: string | null;
+    account_link: ReturnAccountLink | null;
     isin: string;
     source_name: string | null;
     instrument_type: string | null;

@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { ReturnPeriod } from "./returnAccount";
 
 export type StatementSourceChoice = {
   request_id: string;
@@ -24,6 +25,8 @@ type StatementEndpoint = {
   }[];
 };
 export type BrokerStatementReturn = {
+  period: ReturnPeriod;
+  valuation_date: string | null;
   method: "broker_statement_mwr_period_v1";
   scope: "account";
   account_id: number;

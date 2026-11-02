@@ -165,7 +165,7 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
     monkeypatch.setattr(
         overall,
         "_selected_sources",
-        lambda session, account: (
+        lambda session, account, **_selection: (
             [
                 (
                     None,
@@ -178,6 +178,10 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
             ],
             {account},
         ),
+    )
+    monkeypatch.setattr(
+        "hermes_finance.services.source_monthly_returns._selected_sources",
+        overall._selected_sources,
     )
     calls = []
 
@@ -196,6 +200,8 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
             ISIN: SimpleNamespace(
                 opening_date=start,
                 closing_date=END,
+                opening=SimpleNamespace(date=start, reported_value_kopecks=1000),
+                closing=SimpleNamespace(date=END, reported_value_kopecks=1100),
                 contract_version="instrument_return_v2",
                 pnl=metric(100 if not second else -50),
                 modified_dietz=metric(Decimal("0.1")),
@@ -217,6 +223,8 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
                 if second and stale_second
                 else {
                     "reason_codes": [],
+                    "opening_kopecks": "1000",
+                    "closing_kopecks": "1100",
                     "pnl": {"value": "100" if not second else "-50"},
                     "modified_dietz": {"value": "0.1"},
                     "coupons_kopecks": "25",
@@ -499,6 +507,8 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
             "scope",
             "label",
             "canonical_account_id",
+            "account_link",
+            "valuation_date",
             "details_loaded",
             "period",
             "pnl",
@@ -652,6 +662,7 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
             return SimpleNamespace(value=value, status="supported", reason_codes=())
 
         return {
+            "valuation_date": end,
             "analysis": SimpleNamespace(
                 closing=SimpleNamespace(
                     quantity=Decimal("0"), date=end, reported_value_kopecks=0, reason_codes=()
@@ -668,7 +679,7 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
                         "redemption": 0,
                     }.items()
                 },
-            )
+            ),
         }
 
     monkeypatch.setattr(overall.returns_view, "read_detail", detail)
@@ -723,6 +734,7 @@ def test_card_known_source_only_components_require_current_exact_native_proof(
             )
 
         return {
+            "valuation_date": end,
             "analysis": SimpleNamespace(
                 opening_date=date(2020, 1, 1) if blocker == "wrong_period" else start,
                 closing_date=end,
@@ -742,7 +754,7 @@ def test_card_known_source_only_components_require_current_exact_native_proof(
                         "redemption": 0,
                     }.items()
                 },
-            )
+            ),
         }
 
     monkeypatch.setattr(overall.returns_view, "read_detail", detail)

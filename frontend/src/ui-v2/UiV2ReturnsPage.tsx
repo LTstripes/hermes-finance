@@ -1,10 +1,8 @@
-import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
-import { UiV2Shell } from "./UiV2Shell";
-import { getOverall, accountHref, type GoldTarget } from "./returns/overall";
-import { compareDecimal, dateLabel, displayMetric, periodLabel } from "./returns/model";
+import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
   compactQuantity,
@@ -14,10 +12,13 @@ import {
   selectedAccounts,
   selectedIncome,
 } from "./returns/dashboard";
+import { compareDecimal, dateLabel, displayMetric, periodLabel } from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
-import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
+import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
-import layout from "./returns/Dashboard.module.css";
+import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
+import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
+import { UiV2Shell } from "./UiV2Shell";
 
 const ReturnsGoldHistory = lazy(() =>
   import("./returns/ReturnsGoldHistory").then((m) => ({ default: m.ReturnsGoldHistory })),
@@ -277,7 +278,11 @@ export default function UiV2ReturnsPage() {
                             : "Результат пока не подтверждён"}
                         </p>
                       ) : null}
-                      <small>{a.period && periodLabel(a.period)}</small>
+                      <ReturnsResultMeta
+                        period={a.period}
+                        valuationDate={a.valuation_date}
+                        accountLink={a.account_link}
+                      />
                       {accounts.length > 1 && a.result && a.result.rate.value !== null && (
                         <small>Modified Dietz {displayMetric(a.result.rate)} за этот период</small>
                       )}
@@ -386,6 +391,17 @@ export default function UiV2ReturnsPage() {
                                       ? "Акция"
                                       : r.isin}
                                 </small>
+                                <details>
+                                  <summary>Счета и даты</summary>
+                                  {r.accounts.map((a) => (
+                                    <ReturnsResultMeta
+                                      key={a.scope}
+                                      period={a.period}
+                                      valuationDate={a.valuation_date}
+                                      accountLink={a.account_link}
+                                    />
+                                  ))}
+                                </details>
                               </th>
                               <td>
                                 {r.pnl.value !== null ? (

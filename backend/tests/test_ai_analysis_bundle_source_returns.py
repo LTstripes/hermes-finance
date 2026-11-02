@@ -152,6 +152,9 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         assert m["reason_codes"] == ordinary["instruments"][0][name]["reason_codes"]
     assert instrument["metrics"]["xirr_annualized"]["annualized"]
     assert not instrument["metrics"]["xirr_period"]["annualized"]
+    assert instrument["period"] == {"start": str(START), "end": str(END)}
+    assert instrument["valuation_date"] == str(detail["valuation_date"]) == str(END)
+    assert view["instruments"][0]["valuation_date"] == END
     assert instrument["opening"]["quantity"] == detail["opening_quantity"]
     assert instrument["closing"]["quantity"] == detail["closing_quantity"]
     assert instrument["components"]["buys"]["value"]["amount"] == "1000.00"
@@ -159,7 +162,11 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
     assert instrument["components"]["coupons"]["value"]["amount"] == "0.00"
     assert instrument["events"] and any(e["cash_legs"] for e in instrument["events"])
     account = exported["data"]["accounts"][0]
-    assert account["financial_account_ref"] is None  # even with effective broker mappings
+    assert account["mapping_status"] == "linked"
+    assert account["mapping_reason_codes"] == []
+    assert account["financial_account_ref"] in {
+        a["ref"] for a in report["sections"]["current_portfolio"]["data"]["accounts"]
+    }
     assert account["all_history_ref"] == account["selected_month"]["interval_ref"]
     assert account["monthly_history_refs"] == [account["all_history_ref"]]
     validate_ai_financial_review(json.loads(canonical_json(report)))

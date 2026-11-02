@@ -61,3 +61,12 @@ test("decimal quantity formatting changes no significant digits", () => {
   expect(compactQuantity("0.0001200")).toBe("0.00012");
   expect(compactQuantity("0")).toBe("0");
 });
+
+test("explicit IIS and brokerage categories both retain their eligible source result", () => {
+  const data = overallFixture();
+  data.mixed_result.components[0].category = "iis";
+  data.mixed_result.components[1].category = "brokerage";
+  expect(brokerageResult(data, "all").amount.value).toBe("800");
+  expect(brokerageResult(data, "source:SYNTH-A").amount.value).toBe("1200");
+  expect(brokerageResult(data, "source:SYNTH-B").amount.value).toBe("-400");
+});

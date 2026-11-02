@@ -376,6 +376,10 @@ its instrument or payout explanations again, sum rates or average different
 account periods. A changed account must select its own supported interval rather
 than retain another account's inception dates. Private runtime/browser display names are
 labels only and never alter source identity, mappings or financial records.
+Each account result displays its explicitly linked ИИС/Брокерский type and native
+account id, its own period and last valuation date. Missing or ambiguous links
+say that the account connection is unconfirmed; equal amounts never choose a
+financial account. Instrument and monthly results retain their individual dates.
 Account history continues through newer saved months under the
 [C7 continuity contract](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-overall);
 missing evidence remains a visible gap, independently of Close.
@@ -428,8 +432,9 @@ separately labelled source-only partial RUB result and separate actual deposit
 interest, with dates, observation coverage and concrete exclusions. It does not
 add these different methods. Full basket result/rate and unsupported physical
 gold period return remain unavailable; principal increases and current cost gains
-are not period income. Historical brokerage/IIS subtype is never inferred from
-today's account type. Existing account/class detail retains its scope. Exact
+are not period income. A unique explicit source-id link selects the mapped catalogue brokerage/IIS
+category; this does not assert historical financial membership. An unlinked
+account cannot enter either single-category result. Existing account/class detail retains its scope. Exact
 capabilities and conservative crossing exclusions are in [C7](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-selected-basket).
 
 `/v2/returns/account` retains explicit selected account/EOD dates and existing

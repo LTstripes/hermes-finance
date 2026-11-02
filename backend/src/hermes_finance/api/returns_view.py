@@ -32,7 +32,18 @@ class Metric(DTO):
     estimate: bool
 
 
+class AccountLink(DTO):
+    source_account_id: str
+    financial_account_id: int | None
+    account_type: Literal["brokerage", "iis"] | None
+    label: str
+    status: Literal["linked", "unlinked"]
+    reason_codes: list[str]
+
+
 class Result(DTO):
+    account_link: AccountLink | None = None
+    valuation_date: date | None
     period: Period
     pnl: Metric
     rate: Metric
@@ -41,6 +52,7 @@ class Result(DTO):
 
 
 class Account(DTO):
+    account_link: AccountLink | None = None
     id: str
     label: str
     basis: Literal["statements", "accepted"]
@@ -56,6 +68,8 @@ class Context(DTO):
 
 
 class Instrument(DTO):
+    account_link: AccountLink | None = None
+    valuation_date: date | None
     isin: str
     name: str
     kind: str | None
@@ -73,6 +87,7 @@ class MissingMonth(DTO):
 
 
 class AvailableMonths(DTO):
+    valuation_date: date | None
     period: Period
     partial: Literal[True]
     pnl: Metric
@@ -105,6 +120,7 @@ class AcceptedIncome(AcceptedIncomeAmounts):
 
 
 class Overview(DTO):
+    account_link: AccountLink | None = None
     scope: str
     breakdown: ReturnBreakdown | None
     accepted_income: AcceptedIncome | None = None
@@ -205,15 +221,19 @@ def instrument(
 
 
 class BasketCell(DTO):
+    valuation_date: date | None
     period: Period
     value_kopecks: str | None
     reason_codes: list[str]
 
 
 class BasketComponent(DTO):
+    account_link: AccountLink | None = None
+    period: Period | None
+    valuation_date: date | None
     id: str
     label: str
-    category: Literal["brokerage_iis", "deposits", "gold"]
+    category: Literal["brokerage_iis", "brokerage", "iis", "deposits", "gold"]
     basis: Literal["statements", "accepted", "unsupported"]
     method: str
     cells: list[BasketCell]

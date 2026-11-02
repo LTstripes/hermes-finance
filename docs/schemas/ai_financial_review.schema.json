@@ -636,6 +636,7 @@
         "dividends"
       ],
       "properties": {
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "period": {
           "$ref": "#/$defs/returns_period"
         },
@@ -665,6 +666,7 @@
         "instrument_count"
       ],
       "properties": {
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "ref": {
           "type": "string",
           "pattern": "^source-account-[1-9][0-9]*$"
@@ -719,6 +721,7 @@
         "reason_codes"
       ],
       "properties": {
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "source_account_ref": {
           "type": "string",
           "pattern": "^source-account-[1-9][0-9]*$"
@@ -820,6 +823,7 @@
         "exclusion_reason"
       ],
       "properties": {
+        "period": {"$ref":"#/$defs/returns_period"},
         "ref": {
           "type": "string",
           "pattern": "^returns-component-[1-9][0-9]*$"
@@ -838,6 +842,8 @@
         "category": {
           "enum": [
             "brokerage",
+            "iis",
+            "brokerage_iis",
             "deposits",
             "gold"
           ]
@@ -1107,6 +1113,7 @@
         "analysis"
       ],
       "properties": {
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "period": {
           "$ref": "#/$defs/returns_period"
         },
@@ -1181,6 +1188,7 @@
         "detail"
       ],
       "properties": {
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "source_account_ref": {
           "type": "string",
           "pattern": "^source-account-[1-9][0-9]*$"
@@ -2018,6 +2026,8 @@
         "events"
       ],
       "properties": {
+        "period": {"$ref":"#/$defs/returns_period"},
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "isin": {
           "type": "string"
         },
@@ -2195,6 +2205,8 @@
         "detail_status"
       ],
       "properties": {
+        "period": {"$ref":"#/$defs/returns_period"},
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "opening_value": {
           "oneOf": [
             {
@@ -2325,6 +2337,8 @@
         "instruments"
       ],
       "properties": {
+        "period": {"$ref":"#/$defs/returns_period"},
+        "valuation_date": {"type":["string","null"],"format":"date"},
         "ref": {
           "type": "string"
         },
@@ -2383,16 +2397,14 @@
         "intervals"
       ],
       "properties": {
+        "account_type": {"enum":["brokerage","iis",null]},
+        "mapping_reason_codes": {"$ref":"#/$defs/reason_codes"},
         "ref": {
           "type": "string",
           "pattern": "^source-account-[1-9][0-9]*$"
         },
-        "financial_account_ref": {
-          "type": "null"
-        },
-        "mapping_status": {
-          "const": "not_asserted"
-        },
+        "financial_account_ref": {"type":["string","null"]},
+        "mapping_status": {"enum":["linked","unlinked","not_asserted"]},
         "all_history_ref": {
           "oneOf": [
             {

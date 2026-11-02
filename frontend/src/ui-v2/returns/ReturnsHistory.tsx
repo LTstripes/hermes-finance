@@ -2,13 +2,14 @@ import { useState } from "react";
 import {
   displayMetric,
   monthLabel,
-  periodKey,
-  samePeriod,
   type Period,
+  periodKey,
   type Result,
+  samePeriod,
 } from "./model";
-import { Value } from "./ReturnsInfo";
 import styles from "./Returns.module.css";
+import { Value } from "./ReturnsInfo";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function ReturnsHistory({
   rows,
@@ -110,6 +111,7 @@ export function ReturnsHistory({
                       <button type="button" onClick={() => choose(r.period)}>
                         {monthLabel(r.period)}
                       </button>
+                      <ReturnsResultMeta period={r.period} valuationDate={r.valuation_date} />
                     </th>
                     <td>
                       <Value metric={r.pnl} label={`${monthLabel(r.period)}: результат`} signed />

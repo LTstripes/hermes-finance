@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal, DecimalException, localcontext
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer
 
 from hermes_finance.domain.xirr import XirrCashFlow, calculate_xirr
 
@@ -110,6 +110,24 @@ class BrokerStatementReturn(BrokerStatementBasis):
     rate_fraction: str | None
     annualized: Literal[False] = False
     warnings: tuple[str, ...]
+
+    @computed_field
+    @property
+    def period(self) -> dict[str, date]:
+        return {"start": self.t0, "end": self.t1}
+
+    @computed_field
+    @property
+    def valuation_date(self) -> date | None:
+        return (
+            self.closing.valuation_date
+            if self.closing.total_value_kopecks is not None
+            else (
+                self.opening.valuation_date
+                if self.opening.total_value_kopecks is not None
+                else None
+            )
+        )
 
 
 def calculate_statement_return(

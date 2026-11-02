@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.returns_view import AccountLink
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import AccountReconciliation, InstrumentEvent
 from hermes_finance.services.source_instrument_returns import (
@@ -24,6 +25,7 @@ class SourceInstrumentReturnsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_account: str
+    account_link: AccountLink | None
     native_source_account: str | None
     unresolved_events: tuple[InstrumentEvent, ...]
     account_reconciliation_events: tuple[InstrumentEvent, ...]

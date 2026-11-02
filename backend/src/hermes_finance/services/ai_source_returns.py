@@ -32,7 +32,7 @@ READING_GUIDE = {
     "unknown": "NULL is unknown/unavailable, not zero. Known partial income can coexist with unknown valuation or return.",
     "periods": "Compare identical dates and coverage. All-history endpoints do not prove intervening monthly valuations; available months are not full history.",
     "authority": "Source-only provisional observations; financial_authority=none. Separate from accepted Performance and financial Close.",
-    "identity": "Source account refs are local to this file. No verified join to current_portfolio accounts is asserted.",
+    "identity": "Source account refs are local to this file. A linked financial_account_ref uses only the effective exact source-id mapping; it does not assert financial acceptance or historical type authority.",
     "events": "Cash legs show account and opposite instrument-flow signs. Only included_in_interval legs enter the interval cash economics; outside amounts are NULL. producer_eligible preserves source eligibility; counted means at least one eligible in-window cash leg. Cross-boundary dates are chronology, not extra profit. Events repeat across overlapping intervals and must not be summed across them.",
 }
 EXCLUDED = [
@@ -227,6 +227,14 @@ def _instrument(isin, meta, analysis, raw=None):
             )
     return {
         "isin": isin,
+        "period": {"start": str(analysis.opening_date), "end": str(analysis.closing_date)},
+        "valuation_date": str(analysis.closing.date)
+        if analysis.closing.reported_value_kopecks is not None
+        else (
+            str(analysis.opening.date)
+            if analysis.opening.reported_value_kopecks is not None
+            else None
+        ),
         "name": meta.get("name"),
         "instrument_type": meta.get("kind"),
         "opening": _endpoint(analysis.opening),
@@ -267,6 +275,10 @@ def _proof_interval(proof, analyses, metadata):
     raw = proof["interval"]
     result = {
         **_bounds(start, end),
+        "period": {"start": str(start), "end": str(end)},
+        "valuation_date": str(end)
+        if raw and raw.get("closing_kopecks") is not None
+        else (str(start) if raw and raw.get("opening_kopecks") is not None else None),
         "source_contract": "source_account_history_v1"
         if proof.get("derived_history")
         else source_investment_proofs.VERSION,
@@ -279,6 +291,8 @@ def _proof_interval(proof, analyses, metadata):
     if raw is None:
         return result
     result["account"] = {
+        "period": result["period"],
+        "valuation_date": result["valuation_date"],
         "opening_value": _money(raw["opening_kopecks"]),
         "closing_value": _money(raw["closing_kopecks"]),
         "contributions": _money(raw["contributions_kopecks"]),
@@ -323,11 +337,19 @@ def _monthly_interval(session, account, row, flows):
     reasons = _reasons(r.reason_codes + row.flags)
     return {
         **_bounds(r.opening_date, r.closing_date),
+        "period": {"start": str(r.opening_date), "end": str(r.closing_date)},
+        "valuation_date": str(r.closing_date)
+        if r.closing_kopecks is not None
+        else (str(r.opening_date) if r.opening_kopecks is not None else None),
         "source_contract": "source_monthly_returns/instrument_return_v2",
         "currentness": "current",
         "history_from_zero": False,
         "reason_codes": reasons,
         "account": {
+            "period": {"start": str(r.opening_date), "end": str(r.closing_date)},
+            "valuation_date": str(r.closing_date)
+            if r.closing_kopecks is not None
+            else (str(r.opening_date) if r.opening_kopecks is not None else None),
             "opening_value": _money(r.opening_kopecks),
             "closing_value": _money(r.closing_kopecks),
             "contributions": _money(r.contributions_kopecks),
@@ -372,8 +394,10 @@ def _monthly_interval(session, account, row, flows):
     }
 
 
-def source_returns_section(session, *, as_of_date, reporting_period, source_account_refs=None):
-    """Build an additive section without joining source aliases to Account IDs."""
+def source_returns_section(
+    session, *, as_of_date, reporting_period, source_account_refs=None, financial_account_refs=None
+):
+    """Export exact source-id links using the bundle's existing account references."""
     with source_read_snapshot(session):
         analyses = {}
         proofs = source_investment_proofs.read_reports(session, analyses=analyses)
@@ -473,12 +497,18 @@ def source_returns_section(session, *, as_of_date, reporting_period, source_acco
                 ),
                 None,
             )
+            from hermes_finance.services.returns_account_link import account_link
+
+            link = account_link(session, account, canonical)
+            financial_ref = (financial_account_refs or {}).get(link["financial_account_id"])
             monthly_refs = [i["ref"] for i in ordered if _is_full_month(i)]
             exported.append(
                 {
                     "ref": f"source-account-{ordinal}",
-                    "financial_account_ref": None,
-                    "mapping_status": "not_asserted",
+                    "financial_account_ref": financial_ref,
+                    "mapping_status": link["status"],
+                    "mapping_reason_codes": link["reason_codes"],
+                    "account_type": link["account_type"],
                     "all_history_ref": None if whole is None else whole["ref"],
                     "all_history_reason_codes": ["full_history_source_interval_unavailable"]
                     if whole is None
@@ -573,6 +603,7 @@ def _overall_result(raw):
         return None
     return {
         "period": _overall_period(raw["period"]),
+        "valuation_date": _overall_date(raw["valuation_date"]),
         **{key: _overall_metric(raw[key]) for key in ("pnl", "rate", "coupons", "dividends")},
     }
 
@@ -588,6 +619,7 @@ def _overall_income(raw, account_refs):
             {
                 "source_account_ref": account_refs[row["scope"]],
                 "period": _overall_period(row["period"]),
+                "valuation_date": _overall_date(row["valuation_date"]),
                 "amount": _overall_metric(row["amount"]),
                 "proof_status": row["proof_status"],
                 "included": row["included"],
@@ -619,6 +651,7 @@ def _overall_mixed(raw, account_refs):
                 **{key: row[key] for key in ("selected", "available", "included")},
                 "amount": _overall_metric(row["amount"]),
                 "interval": _overall_period(row["interval"]),
+                "period": _overall_period(row["period"]),
                 "valuation_date": _overall_date(row["valuation_date"]),
                 "coverage": {
                     "status": row["coverage"]["status"],
@@ -837,12 +870,14 @@ def _overall_card(raw, account_refs, source_intervals, proof_instruments):
                 "source_account_ref": account_refs[row["scope"]],
                 "source_interval_ref": source_intervals.get(key),
                 "period": period,
+                "valuation_date": _overall_date(row["valuation_date"]),
                 **{name: row[name] for name in ("proof_status", "included", "exclusion_reason")},
                 "reason_codes": _reasons(row["reason_codes"]),
                 "detail": None
                 if detail is None
                 else {
                     "period": _overall_period(detail["period"]),
+                    "valuation_date": _overall_date(detail["valuation_date"]),
                     "opening_quantity": decimal_quantity(detail["opening_quantity"]),
                     "closing_quantity": decimal_quantity(detail["closing_quantity"]),
                     "conditional": detail["conditional"],
@@ -959,6 +994,7 @@ def returns_overall_section(session, *, source_account_refs, source_section):
             "source_accounts": [
                 {
                     "ref": source_account_refs[row["scope"]],
+                    "valuation_date": _overall_date(row["valuation_date"]),
                     "period": _overall_period(row["period"]),
                     "result": _overall_result(row["result"]),
                     "proof_status": row["proof_status"],

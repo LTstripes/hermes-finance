@@ -6270,6 +6270,30 @@ totals; its monthly chain remains unavailable.
 <a id="c7-returns-presentation"></a>
 ### Returns presentation adapter
 
+Returns account attribution uses only the verified native source account id and
+existing effective MyBroker account mappings. Filename aliases must first pass
+the existing single-native-account proof; labels, balances, P&L, equal amounts,
+dates and current holdings never establish identity. `account_link` carries
+`source_account_id`, nullable `financial_account_id` and `account_type`, a display
+`label`, `status=linked|unlinked` and `reason_codes`. A unique one-to-one mapping
+to a catalogue brokerage/IIS account supplies its explicit subtype and label.
+Missing mapping (`source_account_mapping_missing`), conflicting forward/reverse
+mapping (`source_account_mapping_ambiguous`), unproved source identity
+(`source_account_identity_unproven`) or unsupported mapped account type
+(`source_account_type_unsupported`) leaves the result unlinked, with no financial
+account id or subtype. Source-only numbers retain their original authority.
+No relink, migration, financial acceptance or historical membership is inferred.
+
+Each account/instrument result, overall account component and basket cell carries
+its own `period={start,end}` and nullable `valuation_date`: the latest evidenced
+valuation used by that result, including an opening endpoint when the closing
+valuation is unavailable. Missing evidence stays NULL; requested end dates and
+export generation time cannot manufacture a valuation. Mixed results keep their
+individual operand periods; `interval` remains a compatibility alias for component
+`period`. Source monthly totals retain existing metric fields in `period` alongside
+`start`, `end` and `valuation_date`; native instrument rows, monthly/all-time rows
+and broker-statement returns expose the same explicit date metadata.
+
 `GET /api/returns/context`, `/overview?scope=...&start=...&end=...`, and
 `/instrument?...&isin=...` compose existing readers in a coherent read snapshot.
 The adapter performs no DML, provider request, relink, receipt or new return
@@ -6331,7 +6355,7 @@ only when every selected document proves the same single native account through
 the existing read selector. Unreadable, multiple-account and conflicting aliases
 remain visible. Grouping preserves the canonical account's union of originals
 and periods; `scope_aliases` supports equivalent old URLs. Existing effective
-exact broker-account mappings may supply a label only, never accepted authority.
+exact broker-account mappings supply explicit identity metadata, never accepted authority.
 Manual/accepted accounts and PERF portfolio remain a separate basis with their
 existing URLs. The lazy account/month screen retains its CLOSED-period default;
 the unscoped ordinary Returns entry uses the all-history composition below.
@@ -6565,9 +6589,11 @@ proof of complete inventory. Empty operands stay NULL; observed zero survives.
 Source grouping reuses #976's exact native/filename-alias proof. Conflicting or
 unproved document scopes and known mappings of multiple native groups to one
 accepted account are withheld. Accepted representations are not extra addends.
-Current mutable Account type and broker mappings do not prove historical
-brokerage/IIS subtype. With both boxes selected, proven native accounts belong
-to their union once; with just either box selected they remain UNKNOWN. Accepted
+An explicit one-to-one source-id link selects the mapped catalogue brokerage/IIS
+category and shows its native id. This is identity/category metadata, not proof
+of historical financial membership. Unlinked native accounts retain UNKNOWN
+subtype: they may belong to the source-only union once with both boxes selected,
+but cannot enter either single-category subtotal. Accepted
 account-only results stay unavailable rather than borrowing a current type,
 portfolio scope or PERF04 bridge. Shared ISINs in distinct accounts stay distinct.
 
@@ -6595,7 +6621,7 @@ partial. Physical gold period result stays NULL with its concrete evidence
 reason; current valuations and whole-portfolio class rates cannot fill it.
 
 This first panel deliberately leaves flow-bearing union reconciliation,
-historical brokerage/IIS classification, mixed-source event reconciliation and
+historical financial membership, mixed-source event reconciliation and
 physical-gold period performance for a separately accepted contract. Existing
 source/account/class detail modes keep their own supported meaning and URLs.
 
@@ -13691,8 +13717,13 @@ and dated event/cash-leg chronology. Ordinary instrument and monthly readers own
 available calendar-month observations. No formula, ledger or importer is added.
 Unsupported monthly XIRR stays NULL with `source_method_not_available`.
 
-Every source account has an export-local ordinal ref and `mapping_status=not_asserted`;
-`financial_account_ref` is NULL even when a source alias resembles an Account.
+Every source account has an export-local ordinal ref. `mapping_status=linked`
+and `financial_account_ref` use the same explicit native-id resolver and the
+existing bundle account-reference map; they never match amounts or names.
+Unlinked accounts retain NULL, `mapping_reason_codes` and nullable `account_type`.
+Legacy synthetic documents with `mapping_status=not_asserted` remain readable.
+Each interval, account result and instrument retains its own `period` and nullable
+`valuation_date`, including lossless referenced JSON v2 occurrences.
 Only the existing verified source-scope alias resolver groups source accounts.
 Raw account numbers, IDs, proof objects/hashes, native references, paths and
 originals are excluded by explicit allowlists and a strict nested schema.

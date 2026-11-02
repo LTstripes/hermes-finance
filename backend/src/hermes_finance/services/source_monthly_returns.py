@@ -160,6 +160,8 @@ class SourceReturnSegment(PeriodReturnTotals):
     start: date
     end: date
     partial_segment: bool
+    period: dict | None = None
+    valuation_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -177,12 +179,17 @@ class SourceMonthlyReturns:
     approximate: bool = True
     source_proof: dict | None = None
     investment_reports: tuple[dict, ...] = ()
+    account_link: dict | None = None
 
     def to_dict(self):
         value = asdict(self)
         value["months"] = [
             {
                 **asdict(row.result),
+                "period": {"start": row.result.opening_date, "end": row.result.closing_date},
+                "valuation_date": row.result.closing_date
+                if row.result.closing_kopecks is not None
+                else (row.result.opening_date if row.result.opening_kopecks is not None else None),
                 "intake_ids": row.intake_ids,
                 "flags": row.flags,
                 "previous_closing_kopecks": row.previous_closing_kopecks,
@@ -192,6 +199,25 @@ class SourceMonthlyReturns:
             }
             for row in self.months
         ]
+        start = self.months[0].result.opening_date if self.months else None
+        end = self.months[-1].result.closing_date if self.months else None
+        value["period"].update(start=start, end=end)
+        value["valuation_date"] = max(
+            (r["valuation_date"] for r in value["months"] if r["valuation_date"]), default=None
+        )
+        value["period"]["valuation_date"] = value["valuation_date"]
+        for segment in value["segments"]:
+            segment["period"] = {"start": segment["start"], "end": segment["end"]}
+            segment["valuation_date"] = max(
+                (
+                    r["valuation_date"]
+                    for r in value["months"]
+                    if segment["start"] <= r["period"]["start"]
+                    and r["period"]["end"] <= segment["end"]
+                    and r["valuation_date"]
+                ),
+                default=None,
+            )
         return value
 
 
@@ -487,6 +513,9 @@ def read_monthly_returns(
     assumptions: Mapping[int, ProvisionalAssumptions] | None = None,
 ) -> SourceMonthlyReturns:
     """Read persisted classifications; isolate bad originals/months and retain gaps."""
+    from hermes_finance.services.returns_account_link import account_link
+
+    link = account_link(session, source_account)
     sources = []
     gaps = []
     money = defaultdict(list)
@@ -667,6 +696,7 @@ def read_monthly_returns(
             tuple(f for f in flows if f.status == "assumed"),
             tuple(gaps),
             source_proof=proof_status,
+            account_link=link,
         )
 
     currency_months = {gap.month for gap in gaps if gap.code == "currency_unsupported"}
@@ -869,6 +899,7 @@ def read_monthly_returns(
         tuple(f for f in flows if f.status == "assumed"),
         tuple(gaps),
         source_proof=proof_status,
+        account_link=link,
         investment_reports=tuple(investment_reports),
     )
 

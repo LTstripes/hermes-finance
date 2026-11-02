@@ -666,6 +666,12 @@ def test_get_api_decimal_strings_integer_money_no_store_and_no_writes(db, accept
     stock = next(row for row in body["instruments"] if row["isin"] == ISIN)
     row = stock["months"][0]
     assert row["month"] == "2030-04-01"
+    assert stock["period"] == row["period"] == {"start": "2030-03-31", "end": "2030-04-30"}
+    assert stock["valuation_date"] == row["valuation_date"] == "2030-04-30"
+    assert stock["all_time"]["period"] == stock["period"]
+    assert stock["all_time"]["valuation_date"] == stock["valuation_date"]
+    assert stock["account_link"] == body["account_link"]
+    assert body["account_link"]["source_account_id"] == ACCOUNT
     assert type(row["opening_value_kopecks"]) is int
     assert type(row["total_kopecks"]) is int
     assert row["opening_quantity"] == "10"

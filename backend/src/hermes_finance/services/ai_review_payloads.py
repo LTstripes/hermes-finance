@@ -22,6 +22,7 @@ TABLE_PREFIXES = {
 IDENTITY_FIELDS = ("isin", "name", "instrument_type")
 RESULT_FIELDS = ("metrics", "components", "coverage", "reason_codes", "assumptions")
 INSTRUMENT_FIELDS = (*IDENTITY_FIELDS, "opening", "closing", *RESULT_FIELDS, "events")
+CONTEXT_FIELDS = ("period", "valuation_date")
 GUIDE = {
     "lookup": "Resolve typed refs in source_payloads. Each exact payload is stored once.",
     "context": "Each instrument occurrence retains its own account and interval context.",
@@ -81,9 +82,10 @@ def normalize_source_payloads(report: dict[str, object]) -> dict[str, object]:
 
     for container, key in _instrument_slots(result):
         item = container[key]
-        if set(item) != set(INSTRUMENT_FIELDS):
+        if set(item) - set(CONTEXT_FIELDS) != set(INSTRUMENT_FIELDS):
             raise PayloadReferenceError("unexpected source instrument fields")
         container[key] = {
+            **{name: item[name] for name in CONTEXT_FIELDS if name in item},
             "isin": item["isin"],
             "instrument_ref": intern("instruments", {name: item[name] for name in IDENTITY_FIELDS}),
             "opening_ref": intern("endpoints", item["opening"]),
@@ -137,6 +139,7 @@ def _resolve_source_payloads(report: dict[str, object], *, expand: bool) -> dict
             raise PayloadReferenceError("instrument reference conflicts with occurrence ISIN")
         values = resolve("results", item["result_ref"])
         expanded = {
+            **{name: item[name] for name in CONTEXT_FIELDS if name in item},
             **identity,
             "opening": resolve("endpoints", item["opening_ref"]),
             "closing": resolve("endpoints", item["closing_ref"]),

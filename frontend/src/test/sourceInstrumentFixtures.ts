@@ -130,6 +130,8 @@ export function event(patch: Partial<InstrumentEvent>): InstrumentEvent {
 export function source(account = "SYNTH-01"): SourceInstrumentReturns {
   const a = analysis();
   const totals = {
+    period: { start: "2030-04-30", end: "2030-05-31" },
+    valuation_date: "2030-05-31",
     buys_cost_kopecks: null,
     sells_proceeds_kopecks: null,
     price_effect_kopecks: null,
@@ -148,6 +150,7 @@ export function source(account = "SYNTH-01"): SourceInstrumentReturns {
   };
   return {
     source_account: account,
+    account_link: null,
     native_source_account: `${account}-000`,
     financial_authority: "none",
     authority: "provisional",
@@ -160,6 +163,9 @@ export function source(account = "SYNTH-01"): SourceInstrumentReturns {
     instruments: [
       {
         isin: ISIN,
+        period: { start: a.opening_date, end: a.closing_date },
+        valuation_date: a.closing.date,
+        account_link: null,
         source_name: `Синтетическая облигация ${account}`,
         instrument_type: "bond",
         analysis: a,

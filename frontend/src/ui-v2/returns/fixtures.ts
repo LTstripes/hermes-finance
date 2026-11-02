@@ -37,6 +37,8 @@ export function basketFixture(period: Period, categories = "brokerage,iis,deposi
     components: included.includes("gold")
       ? [
           {
+            period,
+            valuation_date: null,
             id: "gold:unknown",
             label: "Физическое золото",
             category: "gold",
@@ -45,6 +47,7 @@ export function basketFixture(period: Period, categories = "brokerage,iis,deposi
             cells: [
               {
                 period,
+                valuation_date: null,
                 value_kopecks: null,
                 reason_codes: ["physical_gold_period_evidence_unavailable"],
               },
@@ -94,6 +97,7 @@ export function row(
     name,
     kind: "stock",
     period,
+    valuation_date: period.end,
     pnl: m(value),
     rate: m(rate, "fraction", "modified_dietz"),
     coupons: m("0"),
@@ -104,6 +108,7 @@ export function row(
 export function overviewFixture(scope = "source:SYNTH-A", period: Period = may): Overview {
   const selected: Result = {
     period,
+    valuation_date: period.end,
     pnl: m(scope === "source:SYNTH-B" ? "-175025" : "4812567", "kopecks", "source_monthly"),
     rate: m("0.01725", "fraction", "modified_dietz"),
     coupons: m("125000", "kopecks", "credited_payments"),
@@ -114,10 +119,25 @@ export function overviewFixture(scope = "source:SYNTH-A", period: Period = may):
     selected,
     all_history: { ...selected, period: { start: "2029-12-31", end: may.end }, pnl: m(null) },
     history: [
-      { ...selected, period: { start: "2029-12-31", end: "2030-01-31" }, pnl: m("0") },
-      { ...selected, period: { start: "2030-01-31", end: "2030-02-28" }, pnl: m("-2400000") },
-      { ...selected, period: { start: "2030-02-28", end: "2030-03-31" }, pnl: m(null) },
-      { ...selected, period: april, pnl: m("3200000") },
+      {
+        ...selected,
+        period: { start: "2029-12-31", end: "2030-01-31" },
+        valuation_date: "2030-01-31",
+        pnl: m("0"),
+      },
+      {
+        ...selected,
+        period: { start: "2030-01-31", end: "2030-02-28" },
+        valuation_date: "2030-02-28",
+        pnl: m("-2400000"),
+      },
+      {
+        ...selected,
+        period: { start: "2030-02-28", end: "2030-03-31" },
+        valuation_date: null,
+        pnl: m(null),
+      },
+      { ...selected, period: april, valuation_date: april.end, pnl: m("3200000") },
       { ...selected, period: may },
     ],
     periods: [april, may, { start: "2029-12-31", end: may.end }],

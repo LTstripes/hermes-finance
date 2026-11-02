@@ -216,6 +216,7 @@ test("partial history shows server RUB subtotal with coverage and no invented ra
     if (!url.pathname.endsWith("overview")) return;
     const data = overviewFixture();
     data.available_months_total = {
+      valuation_date: null,
       period: { start: "2030-03-31", end: "2030-06-30" },
       partial: true,
       pnl: { ...data.selected.pnl, value: "8000", method: "available_calendar_months" },
@@ -553,6 +554,7 @@ test("available period rate stays visible independently of unavailable P&L and p
     body.selected.pnl.value = null;
     body.selected.rate = { ...body.selected.rate, value: "0.001259", unit: "fraction" };
     body.selected_available_months_total = {
+      valuation_date: null,
       period: may,
       partial: true,
       pnl: body.selected.pnl,

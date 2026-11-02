@@ -1,7 +1,9 @@
 import { apiRequest } from "../../api/client";
-import type { Metric, Period, Result } from "./model";
+import type { AccountLink, Metric, Period, Result } from "./model";
 
 export type OverallAccount = {
+  valuation_date: string | null;
+  account_link?: AccountLink | null;
   scope: string;
   label: string;
   period: Period | null;
@@ -10,7 +12,10 @@ export type OverallAccount = {
   reason_codes: string[];
   instrument_count: number;
 };
-export type OverallInstrumentAccount = Pick<Result, "pnl" | "rate" | "coupons" | "dividends"> & {
+export type OverallInstrumentAccount = Pick<
+  Result,
+  "pnl" | "rate" | "coupons" | "dividends" | "valuation_date" | "account_link"
+> & {
   canonical_account_id?: number | null;
   details_loaded: boolean;
   period: Period | null;
@@ -26,13 +31,15 @@ export type OverallInstrument = {
 };
 export type MixedComponent = {
   id: string;
-  category: "brokerage" | "deposits" | "gold";
+  category: "brokerage" | "iis" | "brokerage_iis" | "deposits" | "gold";
   label: string;
   selected: boolean;
   available: boolean;
   included: boolean;
   amount: Metric;
   interval: Period | null;
+  period: Period | null;
+  account_link?: AccountLink | null;
   valuation_date: string | null;
   coverage: {
     status: "supported" | "partial" | "unavailable" | "conflict";
@@ -57,6 +64,8 @@ export type CouponIncome = {
   selected_accounts: number;
   included_accounts: number;
   accounts: {
+    valuation_date: string | null;
+    account_link?: AccountLink | null;
     scope: string;
     label: string;
     period: Period | null;

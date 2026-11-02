@@ -1925,6 +1925,7 @@ def assemble_ai_financial_review(
             as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
             reporting_period=reporting_period,
             source_account_refs=source_account_refs,
+            financial_account_refs=account_ref_by_id,
         )
         sections["returns_overall"] = returns_overall_section(
             session,

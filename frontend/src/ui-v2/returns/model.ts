@@ -1,11 +1,12 @@
 import { apiRequest } from "../../api/client";
+import type { ReturnAccountLink, ReturnPeriod } from "../../api/returnAccount";
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
 import type { ReturnBreakdown } from "./breakdown";
 
-export type Period = { start: string; end: string };
+export type Period = ReturnPeriod;
 export type Metric = {
   value: string | null;
   reason_codes: string[];
@@ -13,7 +14,10 @@ export type Metric = {
   unit: "kopecks" | "fraction" | "percentage_points";
   estimate: boolean;
 };
+export type AccountLink = ReturnAccountLink;
 export type Result = {
+  valuation_date: string | null;
+  account_link?: AccountLink | null;
   period: Period;
   pnl: Metric;
   rate: Metric;
@@ -31,7 +35,12 @@ export type Context = {
   scope_aliases?: Record<string, string>;
   source_periods: Record<string, Period[]>;
   source_history_periods?: Record<string, Period>;
-  accounts: { id: string; label: string; basis: "statements" | "accepted" }[];
+  accounts: {
+    id: string;
+    label: string;
+    basis: "statements" | "accepted";
+    account_link?: AccountLink | null;
+  }[];
   default_period: Period | null;
   closed_periods: Period[];
 };
@@ -54,6 +63,7 @@ export type AcceptedIncome = AcceptedIncomeAmounts & {
   })[];
 };
 export type Overview = {
+  account_link?: AccountLink | null;
   scope: string;
   breakdown?: ReturnBreakdown | null;
   accepted_income?: AcceptedIncome | null;
@@ -68,6 +78,7 @@ export type Overview = {
   proof_status: string;
 };
 export type AvailableMonths = {
+  valuation_date: string | null;
   period: Period;
   partial: true;
   pnl: Metric;

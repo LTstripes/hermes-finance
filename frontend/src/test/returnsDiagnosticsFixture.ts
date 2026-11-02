@@ -25,6 +25,7 @@ export function returnsDiagnosticsFixture(
     return {
       scope: url.searchParams.get("scope") ?? "",
       selected: {
+        valuation_date: null,
         period: {
           start: url.searchParams.get("start") ?? "",
           end: url.searchParams.get("end") ?? "",

@@ -6,7 +6,16 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.returns_view import DTO, Detail, Metric, Period, Result, no_store, read
+from hermes_finance.api.returns_view import (
+    DTO,
+    AccountLink,
+    Detail,
+    Metric,
+    Period,
+    Result,
+    no_store,
+    read,
+)
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.services.returns_overall import read_income, read_instrument_card, read_overall
 
@@ -21,6 +30,8 @@ class OverallResult(DTO):
 
 
 class SourceAccount(DTO):
+    account_link: AccountLink | None = None
+    valuation_date: date | None
     scope: str
     label: str
     period: Period | None
@@ -113,8 +124,10 @@ class ComponentCoverage(DTO):
 
 
 class MixedComponent(DTO):
+    account_link: AccountLink | None = None
+    period: Period | None
     id: str
-    category: Literal["brokerage", "deposits", "gold"]
+    category: Literal["brokerage", "iis", "brokerage_iis", "deposits", "gold"]
     label: str
     selected: bool
     available: bool
@@ -139,6 +152,8 @@ class MixedResult(DTO):
 
 
 class CouponAccount(DTO):
+    account_link: AccountLink | None = None
+    valuation_date: date | None
     scope: str
     label: str
     period: Period | None
@@ -241,6 +256,8 @@ class CardSummary(DTO):
 
 
 class CardAccount(DTO):
+    account_link: AccountLink | None = None
+    valuation_date: date | None
     scope: str
     label: str
     canonical_account_id: int | None
