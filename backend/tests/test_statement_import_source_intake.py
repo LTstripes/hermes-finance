@@ -1520,3 +1520,262 @@ def test_legacy_intake_without_warning_key_reattaches_without_manifest_upgrade(
     assert response.json()["manifest_digest"] == view["manifest_digest"]
     assert client.get(f"{BASE}/{view['id']}").json()["document"] == view["document"]
     assert _tables(database) == before
+
+
+def test_month_broker_sources_xml_partial_success_and_get_recovery(database):
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
+    xml = broker_month_xml()
+    second = xml.replace(b"1234567", b"7654321")
+    before = _all_month_tables(database)
+    response = client.post(
+        path,
+        files=[
+            ("files", (FILENAME, xml, "application/xml")),
+            ("files", (FILENAME.replace("1234567", "7654321"), second, "application/xml")),
+            ("files", ("unsupported.txt", b"synthetic bad file", "text/plain")),
+        ],
+        data={"request_id": "synthetic-month-batch"},
+    )
+    assert response.status_code == 200, response.text
+    batch = response.json()
+    assert [row["error"] is None for row in batch["results"]] == [True, True, False]
+    assert len({row["slot"] for row in batch["items"]}) == 2
+    assert _all_month_tables(database) == before
+    # Lost response recovery is read-only and survives a fresh application.
+    restored = TestClient(create_app(database=database)).get(path).json()
+    assert restored == {k: v for k, v in batch.items() if k != "results"}
+    after = _tables(database)
+    duplicate = client.post(
+        path,
+        files={"files": (FILENAME, xml, "application/xml")},
+        data={"request_id": "synthetic-other-request"},
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["results"][0]["duplicate"]
+    assert _tables(database) == after
+    assert client.post(f"/api/months/{scope['reporting_month_id']}/close").status_code == 200
+    rejected = client.post(
+        path,
+        files={"files": (FILENAME, xml, "application/xml")},
+        data={"request_id": "synthetic-closed"},
+    )
+    assert rejected.status_code == 409
+
+
+def test_month_broker_sources_rejects_foreign_period_and_filename_identity(database):
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
+    xml = broker_month_xml()
+    before = _tables(database)
+    foreign = client.post(
+        path,
+        files={"files": (FILENAME.replace("31.01.30", "20.01.30"), xml, "application/xml")},
+        data={"request_id": "synthetic-foreign"},
+    )
+    assert foreign.status_code == 200, foreign.text
+    assert foreign.json()["results"][0]["error"] == {
+        "code": "broker_source_period_mismatch",
+        "message": "Файл относится к другому периоду.",
+    }
+    assert _tables(database) == before
+    saved = client.post(
+        path,
+        files={"files": (FILENAME, xml, "application/xml")},
+        data={"request_id": "synthetic-save"},
+    )
+    assert saved.status_code == 200, saved.text
+    after = _tables(database)
+    renamed = client.post(
+        path,
+        files={"files": (FILENAME.replace("1234567", "7654321"), xml, "application/xml")},
+        data={"request_id": "synthetic-rename"},
+    )
+    assert renamed.json()["results"][0]["error"]["code"] == "source_intake_original_mismatch"
+    assert _tables(database) == after
+
+
+@pytest.mark.parametrize("broken_pdf", [False, True])
+def test_month_broker_sources_pdf_mixed_batch_recovery_and_retry(database, broken_pdf):
+    from _statement_pdf import build_income_report_pdf
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
+    xml = broker_month_xml()
+    pdf = build_income_report_pdf([{"payment_date": "20.01.2030"}])
+    before = _all_month_tables(database)
+    response = client.post(
+        path,
+        files=[
+            ("files", (FILENAME, xml, "application/xml")),
+            (
+                "files",
+                (
+                    FILENAME.replace("1234567", "7654321"),
+                    xml.replace(b"1234567", b"7654321"),
+                    "application/xml",
+                ),
+            ),
+            ("files", ("synthetic.pdf", b"%PDF-broken" if broken_pdf else pdf, "application/pdf")),
+        ],
+        data={"request_id": "mixed-pdf"},
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert [row["error"] is None for row in result["results"]] == [True, True, not broken_pdf]
+    assert len(result["items"]) == (2 if broken_pdf else 3)
+    assert _all_month_tables(database) == before
+    assert TestClient(create_app(database=database)).get(path).json() == {
+        k: v for k, v in result.items() if k != "results"
+    }
+    retry = client.post(
+        path,
+        files={"files": ("synthetic.pdf", pdf, "application/pdf")},
+        data={"request_id": "pdf-only-retry"},
+    )
+    assert retry.status_code == 200, retry.text
+    assert len(retry.json()["items"]) == 3
+    assert retry.json()["results"][0]["duplicate"] is (not broken_pdf)
+    saved = _tables(database)
+    duplicate = client.post(
+        path,
+        files={"files": ("synthetic.pdf", pdf, "application/pdf")},
+        data={"request_id": "pdf-another-request"},
+    )
+    assert duplicate.json()["results"][0]["duplicate"]
+    assert _tables(database) == saved
+    # PDF descriptors do not enter XML review or change Close readiness.
+    assert len(client.get(BASE).json()) == 2
+    assert client.post(f"/api/months/{scope['reporting_month_id']}/close").status_code == 200
+    assert (
+        client.post(
+            path,
+            files={"files": ("synthetic.pdf", pdf, "application/pdf")},
+            data={"request_id": "pdf-closed"},
+        ).status_code
+        == 409
+    )
+
+
+def test_month_broker_pdf_identity_period_privacy_and_explicit_apply(database):
+    from _statement_pdf import build_income_report_pdf, build_wrong_report_pdf
+    from test_statement_import_apply import build_env
+
+    from hermes_finance.services.statement_import_preparation import prepare_income_report_apply
+    from hermes_finance.statement_import import AccountMappingInput
+
+    with database.session_factory() as session:
+        month_id, account_id, _ = build_env(session)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{month_id}/broker-sources"
+    pdf = build_income_report_pdf()
+
+    def post(document=pdf, filename="synthetic-private-name.pdf", key="pdf-save"):
+        return client.post(
+            path, files={"files": (filename, document, "application/pdf")}, data={"request_id": key}
+        )
+
+    before = _tables(database)
+    assert post(build_wrong_report_pdf(), key="wrong-family").json()["results"][0]["error"]
+    foreign = build_income_report_pdf([{"payment_date": "20.02.2026"}])
+    assert (
+        post(foreign, key="foreign-month").json()["results"][0]["error"]["code"]
+        == "broker_source_period_mismatch"
+    )
+    assert _tables(database) == before
+    saved = post().json()
+    item = saved["items"][0]
+    assert item["state"] == "needs_decision"
+    assert item["accepted_count"] == 0
+    assert item["covered_from"] == "2026-01-20"
+    after = _tables(database)
+    assert (
+        post(filename="renamed.pdf", key="renamed").json()["results"][0]["error"]["code"]
+        == "source_intake_original_mismatch"
+    )
+    assert _tables(database) == after
+    serialized = json.dumps(after, default=str, ensure_ascii=False)
+    for private in (
+        "%PDF",
+        "synthetic-private-name.pdf",
+        "SYNTHETIC BANK",
+        "40817810100000000000",
+        "Synthetic Equity One",
+    ):
+        assert private not in serialized
+    with database.session_factory() as session:
+        prepared = prepare_income_report_apply(
+            session,
+            document=pdf,
+            account_mappings=(AccountMappingInput(account_id, "SYN-DEPO-001"),),
+        )
+        row = prepared.rows[0]
+        selection = {
+            "natural_identity": row.natural_identity,
+            "material_fingerprint": row.material_fingerprint,
+            "expected_hermes_account_id": row.expected_hermes_account_id,
+            "expected_hermes_instrument_id": row.expected_hermes_instrument_id,
+        }
+    response = client.post(
+        "/api/statement-import/apply",
+        files={"document": ("selected.pdf", pdf, "application/pdf")},
+        data={
+            "expected_document_sha256": prepared.document_sha256,
+            "account_mappings": json.dumps(
+                [{"hermes_account_id": account_id, "provider_account_ref": "SYN-DEPO-001"}]
+            ),
+            "selections": json.dumps([selection]),
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["success"], response.text
+    accepted = TestClient(create_app(database=database)).get(path).json()["items"][0]
+    assert accepted["state"] == "financial_data_accepted"
+    assert accepted["accepted_count"] == 1
+    after_apply = _tables(database)
+    assert post(key="after-apply").json()["results"][0]["duplicate"]
+    assert _tables(database) == after_apply
+    event_id = response.json()["items"][0]["applied_statement_event_id"]
+    assert (
+        client.post(f"/api/statement-import/applied-events/{event_id}/retract").status_code == 200
+    )
+    assert client.get(path).json()["items"][0]["state"] == "needs_decision"
+
+
+def test_month_broker_pdf_partial_apply_keeps_confirmation(database):
+    from _statement_pdf import build_income_report_pdf
+    from test_statement_import_apply import build_env
+
+    from hermes_finance.services.statement_import_apply import apply_income_report_preview
+    from hermes_finance.services.statement_import_preparation import prepare_income_report_apply
+    from hermes_finance.statement_import import AccountMappingInput
+
+    with database.session_factory() as session:
+        month_id, account_id, _ = build_env(session)
+    client = TestClient(create_app(database=database))
+    path = f"/api/months/{month_id}/broker-sources"
+    pdf = build_income_report_pdf([{}, {"record_date": "16.01.2026", "payment_date": "21.01.2026"}])
+    saved = client.post(
+        path,
+        files={"files": ("two-rows.pdf", pdf, "application/pdf")},
+        data={"request_id": "two-rows"},
+    )
+    assert saved.status_code == 200, saved.text
+    with database.session_factory() as session:
+        mappings = (AccountMappingInput(account_id, "SYN-DEPO-001"),)
+        prepared = prepare_income_report_apply(session, document=pdf, account_mappings=mappings)
+        applied = apply_income_report_preview(
+            session,
+            document=pdf,
+            account_mappings=mappings,
+            selections=(prepared.rows[0].to_apply_selection(),),
+            expected_document_sha256=prepared.document_sha256,
+        )
+        assert applied.success
+    item = TestClient(create_app(database=database)).get(path).json()["items"][0]
+    assert item["state"] == "needs_decision"
+    assert item["accepted_count"] == 1
+    assert item["row_count"] == 2

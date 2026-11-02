@@ -16,14 +16,19 @@ import { getMonth } from "../api/months";
 import { previewOriginalContext } from "../api/mybrokerPreflight";
 import {
   confirmIntakeReview,
-  listSourceIntakes,
   listAllSourceIntakes,
+  listSourceIntakes,
   previewIntakeReview,
   readSourceIntake,
   type SourceIntake,
 } from "../api/sourceIntake";
 import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { UiV2MonthSources } from "./UiV2MonthSources";
+
+// The unified uploader has its own mixed-file/recovery contract tests.
+vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
+  BrokerSourcesIntake: () => null,
+}));
 
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../api/months", () => ({ getMonth: vi.fn() }));
@@ -199,7 +204,9 @@ function mount(closed = false, existingClient?: QueryClient, path = "/v2/close?s
       </MemoryRouter>
     </QueryClientProvider>
   );
-  return { ...render(content), session, client };
+  const view = render(content);
+  fireEvent.click(screen.getByText("Подробности"));
+  return { ...view, session, client };
 }
 const picker = () => screen.getByLabelText("Счёт источника месяца");
 const journal = () => screen.getByRole("region", { name: "Долговечный разбор источника" });

@@ -6,6 +6,11 @@ import type { SourceIntake } from "../api/sourceIntake";
 import { uiV2Months } from "../test/uiV2Fixtures";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 
+// The unified uploader has its own mixed-file/recovery contract tests.
+vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
+  BrokerSourcesIntake: () => null,
+}));
+
 vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
 
 function intake(id: number, account: string, patch: Partial<SourceIntake> = {}) {
@@ -28,6 +33,7 @@ function mount(
   path = "/v2/close?month=12&step=readiness",
   closed = false,
   extras: ReturnType<typeof intake>[] = [],
+  disclose = true,
 ) {
   const onReview = vi.fn();
   const fetcher = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
@@ -90,6 +96,9 @@ function mount(
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  if (disclose) {
+    fireEvent.click(screen.getByText("Подробности"));
+  }
   return { onReview, fetcher };
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -111,12 +120,12 @@ it("distinguishes long historical overlap from a complete month and names the ab
     screen.getByRole("list", { name: "Исторические и частичные источники" }),
   ).toHaveTextContent("Историческое или частичное пересечение");
   expect(
-    screen.getByText("Исправления и сохранение месяца").closest("details"),
+    screen.getByText("Подробности разбора и сохранение месяца").closest("details"),
   ).not.toHaveAttribute("open");
   fireEvent.click(screen.getByRole("button", { name: "Разобрать и исправить #5" }));
-  expect(screen.getByText("Исправления и сохранение месяца").closest("details")).toHaveAttribute(
-    "open",
-  );
+  expect(
+    screen.getByText("Подробности разбора и сохранение месяца").closest("details"),
+  ).toHaveAttribute("open");
 });
 
 it("keeps both accounts, calendar scope, precise review and the accepted bond link", async () => {
@@ -173,6 +182,7 @@ it("retains historical source-account selection without treating its original as
   expect(missingClosing).toHaveTextContent(
     "Нет полного месячного оригинала. Нужны остатки на 2031-08-31; историческое пересечение не доказывает конец месяца.",
   );
+  fireEvent.click(screen.getByText("Подробности предварительного результата"));
   const result = screen.getByRole("region", { name: "Предварительная доходность месяца" });
   const unavailable = await within(result).findByText(/нет доказанных границ этого месяца/);
   expect(unavailable).toBeVisible();
@@ -188,4 +198,16 @@ it("retains historical source-account selection without treating its original as
     ),
   ).toBe(true);
   expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
+
+it("keeps technical source panels collapsed on ordinary entry", async () => {
+  mount("/v2/close?month=12", false, [], false);
+  await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
+  expect(screen.getByText("Подробности").closest("details")).not.toHaveAttribute("open");
+  expect(
+    screen.getByText("Подробности инструментов и предварительных выплат").closest("details"),
+  ).not.toHaveAttribute("open");
+  expect(
+    screen.getByText("Подробности разбора и сохранение месяца").closest("details"),
+  ).not.toHaveAttribute("open");
 });

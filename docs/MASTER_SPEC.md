@@ -57,7 +57,17 @@ inline work area; another tile replaces it. The active tile and `panel` URL agre
 Back/Reload and **← К месяцу** preserve the exact month. Existing leaf forms keep
 their own Save/readback actions and APIs. Dirty changes require explicit discard;
 pending writes and uncertain ACK/readback require recovery before navigation.
-The statements tile provides one multi-file XML input, saved originals for the
+The statements tile provides one multi-file XML/PDF intake with account-statement
+slots and an income-payment PDF slot. Three files are a typical example, not a
+required set. Type, account and payment period are detected by the existing readers.
+Successful files survive a failed sibling; only problematic files need retry.
+The ordinary view shows **Всё в порядке** or **Нужно подтвердить: N** and short
+findings with **Подтвердить** / **Исправить** opening the existing durable review.
+Findings are warnings and never create a new Close blocker. Technical source,
+Money, positions, estimates and journal tables stay in collapsed **Подробности**.
+The payout PDF descriptor survives Reload; financial acceptance still needs the exact
+original and explicit selected-row Prepare/Apply. It is separate from the optional
+investment-report PDF below. The details retain saved originals for the
 selected period/account, exceptions, recognized instruments and quantities,
 corrections, explicit T-Invest preview and the available preliminary result.
 Source-only Save and strict financial Preview/Apply remain distinct internal

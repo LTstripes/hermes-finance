@@ -11,7 +11,7 @@ import {
   type StatementPreparation,
 } from "../api/statementImport";
 import type { Account, Instrument } from "../api/types";
-import { StatementImportPanel, type StatementApplyVerification } from "./StatementImportPanel";
+import { type StatementApplyVerification, StatementImportPanel } from "./StatementImportPanel";
 
 vi.mock("../api/statementImport", () => ({
   applyStatement: vi.fn(),
@@ -894,4 +894,17 @@ describe("StatementImportPanel native month scope", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
   });
+});
+
+it("uses the exact original supplied by month intake and keeps Apply explicit", async () => {
+  vi.resetAllMocks();
+  vi.mocked(inspectStatement).mockResolvedValue(inspectResult);
+  render(
+    <StatementImportPanel accounts={[account]} instruments={[instrument]} initialFile={file} />,
+  );
+  expect(screen.queryByLabelText("PDF отчёта Alfa")).not.toBeInTheDocument();
+  expect(inspectStatement).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+  await waitFor(() => expect(inspectStatement).toHaveBeenCalledWith(file));
+  expect(applyStatement).not.toHaveBeenCalled();
 });

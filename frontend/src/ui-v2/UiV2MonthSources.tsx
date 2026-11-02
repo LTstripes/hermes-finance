@@ -5,9 +5,9 @@ import { formatApiError } from "../api/client";
 import { listAllSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { ReportingMonth } from "../api/types";
 import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
+import { BrokerSourcesIntake } from "../components/month-close/BrokerSourcesIntake";
 import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
-import { SourceIntakeUpload } from "../components/month-close/SourceIntakeUpload";
 import { ConfirmDialog } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
@@ -43,6 +43,9 @@ export function UiV2MonthSources({
   const client = useQueryClient();
   const { session, original } = useBrokerOriginalSession();
   const [reviewExpanded, setReviewExpanded] = useState(Boolean(original.file));
+  useEffect(() => {
+    if (reviewExpanded) document.getElementById("month-source-review")?.focus();
+  }, [reviewExpanded]);
   const savedFiles = useRef(new Map<number, File>());
   const savedSources = useRef(new Map<number, SourceIntake>());
   type SourceSelection = { id: number; file?: File; account: string; snapshot: SourceIntake };
@@ -58,13 +61,12 @@ export function UiV2MonthSources({
     return () => onPendingChange?.(false);
   }, [uploadPending, onPendingChange]);
   const [journalDirty, setJournalDirty] = useState(false);
-  const reportDirty = useCallback(
-    (dirty: boolean) => {
-      setJournalDirty(dirty);
-      onDirtyChange?.(dirty);
-    },
-    [onDirtyChange],
-  );
+  const [pdfDirty, setPdfDirty] = useState(false);
+  useEffect(() => {
+    onDirtyChange?.(journalDirty || pdfDirty);
+    return () => onDirtyChange?.(false);
+  }, [journalDirty, pdfDirty, onDirtyChange]);
+  const reportDirty = useCallback((dirty: boolean) => setJournalDirty(dirty), []);
   const reportUploadPending = useCallback((pending: boolean) => {
     setUploadPending(pending);
   }, []);
@@ -283,7 +285,7 @@ export function UiV2MonthSources({
           <div className={styles.actions}>
             <button
               type="button"
-              disabled={changingScope || unresolved}
+              disabled={changingScope || unresolved || pdfDirty}
               onClick={() => openSource(intake.id)}
             >
               {month.status === "closed" ? "Просмотреть разбор" : "Разобрать и исправить"} #
@@ -352,179 +354,191 @@ export function UiV2MonthSources({
         wide
       >
         <div className={styles.stack}>
-          <p>Загрузи выписки, выбери счёт и проверь распознанные бумаги.</p>
-          <section aria-label="Состояние источников месяца">
-            {list.isPending || list.isFetching ? (
-              <p>Проверяем сохранённые выписки…</p>
-            ) : list.isError ? (
-              <p>Число сохранённых выписок не подтверждено.</p>
-            ) : (
-              <>
-                <p>
-                  {period} · счёт источника:{" "}
-                  {invalidAccount ? "не подтверждён" : account || "выбери один счёт"}.
-                  {invalidAccount
-                    ? ""
-                    : ` Полных месячных оригиналов: ${fullMonthSources.length}. Исторических или частичных пересечений: ${overlappingSources}.`}
-                </p>
-                {!invalidAccount && fullMonthSources.length === 0 && (
-                  <p>
-                    Нет полного месячного оригинала. Нужны остатки на {closing}; историческое
-                    пересечение не доказывает конец месяца.
-                  </p>
-                )}
-                <nav className={styles.sourceNav} aria-label="Действия с источниками месяца">
-                  <a href="#month-source-list">Сохранённые выписки и исключения</a>
-                  {!invalidAccount && account && (
-                    <a href="#month-instruments">Инструменты, сделки и выплаты</a>
-                  )}
-                </nav>
-              </>
-            )}
-            <details>
-              <summary>Подробнее о данных и закрытии</summary>
-              <p>
-                {month.status === "closed"
-                  ? "Финансовый месяц CLOSED · только чтение."
-                  : canClose === true
-                    ? "Финансовый DRAFT · серверная проверка допускает явное закрытие."
-                    : "Финансовый DRAFT · готовность к закрытию проверяется отдельно."}{" "}
-                Сохранение выписки и предварительная доходность не означают финансового принятия.{" "}
-                <Link to={monthWorkspacePath(month.id, "final_review_close")}>
-                  Проверка финансового месяца
-                </Link>
-              </p>
-            </details>
-          </section>
-          {month.status === "closed" ? (
-            <p>
-              Месяц закрыт. Сохранённые источники доступны для чтения; для исправлений явно открой
-              месяц заново.
-            </p>
-          ) : (
-            <SourceIntakeUpload
-              key={month.id}
-              compact
-              onPendingChange={reportUploadPending}
-              reviewDisabled={unresolved}
-              disabled={unresolved || uploadWouldDiscard}
-              knownSources={list.data}
-              onSaved={(file, intake) => {
-                savedFiles.current.set(intake.id, file);
-                savedSources.current.set(intake.id, intake);
-                // Reselecting this exact original supplies bytes without replacing
-                // the user's unsaved currency/identity form after Reload.
-                const selectedId = client.getQueryData<number>([
-                  "source-intake-selection",
-                  month.id,
-                  account,
-                ]);
-                if (selectedId === intake.id)
-                  setReview((previous) => ({
-                    ...previous,
-                    selection: { id: intake.id, file, snapshot: intake, preserveDraft: true },
-                  }));
-              }}
-              onReview={openSource}
-            />
-          )}
-          {uploadWouldDiscard && month.status !== "closed" && (
-            <p>Перед следующей загрузкой сохрани текущий разбор или явно выбери другую выписку.</p>
-          )}
+          <BrokerSourcesIntake
+            key={month.id}
+            month={month}
+            onDirtyChange={setPdfDirty}
+            onPendingChange={reportUploadPending}
+            disabled={unresolved || uploadWouldDiscard}
+            onSaved={(file, intake) => {
+              savedFiles.current.set(intake.id, file);
+              savedSources.current.set(intake.id, intake);
+              // Reselecting this exact original supplies bytes without replacing
+              // the user's unsaved currency/identity form after Reload.
+              const selectedId = client.getQueryData<number>([
+                "source-intake-selection",
+                month.id,
+                account,
+              ]);
+              if (selectedId === intake.id)
+                setReview((previous) => ({
+                  ...previous,
+                  selection: { id: intake.id, file, snapshot: intake, preserveDraft: true },
+                }));
+            }}
+            onReview={openSource}
+          />
           <details>
-            <summary>Подробнее об источниках</summary>{" "}
-            <p className={styles.note}>
-              Загрузка сохраняет наблюдения без привязки к финансовому месяцу или счёту Hermes.
-              Неизвестный ISIN требует явного разбора. Оригиналы после Reload нужно выбрать заново.
-              Другие периоды доступны в{" "}
-              <Link to="/v2/data/source-intake">общем журнале источников</Link>.
-            </p>
-          </details>
-          {list.isPending ? (
-            <UiV2Loading label="Читаем источники месяца…" />
-          ) : list.isError ? (
-            <UiV2Notice title="Источники месяца не подтверждены" retry={() => void list.refetch()}>
-              {formatApiError(list.error)}
-            </UiV2Notice>
-          ) : (
-            <>
-              <label className={styles.field} id="month-source-list">
-                Счёт источника месяца
-                <select
-                  aria-label="Счёт источника месяца"
-                  disabled={uploadPending}
-                  value={account}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if ((journalDirty || original.file) && !unresolved) setNextAccount(value);
-                    else selectAccount(value);
-                  }}
-                >
-                  <option value="">Все счета</option>
-                  {invalidAccount && (
-                    <option value={account}>Недоступный счёт: {account || "пустой"}</option>
-                  )}
-                  {accounts.map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-              {invalidAccount ? (
-                <p role="alert">
-                  Выбранный счёт источника не подтверждён для этого месяца. Выбери счёт явно.
-                </p>
-              ) : !visible.length ? (
-                <p>
-                  Для выбранного счёта выписок этого периода нет. Нужен оригинал с границами
-                  отчётного месяца; выписки других периодов не становятся его EOD.
-                </p>
+            <summary>Подробности</summary>
+            <p>Загрузи выписки, выбери счёт и проверь распознанные бумаги.</p>
+            <section aria-label="Состояние источников месяца">
+              {list.isPending || list.isFetching ? (
+                <p>Проверяем сохранённые выписки…</p>
+              ) : list.isError ? (
+                <p>Число сохранённых выписок не подтверждено.</p>
               ) : (
                 <>
-                  {fullMonthSources.length > 0 &&
-                    renderSources(fullMonthSources, "Источники и исключения месяца")}
-                  {overlappingSources > 0 && (
-                    <details>
-                      <summary>Исторические и частичные пересечения · {overlappingSources}</summary>
-                      <p>
-                        Эти источники пересекают выбранный месяц, но не заменяют полный месячный
-                        оригинал.
-                      </p>
-                      {renderSources(
-                        visible.filter((item) => !fullMonthSources.includes(item)),
-                        "Исторические и частичные источники",
-                      )}
-                    </details>
+                  <p>
+                    {period} · счёт источника:{" "}
+                    {invalidAccount ? "не подтверждён" : account || "выбери один счёт"}.
+                    {invalidAccount
+                      ? ""
+                      : ` Полных месячных оригиналов: ${fullMonthSources.length}. Исторических или частичных пересечений: ${overlappingSources}.`}
+                  </p>
+                  {!invalidAccount && fullMonthSources.length === 0 && (
+                    <p>
+                      Нет полного месячного оригинала. Нужны остатки на {closing}; историческое
+                      пересечение не доказывает конец месяца.
+                    </p>
                   )}
+                  <nav className={styles.sourceNav} aria-label="Действия с источниками месяца">
+                    <a href="#month-source-list">Сохранённые выписки и исключения</a>
+                    {!invalidAccount && account && (
+                      <a href="#month-instruments">Инструменты, сделки и выплаты</a>
+                    )}
+                  </nav>
                 </>
               )}
-            </>
-          )}
+              <details>
+                <summary>Подробнее о данных и закрытии</summary>
+                <p>
+                  {month.status === "closed"
+                    ? "Финансовый месяц CLOSED · только чтение."
+                    : canClose === true
+                      ? "Финансовый DRAFT · серверная проверка допускает явное закрытие."
+                      : "Финансовый DRAFT · готовность к закрытию проверяется отдельно."}{" "}
+                  Сохранение выписки и предварительная доходность не означают финансового принятия.{" "}
+                  <Link to={monthWorkspacePath(month.id, "final_review_close")}>
+                    Проверка финансового месяца
+                  </Link>
+                </p>
+              </details>
+            </section>
+            {uploadWouldDiscard && month.status !== "closed" && (
+              <p>
+                Перед следующей загрузкой сохрани текущий разбор или явно выбери другую выписку.
+              </p>
+            )}
+            <details>
+              <summary>Подробнее об источниках</summary>{" "}
+              <p className={styles.note}>
+                Загрузка сохраняет наблюдения без привязки к финансовому месяцу или счёту Hermes.
+                Неизвестный ISIN требует явного разбора. Оригиналы после Reload нужно выбрать
+                заново. Другие периоды доступны в{" "}
+                <Link to="/v2/data/source-intake">общем журнале источников</Link>.
+              </p>
+            </details>
+            {list.isPending ? (
+              <UiV2Loading label="Читаем источники месяца…" />
+            ) : list.isError ? (
+              <UiV2Notice
+                title="Источники месяца не подтверждены"
+                retry={() => void list.refetch()}
+              >
+                {formatApiError(list.error)}
+              </UiV2Notice>
+            ) : (
+              <>
+                <label className={styles.field} id="month-source-list">
+                  Счёт источника месяца
+                  <select
+                    aria-label="Счёт источника месяца"
+                    disabled={uploadPending || pdfDirty}
+                    value={account}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if ((journalDirty || original.file) && !unresolved) setNextAccount(value);
+                      else selectAccount(value);
+                    }}
+                  >
+                    <option value="">Все счета</option>
+                    {invalidAccount && (
+                      <option value={account}>Недоступный счёт: {account || "пустой"}</option>
+                    )}
+                    {accounts.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                {invalidAccount ? (
+                  <p role="alert">
+                    Выбранный счёт источника не подтверждён для этого месяца. Выбери счёт явно.
+                  </p>
+                ) : !visible.length ? (
+                  <p>
+                    Для выбранного счёта выписок этого периода нет. Нужен оригинал с границами
+                    отчётного месяца; выписки других периодов не становятся его EOD.
+                  </p>
+                ) : (
+                  <>
+                    {fullMonthSources.length > 0 &&
+                      renderSources(fullMonthSources, "Источники и исключения месяца")}
+                    {overlappingSources > 0 && (
+                      <details>
+                        <summary>
+                          Исторические и частичные пересечения · {overlappingSources}
+                        </summary>
+                        <p>
+                          Эти источники пересекают выбранный месяц, но не заменяют полный месячный
+                          оригинал.
+                        </p>
+                        {renderSources(
+                          visible.filter((item) => !fullMonthSources.includes(item)),
+                          "Исторические и частичные источники",
+                        )}
+                      </details>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </details>
         </div>
       </UiV2Panel>
       {!changingScope &&
-      !list.isPending &&
-      !list.isError &&
-      !list.isFetching &&
-      !invalidAccount &&
-      account ? (
-        <UiV2MonthInstruments
-          key={`${month.id}:${account}`}
-          monthId={month.id}
-          year={month.year}
-          month={month.month}
-          account={account}
-          sourceVersion={JSON.stringify(
-            history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
-          )}
-        />
-      ) : !invalidAccount && !account && sources.length > 0 ? (
-        <p>
-          Выбери один счёт источника, чтобы открыть инструменты и предварительные выплаты этого
-          месяца.
-        </p>
-      ) : null}
+        !list.isPending &&
+        !list.isError &&
+        !list.isFetching &&
+        !invalidAccount &&
+        (!!account || sources.length > 0) && (
+          <details>
+            <summary>Подробности инструментов и предварительных выплат</summary>
+            {!changingScope &&
+            !list.isPending &&
+            !list.isError &&
+            !list.isFetching &&
+            !invalidAccount &&
+            account ? (
+              <UiV2MonthInstruments
+                key={`${month.id}:${account}`}
+                monthId={month.id}
+                year={month.year}
+                month={month.month}
+                account={account}
+                sourceVersion={JSON.stringify(
+                  history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
+                )}
+              />
+            ) : !invalidAccount && !account && sources.length > 0 ? (
+              <p>
+                Выбери один счёт источника, чтобы открыть инструменты и предварительные выплаты
+                этого месяца.
+              </p>
+            ) : null}
+          </details>
+        )}
       <div id="month-source-review" tabIndex={-1}>
-        <details open={reviewExpanded || unresolved || params.get("step") === "final_review_close"}>
+        <details open={reviewExpanded || unresolved}>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: native summary supports keyboard activation; controlled click avoids delayed toggle events hiding GET recovery. */}
           <summary
             onClick={(event) => {
@@ -532,7 +546,7 @@ export function UiV2MonthSources({
               setReviewExpanded((value) => !value);
             }}
           >
-            Исправления и сохранение месяца
+            Подробности разбора и сохранение месяца
           </summary>
           {changingScope && unresolved && (
             <p role="alert">
@@ -549,7 +563,7 @@ export function UiV2MonthSources({
               key={review.generation}
               monthId={review.monthId}
               closed={month.status === "closed"}
-              scopeBlocked={changingScope}
+              scopeBlocked={changingScope || pdfDirty}
               sourceAccount={
                 changingScope
                   ? (JSON.parse(review.scope)[0] ?? "")
@@ -570,7 +584,10 @@ export function UiV2MonthSources({
         !list.isPending &&
         !list.isError &&
         !list.isFetching && (
-          <SourceMonthReturn key={`${account}:${period}`} account={account} period={period} />
+          <details>
+            <summary>Подробности предварительного результата</summary>
+            <SourceMonthReturn key={`${account}:${period}`} account={account} period={period} />
+          </details>
         )}
     </>
   );

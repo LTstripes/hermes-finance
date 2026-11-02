@@ -276,7 +276,14 @@ def _currency_evidence(evidence, prior=None):
 
 
 def save_intake(
-    session, *, document, filename, request_id, account_id=None, reporting_month_id=None
+    session,
+    *,
+    document,
+    filename,
+    request_id,
+    account_id=None,
+    reporting_month_id=None,
+    expected_month_id=None,
 ):
     fingerprint = digest(
         [
@@ -290,6 +297,10 @@ def save_intake(
     )
     _reserve(session)
     try:
+        if expected_month_id is not None:
+            month = session.get(ReportingMonth, expected_month_id, populate_existing=True)
+            if month is None or month.status != "draft":
+                raise MyBrokerError("source_intake_editable_period_required")
         retry = _retry(session, request_id, fingerprint)
         if retry:
             intake_id = retry.original_id
