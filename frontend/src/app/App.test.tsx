@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -72,7 +73,12 @@ describe("App", () => {
 
   it.each([
     ["/v1", "/v2"],
-    ["/analytics", "/v2/capital/performance"],
+    ["/v2/capital/performance", "/v2/returns"],
+    ["/v2/capital/monthly-returns", "/v2/returns"],
+    ["/v2/capital/monthly-result", "/v2/returns"],
+    ["/v2/capital/statement-return", "/v2/returns"],
+    ["/v2/capital/monthly-returns?diagnostics=1", "/v2/returns"],
+    ["/analytics", "/v2/returns"],
     ["/analytics/risk-allocation", "/v2/capital/allocation"],
     ["/freshness", "/v2/data"],
     ["/reconciliation", "/v2/data/reconciliation"],
@@ -91,11 +97,110 @@ describe("App", () => {
     window.history.pushState({}, "", from);
     vi.stubGlobal("fetch", mockFetchRouter({}));
 
-    render(<App />);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
 
     await waitFor(() =>
       expect(window.location.pathname + window.location.search + window.location.hash).toBe(to),
     );
+  });
+
+  it.each([
+    ["performance", "?scope=account&account_id=7&start=2030-01-01&end=2030-02-01"],
+    ["monthly-returns", "?source_account=SYNTH-A&bond_period=2030-02-01"],
+    ["monthly-result", "?month=1"],
+    ["statement-return", "?account_id=7&month=1"],
+  ])("redirects %s with its explicit selection", async (route, query) => {
+    const fetch = mockFetchRouter({ "GET /api/months": () => jsonResponse(sampleMonths) });
+    vi.stubGlobal("fetch", fetch);
+    window.history.pushState({}, "", `/v2/capital/${route}${query}`);
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe("/v2/returns/account"));
+    if (route === "monthly-result" || route === "statement-return") {
+      await waitFor(() =>
+        expect(new URLSearchParams(window.location.search).get("start")).toBe("2026-05-31"),
+      );
+      expect(new URLSearchParams(window.location.search).get("end")).toBe("2026-06-30");
+      expect(new URLSearchParams(window.location.search).get("month")).toBe("1");
+    }
+    if (route === "performance" || route === "statement-return")
+      expect(new URLSearchParams(window.location.search).get("scope")).toBe("account:7");
+    if (route === "monthly-returns") {
+      expect(new URLSearchParams(window.location.search).get("scope")).toBe("source:SYNTH-A");
+      expect(new URLSearchParams(window.location.search).get("start")).toBe("2030-01-31");
+      expect(new URLSearchParams(window.location.search).get("end")).toBe("2030-02-28");
+    }
+    expect(fetch.mock.calls.every(([, init]) => (init?.method ?? "GET") === "GET")).toBe(true);
+  });
+
+  it.each(["2", "999", "0", "1&month=1"])(
+    "refuses invalid, DRAFT or missing month %s without a latest-month fallback",
+    async (month) => {
+      const fetch = mockFetchRouter({ "GET /api/months": () => jsonResponse(sampleMonths) });
+      vi.stubGlobal("fetch", fetch);
+      window.history.pushState({}, "", `/v2/capital/monthly-result?month=${month}`);
+      render(<App />);
+      expect(await screen.findByText("Закрытый отчёт не найден")).toBeVisible();
+      expect(new URLSearchParams(window.location.search).has("start")).toBe(false);
+      expect(fetch.mock.calls.some(([url]) => String(url).includes("/api/returns/overview"))).toBe(
+        false,
+      );
+    },
+  );
+
+  it("replaces a retired Returns history entry and keeps its selection on reload", async () => {
+    vi.stubGlobal("fetch", mockFetchRouter({}));
+    const before = "/v2/income/scenario-lab?before=returns";
+    const target = "/v2/returns/account?start=2030-01-01&end=2030-02-01&scope=account%3A7#details";
+    window.history.pushState({}, "", before);
+    window.history.pushState(
+      {},
+      "",
+      "/v2/capital/performance?scope=account&account_id=7&start=2030-01-01&end=2030-02-01#details",
+    );
+    const view = render(<App />);
+    await waitFor(() =>
+      expect(window.location.pathname + window.location.search + window.location.hash).toBe(target),
+    );
+    view.unmount();
+    render(<App />);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(target);
+    await act(async () => window.history.back());
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(before));
+  });
+
+  it("resolves a delayed CLOSED report before Back and preserves the calendar URL on reload", async () => {
+    let finishMonths: () => void = () => {};
+    const months = new Promise<void>((resolve) => {
+      finishMonths = resolve;
+    });
+    const fetch = mockFetchRouter({
+      "GET /api/months": () => months.then(() => jsonResponse(sampleMonths)),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const calendar = "/v2/data/payouts?month=1&from=monthly-close-v2&monthId=1&step=future_payouts";
+    const returns = "/v2/returns/account?month=1&start=2026-05-31&end=2026-06-30&scope=portfolio";
+    window.history.pushState({}, "", calendar);
+    window.history.pushState({}, "", "/v2/returns?month=1");
+    const view = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    expect(await screen.findByText("Проверяем выбранный месяц…")).toBeVisible();
+    expect(window.location.pathname + window.location.search).toBe("/v2/returns?month=1");
+    await act(async () => finishMonths());
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(returns));
+    await screen.findByRole("link", { name: "В целом — вся доступная история" });
+    await act(async () => window.history.back());
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(calendar));
+    view.unmount();
+    render(<App />);
+    expect(window.location.pathname + window.location.search).toBe(calendar);
+    expect(fetch.mock.calls.every(([, init]) => (init?.method ?? "GET") === "GET")).toBe(true);
   });
 
   describe("legacy month editor compatibility", () => {
@@ -299,23 +404,6 @@ describe("App", () => {
       ),
     ).toBeVisible();
     expect(await screen.findByLabelText("Отчётный месяц", {}, { timeout: 5_000 })).toHaveValue("1");
-    expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
-  });
-
-  it.each([
-    ["/v2/capital/monthly-result?month=1&view=classes", "Денежный результат"],
-    ["/v2/capital/performance?start=invalid&scope=account", "Доходность"],
-  ])("keeps the aggregate Capital detail route %s registered", async (path, heading) => {
-    window.history.pushState({}, "", path);
-    vi.stubGlobal(
-      "fetch",
-      mockFetchRouter({ "GET /api/months": () => jsonResponse(sampleMonths) }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeVisible();
-    expect(window.location.pathname + window.location.search).toBe(path);
     expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
   });
 

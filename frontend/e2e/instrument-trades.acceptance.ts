@@ -20,7 +20,7 @@ test("canonical executions and independently accepted cash stay separate on desk
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(
-    "/v2/capital/performance?start=2029-12-31&end=2030-01-31&scope=account&account_id=1&view=accounts",
+    "/v2/returns/account?diagnostics=performance&start=2029-12-31&end=2030-01-31&scope=account:1&view=accounts",
   );
   const panel = page.getByRole("region", { name: "Известные выплаты по бумаге", exact: true });
   await panel.getByRole("button", { name: "Выбрать бумагу и период" }).click();

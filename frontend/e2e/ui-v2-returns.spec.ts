@@ -128,6 +128,7 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   state.error = false;
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+  // Intentional retired URL: assert compatibility redirect, not ordinary navigation.
   await page.goto(
     "/v2/capital/monthly-returns?source_account=SYNTH-B&bond_period=2030-04-01#bond-slice",
   );
@@ -146,6 +147,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
   await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
     `${may.start}/${may.end}`,
   );
+  // Intentional retired URL: assert compatibility redirect, not ordinary navigation.
   await page.goto(
     "/v2/capital/monthly-returns?source_account=SYNTH-A&bond_isin=RU000A000002#bond-slice",
   );
@@ -454,4 +456,64 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
   await single.screenshot({ path: testInfo.outputPath("returns-leaders-single-1440.png") });
   expect(calls.length).toBeGreaterThanOrEqual(3);
   expect(calls.every((call) => call === "GET /api/returns/overall")).toBe(true);
+});
+
+for (const retired of ["performance", "monthly-returns", "monthly-result", "statement-return"]) {
+  test(`retired ${retired}: Returns navigation @viewport-owned`, async ({ page }) => {
+    await page.route(
+      (url) => url.pathname.startsWith("/api/"),
+      async (route) => {
+        expect(route.request().method()).toBe("GET");
+        expect(new URL(route.request().url()).pathname).toBe("/api/returns/overall");
+        await route.fulfill({ json: overallFixture() });
+      },
+    );
+    await page.goto(`/v2/capital/${retired}`);
+    await expect(page).toHaveURL(/\/v2\/returns$/);
+    const nav = page.getByRole("navigation", { name: "Основная навигация" });
+    const active = nav.getByRole("link", { name: "Доходность", exact: true });
+    await expect(active).toHaveAttribute("aria-current", "page");
+    await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "История и результаты" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Доход и цели", exact: true })).toHaveCount(0);
+  });
+}
+
+test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) => {
+  await install(page);
+  for (const destination of [
+    "/v2/returns/account?scope=source:SYNTH-A",
+    "/v2/returns/instrument/RU000A000001",
+  ]) {
+    await page.goto(destination);
+    const nav = page.getByRole("navigation", { name: "Основная навигация" });
+    const active = nav.getByRole("link", { name: "Доходность", exact: true });
+    await expect(active).toHaveAttribute("aria-current", "page");
+    const colors = await active.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const luminance = (value: string) => {
+        const channels = (value.match(/\d+(?:\.\d+)?/g) ?? [])
+          .slice(0, 3)
+          .map(Number)
+          .map((v) => {
+            const channel = v / 255;
+            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+          });
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+      };
+      const text = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      const sibling = element.parentElement?.querySelector('a:not([aria-current="page"])');
+      return {
+        contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05),
+        background: style.backgroundColor,
+        inactiveBackground: sibling ? getComputedStyle(sibling).backgroundColor : null,
+        marker: style.boxShadow,
+      };
+    });
+    expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(colors.background).not.toBe(colors.inactiveBackground);
+    expect(colors.marker).not.toBe("none");
+    await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  }
 });

@@ -659,9 +659,7 @@ export default function UiV2CapitalPage() {
       <>
         <UiV2ReportContext month={latestClosed}>
           <span className={styles.reportContextLinks}>
-            <Link to={`/v2/capital/monthly-result?month=${latestClosed.id}`}>
-              Денежный результат месяца →
-            </Link>
+            <Link to={`/v2/returns?month=${latestClosed.id}`}>Доходность за месяц →</Link>
             <Link to="/v2/reports">Все отчёты →</Link>
           </span>
         </UiV2ReportContext>

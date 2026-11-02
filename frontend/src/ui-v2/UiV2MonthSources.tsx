@@ -13,6 +13,7 @@ import { formatDate } from "../lib/format";
 import { brokerSourceTitle } from "../lib/ownerCopy";
 import { lastDayOfMonth } from "../lib/period";
 import { monthWorkspacePath } from "./monthSelection";
+import { legacyReturnsHref } from "./returns/ReturnsLegacyRedirect";
 import { SourceMonthReturn } from "./SourceMonthReturn";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import styles from "./UiV2MonthWorkspace.module.css";
@@ -293,7 +294,10 @@ export function UiV2MonthSources({
               .map((value) => (
                 <Link
                   key={value}
-                  to={`/v2/capital/monthly-returns?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}#bond-slice`}
+                  to={legacyReturnsHref(
+                    `?${new URLSearchParams({ source_account: value, bond_period: `${period}-01` })}`,
+                    "#bond-slice",
+                  )}
                 >
                   Облигации и доходность · {value}
                 </Link>

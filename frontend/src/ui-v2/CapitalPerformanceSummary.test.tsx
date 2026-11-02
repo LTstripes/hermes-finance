@@ -14,7 +14,7 @@ import {
 
 const START = "2031-05-31";
 const END = "2031-07-31";
-const HREF = `/v2/capital/performance?start=${START}&end=${END}&scope=portfolio`;
+const HREF = `/v2/returns?start=${START}&end=${END}&scope=portfolio`;
 
 function metric(
   kind: "xirr" | "twrr",

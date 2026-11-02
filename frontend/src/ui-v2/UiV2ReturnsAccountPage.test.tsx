@@ -407,10 +407,7 @@ test("late account response cannot populate the new scope; error hides cached fi
   await screen.findByRole("alert");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByRole("link", { name: "Открыть диагностику выписок" })).toHaveAttribute(
-    "href",
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=SYNTH-B",
-  );
+  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
 });
 
 test("legacy bond deep link preserves exact account and month", async () => {
@@ -504,10 +501,7 @@ test("without CLOSED months source intervals remain selectable without silently 
   expect(screen.getByTestId("location")).not.toHaveTextContent("end=");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByRole("link", { name: "Открыть диагностику выписок" })).toHaveAttribute(
-    "href",
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=SYNTH-A",
-  );
+  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
   fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
     target: { value: `${may.start}/${may.end}` },
   });
@@ -546,4 +540,27 @@ test("account breakdown explains payouts above total using only the selected ove
       (call) => call === "/api/returns/context" || call.startsWith("/api/returns/overview?"),
     ),
   ).toBe(true);
+});
+
+test("available period rate stays visible independently of unavailable P&L and partial months", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const body = overviewFixture();
+    body.selected.pnl.value = null;
+    body.selected.rate = { ...body.selected.rate, value: "0.001259", unit: "fraction" };
+    body.selected_available_months_total = {
+      period: may,
+      partial: true,
+      pnl: body.selected.pnl,
+      included: [],
+      missing: [],
+      covered_months: 0,
+      total_months: 1,
+    };
+    return Promise.resolve(response(body));
+  });
+  setup();
+  const result = await screen.findByRole("region", { name: "Результат периода" });
+  expect(result).toHaveTextContent("0,13%");
+  expect(result).toHaveTextContent("0 из 1");
 });

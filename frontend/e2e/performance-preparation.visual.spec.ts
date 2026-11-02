@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { classReturnsFixture } from "../src/test/classReturnsFixture";
+import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
 
 for (const width of [1366]) {
   for (const scenario of ["values", "evidence", "xirr-only"] as const) {
@@ -19,6 +20,13 @@ for (const width of [1366]) {
       page.on("pageerror", (error) => errors.push(error.message));
       await page.route("**/api/**", async (route) => {
         const url = new URL(route.request().url());
+        const host = returnsDiagnosticsFixture(url, [
+          { id: 1, name: "Синтетический инвестиционный счёт для проверки длинного названия" },
+        ]);
+        if (host && route.request().method() === "GET") {
+          await route.fulfill({ json: host });
+          return;
+        }
         if (!url.pathname.startsWith("/api/")) {
           await route.continue();
           return;
@@ -87,7 +95,7 @@ for (const width of [1366]) {
         await route.fulfill({ json: row });
       });
       await page.goto(
-        `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+        `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=portfolio&view=classes`,
       );
       const stock = page.getByTestId("class-return-stock");
       const bond = page.getByTestId("class-return-bond");
@@ -121,15 +129,16 @@ for (const width of [1366]) {
       await expect(expand).toBeFocused();
       await expect(expand).toHaveAttribute("aria-expanded", "true");
       await expect(page.getByText("Запрошенный период").first()).toBeVisible();
-      await expect(page.getByRole("table")).toBeVisible();
+      const table = page
+        .getByRole("region", { name: "По классам", exact: true })
+        .getByRole("table");
+      await expect(table).toBeVisible();
       await expect(page.getByRole("rowheader")).toHaveCount(4);
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
       expect(
-        await page
-          .getByRole("table")
-          .evaluate((table) => table.scrollWidth <= table.clientWidth + 1),
+        await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
       ).toBe(true);
       // StrictMode may abort/restart the same read during the initial mount.
       expect([...new Set(reads)].sort()).toEqual(["bond", "deposit", "gold", "stock"]);
@@ -190,6 +199,13 @@ for (const width of [1366]) {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/api/**", async (route) => {
       const url = new URL(route.request().url());
+      const host = returnsDiagnosticsFixture(url, [
+        { id: 1, name: "Синтетический инвестиционный счёт для проверки длинного названия" },
+      ]);
+      if (host && route.request().method() === "GET") {
+        await route.fulfill({ json: host });
+        return;
+      }
       if (!url.pathname.startsWith("/api/")) {
         await route.continue();
         return;
@@ -263,7 +279,7 @@ for (const width of [1366]) {
       await route.fulfill({ json });
     });
     await page.goto(
-      `/v2/capital/performance?start=${start}&end=${end}&scope=account&account_id=1&prepare_account=1&prepare_reason=cash_history#performance-preparation`,
+      `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=account:1&prepare_account=1&prepare_reason=cash_history#performance-preparation`,
     );
     const add = page.getByRole("button", { name: "Добавить операцию" });
     await expect(add).toBeVisible();
@@ -324,6 +340,11 @@ for (const width of [1366]) {
     await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
+      const host = returnsDiagnosticsFixture(url);
+      if (host && route.request().method() === "GET") {
+        await route.fulfill({ json: host });
+        return;
+      }
       if (!url.pathname.startsWith("/api/")) {
         await route.continue();
         return;
@@ -409,7 +430,7 @@ for (const width of [1366]) {
       }
     });
     await page.goto(
-      `/v2/capital/performance?start=${start}&end=${end}&scope=portfolio&view=classes`,
+      `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=portfolio&view=classes`,
     );
     const prepare = page.locator("summary", { hasText: "Подготовить подтверждения классов" });
     await prepare.focus();

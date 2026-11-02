@@ -74,7 +74,7 @@ function setup(raw = "1") {
     <QueryClientProvider client={createQueryClient()}>
       <MemoryRouter
         initialEntries={[
-          `/v2/capital/performance?start=${context.start}&end=${context.end}&scope=account&account_id=1&prepare_account=${raw}`,
+          `/v2/returns?start=${context.start}&end=${context.end}&scope=account&account_id=1&prepare_account=${raw}`,
         ]}
       >
         <PerformancePreparation
@@ -239,7 +239,7 @@ describe("Owner preparation", () => {
     expect(screen.getByText(/Портфель: внутренний перевод/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Вернуться к доходности/ })).toHaveAttribute(
       "href",
-      expect.stringContaining("account_id=1"),
+      `/v2/returns/account?start=${context.start}&end=${context.end}&scope=account%3A1&diagnostics=performance`,
     );
     expect(screen.getByLabelText("Счёт операции")).toHaveValue("1");
     fireEvent.change(screen.getByLabelText("Счёт операции"), { target: { value: "2" } });

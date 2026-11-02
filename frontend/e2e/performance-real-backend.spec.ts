@@ -86,7 +86,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
   expect(initial.twrr.availability).not.toBe("available");
   expect(initial.diagnostics.length).toBeGreaterThan(1);
 
-  const url = `/v2/capital/performance?start=${start}&end=${end}&scope=account&account_id=${account.id}&view=accounts&prepare_account=${account.id}&prepare_reason=cash_history#performance-preparation`;
+  const url = `/v2/returns/account?diagnostics=performance&start=${start}&end=${end}&scope=account:${account.id}&view=accounts&prepare_account=${account.id}&prepare_reason=cash_history#performance-preparation`;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });

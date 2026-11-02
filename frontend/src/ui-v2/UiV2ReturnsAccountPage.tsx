@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import {
   compareDecimal,
@@ -23,6 +23,10 @@ import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import { UiV2Shell } from "./UiV2Shell";
 import { readDisplayNames } from "./returns/dashboard";
+
+const ReturnsSourceDiagnostics = lazy(() => import("./ReturnsSourceDiagnostics"));
+const ReturnsPerformanceDiagnostics = lazy(() => import("./ReturnsPerformanceDiagnostics"));
+const BrokerStatementReturnDiagnostics = lazy(() => import("./BrokerStatementReturnDiagnostics"));
 
 function Instruments({
   rows,
@@ -233,6 +237,12 @@ function Instruments({
 export default function UiV2ReturnsAccountPage() {
   const displayNames = readDisplayNames();
   const [params, setParams] = useSearchParams();
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(() => params.has("diagnostics"));
+  const [diagnosticsLoaded, setDiagnosticsLoaded] = useState(diagnosticsExpanded);
+  const [statementExpanded, setStatementExpanded] = useState(
+    () => params.get("diagnostics") === "statement",
+  );
+  const [statementLoaded, setStatementLoaded] = useState(statementExpanded);
   const [basketExpanded, setBasketExpanded] = useState(() => params.has("categories"));
   const navigate = useNavigate();
   const { hash } = useLocation();
@@ -290,6 +300,7 @@ export default function UiV2ReturnsAccountPage() {
     const next = new URLSearchParams(params);
     next.set("start", p.start);
     next.set("end", p.end);
+    next.delete("month");
     setParams(next);
   };
   const options = [
@@ -349,7 +360,8 @@ export default function UiV2ReturnsAccountPage() {
                     next.delete("end");
                   }
                 }
-                next.delete("isin");
+                for (const key of ["isin", "source_account", "bond_isin", "bond_period"])
+                  next.delete(key);
                 setParams(next);
               }}
             >
@@ -485,7 +497,15 @@ export default function UiV2ReturnsAccountPage() {
                 aria-label="Результат периода"
               >
                 {data.selected.pnl.value === null && data.selected_available_months_total ? (
-                  <ReturnsAvailable value={data.selected_available_months_total} />
+                  <>
+                    <ReturnsAvailable value={data.selected_available_months_total} />
+                    {data.selected.rate.value !== null && (
+                      <div>
+                        Доходность выбранного периода:{" "}
+                        <Value metric={data.selected.rate} label="Доходность периода" />
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
                     <h2>Результат периода</h2>
@@ -558,8 +578,15 @@ export default function UiV2ReturnsAccountPage() {
             />
           </>
         )}
-        {context.data?.accounts.some((a) => a.id === scope) && (
-          <details className={styles.diagnostics}>
+        {!!scope && (
+          <details
+            className={styles.diagnostics}
+            open={diagnosticsExpanded}
+            onToggle={(event) => {
+              setDiagnosticsExpanded(event.currentTarget.open);
+              if (event.currentTarget.open) setDiagnosticsLoaded(true);
+            }}
+          >
             <summary>Подробнее о данных</summary>
             <p>
               Результаты используют существующие расчёты; неизвестные значения остаются пустыми.
@@ -578,12 +605,35 @@ export default function UiV2ReturnsAccountPage() {
             {data?.proof_status === "stale" && (
               <p>Подтверждение выписок устарело. Зависимые значения требуют повторной проверки.</p>
             )}
-            {scope.startsWith("source:") && (
-              <Link
-                to={`/v2/capital/monthly-returns?diagnostics=1&source_account=${encodeURIComponent(scope.slice(7))}`}
-              >
-                Открыть диагностику выписок
-              </Link>
+            {diagnosticsLoaded && (
+              <Suspense fallback={<p>Загружаем подробности…</p>}>
+                {scope.startsWith("source:") ? (
+                  context.data?.accounts.some((account) => account.id === scope) ? (
+                    <ReturnsSourceDiagnostics key={scope} account={scope.slice(7)} />
+                  ) : null
+                ) : (
+                  <>
+                    <ReturnsPerformanceDiagnostics />
+                    <details
+                      open={statementExpanded}
+                      onToggle={(event) => {
+                        setStatementExpanded(event.currentTarget.open);
+                        if (event.currentTarget.open) setStatementLoaded(true);
+                      }}
+                    >
+                      <summary>Доходность по отдельной выписке и сценарий</summary>
+                      {statementLoaded && (
+                        <BrokerStatementReturnDiagnostics
+                          key={scope}
+                          accountId={
+                            /^account:[1-9]\d*$/.test(scope) ? Number(scope.slice(8)) : undefined
+                          }
+                        />
+                      )}
+                    </details>
+                  </>
+                )}
+              </Suspense>
             )}
           </details>
         )}

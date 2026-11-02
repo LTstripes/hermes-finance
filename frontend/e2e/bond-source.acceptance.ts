@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("API Decimal boundary rates render identically in Month and Monthly Returns after Back/Reload", async ({
+test("API Decimal boundary rates render identically in Month and Returns after Back/Reload", async ({
   page,
   request,
 }, info) => {
@@ -21,6 +21,12 @@ test("API Decimal boundary rates render identically in Month and Monthly Returns
     }
     await route.fulfill({ response, json: body });
   });
+  await page.route("**/api/returns/overview?**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.selected.rate = { ...body.selected.rate, value: fraction, unit: "fraction" };
+    await route.fulfill({ response, json: body });
+  });
   for (const [value, expected] of [
     ["0.001259", "0,13%"],
     ["-0.00125", "−0,13%"],
@@ -35,13 +41,11 @@ test("API Decimal boundary rates render identically in Month and Monthly Returns
     await card.getByText("Источники расчёта", { exact: true }).click();
     await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
     await page.getByText("Подробнее о данных", { exact: true }).click();
-    await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
-    const monthly = page.getByTestId("returns-monthly-table");
+
+    const monthly = page.getByRole("region", { name: "Результат периода", exact: true });
     await expect(monthly).toContainText(expected);
     await page.reload();
     await expect(monthly).toContainText(expected);
-    await page.goBack();
-    await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
     await page.goBack();
     await expect(card).toContainText(expected);
   }
@@ -62,7 +66,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   page.on("request", (item) => {
     if (item.method() === "POST") writes.push(new URL(item.url()).pathname);
   });
-  await page.goto("/v2/capital/monthly-returns?diagnostics=1&source_account=1234567");
+  await page.goto("/v2/returns/account?diagnostics=1&period=history&scope=source:1234567");
   const proof = page.getByRole("region", {
     name: "Подтверждение источников доходности",
     exact: true,
@@ -86,13 +90,34 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
     (row: { closing_date: string }) => row.closing_date === "2030-04-30",
   );
   const may = get.months.find((row: { closing_date: string }) => row.closing_date === "2030-05-31");
+  const june = get.months.find(
+    (row: { closing_date: string }) => row.closing_date === "2030-06-30",
+  );
+  expect(get.source_proof.status).toBe("current");
   expect(april.growth_kopecks).toBe(60000);
   expect(may.growth_kopecks).toBeNull();
+  expect(june.growth_kopecks).toBe(60000);
   await page.reload();
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Взносы и рост", exact: true })).toContainText(
-    "600,00 ₽",
+  await expect(page.getByRole("combobox", { name: "Счёт", exact: true })).toHaveValue(
+    "source:1234567-000",
   );
+  // The retired monthly table contained April and June rows of 600 ₽ each.
+  // This card is their history subtotal, not the selected April result.
+  const history = page.getByRole("region", { name: "За доступные месяцы", exact: true });
+  await expect(history).toContainText("За доступные месяцы · 2 из 5");
+  await expect(history).toContainText("+1 200 ₽");
+  await expect(history).not.toContainText("%");
+  await history.getByLabel("Подробнее: Покрытие доступных месяцев", { exact: true }).click();
+  await expect(history.getByText(/^Учтён:/)).toHaveText([
+    "Учтён: 31.03.2030 — 30.04.2030",
+    "Учтён: 31.05.2030 — 30.06.2030",
+  ]);
+  await expect(history.getByText(/^Не учтён:/)).toHaveText([
+    "Не учтён: 28.02.2030 — 31.03.2030",
+    "Не учтён: 30.04.2030 — 31.05.2030",
+    "Не учтён: 30.06.2030 — 31.07.2030",
+  ]);
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   const summary = page.getByRole("region", {
@@ -105,10 +130,12 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await summary.getByText("Источники расчёта", { exact: true }).click();
   await summary.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
   await page.getByText("Подробнее о данных", { exact: true }).click();
-  await page.getByRole("link", { name: "Открыть диагностику выписок" }).click();
+
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
-  await page.goBack();
-  await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
+  const selected = page.getByRole("region", { name: "Результат периода", exact: true });
+  await expect(selected).toContainText("+600 ₽");
+  await expect(selected).toContainText("31.03.2030 — 30.04.2030");
+  await expect(history).toContainText("+1 200 ₽");
   await page.goBack();
   await expect(summary).toContainText("600 ₽");
   await page.reload();
@@ -125,6 +152,17 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(summary).not.toContainText("600 ₽");
   await summary.getByText("Подробнее о предварительном расчёте", { exact: true }).click();
   await expect(summary).toContainText("Подтверждение источника устарело");
+  const stale = await (
+    await request.get("/api/source-returns/monthly?source_account=1234567")
+  ).json();
+  expect(stale.source_proof.status).toBe("stale");
+  for (const closing of ["2030-04-30", "2030-06-30"]) {
+    const row = stale.months.find(
+      (item: { closing_date: string }) => item.closing_date === closing,
+    );
+    expect(row.growth_kopecks).toBeNull();
+    expect(row.modified_dietz_return).toBeNull();
+  }
   await summary.screenshot({ path: info.outputPath("source-proof-stale-month.png") });
 });
 
@@ -138,7 +176,7 @@ test("explicit stale bond ISIN stays unavailable on reload; account switch reset
     if (!["GET", "HEAD"].includes(r.method())) mutations.push(r.method());
   });
   await page.goto(
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=7654321&bond_period=2030-05-01&bond_isin=RU000STALE01#bond-slice",
+    "/v2/returns/account?diagnostics=1&period=history&scope=source:7654321&bond_period=2030-05-01&bond_isin=RU000STALE01#bond-slice",
   );
   const panel = page.getByRole("region", { name: "Облигации: позиции, сделки и купоны" });
   await expect(panel.getByText("Выбранная облигация недоступна", { exact: true })).toBeVisible();
@@ -155,7 +193,9 @@ test("explicit stale bond ISIN stays unavailable on reload; account switch reset
   await expect(panel.getByRole("region", { name: "Детали облигации RU000A000001" })).toBeVisible();
   expect(new URL(page.url()).searchParams.get("bond_isin")).toBe("RU000A000001");
 
-  await page.getByLabel("Счёт в выписке", { exact: true }).selectOption("8765432");
+  await page
+    .getByRole("combobox", { name: "Счёт", exact: true })
+    .selectOption("source:8765432-000");
   await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
   expect(new URL(page.url()).searchParams.has("bond_isin")).toBe(false);
   expect(new URL(page.url()).searchParams.has("bond_period")).toBe(false);
@@ -189,7 +229,7 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
     if (!["GET", "HEAD"].includes(r.method())) mutations.push(`${r.method()} ${r.url()}`);
   });
   await page.goto(
-    "/v2/capital/monthly-returns?diagnostics=1&source_account=7654321&bond_period=2030-05-01#bond-slice",
+    "/v2/returns/account?diagnostics=1&period=history&scope=source:7654321&bond_period=2030-05-01#bond-slice",
   );
   const panel = page.getByRole("region", { name: "Облигации: позиции, сделки и купоны" });
   await expect(panel.getByText("7654321-000", { exact: true })).toBeVisible();
@@ -218,7 +258,9 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
   expect(bond.analysis.statement_estimate.pnl.value).toBe(4000);
   await panel.screenshot({ path: info.outputPath("bond-no-trade-1440.png") });
 
-  await page.getByLabel("Счёт в выписке", { exact: true }).selectOption("8765432");
+  await page
+    .getByRole("combobox", { name: "Счёт", exact: true })
+    .selectOption("source:8765432-000");
   await panel.getByLabel("Период облигаций").selectOption("2030-05-01");
   await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
   await expect(withinTable().getByRole("cell", { name: "8", exact: true })).toBeVisible();
@@ -229,7 +271,9 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
     "55,00 ₽",
   );
   await page.reload();
-  await expect(page.getByLabel("Счёт в выписке", { exact: true })).toHaveValue("8765432");
+  await expect(page.getByRole("combobox", { name: "Счёт", exact: true })).toHaveValue(
+    "source:8765432-000",
+  );
   await expect(panel.getByLabel("Период облигаций")).toHaveValue("2030-05-01");
   await expect(withinTable().getByRole("cell", { name: "8", exact: true })).toBeVisible();
   await panel.getByLabel("Период облигаций").selectOption("2030-06-01");

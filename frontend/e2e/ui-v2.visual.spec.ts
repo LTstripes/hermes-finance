@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
 
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import type { BrokerMonthReadback } from "../src/api/brokerMonths";
@@ -798,7 +799,10 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     }
     let json: unknown;
     let status = 200;
-    if (url.pathname === "/api/months") {
+    const returnsHost = returnsDiagnosticsFixture(url, state.accounts);
+    if (returnsHost) {
+      json = returnsHost;
+    } else if (url.pathname === "/api/months") {
       json = state.months;
       status = state.monthsError ? 503 : 200;
     } else if (url.pathname === "/api/broker-months") {
@@ -1004,7 +1008,7 @@ for (const width of [1440]) {
     expect(evidence.reads.some((read) => read.includes("/api/performance"))).toBe(false);
     for (const scope of ["portfolio", "account"]) {
       await page.goto(
-        `/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=${scope}${scope === "account" ? "&account_id=3" : ""}`,
+        `/v2/returns/account?diagnostics=performance&start=2031-05-31&end=2031-07-31&scope=${scope === "account" ? "account:3" : scope}`,
       );
       await expect(page.getByText(explanation)).toBeVisible();
       for (const metric of ["xirr", "twrr"]) {
@@ -1041,7 +1045,8 @@ test("ui-v2 readiness candidates: missing coverage, ambiguity and keyboard Back 
   page,
 }, testInfo) => {
   const evidence = await installCapitalApi(page, "readiness-missing");
-  const path = "/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=portfolio";
+  const path =
+    "/v2/returns/account?diagnostics=performance&start=2031-05-31&end=2031-07-31&scope=portfolio";
   await page.goto(path);
   const table = page.getByTestId("performance-accounts-table");
   await expect(table.getByRole("row")).toHaveCount(3);
@@ -1062,7 +1067,7 @@ test("ui-v2 readiness candidates: missing coverage, ambiguity and keyboard Back 
   const open = ambiguous.getByRole("link", { name: "Открыть" });
   await open.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(`${path.replace("scope=portfolio", "scope=account")}&account_id=3`);
+  await expect(page).toHaveURL(/\/v2\/returns\/account\?.*scope=account%3A3/);
   await expect(page.getByTestId("performance-detail-period")).toContainText("31.05.2031");
   await expect(page.getByTestId("performance-detail-period")).toContainText("31.07.2031");
   await expect(page.getByTestId("performance-detail-xirr")).not.toContainText(/\d[,.]\d+%/);
@@ -1078,7 +1083,9 @@ test("ui-v2 readiness empty catalogue: honest empty state @viewport-owned", asyn
   page,
 }, testInfo) => {
   const evidence = await installCapitalApi(page, "readiness-empty");
-  await page.goto("/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=portfolio");
+  await page.goto(
+    "/v2/returns/account?diagnostics=performance&start=2031-05-31&end=2031-07-31&scope=portfolio",
+  );
   await expect(
     page.getByText("Каталог счетов пуст. Исторический состав расчёта не подтверждён."),
   ).toBeVisible();

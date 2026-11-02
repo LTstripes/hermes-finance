@@ -141,7 +141,9 @@ describe("performanceDetailHref", () => {
         accountId: 3,
         view: "accounts",
       }),
-    ).toBe("/v2/capital/performance?start=2031-05-31&end=2031-07-31&scope=account&account_id=3");
+    ).toBe(
+      "/v2/returns/account?start=2031-05-31&end=2031-07-31&scope=account%3A3&diagnostics=performance",
+    );
   });
 });
 

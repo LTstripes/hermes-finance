@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PerformanceReadiness } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { classReturnsFixture } from "../test/classReturnsFixture";
-import UiV2CapitalPerformanceDetail from "./UiV2CapitalPerformanceDetail";
+import ReturnsPerformanceDiagnostics from "./ReturnsPerformanceDiagnostics";
+import UiV2ReturnsAccountPage from "./UiV2ReturnsAccountPage";
+import { returnsDiagnosticsFixture } from "../test/returnsDiagnosticsFixture";
 
 const START = "2031-05-31";
 const END = "2031-07-31";
@@ -91,6 +93,7 @@ function setup(
     accounts?: Array<Record<string, unknown>>;
     accountsError?: boolean;
   },
+  integrated = false,
 ) {
   const client = createQueryClient();
   const reads: string[] = [];
@@ -122,6 +125,49 @@ function setup(
       }
       let data: unknown;
       switch (url.pathname) {
+        case "/api/returns/context":
+        case "/api/returns/overview":
+          data = returnsDiagnosticsFixture(url, [{ id: 1, name: "Synthetic A" }]);
+          break;
+        case "/api/performance/preparation":
+          data = {
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            evidence_token: "synthetic",
+            flows: [],
+            transfer_links: [],
+            cash_coverages: [],
+            in_kind_coverages: [],
+            movements: [],
+            cash_balances: [],
+            months: [{ id: 91, period_start: START, period_end: END, status: "draft" }],
+          };
+          break;
+        case "/api/performance/membership":
+          data = {
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            scope: "account",
+            rows: [],
+            identity: "synthetic",
+            form_token: "synthetic",
+            readiness: readinessFixture({ scope: "account", accountId: 1 }),
+          };
+          break;
+        case "/api/performance/valuation-captures":
+          data = {
+            scope: "account",
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            performance_currency: "RUB",
+            targets: [],
+            captured: null,
+            readiness: readinessFixture({ scope: "account", accountId: 1 }),
+          };
+          break;
         case "/api/performance/class-returns":
           data = classReturnsFixture(url.searchParams.get("asset_class") as string, START, END);
           break;
@@ -194,7 +240,10 @@ function setup(
         <MemoryRouter initialEntries={[path]}>
           <LocationProbe />
           <Routes>
-            <Route path="v2/capital/performance" element={<UiV2CapitalPerformanceDetail />} />
+            <Route
+              path="v2/returns/account"
+              element={integrated ? <UiV2ReturnsAccountPage /> : <ReturnsPerformanceDiagnostics />}
+            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -209,7 +258,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const PORTFOLIO_PATH = `/v2/capital/performance?start=${START}&end=${END}&scope=portfolio`;
+const PORTFOLIO_PATH = `/v2/returns/account?start=${START}&end=${END}&scope=portfolio`;
 
 function missingCoverageFixture(options: Parameters<typeof readinessFixture>[0] = {}) {
   const body = readinessFixture(options);
@@ -228,7 +277,7 @@ function missingCoverageFixture(options: Parameters<typeof readinessFixture>[0] 
   return body;
 }
 
-describe("UiV2CapitalPerformanceDetail", () => {
+describe("ReturnsPerformanceDiagnostics", () => {
   it("shows catalogue and ambiguous candidates without cash/in-kind coverage or invented returns", async () => {
     const portfolio = missingCoverageFixture();
     portfolio.evidence.scope_membership.account_ids = [1];
@@ -346,7 +395,7 @@ describe("UiV2CapitalPerformanceDetail", () => {
     expect(row).not.toHaveTextContent(/\d[,.]\d+%/);
     expect(within(row).getByRole("link", { name: "Открыть" })).toHaveAttribute(
       "href",
-      `${PORTFOLIO_PATH.replace("scope=portfolio", "scope=account")}&account_id=1`,
+      `/v2/returns/account?start=${START}&end=${END}&scope=account%3A1&diagnostics=performance`,
     );
   });
 
@@ -372,7 +421,7 @@ describe("UiV2CapitalPerformanceDetail", () => {
     expect(within(row).getByText("доступен")).toBeVisible();
     expect(within(row).getByRole("link", { name: "Открыть" })).toHaveAttribute(
       "href",
-      `/v2/capital/performance?start=${START}&end=${END}&scope=account&account_id=3`,
+      `/v2/returns/account?start=${START}&end=${END}&scope=account%3A3&diagnostics=performance`,
     );
 
     expect(screen.getByTestId("performance-detail-bridge")).toHaveTextContent(/42\s?600/);
@@ -380,12 +429,22 @@ describe("UiV2CapitalPerformanceDetail", () => {
     expect(bridgeNote).toHaveTextContent(/Изменение стоимости после внешних потоков/i);
     expect(bridgeNote).toHaveTextContent(/Не прибыль и не доходность/i);
     expect(reads.some((read) => read.includes("/api/performance/readiness"))).toBe(true);
+
+    fireEvent.click(within(row).getByRole("link", { name: "Открыть" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("performance-detail-period")).toHaveTextContent("Брокерский счёт"),
+    );
+    expect(await screen.findByTestId("performance-detail-xirr")).toHaveTextContent("+8,00%");
+    expect(screen.getByTestId("test-location")).toHaveTextContent(
+      `start=${START}&end=${END}&scope=account%3A3&diagnostics=performance`,
+    );
+    expect(reads).toContain(
+      `GET /api/performance/readiness?start_date=${START}&end_date=${END}&scope=account&account_id=3`,
+    );
   });
 
   it("rejects a reversed interval as a context error without fetching readiness", async () => {
-    const { mount, reads } = setup(
-      `/v2/capital/performance?start=${END}&end=${START}&scope=portfolio`,
-    );
+    const { mount, reads } = setup(`/v2/returns/account?start=${END}&end=${START}&scope=portfolio`);
     mount();
 
     expect(await screen.findByText(/Начальная дата позже конечной/i)).toBeVisible();
@@ -394,7 +453,7 @@ describe("UiV2CapitalPerformanceDetail", () => {
 
   it("rejects an unknown account without falling back to the portfolio", async () => {
     const { mount } = setup(
-      `/v2/capital/performance?start=${START}&end=${END}&scope=account&account_id=999`,
+      `/v2/returns/account?start=${START}&end=${END}&scope=account&account_id=999`,
     );
     mount();
 
@@ -514,4 +573,43 @@ describe("UiV2CapitalPerformanceDetail", () => {
     scope.focus();
     expect(scope).toHaveFocus();
   });
+});
+
+it("Returns host retains deposit refusal, class metrics and period horizons", async () => {
+  const { mount } = setup(
+    PORTFOLIO_PATH + "&diagnostics=performance&view=classes",
+    undefined,
+    undefined,
+    true,
+  );
+  mount();
+  await waitFor(() =>
+    expect(screen.getByTestId("class-return-deposit")).toHaveTextContent(
+      "Расчёт не поддерживается",
+    ),
+  );
+  expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%");
+  expect(screen.getByRole("button", { name: "1 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "3 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "12 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Вся история" })).toBeEnabled();
+});
+
+it("Returns account host retains Owner operation and membership preparation", async () => {
+  const { mount } = setup(
+    "/v2/returns/account?start=" +
+      START +
+      "&end=" +
+      END +
+      "&scope=account:1&diagnostics=performance&prepare_account=1&prepare_reason=cash_history",
+    undefined,
+    undefined,
+    true,
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Добавить операцию" }));
+  expect(screen.getByLabelText("Сумма операции")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Сохранить операцию" })).toBeDisabled();
+  fireEvent.click(await screen.findByRole("button", { name: "Добавить явный интервал" }));
+  expect(screen.getByLabelText("Конец включительно")).toBeVisible();
 });

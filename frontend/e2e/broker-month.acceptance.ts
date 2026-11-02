@@ -135,14 +135,40 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   for (const file of files)
     await expect(sources.getByText(`${file.name}: Сохранен`, { exact: true })).toBeVisible();
   const picker = sources.getByLabel("Счёт источника месяца");
+  // The source status is immediate; the return card waits for a separate account read.
+  // Synchronize on that exact response before asserting its missing-month branch.
+  const monthlyRead = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/source-returns/monthly" &&
+      url.searchParams.get("source_account") === "7113501"
+    );
+  });
   await selectSourceAccount(page, "7113501");
-  await expect(
-    page
-      .getByRole("region", { name: "Предварительная доходность месяца" })
-      .getByText(/нет доказанных границ этого месяца/),
-  ).toContainText("2035-10-31");
-  await expect(sources.getByRole("region", { name: "Состояние источников месяца" })).toContainText(
-    "Полных месячных оригиналов: 0",
+  const monthlyResponse = await monthlyRead;
+  expect(monthlyResponse.ok()).toBe(true);
+  const monthly = await monthlyResponse.json();
+  expect(monthly.source_account).toBe("7113501");
+  expect(monthly.authority).toBe("provisional");
+  expect(monthly.financial_authority).toBe("none");
+  expect(
+    monthly.months.filter(
+      (row: { opening_date: string; closing_date: string }) =>
+        row.opening_date === "2035-09-30" && row.closing_date === "2035-10-31",
+    ),
+  ).toEqual([]);
+  const monthlyReturn = page.getByRole("region", { name: "Предварительная доходность месяца" });
+  const unavailable = monthlyReturn.getByText(/нет доказанных границ этого месяца/);
+  await expect(unavailable).toBeVisible();
+  await expect(unavailable).toContainText("EOD 2035-09-30 и 2035-10-31");
+  await expect(monthlyReturn).not.toContainText(/[%₽]/);
+  const sourceStatus = sources.getByRole("region", { name: "Состояние источников месяца" });
+  await expect(sourceStatus).toContainText("Полных месячных оригиналов: 0");
+  const missingClosing = sourceStatus.getByText(/Нет полного месячного оригинала/);
+  await expect(missingClosing).toBeVisible();
+  await expect(missingClosing).toHaveText(
+    "Нет полного месячного оригинала. Нужны остатки на 2035-10-31; историческое пересечение не доказывает конец месяца.",
   );
   const instruments = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(instruments.getByText("RU000A000000 · Акция")).toBeVisible();
@@ -210,7 +236,7 @@ test("statement returns show native EOD facts, NKD caveat, exact export and stal
   const value = await (await request.get(`/api/broker-statement-returns?${params}`)).json();
   expect(value.status).toBe("indicative");
   expect(value.bond_nkd_basis).toBe("unknown");
-  await page.goto("/v2/capital/statement-return");
+  await page.goto("/v2/returns/account?scope=portfolio&diagnostics=statement");
   await page.getByLabel("Брокерский счёт", { exact: true }).selectOption(String(account.id));
   await page.getByLabel("Принятая выписка").selectOption("synthetic-statement-return");
   await expect(page.getByText("2,80%", { exact: true })).toBeVisible();
@@ -2259,7 +2285,15 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     await expect(region).not.toContainText("999");
     if (afterReload) {
       await page.goto(`/v2/returns?month=${monthId}`);
+      // goto waits for the document, not the month read and its history replacement.
+      await expect(page).toHaveURL(
+        `/v2/returns/account?month=${monthId}&start=2037-11-30&end=2037-12-31&scope=portfolio`,
+      );
+      await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
       await page.goBack();
+      await expect(page).toHaveURL(calendarPage);
+      await expect(region).toContainText("Полнота неизвестна; известная часть:");
+      await expect(region).toContainText("0 выплат");
       await page.reload();
       await expect(region).toContainText("Полнота неизвестна; известная часть:");
       await expect(region).toContainText("0 выплат");

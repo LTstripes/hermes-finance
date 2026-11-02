@@ -191,18 +191,19 @@ export function parsePerformanceContext(
   return { context: { start, end, scope, accountId: null, view }, error: null };
 }
 
-export const PERFORMANCE_DETAIL_PATH = "/v2/capital/performance";
+export const PERFORMANCE_DETAIL_PATH = "/v2/returns/account";
 
 /** Deep link that preserves the full leaf context for back/refresh. */
 export function performanceDetailHref(context: PerformanceContext): string {
   const query = new URLSearchParams({
     start: context.start,
     end: context.end,
-    scope: context.scope,
+    scope:
+      context.scope === "account" && context.accountId !== null
+        ? `account:${context.accountId}`
+        : context.scope,
+    diagnostics: "performance",
   });
-  if (context.scope === "account" && context.accountId !== null) {
-    query.set("account_id", String(context.accountId));
-  }
   if (context.view === "classes") {
     query.set("view", "classes");
   }
