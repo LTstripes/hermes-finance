@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -39,6 +40,7 @@ from hermes_finance.persistence import (
     InstrumentMarketMapping,
     PositionQuoteProvenance,
     PositionSnapshot,
+    ReportingMonth,
 )
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.applied_payouts import (
@@ -70,6 +72,7 @@ from hermes_finance.services.positions import (
 from hermes_finance.services.reporting_months import (
     CLOSE_SNAPSHOT_DATE_REQUIRED_CODE,
     CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE,
+    close_completeness_warnings,
     close_hard_guards,
     close_reporting_month,
     create_reporting_month,
@@ -174,22 +177,24 @@ def _add_quote_provenance(
     session.commit()
 
 
-def test_close_hard_guards_only_missing_snapshot_date() -> None:
+def test_close_completeness_is_advisory_even_without_snapshot_date() -> None:
     assert close_hard_guards(SimpleNamespace(snapshot_date=date(2026, 1, 31))) == ()
-    assert close_hard_guards(SimpleNamespace(snapshot_date=None)) == (
+    assert close_hard_guards(SimpleNamespace(snapshot_date=None)) == ()
+    assert close_completeness_warnings(SimpleNamespace(snapshot_date=None)) == (
         (CLOSE_SNAPSHOT_DATE_REQUIRED_CODE, CLOSE_SNAPSHOT_DATE_REQUIRED_MESSAGE),
     )
 
 
-def test_empty_january_draft_requires_explicit_intentional_close(tmp_path: Path) -> None:
+def test_empty_january_draft_can_close_with_warning(tmp_path: Path) -> None:
     session, _database = session_for(tmp_path)
     month = create_reporting_month(session, year=2026, month=1, snapshot_date=date(2026, 1, 31))
     result = build_close_readiness(session, month.id, today=TODAY)
-    assert result.can_close is False
+    assert result.can_close is True
     assert result.status == "draft"
     assert [
         item.code for item in result.items if item.severity is CloseReadinessSeverity.HARD_BLOCKER
-    ] == ["empty_manual_month"]
+    ] == []
+    assert _by_code(result, "empty_manual_month")[0].severity is CloseReadinessSeverity.WARNING
     assert result.intentional_empty_close["eligible"] is True
     assert CloseReadinessCode.SNAPSHOT_DATE_REQUIRED.value not in _codes(result)
     assert CloseReadinessCode.SALARY_TAX_HISTORY_INCOMPLETE.value not in _codes(result)
@@ -275,7 +280,7 @@ def test_active_capital_account_without_monthly_snapshot_is_warning(tmp_path: Pa
     assert len(missing) == 1
     assert missing[0].severity is CloseReadinessSeverity.WARNING
     assert missing[0].context["account_names"] == ["Synthetic Missing Snapshot"]
-    assert result.can_close is False
+    assert result.can_close is True
     assert "empty_manual_month" in _codes(result)
 
 
@@ -591,7 +596,7 @@ def test_readiness_does_not_perform_network_calls(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("socket.create_connection", boom)
     monkeypatch.setattr("socket.getaddrinfo", boom)
     result = build_close_readiness(session, month.id, today=TODAY)
-    assert result.can_close is False
+    assert result.can_close is True
     assert "empty_manual_month" in _codes(result)
 
 
@@ -675,7 +680,7 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
         "snapshot_date": "2031-05-31",
         "source": "manual",
     }
-    assert body["recommended_step_id"] == "readiness"
+    assert body["recommended_step_id"] == "alfa_baseline"
     assert [step["order"] for step in body["steps"]] == list(range(1, 10))
     draft_step_ids = [step["id"] for step in body["steps"]]
     assert draft_step_ids == EXPECTED_WORKFLOW_STEP_IDS
@@ -683,9 +688,9 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
     assert body["steps"][0]["state"] == "completed"
     assert body["steps"][0]["completion_basis"] == "domain_fact"
     assert body["steps"][1]["evidence_summary"]["available"] is False
-    assert body["readiness"]["can_close"] is False
+    assert body["readiness"]["can_close"] is True
     assert "empty_manual_month" in body["readiness"]["reason_codes"]
-    assert body["readiness"]["warning_count"] == 1
+    assert body["readiness"]["warning_count"] == 2
     assert body["freshness"]["available"] is True
     assert body["final_review"]["available"] is True
     assert [card["id"] for card in body["final_review"]["manual_review_cards"]] == [
@@ -812,7 +817,7 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     reopened = client.get(f"/api/months/{month.id}/close-workflow").json()
     assert reopened["month"]["status"] == "draft"
     assert reopened["month"]["id"] == month.id
-    assert reopened["recommended_step_id"] == "readiness"
+    assert reopened["recommended_step_id"] == "alfa_baseline"
     assert reopened["outlook"] is None
 
 
@@ -1366,3 +1371,110 @@ def test_closed_outlook_uses_next_calendar_month_and_separates_redemption_princi
     assert bucket["total_cash_flow"] == {"amount": "1234.56", "currency": "RUB"}
     assert session.scalar(select(func.count()).select_from(type(month))) == before_month_count
     assert session.scalar(select(func.count()).select_from(ExpectedCashFlow)) == before_flow_count
+
+
+@pytest.mark.parametrize("missing_snapshot", [False, True])
+def test_user_close_retains_source_gaps_and_unfinished_steps_after_reload(
+    tmp_path, missing_snapshot
+):
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.services.source_intake import PENDING, save_intake
+
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+    account = create_account(session, name="Source account", account_type=AccountType.BROKERAGE)
+    create_account(session, name="Missing account", account_type=AccountType.BROKERAGE)
+    stock = create_instrument(session, name="Synthetic stock", instrument_type=InstrumentType.STOCK)
+    # Persisted snapshot_date is NOT NULL; absence of position data is the
+    # supported HTTP scenario. The date-less predicate has a separate unit test.
+    if not missing_snapshot:
+        create_position_snapshot(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=stock.id,
+            quantity="1",
+            average_cost_per_unit="100.00",
+            market_price_per_unit="100.00",
+            price_date=date(2030, 1, 31),
+            price_source=PriceSource.MANUAL,
+        )
+    save_intake(
+        session,
+        document=fixture(),
+        filename=FILENAME,
+        request_id="incomplete-source",
+        account_id=account.id,
+        reporting_month_id=month.id,
+    )
+    month_id = month.id
+    session.close()
+    with database.session_factory() as saved:
+        before = {
+            table.name: list(saved.execute(select(table)))
+            for table in Base.metadata.sorted_tables
+            if table.name != "reporting_months"
+        }
+    with TestClient(create_app(database)) as client:
+        before_workflow = client.get(f"/api/months/{month_id}/close-workflow").json()
+        assert before_workflow["readiness"]["can_close"]
+        assert before_workflow["readiness"]["hard_blocker_count"] == 0
+        assert PENDING in before_workflow["readiness"]["reason_codes"]
+        ack = client.post(f"/api/months/{month_id}/close")
+        assert ack.status_code == 200, ack.text
+        assert ack.json()["status"] == "closed"
+    # A new client/session models page reload; neither status nor proof is cached.
+    with TestClient(create_app(database)) as client:
+        response = client.get(f"/api/months/{month_id}/close-workflow")
+        assert response.status_code == 200, response.text
+        current = response.json()
+        assert current["month"]["status"] == "closed"
+        assert current["month"]["snapshot_date"] == before_workflow["month"]["snapshot_date"]
+        assert set(before_workflow["readiness"]["reason_codes"]) <= set(
+            current["readiness"]["reason_codes"]
+        )
+        stages = {step["id"]: step for step in current["steps"]}
+        assert stages["final_review_close"]["state"] == "completed"
+        for step_id in ("future_payouts", "broker_reconciliation", "readiness"):
+            assert stages[step_id]["state"] != "completed"
+            assert stages[step_id]["completion_basis"] != "month_closed"
+            assert stages[step_id]["primary_action"] is None
+    with database.session_factory() as saved:
+        after = {
+            table.name: list(saved.execute(select(table)))
+            for table in Base.metadata.sorted_tables
+            if table.name != "reporting_months"
+        }
+        # Close advances the existing source-return dependency generation.
+        # It must not mutate any source, proof, journal or economic fact.
+        before_tokens = before.pop("source_return_proof_dependencies")
+        after_tokens = after.pop("source_return_proof_dependencies")
+        assert after_tokens[:-1] == before_tokens
+        assert after_tokens[-1].token.startswith(f"p:{month_id}:")
+        assert after == before
+
+
+def test_close_write_failure_returns_error_and_keeps_draft(tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    session, database = session_for(tmp_path)
+    month = create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+    month_id = month.id
+    session.close()
+    original_commit = Session.commit
+
+    def fail_close_commit(candidate):
+        if any(
+            isinstance(row, ReportingMonth) and row.status == "closed" for row in candidate.dirty
+        ):
+            raise RuntimeError("Synthetic Close storage failure")
+        return original_commit(candidate)
+
+    with TestClient(create_app(database), raise_server_exceptions=False) as client:
+        monkeypatch.setattr(Session, "commit", fail_close_commit)
+        response = client.post(f"/api/months/{month_id}/close")
+        assert response.status_code == 500
+        current = client.get(f"/api/months/{month_id}/close-workflow").json()
+        assert current["month"]["status"] == "draft"
+        assert "empty_manual_month" in current["readiness"]["reason_codes"]

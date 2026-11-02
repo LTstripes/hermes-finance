@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
@@ -930,27 +930,24 @@ def _readiness_step(readiness: CloseReadiness) -> GuidedCloseStep:
     blockers = tuple(item.code for item in readiness.items if item.severity.value == "hard_blocker")
     warnings = tuple(item.code for item in readiness.items if item.severity.value == "warning")
     if blockers:
-        action = (
-            _action(GuidedCloseActionId.SET_SNAPSHOT_DATE, GuidedCloseActionTarget.OPEN_PANEL)
-            if "snapshot_date_required" in blockers
-            else _action(GuidedCloseActionId.OPEN_FRESHNESS, GuidedCloseActionTarget.INTERNAL_ROUTE)
-        )
         return _step(
             step_id=GuidedCloseStepId.READINESS,
             state=derive_step_state(hard_blocked=True),
             applicability=GuidedCloseApplicability.MANDATORY,
             gate=GuidedCloseGate.MUST_RESOLVE,
             affects_close=True,
-            why="Есть hard blocker из действующего Close Cockpit.",
+            why="Сохранённые связи источников изменились; нужна повторная сверка.",
             reason_codes=blockers,
-            primary_action=action,
+            primary_action=_action(
+                GuidedCloseActionId.OPEN_FRESHNESS, GuidedCloseActionTarget.INTERNAL_ROUTE
+            ),
             diagnostics={"warning_count": len(warnings)},
         )
     if warnings:
         return _step(
             step_id=GuidedCloseStepId.READINESS,
             state=derive_step_state(stale_or_partial=True),
-            applicability=GuidedCloseApplicability.MANDATORY,
+            applicability=GuidedCloseApplicability.CONDITIONAL,
             gate=GuidedCloseGate.ADVISORY,
             affects_close=False,
             why="Можно закрыть с предупреждениями из действующего Close Cockpit.",
@@ -964,25 +961,12 @@ def _readiness_step(readiness: CloseReadiness) -> GuidedCloseStep:
     return _step(
         step_id=GuidedCloseStepId.READINESS,
         state=derive_step_state(completed=True),
-        applicability=GuidedCloseApplicability.MANDATORY,
-        gate=GuidedCloseGate.NONE,
-        affects_close=False,
-        why="Close Cockpit не нашёл hard blockers или предупреждений.",
-        completion_basis=GuidedCloseCompletionBasis.BACKEND_READ,
-        diagnostics={"warning_count": 0},
-    )
-
-
-def _closed_read_only_step(step_id: GuidedCloseStepId) -> GuidedCloseStep:
-    return _step(
-        step_id=step_id,
-        state=GuidedCloseStepState.NOT_STARTED,
         applicability=GuidedCloseApplicability.CONDITIONAL,
         gate=GuidedCloseGate.NONE,
         affects_close=False,
-        why="Месяц закрыт и доступен только для чтения; для нового действия сначала нужно явное открытие.",
-        reason_codes=("month_closed_read_only",),
-        evidence_summary=_unavailable_evidence("month_closed_read_only"),
+        why="Проверка не выявила предупреждений.",
+        completion_basis=GuidedCloseCompletionBasis.BACKEND_READ,
+        diagnostics={"warning_count": 0},
     )
 
 
@@ -1209,7 +1193,7 @@ def build_final_month_review(
     """Compose the final review from existing read models only."""
     month_id = getattr(month, "id")
     if getattr(month, "snapshot_date") is None:
-        summary = monthly_summary(session, month_id)
+        summary = monthly_summary(session, month_id, allow_incomplete_salary_tax=True)
         dashboard = None
         ladder = None
     else:
@@ -1390,141 +1374,115 @@ def build_month_close_workflow(
             freshness_summary=freshness,
         )
         closed = month.status == "closed"
-        if closed:
-            first = _step(
-                step_id=GuidedCloseStepId.MONTH_SETUP,
-                state=derive_step_state(completed=True),
+        month_blocked = month.snapshot_date is None
+        month_step = _step(
+            step_id=GuidedCloseStepId.MONTH_SETUP,
+            state=derive_step_state(stale_or_partial=month_blocked, completed=not month_blocked),
+            applicability=GuidedCloseApplicability.CONDITIONAL,
+            gate=GuidedCloseGate.ADVISORY if month_blocked else GuidedCloseGate.NONE,
+            affects_close=False,
+            why=(
+                "Дата снимка не указана; часть итогов недоступна."
+                if month_blocked
+                else "Выбранный месяц и его дата снимка доступны."
+            ),
+            reason_codes=("snapshot_date_required",) if month_blocked else (),
+            primary_action=(
+                _action(GuidedCloseActionId.SET_SNAPSHOT_DATE, GuidedCloseActionTarget.OPEN_PANEL)
+                if month_blocked
+                else None
+            ),
+            completion_basis=None if month_blocked else GuidedCloseCompletionBasis.DOMAIN_FACT,
+        )
+        provider_steps = (
+            _alfa_baseline_step(session, month),
+            (
+                _market_quote_step(freshness, session=session, month_id=month.id)
+                if freshness is not None
+                else _provider_step_read_only(
+                    step_id=GuidedCloseStepId.MARKET_QUOTES,
+                    why="Без даты снимка проверка котировок недоступна.",
+                    reason_code="snapshot_date_required",
+                    action_id=GuidedCloseActionId.OPEN_QUOTE_PREVIEW,
+                )
+            ),
+            _actual_payouts_step(session, month),
+            _future_payouts_step(session, month),
+            _provider_step_read_only(
+                step_id=GuidedCloseStepId.BROKER_RECONCILIATION,
+                why=(
+                    "Проверка Alfa доступна только по явной команде и не сохраняется "
+                    "этим read model."
+                ),
+                reason_code="reconciliation_not_run",
+                action_id=GuidedCloseActionId.OPEN_RECONCILIATION_PREVIEW,
+            ),
+        )
+        steps = (
+            month_step,
+            *provider_steps,
+            _readiness_step(readiness),
+            _step(
+                step_id=GuidedCloseStepId.FINAL_REVIEW_CLOSE,
+                state=derive_step_state(
+                    hard_blocked=not readiness.can_close,
+                    stale_or_partial=bool(
+                        any(item.severity.value == "warning" for item in readiness.items)
+                    ),
+                    ready=True,
+                ),
                 applicability=GuidedCloseApplicability.MANDATORY,
+                gate=GuidedCloseGate.OWNER_DECISION,
+                affects_close=False,
+                why="Итоговая проверка завершится только явной командой Close.",
+                reason_codes=tuple(
+                    item.code
+                    for item in readiness.items
+                    if item.severity.value in {"hard_blocker", "warning"}
+                ),
+                primary_action=(
+                    _action(
+                        GuidedCloseActionId.CONFIRM_CLOSE,
+                        GuidedCloseActionTarget.CONFIRM_CLOSE,
+                    )
+                    if readiness.can_close
+                    else None
+                ),
+                evidence_summary={
+                    "available": False,
+                    "reason_code": "final_review_not_in_core",
+                },
+            ),
+            _step(
+                step_id=GuidedCloseStepId.NEXT_MONTH_OUTLOOK,
+                state=derive_step_state(not_applicable=True),
+                applicability=GuidedCloseApplicability.NOT_APPLICABLE,
                 gate=GuidedCloseGate.NONE,
                 affects_close=False,
-                why="Месяц уже закрыт; открыт режим только для чтения.",
-                reason_codes=("month_closed_read_only",),
-                completion_basis=GuidedCloseCompletionBasis.MONTH_CLOSED,
-            )
-            steps = (
-                first,
-                *(_closed_read_only_step(step_id) for step_id, _title in _STEP_DEFINITIONS[1:6]),
-                _step(
-                    step_id=GuidedCloseStepId.READINESS,
-                    state=derive_step_state(completed=True),
-                    applicability=GuidedCloseApplicability.MANDATORY,
-                    gate=GuidedCloseGate.NONE,
-                    affects_close=False,
-                    why="Закрытый месяц сохранён; Close Cockpit доступен для просмотра.",
-                    reason_codes=("month_closed_read_only",),
-                    completion_basis=GuidedCloseCompletionBasis.MONTH_CLOSED,
+                why=(
+                    "Outlook появляется только после закрытия и отдельной композиции "
+                    "известных событий."
                 ),
+                reason_codes=("outlook_not_available_until_closed",),
+                evidence_summary=_unavailable_evidence("outlook_not_available_until_closed"),
+            ),
+        )
+        if closed:
+            # Close records the user decision, never completion of other stages.
+            steps = tuple(
+                replace(step, primary_action=None, secondary_actions=()) for step in steps[:-2]
+            ) + (
                 _step(
                     step_id=GuidedCloseStepId.FINAL_REVIEW_CLOSE,
-                    state=derive_step_state(completed=True),
+                    state=GuidedCloseStepState.COMPLETED,
                     applicability=GuidedCloseApplicability.MANDATORY,
                     gate=GuidedCloseGate.NONE,
                     affects_close=False,
-                    why="Месяц закрыт явной командой Close.",
+                    why="Месяц закрыт по решению пользователя; замечания сохранены.",
                     reason_codes=("month_closed_read_only",),
                     completion_basis=GuidedCloseCompletionBasis.MONTH_CLOSED,
                 ),
                 _next_month_outlook_step(session, month),
-            )
-        else:
-            month_blocked = month.snapshot_date is None
-            month_step = _step(
-                step_id=GuidedCloseStepId.MONTH_SETUP,
-                state=derive_step_state(hard_blocked=month_blocked, completed=not month_blocked),
-                applicability=GuidedCloseApplicability.MANDATORY,
-                gate=GuidedCloseGate.MUST_RESOLVE if month_blocked else GuidedCloseGate.NONE,
-                affects_close=month_blocked,
-                why=(
-                    "Перед закрытием нужно указать дату снимка."
-                    if month_blocked
-                    else "Выбранный черновик и его дата снимка доступны."
-                ),
-                reason_codes=("snapshot_date_required",) if month_blocked else (),
-                primary_action=(
-                    _action(
-                        GuidedCloseActionId.SET_SNAPSHOT_DATE, GuidedCloseActionTarget.OPEN_PANEL
-                    )
-                    if month_blocked
-                    else None
-                ),
-                completion_basis=None if month_blocked else GuidedCloseCompletionBasis.DOMAIN_FACT,
-            )
-            provider_steps = (
-                _alfa_baseline_step(session, month),
-                (
-                    _market_quote_step(freshness, session=session, month_id=month.id)
-                    if freshness is not None
-                    else _provider_step_read_only(
-                        step_id=GuidedCloseStepId.MARKET_QUOTES,
-                        why="Без даты снимка проверка котировок недоступна.",
-                        reason_code="snapshot_date_required",
-                        action_id=GuidedCloseActionId.OPEN_QUOTE_PREVIEW,
-                    )
-                ),
-                _actual_payouts_step(session, month),
-                _future_payouts_step(session, month),
-                _provider_step_read_only(
-                    step_id=GuidedCloseStepId.BROKER_RECONCILIATION,
-                    why=(
-                        "Проверка Alfa доступна только по явной команде и не сохраняется "
-                        "этим read model."
-                    ),
-                    reason_code="reconciliation_not_run",
-                    action_id=GuidedCloseActionId.OPEN_RECONCILIATION_PREVIEW,
-                ),
-            )
-            steps = (
-                month_step,
-                *provider_steps,
-                _readiness_step(readiness),
-                _step(
-                    step_id=GuidedCloseStepId.FINAL_REVIEW_CLOSE,
-                    state=derive_step_state(
-                        hard_blocked=bool(
-                            any(item.severity.value == "hard_blocker" for item in readiness.items)
-                        ),
-                        stale_or_partial=bool(
-                            any(item.severity.value == "warning" for item in readiness.items)
-                        ),
-                        ready=not any(
-                            item.severity.value == "hard_blocker" for item in readiness.items
-                        ),
-                    ),
-                    applicability=GuidedCloseApplicability.MANDATORY,
-                    gate=GuidedCloseGate.MUST_RESOLVE
-                    if any(item.severity.value == "hard_blocker" for item in readiness.items)
-                    else GuidedCloseGate.OWNER_DECISION,
-                    affects_close=any(
-                        item.severity.value == "hard_blocker" for item in readiness.items
-                    ),
-                    why="Итоговая проверка завершится только явной командой Close.",
-                    reason_codes=tuple(
-                        item.code
-                        for item in readiness.items
-                        if item.severity.value in {"hard_blocker", "warning"}
-                    ),
-                    primary_action=_action(
-                        GuidedCloseActionId.CONFIRM_CLOSE,
-                        GuidedCloseActionTarget.CONFIRM_CLOSE,
-                    ),
-                    evidence_summary={
-                        "available": False,
-                        "reason_code": "final_review_not_in_core",
-                    },
-                ),
-                _step(
-                    step_id=GuidedCloseStepId.NEXT_MONTH_OUTLOOK,
-                    state=derive_step_state(not_applicable=True),
-                    applicability=GuidedCloseApplicability.NOT_APPLICABLE,
-                    gate=GuidedCloseGate.NONE,
-                    affects_close=False,
-                    why=(
-                        "Outlook появляется только после закрытия и отдельной композиции "
-                        "известных событий."
-                    ),
-                    reason_codes=("outlook_not_available_until_closed",),
-                    evidence_summary=_unavailable_evidence("outlook_not_available_until_closed"),
-                ),
             )
         steps = tuple(steps)
         recommended = GuidedCloseStepId.NEXT_MONTH_OUTLOOK if closed else recommended_step_id(steps)

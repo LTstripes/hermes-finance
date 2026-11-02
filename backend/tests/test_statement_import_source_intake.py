@@ -268,9 +268,8 @@ def test_current_journal_choice_cannot_be_laundered_by_strict_receipt(
         else "source_intake_identity_deferred"
     )
     assert current["finance_link"] is None and not current["bookkeeping_ready"]
-    assert not current["can_close"] and {source_intake.PENDING, expected} <= set(
-        current["exceptions"]
-    )
+    assert not current["can_close"]
+    assert {source_intake.PENDING, expected} <= set(current["exceptions"])
     listed = client.get(f"{BASE}?reporting_month_id={month_id}").json()
     assert listed[0]["exceptions"] == current["exceptions"]
     with database.session_factory() as session:
@@ -493,8 +492,12 @@ def test_intake_delete_rebind_close_and_period_guards(database):
             delete_reporting_month(session, month_id)
         with pytest.raises(ValueError, match="source_intake_bound_month"):
             update_reporting_month(session, month_id, snapshot_date=date(2030, 2, 1))
-        with pytest.raises(ValueError, match="MyBroker"):
-            close_reporting_month(session, month_id)
+        # A first pending intake is incomplete evidence, not lost acceptance.
+        assert close_reporting_month(session, month_id).status == "closed"
+        with pytest.raises(ValueError, match="reopened"):
+            delete_reporting_month(session, month_id)
+        with pytest.raises(ValueError, match="closed"):
+            update_reporting_month(session, month_id, snapshot_date=date(2030, 2, 1))
     requested = intent(view, account_id=999)
     response = upload(client, f"{BASE}/{view['id']}/review-preview", xml, "intent", requested)
     assert response.status_code == 409

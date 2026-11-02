@@ -97,7 +97,7 @@ def test_section_receipt_original_preview_get_close_and_ten_exact_replays(databa
         client.get(base_url).json()["exceptions"]
     )
     month_url = f"/api/months/{intent['reporting_month_id']}"
-    assert not client.get(month_url + "/close-readiness").json()["can_close"]
+    assert client.get(month_url + "/close-readiness").json()["can_close"]
     accepted = section_apply(client, intent, raw, plan)
     assert accepted.status_code == 200, accepted.text
     assert [s["disposition_status"] for s in accepted.json()["sections"]] == ["effective"] * 2
@@ -190,7 +190,9 @@ def test_section_aba_explicit_reacceptance_no_history_fallback(database, change)
         setattr(row, field, previous)
         session.commit()
     assert not client.get("/api/broker-months/section-base").json()["bookkeeping_ready"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
     assert all(
         s["disposition_status"] == "blocked"
         for s in client.get("/api/broker-months/proof-A").json()["sections"]
@@ -291,10 +293,9 @@ def test_section_overlap_safe_source_never_clears_unsafe_source_both_orders(data
         read = client.get(f"/api/broker-months/{request_id}").json()
         assert not read["bookkeeping_ready"]
         assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(read["exceptions"])
-    assert not client.get(
-        f"/api/months/{safe_intent['reporting_month_id']}/close-readiness"
-    ).json()["can_close"]
-    assert client.post(f"/api/months/{safe_intent['reporting_month_id']}/close").status_code == 422
+    assert client.get(f"/api/months/{safe_intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
     scope = {k: safe_intent[k] for k in ("account_id", "reporting_month_id")}
     preview = _broker_month_preview(client, scope, safe)
     assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(preview["exceptions"])
@@ -472,6 +473,9 @@ def test_section_malformed_journal_or_chain_fails_closed_without_fallback(databa
         else "broker_month_receipt_invalid"
     )
     assert expected in read["exceptions"]
+    assert not client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
     assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
     assert all(
         s["disposition_status"] == "blocked"
@@ -530,7 +534,9 @@ def test_section_frozen_legacy_mixed_or_unknown_exceptions_are_never_suppressed(
     _section_accept(client, intent, raw)
     read = client.get("/api/broker-months/section-base").json()
     assert read["exceptions"] == [exception] and not read["bookkeeping_ready"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()[
+        "can_close"
+    ]
     after = _all_month_tables(database)
     assert all(after[t] == before[t] for t in before if t != "broker_month_applies")
     assert (
@@ -850,8 +856,8 @@ def test_safe_metadata_never_grants_month_get_readiness_or_close_authority(datab
     assert _broker_month_apply(client, intent, plan, raw).status_code == 200
     assert not client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
     readiness = client.get(f"/api/months/{intent['reporting_month_id']}/close-readiness").json()
-    assert not readiness["can_close"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert readiness["can_close"]
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
 
 
 def test_daily_money_unknown_and_repo_still_block(database):

@@ -167,7 +167,8 @@ def test_empty_month_surfaces_server_close_guard(session: Session) -> None:
 
     assert len(result.insights) == 1
     assert result.insights[0].evidence["close_readiness_code"] == "empty_manual_month"
-    assert result.insights[0].evidence["can_close"] is False
+    assert result.insights[0].evidence["can_close"] is True
+    assert result.insights[0].severity is InsightSeverity.WARNING
 
 
 def test_missing_active_capital_account_snapshot_is_actionable_coverage_warning(
@@ -190,7 +191,7 @@ def test_missing_active_capital_account_snapshot_is_actionable_coverage_warning(
     assert insight.evidence == {
         "close_readiness_code": "active_account_snapshot_missing",
         "close_readiness_severity": "warning",
-        "can_close": False,
+        "can_close": True,
         "status": "draft",
         "snapshot_date": "2030-05-12",
         "context": {
@@ -492,7 +493,8 @@ def test_missing_snapshot_suppresses_all_other_rules(
     result = build_deterministic_insights(session, month.id, evaluated_on=TODAY)
 
     assert _codes(result) == [CloseReadinessCode.SNAPSHOT_DATE_REQUIRED.value]
-    assert result.insights[0].severity is InsightSeverity.ERROR
+    assert result.insights[0].severity is InsightSeverity.WARNING
+    assert result.insights[0].evidence["can_close"] is True
     assert result.insights[0].evidence["snapshot_date"] is None
 
 

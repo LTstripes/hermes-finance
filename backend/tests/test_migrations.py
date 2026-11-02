@@ -134,7 +134,7 @@ def test_month_template_provenance_preserves_unknown_legacy_and_windows_recovery
     assert run_alembic(path, "upgrade", "head").returncode == 0
     database = create_database(path)
     with database.session_factory() as session:
-        assert not build_close_readiness(session, month_id, today=date(2030, 1, 31)).can_close
+        assert build_close_readiness(session, month_id, today=date(2030, 1, 31)).can_close
         for model, update_row, changes in (
             (IncomeEntry, update_income_entry, {"net_amount": "0.00"}),
             (ExpenseEntry, update_expense_entry, {"amount": "0.00"}),

@@ -30,24 +30,16 @@ previews and actual payout reconciliation retain their existing authority.
 
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
-Ordinary Close of a completely unfilled manual DRAFT is blocked with
-`empty_manual_month`. Saved actual month facts, including an explicit zero, make
-the month nonempty; XML is optional and partial completeness remains advisory.
-Notes, plans, forecasts, copied salary/expense/saving templates and source-only
-Save do not fill a month. Copied templates require explicit amount confirmation,
-including zero; legacy rows without provenance are not silently confirmed. A separate
-intentional-empty command requires a fresh exact-period confirmation and reason,
-retains audit and creates no economic facts. It waives only this empty guard;
-snapshot/source/receipt guards remain mandatory. Reopen/clone require new consent.
-The backend contract is in [C3](ARCHITECTURE_AND_CONTRACTS.md#c3-empty-manual-close);
-the Month final-review screen offers a separate reasoned confirmation only after
-server readiness confirms eligibility. It displays the exact calendar period,
-month ID and snapshot date, requires an explicit checkbox and a nonblank reason,
-and rereads readiness before sending. Pending intent survives Back/Reload in the
-same browser session; recovery reads the receipt and current month by GET only.
-Owner Test UAT remains a separate acceptance gate.
+The user may close the selected month with incomplete data or unfinished steps.
+Final review shows short warnings beside **Закрыть месяц** and retains them after
+Reload in the closed month. It does not claim that all checks passed. Corrections
+use the existing editors after **Открыть месяц заново**. See the single normative
+[Close/completeness contract](ARCHITECTURE_AND_CONTRACTS.md#c3-user-close-warnings);
+[legacy intentional-empty receipts](ARCHITECTURE_AND_CONTRACTS.md#c3-empty-manual-close)
+remain available for recovery of an already submitted intent.
 
-Data → Files permits source review without selecting a month. Keep every observed position, trade, Money occurrence and unsupported branch visible. The full original is indivisible: hiding one problem row does not turn 12 of 13 into a complete source. A default RUB preference is a proposal with provenance, not denomination proof. An incomplete DRAFT may retain unresolved evidence under its explicit contract; it does not waive financial or Close guards.
+Data → Files permits source review without selecting a month. Keep every observed position, trade, Money occurrence and unsupported branch visible. The full original is indivisible: hiding one problem row does not turn 12 of 13 into a complete source. A default RUB preference is a proposal with provenance, not denomination proof. An incomplete DRAFT may retain unresolved evidence under its explicit contract; financial Apply requirements remain separate from the
+[Close policy](ARCHITECTURE_AND_CONTRACTS.md#c3-user-close-warnings).
 
 After a successful ACK, failed readback is recovered by GET. Never replay a financial POST merely because GET failed. If ACK itself is lost, the outcome is uncertain: resolve the same immutable intent/key and committed state. After mapping changes obtain a fresh full-original Preview. Saved decisions may survive restart; original bytes must be reselected for mutations/reparse. C3–C5 own exact rules.
 
@@ -94,7 +86,7 @@ month's closing EOD. Monthly results require exact calendar boundaries; absent
 results name the required EOD dates instead of displaying zero.
 
 The final tile composes the existing month totals, filling/readiness status and
-visible blockers with explicit guarded Close. Technical provenance and extended
+visible warnings with explicit user-decided Close. Technical provenance and extended
 checks remain in **Подробнее**. A confirmed lifecycle change requires independent
 workflow GET and invalidates Home/Capital/Returns/chart reads. Unknown Close ACK
 keeps commands/navigation blocked with GET-only recovery. No second calculation

@@ -143,7 +143,7 @@ def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(tmp_path:
         database.engine.dispose()
 
 
-def test_closed_salary_free_month_is_known_zero(tmp_path: Path) -> None:
+def test_closed_salary_free_month_remains_unknown_until_explicit_zero(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         upsert_salary_tax_year_context(
@@ -156,8 +156,12 @@ def test_closed_salary_free_month_is_known_zero(tmp_path: Path) -> None:
         june_id = build_month(session, 2031, 6)
         add_salary(session, june_id, "300000.00")
 
+        with pytest.raises(SalaryTaxHistoryIncompleteError):
+            calculate_salary_tax(session, june_id)
+        reopen_reporting_month(session, may_id)
+        add_salary(session, may_id, "0.00")
+        close_fixture_month(session, may_id)
         result = calculate_salary_tax(session, june_id)
-
         assert result.tax_kopecks == 4_300_000
         assert may_id != june_id
     finally:

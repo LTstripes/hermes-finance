@@ -78,13 +78,15 @@ def _same_scope(actual, forecast):
     )
 
 
-def _future_pool(session, forecast):
+def _future_pool(session, forecast, *, closed_month_id=None):
     month = (
         session.get(ReportingMonth, forecast.reporting_month_id)
         if forecast.reporting_month_id
         else None
     )
-    if month is None or month.status != "draft":
+    if month is None or (month.status != "draft" and month.id != closed_month_id):
+        return False
+    if month.snapshot_date is None:
         return False
     start, end = _future_bounds(month)
     day = (
@@ -696,6 +698,7 @@ def obligations(
     include_stale=False,
     require_candidates=False,
     calendar_month_id=None,
+    closed_month_id=None,
 ):
     """Pure current source-owned obligations, independent of UI forecast version."""
     result = []
@@ -715,7 +718,7 @@ def obligations(
             (kind, forecast)
             for kind, forecast in _forecasts(session, actual)
             if (calendar_month_id is None or forecast.reporting_month_id == calendar_month_id)
-            and _future_pool(session, forecast)
+            and _future_pool(session, forecast, closed_month_id=closed_month_id)
         ]
         if require_candidates and not forecasts:
             continue  # No competitor means no settlement obligation or future exclusion.
@@ -834,7 +837,7 @@ def obligations(
 
 def close_blockers(session, month_id):
     month = session.get(ReportingMonth, month_id)
-    if month is None or month.status != "draft":
+    if month is None:
         return ()
     return tuple(
         sorted(
@@ -843,7 +846,9 @@ def close_blockers(session, month_id):
                     c["reason_code"],
                     f"Счёт #{o['account_id']}, выплата #{o['investment_cash_flow_id']}: требуется сверка прогноза {c['kind']} #{c['facts']['id']}.",
                 )
-                for o in obligations(session, month_id, require_candidates=True)
+                for o in obligations(
+                    session, month_id, require_candidates=True, closed_month_id=month_id
+                )
                 for c in o["candidates"]
                 if c["reason_code"]
             }
@@ -940,6 +945,19 @@ def _closed_future_states(session, month):
                 state == "unresolved" or result.get(key) != "paid"
             ):
                 result[key] = state
+    # Retain unresolved competitors of this closed month's own actuals. Later
+    # actuals cannot reinterpret unrelated earlier CLOSED forecast projections.
+    for obligation in obligations(
+        session,
+        month_id=month.id,
+        include_stale=True,
+        require_candidates=True,
+        calendar_month_id=month.id,
+        closed_month_id=month.id,
+    ):
+        for candidate in obligation["candidates"]:
+            key = (candidate["kind"], int(candidate["facts"]["id"]))
+            result.setdefault(key, candidate["state"])
     return result
 
 
@@ -947,12 +965,12 @@ def future_states(session, calendar_month_id):
     """Eligible future only; actual amounts continue to come solely from ICF."""
     month = session.get(ReportingMonth, calendar_month_id)
     result = {}
-    if month is None:
+    if month is None or month.snapshot_date is None:
         return result
     if month.status == "closed":
         return _closed_future_states(session, month)
     # Lost source authority never promotes a competitor to unquestioned future.
-    # Close authority for stale economics remains with the existing source guards.
+    # Source completeness stays separate from the user decision to close.
     for obligation in obligations(
         session,
         include_stale=True,

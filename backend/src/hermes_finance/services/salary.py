@@ -64,7 +64,9 @@ def _salary_gross_for_month(session: Session, reporting_month_id: int) -> int:
 def prior_taxable_gross_ytd(session: Session, reporting_month: ReportingMonth) -> tuple[int, bool]:
     """Return ``(ytd_before_current_payment, opening_context_available)``.
 
-    Prior months must be explicitly closed. An optional annual opening
+    Prior months must be closed and contain explicitly saved salary facts,
+    including an explicit zero. Close alone does not attest a missing salary.
+    An optional annual opening
     baseline is applied once. Raises
     :class:`SalaryTaxHistoryIncompleteError` when required months are
     missing. This is the single completeness/YTD algorithm used by both
@@ -88,11 +90,12 @@ def prior_taxable_gross_ytd(session: Session, reporting_month: ReportingMonth) -
             ReportingMonth.month,
             func.coalesce(func.sum(IncomeEntry.gross_amount_kopecks), 0),
         )
-        .outerjoin(
+        .join(
             IncomeEntry,
             and_(
                 IncomeEntry.reporting_month_id == ReportingMonth.id,
                 IncomeEntry.income_type == IncomeType.SALARY.value,
+                IncomeEntry.actual_fact_origin == "saved_actual_v1",
             ),
         )
         .where(

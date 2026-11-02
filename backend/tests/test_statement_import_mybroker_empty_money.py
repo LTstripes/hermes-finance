@@ -384,9 +384,9 @@ def test_exact_blank_never_changes_source_month_get_close_or_money_blockers(data
     assert response.json()["error"]["message"] == "broker_month_reconciliation_required"
     assert client.get(month_url).json() == original_get
     assert client.get(readiness_url).json() == original_readiness
-    assert not original_get["bookkeeping_ready"] and not original_readiness["can_close"]
-    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 422
+    assert not original_get["bookkeeping_ready"] and original_readiness["can_close"]
     assert snapshot(database) == before
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/close").status_code == 200
 
 
 @pytest.mark.parametrize(

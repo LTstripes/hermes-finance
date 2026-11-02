@@ -29,7 +29,7 @@ from hermes_finance.services.freshness_provenance import (
 )
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
 from hermes_finance.services.reporting_months import (
-    close_hard_guards,
+    close_completeness_warnings,
     get_reporting_month,
 )
 from hermes_finance.services.risk_allocation import risk_allocation_for_month
@@ -157,30 +157,34 @@ def _close_guard_insights(
         _insight(
             code=code,
             type="close_readiness",
-            severity=InsightSeverity.ERROR,
+            severity=InsightSeverity.WARNING,
             message=message,
             evidence={
                 "close_readiness_code": code,
-                "close_readiness_severity": CloseReadinessSeverity.HARD_BLOCKER.value,
-                "can_close": False,
+                "close_readiness_severity": CloseReadinessSeverity.WARNING.value,
+                "can_close": True,
                 "status": month.status,
                 "snapshot_date": _date(month.snapshot_date),
             },
             source="close_readiness",
             as_of=month.snapshot_date,
-            reason="close_readiness_returned_a_hard_blocker",
+            reason="close_readiness_returned_a_warning",
             provenance=(InsightProvenance(source="reporting_month"),),
         )
         for code, message in blockers
     ]
 
 
-def _close_insights(*, month, readiness) -> list[DeterministicInsight]:
+def _close_insights(*, month, readiness, completeness_codes) -> list[DeterministicInsight]:
     return [
         _insight(
             code=item.code,
             type="close_readiness",
-            severity=InsightSeverity.ERROR,
+            severity=(
+                InsightSeverity.ERROR
+                if item.severity is CloseReadinessSeverity.HARD_BLOCKER
+                else InsightSeverity.WARNING
+            ),
             message=item.message,
             evidence={
                 "close_readiness_code": item.code,
@@ -192,11 +196,15 @@ def _close_insights(*, month, readiness) -> list[DeterministicInsight]:
             },
             source="close_readiness",
             as_of=month.snapshot_date,
-            reason="close_readiness_returned_a_hard_blocker",
+            reason=(
+                "close_readiness_returned_a_hard_blocker"
+                if item.severity is CloseReadinessSeverity.HARD_BLOCKER
+                else "close_readiness_returned_a_warning"
+            ),
             provenance=(InsightProvenance(source="reporting_month"),),
         )
         for item in readiness.items
-        if item.severity is CloseReadinessSeverity.HARD_BLOCKER
+        if item.code in completeness_codes or item.severity is CloseReadinessSeverity.HARD_BLOCKER
     ]
 
 
@@ -502,7 +510,7 @@ def build_deterministic_insights(
         raise ValueError("forecast_version must not be empty")
 
     month = get_reporting_month(session, reporting_month_id)
-    blockers = close_hard_guards(month)
+    blockers = close_completeness_warnings(month)
     if month.snapshot_date is None:
         return DeterministicInsightsResult(
             contract_version=DETERMINISTIC_INSIGHTS_CONTRACT_VERSION,
@@ -537,7 +545,13 @@ def build_deterministic_insights(
     )
 
     insights: list[DeterministicInsight] = []
-    insights.extend(_close_insights(month=month, readiness=readiness))
+    insights.extend(
+        _close_insights(
+            month=month,
+            readiness=readiness,
+            completeness_codes={code for code, _ in close_completeness_warnings(month, session)},
+        )
+    )
     insights.extend(_important_coverage_insights(month=month, readiness=readiness))
     insights.extend(_freshness_insights(freshness))
     insights.extend(_payout_reconciliation_insights(month=month, readiness=readiness))
