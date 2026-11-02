@@ -340,8 +340,10 @@ def reopen_reporting_month(session: Session, month_id: int) -> ReportingMonth:
     session.refresh(reporting_month)
     invalidate_class_coverages_for_reopen(session, reporting_month)
     reporting_month.status = ReportingMonthStatus.DRAFT.value
-    # Retire every header confirmation, even an explicit Reopen of a DRAFT.
-    reporting_month.updated_at = datetime.now(UTC)
+    # Reopen retires header-bound pending commands, not accepted operation evidence.
+    # Repeating it on an unchanged DRAFT is a lifecycle no-op.
+    if inspect(reporting_month).attrs.status.history.has_changes():
+        reporting_month.updated_at = datetime.now(UTC)
     session.commit()
     session.refresh(reporting_month)
     return reporting_month

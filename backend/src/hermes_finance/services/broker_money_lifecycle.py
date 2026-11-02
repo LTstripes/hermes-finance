@@ -86,6 +86,26 @@ def _financial_scope(row, receipt, month):
     )
 
 
+def _payout_affects(row, target):
+    if target["role"] not in {"coupon", "dividend"}:
+        return False
+    if row.id == target["target_id"]:
+        return True
+    # The selected fact and potential overlapping payouts are dependencies;
+    # another instrument/date/amount in the same account is independent.
+    facts = target["facts"]
+    return facts is not None and all(
+        facts[field] in {str(value) for value in _values(row, field)}
+        for field in (
+            "account_id",
+            "instrument_id",
+            "flow_type",
+            "event_date",
+            "net_amount_kopecks",
+        )
+    )
+
+
 def _statement_affects(session, row, target):
     if target["role"] != "coupon":
         return False
@@ -347,10 +367,18 @@ def _before_flush(session, _context, _instances):
                         for e in proof.get("dividend_evidence", [])
                     )
                 if isinstance(row, ReportingMonth):
-                    return (
-                        target["role"] == "trade"
-                        and row.id == receipt.reporting_month_id
-                        and "closed" in inspect(row).attrs.status.history.deleted
+                    return row.id == receipt.reporting_month_id and (
+                        row in session.deleted
+                        or any(
+                            inspect(row).attrs[f].history.has_changes()
+                            for f in (
+                                "year",
+                                "month",
+                                "snapshot_date",
+                                "period_start",
+                                "period_end",
+                            )
+                        )
                     )
                 if isinstance(row, ExecutedTrade):
                     return target["role"] == "trade" and row.id == target["target_id"]
@@ -368,6 +396,12 @@ def _before_flush(session, _context, _instances):
                     # The reserved, revalidated batch may add an independently
                     # proved payout without invalidating unchanged prior payouts.
                     return False
+                if isinstance(row, InvestmentCashFlow):
+                    return _payout_affects(row, target)
+                if isinstance(row, ExternalFlow):
+                    return target["role"] == "account_funding" and _financial_scope(
+                        row, receipt, month
+                    )
                 if isinstance(row, Account):
                     return row.id == receipt.account_id
                 if isinstance(row, Instrument):
@@ -394,10 +428,8 @@ def _before_flush(session, _context, _instances):
                 if isinstance(
                     row,
                     (
-                        ExternalFlow,
                         CashBalance,
                         PositionSnapshot,
-                        InvestmentCashFlow,
                     ),
                 ):
                     return _financial_scope(row, receipt, month)

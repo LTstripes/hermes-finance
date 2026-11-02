@@ -81,6 +81,18 @@ def settlement(database, request):
     return client, intent
 
 
+def change_month_geometry(session, month_id):
+    """A real dependency edit (including ABA) must still retire evidence."""
+    from hermes_finance.persistence import ReportingMonth
+
+    month = session.get(ReportingMonth, month_id)
+    original = month.snapshot_date
+    month.snapshot_date = original.replace(day=original.day - 1)
+    session.commit()
+    month.snapshot_date = original
+    session.commit()
+
+
 def database_bytes(database):
     with closing(sqlite3.connect(database.engine.url.database)) as c:
         return "\n".join(c.iterdump())
@@ -912,7 +924,7 @@ def test_distinct_exact_pair_future_and_consumers_preserve_unknown_subtotal(data
     assert obligations[0]["candidates"][0]["state"] == "unresolved"
 
 
-def test_reopen_changes_generation_without_rewriting_settlement_receipt(database, settlement):
+def test_unchanged_reopen_preserves_settlement_and_receipt(database, settlement):
     from hermes_finance.services.reporting_months import close_reporting_month
 
     client, intent = settlement
@@ -922,8 +934,10 @@ def test_reopen_changes_generation_without_rewriting_settlement_receipt(database
         original = session.get(BrokerMonthApply, "R1").projection_json
     assert client.post(f"/api/months/{intent['reporting_month_id']}/reopen").status_code == 200
     get = client.get("/api/broker-months/R1").json()
-    assert get["relations"][0]["state"] != "paid"
+    assert get["relations"][0]["state"] == "paid"
     before = database_bytes(database)
+    assert client.post(f"/api/months/{intent['reporting_month_id']}/reopen").status_code == 200
+    assert database_bytes(database) == before
     assert client.post("/api/broker-months/payout-apply", json=payload).status_code == 200
     assert database_bytes(database) == before
     with database.session_factory() as session:
@@ -1047,6 +1061,8 @@ def test_canonical_copies_draft_close_reopen_and_older_closed_projection(databas
     assert database_bytes(database) == before
     with database.session_factory() as session:
         reopen_reporting_month(session, copied.reporting_month_id)
+        assert client.get("/api/broker-months/R1").json()["relations"][0]["state"] == "paid"
+        change_month_geometry(session, copied.reporting_month_id)
     assert client.get("/api/broker-months/R1").json()["relations"][0]["state"] == "stale"
     r3, _ = accept(
         client,
@@ -1069,7 +1085,9 @@ def test_canonical_copies_draft_close_reopen_and_older_closed_projection(databas
     assert client.get("/api/broker-months/R3").json()["relations"][0]["state"] == "paid"
 
 
-def test_selected_forecast_month_reopen_before_first_link_invalidates_preview(database, settlement):
+def test_selected_forecast_month_geometry_edit_before_first_link_invalidates_preview(
+    database, settlement
+):
     from hermes_finance.services.reporting_months import (
         close_reporting_month,
         reopen_reporting_month,
@@ -1089,6 +1107,7 @@ def test_selected_forecast_month_reopen_before_first_link_invalidates_preview(da
     with database.session_factory() as session:
         close_reporting_month(session, selected.reporting_month_id)
         reopen_reporting_month(session, selected.reporting_month_id)
+        change_month_geometry(session, selected.reporting_month_id)
     before = database_bytes(database)
     stale = client.post(
         "/api/broker-months/payout-apply",
@@ -1309,6 +1328,9 @@ def test_cross_month_reclose_never_revives_stale_paid_projection(database, settl
     check("paid")  # Normal Close retains the reviewed projection.
     with database.session_factory() as session:
         reopen_reporting_month(session, month_b)
+    check("paid")
+    with database.session_factory() as session:
+        change_month_geometry(session, month_b)
     check("unresolved")
     with database.session_factory() as session:
         # Actual A does not add a global HARD block to manual-only month B.
@@ -1385,6 +1407,7 @@ def test_app_only_month_workflow_uses_actual_lineage_not_null_ecf(
         with database.session_factory() as session:
             close_reporting_month(session, review_month_id)
             reopen_reporting_month(session, review_month_id)
+            change_month_geometry(session, review_month_id)
         assert client.get("/api/broker-months/month-R1").json()["relations"][0]["state"] == "stale"
         workflow(True)
     r3, _ = accept(
@@ -1530,13 +1553,14 @@ def test_terminal_retirement_lineage_survives_forecast_close(
         with database.session_factory() as session:
             for month_id in scopes:
                 reopen_reporting_month(session, month_id)
+                change_month_geometry(session, month_id)
         check("unresolved")  # Stale R5 cannot fall back to R3/R1.
         close_forecasts()
         check("unresolved")
 
 
 @pytest.mark.parametrize("settlement", ["near"], indirect=True)
-@pytest.mark.parametrize("invalidate", [None, "reopen", "provider_aba"])
+@pytest.mark.parametrize("invalidate", [None, "geometry_aba", "provider_aba"])
 def test_retired_closed_projection_requires_current_exact_distinct(
     database, settlement, invalidate
 ):
@@ -1588,9 +1612,10 @@ def test_retired_closed_projection_requires_current_exact_distinct(
     assert response.status_code == 200, response.text
     with database.session_factory() as session:
         assert future_states(session, month_id) == {("app", app_id): "future"}
-        if invalidate == "reopen":
+        if invalidate == "geometry_aba":
             close_reporting_month(session, month_id)
             reopen_reporting_month(session, month_id)
+            change_month_geometry(session, month_id)
         elif invalidate == "provider_aba":
             row = session.get(AppliedProviderPayout, app_id)
             original = row.provider_status
@@ -1740,6 +1765,7 @@ def test_retired_ecf_current_scope_survives_close_and_kind_aba(database, settlem
     check("paid")
     with database.session_factory() as session:
         reopen_reporting_month(session, month_id)
+        change_month_geometry(session, month_id)
     assert client.get("/api/broker-months/scope-R3").json()["relations"][0]["state"] == "stale"
     close()
     check("unresolved")  # Stale successor cannot fall back to R1.

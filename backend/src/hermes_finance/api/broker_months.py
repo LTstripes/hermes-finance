@@ -196,6 +196,35 @@ async def statement_evidence_apply(
         raise HTTPException(409, str(error)) from None
 
 
+@router.post("/money-prepare")
+async def money_prepare(
+    file: UploadFile = File(...),
+    intent: str = Form(...),
+    originals: list[UploadFile] = File(default=[]),
+    session: Session = Depends(session_for_request),
+):
+    from hermes_finance.services.broker_money_preparation import prepare_money
+
+    try:
+        requested = MoneyIntentV2.model_validate_json(intent)
+        if len(originals) > 31:
+            raise MyBrokerError("money_originals_invalid")
+        result = prepare_money(
+            session,
+            requested,
+            [(f.filename or "", await _bytes(f)) for f in [file, *originals]],
+        )
+        result["preview"] = _money_transport(result["preview"])
+        return result
+    except (ValidationError, MyBrokerError, ValueError) as error:
+        raise HTTPException(
+            422,
+            "broker_money_preparation_invalid"
+            if isinstance(error, ValidationError)
+            else str(error),
+        ) from None
+
+
 @router.post("/preview")
 async def preview(
     file: UploadFile = File(...),

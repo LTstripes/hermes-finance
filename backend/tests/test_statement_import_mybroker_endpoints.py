@@ -2832,7 +2832,7 @@ def test_trade_money_native_controls_cannot_be_waived(database, field, value, co
         assert code in plan["blockers"]
 
 
-def test_trade_money_fresh_repeat_is_revision_noop_and_reopen_does_not_reaffirm(database):
+def test_trade_money_fresh_repeat_and_unchanged_reopen_preserve_confirmation(database):
     from hermes_finance.persistence import ExecutedTradeRevision
     from hermes_finance.services.broker_money import preview_money, read_money
 
@@ -2853,8 +2853,16 @@ def test_trade_money_fresh_repeat_is_revision_noop_and_reopen_does_not_reaffirm(
     assert client.post(f"/api/months/{intent.reporting_month_id}/reopen").status_code == 200
     with database.session_factory() as session:
         current = read_money(session, "trade-once")
-        assert "money_review_retired" in current["targets"][0]["exceptions"]
-        assert not current["bookkeeping_ready"]
+        assert all(t["effective"] for t in current["targets"]), current["targets"]
+        assert current["bookkeeping_ready"], current["exceptions"]
+        journal_count = session.scalar(select(func.count()).select_from(BrokerMonthApply))
+        from hermes_finance.services.reporting_months import reopen_reporting_month
+
+        before = session.get(ReportingMonth, intent.reporting_month_id).updated_at
+        reopen_reporting_month(session, intent.reporting_month_id)
+        assert session.get(ReportingMonth, intent.reporting_month_id).updated_at == before
+        assert session.scalar(select(func.count()).select_from(BrokerMonthApply)) == journal_count
+        assert read_money(session, "trade-once")["bookkeeping_ready"]
 
 
 def test_trade_money_repo_cannot_create_financial_source_draft(database):

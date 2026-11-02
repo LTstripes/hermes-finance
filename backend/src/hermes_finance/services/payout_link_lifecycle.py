@@ -149,14 +149,10 @@ def _affects(session, row, actual, base, links):
                     ids.add(forecast.reporting_month_id)
         if row.id not in ids:
             return False
-        # Normal Close preserves the accepted proof. Reopen always changes its generation.
-        return (
-            "closed" in inspect(row).attrs.status.history.deleted
-            or (row.status == "draft" and inspect(row).attrs.updated_at.history.has_changes())
-            or any(
-                inspect(row).attrs[f].history.has_changes()
-                for f in ("year", "month", "snapshot_date", "period_start", "period_end")
-            )
+        # Lifecycle alone changes editability, not the accepted payment evidence.
+        return row in session.deleted or any(
+            inspect(row).attrs[f].history.has_changes()
+            for f in ("year", "month", "snapshot_date", "period_start", "period_end")
         )
     if isinstance(row, MyBrokerImport):
         month = session.get(ReportingMonth, actual.reporting_month_id)
