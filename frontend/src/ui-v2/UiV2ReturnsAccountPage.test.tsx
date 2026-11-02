@@ -541,3 +541,26 @@ test("account breakdown explains payouts above total using only the selected ove
     ),
   ).toBe(true);
 });
+
+test("available period rate stays visible independently of unavailable P&L and partial months", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const body = overviewFixture();
+    body.selected.pnl.value = null;
+    body.selected.rate = { ...body.selected.rate, value: "0.001259", unit: "fraction" };
+    body.selected_available_months_total = {
+      period: may,
+      partial: true,
+      pnl: body.selected.pnl,
+      included: [],
+      missing: [],
+      covered_months: 0,
+      total_months: 1,
+    };
+    return Promise.resolve(response(body));
+  });
+  setup();
+  const result = await screen.findByRole("region", { name: "Результат периода" });
+  expect(result).toHaveTextContent("0,13%");
+  expect(result).toHaveTextContent("0 из 1");
+});

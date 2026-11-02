@@ -25,7 +25,15 @@ export default function ReturnsSourceDiagnostics({ account }: { account: string 
     .filter(
       (item) =>
         item.document.filename_account === account ||
-        item.document.source_accounts?.includes(account),
+        item.document.source_accounts?.includes(account) ||
+        // Saved parser DTOs need not contain the optional aggregate. Match
+        // only explicit row identities; never infer a native account suffix.
+        [
+          ...(item.document.positions ?? []),
+          ...(item.document.rub_money ?? []),
+          ...(item.document.money ?? []),
+          ...(item.document.trades ?? []).map((row) => row.core),
+        ].some((row) => row.source_account === account),
     )
     .map((item) => ({ intake_id: item.id, manifest_digest: item.manifest_digest }));
   const unavailable =

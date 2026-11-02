@@ -101,7 +101,7 @@ export function SourceMonthReturn({ account, period }: { account: string; period
       <details>
         <summary>Источники расчёта</summary>
         <Link
-          to={`/v2/returns?${new URLSearchParams({ scope: `source:${account}`, period: "history" })}`}
+          to={`/v2/returns/account?${new URLSearchParams({ scope: `source:${account}`, start: opening, end: closing })}`}
         >
           Доходность и подтверждение источников
         </Link>

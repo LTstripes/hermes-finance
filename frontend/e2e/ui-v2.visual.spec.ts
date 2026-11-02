@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
 
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import type { BrokerMonthReadback } from "../src/api/brokerMonths";
@@ -798,7 +799,10 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     }
     let json: unknown;
     let status = 200;
-    if (url.pathname === "/api/months") {
+    const returnsHost = returnsDiagnosticsFixture(url, state.accounts);
+    if (returnsHost) {
+      json = returnsHost;
+    } else if (url.pathname === "/api/months") {
       json = state.months;
       status = state.monthsError ? 503 : 200;
     } else if (url.pathname === "/api/broker-months") {

@@ -29,7 +29,8 @@ test("isolated production UAT entry makes only allowed GETs and reuses canonical
     "/api/months",
     "/api/settings",
     "/api/quotes/refresh",
-    "/v2/capital/performance",
+    "/v2/returns",
+    "/v2/returns/account",
     "/index.html",
   ]) {
     expect((await request.get(path)).status()).toBe(404);

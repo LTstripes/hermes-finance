@@ -497,7 +497,15 @@ export default function UiV2ReturnsAccountPage() {
                 aria-label="Результат периода"
               >
                 {data.selected.pnl.value === null && data.selected_available_months_total ? (
-                  <ReturnsAvailable value={data.selected_available_months_total} />
+                  <>
+                    <ReturnsAvailable value={data.selected_available_months_total} />
+                    {data.selected.rate.value !== null && (
+                      <div>
+                        Доходность выбранного периода:{" "}
+                        <Value metric={data.selected.rate} label="Доходность периода" />
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
                     <h2>Результат периода</h2>

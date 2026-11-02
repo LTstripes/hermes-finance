@@ -7,6 +7,8 @@ import type { PerformanceReadiness } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import { classReturnsFixture } from "../test/classReturnsFixture";
 import ReturnsPerformanceDiagnostics from "./ReturnsPerformanceDiagnostics";
+import UiV2ReturnsAccountPage from "./UiV2ReturnsAccountPage";
+import { returnsDiagnosticsFixture } from "../test/returnsDiagnosticsFixture";
 
 const START = "2031-05-31";
 const END = "2031-07-31";
@@ -91,6 +93,7 @@ function setup(
     accounts?: Array<Record<string, unknown>>;
     accountsError?: boolean;
   },
+  integrated = false,
 ) {
   const client = createQueryClient();
   const reads: string[] = [];
@@ -122,6 +125,49 @@ function setup(
       }
       let data: unknown;
       switch (url.pathname) {
+        case "/api/returns/context":
+        case "/api/returns/overview":
+          data = returnsDiagnosticsFixture(url, [{ id: 1, name: "Synthetic A" }]);
+          break;
+        case "/api/performance/preparation":
+          data = {
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            evidence_token: "synthetic",
+            flows: [],
+            transfer_links: [],
+            cash_coverages: [],
+            in_kind_coverages: [],
+            movements: [],
+            cash_balances: [],
+            months: [{ id: 91, period_start: START, period_end: END, status: "draft" }],
+          };
+          break;
+        case "/api/performance/membership":
+          data = {
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            scope: "account",
+            rows: [],
+            identity: "synthetic",
+            form_token: "synthetic",
+            readiness: readinessFixture({ scope: "account", accountId: 1 }),
+          };
+          break;
+        case "/api/performance/valuation-captures":
+          data = {
+            scope: "account",
+            account_id: 1,
+            start_date: START,
+            end_date: END,
+            performance_currency: "RUB",
+            targets: [],
+            captured: null,
+            readiness: readinessFixture({ scope: "account", accountId: 1 }),
+          };
+          break;
         case "/api/performance/class-returns":
           data = classReturnsFixture(url.searchParams.get("asset_class") as string, START, END);
           break;
@@ -194,7 +240,10 @@ function setup(
         <MemoryRouter initialEntries={[path]}>
           <LocationProbe />
           <Routes>
-            <Route path="v2/returns/account" element={<ReturnsPerformanceDiagnostics />} />
+            <Route
+              path="v2/returns/account"
+              element={integrated ? <UiV2ReturnsAccountPage /> : <ReturnsPerformanceDiagnostics />}
+            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -524,4 +573,43 @@ describe("ReturnsPerformanceDiagnostics", () => {
     scope.focus();
     expect(scope).toHaveFocus();
   });
+});
+
+it("Returns host retains deposit refusal, class metrics and period horizons", async () => {
+  const { mount } = setup(
+    PORTFOLIO_PATH + "&diagnostics=performance&view=classes",
+    undefined,
+    undefined,
+    true,
+  );
+  mount();
+  await waitFor(() =>
+    expect(screen.getByTestId("class-return-deposit")).toHaveTextContent(
+      "Расчёт не поддерживается",
+    ),
+  );
+  expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%");
+  expect(screen.getByRole("button", { name: "1 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "3 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "12 мес." })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Вся история" })).toBeEnabled();
+});
+
+it("Returns account host retains Owner operation and membership preparation", async () => {
+  const { mount } = setup(
+    "/v2/returns/account?start=" +
+      START +
+      "&end=" +
+      END +
+      "&scope=account:1&diagnostics=performance&prepare_account=1&prepare_reason=cash_history",
+    undefined,
+    undefined,
+    true,
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Добавить операцию" }));
+  expect(screen.getByLabelText("Сумма операции")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Сохранить операцию" })).toBeDisabled();
+  fireEvent.click(await screen.findByRole("button", { name: "Добавить явный интервал" }));
+  expect(screen.getByLabelText("Конец включительно")).toBeVisible();
 });

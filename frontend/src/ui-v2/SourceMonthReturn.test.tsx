@@ -131,3 +131,16 @@ it("converts the Decimal fraction to percentage text without binary financial ar
   expect(sourceReturnRate("0E-60")).toBe("0,00%");
   expect(sourceReturnRate(null)).toBe("—");
 });
+
+it("links the exact source month to its Returns evidence tools", async () => {
+  renderReturn([monthly]);
+  await screen.findByText(/0.*₽.*0,00%/);
+  const link = screen.getByRole("link", { name: "Доходность и подтверждение источников" });
+  const url = new URL(link.getAttribute("href")!, "http://localhost");
+  expect(url.pathname).toBe("/v2/returns/account");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    scope: "source:SYN-OCT",
+    start: monthly.opening_date,
+    end: monthly.closing_date,
+  });
+});

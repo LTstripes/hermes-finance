@@ -128,6 +128,7 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   state.error = false;
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
+  // Intentional retired URL: assert compatibility redirect, not ordinary navigation.
   await page.goto(
     "/v2/capital/monthly-returns?source_account=SYNTH-B&bond_period=2030-04-01#bond-slice",
   );
@@ -146,6 +147,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
   await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
     `${may.start}/${may.end}`,
   );
+  // Intentional retired URL: assert compatibility redirect, not ordinary navigation.
   await page.goto(
     "/v2/capital/monthly-returns?source_account=SYNTH-A&bond_isin=RU000A000002#bond-slice",
   );

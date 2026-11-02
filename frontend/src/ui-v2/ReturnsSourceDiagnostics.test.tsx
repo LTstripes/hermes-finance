@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import ReturnsSourceDiagnostics from "./ReturnsSourceDiagnostics";
@@ -77,3 +78,79 @@ test.each(["monthly", "intakes"])(
     expect(screen.queryByRole("region", { name: "Взносы и рост" })).not.toBeInTheDocument();
   },
 );
+
+test("canonical native account previews and confirms originals without optional source_accounts", async () => {
+  const user = userEvent.setup();
+  const account = "SYNTH-01-000";
+  const expected = [{ intake_id: 1, manifest_digest: "a".repeat(64) }];
+  let confirmed = false;
+  const writes: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (init?.method === "POST") writes.push(path);
+      if (path.endsWith("/preview")) {
+        const form = init?.body;
+        if (!(form instanceof FormData)) throw new Error("Expected multipart request");
+        const body = JSON.parse(String(form.get("request")));
+        expect(body).toEqual({ source_account: account, expected_sources: expected });
+        return json({
+          source_account: account,
+          source_count: 1,
+          cancellation_months: [],
+          form_token: "synthetic",
+          preview_digest: "b".repeat(64),
+          financial_authority: "none",
+          financial_effects: 0,
+        });
+      }
+      if (path.endsWith("/confirm")) {
+        const body = JSON.parse(String(init?.body));
+        confirmed = true;
+        return json({ source_account: account, request_id: body.request_id });
+      }
+      if (path.includes("/intakes"))
+        return json([
+          {
+            ...intake,
+            manifest_digest: expected[0].manifest_digest,
+            document: { filename_account: "SYNTH-01", positions: [{ source_account: account }] },
+          },
+        ]);
+      if (path.includes("/monthly?"))
+        return json({
+          source_account: account,
+          source_proof: {
+            status: confirmed ? "current" : "absent",
+            proof_id: confirmed ? 1 : null,
+          },
+        });
+      return json({ source_account: account, instruments: [] });
+    }),
+  );
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <ReturnsSourceDiagnostics account={account} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText(/Оригиналы можно проверить один раз/);
+  await user.upload(
+    screen.getByLabelText("Оригиналы для подтверждения"),
+    new File(["synthetic"], "source.xml", { type: "application/xml" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Проверить оригиналы" }));
+  const save = await screen.findByRole("button", { name: "Сохранить подтверждение" });
+  expect(save).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: /Подтверждаю сохранение доказательства/ }));
+  await user.click(save);
+  await screen.findByText(/Источник подтверждён:/);
+  expect(writes).toEqual([
+    "/api/source-returns/proofs/preview",
+    "/api/source-returns/proofs/confirm",
+  ]);
+});

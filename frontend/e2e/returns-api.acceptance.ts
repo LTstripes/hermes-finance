@@ -132,6 +132,7 @@ test("alias history links, partial coverage, keyboard details, Back and accepted
 }, testInfo) => {
   const context = await (await request.get("/api/returns/context")).json();
   expect(context.scope_aliases["source:1234567"]).toBe("source:1234567-000");
+  // Intentional retired alias URL exercises history-preserving compatibility.
   await page.goto("/v2/capital/monthly-returns?source_account=1234567#bond-slice");
   await expect(page).toHaveURL(/scope=source%3A1234567-000.*start=2030-03-31&end=2030-06-30/);
   const result = page.getByRole("region", { name: "Результат периода", exact: true });

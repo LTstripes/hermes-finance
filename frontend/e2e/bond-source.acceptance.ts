@@ -96,7 +96,7 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
   await expect(
     page.getByRole("region", { name: "За доступные месяцы", exact: true }),
-  ).toContainText("600,00 ₽");
+  ).toContainText("600 ₽");
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   const summary = page.getByRole("region", {
@@ -235,7 +235,9 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
     "55,00 ₽",
   );
   await page.reload();
-  await expect(page.getByLabel("Счёт в выписке", { exact: true })).toHaveValue("8765432");
+  await expect(page.getByRole("combobox", { name: "Счёт", exact: true })).toHaveValue(
+    "source:8765432-000",
+  );
   await expect(panel.getByLabel("Период облигаций")).toHaveValue("2030-05-01");
   await expect(withinTable().getByRole("cell", { name: "8", exact: true })).toBeVisible();
   await panel.getByLabel("Период облигаций").selectOption("2030-06-01");
