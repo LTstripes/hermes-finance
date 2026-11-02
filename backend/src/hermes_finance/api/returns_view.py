@@ -82,9 +82,32 @@ class AvailableMonths(DTO):
     total_months: int
 
 
+class AcceptedIncomeAmounts(DTO):
+    net_kopecks: str | None
+    gross_kopecks: str | None
+    tax_kopecks: str | None
+    fees_kopecks: str | None
+    coupons_kopecks: str | None
+    dividends_kopecks: str | None
+
+
+class AcceptedInstrumentIncome(AcceptedIncomeAmounts):
+    id: str
+    account: str
+    name: str
+    isin: str | None
+
+
+class AcceptedIncome(AcceptedIncomeAmounts):
+    partial: Literal[True]
+    reason_codes: list[str]
+    instruments: list[AcceptedInstrumentIncome]
+
+
 class Overview(DTO):
     scope: str
     breakdown: ReturnBreakdown | None
+    accepted_income: AcceptedIncome | None = None
     selected: Result
     all_history: Result | None
     available_months_total: AvailableMonths | None

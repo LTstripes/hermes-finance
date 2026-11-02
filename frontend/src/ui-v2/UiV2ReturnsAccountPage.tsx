@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { readDisplayNames } from "./returns/dashboard";
 import {
   compareDecimal,
   displayMetric,
@@ -15,14 +16,14 @@ import {
   validDate,
 } from "./returns/model";
 import styles from "./returns/Returns.module.css";
+import { ReturnsAcceptedIncome } from "./returns/ReturnsAcceptedIncome";
 import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
 import { ReturnsBasket } from "./returns/ReturnsBasket";
-import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsBreakdown } from "./returns/ReturnsBreakdown";
+import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
 import { UiV2Shell } from "./UiV2Shell";
-import { readDisplayNames } from "./returns/dashboard";
 
 const ReturnsSourceDiagnostics = lazy(() => import("./ReturnsSourceDiagnostics"));
 const ReturnsPerformanceDiagnostics = lazy(() => import("./ReturnsPerformanceDiagnostics"));
@@ -556,7 +557,9 @@ export default function UiV2ReturnsAccountPage() {
                 <small>За выбранный период</small>
               </section>
             </div>
-            {data.breakdown ? (
+            {data.accepted_income?.net_kopecks != null ? (
+              <ReturnsAcceptedIncome value={data.accepted_income} />
+            ) : data.breakdown ? (
               <ReturnsBreakdown value={data.breakdown} total={data.selected.pnl} />
             ) : (
               <p className={styles.basisNote}>Разложение результата за этот период недоступно.</p>

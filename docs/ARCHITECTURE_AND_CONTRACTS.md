@@ -6624,8 +6624,18 @@ Source security rows retain their own instrument method. Whole history never
 uses the sum of available months. Credited coupon/dividend amounts are
 added across adjacent, fully represented months, with any missing amount
 withholding the entire interval income. Accepted scopes retain their existing
-prerequisites; unsupported payout/instrument breakdowns stay NULL/empty with
-reasons. Browser comparison uses exact Decimal/BigInt ordering; Number is
+prerequisites. Accepted coupon/dividend explanations reuse
+`known_instrument_cash_income`: canonical ICF IDs are the only economic
+operands, while XML/Money/PDF links qualify those same events. The selected
+account and dated portfolio membership bound the read. Known admitted net
+subtotals remain visible when PERF04A/TWRR are unavailable and never alter
+those results. `accepted_income` exposes exact integer-kopeck strings for net,
+known gross/tax/fees and per-instrument explanations; unknown components remain
+NULL. Coverage is explicitly partial, independently of `estimate=false`.
+The breakdown payout operand is net; withheld tax is a separate annotation,
+never a second deduction. No qualifying events means NULL, not an absence proof;
+an evidenced zero net remains zero. Full accepted instrument P&L/rate remains
+unsupported. Browser comparison uses exact Decimal/BigInt ordering; Number is
 confined to bar geometry.
 
 Owner extension A–C ([#963](https://github.com/LTstripes/hermes-finance/issues/963#issuecomment-6447928093)):

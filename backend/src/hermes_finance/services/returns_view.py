@@ -11,17 +11,26 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from hermes_finance.domain import PerformanceScope
+from hermes_finance.domain import PerformanceScope, RubleAmount
 from hermes_finance.persistence import (
     Account,
     BrokerIdentityMapping,
     Instrument,
+    InvestmentCashFlow,
     ReportingMonth,
     SourceIntakeOriginal,
 )
+from hermes_finance.services.instrument_cash_income import known_instrument_cash_income
 from hermes_finance.services.performance_attribution import performance_attribution_for_interval
+from hermes_finance.services.performance_availability import (
+    _membership_at,
+    _scope_membership_coverage,
+)
 from hermes_finance.services.portfolio_twrr import twrr_for_interval
-from hermes_finance.services.source_instrument_returns import read_instrument_returns
+from hermes_finance.services.source_instrument_returns import (
+    ReturnBreakdown,
+    read_instrument_returns,
+)
 from hermes_finance.services.source_monthly_returns import (
     _SOURCE_SCOPE_READS,
     _selected_sources,
@@ -505,12 +514,96 @@ def _investment_report_result(proof):
     }
 
 
-def _accepted_result(session, scope, start, end):
+def _accepted_income(session, scope, start, end):
+    """Project existing qualified ICF events once, independently of P&L/rate.
+
+    The payout reader owns identity, currentness and gross/net/tax semantics.
+    Its unknown interval coverage cannot establish an absent-payment zero.
+    """
+    pairs = select(InvestmentCashFlow.account_id, InvestmentCashFlow.instrument_id).where(
+        InvestmentCashFlow.flow_type.in_(("coupon", "dividend")),
+        InvestmentCashFlow.event_date > start,
+        InvestmentCashFlow.event_date <= end,
+    )
+    membership_rows = None
+    reasons = {"whole_interval_coverage_unknown"}
+    if scope != "portfolio":
+        pairs = pairs.where(InvestmentCashFlow.account_id == int(scope.split(":", 1)[1]))
+    else:
+        membership, membership_rows = _scope_membership_coverage(
+            session,
+            scope=PerformanceScope.PORTFOLIO,
+            account_id=None,
+            start_date=start,
+            end_date=end,
+        )
+        reasons.update(membership.reason_codes)
+    events, instruments = [], []
+    for account_id, instrument_id in session.execute(
+        pairs.distinct().order_by(InvestmentCashFlow.account_id, InvestmentCashFlow.instrument_id)
+    ):
+        if instrument_id is None:
+            reasons.add("historical_instrument_identity_unknown")
+            continue
+        payout = known_instrument_cash_income(session, account_id, instrument_id, start, end)
+        reasons.update(set(payout["reason_codes"]) - {"full_instrument_return_unavailable"})
+        selected = []
+        for event in payout["events"]:
+            if (
+                membership_rows is not None
+                and _membership_at(
+                    membership_rows.get(account_id, []), date.fromisoformat(event["date"])
+                )
+                is not True
+            ):
+                continue
+            reasons.update(event["reason_codes"])
+            if event["included_in_known_net"]:
+                selected.append(event)
+        events.extend(selected)
+        if selected:
+            instrument = session.get(Instrument, instrument_id)
+            instruments.append(
+                {
+                    "id": f"{account_id}:{instrument_id}",
+                    "account": payout["account"]["name"],
+                    "name": instrument.name,
+                    "isin": instrument.isin,
+                    **_accepted_amounts(selected),
+                }
+            )
+    return {
+        **_accepted_amounts(events),
+        "partial": True,
+        "reason_codes": sorted(reasons),
+        "instruments": instruments,
+    }
+
+
+def _accepted_amounts(events):
+    def total(field, rows):
+        values = [row[field] for row in rows]
+        if not values or any(v is None for v in values):
+            return None
+        return str(sum(RubleAmount.from_api(v).kopecks for v in values))
+
+    return {
+        "net_kopecks": total("booked_net", events),
+        "gross_kopecks": total("gross", events),
+        "tax_kopecks": total("tax", events),
+        "fees_kopecks": total("fee", events),
+        "coupons_kopecks": total("booked_net", [e for e in events if e["kind"] == "coupon"]),
+        "dividends_kopecks": total("booked_net", [e for e in events if e["kind"] == "dividend"]),
+    }
+
+
+def _accepted_result(session, scope, start, end, income=None):
     kind = PerformanceScope.PORTFOLIO if scope == "portfolio" else PerformanceScope.ACCOUNT
     account_id = None if scope == "portfolio" else int(scope.split(":", 1)[1])
     selection = dict(start_date=start, end_date=end, scope=kind, account_id=account_id)
     pnl = performance_attribution_for_interval(session, **selection)
     rate = twrr_for_interval(session, **selection)
+    income = _accepted_income(session, scope, start, end) if income is None else income
     return {
         "period": bounds(start, end),
         "pnl": metric(
@@ -526,8 +619,15 @@ def _accepted_result(session, scope, start, end):
             unit="percentage_points",
             estimate=False,
         ),
-        "coupons": metric(reasons=("accepted_income_breakdown_unavailable",), estimate=False),
-        "dividends": metric(reasons=("accepted_income_breakdown_unavailable",), estimate=False),
+        **{
+            name: metric(
+                income[name + "_kopecks"],
+                reasons=income["reason_codes"],
+                method="known-booked-net-payouts",
+                estimate=False,
+            )
+            for name in ("coupons", "dividends")
+        },
     }
 
 
@@ -571,9 +671,23 @@ def read_overview(session, *, scope, start, end):
             whole = (
                 _accepted_result(session, scope, first, last) if first and first < last else None
             )
+            income = _accepted_income(session, scope, start, end)
+            selected = _accepted_result(session, scope, start, end, income)
             view = {
-                "selected": _accepted_result(session, scope, start, end),
-                "breakdown": None,
+                "selected": selected,
+                "accepted_income": income,
+                "breakdown": ReturnBreakdown(
+                    payouts_kopecks=income["net_kopecks"],
+                    price_and_trades_kopecks=None,
+                    commissions_kopecks=None,
+                    paid_nkd_kopecks=None,
+                    taxes_kopecks=None,
+                    other_kopecks=None,
+                    total_kopecks=selected["pnl"]["value"],
+                    complete=False,
+                )
+                if income["net_kopecks"] is not None
+                else None,
                 "all_history": whole,
                 "available_months_total": None,
                 "selected_available_months_total": None,

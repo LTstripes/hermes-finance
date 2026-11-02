@@ -568,3 +568,64 @@ test("available period rate stays visible independently of unavailable P&L and p
   expect(result).toHaveTextContent("0,13%");
   expect(result).toHaveTextContent("0 из 1");
 });
+
+test("accepted net payments remain visible when the result and percentage are unavailable", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return undefined;
+    const data = overviewFixture("portfolio", may);
+    const exact = {
+      value: "10440",
+      reason_codes: ["whole_interval_coverage_unknown"],
+      method: "known-booked-net-payouts",
+      unit: "kopecks" as const,
+      estimate: false,
+    };
+    return Promise.resolve(
+      response({
+        ...data,
+        selected: {
+          ...data.selected,
+          pnl: { ...exact, value: null, method: "PERF04A" },
+          rate: { ...exact, value: null, method: "twrr", unit: "percentage_points" },
+          coupons: { ...exact, value: null },
+          dividends: exact,
+        },
+        accepted_income: {
+          net_kopecks: "10440",
+          gross_kopecks: "12000",
+          tax_kopecks: "1560",
+          fees_kopecks: null,
+          coupons_kopecks: null,
+          dividends_kopecks: "10440",
+          partial: true,
+          reason_codes: ["whole_interval_coverage_unknown"],
+          instruments: [
+            {
+              id: "1:1",
+              account: "Учебный счёт",
+              name: "Учебная акция",
+              isin: "RU000A000001",
+              net_kopecks: "10440",
+              gross_kopecks: "12000",
+              tax_kopecks: "1560",
+              fees_kopecks: null,
+              coupons_kopecks: null,
+              dividends_kopecks: "10440",
+            },
+          ],
+        },
+        breakdown: null,
+        selected_available_months_total: null,
+        instruments: [],
+      }),
+    );
+  });
+  setup(`/v2/returns/account?scope=portfolio&start=${may.start}&end=${may.end}`);
+  const payouts = await screen.findByRole("region", { name: "Разложение выплат" });
+  expect(within(payouts).getByText(/покрытие периода частичное/)).toBeVisible();
+  expect(within(payouts).getByText(/Учебная акция/)).toBeVisible();
+  expect(
+    within(screen.getByRole("region", { name: "Результат периода" })).getAllByText("—"),
+  ).toHaveLength(2);
+  expect(within(payouts).queryByText("Оценка")).toBeNull();
+});
