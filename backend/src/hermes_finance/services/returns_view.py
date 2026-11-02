@@ -151,6 +151,9 @@ def read_context(session):
                     source_periods.setdefault(f"source:{canonical.get(alias, alias)}", []).append(
                         bounds(original.covered_from - timedelta(days=1), original.covered_to)
                     )
+        saved_month_ends = {
+            key: max(p["end"] for p in periods) for key, periods in source_periods.items()
+        }
         for periods in source_periods.values():
             periods[:] = list({(p["start"], p["end"]): p for p in periods}.values())
             periods.append(bounds(min(p["start"] for p in periods), max(p["end"] for p in periods)))
@@ -170,6 +173,14 @@ def read_context(session):
             if proof["history_from_zero"] and rank > history_rank.get(key, ("", 0)):
                 history_rank[key] = rank
                 history_periods[key] = period
+        # Selection metadata can extend to saved newer months; numerical reads
+        # still require the current base proof, every month and matching seams.
+        for key, period in history_periods.items():
+            latest = saved_month_ends.get(key, period["end"])
+            if latest > period["end"]:
+                history_periods[key] = {**period, "end": latest}
+                if history_periods[key] not in source_periods[key]:
+                    source_periods[key].append(history_periods[key])
         return {
             "accounts": _accounts(session, canonical),
             "scope_aliases": {f"source:{a}": f"source:{b}" for a, b in canonical.items() if a != b},
@@ -425,7 +436,13 @@ def _source_view(session, account, start, end):
         key=lambda p: (p["covered_to"], p["proof_id"]),
     )
     if historical:
-        whole = _investment_report_result(historical[-1])
+        from hermes_finance.services.source_account_history import extend_history
+
+        extended = extend_history(historical[-1], monthly)
+        whole = _investment_report_result(extended)
+        periods.append(whole["period"])
+        if whole["period"] == bounds(start, end):
+            selected = whole.copy()
     if instruments.instruments:
         analysis = instruments.instruments[0].analysis
         periods.append(bounds(analysis.history_start, analysis.history_end))
@@ -460,7 +477,9 @@ def _investment_report_result(proof):
             if interval is None or interval["pnl"]["value"] is None
             else int(interval["pnl"]["value"]),
             reasons=reasons,
-            method="source_xml_pdf_interval",
+            method="source_account_history_v1"
+            if proof.get("derived_history")
+            else "source_xml_pdf_interval",
         ),
         "rate": metric(
             None

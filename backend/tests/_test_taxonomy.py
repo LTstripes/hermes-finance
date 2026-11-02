@@ -106,6 +106,8 @@ CI_CORE_ADDITIONAL_FILES = (
     "test_astra_medium_xfail.py",
     "test_source_instrument_returns_service.py",
     "test_source_monthly_returns_service.py",
+    "test_source_account_history_service.py",
+    "test_october_returns_service.py",
     "test_source_money_classifications_service.py",
 )
 

@@ -240,9 +240,20 @@ def _source_accounts(
         )
         selected, _ = _selected_sources(session, account)
         metadata = _identities([view for _, view, error in selected if not error and view])
-        result = returns_view._investment_report_result(proof) if proof else None
+        extended = proof
+        if proof and any(
+            original is not None and original.covered_to.isoformat() > proof["covered_to"]
+            for original, _, _ in selected
+        ):
+            from hermes_finance.services.source_account_history import extend_history
+            from hermes_finance.services.source_monthly_returns import read_monthly_returns
+
+            extended = extend_history(proof, read_monthly_returns(session, source_account=account))
+        result = returns_view._investment_report_result(extended) if extended else None
         status = proof["status"] if proof else "absent"
-        reasons = list(proof["reason_codes"]) if proof else ["all_history_source_proof_absent"]
+        reasons = (
+            list(extended["reason_codes"]) if extended else ["all_history_source_proof_absent"]
+        )
         analyses = captured.get(proof["proof_id"], {}) if proof and status == "current" else {}
         if captured_analyses is not None:
             captured_analyses[scope] = analyses
