@@ -86,8 +86,9 @@ from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "1.5.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json"
+SCHEMA_VERSION = "1.6.0"
+SUPPORTED_V1_VERSIONS = {"1.5.0", SCHEMA_VERSION}
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/1.6.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -155,7 +156,7 @@ class AiFinancialReviewValidationError(RuntimeError):
 def _schema_path(version: str = SCHEMA_VERSION) -> Path:
     filename = (
         "ai_financial_review.v2.schema.json"
-        if version == ai_review_payloads.VERSION
+        if version in ai_review_payloads.VERSIONS
         else "ai_financial_review.schema.json"
     )
     for parent in Path(__file__).resolve().parents:
@@ -169,12 +170,48 @@ def _schema(version: str = SCHEMA_VERSION) -> dict[str, object]:
     return json.loads(_schema_path(version).read_text(encoding="utf-8"))
 
 
+def _legacy_returns_context(report: dict[str, object]) -> None:
+    """Keep explicit v1.5/v2.0 downloads within their original field allowlists."""
+    source = report["sections"].get("source_returns", {}).get("data")
+    if source is not None:
+        for account in source["accounts"]:
+            account.pop("account_type", None)
+            account.pop("mapping_reason_codes", None)
+            account.update(financial_account_ref=None, mapping_status="not_asserted")
+            for interval in account["intervals"]:
+                for item in (interval, interval["account"], *interval["instruments"]):
+                    if item is not None:
+                        item.pop("period", None)
+                        item.pop("valuation_date", None)
+    overall = report["sections"].get("returns_overall", {}).get("data")
+    if overall is not None:
+        for account in overall["source_accounts"]:
+            account.pop("valuation_date", None)
+            if account["result"] is not None:
+                account["result"].pop("valuation_date", None)
+        for name in ("coupon_income", "dividend_income"):
+            for account in overall[name]["accounts"]:
+                account.pop("valuation_date", None)
+        for component in overall["mixed_result"]["components"]:
+            component.pop("period", None)
+            if component["category"] in {"iis", "brokerage_iis"}:
+                component["category"] = "brokerage"
+        for card in overall["instruments"]:
+            for account in card["accounts"]:
+                account.pop("valuation_date", None)
+                detail = account["detail"]
+                if detail is not None:
+                    detail.pop("valuation_date", None)
+                    detail["analysis"].pop("period", None)
+                    detail["analysis"].pop("valuation_date", None)
+
+
 def validate_ai_financial_review(report: dict[str, object]) -> None:
     """Validate an assembled report before returning it to a caller."""
     try:
         version = str(report.get("schema_version"))
         Draft202012Validator(_schema(version), format_checker=FormatChecker()).validate(report)
-        if version == ai_review_payloads.VERSION:
+        if version in ai_review_payloads.VERSIONS:
             ai_review_payloads.validate_source_payload_refs(report)
     except (ValidationError, ai_review_payloads.PayloadReferenceError) as error:
         raise AiFinancialReviewValidationError(
@@ -1620,7 +1657,7 @@ def assemble_ai_financial_review(
 ) -> dict[str, object]:
     """Compose the canonical AI financial review from accepted read models."""
 
-    if format_version not in {SCHEMA_VERSION, ai_review_payloads.VERSION}:
+    if format_version not in SUPPORTED_V1_VERSIONS | ai_review_payloads.VERSIONS:
         raise ValueError("unsupported AI financial review format version")
     version = forecast_version.strip()
     if not version:
@@ -2120,7 +2157,11 @@ def assemble_ai_financial_review(
         "field_states": field_states,
         "warnings": warnings,
     }
-    if format_version == ai_review_payloads.VERSION:
-        report = ai_review_payloads.normalize_source_payloads(report)
+    if format_version in {"1.5.0", "2.0.0"}:
+        _legacy_returns_context(report)
+        report["schema_version"] = "1.5.0"
+        report["$schema"] = SCHEMA_URI.replace(SCHEMA_VERSION, "1.5.0")
+    if format_version in ai_review_payloads.VERSIONS:
+        report = ai_review_payloads.normalize_source_payloads(report, format_version=format_version)
     validate_ai_financial_review(report)
     return report

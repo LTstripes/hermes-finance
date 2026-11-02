@@ -10,9 +10,10 @@ import json
 from copy import deepcopy
 from hashlib import sha256
 
-VERSION = "2.0.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/2.0.0/schema.json"
-LEGACY_VERSIONS = {"1.4.0", "1.5.0"}
+VERSION = "2.1.0"
+VERSIONS = {"2.0.0", VERSION}
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/2.1.0/schema.json"
+LEGACY_VERSIONS = {"1.4.0", "1.5.0", "1.6.0"}
 TABLE_PREFIXES = {
     "instruments": "instrument-",
     "endpoints": "endpoint-",
@@ -65,8 +66,12 @@ def _instrument_slots(report):
                     yield account["detail"], "analysis"
 
 
-def normalize_source_payloads(report: dict[str, object]) -> dict[str, object]:
+def normalize_source_payloads(
+    report: dict[str, object], *, format_version: str = VERSION
+) -> dict[str, object]:
     """Represent a v1 report without discarding or inferring any source fact."""
+    if format_version not in VERSIONS:
+        raise PayloadReferenceError("unsupported normalized AI report version")
     if report.get("schema_version") not in LEGACY_VERSIONS or "source_payloads" in report:
         raise PayloadReferenceError("expected an expanded v1 AI report")
     result = deepcopy(report)
@@ -99,8 +104,8 @@ def normalize_source_payloads(report: dict[str, object]) -> dict[str, object]:
         "reading_guide": dict(GUIDE),
         **{table: dict(sorted(values.items())) for table, values in tables.items()},
     }
-    result["$schema"] = SCHEMA_URI
-    result["schema_version"] = VERSION
+    result["$schema"] = SCHEMA_URI.replace(VERSION, format_version)
+    result["schema_version"] = format_version
     # Put the lookup tables before their first use, without reordering v1 fields.
     return {
         name: value
@@ -112,7 +117,7 @@ def normalize_source_payloads(report: dict[str, object]) -> dict[str, object]:
 
 
 def _resolve_source_payloads(report: dict[str, object], *, expand: bool) -> dict[str, object]:
-    if report.get("schema_version") != VERSION:
+    if report.get("schema_version") not in VERSIONS:
         raise PayloadReferenceError("expected a normalized v2 AI report")
     result = deepcopy(report) if expand else report
     dictionary = result.pop("source_payloads") if expand else result["source_payloads"]

@@ -1,9 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/2.0.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/2.1.0/schema.json",
   "title": "Hermes Finance AI Financial Review v2 - referenced source payloads",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {"properties": {"schema_version": {"const": "2.0.0"}}},
+      "then": {"properties": {"$schema": {"const": "https://hermes-finance.local/schema/ai-financial-review/2.0.0/schema.json"}}},
+      "else": {"properties": {"$schema": {"const": "https://hermes-finance.local/schema/ai-financial-review/2.1.0/schema.json"}}}
+    }
+  ],
   "required": [
     "$schema",
     "schema_name",
@@ -19,13 +26,13 @@
   ],
   "properties": {
     "$schema": {
-      "const": "https://hermes-finance.local/schema/ai-financial-review/2.0.0/schema.json"
+      "enum": ["https://hermes-finance.local/schema/ai-financial-review/2.0.0/schema.json", "https://hermes-finance.local/schema/ai-financial-review/2.1.0/schema.json"]
     },
     "schema_name": {
       "const": "hermes.finance.ai_financial_review"
     },
     "schema_version": {
-      "const": "2.0.0"
+      "enum": ["2.0.0", "2.1.0"]
     },
     "metadata": {
       "$ref": "#/$defs/metadata"
@@ -872,7 +879,7 @@
         "exclusion_reason"
       ],
       "properties": {
-        "period": {"$ref":"#/$defs/returns_period"},
+        "period": {"oneOf":[{"$ref":"#/$defs/returns_period"},{"type":"null"}]},
         "ref": {
           "type": "string",
           "pattern": "^returns-component-[1-9][0-9]*$"
@@ -6910,7 +6917,8 @@
         "expanded_schema_version": {
           "enum": [
             "1.4.0",
-            "1.5.0"
+            "1.5.0",
+            "1.6.0"
           ]
         },
         "reading_guide": {

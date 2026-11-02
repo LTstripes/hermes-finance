@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.5.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-financial-review/1.6.0/schema.json",
   "title": "Hermes Finance AI Financial Review",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "$schema": { "type": "string", "format": "uri-reference" },
     "schema_name": { "const": "hermes.finance.ai_financial_review" },
-    "schema_version": { "enum": ["1.4.0", "1.5.0"] },
+    "schema_version": { "enum": ["1.4.0", "1.5.0", "1.6.0"] },
     "metadata": { "$ref": "#/$defs/metadata" },
     "scope": { "$ref": "#/$defs/scope" },
     "coverage": { "$ref": "#/$defs/coverage_summary" },
@@ -823,7 +823,7 @@
         "exclusion_reason"
       ],
       "properties": {
-        "period": {"$ref":"#/$defs/returns_period"},
+        "period": {"oneOf":[{"$ref":"#/$defs/returns_period"},{"type":"null"}]},
         "ref": {
           "type": "string",
           "pattern": "^returns-component-[1-9][0-9]*$"

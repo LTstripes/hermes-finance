@@ -34,7 +34,9 @@ from hermes_finance.persistence import (
     SavingAllocation,
 )
 from hermes_finance.services import ai_analysis_bundle as bundle_service
+from hermes_finance.services import ai_review_payloads
 from hermes_finance.services.accounts import create_account
+from hermes_finance.services.ai_financial_review import validate_ai_financial_review
 from hermes_finance.services.cash import create_cash_balance
 from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
 from hermes_finance.services.deposits import create_deposit_snapshot
@@ -1482,7 +1484,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     payload = json.loads(response.content.decode("utf-8"))
     _financial_review_validator().validate(payload)
     assert payload["schema_name"] == "hermes.finance.ai_financial_review"
-    assert payload["schema_version"] == "1.5.0"
+    assert payload["schema_version"] == "1.6.0"
     assert response.headers["content-type"] == "application/json; charset=utf-8"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["metadata"]["source_contracts"] == [
@@ -1870,6 +1872,18 @@ def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_st
     assert response.status_code == 200, response.text
     payload = response.json()
     _financial_review_validator().validate(payload)
+    # A saved gold valuation proves an as-of date, not a dated return period.
+    gold_component = next(
+        row
+        for row in payload["sections"]["returns_overall"]["data"]["mixed_result"]["components"]
+        if row["category"] == "gold"
+    )
+    assert gold_component["source_account_ref"] is None
+    assert gold_component["period"] is None
+    assert gold_component["valuation_date"] == "2026-04-30"
+    referenced = ai_review_payloads.normalize_source_payloads(payload)
+    validate_ai_financial_review(referenced)
+    assert ai_review_payloads.expand_source_payloads(referenced) == payload
 
     portfolio = payload["sections"]["current_portfolio"]["data"]
     instruments = {item["name"]: item for item in portfolio["instruments"]}

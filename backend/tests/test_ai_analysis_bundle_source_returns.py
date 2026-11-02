@@ -66,9 +66,14 @@ def _first(section):
     return section["data"]["accounts"][0]["intervals"][0]
 
 
+@pytest.mark.parametrize("account_type", ["brokerage", "iis"])
 def test_versioned_referenced_download_preserves_legacy_default_and_read_only_facts(
-    database, monkeypatch
+    database, monkeypatch, account_type
 ):
+    with database.session_factory() as session:
+        account = session.scalar(select(Account).where(Account.name == "Synthetic account"))
+        account.account_type = account_type
+        session.commit()
     from hermes_finance.api import ai_financial_review as api
 
     _save(database, monkeypatch)
@@ -80,13 +85,53 @@ def test_versioned_referenced_download_preserves_legacy_default_and_read_only_fa
     with TestClient(create_app(database)) as client:
         previous = client.get("/api/export/ai-financial-review", params=params)
         assert previous.status_code == 200, previous.text
-        assert previous.json()["schema_version"] == "1.5.0"
+        assert previous.json()["schema_version"] == "1.6.0"
+        assert (
+            previous.json()["sections"]["source_returns"]["data"]["accounts"][0]["account_type"]
+            == account_type
+        )
         current = client.get(
-            "/api/export/ai-financial-review/json", params={**params, "format_version": "2.0.0"}
+            "/api/export/ai-financial-review/json", params={**params, "format_version": "2.1.0"}
         )
         assert current.status_code == 200, current.text
-        assert current.json()["schema_version"] == "2.0.0"
+        assert current.json()["schema_version"] == "2.1.0"
         assert ai_review_payloads.expand_source_payloads(current.json()) == previous.json()
+        for old_version in ("1.5.0", "2.0.0"):
+            historical = client.get(
+                "/api/export/ai-financial-review/json",
+                params={**params, "format_version": old_version},
+            )
+            assert historical.status_code == 200, historical.text
+            assert historical.json()["schema_version"] == old_version
+            legacy = historical.json()
+            validate_ai_financial_review(legacy)
+            if old_version == "2.0.0":
+                legacy = ai_review_payloads.expand_source_payloads(legacy)
+            assert (
+                legacy["sections"]["returns_overall"]["data"]["mixed_result"]["known_result"]
+                == previous.json()["sections"]["returns_overall"]["data"]["mixed_result"][
+                    "known_result"
+                ]
+            )
+            assert all(
+                row["category"] not in {"iis", "brokerage_iis"}
+                for row in legacy["sections"]["returns_overall"]["data"]["mixed_result"][
+                    "components"
+                ]
+            )
+            legacy_account = legacy["sections"]["source_returns"]["data"]["accounts"][0]
+            assert legacy_account["mapping_status"] == "not_asserted"
+            assert legacy_account["financial_account_ref"] is None
+            assert "mapping_reason_codes" not in legacy_account
+            assert "account_type" not in legacy_account
+            legacy_interval = legacy_account["intervals"][0]
+            for item in (
+                legacy_interval,
+                legacy_interval["account"],
+                *legacy_interval["instruments"],
+            ):
+                if item is not None:
+                    assert "period" not in item and "valuation_date" not in item
         assert current.headers["cache-control"] == "no-store"
         assert "attachment;" in current.headers["content-disposition"]
         assert (
@@ -118,7 +163,7 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         )
         overview = returns_overall.read_overall(session, include_instrument_details=True)
         card = returns_overall.read_instrument_card(session, instrument["isin"], overview=overview)
-    assert report["schema_version"] == "1.5.0"
+    assert report["schema_version"] == "1.6.0"
     assert current["scope"] == "current_available_history_not_limited_to_selected_month"
     assert current["mixed_result"]["known_result"] == adapter._overall_metric(
         overview["mixed_result"]["known_result"]
