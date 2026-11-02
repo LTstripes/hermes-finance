@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SourceIntake } from "../api/sourceIntake";
@@ -44,9 +44,26 @@ function mount(
       : String(input).includes("/payouts/calendar")
         ? new Response(JSON.stringify([]))
         : String(input).startsWith("/api/source-returns/monthly")
-          ? new Response(JSON.stringify({ months: [] }), {
-              headers: { "Content-Type": "application/json" },
-            })
+          ? new Response(
+              JSON.stringify({
+                source_account: new URL(String(input), "http://localhost").searchParams.get(
+                  "source_account",
+                ),
+                authority: "provisional",
+                financial_authority: "none",
+                months: [
+                  {
+                    opening_date: "2031-06-30",
+                    closing_date: "2031-07-31",
+                    growth_kopecks: 123456,
+                    modified_dietz_return: "0.027",
+                  },
+                ],
+              }),
+              {
+                headers: { "Content-Type": "application/json" },
+              },
+            )
           : new Response(
               JSON.stringify([
                 intake(1, "ACCOUNT-A"),
@@ -149,9 +166,18 @@ it("retains historical source-account selection without treating its original as
   const { fetcher } = mount("/v2/close?month=12&source_account=OTHER-PERIOD");
   expect(await screen.findByRole("region", { name: "Состояние источников месяца" })).toBeVisible();
   expect(await screen.findByText(/Для выбранного счёта выписок этого периода нет/)).toBeVisible();
-  expect(screen.getByRole("region", { name: "Состояние источников месяца" })).toHaveTextContent(
-    "Полных месячных оригиналов: 0",
+  const status = screen.getByRole("region", { name: "Состояние источников месяца" });
+  expect(status).toHaveTextContent("Полных месячных оригиналов: 0");
+  const missingClosing = within(status).getByText(/Нет полного месячного оригинала/);
+  expect(missingClosing).toBeVisible();
+  expect(missingClosing).toHaveTextContent(
+    "Нет полного месячного оригинала. Нужны остатки на 2031-08-31; историческое пересечение не доказывает конец месяца.",
   );
+  const result = screen.getByRole("region", { name: "Предварительная доходность месяца" });
+  const unavailable = await within(result).findByText(/нет доказанных границ этого месяца/);
+  expect(unavailable).toBeVisible();
+  expect(unavailable).toHaveTextContent("EOD 2031-07-31 и 2031-08-31");
+  expect(result).not.toHaveTextContent(/[%₽]/);
   expect(screen.getByRole("link", { name: "Инструменты, сделки и выплаты" })).toHaveAttribute(
     "href",
     "#month-instruments",
