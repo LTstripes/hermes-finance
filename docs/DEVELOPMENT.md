@@ -471,6 +471,24 @@ Choose affected semantic lanes and concrete regression/failure boundaries. Use e
 
 A read-only review preflight verifies actual source access and exact candidate identity. Setup failure is UNVERIFIED; repair its cause before another preflight. Reviewer self-message is not a PASS. Synthetic tests, Windows probes, local private UAT, published release and installed runtime each retain their own provenance and limits.
 
+<a id="proportionate-cosmetic-changes"></a>
+### Proportionate cosmetic changes
+
+Classify the actual effects first. Static icons, wording or layout are cosmetic
+only when data meaning, calculations, privacy, security and runtime contracts are
+unchanged. Use relevant visual/asset/markup checks and focused lint/format checks,
+plus mandatory existing CI. Reuse valid exact-candidate evidence; a handoff or
+extra reassurance alone does not justify another full suite.
+
+Cosmetic scope does not itself call for database backups, migrations, evidence
+re-attestation or runtime changes. Prefer the next planned substantive release
+over a separate cosmetic rollout. If an existing package/release gate requires
+broader action, stop before that action, identify the concrete dependency and
+resolve it as a separately scoped task/decision with any missing authorization.
+Unrelated blockers must not silently expand the cosmetic task. Existing
+financial/data, security and release safeguards remain mandatory; never bypass
+them or weaken runtime protections to force cosmetic delivery.
+
 <a id="d4-verification_policy-1"></a>
 ### Complete proportional verification policy
 
