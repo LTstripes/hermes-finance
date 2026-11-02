@@ -1,85 +1,57 @@
+﻿# Run tests. Never modifies source files.
+#   .\scripts\test.ps1                      # backend pytest + frontend vitest + typecheck + build (as before)
+#   .\scripts\test.ps1 -Backend             # backend pytest only
+#   .\scripts\test.ps1 -Frontend [-ChangedSince <sha>]   # vitest (optionally --changed <sha>) + tsc -b, no vite build
+#   .\scripts\test.ps1 -Paths backend/tests/test_x.py,frontend/src/a.test.ts
+#   .\scripts\test.ps1 -Full                # everything incl. production build
 [CmdletBinding()]
-param()
+param([switch]$Backend, [switch]$Frontend, [switch]$Full, [string[]]$Paths, [string]$ChangedSince, [switch]$Build, [int]$Timeout = 0)
 
-Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
-
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-$backendDir = Join-Path $repoRoot "backend"
-$frontendDir = Join-Path $repoRoot "frontend"
-
-function Get-RequiredCommand {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name,
-        [Parameter(Mandatory = $true)]
-        [string]$InstallHint
-    )
-
-    $command = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        throw "Missing dependency '$Name'. $InstallHint"
-    }
-
-    return $command.Source
-}
-
-function Invoke-NativeStep {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Label,
-        [Parameter(Mandatory = $true)]
-        [scriptblock]$Action
-    )
-
-    Write-Host "==> $Label" -ForegroundColor Cyan
-    & $Action
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed with exit code $LASTEXITCODE."
-    }
-}
+. (Join-Path $PSScriptRoot "check-common.ps1")
+$backendDir = Join-Path $repoRoot "backend"; $frontendDir = Join-Path $repoRoot "frontend"
 
 try {
-    $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
-    $npm = Get-RequiredCommand -Name "npm.cmd" -InstallHint "Install Node.js 22.22 or newer from https://nodejs.org/."
+    $scope = Resolve-CheckScope -Backend:$Backend -Frontend:$Frontend -Full:$Full -Paths $Paths
+    $tools = Assert-ScopeReady -Scope $scope -RepoRoot $repoRoot
+    $legacyDefault = -not ($Backend -or $Frontend -or $Full -or $Paths)
+    $doBuild = $Full -or $Build -or $legacyDefault
+    Write-Host ("Plan: backend={0} frontend={1} full={2} build={3} bePaths=[{4}] fePaths=[{5}] changedSince={6}" -f $scope.Backend, $scope.Frontend, $scope.Full, $doBuild, ($scope.BackendPaths -join ' '), ($scope.FrontendPaths -join ' '), $ChangedSince)
 
-    if (-not (Test-Path (Join-Path $backendDir "pyproject.toml") -PathType Leaf)) {
-        throw "Backend project not found at '$backendDir'. Run this script from the Hermes Finance repository."
-    }
-    if (-not (Test-Path (Join-Path $frontendDir "package.json") -PathType Leaf)) {
-        throw "Frontend project not found at '$frontendDir'. Run this script from the Hermes Finance repository."
-    }
-    if (-not (Test-Path (Join-Path $frontendDir "node_modules") -PathType Container)) {
-        throw "Frontend dependencies are missing. Run 'cd frontend' and then 'npm ci'."
-    }
-
-    Push-Location $backendDir
-    try {
-        Invoke-NativeStep -Label "Checking backend lockfile" -Action {
-            & $uv lock --check
+    if ($scope.Backend) {
+        $uv = $tools.uv
+        Push-Location $backendDir
+        try {
+            Invoke-NativeStep -Label "Checking backend lockfile" -Action { & $uv lock --check }
+            $targets = @($scope.BackendPaths)
+            Invoke-NativeStep -Label "Running backend tests $($targets -join ' ')" -Action {
+                if ($Timeout -gt 0) { & $uv run --locked --with pytest-timeout python -I -m pytest -q -p timeout "--timeout=$Timeout" @targets }
+                else { & $uv run --locked python -I -m pytest -q @targets }
+            }
         }
-        Invoke-NativeStep -Label "Running backend tests" -Action {
-            & $uv run python -I -m pytest -q
-        }
-    }
-    finally {
-        Pop-Location
+        finally { Pop-Location }
     }
 
-    Push-Location $frontendDir
-    try {
-        Invoke-NativeStep -Label "Running frontend tests" -Action {
-            & $npm test
+    if ($scope.Frontend) {
+        $npm = $tools.npm
+        Push-Location $frontendDir
+        try {
+            $vArgs = @()
+            if ($ChangedSince -and -not $Full) { $vArgs += "--changed=$ChangedSince" }
+            $vArgs += @($scope.FrontendPaths)
+            Invoke-NativeStep -Label "Running frontend tests $($vArgs -join ' ')" -Action { & $npm test -- @vArgs }
+            if ($doBuild) {
+                Invoke-NativeStep -Label "Building frontend (tsc -b && vite build)" -Action { & $npm run build }
+            }
+            else {
+                Invoke-NativeStep -Label "Type-checking frontend (tsc -b)" -Action { & $npm exec -- tsc -b }
+            }
         }
-        Invoke-NativeStep -Label "Building frontend" -Action {
-            & $npm run build
-        }
-    }
-    finally {
-        Pop-Location
+        finally { Pop-Location }
     }
 
-    Write-Host "All backend and frontend checks passed." -ForegroundColor Green
+    Write-Host "Selected checks passed." -ForegroundColor Green
 }
 catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red

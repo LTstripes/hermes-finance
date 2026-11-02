@@ -1,79 +1,38 @@
+﻿# Format checks. Never modifies files.
+#   .\scripts\format-check.ps1                 # backend + frontend (as before)
+#   .\scripts\format-check.ps1 -Backend | -Frontend | -Full
+#   .\scripts\format-check.ps1 -Paths backend/app/x.py,frontend/src/y.ts   # only listed files
 [CmdletBinding()]
-param()
+param([switch]$Backend, [switch]$Frontend, [switch]$Full, [string[]]$Paths)
 
-Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
-
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-$backendDir = Join-Path $repoRoot "backend"
-$frontendDir = Join-Path $repoRoot "frontend"
-
-function Get-RequiredCommand {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name,
-        [Parameter(Mandatory = $true)]
-        [string]$InstallHint
-    )
-
-    $command = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        throw "Missing dependency '$Name'. $InstallHint"
-    }
-
-    return $command.Source
-}
-
-function Invoke-NativeStep {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Label,
-        [Parameter(Mandatory = $true)]
-        [scriptblock]$Action
-    )
-
-    Write-Host "==> $Label" -ForegroundColor Cyan
-    & $Action
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed with exit code $LASTEXITCODE."
-    }
-}
+. (Join-Path $PSScriptRoot "check-common.ps1")
+$backendDir = Join-Path $repoRoot "backend"; $frontendDir = Join-Path $repoRoot "frontend"
 
 try {
-    $uv = Get-RequiredCommand -Name "uv" -InstallHint "Install uv from https://docs.astral.sh/uv/."
-    $npm = Get-RequiredCommand -Name "npm.cmd" -InstallHint "Install Node.js 22.22 or newer from https://nodejs.org/."
-
-    if (-not (Test-Path (Join-Path $backendDir "pyproject.toml") -PathType Leaf)) {
-        throw "Backend project not found at '$backendDir'. Run this script from the Hermes Finance repository."
+    $scope = Resolve-CheckScope -Backend:$Backend -Frontend:$Frontend -Full:$Full -Paths $Paths
+    $tools = Assert-ScopeReady -Scope $scope -RepoRoot $repoRoot
+    Write-Host ("Plan: backend={0} frontend={1} bePaths=[{2}] fePaths=[{3}]" -f $scope.Backend, $scope.Frontend, ($scope.BackendPaths -join ' '), ($scope.FrontendPaths -join ' '))
+    if ($scope.Backend) {
+        $uv = $tools.uv
+        $t = @($scope.BackendPaths); if ($t.Count -eq 0) { $t = @('.') }
+        Push-Location $backendDir
+        try { Invoke-NativeStep -Label "Checking backend formatting" -Action { & $uv run --locked ruff format --check @t } }
+        finally { Pop-Location }
     }
-    if (-not (Test-Path (Join-Path $frontendDir "package.json") -PathType Leaf)) {
-        throw "Frontend project not found at '$frontendDir'. Run this script from the Hermes Finance repository."
-    }
-    if (-not (Test-Path (Join-Path $frontendDir "node_modules") -PathType Container)) {
-        throw "Frontend dependencies are missing. Run 'cd frontend' and then 'npm ci'."
-    }
-
-    Push-Location $backendDir
-    try {
-        Invoke-NativeStep -Label "Checking backend formatting" -Action {
-            & $uv run --locked ruff format --check .
+    if ($scope.Frontend) {
+        $npm = $tools.npm
+        $t = @($scope.FrontendPaths)
+        Push-Location $frontendDir
+        try {
+            Invoke-NativeStep -Label "Checking frontend formatting" -Action {
+                if ($t.Count -gt 0) { & $npm exec -- biome format @t } else { & $npm run format-check }
+            }
         }
+        finally { Pop-Location }
     }
-    finally {
-        Pop-Location
-    }
-
-    Push-Location $frontendDir
-    try {
-        Invoke-NativeStep -Label "Checking frontend formatting" -Action {
-            & $npm run format-check
-        }
-    }
-    finally {
-        Pop-Location
-    }
-
-    Write-Host "Backend and frontend format checks passed." -ForegroundColor Green
+    Write-Host "Selected checks passed." -ForegroundColor Green
 }
 catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
