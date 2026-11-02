@@ -28,7 +28,7 @@ export function ReturnsAvailable({ value }: { value: AvailableMonths }) {
         {value.missing.map((m) => (
           <div key={m.period.start}>
             <p>Не учтён: {periodLabel(m.period)}</p>
-            <Explanation codes={m.reason_codes} />
+            <Explanation codes={m.reason_codes} context={{ month: periodLabel(m.period) }} />
           </div>
         ))}
         <p>Полный результат за этот интервал недоступен.</p>

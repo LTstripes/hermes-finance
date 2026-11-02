@@ -733,7 +733,7 @@ it("exceptions lead a compact exact-source summary while full inventory and know
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
-it("unknown diagnostics stay visible and do not invent an Apply gate for a supported incomplete DRAFT", async () => {
+it("unknown reasons stay neutral with raw codes in details and do not invent an Apply gate", async () => {
   known();
   vi.mocked(previewBrokerMonth).mockResolvedValue({
     ...preview,
@@ -742,12 +742,13 @@ it("unknown diagnostics stay visible and do not invent an Apply gate for a suppo
   const { user } = mounted();
   await upload(user);
   const summary = await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
+  for (const node of within(summary).getAllByText("Значение сейчас недоступно"))
+    expect(node).toBeVisible();
   for (const code of ["future_unknown", "__proto__"])
-    expect(
-      within(summary)
-        .getAllByText(code)
-        .some((node) => node.closest("details") === null),
-    ).toBe(true);
+    for (const node of within(summary).getAllByText(code)) expect(node).not.toBeVisible();
+  await user.click(within(summary).getByText("Технические причины Preview"));
+  for (const code of ["future_unknown", "__proto__"])
+    expect(within(summary).getByText(code)).toBeVisible();
   expect(
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).toBeEnabled();

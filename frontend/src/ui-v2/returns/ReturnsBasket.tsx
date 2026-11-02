@@ -217,7 +217,10 @@ export function ReturnsBasket({
                     <li key={cell.period.start}>
                       {periodLabel(cell.period)}:{" "}
                       {cell.value_kopecks === null ? "Не учтён" : money(cell.value_kopecks)}
-                      <Explanation codes={cell.reason_codes} />
+                      <Explanation
+                        codes={cell.reason_codes}
+                        context={{ month: periodLabel(cell.period), account: component.label }}
+                      />
                     </li>
                   ))}
                 </ul>

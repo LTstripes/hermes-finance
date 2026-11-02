@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useRef, useState } from "react";
 import { listAccounts } from "../api/accounts";
 import { confirmBrokerIdentityMapping } from "../api/brokerIdentityMappings";
@@ -51,44 +52,6 @@ export function verifyMyBrokerReadback(
     throw new Error("Сохранённые данные не совпали с предпросмотром. Проверь отчёт повторно.");
   }
 }
-
-const REASONS: Record<string, string> = {
-  instrument_disposition_reconciliation_required:
-    "Изменение принятого решения об инструменте требует отдельной сверки.",
-  mybroker_excluded_source_impact:
-    "Источник сохранён; для затронутой исторической доходности требуется полное подтверждение.",
-  pending_not_cash: "Есть нерассчитанная сделка: фактического денежного потока пока нет.",
-  endpoint_unsettled: "Фактическое и ожидаемое количество бумаг на конец периода различаются.",
-  trade_ids_incomplete:
-    "Не хватает одного из двух ID сделки: автоматическое сопоставление недоступно.",
-  settlement_cash_missing_or_ambiguous: "Денежная строка расчётов отсутствует или неоднозначна.",
-  commission_basis_unresolved: "Не установлено, включена ли комиссия в сумму расчётов.",
-  money_link_ambiguous: "Первый ID связан с несколькими сделками: нужна сверка.",
-  money_link_missing: "Для денежной строки не найдена сделка с полным ID.",
-  money_semantics_unsupported: "Есть денежные операции, для которых правила ещё не установлены.",
-  "4_Transfers_unsupported": "Операции перевода требуют отдельной сверки.",
-  "5_UFSR_unsupported": "В разделе UFSR есть неподдерживаемые данные.",
-  immutable_trade_conflict: "Изменились исходные условия сделки: нужна сверка.",
-  trade_material_conflict: "Повторная запись сделки содержит другие существенные данные.",
-  pending_disappeared: "Нерассчитанная сделка исчезла без подтверждённого расчёта.",
-  settled_to_pending_conflict: "Рассчитанная сделка снова отмечена как нерассчитанная.",
-  document_coverage_conflict:
-    "Те же байты отчёта уже сохранены с другим периодом или source account.",
-  accepted_mapping_conflict: "Сохранённое сопоставление изменилось: нужна сверка.",
-  accepted_class_coverage_requires_reconciliation:
-    "Данные могут противоречить принятому подтверждению периода. Сначала нужна сверка этого подтверждения.",
-  accepted_endpoint_quantity_conflict: "Количество бумаг расходится с принятым месячным срезом.",
-  accepted_parser_version_conflict:
-    "Документ уже сохранён другой версией разбора: загрузи отдельный отчёт за этот период.",
-  endpoint_beginning_quantity_unavailable:
-    "Нет начального количества позиции: endpoint-доказательства неполны.",
-  endpoint_value_unavailable:
-    "Нет начальной или конечной стоимости позиции: оценка не подтверждена.",
-  rub_money_unavailable: "Строка RUB-остатка не наблюдалась: остаток неизвестен, а не ноль.",
-  rub_money_incomplete: "В строке RUB-остатка отсутствует сумма начала или конца.",
-  position_row_unclassified: "Есть строка позиции без подтверждённого типа: она не сохранена.",
-  rub_money_ambiguous: "Найдено несколько строк RUB-остатка: однозначная сумма недоступна.",
-};
 
 export function MyBrokerImportPanel() {
   const [file, setFile] = useState<File | null>(null);
@@ -468,7 +431,7 @@ export function MyBrokerImportPanel() {
           })}
           <ul>
             {[...preview.conflicts, ...preview.blockers].map((reason) => (
-              <li key={reason}>{REASONS[reason] ?? "Есть данные, требующие отдельной сверки."}</li>
+              <li key={reason}>{reasonCopy(reason, { surface: "import" }).message}</li>
             ))}
           </ul>
           <label>

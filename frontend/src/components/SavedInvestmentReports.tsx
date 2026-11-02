@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery } from "@tanstack/react-query";
 import { formatApiError } from "../api/client";
 import { getInvestmentReports } from "../api/sourceReportPreview";
@@ -26,8 +27,9 @@ export function SavedInvestmentReports({ account, period }: { account?: string; 
             </summary>
             {proof.status !== "current" || !proof.interval ? (
               <p>
-                Свидетельство устарело: {proof.reason_codes.join(", ")}. Числа скрыты; нужна новая
-                проверка оригиналов.
+                Свидетельство устарело:{" "}
+                {proof.reason_codes.map((code) => reasonCopy(code).message).join("; ")}. Числа
+                скрыты; нужна новая проверка оригиналов.
               </p>
             ) : (
               <SourceReportResults
@@ -39,6 +41,12 @@ export function SavedInvestmentReports({ account, period }: { account?: string; 
                   intervals: [proof.interval],
                 }}
               />
+            )}
+            {!!proof.reason_codes.length && (
+              <details>
+                <summary>Подробности</summary>
+                <code>{proof.reason_codes.join(", ")}</code>
+              </details>
             )}
             <p>Предварительный расчёт по источникам, без финансового Apply и изменения CLOSED.</p>
           </details>

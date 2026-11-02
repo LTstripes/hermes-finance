@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import type { InstrumentObservations } from "../api/instrumentEodObservations";
 import { formatDate } from "../lib/format";
 import styles from "./UiV2CapitalPerformance.module.css";
@@ -11,32 +12,7 @@ const basisLabels = {
   not_applicable: "НКД не применим",
 };
 export function observationGap(reason: string): string {
-  if (reason === "exact_eod_position_missing")
-    return "На эту точную дату нет сохранённой позиции. Это не доказывает нулевое владение или стоимость.";
-  if (reason === "revision_journal_unavailable")
-    return "Нет надёжного журнала версий для этой границы.";
-  if (reason === "native_position_authority_unavailable")
-    return "Нет принятого native-подтверждения этой позиции.";
-  if (
-    reason === "historical_identity_or_mapping_changed" ||
-    reason === "historical_identity_unknown"
-  )
-    return "Историческая RUB-идентичность бумаги не подтверждена или привязка изменилась.";
-  if (reason === "bond_nkd_basis_unknown")
-    return "Учёт НКД неизвестен: сопоставимость двух оценок не подтверждена.";
-  if (reason === "bond_nkd_basis_incomparable")
-    return "Оценки по-разному учитывают НКД и несопоставимы.";
-  if (reason === "quantity_changed_not_profit")
-    return "Количество изменилось. Разница стоимости позиции не является прибылью.";
-  if (reason === "overlapping_endpoint_conflict")
-    return "Источники противоречат друг другу на этой EOD-дате.";
-  if (reason.includes("date") || reason.includes("period"))
-    return "Точная дата EOD или отчётный период не подтверждены.";
-  if (reason === "zero_inventory_entitlement_unproven")
-    return "Нулевое владение и отсутствие оставшихся прав на выплаты не подтверждены.";
-  if (reason === "archived_position_unavailable")
-    return "Архивная запись не подтверждает действующую EOD-оценку.";
-  return "Сохранённая оценка или её источник изменились; текущее подтверждение недоступно.";
+  return reasonCopy(reason, { surface: "observation" }).message;
 }
 
 export function InstrumentEodEvidence({ result }: { result: InstrumentObservations }) {

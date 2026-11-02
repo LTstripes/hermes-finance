@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
@@ -80,18 +81,7 @@ function stateCopy(target: ValuationCaptureTarget, relation: ValuationCaptureRel
 }
 
 function blockedCopy(reason: string | null): string {
-  switch (reason) {
-    case "ambiguous_sides":
-      return "У цели уже несколько записей одной стороны. Пара неоднозначна; этот ввод её не исправляет.";
-    case "group_membership_changed":
-      return "Состав или дата группы изменились. Нужна явная замена группы; отдельного редактора групп пока нет.";
-    case "target_identity_unavailable":
-      return "Текущая идентичность цели недоступна (история участия или состав). Сначала исправьте её — ввод наблюдений заблокирован.";
-    case "target_missing":
-      return "Цель больше не существует в текущей версии данных. Перечитайте данные.";
-    default:
-      return "Ввод наблюдений для этой цели сейчас не поддерживается.";
-  }
+  return reasonCopy(reason, { surface: "capture" }).message;
 }
 
 function SideEvidence({

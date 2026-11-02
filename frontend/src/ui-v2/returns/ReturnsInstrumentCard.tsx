@@ -351,6 +351,7 @@ export function ReturnsInstrumentCard({
                 <section key={account.scope}>
                   <h3>{accountLabels[account.scope] ?? account.label}</h3>
                   <Explanation
+                    context={{ account: account.label, instrument: data.name }}
                     codes={codes.length ? codes : ["all_history_source_proof_unavailable"]}
                   />
                 </section>

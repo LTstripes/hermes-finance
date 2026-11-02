@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import type { ClassReturnMetric, ClassReturns } from "../api/types";
 
 type State = "unsupported" | "incomplete" | "corrected" | "solver" | "undefined";
@@ -11,125 +12,92 @@ const STATE_LABELS: Record<State, string> = {
 };
 
 // Exact accepted codes, never substring classification or financial inference.
-const REASONS: Record<string, { state: State; detail: string }> = {
+const REASONS: Record<string, { state: State }> = {
   mybroker_class_reconciliation_required: {
     state: "incomplete",
-    detail:
-      "Данные MyBroker требуют исторической сверки операций и их класса. Импорт отчёта сам по себе не подтверждает интервал без движений.",
   },
   unsupported_class: {
     state: "unsupported",
-    detail:
-      "Доходность этого класса пока не поддерживается. Дополнительные подтверждения не откроют расчёт.",
   },
   unsupported_currency: {
     state: "unsupported",
-    detail: "Этот расчёт поддерживает только подтверждённые оценки в RUB.",
   },
   membership_incomplete_or_changed: {
     state: "incomplete",
-    detail: "История участия счетов неполна или изменилась.",
   },
   historical_universe_empty: {
     state: "incomplete",
-    detail: "Исторический состав портфеля не подтверждён.",
   },
   exact_endpoint_missing_or_ambiguous: {
     state: "incomplete",
-    detail: "Нет однозначной оценки на точную дату границы периода.",
   },
   reporting_month_not_closed: {
     state: "incomplete",
-    detail: "Отчёт на границе периода ещё не закрыт.",
   },
   historical_class_unknown: {
     state: "incomplete",
-    detail: "Историческая принадлежность позиций к классу не подтверждена.",
   },
   historical_class_reclassified: {
     state: "corrected",
-    detail: "Классификация позиций менялась в выбранном периоде.",
   },
   archived_position_incomplete: {
     state: "incomplete",
-    detail: "Подтверждения по архивным позициям неполны.",
   },
   cash_flow_class_unknown: {
     state: "incomplete",
-    detail: "Класс денежной операции не подтверждён.",
   },
   known_cash_crossing: {
     state: "corrected",
-    detail:
-      "Есть денежное движение через границу класса: интервал без таких движений не подтверждён.",
   },
   in_kind_class_unknown: {
     state: "incomplete",
-    detail: "Класс неденежного движения не подтверждён.",
   },
   external_in_kind_crossing: {
     state: "corrected",
-    detail: "Есть внешнее неденежное движение через границу класса.",
   },
   internal_transfer_ambiguous: {
     state: "incomplete",
-    detail: "Внутреннее перемещение не подтверждено однозначно.",
   },
   position_set_changed: {
     state: "corrected",
-    detail: "Состав позиций изменился: подтверждение интервала без движений неприменимо.",
   },
   position_quantity_changed: {
     state: "corrected",
-    detail: "Количество позиций изменилось: подтверждение интервала без движений неприменимо.",
   },
   class_endpoint_empty: {
     state: "undefined",
-    detail: "На границе периода нет позиций класса для расчёта доходности.",
   },
   no_crossing_coverage_missing_or_ambiguous: {
     state: "incomplete",
-    detail:
-      "Нет однозначного подтверждения отсутствия движений через границу класса за весь точный интервал.",
   },
   opening_class_inventory_not_complete: {
     state: "incomplete",
-    detail: "Полный состав класса на начальную дату не подтверждён.",
   },
   closing_class_inventory_not_complete: {
     state: "incomplete",
-    detail: "Полный состав класса на конечную дату не подтверждён.",
   },
   no_crossing_coverage_not_complete: {
     state: "incomplete",
-    detail: "Подтверждение отсутствия движений через границу класса не имеет статуса «полное».",
   },
   no_crossing_material_changed: {
     state: "corrected",
-    detail:
-      "Исходные факты изменились после подтверждения интервала. Подтверждение больше не действует.",
   },
   not_computable_xirr_no_valid_root: {
     state: "undefined",
-    detail: "Для подтверждённого ряда не существует допустимого значения XIRR.",
   },
   not_computable_twrr_zero_or_negative_denominator: {
     state: "undefined",
-    detail: "TWRR не определён при нулевом или отрицательном начальном капитале.",
   },
   not_computable_xirr_convergence_failed: {
     state: "solver",
-    detail: "Метод XIRR не сошёлся. Это численное ограничение, а не нехватка операций.",
   },
   not_computable_xirr_root_ambiguity: {
     state: "solver",
-    detail:
-      "Метод XIRR не может выбрать однозначный корень. Это ограничение метода, а не нехватка операций.",
   },
 };
 
 export function classReasonCopy(code: string): string {
-  return REASONS[code]?.detail ?? "API сообщил причину недоступности без описания для этого кода.";
+  return reasonCopy(code, { surface: "class" }).message;
 }
 
 export function classMetricState(metric: ClassReturnMetric, row: ClassReturns): string {

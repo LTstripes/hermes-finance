@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import type { SourceMetric, SourceReportPreview } from "../api/sourceReportPreview";
 import { fromKopecks } from "../lib/money";
 import { formatSourceReturnRate } from "../lib/sourceReturnFormat";
@@ -106,7 +107,10 @@ export function SourceReportResults({
               соответствовать одной строке PDF.
             </p>
             {a.reason_codes.length > 0 && (
-              <p>Ограничения результата счёта: {a.reason_codes.join(", ")}</p>
+              <p>
+                Ограничения результата счёта:{" "}
+                {a.reason_codes.map((code) => reasonCopy(code).message).join("; ")}
+              </p>
             )}
             <p>
               Проверка денежных остатков: {money(a.reconciliation.cash_delta_kopecks)}. расхождение
@@ -152,8 +156,8 @@ export function SourceReportResults({
               .filter((s) => s.reason_codes.length)
               .map((s) => (
                 <p key={s.isin}>
-                  {s.isin}: {s.reason_codes.join(", ")}. Известная часть:{" "}
-                  {money(s.known_subtotal.value)}.
+                  {s.isin}: {s.reason_codes.map((code) => reasonCopy(code).message).join("; ")}.
+                  Известная часть: {money(s.known_subtotal.value)}.
                 </p>
               ))}
             {a.unallocated_payouts.length > 0 && (
@@ -161,6 +165,20 @@ export function SourceReportResults({
                 Требуют решения: {a.unallocated_payouts.length} денежных строк выплат. Они учтены в
                 денежном остатке счёта, связь с бумагой не подтверждена.
               </p>
+            )}
+            {(a.reason_codes.length > 0 ||
+              a.instruments.some((s) => s.reason_codes.length > 0)) && (
+              <details>
+                <summary>Подробности</summary>
+                <code>
+                  {[
+                    ...new Set([
+                      ...a.reason_codes,
+                      ...a.instruments.flatMap((s) => s.reason_codes),
+                    ]),
+                  ].join(", ")}
+                </code>
+              </details>
             )}
             {(a.exceptions ?? []).map((item) => (
               <p key={item.reference}>

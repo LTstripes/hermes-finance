@@ -239,7 +239,11 @@ test("partial history shows server RUB subtotal with coverage and no invented ra
   expect(screen.queryByRole("region", { name: "За всю историю" })).toBeNull();
   const info = within(card).getByLabelText("Подробнее: Покрытие доступных месяцев");
   fireEvent.click(info);
-  expect(within(card).getByText("Не хватает стоимости на границе периода.")).toBeVisible();
+  expect(
+    within(card).getByText(
+      "Не хватает стоимости на границе периода. Месяц: 30.04.2030 — 31.05.2030.",
+    ),
+  ).toBeVisible();
   expect(within(card).getByText("Не учтён: 30.04.2030 — 31.05.2030")).toBeVisible();
 });
 

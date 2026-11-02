@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { listAccounts } from "../api/accounts";
@@ -12,35 +13,6 @@ import { formatApiError } from "../api/client";
 import { formatDate } from "../lib/format";
 import styles from "./BrokerStatementReturnDiagnostics.module.css";
 import { BrokerStatementWhatIfPanel } from "./BrokerStatementWhatIfPanel";
-
-const REASONS: Record<string, string> = {
-  account_crossing_coverage_unproved:
-    "Не подтверждён полный список датированных пополнений и выводов счёта.",
-  money_disposition_unresolved:
-    "H2 не может подтвердить назначение одного или нескольких денежных событий. Принятого Money proof может быть недостаточно для поддержки события в H2.",
-  legacy_cash_or_transfer_overlap:
-    "Есть денежные события или переводы без совместимого подтверждения H2.",
-  coupon_target_scope_conflict:
-    "Основания купона не соответствуют счёту, периоду или инструменту H2.",
-  material_account_exposure_unassessed:
-    "Не подтверждено влияние REPO, UFSR, custody или движений бумаг.",
-  statement_inventory_incomplete: "Не подтверждён полный состав счёта на обе даты.",
-  statement_endpoint_value_unavailable:
-    "Отсутствует подтверждённая оценка позиций или отдельный RUB cash.",
-  statement_source_revision_changed:
-    "Источник изменился после принятия; требуется актуальная проверка.",
-  statement_preview_stale:
-    "Основания изменились после просмотра. Обнови результат перед экспортом.",
-  frozen_dependency_changed: "Ранее подтверждённые основания изменились; требуется новая проверка.",
-  statement_account_evidence_invalid: "Нельзя проверить привязку источника к счёту.",
-  statement_dependencies_invalid: "Нельзя проверить актуальные основания принятой выписки.",
-  statement_overlapping_source: "Есть другой источник с пересекающимся периодом.",
-  statement_account_membership_unproved:
-    "Не подтверждена принадлежность полного состава источника выбранному счёту.",
-  not_computable_xirr_no_valid_root: "Для этих движений нет допустимого корня MWR.",
-  not_computable_xirr_root_ambiguity: "Нельзя подтвердить единственный корень MWR.",
-  not_computable_xirr_convergence_failed: "Численный расчёт не сошёлся с требуемой точностью.",
-};
 
 export default function BrokerStatementReturnDiagnostics({
   accountId,
@@ -165,7 +137,7 @@ export default function BrokerStatementReturnDiagnostics({
             {data.reason_codes.length > 0 && (
               <ul aria-label="Причины недоступности">
                 {data.reason_codes.map((r) => (
-                  <li key={r}>{REASONS[r] ?? `Не подтверждено основание: ${r}`}</li>
+                  <li key={r}>{reasonCopy(r, { surface: "brokerReturn" }).message}</li>
                 ))}
               </ul>
             )}
@@ -216,6 +188,7 @@ export default function BrokerStatementReturnDiagnostics({
             </a>
             <details>
               <summary>Источники и актуальность</summary>
+              {!!data.reason_codes.length && <code>{data.reason_codes.join(", ")}</code>}
               {data.sources.map((s) => (
                 <p key={s.import_id}>
                   Источник {s.import_id}: {s.document_sha256}

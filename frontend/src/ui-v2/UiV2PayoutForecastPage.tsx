@@ -1,3 +1,4 @@
+import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -68,14 +69,6 @@ import { DataMonthContext, UiV2DataFrame } from "./UiV2DataShell";
 import styles from "./UiV2PayoutForecast.module.css";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { UiV2StatementImportSection } from "./UiV2StatementImportSection";
-
-const APPLY_FAILURE_LABELS: Record<string, string> = {
-  preview_changed: "Предпросмотр изменился. Обнови его и проверь выбор.",
-  closed_month: "Месяц закрыт. Сначала открой его для редактирования.",
-  provider_error: "T-Invest не удалось безопасно перечитать данные. Ничего не применено.",
-  validation_error: "Выбранные строки больше нельзя применить в этом состоянии.",
-  persistence_error: "Не удалось сохранить выбранный набор. Все изменения отменены.",
-};
 
 const PAYOUT_OUTCOME_LABELS: Record<PayoutExecutionResult["outcome"], string> = {
   CONFIRMED: "Сохранение подтверждено",
@@ -611,7 +604,7 @@ function PayoutForecastTool({
     )
       return;
     if (readOnly) {
-      setActionError(APPLY_FAILURE_LABELS.closed_month);
+      setActionError(reasonCopy("closed_month", { surface: "payoutApply" }).message);
       return;
     }
     if (
@@ -647,7 +640,7 @@ function PayoutForecastTool({
     )
       return;
     if (readOnly) {
-      setActionError(APPLY_FAILURE_LABELS.closed_month);
+      setActionError(reasonCopy("closed_month", { surface: "payoutApply" }).message);
       return;
     }
     if (
@@ -840,7 +833,7 @@ function PayoutForecastTool({
           unresolved.outcome === "APPLIED_UNVERIFIED"
             ? UNCONFIRMED_READBACK_MESSAGE
             : unresolved.outcome === "STALE_NO_WRITE"
-              ? APPLY_FAILURE_LABELS.preview_changed
+              ? reasonCopy("preview_changed", { surface: "payoutApply" }).message
               : unresolved.message,
         );
       setPreview(null);

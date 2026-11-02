@@ -220,3 +220,31 @@ test("global refresh reads the panel once; changed dependency facts still invali
   expect(listPayoutCalendar).toHaveBeenCalledTimes(3);
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });
+
+test.each(["available", "closed", "dirty", "no-action", "unknown"])(
+  "reason copy and remediation match the actual payout screen: %s",
+  async (mode) => {
+    const code =
+      mode === "no-action"
+        ? "position_not_positive"
+        : mode === "unknown"
+          ? "future_valuation_flow_error"
+          : "mapping_ambiguous";
+    vi.mocked(getDraftPayoutContext).mockResolvedValue({
+      ...context,
+      items: [{ ...context.items[0], eligible: false, reason_codes: [code] }],
+    });
+    show({ closed: mode === "closed", disabled: mode === "dirty" });
+    await screen.findByText(/Что требует проверки/);
+    expect(screen.getByText(code)).not.toBeVisible();
+    if (mode === "available")
+      expect(screen.getByRole("link", { name: "Исправить" })).toHaveAttribute(
+        "href",
+        "/v2/data/catalogs",
+      );
+    else expect(screen.queryByRole("link", { name: "Исправить" })).toBeNull();
+    if (mode === "unknown") expect(screen.getByText("Значение сейчас недоступно")).toBeVisible();
+    expect(screen.getByText(/Счёт 1 · Бумага · RU000A000000/)).toBeVisible();
+    expect(refreshDraftPayouts).not.toHaveBeenCalled();
+  },
+);

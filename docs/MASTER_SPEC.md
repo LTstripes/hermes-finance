@@ -870,6 +870,8 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 
 User-facing основной поток не должен содержать ссылки вида `MASTER_SPEC §...`, endpoint names (`/api/...`), storage names (`income_type=...`) и слова `backend` как объяснение поведения. Такие детали допустимы только в Diagnostics/technical details.
 
+Тексты reason codes и ссылки на доступное исправление берутся из единого frontend-словаря `lib/reasonCopy.ts` с контекстом месяца, счёта и инструмента. Неизвестная причина отображается как «Значение сейчас недоступно»; сырой код остаётся только в диагностике/«Подробностях». «Исправить» показывается лишь при доступном действии. Перевод не меняет доступность расчёта и серьёзность причины.
+
 
 <a id="p6-030-55-14-fact--forecast--goal"></a>
 #### 1.4 Fact / Forecast / Goal

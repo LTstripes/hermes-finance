@@ -1,3 +1,4 @@
+import { reasonCopy } from "../../lib/reasonCopy";
 import type { NextMonthOutlook as NextMonthOutlookModel } from "../../api/monthCloseWorkflow";
 import type { CashFlowLadderEvent, MoneyValue, UpcomingEventsWindow } from "../../api/types";
 import { formatDate, formatMonth } from "../../lib/format";
@@ -20,16 +21,8 @@ function eventLabel(event: CashFlowLadderEvent): string {
   return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${event.instrument_name ?? event.account_name}`;
 }
 
-const OUTLOOK_UNAVAILABLE_LABELS: Record<string, string> = {
-  outlook_not_available_until_closed:
-    "Данные следующего месяца появятся после закрытия текущего отчёта.",
-  outlook_section_unavailable:
-    "Для следующего месяца пока недостаточно подтверждённых датированных данных.",
-};
-
 function unavailableReason(reasonCode: string | null): string {
-  if (!reasonCode) return "Причина недоступности не указана.";
-  return OUTLOOK_UNAVAILABLE_LABELS[reasonCode] ?? "Причина недоступности не распознана.";
+  return reasonCopy(reasonCode, { surface: "outlook" }).message;
 }
 
 function WindowSummary({ window }: { window: UpcomingEventsWindow }) {

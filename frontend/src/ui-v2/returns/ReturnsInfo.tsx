@@ -1,94 +1,9 @@
+import { Link } from "react-router";
+import { reasonCopy, type ReasonContext } from "../../lib/reasonCopy";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { displayMetric, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
-const reasons: Record<string, string> = {
-  known_instrument_accounts_only:
-    "Сумма известных значений по показанным счетам; пробелы отмечены отдельно.",
-  combined_rate_periods_and_flows_not_proven:
-    "Общий процент по счетам не подтверждён: периоды и денежные потоки проверяются отдельно.",
-  source_sections_not_financially_accepted:
-    "Это аналитические данные выписки; они не заменяют данные финансового закрытия месяца.",
-  known_source_history_coupons_only:
-    "Учтены только известные полученные купоны из сохранённой истории выписок каждого включённого счёта.",
-  current_coupon_history_unavailable:
-    "Актуальная проверенная история купонов этого счёта недоступна; старые значения не подставляются.",
-  coupon_income_unavailable: "Сумма полученных купонов по этому счёту не подтверждена.",
-  coupon_history_accounts_missing_or_excluded:
-    "По части счетов история отсутствует либо счёт исключён; доступные купоны остальных счетов сохранены.",
-  coupon_account_history_periods_differ:
-    "Границы доступной истории купонов различаются по счетам и приведены отдельно.",
-  source_account_identity_mapping_conflict:
-    "Соответствие источника каноническому счёту конфликтует; компонент не включён в известный итог.",
-  source_proof_stale: "Проверка выписок устарела; требуется актуальное подтверждение.",
-  known_components_only:
-    "В известный результат входят только включённые компоненты с подтверждённой основой и отсутствием пересечений.",
-  source_only_not_financial_close:
-    "Основа — сохранённые выписки; данные не означают принятие финансового месяца.",
-  all_history_source_proof_absent: "Проверенный расчёт за всю историю отсутствует.",
-  all_history_source_proof_unavailable: "Проверенный расчёт за всю историю недоступен.",
-  instrument_name_unavailable: "Название бумаги не подтверждено; используется точный ISIN.",
-  instrument_name_conflict:
-    "В источниках различаются названия; навигация связана только по точному ISIN.",
-  known_received_interest_only: "Включены только известные фактически полученные проценты.",
-  deposit_full_history_not_proven: "Полнота истории депозитов не подтверждена.",
-  draft_deposit_interest_excluded: "Проценты из черновиков не включены в известный итог.",
-  gold_period_return_unproven: "Результат золота за период не подтверждён.",
-  snapshot_result_not_period_return:
-    "Результат сохранённого снимка не является доходностью периода.",
-  saved_snapshot_unrealized_only: "Доступен только сохранённый нереализованный результат.",
-  current_catalogue_gold_classification: "Классификация золота основана на текущем справочнике.",
-  historical_gold_classification_unproven: "Историческая классификация золота не подтверждена.",
-  gold_snapshot_cost_result_missing_or_conflicting:
-    "Стоимость, затраты или результат снимка отсутствуют либо противоречат друг другу.",
-  gold_cost_return_denominator_unavailable:
-    "Нет подтверждённых положительных затрат для процентного результата.",
-  gold_dated_trade_history_unavailable: "Подтверждённая история сделок с золотом недоступна.",
-  overall_aggregation_pending_review:
-    "Общий результат по категориям и общая процентная доходность пока не подтверждены. Доступные компоненты показаны отдельно.",
-
-  historical_brokerage_iis_type_unproven:
-    "Исторический тип счёта не подтверждён. Для известной части по всем выпискам включите и брокерские счета, и ИИС.",
-  basket_native_identity_unproven:
-    "Идентичность счёта или его aliases не подтверждена однозначно; сумма исключена.",
-  basket_account_identity_overlap:
-    "Представления счетов пересекаются или противоречат друг другу. Сумма исключена во избежание двойного учёта.",
-  basket_crossing_reconciliation_unavailable:
-    "Есть движения через границу счёта или сведения о переводе. Их общий эффект и расходы для выбранной корзины не подтверждены; месяц исключён.",
-  accepted_basket_pnl_and_category_unproven:
-    "Подтверждённый денежный мост счёта не является P&L этой корзины; историческая категория также не подтверждена.",
-  source_inventory_unproven: "Состав счетов по выпискам не подтверждён.",
-  deposit_inventory_unproven: "Нет наблюдений, доказывающих состав депозитов за период.",
-  deposit_snapshot_missing:
-    "В этом месяце нет наблюдения по депозитам этого счёта. Это не нулевые проценты.",
-  calendar_month_missing_or_not_closed:
-    "Нет единственного закрытого отчёта за этот календарный месяц.",
-  physical_gold_period_evidence_unavailable:
-    "Доходность физического золота за период не подтверждена. Текущая стоимость и прирост от цены покупки её не заменяют.",
-  missing_endpoint: "Не хватает стоимости на границе периода.",
-  missing_quantity: "Не подтверждено количество на границе периода.",
-  unknown_flow: "Не все движения денег определены.",
-  unknown_flows: "Не все движения денег определены.",
-  flow_coverage_gap: "История движений денег покрывает период не полностью.",
-  incomplete_source_coverage: "Выписки покрывают период не полностью.",
-  bond_valuation_basis_unknown: "Для полного результата облигации нужен НКД на обеих границах.",
-  non_positive_dietz_denominator: "Нет положительной базы для расчёта процента.",
-  income_interval_unavailable: "Полученные выплаты за весь этот интервал не подтверждены.",
-  interval_rate_unavailable:
-    "Расчёт процента для этих границ пока недоступен. Выберите месяц или готовый интервал.",
-  accepted_income_breakdown_unavailable:
-    "Подтверждённый расчёт не содержит отдельного итога выплат. Они доступны для счетов в группе «По выпискам».",
-  accepted_instrument_breakdown_unavailable:
-    "Подтверждённый расчёт портфеля не содержит доходности отдельных бумаг. Выберите счёт в группе «По выпискам».",
-  payout_link_stale: "Связь выплаты с бумагой требует повторной проверки.",
-  source_period_inferred: "Даты остатков в выписке не подтверждены.",
-  seam_mismatch: "Остатки соседних периодов расходятся.",
-  calendar_month_not_closed: "За этот месяц пока нет закрытого отчёта.",
-  calendar_month_missing: "Нет результата за полный календарный месяц.",
-  calendar_month_ambiguous: "Нельзя однозначно выбрать результат месяца.",
-  calendar_month_unavailable: "Результат месяца недоступен.",
-  partial_calendar_month: "Неполный календарный месяц не включён в сумму.",
-};
 const methods: Record<string, string> = {
   known_source_history_coupons:
     "Сумма купонов по уникальным счетам, рассчитанная сервером по актуальной сохранённой истории. Суммы инструментов и месячные наблюдения повторно не добавляются.",
@@ -110,20 +25,34 @@ const methods: Record<string, string> = {
   PERF04A: "Изменение стоимости после внешних пополнений и снятий, по подтверждённым отчётам.",
   twrr: "Доходность TWRR за выбранный период, по подтверждённым отчётам.",
 };
-export function Explanation({ codes }: { codes: string[] }) {
-  const texts = [
-    ...new Set(
-      codes.map(
-        (c) =>
-          reasons[c] ?? "Для этого значения не хватает проверенных данных за выбранный период.",
-      ),
-    ),
+export function Explanation({ codes, context }: { codes: string[]; context?: ReasonContext }) {
+  const copy = [
+    ...new Map(
+      codes.map((code) => {
+        const value = reasonCopy(code, { surface: "returns", ...context });
+        return [value.message, value];
+      }),
+    ).values(),
   ];
   return (
     <>
-      {texts.map((text) => (
-        <p key={text}>{text}</p>
+      {copy.map(({ message, action }) => (
+        <p key={message}>
+          {message}
+          {action && (
+            <>
+              {" "}
+              <Link to={action.href}>{action.label}</Link>
+            </>
+          )}
+        </p>
       ))}
+      {codes.length > 0 && (
+        <details>
+          <summary>Подробности</summary>
+          <code>{[...new Set(codes)].join(", ")}</code>
+        </details>
+      )}
     </>
   );
 }
