@@ -37,7 +37,6 @@ const CARD_SECTIONS: Record<string, string[]> = {
 };
 
 const STEP_TITLES: Record<string, string> = {
-  alfa_baseline: "Состав портфеля Alfa",
   market_quotes: "Рыночные цены",
   actual_payouts: "Фактические выплаты",
   future_payouts: "Будущие выплаты",
@@ -391,18 +390,6 @@ function ReadinessDetails({
             ) : (
               <p className="muted">Провайдерских сведений нет.</p>
             )}
-          </section>
-
-          <section>
-            <h3>Сверка Alfa</h3>
-            <p className="muted">
-              {review.reconciliation_availability.available
-                ? "Есть результат текущей проверки."
-                : "Результат не получен: проверка запускается отдельно и здесь не сохраняется."}
-            </p>
-            {review.reconciliation_availability.reason_code ? (
-              <code>{review.reconciliation_availability.reason_code}</code>
-            ) : null}
           </section>
         </div>
       </details>

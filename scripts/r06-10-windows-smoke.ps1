@@ -3,8 +3,8 @@ param()
 
 # R06-10 canonical Windows production smoke.
 # Isolated temp DB. Hits only local health/months/frontend.
-# Does not invoke quote/payout/broker-snapshot/statement preview or apply,
-# so it does not make a live T-Invest or Alfa PRO request. Settings may
+# Does not invoke quote/payout/statement preview or apply,
+# so it does not make a live T-Invest request. Settings may
 # still load the ignored repository-root .env; this script does not prove
 # the token file was unread. It must not print or expose a token.
 # Proves the production listener is exactly 127.0.0.1:8000

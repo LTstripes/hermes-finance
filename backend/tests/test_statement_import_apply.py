@@ -1210,14 +1210,12 @@ def test_incompatible_link_existing_is_rejected(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-def test_apply_modules_have_no_network_ocr_or_alfa_live_imports() -> None:
+def test_apply_modules_have_no_network_or_ocr_imports() -> None:
     files = [
         Path(inspect.getfile(apply_income_report_preview)).resolve(),
         Path(inspect.getfile(create_applied_statement_event)).resolve(),
     ]
     forbidden_modules = {
-        "hermes_finance.broker_data.alfa_pro.adapter",
-        "hermes_finance.alfa_pro_probe",
         "httpx",
         "httpx2",
         "requests",

@@ -1,6 +1,8 @@
 # ADR 0010 — Market-data and broker-data provider strategy
 
-**Status:** Accepted  
+**Status:** Superseded (Alfa Pro decision only; T-Invest market-data strategy remains in force)
+
+Alfa Pro functionality was removed by [#1036](https://github.com/LTstripes/hermes-finance/issues/1036). This ADR is retained as decision history. Accepted records and generic broker identity/source handling remain supported under [C4](../ARCHITECTURE_AND_CONTRACTS.md#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19).
 **Date:** 2026-08-13  
 **Release line:** `r04` / 0.4.x
 

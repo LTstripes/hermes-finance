@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccount, deleteAccount, listAccounts, updateAccount } from "../api/accounts";
 import {
   confirmBrokerIdentityMapping,
-  listEffectiveBrokerIdentityMappings,
+  listBrokerIdentityMappings,
   remapBrokerIdentityMapping,
   revokeBrokerIdentityMapping,
 } from "../api/brokerIdentityMappings";
@@ -27,7 +27,7 @@ vi.mock("../api/accounts", () => ({
 
 vi.mock("../api/brokerIdentityMappings", () => ({
   confirmBrokerIdentityMapping: vi.fn(),
-  listEffectiveBrokerIdentityMappings: vi.fn(),
+  listBrokerIdentityMappings: vi.fn(),
   remapBrokerIdentityMapping: vi.fn(),
   revokeBrokerIdentityMapping: vi.fn(),
 }));
@@ -136,7 +136,7 @@ const getInstrumentCleanupMock = vi.mocked(getInstrumentCleanup);
 const getInstrumentMappingMock = vi.mocked(getInstrumentMapping);
 const discoverInstrumentMappingMock = vi.mocked(discoverInstrumentMapping);
 const listMonthsMock = vi.mocked(listMonths);
-const listBrokerMappingsMock = vi.mocked(listEffectiveBrokerIdentityMappings);
+const listBrokerMappingsMock = vi.mocked(listBrokerIdentityMappings);
 const confirmBrokerMappingMock = vi.mocked(confirmBrokerIdentityMapping);
 const remapBrokerMappingMock = vi.mocked(remapBrokerIdentityMapping);
 const revokeBrokerMappingMock = vi.mocked(revokeBrokerIdentityMapping);
@@ -279,7 +279,7 @@ describe("UiV2DataCatalogsPage", () => {
     expect(deleteInstrumentMock).not.toHaveBeenCalled();
   });
 
-  it("keeps broker identity mappings read-only until an explicit action", async () => {
+  it("reads historical broker mappings without offering mutations", async () => {
     listBrokerMappingsMock.mockResolvedValue([brokerMapping()]);
     const user = userEvent.setup();
     renderPage();

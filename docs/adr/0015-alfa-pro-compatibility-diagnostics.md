@@ -1,6 +1,8 @@
 # ADR-0015: Alfa PRO compatibility fingerprint and safe diagnostics
 
-Status: Implemented for R07-T01
+Status: Superseded
+
+Alfa Pro functionality was removed by [#1036](https://github.com/LTstripes/hermes-finance/issues/1036). This ADR is retained as decision history; [C4](../ARCHITECTURE_AND_CONTRACTS.md#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19) owns retained-data compatibility.
 
 ## Context
 

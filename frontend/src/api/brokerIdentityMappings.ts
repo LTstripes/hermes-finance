@@ -34,12 +34,12 @@ export type BrokerIdentityMappingRemapPayload = {
   captured_at?: string | null;
 };
 
-export function listBrokerIdentityMappings(provider: string, signal?: AbortSignal) {
-  const query = new URLSearchParams({ provider });
-  return apiRequest<BrokerIdentityMapping[]>(`/api/broker-identity-mappings?${query.toString()}`, {
-    method: "GET",
-    signal,
-  });
+export function listBrokerIdentityMappings(provider?: string, signal?: AbortSignal) {
+  const query = new URLSearchParams(provider ? { provider } : {});
+  return apiRequest<BrokerIdentityMapping[]>(
+    `/api/broker-identity-mappings${query.size ? `?${query.toString()}` : ""}`,
+    { method: "GET", signal },
+  );
 }
 
 export async function listEffectiveBrokerIdentityMappings(

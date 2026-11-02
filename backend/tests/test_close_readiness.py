@@ -88,11 +88,9 @@ STOCK_UID = "11111111-1111-1111-1111-111111111111"
 BOND_UID = "33333333-3333-3333-3333-333333333333"
 EXPECTED_WORKFLOW_STEP_IDS = [
     "month_setup",
-    "alfa_baseline",
     "market_quotes",
     "actual_payouts",
     "future_payouts",
-    "broker_reconciliation",
     "readiness",
     "final_review_close",
     "next_month_outlook",
@@ -207,7 +205,6 @@ def test_empty_january_draft_can_close_with_warning(tmp_path: Path) -> None:
         FreshnessReasonCode.STATEMENT_NONE_FOR_MONTH.value,
         FreshnessReasonCode.MANUAL_MONTH_DATA_EMPTY.value,
         FreshnessReasonCode.DEPOSIT_CASH_EMPTY.value,
-        FreshnessReasonCode.ALFA_PRO_OBSERVATION_NOT_PERSISTED.value,
         CloseReadinessCode.PROVENANCE_SUMMARY.value,
         CloseReadinessCode.BACKUP_NONE.value,
     }
@@ -660,7 +657,6 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
         database,
         market_data_provider=_FailIfCalledProvider(),
         payout_provider=_FailIfCalledProvider(),
-        broker_snapshot_provider=_FailIfCalledProvider(),
     )
     application.state.quote_preview_clock = lambda: date(2031, 5, 31)
     application.state.freshness_generated_at = lambda: datetime(
@@ -680,14 +676,13 @@ def test_workflow_api_is_month_scoped_read_only_and_provider_free(tmp_path: Path
         "snapshot_date": "2031-05-31",
         "source": "manual",
     }
-    assert body["recommended_step_id"] == "alfa_baseline"
-    assert [step["order"] for step in body["steps"]] == list(range(1, 10))
+    assert body["recommended_step_id"] == "actual_payouts"
+    assert [step["order"] for step in body["steps"]] == list(range(1, 8))
     draft_step_ids = [step["id"] for step in body["steps"]]
     assert draft_step_ids == EXPECTED_WORKFLOW_STEP_IDS
     assert len(draft_step_ids) == len(set(draft_step_ids))
     assert body["steps"][0]["state"] == "completed"
     assert body["steps"][0]["completion_basis"] == "domain_fact"
-    assert body["steps"][1]["evidence_summary"]["available"] is False
     assert body["readiness"]["can_close"] is True
     assert "empty_manual_month" in body["readiness"]["reason_codes"]
     assert body["readiness"]["warning_count"] == 2
@@ -800,7 +795,7 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     closed_step_ids = [step["id"] for step in closed["steps"]]
     assert closed_step_ids == EXPECTED_WORKFLOW_STEP_IDS
     assert len(closed_step_ids) == len(set(closed_step_ids))
-    assert [step["order"] for step in closed["steps"]] == list(range(1, 10))
+    assert [step["order"] for step in closed["steps"]] == list(range(1, 8))
     assert (
         next(step for step in closed["steps"] if step["id"] == "final_review_close")["state"]
         == "completed"
@@ -817,7 +812,7 @@ def test_closed_workflow_has_no_close_action_and_reopen_is_rederived(tmp_path: P
     reopened = client.get(f"/api/months/{month.id}/close-workflow").json()
     assert reopened["month"]["status"] == "draft"
     assert reopened["month"]["id"] == month.id
-    assert reopened["recommended_step_id"] == "alfa_baseline"
+    assert reopened["recommended_step_id"] == "actual_payouts"
     assert reopened["outlook"] is None
 
 
@@ -829,7 +824,7 @@ def _workflow_step(client: TestClient, month_id: int, step_id: str) -> dict:
 
 def _seed_baseline_evidence(session, month, snapshot: PositionSnapshot) -> None:
     applied = BrokerBaselineApply(
-        provider="alfa_pro",
+        provider="synthetic_broker",
         reporting_month_id=month.id,
         baseline_date=month.snapshot_date,
         source_as_of=FETCHED_AT,
@@ -849,53 +844,6 @@ def _seed_baseline_evidence(session, month, snapshot: PositionSnapshot) -> None:
         )
     )
     session.commit()
-
-
-def test_workflow_derives_alfa_selected_evidence_and_narrow_staleness(tmp_path: Path) -> None:
-    session, database = session_for(tmp_path)
-    month = create_reporting_month(session, year=2031, month=5, snapshot_date=date(2031, 5, 31))
-    account = create_account(session, name="Alfa", account_type=AccountType.BROKERAGE)
-    instrument = create_instrument(
-        session, name="Synthetic share", instrument_type=InstrumentType.STOCK
-    )
-    snapshot = create_position_snapshot(
-        session,
-        reporting_month_id=month.id,
-        account_id=account.id,
-        instrument_id=instrument.id,
-        quantity="2",
-        average_cost_per_unit="100.00",
-        market_price_per_unit="100.00",
-        price_date=month.snapshot_date,
-    )
-    session.commit()
-    _seed_baseline_evidence(session, month, snapshot)
-    client = TestClient(create_app(database))
-
-    completed = _workflow_step(client, month.id, "alfa_baseline")
-    assert completed["state"] == "completed"
-    assert completed["evidence_scope"] == "selected_rows_only"
-    assert completed["evidence_summary"] == {
-        "available": True,
-        "coverage_scope": "selected_rows_only",
-        "selected_count": 1,
-        "matching_count": 1,
-        "stale_count": 0,
-    }
-
-    stage_update_position_snapshot(session, snapshot.id, quantity="3")
-    session.commit()
-    quantity_changed = _workflow_step(client, month.id, "alfa_baseline")
-    assert quantity_changed["state"] == "warning"
-    assert "baseline_quantity_changed" in quantity_changed["reason_codes"]
-    assert quantity_changed["stale"]["is_stale"] is True
-
-    stage_update_position_snapshot(session, snapshot.id, quantity="2")
-    month.snapshot_date = date(2031, 6, 30)
-    session.commit()
-    date_changed = _workflow_step(client, month.id, "alfa_baseline")
-    assert date_changed["state"] == "warning"
-    assert "baseline_date_changed" in date_changed["reason_codes"]
 
 
 def test_workflow_keeps_quote_current_on_quantity_change_and_detects_remap(
@@ -985,7 +933,6 @@ def test_nonblocking_quote_warning_keeps_payout_action_and_close_available(
         database,
         market_data_provider=_FailIfCalledProvider(),
         payout_provider=_FailIfCalledProvider(),
-        broker_snapshot_provider=_FailIfCalledProvider(),
     )
     application.state.quote_preview_clock = lambda: target_date
     application.state.freshness_generated_at = lambda: datetime(
@@ -1106,7 +1053,6 @@ def test_workflow_does_not_skip_unmapped_position_without_payout_evidence(
             database,
             market_data_provider=_FailIfCalledProvider(),
             payout_provider=_FailIfCalledProvider(),
-            broker_snapshot_provider=_FailIfCalledProvider(),
         )
     )
 
@@ -1199,7 +1145,6 @@ def test_workflow_derives_future_payout_dependencies_without_provider_calls(tmp_
             database,
             market_data_provider=_FailIfCalledProvider(),
             payout_provider=_FailIfCalledProvider(),
-            broker_snapshot_provider=_FailIfCalledProvider(),
         )
     )
 
@@ -1296,7 +1241,6 @@ def test_final_review_reuses_dashboard_authorities_and_keeps_optional_cards_expl
             database,
             market_data_provider=_FailIfCalledProvider(),
             payout_provider=_FailIfCalledProvider(),
-            broker_snapshot_provider=_FailIfCalledProvider(),
         )
     )
 
@@ -1316,10 +1260,6 @@ def test_final_review_reuses_dashboard_authorities_and_keeps_optional_cards_expl
     assert final_review["important_future_events"]["next_month"]["passive_income"] is None
     assert final_review["investments"]["available"] is False
     assert final_review["investments"]["reason_code"] == "no_position_snapshots"
-    assert final_review["reconciliation_availability"] == {
-        "available": False,
-        "reason_code": "reconciliation_not_run",
-    }
 
 
 def test_closed_outlook_uses_next_calendar_month_and_separates_redemption_principal(
@@ -1356,7 +1296,6 @@ def test_closed_outlook_uses_next_calendar_month_and_separates_redemption_princi
             database,
             market_data_provider=_FailIfCalledProvider(),
             payout_provider=_FailIfCalledProvider(),
-            broker_snapshot_provider=_FailIfCalledProvider(),
         )
     )
     body = client.get(f"/api/months/{month.id}/close-workflow").json()
@@ -1436,7 +1375,7 @@ def test_user_close_retains_source_gaps_and_unfinished_steps_after_reload(
         )
         stages = {step["id"]: step for step in current["steps"]}
         assert stages["final_review_close"]["state"] == "completed"
-        for step_id in ("future_payouts", "broker_reconciliation", "readiness"):
+        for step_id in ("future_payouts", "readiness"):
             assert stages[step_id]["state"] != "completed"
             assert stages[step_id]["completion_basis"] != "month_closed"
             assert stages[step_id]["primary_action"] is None

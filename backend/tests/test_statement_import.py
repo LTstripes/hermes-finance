@@ -867,7 +867,6 @@ def test_package_has_no_persistence_ocr_or_network_imports() -> None:
     forbidden_modules = {
         "hermes_finance.persistence",
         "hermes_finance.services.investment_cash_flows",
-        "hermes_finance.broker_data.alfa_pro.adapter",
         "httpx",
         "httpx2",
         "requests",

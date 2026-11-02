@@ -3266,115 +3266,49 @@ separately accepted generation/version mechanism. #608 must not silently introdu
 must keep its separate stale-form/restore/duplicate-protection identity.
 
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19"></a>
-### Reusable broker mappings and explicitly approved baseline
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-non-negotiable-invariants"></a>
-#### Non-negotiable invariants
-
-These remain authoritative and are not weakened:
-
-- local single-user product; loopback-only; no cloud/auth/telemetry/trading/background refresh;
-- exact money: `Decimal` / integer minor units, `ROUND_HALF_UP`, no binary `float` in financial logic;
-- a CLOSED reporting month is immutable until explicit reopen;
-- Hermes identity stays canonical; provider IDs are projections (ADR 0013 §6);
-- frontend is not the financial source of truth;
-- no raw Alfa payloads, credentials, runtime paths, or private diagnostic artifacts in Git, logs, API, or persistence;
-- existing historical imports (manual, Excel, T-Invest quotes/payouts, Alfa depository PDF statements) remain historical truth and are not re-imported or rewritten by a current-state baseline.
-
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-current-accepted-surface-baseline-of-this-contract"></a>
-#### Current accepted surface (baseline of this contract)
-
-This ADR is written against current `r07` `67fa84653be23c05852f2e05bd0c4bcd39c879f9`.
-
-| Surface | What it already does | What it must not be mistaken for |
-|---|---|---|
-| `BrokerSnapshotProvider` / Alfa PRO adapter (ADR 0013, R06-03) | Owner-triggered read-only current snapshot | Historical ledger, cash-flow import, trading |
-| R06-04 matching / preview | Explicit account mapping; explicit instrument mapping; exact unique ISIN; fail-closed conflicts | Persistent mapping store |
-| R07-08A normalized reconciliation | Read-only row states; comparison-only provider valuation fields; `eligible_for_apply=false` | Apply path |
-| R06-05 `broker_snapshot_apply` | Selective quantity apply into one editable month; dependent average cost / market price / NKD are owner-local decisions; closed-month refusal; fingerprint stale-preview protection; identical quantity + `keep_existing` dependents is `unchanged` | Persistent mappings; cash apply; provider price/UchPrice/NKD/P&L as Hermes values |
-| `instrument_market_mappings` | Market-data quote identity (T-Invest `instrument_uid` / historical MOEX board identity) | Broker account/position identity |
-| Alfa depository PDF import | Per-import transient statement mapping | Broker snapshot mapping |
-| R07-07 `alfa_pro_positions` freshness family | Always `unknown` because Alfa observation timestamps are **not** persisted after quantity apply | A freshness clock invented from `updated_at` or apply time |
-
-R06-05 already implements the quantity write the owner needs. The missing contract is: **when** a current snapshot may become the trusted current-state boundary, **which** Alfa fields may persist, and **how** owner-confirmed mappings are reused without silent remap.
-
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-decision"></a>
-#### Decision
-
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-1-introduce-a-persistent-broker-identity-mapping-registry"></a>
-#### 1. Introduce a persistent broker-identity mapping registry
-
-Add a local, owner-controlled **broker identity mapping registry**, separate from market-data mappings and from statement-import mappings.
-
-The registry stores provider-scoped **account** and **instrument** identity links that the owner has explicitly confirmed. Subsequent broker snapshot preview/reconciliation **pre-populates** those links into the existing `OwnerMappingInput` shape and labels them as reused. The existing matcher remains the resolver. This ADR does not invent a second matching engine.
-
-Logical record (storage shape is an implementation decision; these fields are normative):
-
-```text
-BrokerIdentityMapping
-    mapping_id
-    provider                  # e.g. alfa_pro; later t_invest broker snapshot
-    subject_kind              # account | instrument
-    provider_identity         # opaque provider key; see §3
-    hermes_target_id          # accounts.id or instruments.id
-    status                    # effective | revoked | superseded
-    observed_isin             # instruments only; optional evidence at confirmation
-    confirmed_at
-    source_as_of              # snapshot observation time used at confirmation
-    captured_at
-    predecessor_mapping_id    # set on remap
-    successor_mapping_id      # set when this row is superseded
-    revoked_at / revoke_reason
-```
-
-Append-only lifecycle: confirm, revoke, and remap insert or status-transition history. They must not rewrite the original confirmation tuple `(provider, subject_kind, provider_identity, hermes_target_id, confirmed_at)`. Historical `PositionSnapshot` rows are never rewritten because a mapping later changes.
-
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-2-registry-is-not-the-other-mapping-tables"></a>
-#### 2. Registry is not the other mapping tables
-
-| Store | Bounded context | Canonical key | This ADR |
-|---|---|---|---|
-| `instrument_market_mappings` | Market quotes (ADR 0009 / 0010) | provider + `provider_instrument_id` (+ venue) | Unchanged. T-Invest quote `instrument_uid` stays here. |
-| Statement import mappings | Alfa depository PDF inspect/prepare/apply | Per-import ISIN/account mapping | Unchanged. Transient per import. |
-| **Broker identity mapping registry** | Broker current holdings identity | `(provider, subject_kind, provider_identity)` | **New.** First implemented provider: `alfa_pro`. |
-
-Copying or inferring broker mappings from market mappings, statement mappings, account names, `external_code`, tickers, section codes, or `IIAType` is forbidden. No automatic backfill from legacy data.
-
-The registry is provider-neutral so a future T-Invest **broker** snapshot adapter (ADR 0010) can store `t_invest` account/instrument holdings identity without sharing the quote-mapping table. This ADR does not implement T-Invest broker import.
-
-
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-3-provider-identity-keys"></a>
-#### 3. Provider identity keys
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-5-resolution-order-preview"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-6-when-the-registry-may-be-written"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-7-owner-approved-current-state-baseline"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-8-baseline-provenance-minimum-persist"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-9-existing-historical-data-and-coexistence"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-10-alfa-fields-persist-vs-comparison-only-vs-ignored"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-101-may-persist-minimum"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-102-comparison-only--preview-may-show-never-write-as-hermes-financial-truth"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-103-unresolved--ignored--do-not-map-persist-or-infer"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-11-synthetic-acceptance-examples"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e1--first-time-mapping"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e2--reused-mapping-next-run"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e3--new-instrument"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e4--changed-provider-account-identity"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e5--conflicting-isin"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e6--revoked-then-remapped"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e7--identical-baseline-rerun"></a>
+<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e8--closed-month-refusal"></a>
+### Broker identity registry and retained baseline history
 
-Hermes local `account_id` / `instrument_id` remain canonical.
+[#1036](https://github.com/LTstripes/hermes-finance/issues/1036) retires Alfa Pro transport, diagnostics, snapshot preview/apply and live reconciliation. The removed APIs are `POST /api/months/{month_id}/broker-snapshot-preview`, `broker-snapshot-apply`, `broker-baseline-apply` and `broker-reconciliation-preview`; they return 404. No provider is constructed at startup or by generic reads. Close workflow omits the retired baseline/reconciliation steps, their actions and final-review reconciliation diagnostics.
 
-For `provider = alfa_pro` the registry keys are the keys the accepted matcher already uses:
+The provider-neutral `BrokerIdentityMapping` registry and its explicit confirm/revoke/remap API remain shared by supported source intake. Keys stay `(provider, subject_kind, provider_identity)`; account/instrument targets remain Hermes identities. Confirmations are explicit; no name/date/amount guessing or automatic backfill is introduced. Revoke/remap preserves history and does not rewrite accepted financial rows. The catalog shows saved mappings for all providers as read-only history.
 
-| Kind | Provider identity | Alfa field | Not a registry key |
-|---|---|---|---|
-| `account` | `provider_account_id` | `ClientAccountEntity.IdAccount` | `IdSubAccount`, `IdRazdel`, `RCode`, names, `IIAType` |
-| `instrument` | `provider_instrument_id` | `ClientPositionEntity.IdObject` / `AssetInfoEntity.IdObject` | ticker, name, section, subaccount |
+Keep released migration bytes and ORM models for `broker_identity_mappings`, `broker_baseline_applies`, `broker_baseline_apply_items`, positions and journals. Removal performs no data migration, deletion, relabelling, or reinterpretation. Historical `alfa_pro` source identifiers remain valid in source labels and export allowlists. CLOSED months still require explicit Reopen.
 
-Subaccount/section IDs remain snapshot observations. They are not mapping keys in this contract. Mapping at section granularity, or aggregating duplicate provider rows that resolve to the same Hermes `(account, instrument)`, remains the existing fail-closed rule (“no aggregation rule”). This ADR does not add that rule.
-
-ISIN is **not** the registry key. Exact unique ISIN matching remains a deterministic **resolution path** under the existing matcher (see §5).
-
-Provider identity is opaque text as already accepted. A changed provider id is a new identity, never a silent remap of the old one (ADR 0013 §6).
-
+Persisted baseline observation/apply clocks are read through the generic [broker positions family](#c9-freshness_provenance-1-broker_positions); they never become quote freshness clocks. Historical decisions remain in [ADR 0013](adr/0013-broker-snapshot-and-alfa-pro-security.md), [ADR 0015](adr/0015-alfa-pro-compatibility-diagnostics.md) and [ADR 0016](adr/0016-owner-approved-alfa-baseline-and-broker-mappings.md), marked Superseded.
 
 <a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-4-effective--revoked--remapped--uniqueness"></a>
-#### 4. Effective / revoked / remapped / uniqueness
+#### Registry lifecycle and uniqueness
 
 Statuses:
 
-| Status | Resolver behaviour | Owner effect |
+| Status | Read/source-intake behaviour | Owner effect |
 |---|---|---|
-| `effective` | Loaded into `OwnerMappingInput` for the next preview | Shown as reused; owner may keep, revoke, or remap |
-| `revoked` | Ignored | Owner must map again if the provider identity reappears |
+| `effective` | Available to supported source-intake resolvers | Explicit confirmation remains in force |
+| `revoked` | Ignored | Does not authorize source-intake resolution |
 | `superseded` | Ignored; successor is the effective row | Previous confirmation remains auditable |
 
 **Remap** is revoke-by-supersession plus a new `effective` row in one explicit owner action. It is not an in-place overwrite of `hermes_target_id`.
@@ -3383,310 +3317,14 @@ While `effective`, uniqueness is fail-closed as follows, per provider:
 
 1. **Forward (accounts and instruments):** at most one `effective` Hermes target for `(provider, subject_kind, provider_identity)`. A second distinct target for the same provider identity requires explicit remap.
 2. **Reverse (instruments):** at most one `effective` `provider_instrument_id` for `(provider, hermes_instrument_id)`. A second provider instrument id for the same Hermes instrument requires explicit remap.
-3. **Reverse (accounts):** multiple provider accounts may point at one Hermes account only when the owner confirms each pair explicitly. That is not aggregation: if those accounts then contribute duplicate resolved positions for the same Hermes instrument, the existing position-level conflict still wins.
+3. **Reverse (accounts):** multiple provider accounts may point at one Hermes account only when the owner confirms each pair explicitly. This does not authorize position aggregation.
 
 Identical repeated confirmation of an already effective pair is idempotent (no new successor). Confirming a **different** Hermes target for an effective provider identity without an explicit remap/revoke is a **conflict** and must not write. The same applies to a second `effective` provider instrument id for one Hermes instrument.
 
-Request-body mappings (today’s `OwnerMappingInput`) remain valid for one preview/apply:
-
-- equal to an effective registry pair → reused, not a conflict;
-- new provider identity with no effective row → candidate `new` mapping, persisted only after explicit confirmation (§6);
-- disagrees with an effective registry pair and the request does not carry an explicit revoke/remap → `conflict`, fail-closed.
-
-One Hermes instrument may appear under many mapped **accounts**; instrument uniqueness is per provider instrument id, not per account. Duplicate provider **position** rows that collapse to one Hermes `(account_id, instrument_id)` stay a position-level conflict (existing R06-04 rule). That conflict is not resolved by this registry.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-5-resolution-order-preview"></a>
-#### 5. Resolution order (preview)
-
-Each owner-triggered snapshot preview keeps the accepted gates: incomplete / stale / non-eligible / compatibility `unknown|unsupported` snapshots are fail-closed and not apply candidates (ADR 0013, ADR 0015, R07-08A).
-
-Then:
-
-1. Load `effective` registry rows for the snapshot’s `provider`.
-2. Compose them with any explicit request mappings under §4.
-3. Run the **existing** matcher:
-   - accounts: explicit mapping only;
-   - instruments: explicit mapping, else exact unique normalized ISIN (`strip` + `upper`; empty ISIN is absent);
-   - ticker / name / `IIAType` / section code / numeric similarity never create identity;
-   - explicit mapping that contradicts present ISIN evidence on both sides is `conflict` (existing B5).
-4. Classify each identity row for owner display (presentation on top of matcher status, not a second matcher):
-
-| Classification | Meaning |
-|---|---|
-| `reused` | Resolved from an `effective` registry row |
-| `deterministic_isin` | Instrument resolved only by exact unique ISIN; no effective registry row yet |
-| `new` | Unmatched; owner must map or skip |
-| `ambiguous` | Existing matcher `ambiguous` (multiple Hermes ISINs) |
-| `conflict` | Existing matcher `conflict`, uniqueness violation, or request/registry disagreement |
-| `provider_identity_absent` | An `effective` registry row whose provider identity is not in this snapshot (orphaned; not auto-revoked) |
-
-Owner-readable labels (title, type, short id) remain a presentation concern. They must not become registry keys. UUIDs/internal ids stay secondary.
-
-Unique ISIN matching **may** resolve an instrument without a registry row. It must **not** silently insert a registry row. Persistence happens only under §6.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-6-when-the-registry-may-be-written"></a>
-#### 6. When the registry may be written
-
-Registry writes are explicit owner confirmations. Allowed writes:
-
-- confirm a `new` account mapping;
-- confirm an instrument mapping that the matcher already resolved (`explicit` or `deterministic_isin`) or that the owner picked from a non-ambiguous candidate set;
-- revoke an `effective` mapping;
-- remap as defined in §4.
-
-Forbidden writes:
-
-- silent persist because unique ISIN matched;
-- silent persist because preview ran;
-- silent persist because quantity apply ran **without** those identities being in the confirmed set;
-- backfill from closed months, statement imports, market mappings, or guessed names.
-
-A successful **baseline apply** (§7) of a selected position row **must** include, in the same transaction, confirmation of the account and instrument identities used for that row (already `effective`, or newly confirmed in this action). Quantity must not land without a durable identity explanation.
-
-Revoke/remap never mutates already applied `PositionSnapshot` quantity, cost, or quotes.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-7-owner-approved-current-state-baseline"></a>
-#### 7. Owner-approved current-state baseline
-
-A **baseline** is an explicit owner action that uses one complete, compatibility-confirmed Alfa (or later broker) current snapshot to establish trusted **current position quantity** in **one editable reporting month**, after identity confirmation.
-
-Normative flow (issue #201 UX, now contract):
-
-1. Owner fetches a current read-only snapshot (existing adapter; no background refresh).
-2. Preview shows reused / deterministic / new / ambiguous / conflict identities.
-3. Owner confirms only unresolved/new mappings; may revoke or remap reused ones.
-4. Preview shows current quantity differences for resolved identities (existing R06-04 / R07-08A states).
-5. Owner explicitly applies **selected** quantity rows to the editable month through the accepted R06-05 apply path (fingerprint, selective, transactional).
-6. Re-running the same baseline against unchanged identities and quantities is idempotent: selected rows come back `unchanged` and no financial fields move.
-
-Baseline parameters:
-
-| Field | Rule |
-|---|---|
-| `provider` | Snapshot provider; first implementation `alfa_pro` |
-| `reporting_month_id` | Must exist and be editable (`draft`). CLOSED → refuse, existing `CLOSED_MONTH` semantics. |
-| `baseline_date` | Owner-declared current-state date. **Must equal** that month’s `snapshot_date`. Planned owner use is `2026-08-31` on the August 2026 month whose `snapshot_date` is that day. A mismatch is fail-closed. |
-| `source_as_of` / `captured_at` | Provenance of the snapshot actually confirmed. Local observation time may differ from `baseline_date`; do not substitute one for the other (R07-07 four clocks). |
-
-What a baseline **may** establish, after explicit owner confirmation:
-
-- registry account mappings;
-- registry instrument mappings (deterministic or owner-picked);
-- `PositionSnapshot.quantity` for selected resolved rows with provider quantity `> 0`, via R06-05 `update` / `create`;
-- baseline provenance (§8).
-
-What a baseline **must not** silently establish or overwrite:
-
-- any other reporting month, including earlier closed months and other drafts;
-- deposits, withdrawals, transfers, statement payouts, T-Invest payouts, or performance history (`external_flows`, valuation points, XIRR/TWRR inputs);
-- Hermes `average_cost_per_unit` from Alfa `UchPrice` / accounting price;
-- Hermes `market_price_per_unit`, `price_date`, `price_source` from Alfa `Price`;
-- Hermes `accrued_interest` from Alfa `NKD` / `PSTNKD`;
-- Hermes unrealized result from Alfa `NPLtoMarketCurPrice` / `DailyPL`;
-- Hermes cash balances from Alfa `ClientBalanceEntity.Money` (still non-comparable at this `r07` schema);
-- new Hermes accounts or instruments invented from the snapshot;
-- credentials, raw frames, or private diagnostics.
-
-R06-05 dependent-field rules stay: `create` requires explicit **local** average cost and market price/date/source; `update` requires explicit `keep_existing` or explicit **local** replace. Provider valuation fields are never a legal replace source.
-
-Zero or missing provider quantity cannot be applied (existing R06-05). A missing provider row must not delete a Hermes position. Hermes-only rows are visible in preview; clearing them is outside this baseline contract.
-
-`ClientPositionEntity.IsMoney = true` is a cash-like observation. Those rows are **not** quantity-baseline eligible and must not create or update `PositionSnapshot` instrument rows. They stay with the cash/comparison family.
-
-Provider-only rows whose identity is unresolved stay `unresolved` / `new`. They are never silently created.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-8-baseline-provenance-minimum-persist"></a>
-#### 8. Baseline provenance (minimum persist)
-
-When a baseline apply commits, persist a month-scoped **baseline provenance** record (name is an implementation decision) containing only:
-
-- `provider`;
-- `reporting_month_id`;
-- `baseline_date`;
-- `source_as_of`;
-- `captured_at`;
-- owner `confirmed_at`;
-- sanitized `compatibility_fingerprint` / apply fingerprint already used by R06-05 / ADR 0015;
-- per selected row: `position_snapshot_id`, action `created|updated|unchanged`, applied `quantity`.
-
-Do not persist provider prices, NKD, P&L, cash amounts, tickers, names, or raw snapshots in this record.
-
-This **narrowly supersedes** ADR 0013 §11 for the enumerated minimum in §10 only. Issue #201 is the owner’s explicit persistence confirmation for those fields. The legal/terms gate remains closed for raw payloads, undocumented extras, and any broader Alfa-derived ledger.
-
-R07-07 currently states that Alfa PRO observations are transient and the `alfa_pro_positions` family is always `unknown` (`alfa_pro_observation_not_persisted`). After the implementation slice that writes §8, that family must be updated to read this provenance: `source_as_of` is the observation clock; `confirmed_at` is import/apply time and is **not** freshness. Until that slice lands, R07-07 stays as written.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-9-existing-historical-data-and-coexistence"></a>
-#### 9. Existing historical data and coexistence
-
-A current Alfa baseline **coexists** with earlier imported history as a new trusted **current-state** boundary:
-
-- closed months keep their snapshots;
-- statement/T-Invest/manual history is not re-derived from Alfa current state;
-- the selected draft month becomes the owner-approved current holdings quantity for that `snapshot_date`;
-- later months are not auto-cloned or backfilled by this contract (existing month clone/reopen rules unchanged);
-- performance/history contracts that already treat closed snapshots as truth continue to do so.
-
-No migration rewrites owner data. No backfill of the registry.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-10-alfa-fields-persist-vs-comparison-only-vs-ignored"></a>
-#### 10. Alfa fields: persist vs comparison-only vs ignored
-
-Authoritative raw-field meanings remain R06-03 / `FIELD_MAPPINGS`. A field name is still not evidence. This table is the **persistence/apply** gate on top of that mapping.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-101-may-persist-minimum"></a>
-#### 10.1 May persist (minimum)
-
-| Alfa entity.field | Snapshot field | Persist as | Condition |
-|---|---|---|---|
-| `ClientAccountEntity.IdAccount` | `provider_account_id` | registry account identity | Explicit owner confirm / baseline confirm |
-| `ClientPositionEntity.IdObject` / `AssetInfoEntity.IdObject` | `provider_instrument_id` | registry instrument identity | Explicit owner confirm / baseline confirm |
-| `AssetInfoEntity.ISIN` | `isin` | optional `observed_isin` evidence on the instrument mapping; also deterministic match input | Never the registry key; never overwrites a conflicting Hermes `Instrument.isin` |
-| `ClientPositionEntity.TorgPos` | `quantity` | `PositionSnapshot.quantity` | Explicit selected R06-05 apply; quantity `> 0`; identity resolved and confirmed; not `IsMoney` |
-| (Hermes clocks) | `source_as_of`, `captured_at` | baseline provenance | Written only with a committed baseline apply |
-| (sanitized ADR 0015) | compatibility fingerprint | baseline provenance | Value-independent structural fingerprint only |
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-102-comparison-only--preview-may-show-never-write-as-hermes-financial-truth"></a>
-#### 10.2 Comparison-only — preview may show; never write as Hermes financial truth
-
-Listed names match `COMPARISON_ONLY_PROVIDER_FIELDS` plus cash and classification observations.
-
-| Alfa entity.field | Snapshot field | Why comparison-only |
-|---|---|---|
-| `ClientPositionEntity.Price` | `broker_unit_price` | No accepted unit/currency/scale conversion into Hermes `market_price_per_unit` |
-| `ClientPositionEntity.UchPrice` | `accounting_price` | Must not become `average_cost_per_unit` merely because it exists |
-| `ClientPositionEntity.NKD` | `accrued_interest_nkd` | Non-comparable vs Hermes kopecks; not auto NKD apply |
-| `ClientPositionEntity.NPLtoMarketCurPrice` | `unrealized_result` | Hermes unrealized is derived from local valuation; not broker НПУ |
-| `ClientBalanceEntity.Money` | cash `amount` | Hermes cash is month-scoped and (on this `r07`) not account-linked; existing cash rows stay `non_comparable` |
-| `ClientPositionEntity.IsMoney` | `is_money` | Classification only; money rows are not instrument quantity baseline |
-| synthesized `market_value` | `market_value` | R06-03 forbids `TorgPos * Price` stand-in; no official position market-value field |
-| `SubAccountRazdelEntity.RCode` / `IdRazdel` / `IdSubAccount` / `IdRazdelGroup` | section/subaccount observations | Display/correlation only; not registry keys |
-| `AssetInfoEntity.Ticker` / `Name` | `ticker` / `display_name` | Discovery/display hints; never identity; not stored as mapping keys |
-
-R07-08A `comparison_only_fields` remains the API list for valuation observations. Implementation must not promote those fields into write instructions.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-103-unresolved--ignored--do-not-map-persist-or-infer"></a>
-#### 10.3 Unresolved / ignored — do not map, persist, or infer
-
-| Alfa field | Reason |
-|---|---|
-| `ClientAccountEntity` extras / live `IIAType` | Undocumented; IIS stays owner-controlled (ADR 0013 §7) |
-| `ClientPositionEntity.PSTNKD` | Insufficient to distinguish from `NKD` |
-| `ClientPositionEntity.DailyPL` | Daily P/L is not unrealized-result |
-| `ClientBalanceEntity.PortfolioCost` | Portfolio-level; not position market value |
-| `ClientOperationEntity` and type codes `3` / `14` | Not in the production snapshot; not a ledger (ADR 0013 §9) |
-| `#Order.*`, limits, archive, order book, trade tape | Trading/out of adapter |
-| Raw router frames, credentials, exception text | Privacy / ADR 0013 §10–11, ADR 0015 |
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-11-synthetic-acceptance-examples"></a>
-#### 11. Synthetic acceptance examples
-
-All identities below are synthetic (`SYN-*`). No owner/runtime values.
-
-Shared fixture unless a row overrides it:
-
-- provider `alfa_pro`;
-- Hermes account `H-ACC-1`, instrument `H-INS-1` with ISIN `SYN000000001`;
-- draft month `2026-08` with `snapshot_date = 2026-08-31`;
-- complete compatible snapshot, `eligible_for_apply = true`.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e1--first-time-mapping"></a>
-#### E1 — First-time mapping
-
-**Given** empty registry; snapshot account `SYN-ACCOUNT-001`, instrument `SYN-INSTRUMENT-001` with unique ISIN `SYN000000001`, `TorgPos = 10`; Hermes has `H-ACC-1` / `H-INS-1` and no August position.
-
-**When** owner maps `SYN-ACCOUNT-001 → H-ACC-1`, accepts the unique-ISIN instrument resolution, and applies create with explicit local average cost and market price.
-
-**Then** registry gains two `effective` rows; August `PositionSnapshot.quantity = 10`; baseline provenance written; comparison-only `Price`/`UchPrice`/`NKD` are not copied.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e2--reused-mapping-next-run"></a>
-#### E2 — Reused mapping next run
-
-**Given** E1 registry rows still `effective`; next snapshot same identities, `TorgPos = 12`; August still draft with quantity `10`.
-
-**When** owner opens preview with no request mappings.
-
-**Then** account and instrument classify `reused`; owner is not asked to re-enter them; quantity preview is `differs` / `12 vs 10`; apply update with `keep_existing` dependents writes quantity `12` only.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e3--new-instrument"></a>
-#### E3 — New instrument
-
-**Given** E1 registry; snapshot adds `SYN-INSTRUMENT-002` with ISIN `SYN000000002` and no Hermes instrument with that ISIN.
-
-**When** preview runs.
-
-**Then** `SYN-INSTRUMENT-001` stays `reused`; `SYN-INSTRUMENT-002` is `new` / unmatched; no row is auto-created; quantity apply of the new id is refused until the owner maps it to an existing Hermes instrument (or creates that instrument **outside** this flow, then maps). This flow does not invent instruments.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e4--changed-provider-account-identity"></a>
-#### E4 — Changed provider account identity
-
-**Given** effective `SYN-ACCOUNT-001 → H-ACC-1`; new snapshot has only `SYN-ACCOUNT-002` (old id absent).
-
-**When** preview runs.
-
-**Then** `SYN-ACCOUNT-001` is `provider_identity_absent` (not auto-revoked, not silently rebound); `SYN-ACCOUNT-002` is `new`; positions under `002` stay unresolved until explicit remap `001` superseded and `002 → H-ACC-1` confirmed. No quantity apply through the orphaned mapping.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e5--conflicting-isin"></a>
-#### E5 — Conflicting ISIN
-
-**Given** effective `SYN-INSTRUMENT-001 → H-INS-1` and Hermes ISIN `SYN000000001`; snapshot `SYN-INSTRUMENT-001` now carries ISIN `SYN000000099`.
-
-**When** preview runs.
-
-**Then** instrument status is `conflict` (“explicit mapping contradicts provider ISIN evidence”); classification `conflict`; row is not applyable; registry remains `effective` until owner remaps or fixes local ISIN by the ordinary instrument editor. No silent retarget.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e6--revoked-then-remapped"></a>
-#### E6 — Revoked then remapped
-
-**Given** E1 effective instrument mapping.
-
-**When** owner revokes `SYN-INSTRUMENT-001`, then remaps it to `H-INS-2` (existing Hermes instrument, ISIN compatible or absent).
-
-**Then** original row becomes `superseded` (or `revoked` then a new confirm — remap must leave history); new `effective` row points at `H-INS-2`; previously applied August quantity on `(H-ACC-1, H-INS-1)` is **unchanged**; later preview uses `H-INS-2`.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e7--identical-baseline-rerun"></a>
-#### E7 — Identical baseline rerun
-
-**Given** E1 after apply (quantity already `10`, dependents kept); same snapshot, same mappings, same `baseline_date`.
-
-**When** owner applies the same selected row with the same fingerprint-valid keep-existing decisions.
-
-**Then** result item action is `unchanged`; `PositionSnapshot` financial fields and `updated_at` semantics follow existing R06-05 no-op (no rewrite); provenance may record the rerun as unchanged evidence but must not invent a second quantity history. Mapping confirm is idempotent.
-
-
-<a id="c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19-e8--closed-month-refusal"></a>
-#### E8 — Closed-month refusal
-
-**Given** August month `closed`; registry may already be populated.
-
-**When** owner requests baseline apply (or R06-05 apply) for that month.
-
-**Then** refusal with existing closed-month semantics; no quantity write; no registry write as a side-effect of the refused apply. Reopen remains the only path to edit that month. Preview may still be read-only.
-
-Additional synthetic guards the implementation slices must keep (already accepted elsewhere, restated so they are not dropped):
-
-- request maps one provider account to two Hermes accounts → `conflict`;
-- two provider position rows resolve to the same Hermes pair → position `conflict`, no aggregation;
-- stale/incomplete/compatibility-unknown snapshot → no actionable rows, `eligible_for_apply` false;
-- `UchPrice` present and owner omitted local average cost on **create** → validation error, not a silent copy.
+Observed ISIN is optional confirmation evidence, never the provider identity key. A contradictory present Hermes/provider ISIN fails closed. Revoke/remap never changes accepted positions, cost, quotes or journals. No silent backfill from market mappings, names, dates, amounts or closed history is permitted.
 
 <a id="c5"></a>
+
 ## 5. Money, trades, settlement, fees and NKD
 
 Recognition Money, accepted coupon net, Owner funding and execution cash legs are distinct. Preserve the one economic owner of each occurrence/leg. Cash already present in an endpoint cannot be credited twice. Principal redemption is capital, not passive income. Source algebra validates an independently established basis; it never chooses a convention. Bond BUY needs the supported S/N/F proof; stock BUY uses the separately proved S/F basis and cannot fill paid NKD with a synthetic zero.
@@ -12108,7 +11746,7 @@ Future capital trajectory отсутствует.
 
 <a id="c9"></a>
 
-Selective quote Apply reuses its immutable reviewed Preview, exact target snapshot/date, explicit mapping and selected fields; refetch/changed-source guards are atomic and no network refetch occurs under a financial commit. Existing manual/immutable quote provenance is not overwritten by unrelated provider snapshots. Alfa provider Price/UchPrice/NKD/P&L remain comparison observations; the later approved baseline/mapping contract supplies only its explicitly allowed persisted fields. The earlier release-wide ban on all persistent broker mappings is superseded by that accepted registry, not by arbitrary provider payload persistence.
+Selective quote Apply reuses its immutable reviewed Preview, exact target snapshot/date, explicit mapping and selected fields; refetch/changed-source guards are atomic and no network refetch occurs under a financial commit. Existing manual/immutable quote provenance is not overwritten by unrelated provider snapshots. Historical broker observations retain their accepted meaning under [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19). The earlier release-wide ban on all persistent broker mappings is superseded by that accepted registry, not by arbitrary provider payload persistence.
 
 ## 9. Providers, freshness, reconciliation and source units
 
@@ -12234,7 +11872,7 @@ Quote valuation target is `min(snapshot_date, evaluated_on)` (ADR 0009). That ta
 #### No universal score
 
 The summary never emits a freshness percentage, index, or blended score. Families are
-not averaged. A missing Alfa PRO observation timestamp does not pull quotes toward
+not averaged. A missing broker observation timestamp does not pull quotes toward
 “stale”. Manual rows do not enter a denominator.
 
 
@@ -12271,21 +11909,10 @@ Active applied T-Invest payout events for the month.
 
 
 <a id="c9-freshness_provenance-1-alfa_pro_positions"></a>
-#### `alfa_pro_positions`
+<a id="c9-freshness_provenance-1-broker_positions"></a>
+#### `broker_positions`
 
-Reads persisted owner-approved baseline provenance (ADR 0016 §8). `source_as_of` is the
-observation clock. `confirmed_at` is import/apply time and is **not** freshness.
-`baseline_date`, `snapshot_date`, and `updated_at` are not freshness clocks.
-
-- No persisted baseline for the month → family status `unknown`, reason
-  `alfa_pro_observation_not_persisted`. `providers` stays empty so capability alone
-  cannot list `alfa_pro` or create `multiple_providers`.
-- Persisted baseline present → family status `not_applicable` (holdings observation is
-  not quote-stale). Reasons `alfa_pro_baseline_present` and
-  `alfa_pro_observation_not_freshness_classified`. `providers` lists the baseline
-  provider (`alfa_pro`).
-- Do not classify this family current/stale/unavailable by the quote 8/30-day window.
-
+Reads previously accepted broker baseline provenance under [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19). The family is omitted when no baseline is persisted for the selected month. Otherwise its status is `not_applicable`, with `broker_baseline_present` and `broker_observation_not_freshness_classified` reasons and the stored provider identifier unchanged. `source_as_of` is observation time; `captured_at` is fetch time; `confirmed_at` is apply time. None is evaluated by the quote 8/30-day window. No refresh/apply action is available for this historical family.
 
 <a id="c9-freshness_provenance-1-alfa_statement_payouts"></a>
 #### `alfa_statement_payouts`
@@ -12352,9 +11979,8 @@ informational vs warning only. This endpoint never promotes a warning to a close
 | `payout_event_present` | info | Applied T-Invest payouts exist |
 | `payout_none_for_month` | info | No applied T-Invest payouts in this month |
 | `payout_not_freshness_classified` | info | Payout events are not quote-stale |
-| `alfa_pro_observation_not_persisted` | info | Cannot classify Alfa PRO observation time |
-| `alfa_pro_baseline_present` | info | Owner-approved Alfa PRO current-state baseline is persisted for the month |
-| `alfa_pro_observation_not_freshness_classified` | info | Persisted `source_as_of` is observation time, not quote freshness |
+| `broker_baseline_present` | info | Accepted broker baseline history is persisted for the month |
+| `broker_observation_not_freshness_classified` | info | Persisted `source_as_of` is observation time, not quote freshness |
 | `statement_event_present` | info | Active statement events exist for the month |
 | `statement_none_for_month` | info | No active statement events in this month |
 | `statement_not_freshness_classified` | info | Statement events are not quote-stale |
@@ -12382,7 +12008,7 @@ informational vs warning only. This endpoint never promotes a warning to a close
 
 Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS is not a production quote fallback. The separate explicit bounded official identity/denomination lookup in C4 is supported and is not quote authority.
 
-Alfa PRO current snapshot and the accepted Alfa depository income-payment PDF import are 0.6 product paths; their complete current authority is specified in C3/C4/C9. This file remains the T-Invest quote/payout guide.
+Alfa depository income-payment PDF import remains supported under C3/C9. The retired snapshot path and retained broker history are specified in C4. This file remains the T-Invest quote/payout guide.
 
 
 <a id="c9-t-invest-market-data-1-what-this-does"></a>
@@ -12879,32 +12505,9 @@ The current MOEX-shaped identity (`provider + engine + market + boardid + secid`
 
 
 <a id="c9-0010-market-and-broker-provider-strategy-17-2-alfa-pro-is-the-bounded-broker-portfolio-snapshot-provider-for-alfa-accounts"></a>
-#### 2. Alfa PRO is the bounded broker-portfolio snapshot provider for Alfa accounts
+#### Retired broker connection
 
-Alfa PRO is not selected as the primary 0.4 market-data source, but it is retained as a valuable future `BrokerPortfolioProvider` for the owner's Alfa brokerage/IIS data.
-
-Documented useful capabilities include:
-
-- account/subaccount data;
-- current positions and quantities;
-- accounting/average-price-related fields;
-- cash and broker valuation;
-- accrued coupon/NKD;
-- unrealized P/L;
-- identifiers correlating positions with instruments;
-- at least partial operation/trade data.
-
-Important Alfa limitations:
-
-- PRO terminal must be installed, running and authenticated during API use;
-- API is a localhost WebSocket router (`ws://127.0.0.1:3366/router/`);
-- no true API read-only scope is documented; the same socket exposes order methods;
-- bond market-data Last/Close unit is not documented clearly enough for authoritative conversion;
-- IIS-vs-ordinary-account classification is not documented as an explicit API field;
-- private persistence of quotes/account payloads needs confirmation from Alfa under the applicable terms.
-
-For the owner's workflow, launching PRO manually once per month is considered acceptable if it enables local portfolio reconciliation. No Alfa broker import is part of 0.4.
-
+Alfa Pro is retired; [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19) owns the removal and historical compatibility contract. [ADR 0010](adr/0010-market-and-broker-provider-strategy.md) retains the original provider decision.
 
 <a id="c9-0010-market-and-broker-provider-strategy-17-3-market-data-and-broker-holdings-are-separate-bounded-contexts"></a>
 #### 3. Market data and broker holdings are separate bounded contexts
@@ -12923,20 +12526,14 @@ MarketData mapping
   -> current/historical market quote
 
 BrokerPortfolio mapping
-  provider = alfa_pro
+  provider = <persisted broker provider>
   provider account/instrument identifiers
   -> actual account, position, quantity, broker valuation, NKD, cash
 ```
 
 The market provider and broker provider must not be forced to share one identity schema.
 
-Future broker integrations should use a separate boundary, e.g. `BrokerPortfolioProvider`, with provider-specific adapters such as:
-
-- `AlfaProBrokerPortfolioProvider`;
-- `TInvestBrokerPortfolioProvider`.
-
-T-Invest broker data may later support T-Invest accounts, but it cannot read Alfa accounts; Alfa PRO cannot read T-Invest accounts.
-
+Broker holdings and market quotes retain separate provider identity boundaries. No Alfa Pro adapter remains.
 
 <a id="c9-0010-market-and-broker-provider-strategy-17-provider-neutral-identity-requirement"></a>
 #### Provider-neutral identity requirement
@@ -13629,383 +13226,33 @@ Retry is a new explicit owner action only.
 - Month clone MUST NOT silently copy applied provider payout provenance as if it were newly accepted for the new month. New month's payout state is derived by a new owner-triggered preview/apply against its copied positions.
 
 <a id="c9-0013-broker-snapshot-and-alfa-pro-security-30"></a>
-### Alfa current snapshot transport and safe reconciliation
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-decision"></a>
-#### Decision
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-1-introduce-a-dedicated-brokersnapshotprovider-boundary"></a>
-#### 1. Introduce a dedicated `BrokerSnapshotProvider` boundary
-
-0.6 defines a provider-neutral read-only boundary for **current broker state**.
-
-Conceptually:
-
-```text
-BrokerSnapshotProvider
-    fetch_snapshot()
-        -> BrokerSnapshot
-
-BrokerSnapshot
-    provider
-    source_as_of
-    accounts[]
-    positions[]
-    cash_balances[]
-    warnings[]
-    provenance
-```
-
-The exact Python DTO names may vary in R06-03, but the semantics are normative:
-
-- a snapshot is an observation of current provider state at a known `source_as_of` time;
-- it is not a reporting month by itself;
-- it is not an authoritative historical transaction ledger;
-- it performs no writes to Hermes persistence;
-- it performs no reconciliation or apply by itself.
-
-`MarketDataProvider`, `BrokerSnapshotProvider`, and future `BrokerStatementImporter` remain separate bounded contexts.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-2-alfa-pro-authentication-is-bus-gated-and-fail-closed"></a>
-#### 2. Alfa PRO authentication is bus-gated and fail-closed
-
-The Alfa adapter must establish the session in this order:
-
-1. connect only to the approved loopback router;
-2. `listen` to `#ConnectionState.Bus`;
-3. wait within a bounded overall deadline, treating a per-receive timeout as idle rather than successful completion;
-4. observe `AuthStatus` from the bus;
-5. issue client-data reads only after an actually observed `AuthStatus == 2`;
-6. if status is missing, changes away from `2`, the socket fails, or the deadline expires, stop and return a non-applicable failure/unavailable result.
-
-The adapter must **not** use ConnectionState `#Data.Query` as the production auth gate on the current compatibility contract. It must not translate undocumented error code `6` into an authentication state.
-
-If authentication becomes non-`2` while a snapshot is being collected, the collection is not eligible for apply. A partial snapshot may be surfaced diagnostically only if it remains sanitized and clearly marked non-applicable.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-3-read-only-safety-is-structural-not-credential-scoped"></a>
-#### 3. Read-only safety is structural, not credential-scoped
-
-No separate provider-level read-only credential/scope has been established for the observed PRO integration. The same authenticated terminal can be ready to sign trading instructions. Therefore Hermes read-only safety must exist **by construction**.
-
-The production Alfa snapshot adapter must have:
-
-- no public generic `send(channel, payload)` interface;
-- a closed allowlist of router commands and channels;
-- `request` only to `#Data.Query`;
-- `listen` / `unlisten` only for explicitly approved data buses;
-- a hard runtime rejection for every `#Order.*` channel before any send;
-- no order, limit, cancel, transfer, signing, certificate-management or mutation DTO/service/helper;
-- source-level and deterministic tests that keep the trading surface absent;
-- sanitized errors that never dump provider frames or payloads.
-
-`ReadyToSign` is observation-only. Hermes must never try to change it, create/sign certificates, or make snapshot reads contingent on manipulating signing state.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-4-minimize-the-production-snapshot-entity-surface"></a>
-#### 4. Minimize the production snapshot entity surface
-
-R06-01 used a wider evidence surface. The production snapshot provider is narrower.
-
-Approved snapshot entities are limited to the data required for current state:
-
-- `ClientAccountEntity`;
-- `ClientSubAccountEntity`;
-- `SubAccountRazdelEntity`;
-- `ClientPositionEntity`;
-- `ClientBalanceEntity`;
-- `AssetInfoEntity`, bounded to the provider object IDs needed by observed positions where possible.
-
-`ClientOperationEntity` is **not part of the production snapshot contract** and must not be queried by default in R06-03. Its R06-01 use was evidence gathering only.
-
-Order entities, order book, trade tape, archive/candles, trading limits, order services and all other non-allowlisted surfaces are outside this adapter.
-
-Each live fetch is one-shot, bounded and owner-initiated. It must unlisten/close after collection and must not maintain or renew long-lived subscriptions in the background.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-5-snapshot-financial-values-are-observations-with-explicit-semantics"></a>
-#### 5. Snapshot financial values are observations with explicit semantics
-
-The provider-neutral snapshot may expose, when available:
-
-- position quantity;
-- provider/broker unit price or valuation input;
-- provider-reported market value;
-- accounting/average-cost-related unit price;
-- accrued interest / NKD;
-- unrealized result;
-- cash balance by account/subaccount/currency;
-- provider field/source metadata required to explain provenance.
-
-R06-03 must document and test the exact Alfa raw-field mapping before a field is promoted into one of these normalized semantics. A field name alone is not sufficient evidence of meaning.
-
-Provider-reported market value and a Hermes-derived value must not silently replace one another. Reconciliation may compare them, but provenance must preserve which value came from the broker and which was calculated by Hermes.
-
-Alfa values observed as JSON numbers must cross the provider boundary into exact domain representations without binary floating-point financial arithmetic. Financial amounts/prices/rates use `Decimal` or exact minor-unit representations according to existing Hermes rules; quantities also use a decimal-safe representation where the provider permits non-integer values. R06-03 must not build financial domain values from a binary `float` round-trip.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-6-hermes-identity-remains-canonical-alfa-identity-is-a-provider-projection"></a>
-#### 6. Hermes identity remains canonical; Alfa identity is a provider projection
-
-A provider identifier is useful correlation metadata, not Hermes canonical identity.
-
-For instruments:
-
-- Hermes local `instrument_id` remains canonical inside the product;
-- ISIN is the preferred cross-provider external identity when present;
-- Alfa `IdObject` and related provider IDs may be retained as Alfa provenance/mapping metadata only under the persistence gate below;
-- ticker/name are discovery/display hints and must not create a silent mapping;
-- the observed `29/29` ISIN coverage is positive evidence for this strategy, not a permanent provider guarantee.
-
-For accounts:
-
-- Alfa account/subaccount/section IDs are provider identities;
-- mapping to Hermes `accounts` is explicit owner-controlled mapping;
-- one clean-restart stability observation is useful evidence but not a promise of stability across terminal upgrades, reinstallations, broker migrations or provider data resets;
-- missing/changed provider identity must produce a reconciliation conflict, not silently remap an account.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-7-iis-classification-remains-owner-controlled-until-semantics-are-accepted"></a>
-#### 7. IIS classification remains owner-controlled until semantics are accepted
-
-R06-01 observed an `IIAType` field in live `ClientAccountEntity` field names, but Alfa PRO API v2.1 does not document that field or its values. Therefore its semantic meaning is `UNRESOLVED`.
-
-Hermes must not infer IIS from:
-
-- `IIAType` until an official accepted mapping exists;
-- account numbers/codes;
-- names or text substrings;
-- section names/codes.
-
-The existing Hermes account type / IIS profile remains the source of truth through explicit owner mapping. A later narrow ADR/task may accept an official provider mapping if evidence becomes available.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-8-reconciliation-preview-is-mandatory-before-persistenceapply"></a>
-#### 8. Reconciliation preview is mandatory before persistence/apply
-
-The flow is:
-
-```text
-Alfa PRO
-  -> AlfaProBrokerSnapshotProvider
-  -> immutable in-memory BrokerSnapshot
-  -> reconciliation preview
-  -> owner selects/accepts changes
-  -> selective apply
-```
-
-There is no direct provider-to-database write path.
-
-Preview must surface at least:
-
-- matched/unmatched accounts;
-- matched/unmatched instruments;
-- provider-only and Hermes-only positions;
-- quantity differences;
-- cash differences;
-- provider valuation/accounting-price/NKD/unrealized differences where supported;
-- source timestamp and provider provenance;
-- incomplete/error/truncation state.
-
-No missing provider row may silently delete a Hermes position. No provider-only row may silently create or map an instrument/account.
-
-Any future apply is explicit, selective and transactional. A CLOSED reporting month cannot be changed by broker sync; the owner must explicitly reopen it first under the existing month lifecycle rules.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-9-current-snapshot-and-historical-broker-ledger-are-deliberately-separated"></a>
-#### 9. Current snapshot and historical broker ledger are deliberately separated
-
-`ClientOperationEntity` must not be treated as the source of truth for payouts, taxes, commissions, deposits, withdrawals or complete historical activity.
-
-Reasons:
-
-- the official v2.1 entity is described as operations/trades;
-- the live bounded initial load was only three rows over two dates;
-- no accepted date-filter/pagination/retention contract has been established;
-- live numeric operation type IDs `3` and `14` have no accepted official mapping in this ADR;
-- the same short observed operation set surviving one restart proves only restart persistence of that observed set, not historical completeness.
-
-Historical cash activity therefore belongs to a separate future `BrokerStatementImporter` based on broker reports/statements or another later accepted authoritative contract.
-
-R06-03 must not write `ClientOperationEntity` rows into `investment_cash_flows`.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-10-browserfrontend-must-never-proxy-the-alfa-router"></a>
-#### 10. Browser/frontend must never proxy the Alfa router
-
-The foreign-Origin handshake acceptance from R06-01 is a threat-model fact, not by itself a vulnerability finding.
-
-Consequences for Hermes are normative:
-
-- Alfa WebSocket communication occurs only in backend/server-side code;
-- the frontend never receives a raw Alfa WebSocket URL, generic channel proxy, raw provider frame or provider credential/session primitive;
-- a future UI may expose only a high-level explicit owner action such as “read broker snapshot” and a sanitized reconciliation result;
-- localhost request-security protections remain governed by ADR 0004;
-- broker sync must not create a browser-accessible generic tunnel to local trading services.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-11-persistence-is-gated-and-minimized"></a>
-#### 11. Persistence is gated and minimized
-
-Raw Alfa frames/payloads are never persisted as a normal product feature and are never logged.
-
-The legal/terms basis for persistent storage of Alfa private API-derived broker data remains `NEEDS_CONFIRMATION`. Until that gate is explicitly resolved:
-
-- R06-03 may implement transient read-only acquisition and normalized in-memory DTOs;
-- R06-04 may implement in-memory reconciliation/preview;
-- persistence of provider IDs/mappings or selected Alfa-derived snapshot values must not silently become accepted merely because the technical adapter works;
-- R06-05 selective apply is blocked from release acceptance if the required persistence permission remains unresolved.
-
-If persistence becomes accepted, store only the minimum normalized/provenance fields required for owner mapping, reconciliation and audit. Do not store raw provider payloads “for debugging”.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-12-compatibility-failures-are-explicit-no-speculative-protocol-fallback"></a>
-#### 12. Compatibility failures are explicit; no speculative protocol fallback
-
-The PRO terminal updates automatically and API documentation may lag observed terminal behavior. Therefore compatibility failures must fail safely.
-
-The adapter must not respond to undocumented errors by trying arbitrary request shapes/channels. New compatibility behavior requires:
-
-- official documentation/example evidence or a deliberately bounded owner-only probe;
-- synthetic tests;
-- independent review when the network/security boundary changes.
-
-Observed code `6` remains an opaque provider SubscribeResponse code in this architecture.
-
-
-<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-provider-neutral-status-expectations"></a>
-#### Provider-neutral status expectations
-
-R06-03 may choose exact class/enum names, but callers must be able to distinguish at least:
-
-- successful complete snapshot;
-- provider unavailable / terminal not running;
-- authentication unresolved or not authorized;
-- compatibility/protocol error;
-- partial/incomplete snapshot;
-- malformed provider response.
-
-A partial/incomplete snapshot is not eligible for selective apply unless a later contract explicitly defines safe field-level applicability. Required snapshot entity errors, truncation or loss of authenticated state fail closed.
-
 <a id="c9-0015-alfa-pro-compatibility-diagnostics-19"></a>
-### Typed compatibility failures and no fallback
-
-<a id="c9-0015-alfa-pro-compatibility-diagnostics-19-decision"></a>
-#### Decision
-
-The transient `BrokerSnapshot` contains an `AlfaDiagnosticReport` with two
-versioned contracts:
-
-- `alfa-pro-diagnostics/v1` is the owner-facing report contract.
-- `alfa-pro-fingerprint/v1` is the deterministic SHA-256 fingerprint contract.
-
-The fingerprint covers only the documented API version, bounded allowlisted
-version hints, observed router message shapes, entity payload field names,
-entity row field names, and capability labels. It does not cover row keys or
-any field values. Version hints are read only from bounded allowlisted fields;
-an absent or invalid hint remains `unresolved`.
-
-The current accepted contract does not prove that an Alfa API version hint or a
-router/protocol version hint uses the API-documentation version namespace. The
-adapter therefore records both as observational evidence and does not compare
-either value to `api_doc_version`. An observed value that differs from `2.1`
-does not by itself mean `unsupported`; compatibility is decided by the
-confirmed structural protocol and layout guards below. A future `unsupported`
-classification requires a separately accepted supported-protocol/version
-contract or mapping.
-
-Compatibility has three explicit states:
-
-- `compatible`: the expected bus/query shapes and required current-state layout
-  were observed, with no material protocol or layout anomaly.
-- `unknown`: the observation is incomplete or a protocol/layout anomaly was
-  seen; the adapter cannot prove safe compatibility.
-- `unsupported`: a separately accepted API/protocol version contract explicitly
-  marks the observed version outside the adapter contract. No such version
-  mapping is assumed by this v1 implementation.
-
-Diagnostics classify the first actionable boundary as `connection`, `auth`,
-`routing`, `protocol`, `layout`, or `mapping`. Failure codes are bounded,
-developer-readable labels; raw provider error text is not copied into the
-artifact.
-
-
-<a id="c9-0015-alfa-pro-compatibility-diagnostics-19-safety-and-apply-rules"></a>
-#### Safety and apply rules
-
-The existing lifecycle remains authoritative: explicit refresh, preview,
-owner mapping, explicit prepare/select decisions, and persisted staleness
-fingerprints. `BrokerSnapshot.status` becomes `compatibility_error` when the
-required read completes but compatibility is `unknown` or `unsupported`, and
-`eligible_for_apply` remains false. The API does not refresh in the background,
-does not broaden the channel allowlist, and does not bypass mapping or
-staleness checks.
-
-The preview response exposes both structured `diagnostics` and a text
-`diagnostic_report`. The Alfa PRO panel displays the report behind an explicit
-details disclosure and provides an owner-triggered copy action. The text form
-repeats the safety assertions so it can be transferred without accompanying
-application logs.
-
 <a id="c9-2026-08-20-r06-03-alfa-pro-field-mapping-10"></a>
-### Complete accepted Alfa v2.1 field and unit table
-
-The production adapter does not query historical operation entities.
-
-
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-decision"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-1-introduce-a-dedicated-brokersnapshotprovider-boundary"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-2-alfa-pro-authentication-is-bus-gated-and-fail-closed"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-3-read-only-safety-is-structural-not-credential-scoped"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-4-minimize-the-production-snapshot-entity-surface"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-5-snapshot-financial-values-are-observations-with-explicit-semantics"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-6-hermes-identity-remains-canonical-alfa-identity-is-a-provider-projection"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-7-iis-classification-remains-owner-controlled-until-semantics-are-accepted"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-8-reconciliation-preview-is-mandatory-before-persistenceapply"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-9-current-snapshot-and-historical-broker-ledger-are-deliberately-separated"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-10-browserfrontend-must-never-proxy-the-alfa-router"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-11-persistence-is-gated-and-minimized"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-12-compatibility-failures-are-explicit-no-speculative-protocol-fallback"></a>
+<a id="c9-0013-broker-snapshot-and-alfa-pro-security-30-provider-neutral-status-expectations"></a>
+<a id="c9-0015-alfa-pro-compatibility-diagnostics-19-decision"></a>
+<a id="c9-0015-alfa-pro-compatibility-diagnostics-19-safety-and-apply-rules"></a>
 <a id="c9-2026-08-20-r06-03-alfa-pro-field-mapping-10-accepted-mappings"></a>
-#### Accepted mappings
-
-| Alfa entity | Alfa field | Official wording | Snapshot field | Units |
-|---|---|---|---|---|
-| ClientAccountEntity | IdAccount | Идентификатор счёта | provider_account_id | opaque id |
-| ClientSubAccountEntity | IdSubAccount | Идентификатор субсчёта | provider_subaccount_id | opaque id |
-| ClientSubAccountEntity | IdAccount | Счёт клиента | provider_account_id | opaque id |
-| SubAccountRazdelEntity | IdRazdel | Идентификатор портфеля | provider_section_id | opaque id |
-| SubAccountRazdelEntity | IdAccount | Счёт клиента | provider_account_id | opaque id |
-| SubAccountRazdelEntity | IdSubAccount | Субсчёт клиента | provider_subaccount_id | opaque id |
-| SubAccountRazdelEntity | IdRazdelGroup | Группа портфелей 1–4 | section_group | official int |
-| SubAccountRazdelEntity | RCode | Код раздела | section_code | string |
-| ClientPositionEntity | IdAccount / IdSubAccount / IdRazdel / IdObject | Счёт / Субсчёт / Портфель / Выпуск | provider_* ids | opaque id |
-| ClientPositionEntity | TorgPos | Текущая позиция | quantity | Decimal quantity |
-| ClientPositionEntity | Price | Текущая цена | broker_unit_price | provider price number |
-| ClientPositionEntity | UchPrice | Учётная цена | accounting_price | provider price number |
-| ClientPositionEntity | NKD | НКД (накопленный купонный доход) | accrued_interest_nkd | provider money number |
-| ClientPositionEntity | NPLtoMarketCurPrice | Номинальная прибыль/убыток (НПУ) | unrealized_result | provider money number |
-| ClientPositionEntity | IsMoney | Деньги — валютная позиция | is_money | bool |
-| ClientBalanceEntity | Money | Рубли | amount + currency RUB | RUB cash |
-| ClientBalanceEntity | IdAccount / IdSubAccount / IdRazdelGroup | Счёт / Субсчёт / Группа портфелей | provider refs | ids / group int |
-| AssetInfoEntity | ISIN / Ticker / Name / IdObject | Международный идентификатор / тикер / наименование / выпуск | isin, ticker, display_name, provider_instrument_id | reconciliation metadata |
-
-JSON financial numbers are decoded with `parse_float=Decimal` at the payload boundary. Binary `float` is rejected, not recovered via `Decimal(str(float))`.
-
-`source_as_of` is a timezone-aware **local observation time**. The official current-state entities do not document an authoritative snapshot timestamp.
-
-
 <a id="c9-2026-08-20-r06-03-alfa-pro-field-mapping-10-unresolved--kept-none--ignored"></a>
-#### Unresolved — kept None / ignored
-
-| Alfa field | Official wording | Why not mapped |
-|---|---|---|
-| ClientAccountEntity extras (including undocumented live account-kind fields) | not in v2.1 schema (schema lists only IdAccount) | IIS remains owner-controlled; no inference from name/code/substring |
-| ClientPositionEntity.PSTNKD | НКД | insufficient to distinguish from documented NKD |
-| ClientPositionEntity.DailyPL | Текущая прибыль/убыток (ПУдн) | daily P/L is not the unrealized-result mapping |
-| ClientBalanceEntity.PortfolioCost | Стоимость портфеля | portfolio-level; not a position market value |
-| position market_value | (none) | no official position market-value field |
-
-Hermes must not compute a silent `TorgPos * Price` stand-in for provider market value.
-
-
 <a id="c9-2026-08-20-r06-03-alfa-pro-field-mapping-10-explicitly-out-of-this-adapter"></a>
-#### Explicitly out of this adapter
+### Retired snapshot transport and diagnostics
 
-- Historical operation entities and their type codes
-- `#Order.*`, limits, archive, order book, trade tape
-- Persistence, reconciliation, apply, API/UI
+The transport, compatibility diagnostics and field mapping are removed under [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19). Original decisions and field semantics remain historical evidence in [ADR 0013](adr/0013-broker-snapshot-and-alfa-pro-security.md), [ADR 0015](adr/0015-alfa-pro-compatibility-diagnostics.md) and the [archived field mapping](archive/2026-10-18/docs/reviews/2026-08-20-r06-03-alfa-pro-field-mapping.md).
 
 <a id="c10"></a>
+
 ## 10. Export formats, schema versions and compatibility
 
 Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.

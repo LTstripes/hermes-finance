@@ -7,16 +7,9 @@ import {
 } from "./navigation";
 
 describe("monthly close navigation", () => {
-  it("routes the Alfa action to the exact native month with canonical return context", () => {
-    expect(routeForGuidedAction("open_alfa_preview", 42, "alfa_baseline", "monthly-close-v2")).toBe(
-      "/v2/data/alfa-baseline?month=42&from=monthly-close-v2&step=alfa_baseline&monthId=42",
-    );
-  });
-
   it.each([
     ["open_month", "month_setup", "/v2/data/months/42"],
     ["clone_next_month", "next_month_outlook", "/v2/data/months?month=42"],
-    ["open_reconciliation_preview", "broker_reconciliation", "/v2/data/reconciliation?month=42"],
   ] as const)("routes %s with exact selection and return context", (action, step, destination) => {
     const [path, query] = routeForGuidedAction(action, 42, step).split("?");
     const target = new URLSearchParams(query);

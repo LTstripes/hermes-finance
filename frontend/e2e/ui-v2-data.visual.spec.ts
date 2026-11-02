@@ -118,60 +118,6 @@ async function installDataApi(page: Page) {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/instruments") {
       json = uiV2Instruments;
-    } else if (url.pathname === "/api/months/12/broker-reconciliation-preview") {
-      if (request.method() !== "POST") {
-        unexpected.push(`${request.method()} ${url.pathname}`);
-        await route.abort();
-        return;
-      }
-      json = {
-        reporting_month_id: 12,
-        provider: "alfa_pro",
-        status: "applicable",
-        read_only: true,
-        eligible_for_apply: false,
-        stale: false,
-        snapshot_status: "complete",
-        compatibility_state: "compatible",
-        compatibility_fingerprint: "a".repeat(64),
-        snapshot_fingerprint: "b".repeat(64),
-        source_as_of: "2031-08-30T12:00:00+00:00",
-        captured_at: "2031-08-30T12:05:00+00:00",
-        month_status: "draft",
-        month_closed: false,
-        accounts: [],
-        instruments: [],
-        rows: [],
-        cash: [],
-        warnings: [],
-        diagnostics: {
-          schema_version: "alfa-pro-diagnostics/v1",
-          provider: "alfa_pro",
-          snapshot_status: "complete",
-          eligible_for_apply: false,
-          compatibility_state: "compatible",
-          compatibility_fingerprint: "a".repeat(64),
-          api_doc_version: "synthetic",
-          observed_alfa_pro_version: null,
-          observed_api_version: null,
-          observed_protocol_version: null,
-          protocol_family: "router-v1",
-          layout_family: "snapshot-v2.1",
-          capabilities: [],
-          failure_class: "none",
-          failure_codes: [],
-          entity_status: [],
-          entity_counts: [],
-          observed_fields: [],
-          safe_artifact: true,
-          raw_payload_saved: false,
-          private_values_included: false,
-          credentials_included: false,
-        },
-        diagnostic_report: "synthetic",
-        error_code: null,
-        message: null,
-      };
     } else if (request.method() !== "GET") {
       unexpected.push(line);
       await route.abort();
@@ -289,8 +235,8 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   test.skip(testInfo.project.name !== "1440x900", "Navigation evidence captured once");
   const evidence = await installDataApi(page);
   const sourcePath = "/v2/data?month=12&from=monthly-close-v2&step=readiness&monthId=12";
-  const reconciliationPath =
-    "/v2/data/reconciliation?month=12&from=monthly-close-v2&step=readiness&monthId=12";
+  const intakePath =
+    "/v2/data/source-intake?month=12&from=monthly-close-v2&step=readiness&monthId=12";
   await page.goto(sourcePath);
   await expect(page.getByTestId("data-month-context")).toContainText("Август 2031");
   await expect(page.getByRole("link", { name: "Экспорт и копии" })).toHaveAttribute(
@@ -302,14 +248,14 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
     "/v2/data/app",
   );
   await expect(page.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
-  const reconciliation = page.getByRole("link", { name: "Сверка портфеля" });
-  await reconciliation.focus();
-  await expect(reconciliation).toBeFocused();
-  await reconciliation.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`${reconciliationPath.replaceAll("?", "\\?")}$`));
-  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  const intake = page.getByRole("link", { name: "Разбор источника" });
+  await intake.focus();
+  await expect(intake).toBeFocused();
+  await intake.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`${intakePath.replaceAll("?", "\\?")}$`));
+  await expect(page.getByRole("heading", { level: 1, name: "Разбор источника" })).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Разбор источника" })).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`${sourcePath.replaceAll("?", "\\?")}$`));
   await expect(page.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
@@ -332,30 +278,6 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=readiness$/);
   await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
   expect(evidence.posts).toEqual([]);
-  expect(evidence.unexpected).toEqual([]);
-  expect(evidence.errors).toEqual([]);
-});
-
-test("ui-v2 Data reconciliation: no provider call on mount; preview only on click", async ({
-  page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "1440x900", "Reconciliation proof captured once");
-  const evidence = await installDataApi(page);
-  await page.goto("/v2/data/reconciliation");
-  await expect(page.getByTestId("reconciliation-idle")).toBeVisible();
-  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
-    "Сверка только показывает различия и ничего не сохраняет",
-  );
-  await expect(page.getByTestId("reconciliation-safety-note")).toContainText(
-    "Данные брокера запрашиваются только после нажатия",
-  );
-  expect(evidence.posts).toEqual([]);
-  await page.getByRole("button", { name: "Проверить снимок" }).click();
-  await expect(page.getByTestId("reconciliation-result")).toBeVisible();
-  await expect(page.getByText("eligible_for_apply", { exact: false })).toHaveCount(0);
-  expect(evidence.posts).toEqual(["POST /api/months/12/broker-reconciliation-preview"]);
-  await assertBounded(page);
-  await capture(page, testInfo, "ui-v2-data-reconciliation-desktop");
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });

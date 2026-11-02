@@ -164,6 +164,47 @@ def test_unknown_integration_weight_fails_closed(monkeypatch) -> None:
     assert ci_integrations_shard_for_test_path(TESTS_ROOT / removed) is None
 
 
+def test_integration_groups_do_not_rebalance_when_weights_change(monkeypatch) -> None:
+    import _test_taxonomy as taxonomy
+
+    assignments = {path: ci_integrations_shard_for_test_path(path) for path in _integration_files()}
+    assert assignments[TESTS_ROOT / "test_freshness_provenance.py"] == "ci_integrations_a"
+    assert assignments[TESTS_ROOT / "test_statement_import_apply.py"] == "ci_integrations_b"
+    weights = dict(CI_INTEGRATIONS_SHARD_WEIGHTS)
+    # Retire the largest module and change another duration; neither operation
+    # may move any remaining file out of its accepted historical A/B group.
+    removed = "test_statement_import_mybroker_endpoints.py"
+    weights.pop(removed)
+    weights["test_freshness_provenance.py"] = 1000.0
+    monkeypatch.setattr(taxonomy, "CI_INTEGRATIONS_SHARD_WEIGHTS", weights)
+
+    assert ci_integrations_shard_for_test_path(TESTS_ROOT / removed) is None
+    for path, group in assignments.items():
+        if path.name != removed:
+            assert ci_integrations_shard_for_test_path(path) == group
+
+
+def test_integration_roster_covers_existing_files_once() -> None:
+    from _test_taxonomy import CI_INTEGRATIONS_SHARD_FILES
+
+    group_a = CI_INTEGRATIONS_SHARD_FILES["ci_integrations_a"]
+    group_b = CI_INTEGRATIONS_SHARD_FILES["ci_integrations_b"]
+    assert group_a.isdisjoint(group_b)
+    assert group_a | group_b == set(CI_INTEGRATIONS_SHARD_WEIGHTS)
+
+
+def test_missing_or_ambiguous_integration_group_fails_closed(monkeypatch) -> None:
+    import _test_taxonomy as taxonomy
+
+    path = TESTS_ROOT / "test_freshness_provenance.py"
+    for groups in (
+        dict.fromkeys(CI_INTEGRATIONS_SHARD_MARKERS, frozenset()),
+        dict.fromkeys(CI_INTEGRATIONS_SHARD_MARKERS, frozenset({path.name})),
+    ):
+        monkeypatch.setattr(taxonomy, "CI_INTEGRATIONS_SHARD_FILES", groups)
+        assert ci_integrations_shard_for_test_path(path) is None
+
+
 def test_integration_files_have_one_exclusive_shard() -> None:
     assert all(weight > 0 for weight in CI_INTEGRATIONS_SHARD_WEIGHTS.values())
     totals = {marker: 0.0 for marker in CI_INTEGRATIONS_SHARD_MARKERS}

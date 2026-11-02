@@ -16,11 +16,9 @@ import { UiV2Shell } from "./UiV2Shell";
 const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
   { id: "sources", label: "Источники и актуальность" },
   { id: "source-intake", label: "Разбор источника" },
-  { id: "reconciliation", label: "Сверка портфеля" },
 ];
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
-  { id: "alfa-baseline", label: "Позиции из Alfa" },
   { id: "payouts", label: "Выплаты" },
   { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },

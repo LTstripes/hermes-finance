@@ -491,7 +491,7 @@ describe("native Monthly Close work mode", () => {
   });
 
   it("refetches authoritative workflow on window focus", async () => {
-    const { mount, state } = setup("/v2/close?month=12&step=alfa_baseline");
+    const { mount, state } = setup("/v2/close?month=12&step=market_quotes");
     mount();
     await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
     const before = state.workflowReads;

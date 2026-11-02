@@ -152,7 +152,7 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await expect(page.getByTestId("v2-capital")).toHaveText("2 803 900 ₽");
   await expect(page.getByTestId("v2-draft-action")).toHaveAttribute(
     "href",
-    "/v2/close?month=12&step=alfa_baseline",
+    "/v2/close?month=12&step=market_quotes",
   );
   await expect(
     page.getByRole("region", { name: "Главные показатели" }).getByRole("article"),
@@ -496,34 +496,14 @@ async function installCloseApi(page: Page) {
   return { errors, requests, state, unexpected };
 }
 
-test("ui-v2 Monthly Close desktop: provider handoff, final review, Close and Home journey", async ({
+test("ui-v2 Monthly Close desktop: final review, Close and Home journey", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Interaction proof once");
   const evidence = await installCloseApi(page);
   await page.goto("/v2");
   await page.getByTestId("v2-draft-action").click();
-  await expect(page).toHaveURL(/\/v2\/close\?month=12&step=alfa_baseline$/);
-  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "Сверить состав портфеля", exact: true }),
-  ).toBeVisible();
-
-  await page.getByRole("link", { name: "Открыть предпросмотр Alfa" }).click();
-  await expect(page).toHaveURL(
-    /\/v2\/data\/alfa-baseline\?month=12&from=monthly-close-v2&step=alfa_baseline&monthId=12$/,
-  );
-  await expect(page.getByRole("heading", { name: "Текущий базовый срез" })).toBeVisible();
-  await expect(page.getByLabel("Отчётный месяц", { exact: true })).toHaveValue("12");
-  expect(
-    evidence.requests.filter((request) => request.includes("broker-snapshot-preview")),
-  ).toEqual([]);
-  await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=12&step=alfa_baseline",
-  );
-  await page.getByRole("link", { name: "Вернуться к закрытию" }).click();
-
+  await expect(page).toHaveURL(/\/v2\/close\?month=12&step=market_quotes$/);
   await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
   await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
   await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();

@@ -16,7 +16,7 @@ function jsonOk(body: unknown) {
 
 const mapping = {
   mapping_id: 7,
-  provider: "alfa_pro",
+  provider: "synthetic_broker",
   subject_kind: "account",
   provider_identity: "SYN-ACCOUNT-001",
   hermes_target_id: 3,
@@ -42,9 +42,11 @@ describe("broker identity mapping API helpers", () => {
       .mockResolvedValue(jsonOk([mapping, { ...mapping, mapping_id: 8, status: "superseded" }]));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(listEffectiveBrokerIdentityMappings("alfa_pro")).resolves.toEqual([mapping]);
+    await expect(listEffectiveBrokerIdentityMappings("synthetic_broker")).resolves.toEqual([
+      mapping,
+    ]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/broker-identity-mappings?provider=alfa_pro",
+      "/api/broker-identity-mappings?provider=synthetic_broker",
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -54,7 +56,7 @@ describe("broker identity mapping API helpers", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await confirmBrokerIdentityMapping({
-      provider: "alfa_pro",
+      provider: "synthetic_broker",
       subject_kind: "account",
       provider_identity: "SYN-ACCOUNT-NEW",
       hermes_target_id: 4,
@@ -65,7 +67,7 @@ describe("broker identity mapping API helpers", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          provider: "alfa_pro",
+          provider: "synthetic_broker",
           subject_kind: "account",
           provider_identity: "SYN-ACCOUNT-NEW",
           hermes_target_id: 4,

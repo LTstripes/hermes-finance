@@ -6,7 +6,6 @@ import { readDisplayNames } from "./returns/dashboard";
 
 import type { DataAppSection } from "./monthSelection";
 
-const UiV2AlfaBaselinePage = lazy(() => import("./UiV2AlfaBaselinePage"));
 const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 
 const UiV2Page = lazy(() => import("./UiV2Page"));
@@ -22,7 +21,6 @@ const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
 const UiV2SourceIntakePage = lazy(() => import("./UiV2SourceIntakePage"));
 const UiV2MonthsPage = lazy(() => import("./UiV2MonthsPage"));
 const UiV2MonthEditorPage = lazy(() => import("./UiV2MonthEditorPage"));
-const UiV2DataReconciliationPage = lazy(() => import("./UiV2DataReconciliationPage"));
 const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
 const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
 const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
@@ -69,14 +67,6 @@ function SuspenseFrame({ children }: { children: ReactNode }) {
     <UiV2ErrorBoundary>
       <Suspense fallback={<UiV2LoadingFallback />}>{children}</Suspense>
     </UiV2ErrorBoundary>
-  );
-}
-
-export function UiV2AlfaBaselineEntry() {
-  return (
-    <SuspenseFrame>
-      <UiV2AlfaBaselinePage />
-    </SuspenseFrame>
   );
 }
 
@@ -185,14 +175,6 @@ export function UiV2MonthEditorEntry() {
   );
 }
 
-export function UiV2DataReconciliationEntry() {
-  return (
-    <SuspenseFrame>
-      <UiV2DataReconciliationPage />
-    </SuspenseFrame>
-  );
-}
-
 export function UiV2DataCatalogsEntry() {
   return (
     <SuspenseFrame>
@@ -220,10 +202,7 @@ export function UiV2DataAppEntry() {
 export function UiV2DataPlaceholderEntry({
   section,
 }: {
-  section: Exclude<
-    DataAppSection,
-    "sources" | "reconciliation" | "months" | "alfa-baseline" | "payouts" | "source-intake"
-  >;
+  section: Exclude<DataAppSection, "sources" | "months" | "payouts" | "source-intake">;
 }) {
   return (
     <SuspenseFrame>

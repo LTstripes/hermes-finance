@@ -177,7 +177,6 @@ CI_CORE_SHARD_WEIGHTS = {
     "test_portfolio_review_package_contract.py": 0.13,
     "test_properties.py": 10.62,
     "test_r02_27_passive_goal_current_value.py": 0.41,
-    "test_r06_09_api.py": 6.95,
     "test_r08_01c_performance_availability.py": 7.54,
     "test_performance_readiness.py": 5.0,  # Initial estimate for the new projection contract.
     "test_historical_membership.py": 5.0,
@@ -219,13 +218,9 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_ai_analysis_bundle_export.py": 11.44,
     "test_ai_analysis_bundle_financial_review_contract.py": 6.78,
     "test_ai_financial_review_linked_pairs.py": 2.54,
-    "test_alfa_pro_probe.py": 16.10,
-    "test_alfa_pro_snapshot.py": 21.61,
-    "test_broker_baseline_apply.py": 6.78,
     "test_broker_identity_mappings.py": 5.93,
     "test_broker_intake_reconciliation.py": 5.0,
     "test_broker_statement_evidence.py": 12.0,
-    "test_broker_snapshot_apply.py": 11.44,
     "test_forecast_dashboard_integration.py": 4.66,
     "test_freshness_provenance.py": 5.08,
     "test_instrument_mappings.py": 9.32,
@@ -236,7 +231,6 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_markdown_export_api.py": 4.24,
     "test_market_data_provider.py": 10.59,
     "test_market_identity.py": 3.81,
-    "test_normalized_reconciliation.py": 3.81,
     "test_payout_api.py": 9.32,
     "test_payout_draft_refresh.py": 12.0,
     "test_payout_api_hardening.py": 1.27,
@@ -255,7 +249,6 @@ CI_INTEGRATIONS_SHARD_WEIGHTS = {
     "test_quote_failure_ux.py": 4.66,
     "test_quote_preview.py": 4.66,
     "test_quote_preview_api.py": 2.54,
-    "test_reconciliation_preview.py": 13.56,
     "test_risk_allocation.py": 2.97,
     "test_statement_import.py": 23.73,
     "test_statement_import_apply.py": 17.80,
@@ -303,9 +296,6 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
     "test_ai_analysis_bundle_contract.py": 0.21,
     "test_ai_analysis_bundle_export.py": 31.16,
     "test_ai_analysis_bundle_financial_review_contract.py": 1.02,
-    "test_alfa_pro_probe.py": 1.08,
-    "test_broker_baseline_apply.py": 6.04,
-    "test_broker_snapshot_apply.py": 9.27,
     "test_forecast_dashboard_integration.py": 4.19,
     "test_freshness_provenance.py": 4.57,
     "test_instrument_mappings_api.py": 10.17,
@@ -313,7 +303,6 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
     "test_linked_pair_read_model.py": 3.17,
     "test_markdown_export.py": 0.01,
     "test_market_data_provider.py": 0.02,
-    "test_normalized_reconciliation.py": 1.62,
     "test_payout_apply.py": 10.86,
     "test_payout_apply_hardening.py": 0.67,
     "test_payout_preview.py": 8.10,
@@ -322,7 +311,6 @@ CI_INTEGRATIONS_A_SHARD_WEIGHTS = {
     "test_quote_apply_api.py": 24.47,
     "test_quote_failure_ux.py": 4.01,
     "test_quote_preview_api.py": 2.77,
-    "test_reconciliation_preview.py": 0.34,
     "test_statement_import.py": 5.01,
     "test_statement_import_broker_statement_return.py": 128.98,
     "test_statement_import_historical_endpoints.py": 44.18,
@@ -460,7 +448,6 @@ CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
     "test_ai_analysis_bundle_source_returns.py": 5.00,
     "test_statement_import_payout_reconciliation.py": 30.0,
     "test_ai_financial_review_linked_pairs.py": 4.00,
-    "test_alfa_pro_snapshot.py": 1.02,
     "test_broker_identity_mappings.py": 5.39,
     "test_instrument_mappings.py": 7.47,
     "test_markdown_export_api.py": 5.98,
@@ -555,6 +542,18 @@ CI_INTEGRATIONS_B_SHARD_WEIGHTS = {
     "test_t_invest_quotation.py": 0.01,
 }
 
+# The per-group execution tables pin the accepted historical A/B file roster.
+# Removing a retired suite must not rebalance surviving files across groups.
+# Duration weights still schedule nodes within each group; parent weights remain
+# complete, positive coverage guards without entries for deleted files.
+CI_INTEGRATIONS_SHARD_FILES = {
+    marker: frozenset(key.split("::", 1)[0] for key in weights)
+    for marker, weights in (
+        ("ci_integrations_a", CI_INTEGRATIONS_A_SHARD_WEIGHTS),
+        ("ci_integrations_b", CI_INTEGRATIONS_B_SHARD_WEIGHTS),
+    )
+}
+
 _CI_LANE_OVERRIDES = {
     "security/test_security_review.py": "ci_runtime_release",
     # Resolve legacy flat modules and ambiguous additive-marker combinations
@@ -640,9 +639,7 @@ _PERSISTENCE_FILES = frozenset(
         "test_backups_api.py",
         "test_protected_backups.py",
         "test_recovery_rehearsal.py",
-        "test_broker_baseline_apply.py",
         "test_broker_identity_mappings.py",
-        "test_broker_snapshot_apply.py",
         "test_database.py",
         "test_month_clone.py",
         "test_month_guard.py",
@@ -660,9 +657,7 @@ _INTEGRATION_FILES = frozenset(
         "test_instrument_type_compatibility.py",
         "test_market_data_provider.py",
         "test_market_identity.py",
-        "test_normalized_reconciliation.py",
         "test_provider_capabilities.py",
-        "test_reconciliation_preview.py",
         "test_risk_allocation.py",
         "test_forecast_dashboard_integration.py",
     }
@@ -713,8 +708,6 @@ _WINDOWS_FILES = frozenset(
 _NETWORK_FREE_FILES = frozenset(
     {
         "test_ai_analysis_bundle_export.py",
-        "test_alfa_pro_probe.py",
-        "test_alfa_pro_snapshot.py",
         "test_local_security.py",
         "test_provider_capabilities.py",
         "test_r04_08_release_verification.py",
@@ -766,7 +759,6 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     if filename in _INTEGRATION_FILES or any(
         filename.startswith(prefix)
         for prefix in (
-            "test_alfa_pro_",
             "test_broker_",
             "test_payout_",
             "test_quote_",
@@ -879,7 +871,7 @@ def ci_persistence_shard_for_test_path(test_path: Path) -> str | None:
 
 
 def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
-    """Return one exclusive duration-weighted shard for an integration file."""
+    """Return the pinned historical A/B group, failing closed on missing ownership."""
 
     if ci_lane_for_test_path(test_path) != "ci_integrations":
         return None
@@ -887,37 +879,11 @@ def ci_integrations_shard_for_test_path(test_path: Path) -> str | None:
     relative_path = _relative_test_path(test_path)
     if relative_path is None:
         return None
-    # Keep the accepted A/B groups stable when adding the bounded #711 suite.
-    added = {
-        "test_broker_statement_evidence.py",
-        "test_statement_import_payout_reconciliation.py",
-        "test_payout_draft_refresh.py",
-        "test_ai_analysis_bundle_source_returns.py",
-    }
-    # New A coverage must not rebalance the historical A/B file roster; the
-    # split weight tables intentionally describe those existing groups.
-    added_a = {"test_broker_intake_reconciliation.py"}
-    if relative_path.as_posix() in added_a:
-        return (
-            "ci_integrations_a"
-            if CI_INTEGRATIONS_SHARD_WEIGHTS.get(relative_path.as_posix(), 0) > 0
-            else None
-        )
-    if relative_path.as_posix() in added:
-        return (
-            "ci_integrations_b"
-            if CI_INTEGRATIONS_SHARD_WEIGHTS.get(relative_path.as_posix(), 0) > 0
-            else None
-        )
-    return _weighted_shard(
-        relative_path.as_posix(),
-        {
-            key: value
-            for key, value in CI_INTEGRATIONS_SHARD_WEIGHTS.items()
-            if key not in added | added_a
-        },
-        CI_INTEGRATIONS_SHARD_MARKERS,
-    )
+    key = relative_path.as_posix()
+    if CI_INTEGRATIONS_SHARD_WEIGHTS.get(key, 0) <= 0:
+        return None
+    groups = [marker for marker, files in CI_INTEGRATIONS_SHARD_FILES.items() if key in files]
+    return groups[0] if len(groups) == 1 else None
 
 
 def ci_integrations_a_shard_for_test_node(test_path: Path, nodeid: str) -> str | None:

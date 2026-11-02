@@ -23,7 +23,7 @@ import { UNKNOWN_SOURCE_LABEL } from "./uiV2Copy";
 
 const FAMILY_CLOSE_STEP: Record<string, GuidedCloseStepId | null> = {
   market_quotes: "market_quotes",
-  alfa_pro_positions: "alfa_baseline",
+  broker_positions: null,
   t_invest_payouts: "future_payouts",
   alfa_statement_payouts: "actual_payouts",
   manual_month_data: null,
@@ -33,7 +33,7 @@ const FAMILY_CLOSE_STEP: Record<string, GuidedCloseStepId | null> = {
 const SAVED_REASON_CODES = new Set([
   "payout_event_present",
   "statement_event_present",
-  "alfa_pro_baseline_present",
+  "broker_baseline_present",
   "manual_month_data_present",
   "deposit_cash_present",
 ]);
@@ -50,7 +50,9 @@ const EVENT_FRESHNESS_CLOCKS = new Set(["payment_date", "event_date", "source_as
 
 function familyOrigin(family: FreshnessFamily): string {
   if (family.family_id === "alfa_statement_payouts") return "Загружено из выписки Альфа-Банка";
-  if (family.family_id === "alfa_pro_positions") return "Получено из Alfa PRO";
+  if (family.family_id === "broker_positions") {
+    return `Получено из ${family.providers.map(sourceLabel).join(" · ")}`;
+  }
   if (family.family_id === "t_invest_payouts") return "Получено из T-Invest";
   if (family.family_id === "market_quotes") {
     const providers = family.providers.map(sourceLabel);
@@ -79,9 +81,6 @@ function familySavedState(family: FreshnessFamily): { label: string; tone: strin
   }
   if (family.reasons.some((reason) => EMPTY_REASON_CODES.has(reason.code))) {
     return { label: "Ничего не сохранено", tone: "missing" };
-  }
-  if (family.family_id === "alfa_pro_positions") {
-    return { label: "Срез не сохранён", tone: "unknown" };
   }
   return { label: "Не подтверждено", tone: "unknown" };
 }
@@ -384,7 +383,7 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
           <Link to={monthlyCloseReturnPath({ monthId, origin: "monthly-close-v2", step })}>
             Открыть шаг закрытия →
           </Link>
-        ) : (
+        ) : family.family_id === "broker_positions" ? null : (
           <span className={dataStyles.muted}>Обновление — вручную в редакторе месяца</span>
         )}
       </div>
