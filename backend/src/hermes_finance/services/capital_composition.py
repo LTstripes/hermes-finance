@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
+from hermes_finance.domain.monthly_summary import MonthlyCapitalChange
 from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.reporting import ReportingMonthStatus
 from hermes_finance.domain.values import RubleAmount
@@ -91,6 +92,7 @@ class ClosedReportComparison:
     linked_pair_debts_delta: RubleAmount | None
     linked_pair_net_contribution_delta: RubleAmount | None
     explanation: CapitalChangeExplanation | None
+    capital_change: MonthlyCapitalChange | None = None
 
 
 def _amount_delta(current: RubleAmount, previous: RubleAmount) -> RubleAmount:
@@ -109,6 +111,19 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
     history = capital_composition_history(session)
     current = history.points[-1] if history.points else None
     previous = history.points[-2] if len(history.points) >= 2 else None
+    capital_change = None
+    if current is not None:
+        from hermes_finance.services.monthly_capital_change import monthly_capital_change
+
+        ids = [current.reporting_month_id] + ([previous.reporting_month_id] if previous else [])
+        liquid = liquid_capital_for_months(session, ids)
+        capital_change = monthly_capital_change(
+            session,
+            current=session.get(ReportingMonth, current.reporting_month_id),
+            previous=session.get(ReportingMonth, previous.reporting_month_id) if previous else None,
+            liquid=liquid[current.reporting_month_id],
+            previous_liquid=liquid[previous.reporting_month_id] if previous else None,
+        )
     if current is None or previous is None:
         return ClosedReportComparison(
             asset_classes=history.asset_classes,
@@ -123,6 +138,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
             linked_pair_debts_delta=None,
             linked_pair_net_contribution_delta=None,
             explanation=None,
+            capital_change=capital_change,
         )
 
     previous_allocation = {item.asset_class: item.amount for item in previous.allocation}
@@ -159,6 +175,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
             current.linked_pair_net_contribution, previous.linked_pair_net_contribution
         ),
         explanation=explanation,
+        capital_change=capital_change,
     )
 
 

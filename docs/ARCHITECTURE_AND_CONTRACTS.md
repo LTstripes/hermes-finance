@@ -676,6 +676,38 @@ liquid_capital_net = liquid_assets - credit_card_debt - other_included_debts
 Формула — известный итог по сохранённым включённым строкам. Счёт без снимка остаётся в каталоге; в сумму не входит его отсутствующее значение, и нулём оно не подставляется. Строка `CashBalance` с `account_id = NULL` — непривязанный кэш и не закрывает снимок ни одного реального счёта. Слова `available`, `exact`, `partial` и `complete` для этого итога, полнота источников портфеля и отдельная полнота cash-history/performance заданы в [`docs/financial-completeness-contract.md`](#c2-financial-completeness-contract-8).
 
 
+#### Monthly capital-change explanation
+
+Monthly summary `capital_change` and the analytics closed-report comparison use
+one read-only assembler and the pure `domain.monthly_summary` bridge. For adjacent
+calendar months with month-end snapshots and available endpoint evidence:
+
+```text
+start + external_net + investment_result + other_changes + unexplained = end
+unexplained = end - start - external_net - investment_result - other_changes
+```
+
+All operands use integer kopecks/RubleAmount; API money uses exact Decimal strings.
+Components are explicitly `known_subtotals`, not assertions of complete history.
+Start/end reuse liquid_capital; partial endpoint coverage retains its reason.
+Missing endpoints, non-month-end snapshots or calendar gaps withhold the bridge.
+Existing summary delta and closed-to-closed comparison semantics are unchanged.
+
+External net reuses canonical ExternalFlow portfolio classifications only when
+its dated performance roster exactly matches the included capital-account set.
+Unassigned cash or included cash attached outside that roster withholds external
+attribution. Unresolved/unknown/non-RUB flows are excluded. Account-only broker-money funding
+is not automatically a whole-capital inflow. Internal transfers are not external
+funding; unproved movements remain unexplained. History completeness is unproven.
+Investment result reuses included-account deposit-interest sources and existing
+monthly account Returns with the #1043 exact account link, exact interval and
+matching saved account endpoints. Such source P&L retains its estimate status;
+accepted payouts, instrument results and cost-based unrealized totals are not
+added again. Missing or mismatched account results remain unexplained.
+Other changes currently contain only previous minus current included liabilities.
+No residual asset delta is silently assigned to other changes. This read model
+creates no financial/Close authority and performs no source or runtime writes.
+
 <a id="c2-master_spec-668-102-чистая-стоимость-недвижимости"></a>
 #### 10.2. Чистая стоимость недвижимости
 
@@ -13406,6 +13438,19 @@ and validation; it does not define an endpoint, UI, or file-generation workflow.
 
 <a id="c10-ai_analysis_bundle-1-representation-rules"></a>
 #### Representation rules
+
+AI Analysis Bundle and the recommended AI Financial Review also expose the optional
+additive `statement_top_ups` block (including normalized v2). Existing fields and
+previous packages remain valid. One shared broker_money reader selects each
+canonical account-funding target once from its latest effective proof; stale,
+retired or revoked authority is excluded. Amounts are per financial account and
+event calendar month, with YYYY-MM and explicit date bounds, export-local account
+refs, accepted/excluded counts and reasons. Known top-ups do not subtract
+withdrawals, include coupons or count replay/overlap copies again. Missing effective
+evidence is NULL or absent, never an invented zero month. Totals are known RUB
+subtotals with unknown history completeness and unknown whole-portfolio scope.
+Known top-ups use the existing money-metric availability/precision/source/reasons
+shape, including NULL value and unknown precision when no effective amount exists.
 
 - Money is a decimal string in major RUB units, always with two fractional digits. JSON numbers
   are not used for money, rates, percentages, prices, or quantities.

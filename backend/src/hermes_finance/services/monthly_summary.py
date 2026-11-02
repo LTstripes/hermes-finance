@@ -107,6 +107,7 @@ def monthly_summary(
     liquid_capital_delta: RubleAmount | None = None
     passive_income_delta: RubleAmount | None = None
 
+    prev_liquid = None
     if prev is not None:
         delta_coverage = combined_portfolio_source_coverage(
             capital_coverage, coverage_by_month[prev.id]
@@ -162,10 +163,20 @@ def monthly_summary(
     if salary_tax is None:
         warnings += (SalaryTaxHistoryIncompleteError.code,)
 
+    from hermes_finance.services.monthly_capital_change import monthly_capital_change
+
+    capital_change = monthly_capital_change(
+        session,
+        current=reporting_month,
+        previous=prev,
+        liquid=liquid_capital,
+        previous_liquid=prev_liquid,
+    )
     return MonthlySummaryResult(
         year=year,
         month=month,
         liquid_capital=liquid_capital,
+        capital_change=capital_change,
         liquid_capital_delta=liquid_capital_delta,
         portfolio_source_coverage=capital_coverage,
         liquid_capital_delta_coverage=delta_coverage,

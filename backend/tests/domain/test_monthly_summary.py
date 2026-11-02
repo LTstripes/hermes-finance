@@ -61,6 +61,7 @@ EXPECTED_FIELDS = (
     "passive_income_average_months_used",
     "portfolio_source_coverage",
     "liquid_capital_delta_coverage",
+    "capital_change",
 )
 
 
@@ -255,7 +256,7 @@ def test_assemble_warnings_no_delta_warning_when_delta_is_present() -> None:
 def test_result_field_names_and_count() -> None:
     actual = tuple(f.name for f in fields(MonthlySummaryResult))
     assert actual == EXPECTED_FIELDS
-    assert len(actual) == 22
+    assert len(actual) == 23
 
 
 def test_calculation_version_constant_and_default() -> None:
@@ -275,3 +276,40 @@ def test_result_is_frozen() -> None:
 def test_result_custom_calculation_version_is_accepted() -> None:
     result = make_result(calculation_version="v2")
     assert result.calculation_version == "v2"
+
+
+@pytest.mark.parametrize(
+    "start,external,investment,other,end,residual",
+    [
+        (0, 0, 0, 0, 0, 0),
+        (100_001, 0, 0, 0, 100_001, 0),
+        (100_001, -20_002, 503, 17, 80_519, 0),
+        (100_001, 20_002, -503, -17, 119_490, 7),
+        (10**22 + 1, 3, 5, 7, 10**22 + 17, 1),
+    ],
+)
+def test_capital_change_exact_identity(start, external, investment, other, end, residual):
+    from hermes_finance.domain.monthly_summary import explain_capital_change
+
+    result = explain_capital_change(
+        start=RubleAmount(start),
+        end=RubleAmount(end),
+        external_net=RubleAmount(external),
+        investment_result=RubleAmount(investment),
+        other_changes=RubleAmount(other),
+    )
+    assert result.unexplained.kopecks == residual
+    assert result.other_changes.kopecks == other
+    assert (
+        sum(
+            value.kopecks
+            for value in (
+                result.start,
+                result.external_net,
+                result.investment_result,
+                result.other_changes,
+                result.unexplained,
+            )
+        )
+        == result.end.kopecks
+    )

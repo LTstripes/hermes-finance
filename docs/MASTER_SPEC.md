@@ -348,9 +348,17 @@ settings remain reachable inside Настройки; existing deep links keep wo
 On desktop the sidebar remains visible while the page scrolls, with its own
 scrolling at short heights and no content overlap.
 
+Capital shows a monthly change explanation for adjacent month-end snapshots:
+начальный капитал → внешние внесения/изъятия → инвестиционный результат →
+прочие изменения → отдельный необъяснённый остаток → конечный капитал.
+Amounts are backend-owned known subtotals; one plain-language note explains
+missing evidence. Other changes identify included-liability movement and never
+absorb the unexplained residual. Missing endpoints or calendar months withhold
+the bridge instead of fabricating a zero baseline.
+
 Capital places the existing allocation by asset class/account and largest
 positions below its main chart, followed by property and Где лежит капитал.
-The duplicated current-snapshot, changes, linked-pair and portfolio-performance
+The duplicated current-snapshot, class-change, linked-pair and portfolio-performance
 blocks are removed from this page; their data, calculations and dedicated tools
 are retained. Instrument names lead directly to the standalone instrument page,
 preserving the holding filter on return. Home retains the changes block and

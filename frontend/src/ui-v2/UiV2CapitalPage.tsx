@@ -173,6 +173,59 @@ function HeadlineGrid({
   );
 }
 
+function CapitalChange({ comparison }: { comparison: ClosedReportComparison | undefined }) {
+  const change = comparison?.capital_change;
+  if (
+    !comparison?.current ||
+    !change ||
+    change.reporting_month_id !== comparison?.current?.reporting_month_id ||
+    change.previous_reporting_month_id !== (comparison?.previous?.reporting_month_id ?? null)
+  )
+    return null;
+  const breakdown = change.breakdown;
+  const rows = breakdown
+    ? ([
+        ["Начальный капитал", breakdown.start],
+        ["Внешние внесения и изъятия", breakdown.external_net],
+        ["Инвестиционный результат", breakdown.investment_result],
+        ["Прочие изменения", breakdown.other_changes],
+        ["Необъяснённый остаток", breakdown.unexplained],
+        ["Конечный капитал", breakdown.end],
+      ] as const)
+    : [];
+  return (
+    <Panel
+      eyebrow={formatMonth(comparison.current.year, comparison.current.month)}
+      id="capital-change-title"
+      title="Как изменился капитал за месяц"
+      wide
+    >
+      {breakdown ? (
+        <>
+          <dl className={styles.netSummary}>
+            {rows.map(([label, amount], index) => (
+              <div key={label} data-testid={index === 4 ? "capital-unexplained" : undefined}>
+                <dt>{label}</dt>
+                <dd>{index === 0 || index === 5 ? money(amount) : moneyDelta(amount)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className={styles.panelFootnote}>
+            Показаны известные суммы. Прочие изменения — изменение включённых обязательств.
+            Неподтверждённые движения и недоступные результаты остаются в отдельном необъяснённом
+            остатке.
+            {change.reason_codes.includes("capital_investment_source_estimate")
+              ? " Инвестиционный результат включает оценку по выпискам с совпадающими остатками."
+              : ""}
+          </p>
+        </>
+      ) : (
+        <p>Для объяснения нужны данные на конец этого и предыдущего календарного месяца.</p>
+      )}
+    </Panel>
+  );
+}
+
 function CompositionOverTime({
   assetClasses,
   points,
@@ -678,6 +731,7 @@ export default function UiV2CapitalPage() {
           <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
         ) : null}
         <div className={styles.homeGrid}>
+          <CapitalChange comparison={comparison} />
           <CompositionOverTime
             assetClasses={compositionReady ? (compositionQuery.data?.asset_classes ?? []) : []}
             points={compositionReady ? (compositionQuery.data?.points ?? []) : []}

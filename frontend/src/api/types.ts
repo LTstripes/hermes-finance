@@ -661,6 +661,23 @@ export type ClosedReportSnapshot = CapitalCompositionPoint & {
   linked_pair_net_contribution: MoneyValue;
 };
 
+export type MonthlyCapitalChange = {
+  reporting_month_id: number;
+  previous_reporting_month_id: number | null;
+  period_start: string;
+  period_end: string;
+  component_basis: "known_subtotals";
+  breakdown: {
+    start: MoneyValue;
+    external_net: MoneyValue;
+    investment_result: MoneyValue;
+    other_changes: MoneyValue;
+    unexplained: MoneyValue;
+    end: MoneyValue;
+  } | null;
+  reason_codes: string[];
+};
+
 export type ClosedReportComparison = {
   comparison_basis: "latest_closed_to_previous_closed";
   availability: "available" | "previous_closed_report_unavailable" | "no_closed_report";
@@ -677,6 +694,7 @@ export type ClosedReportComparison = {
   linked_pair_net_contribution_delta: MoneyValue | null;
   net_liquid_capital_reconciles: boolean | null;
   explanation: CapitalChangeExplanation | null;
+  capital_change?: MonthlyCapitalChange | null;
 };
 
 export type LinkedPairEndpoint = {
@@ -767,6 +785,7 @@ export type DashboardSlice = {
   summary?: {
     forecast: DashboardForecast;
     liquid_capital?: DashboardLiquidCapital;
+    capital_change?: MonthlyCapitalChange | null;
   };
   mortgage: DashboardMortgage;
   historical_series?: CapitalHistoryPoint[];

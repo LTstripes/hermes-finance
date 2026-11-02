@@ -2531,3 +2531,177 @@ def test_capital_goal_source_metric_path_translates_to_historical_dynamics(
         if item["goal_type"] == "capital"
     )
     assert review_goal["source_metric_path"] == expected_path
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_statement_top_ups_count_effective_funding_once(app_context, normalized):
+    from test_statement_import_mybroker import FILENAME
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide, _money_setup
+
+    from hermes_finance.persistence import BrokerIdentityMapping
+    from hermes_finance.services.statement_top_ups import statement_top_up_totals
+
+    client, database = app_context
+    from test_statement_import_mybroker import ACCOUNT, ISIN
+
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    with database.session_factory() as session:
+        account = create_account(session, name="Synthetic account", account_type="brokerage")
+        instrument = create_instrument(
+            session, name="Synthetic security", instrument_type="stock", isin=ISIN
+        )
+        for identity in ("1234567", ACCOUNT):
+            confirm_mapping(
+                session,
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=identity,
+                hermes_target_id=account.id,
+            )
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="instrument",
+            provider_identity=ISIN,
+            hermes_target_id=instrument.id,
+            observed_isin=ISIN,
+        )
+    money_client, xml, intent, bond, _ = _money_setup(database)
+    originals = [(FILENAME, xml)]
+    try:
+        with database.session_factory() as session:
+            assert statement_top_up_totals(session) == ()
+            reviewed = _money_decide(session, intent, originals, bond)
+            saved = _money_apply(session, reviewed, originals)
+            from hermes_finance.services.broker_money import apply_money
+
+            apply_money(
+                session,
+                reviewed,
+                originals,
+                request_id="money-accepted",
+                confirmation_digest=saved["confirmation_digest"],
+            )  # replay is not another top-up
+            rows = statement_top_up_totals(session)
+            assert len(rows) == 1
+            assert rows[0].accepted_event_count == 1
+            assert rows[0].excluded_event_count == 0
+            assert rows[0].known_top_ups is not None
+            expected = rows[0].known_top_ups.to_api()
+            assert Decimal(expected) > 0
+
+        compact = _ok(client.post("/api/export/ai-analysis-bundle"), status=200)
+        params = {"format_version": "2.1.0" if normalized else "1.6.0"}
+        full = _ok(client.get("/api/export/ai-financial-review", params=params), status=200)
+        validate_ai_financial_review(full)
+        assert full["statement_top_ups"] == compact["statement_top_ups"]
+        funding = compact["statement_top_ups"]
+        assert funding["portfolio_scope"] == "unknown"
+        assert funding["coverage"] == "unknown"
+        item = funding["months"][0]
+        assert item["period"] == {"year": 2030, "month": 1}
+        assert item["period_label"] == "2030-01"
+        assert item["period_start"] == "2030-01-01"
+        assert item["period_end"] == "2030-01-31"
+        assert item["known_top_ups"]["value"] == _money(expected)
+        assert item["known_top_ups"]["availability"] == "available"
+        assert item["known_top_ups"]["precision"] == "exact"
+        markdown = client.post("/api/export/ai-analysis-bundle/markdown")
+        assert markdown.status_code == 200, markdown.text
+        assert f"| {item['account_ref']} | 2030-01 | {expected} |" in markdown.text
+
+        assert item["account_ref"] in {
+            row["ref"] for row in compact["current_portfolio"]["accounts"]
+        }
+        assert "target_id" not in json.dumps(funding)
+        assert "request_id" not in json.dumps(funding)
+
+        # Revoked source identity must not retain an old amount in a fresh GET.
+        with database.session_factory() as session:
+            from hermes_finance.services.broker_identity_mappings import revoke_mapping
+
+            mapping = session.scalar(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.provider_identity == ACCOUNT,
+                )
+            )
+            revoke_mapping(session, mapping.id, reason="synthetic identity revoked")
+            rows = statement_top_up_totals(session)
+            assert rows[0].known_top_ups is None
+            assert rows[0].excluded_event_count == 1
+        refreshed = _ok(client.post("/api/export/ai-analysis-bundle"), status=200)
+        assert refreshed["statement_top_ups"]["months"][0]["known_top_ups"]["value"] is None
+        assert (
+            refreshed["statement_top_ups"]["months"][0]["known_top_ups"]["availability"]
+            == "unavailable"
+        )
+    finally:
+        money_client.close()
+
+
+def test_statement_top_ups_keep_account_and_event_month_boundaries(app_context, monkeypatch):
+    from types import SimpleNamespace
+
+    from hermes_finance.persistence import HistoricalOwnerFlow
+    from hermes_finance.services import broker_money
+    from hermes_finance.services.statement_top_ups import export_statement_top_ups
+
+    _, database = app_context
+    with database.session_factory() as session:
+        first = create_account(session, name="Synthetic first", account_type="brokerage")
+        second = create_account(session, name="Synthetic second", account_type="iis")
+        cases = [
+            ("a", first.id, date(2031, 1, 8), 123, "contribution"),
+            ("b", first.id, date(2031, 2, 8), 456, "contribution"),
+            ("c", second.id, date(2031, 1, 8), 789, "contribution"),
+            ("d", first.id, date(2031, 1, 9), 10, "withdrawal"),
+            ("e", second.id, date(2031, 2, 8), 999, "contribution"),
+            ("f", first.id, date(2031, 3, 8), 999, "contribution"),
+        ]
+        proofs = {}
+        for key, account_id, day, amount, direction in cases:
+            flow = HistoricalOwnerFlow(
+                id=key,
+                account_id=account_id,
+                event_date=day,
+                currency="RUB",
+                signed_source_amount=str(amount),
+                direction=direction,
+                boundary_amount_kopecks=amount,
+            )
+            session.add(flow)
+            proofs[("account_funding", key)] = (
+                SimpleNamespace(account_id=account_id),
+                {},
+                {
+                    "role": "account_funding",
+                    "target_id": key,
+                    "facts": {"event_date": day.isoformat()},
+                },
+            )
+        session.commit()
+        # Isolate grouping from the proof kernel; the preceding real-import
+        # regression covers currentness, replay and revoked-identity exclusion.
+        monkeypatch.setattr(broker_money, "latest_proofs", lambda session: proofs)
+        monkeypatch.setattr(
+            broker_money,
+            "proof_blockers",
+            lambda s, r, p, t: ["money_review_retired"] if t["target_id"] == "e" else [],
+        )
+        result = export_statement_top_ups(
+            session,
+            {first.id: "acct-first", second.id: "acct-second"},
+            through=(2031, 2),
+        )
+    assert [
+        (row["account_ref"], row["period_label"], row["known_top_ups"]["value"])
+        for row in result["months"]
+    ] == [
+        ("acct-first", "2031-01", _money("1.23")),
+        ("acct-second", "2031-01", _money("7.89")),
+        ("acct-first", "2031-02", _money("4.56")),
+        ("acct-second", "2031-02", None),
+    ]
+    assert result["months"][-1]["excluded_event_count"] == 1

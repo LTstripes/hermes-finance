@@ -2157,6 +2157,11 @@ def assemble_ai_financial_review(
         "field_states": field_states,
         "warnings": warnings,
     }
+    from hermes_finance.services.statement_top_ups import export_statement_top_ups
+
+    report["statement_top_ups"] = export_statement_top_ups(
+        session, account_ref_by_id, through=reporting_period
+    )
     if format_version in {"1.5.0", "2.0.0"}:
         _legacy_returns_context(report)
         report["schema_version"] = "1.5.0"

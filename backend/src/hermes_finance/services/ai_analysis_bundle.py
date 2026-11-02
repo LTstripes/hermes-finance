@@ -1779,6 +1779,11 @@ def assemble_ai_analysis_bundle(
     }
     if insights_section is not None:
         bundle["deterministic_insights"] = insights_section
+    from hermes_finance.services.statement_top_ups import export_statement_top_ups
+
+    bundle["statement_top_ups"] = export_statement_top_ups(
+        session, account_refs, through=(current.year, current.month)
+    )
     validate_bundle(bundle)
     return bundle
 
@@ -1899,6 +1904,23 @@ def render_bundle_markdown(bundle: dict[str, object]) -> str:
     if not bundle["warnings"]:
         lines.append("- none")
     lines.append("")
+    funding = bundle.get("statement_top_ups", {}).get("months", [])
+    if funding:
+        lines.extend(
+            [
+                "## Statement top-ups by investment account and month",
+                "",
+                "Known effective broker-money events only; history completeness and portfolio scope are unknown.",
+                "",
+                "| Account | Period | Known top-ups (RUB) |",
+                "| --- | --- | --- |",
+            ]
+        )
+        for row in funding:
+            amount = row["known_top_ups"]["value"]
+            text = amount["amount"] if amount is not None else "unavailable"
+            lines.append(f"| {row['account_ref']} | {row['period_label']} | {text} |")
+        lines.append("")
     lines.append(
         "Canonical machine-readable artifact is the JSON bundle assembled from the same DTO."
     )

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.analytics import MonthlyCapitalChangeOut, capital_change_to_out
 from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.database import coherent_read_snapshot
@@ -218,6 +219,7 @@ class MonthlySummaryOut(BaseModel):
 
     month: MonthRefOut
     liquid_capital: LiquidCapitalOut
+    capital_change: MonthlyCapitalChangeOut | None
     liquid_capital_delta: MoneyValue | None
     liquid_capital_delta_coverage: PortfolioSourceCoverage | None
     passive_income_actual: MoneyValue
@@ -423,6 +425,7 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
             source=month.source,
         ),
         liquid_capital=_liquid_out(summary.liquid_capital, summary.portfolio_source_coverage),
+        capital_change=capital_change_to_out(summary.capital_change),
         liquid_capital_delta=_money_opt(summary.liquid_capital_delta),
         liquid_capital_delta_coverage=summary.liquid_capital_delta_coverage,
         passive_income_actual=_money(summary.passive_income_actual),
