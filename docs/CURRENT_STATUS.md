@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-01**. This is the sole changing project status book. Current source
+Updated **2026-11-03**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -8,6 +8,14 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+**Released and installed: [v1.10.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.0),
+`679f72e63933e9c80892f80c48a18292c2af8416`** ([release notes](release-notes-1.10.0.md)).
+Exact-main [CI41527900783](https://github.com/LTstripes/hermes-finance/actions/runs/41527900783)
+and [guarded release41529526823](https://github.com/LTstripes/hermes-finance/actions/runs/41529526823)
+completed SUCCESS; independent read-back confirms the annotated tag peels to the
+exact main commit and the release is published. Stable was updated through
+backup-first OPS02 and started; health reports 1.10.0. No schema migration.
+Owner visual UAT of the new month-sources intake and returns screens is pending.
 1.9.3 is published and installed at `f67e8031b0869c395f57317b76b3fcdae5ea144c`.
 Installed parallel month/payment reads completed promptly, but actual browser UAT
 then reproduced a separate render crash: the old Money table dereferenced legacy
