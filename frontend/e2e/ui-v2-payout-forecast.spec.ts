@@ -141,7 +141,8 @@ const payoutPreview = {
   ],
 };
 
-async function installPayoutApi(page: Page) {
+async function installPayoutApi(page: Page, mode: "normal" | "partial" | "offline" = "normal") {
+  let offline = false;
   const posts: string[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -174,13 +175,55 @@ async function installPayoutApi(page: Page) {
         });
         return;
       }
+      if (request.method() === "GET" && pathname === "/api/instruments/11/market-mapping") {
+        await route.fulfill({
+          json: {
+            instrument_id: 11,
+            state: mode === "partial" ? "unmapped" : "mapped",
+            identity:
+              mode === "partial"
+                ? null
+                : {
+                    provider: "t_invest",
+                    provider_instrument_id: "SYNTHETIC-UID-001",
+                    provider_venue_id: null,
+                  },
+            instrument_isin: "RU000SYNTH01",
+            legacy_moex_secid: null,
+          },
+        });
+        return;
+      }
       if (request.method() === "GET" && pathname === "/api/payouts/calendar") {
+        if (offline) {
+          await route.abort();
+          return;
+        }
         await route.fulfill({ json: payoutCalendar });
         return;
       }
       if (request.method() === "GET" && pathname === "/api/months/12/payout-refresh-status") {
+        if (offline) {
+          await route.abort();
+          return;
+        }
         await route.fulfill({
-          json: { reporting_month_id: 12, positions_changed: 0, items: [] },
+          json: {
+            reporting_month_id: 12,
+            positions_changed: mode === "partial" ? 1 : 0,
+            items: [],
+            forecast_as_of: "2031-08-30T12:00:00Z",
+            automatic_refresh: {
+              status: mode === "partial" ? "partial" : mode === "offline" ? "error" : "completed",
+              message: "",
+              reason_codes:
+                mode === "partial"
+                  ? ["mapping_ambiguous", "possible_manual_duplicate"]
+                  : mode === "offline"
+                    ? ["provider_unavailable"]
+                    : [],
+            },
+          },
         });
         return;
       }
@@ -282,7 +325,13 @@ async function installPayoutApi(page: Page) {
       });
     },
   );
-  return { errors, posts };
+  return {
+    errors,
+    posts,
+    goOffline: () => {
+      offline = true;
+    },
+  };
 }
 
 async function assertNoPageOverflow(page: Page) {
@@ -299,18 +348,19 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     const api = await installPayoutApi(page);
     await page.goto("/v2/data/payouts?month=12");
     await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
-    await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
-    // No provider request on mount: only local reads happened.
+    const main = page.getByRole("region", { name: "Основной прогноз" });
+    await expect(main.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
     expect(api.posts).toEqual([]);
-    // Calendar month rows render collapsed; expand to prove principal
-    // stays distinct from passive income/fact.
-    await expect(page.locator(".payments-calendar__month summary").first()).toBeVisible();
-    await page.locator(".payments-calendar__month summary").first().click();
-    await expect(page.getByText("возврат капитала, не доход").first()).toBeVisible();
+    await expect(main.getByRole("button")).toHaveCount(2);
+    await expect(main.getByText("300 ₽", { exact: true })).toBeVisible();
+    await expect(main.locator("dd").nth(1)).toHaveText("1 000 ₽");
+    await expect(main).not.toContainText(/t_invest|SYNTHETIC-UID|completed|active/);
+    await expect(main.getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+    await expect(main.getByText("возврат капитала, не доход")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Проверить выплаты T-Invest" })).toHaveCount(0);
     await assertNoPageOverflow(page);
-    // Contained horizontal table scroll lives inside the calendar section.
-    const scrollOverflowX = await page
-      .locator('section[aria-label="Календарь выплат: горизонтальная прокрутка таблицы"]')
+    const scrollOverflowX = await main
+      .getByRole("region", { name: "Выплаты: прокрутка списка" })
       .evaluate((element) => getComputedStyle(element).overflowX);
     expect(scrollOverflowX).toBe("auto");
     await page.screenshot({
@@ -318,6 +368,15 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
       fullPage: true,
     });
 
+    // Keyboard opens the single-click disclosure before an explicit preview.
+    await main.getByRole("button", { name: "Подробности" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("button", { name: "Проверить все позиции T-Invest" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" }),
+    ).toHaveAttribute("href", "/v2/close?month=12&panel=brokers");
     // Explicit preview behind a button.
     await page.getByRole("button", { name: "Проверить выплаты T-Invest" }).click();
     await expect(page.getByText("Новая").first()).toBeVisible();
@@ -373,3 +432,72 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(api.errors).toEqual([]);
   });
 }
+
+for (const mode of ["partial", "offline"] as const) {
+  test(`simplified payout forecast desktop: ${mode} retains dated saved payments`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1366, height: 900 });
+    const api = await installPayoutApi(page, mode);
+    await page.goto("/v2/data/payouts?month=12");
+    const main = page.getByRole("region", { name: "Основной прогноз" });
+    const attention = main.getByRole("status", { name: "Требует внимания" });
+    await expect(main.getByRole("table")).toBeVisible();
+    await expect(main.getByRole("button")).toHaveCount(2);
+    await expect(main).toContainText("Последний прогноз: 30.08.2031");
+    await expect(attention).toContainText(
+      mode === "partial" ? "Прогноз неполный" : "Обновление недоступно",
+    );
+    if (mode === "partial") {
+      await expect(attention).toContainText("нет сопоставления с T-Invest");
+      await expect(attention).toContainText("Есть конфликт выплат");
+    } else {
+      await expect(attention).toContainText("Показан прежний прогноз");
+      api.goOffline();
+      await main.getByRole("button", { name: "Обновить" }).click();
+      await expect(main.getByRole("button", { name: "Обновить", exact: true })).toBeEnabled();
+      await expect(main.getByRole("table")).toBeVisible();
+      await expect(attention).toContainText("Последний прогноз: 30.08.2031");
+    }
+    await expect(main).not.toContainText(
+      /mapping_ambiguous|possible_manual_duplicate|provider_unavailable/,
+    );
+    expect(api.posts).toEqual([]);
+    expect(api.errors).toEqual([]);
+    await assertNoPageOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath(`payout-${mode}.png`), fullPage: true });
+  });
+}
+
+test("legacy statement import stays collapsed and expands on hash navigation and reload", async ({
+  page,
+}) => {
+  const api = await installPayoutApi(page);
+  await page.goto("/v2/data/payouts?month=12");
+  const disclosure = page.locator("details#statement-import");
+  const input = page.getByLabel("PDF отчёта Alfa");
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(input).toBeHidden();
+
+  const summary = disclosure.locator("summary");
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  await summary.click();
+  await expect(input).toBeHidden();
+
+  await page.evaluate(() => {
+    window.location.hash = "statement-import";
+  });
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  await expect(page.getByRole("region", { name: "Основной прогноз" })).toBeVisible();
+
+  await page.reload();
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  expect(api.posts).toEqual([]);
+  expect(api.errors).toEqual([]);
+});

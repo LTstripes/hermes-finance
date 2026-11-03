@@ -1,11 +1,10 @@
-import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { listExpectedFlows } from "../api/expectedFlows";
+import { getInstrumentMapping } from "../api/instrumentMappings";
 import { listInstruments } from "../api/instruments";
 import { getCloseReadiness, getMonth, listMonths } from "../api/months";
 import {
@@ -27,6 +26,8 @@ import type {
   Account,
   ExpectedFlow,
   Instrument,
+  InstrumentMarketMapping,
+  MoneyValue,
   PositionSnapshot,
   ReportingMonth,
 } from "../api/types";
@@ -54,9 +55,13 @@ import {
   LoadingState,
   Panel,
   Select,
+  Table,
+  Td,
+  Th,
 } from "../components/ui";
-import { formatMonth, formatQuantity } from "../lib/format";
+import { formatDate, formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
+import { reasonCopy } from "../lib/reasonCopy";
 import { queryKeys } from "../queryClient";
 import { resolveMonthSelection } from "./monthSelection";
 import {
@@ -256,6 +261,37 @@ function payoutSubtotal(rows: PayoutPreview["rows"], principal: boolean): string
     .join("; ");
 }
 
+// Aggregate authoritative calendar buckets exactly, keeping currencies separate.
+function calendarTotal(values: MoneyValue[]): string {
+  const totals = new Map<string, bigint>();
+  for (const value of values) {
+    if (!/^-?\d+\.\d{2}$/.test(value.amount)) return "Не определён";
+    totals.set(
+      value.currency,
+      (totals.get(value.currency) ?? 0n) + BigInt(value.amount.replace(".", "")),
+    );
+  }
+  if (!totals.size) return formatMoney("0.00");
+  return [...totals]
+    .map(([currency, minor]) => {
+      const absolute = minor < 0n ? -minor : minor;
+      const amount = `${minor < 0n ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
+      return formatMoney(amount, { currency: currency === "RUB" ? "₽" : currency });
+    })
+    .join(" · ");
+}
+
+function payoutKindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    coupon: "Купон",
+    dividend: "Дивиденд",
+    redemption: "Возврат номинала",
+    interest: "Проценты",
+    other: "Другая выплата",
+  };
+  return labels[kind] ?? "Другая выплата";
+}
+
 const PAYOUT_ATTENTION: Record<string, string> = {
   revised: "Изменена: проверь детали",
   possible_manual_duplicate: "Возможный ручной дубль: укажи способ учёта и ручную запись",
@@ -292,6 +328,11 @@ function PayoutForecastTool({
   const [positions, setPositions] = useState<PositionSnapshot[]>([]);
   const [calendar, setCalendar] = useState<PayoutCalendarMonth[]>([]);
   const [refreshStatus, setRefreshStatus] = useState<PayoutRefreshStatus | null>(null);
+  const [mappings, setMappings] = useState<InstrumentMarketMapping[]>([]);
+  const [mappingUnavailable, setMappingUnavailable] = useState(false);
+  const [savedConflict, setSavedConflict] = useState<boolean | null>(null);
+  const [calendarLoaded, setCalendarLoaded] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [expectedCount, setExpectedCount] = useState<number | null>(null);
 
   const [selectedPositionId, setSelectedPositionId] = useState("");
@@ -371,16 +412,17 @@ function PayoutForecastTool({
         accountRows,
         instrumentRows,
         positionRows,
-        calendarRows,
-        refreshRows,
+        [calendarRead, refreshRead],
         expectedRows,
       ] = await Promise.all([
         getMonth(target),
         listAccounts(),
         listInstruments({ active: true }),
         listPositions(target),
-        listPayoutCalendar(target, targetVersion),
-        getPayoutRefreshStatus(target),
+        Promise.allSettled([
+          listPayoutCalendar(target, targetVersion),
+          getPayoutRefreshStatus(target),
+        ]),
         listExpectedFlows(target, targetVersion),
       ]);
       if (!alive.current || generation !== readGeneration.current) return;
@@ -399,15 +441,68 @@ function PayoutForecastTool({
         setExpectedCount(null);
         return;
       }
-      // Local-only readback: no provider request happens here.
-      await getCloseReadiness(target).catch(() => null);
+      const mappingInstrumentIds = [
+        ...new Set(
+          positionRows
+            .filter((position) => {
+              const instrument = instrumentRows.find((row) => row.id === position.instrument_id);
+              return (
+                instrument &&
+                ["stock", "bond"].includes(instrument.instrument_type) &&
+                /^\d+(?:\.\d+)?$/.test(position.quantity) &&
+                /[1-9]/.test(position.quantity)
+              );
+            })
+            .map((row) => row.instrument_id),
+        ),
+      ];
+      const mappingReads = await Promise.allSettled(
+        mappingInstrumentIds.map(async (id) => {
+          const value = await getInstrumentMapping(id);
+          if (value.instrument_id !== id) throw new Error("Сопоставление другой бумаги.");
+          return value;
+        }),
+      );
       if (!alive.current || generation !== readGeneration.current) return;
+      setMappings(mappingReads.flatMap((row) => (row.status === "fulfilled" ? [row.value] : [])));
+      setMappingUnavailable(mappingReads.some((row) => row.status === "rejected"));
+      // Local-only readback: no provider request happens here.
+      const readiness = await getCloseReadiness(target).catch(() => null);
+      if (!alive.current || generation !== readGeneration.current) return;
+      const readinessMatches =
+        readiness &&
+        readiness.year === freshMonth.year &&
+        readiness.month === freshMonth.month &&
+        readiness.status === freshMonth.status &&
+        readiness.snapshot_date === freshMonth.snapshot_date;
+      setSavedConflict(
+        readinessMatches
+          ? readiness.items.some((item) => item.code === "unresolved_payout_reconciliation")
+          : null,
+      );
       setMonth(freshMonth);
       setAccounts(accountRows);
       setInstruments(instrumentRows);
       setPositions(positionRows);
-      setCalendar(calendarRows);
-      setRefreshStatus(refreshRows);
+      if (calendarRead.status === "fulfilled") {
+        setCalendar(calendarRead.value);
+        setCalendarLoaded(true);
+      }
+      // Date and status must describe the same successful calendar read.
+      if (calendarRead.status === "fulfilled") {
+        setRefreshStatus(
+          refreshRead.status === "fulfilled" && refreshRead.value.reporting_month_id === target
+            ? refreshRead.value
+            : null,
+        );
+      }
+      if (
+        calendarRead.status === "rejected" ||
+        refreshRead.status === "rejected" ||
+        (refreshRead.status === "fulfilled" && refreshRead.value.reporting_month_id !== target)
+      ) {
+        setContextError("Не удалось перечитать сохранённый прогноз или его состояние.");
+      }
       setExpectedCount(expectedRows.length);
       setSelectedPositionId((current) =>
         positionRows.some((row) => String(row.id) === current)
@@ -449,6 +544,9 @@ function PayoutForecastTool({
       setLastApplyResult(null);
       setPendingBulk(null);
       setPendingApply(null);
+      setCalendar([]);
+      setCalendarLoaded(false);
+      setRefreshStatus(null);
     }
     void readContext(monthId, version);
   }, [monthId, version, readContext]);
@@ -813,6 +911,9 @@ function PayoutForecastTool({
           )
             return false;
           setMonth(rereadMonth);
+          setSavedConflict(
+            readiness.items.some((item) => item.code === "unresolved_payout_reconciliation"),
+          );
           setCalendar(rereadCalendar);
           setRefreshStatus(rereadRefresh);
           setExpectedCount(rereadExpected.length);
@@ -889,11 +990,122 @@ function PayoutForecastTool({
       : `/v2/data/months/${month.id}?section=payouts`
     : null;
 
+  function reloadCalendar() {
+    contextRevision.current += 1;
+    setPendingApply(null);
+    setPendingBulk(null);
+    setPreview(null);
+    setPreviewMeta(null);
+    setBatchPreview(null);
+    setBatchMeta(null);
+    setSelectedGroups({});
+    void readContext(monthId, version);
+  }
+
+  const payments = calendar
+    .flatMap((entry) => entry.items)
+    .sort((a, b) => a.expected_date.localeCompare(b.expected_date));
+  const automatic = refreshStatus?.automatic_refresh;
+  const forecastDate = refreshStatus?.forecast_as_of;
+  const dateLabel = forecastDate
+    ? `Последний прогноз: ${formatDate(forecastDate)}.`
+    : "Дата последнего прогноза неизвестна.";
+  const attention: string[] = [];
+  if (contextError || automatic?.status === "error") {
+    attention.push(
+      `Обновление недоступно. ${calendarLoaded ? "Показан прежний прогноз." : "Сохранённый прогноз не загружен."} ${dateLabel}`,
+    );
+  } else if (automatic?.status === "pending" || automatic?.status === "running") {
+    attention.push("Прогноз обновляется. Пока показаны сохранённые выплаты.");
+  } else if (automatic?.status === "partial" || automatic?.status === "needs_review") {
+    attention.push("Прогноз неполный: часть бумаг требует проверки.");
+  }
+  if (automatic?.reason_codes.includes("draft_changed")) {
+    attention.push("Данные месяца изменились. Прежний прогноз может быть устаревшим.");
+  }
+  if (
+    automatic?.reason_codes.some((code) =>
+      [
+        "possible_manual_duplicate",
+        "ambiguous_identity",
+        "saved_provider_identity_changed",
+      ].includes(code),
+    )
+  ) {
+    attention.push("Есть конфликт выплат или сопоставления бумаг. Проверь подробности.");
+  }
+  if (refreshStatus?.positions_changed) {
+    attention.push(
+      `Изменились позиции: ${refreshStatus.positions_changed}. Сохранённый прогноз требует проверки.`,
+    );
+  }
+  if (savedConflict)
+    attention.push("Есть несогласованные выплаты. Проверь способ учёта в подробностях.");
+  if (savedConflict === null) attention.push("Не удалось проверить согласованность выплат.");
+  if (mappingUnavailable) attention.push("Не удалось проверить сопоставление части бумаг.");
+  if (positions.some((position) => !instrumentById.has(position.instrument_id))) {
+    attention.push("Часть бумаг не найдена в справочнике. Прогноз может быть неполным.");
+  }
+  for (const mapping of mappings) {
+    if (mapping.state === "mapped" && mapping.identity?.provider === "t_invest") continue;
+    const name = instrumentById.get(mapping.instrument_id)?.name ?? "Бумага";
+    const problem =
+      mapping.state === "unmapped"
+        ? "нет сопоставления с T-Invest"
+        : mapping.state === "excluded"
+          ? "исключена из прогноза"
+          : "требуется сопоставление с T-Invest";
+    attention.push(`${name}: ${problem}.`);
+  }
+  if (calendar.some((entry) => entry.actual_attribution_coverage === "unknown")) {
+    attention.push("Полнота выплат неизвестна. В итогах показана известная часть.");
+  }
+  const reviewedPreviews = [
+    ...(preview ? [preview] : []),
+    ...(batchPreview?.items.flatMap((item) => (item.preview ? [item.preview] : [])) ?? []),
+  ];
+  for (const value of reviewedPreviews) {
+    if (
+      value.rows.some((row) =>
+        ["possible_manual_duplicate", "ambiguous_identity", "revised"].includes(row.status),
+      )
+    ) {
+      attention.push(
+        `${positionLabelFor(value.account_id, value.instrument_id)}: есть конфликт или изменение выплаты. Проверь подробности.`,
+      );
+    }
+  }
+  if (batchPreview?.items.some((item) => ["error", "skipped"].includes(item.status))) {
+    attention.push("Для части бумаг прогноз недоступен. Проверь подробности.");
+  }
+  if (actionError) attention.push("Операция не завершена. Проверь подробности.");
+
   if (loadingContext && !month && !contextError && !monthMismatch) {
     return <LoadingState description="Загружаем локальный календарь…" inline />;
   }
   if (contextError && !month) {
-    return <EmptyState description={contextError} title="Не удалось открыть выплаты" />;
+    return (
+      <section className={styles.overview} aria-label="Основной прогноз">
+        <h2>Прогноз недоступен</h2>
+        <p>Не удалось загрузить сохранённые выплаты. Дата последнего прогноза неизвестна.</p>
+        <div className="toolbar">
+          <Button type="button" disabled={loadingContext} onClick={reloadCalendar}>
+            Обновить
+          </Button>
+          <Button
+            type="button"
+            aria-expanded={detailsOpen}
+            aria-controls="payout-forecast-error"
+            onClick={() => setDetailsOpen((value) => !value)}
+          >
+            Подробности
+          </Button>
+        </div>
+        <div id="payout-forecast-error" hidden={!detailsOpen}>
+          {contextError}
+        </div>
+      </section>
+    );
   }
   if (monthMismatch) {
     return (
@@ -906,355 +1118,120 @@ function PayoutForecastTool({
 
   return (
     <div className={styles.tool}>
-      {contextError ? (
-        <div className="inline-alert inline-alert--error" role="alert">
-          {contextError}
-        </div>
-      ) : null}
-      <TInvestPayoutApplySummary result={lastApplyResult} />
-      <Panel label="Будущие выплаты" title="Прогнозные выплаты">
-        <div className="toolbar">
-          <Button
-            disabled={
-              previewLoading || batchLoading || applying || loadingContext || positions.length === 0
-            }
-            onClick={() => void handleBatchPreview()}
-            variant="primary"
-            type="button"
-          >
-            {batchLoading ? "Запрашиваем…" : "Проверить все позиции T-Invest"}
-          </Button>
-          <Button
-            disabled={
-              applying ||
-              previewLoading ||
-              batchLoading ||
-              retiredPreview ||
-              readOnly ||
-              !Object.values(selectedGroups).some((rows) => rows.length)
-            }
-            onClick={requestBulkApply}
-            type="button"
-            variant="primary"
-          >
-            Применить выбранные
-          </Button>
-          <span role="status">
-            Выбрано событий:{" "}
-            {Object.values(selectedGroups).reduce((count, rows) => count + rows.length, 0)}
-          </span>
-          <Button
-            disabled={applying || loadingContext}
-            onClick={() => {
-              contextRevision.current += 1;
-              setPendingApply(null);
-              setPendingBulk(null);
-              setPreview(null);
-              setPreviewMeta(null);
-              setBatchPreview(null);
-              setBatchMeta(null);
-              setSelectedGroups({});
-              void readContext(monthId, version);
-            }}
-            type="button"
-          >
-            Перечитать сохранённый календарь
-          </Button>
-          <Button
-            disabled={applying || retiredPreview || readOnly || !batchPreview}
-            onClick={() =>
-              selectionCommand(
-                batchPreview?.items.map((item) => item.position_snapshot_id) ?? [],
-                "eligible",
-              )
-            }
-            type="button"
-          >
-            Выбрать доступные
-          </Button>
-          <Button
-            disabled={applying || !batchPreview}
-            onClick={() =>
-              selectionCommand(
-                batchPreview?.items.map((item) => item.position_snapshot_id) ?? [],
-                "clear",
-              )
-            }
-            type="button"
-          >
-            Очистить выбор
-          </Button>
-          <Button
-            disabled={!batchPreview}
-            onClick={() =>
-              setExpanded(new Set(batchPreview?.items.map((item) => item.position_snapshot_id)))
-            }
-            type="button"
-          >
-            Развернуть всё
-          </Button>
-          <Button disabled={!batchPreview} onClick={() => setExpanded(new Set())} type="button">
-            Свернуть всё
-          </Button>
-          {applying ? (
-            <Button
-              type="button"
-              onClick={() => {
-                stopRequested.current = true;
-              }}
-            >
-              Остановить после текущей группы
-            </Button>
-          ) : null}
-        </div>
-        {actionError ? (
-          <div role="alert" className="inline-alert inline-alert--warn">
-            {actionError}
-          </div>
-        ) : null}
-        {executionResults.length ? (
-          <div aria-live="polite">
-            <p>
-              Результат по группам. Подтверждено:{" "}
-              {executionResults.filter((row) => row.outcome === "CONFIRMED").length} из{" "}
-              {executionResults.length}.
-            </p>
-            {executionResults.map((row, index) => (
-              <p key={row.group.payload.position_snapshot_id}>
-                <strong>{row.group.label}</strong>: {PAYOUT_OUTCOME_LABELS[row.outcome]} · версия «
-                {row.group.payload.forecast_version}» ·{" "}
-                {activeGroup === index
-                  ? "Проверяем / применяем…"
-                  : row.message.replaceAll("об Apply", "о применении")}
-              </p>
-            ))}
-          </div>
-        ) : null}
-      </Panel>
-
-      {refreshStatus && refreshStatus.positions_changed > 0 ? (
-        <div className="inline-alert inline-alert--warn payout-refresh-needed" role="status">
+      <section aria-label="Основной прогноз" className={styles.overview}>
+        <div className={styles.heading}>
           <div>
-            <strong>Прогноз выплат требует обновления.</strong> {refreshStatus.positions_changed}{" "}
-            позиции изменились локально; T-Invest ещё не перечитан.
-          </div>
-          <Button
-            disabled={batchLoading || applying || loadingContext}
-            onClick={() =>
-              void handleBatchPreview(refreshStatus.items.map((item) => item.position_snapshot_id))
-            }
-            type="button"
-          >
-            {batchLoading ? "Запрашиваем…" : "Проверить изменённые"}
-          </Button>
-        </div>
-      ) : null}
-
-      <Panel label="Синхронизация" title="Проверка позиций T-Invest">
-        {batchPreview ? (
-          <div className="stack-18 payout-batch-results">
-            <TInvestBatchSummary preview={batchPreview} />
-            {batchPreview.items.map((item) => {
-              const itemLabel = positionLabelFor(item.account_id, item.instrument_id);
-              const previewValue = item.preview;
-              const attention = previewValue?.rows.filter(
-                (row) => row.status !== "new" && row.status !== "unchanged",
-              );
-              return (
-                <div className="payout-batch-results__group" key={item.position_snapshot_id}>
-                  <div className="payout-batch-results__heading">
-                    <strong>{itemLabel}</strong>
-                    <TInvestBatchItemStatus item={item} />
-                  </div>
-                  <p>
-                    Событий: {previewValue?.rows.length ?? 0} · Выбрано:{" "}
-                    {selectedGroups[item.position_snapshot_id]?.length ?? 0}
-                  </p>
-                  <p>
-                    Доход: {payoutSubtotal(previewValue?.rows ?? [], false)} · Возврат капитала:{" "}
-                    {payoutSubtotal(previewValue?.rows ?? [], true)}
-                  </p>
-                  {attention?.length ? (
-                    <p>
-                      {attention
-                        .map(
-                          (row) =>
-                            `${PAYOUT_ATTENTION[row.status] ?? "Требует проверки"}${row.message ? `: ${row.message}` : ""}`,
-                        )
-                        .join(" · ")}
-                    </p>
-                  ) : null}
-                  {previewValue?.rows.some((row) => row.status === "unchanged") ? (
-                    <p>Уже сохранено; повторно не отправляется.</p>
-                  ) : null}
-                  {item.message ? <p role="status">{item.message}</p> : null}
-                  <Button
-                    type="button"
-                    aria-expanded={expanded.has(item.position_snapshot_id)}
-                    aria-controls={`payout-group-${item.position_snapshot_id}`}
-                    onClick={() =>
-                      setExpanded((current) => {
-                        const next = new Set(current);
-                        if (next.has(item.position_snapshot_id))
-                          next.delete(item.position_snapshot_id);
-                        else next.add(item.position_snapshot_id);
-                        return next;
-                      })
-                    }
-                  >
-                    {expanded.has(item.position_snapshot_id) ? "Свернуть" : "Развернуть"}{" "}
-                    {itemLabel}
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={applying || retiredPreview || readOnly || !previewValue}
-                    onClick={() =>
-                      selectionCommand(
-                        [item.position_snapshot_id],
-                        selectedGroups[item.position_snapshot_id]?.length ? "clear" : "eligible",
-                      )
-                    }
-                  >
-                    Выбрать / очистить {itemLabel}
-                  </Button>
-                  <div
-                    id={`payout-group-${item.position_snapshot_id}`}
-                    hidden={!expanded.has(item.position_snapshot_id)}
-                  >
-                    {previewValue ? (
-                      <PayoutPreviewPanel
-                        applying={applying}
-                        error={null}
-                        forecastVersion={version}
-                        loading={previewLoading || batchLoading}
-                        onApply={(rows) => requestBatchApply(previewValue, rows)}
-                        onForecastVersionChange={() => undefined}
-                        onRefresh={() => void handleBatchPositionRefresh(item.position_snapshot_id)}
-                        positionLabel={itemLabel}
-                        preview={previewValue}
-                        readOnly={readOnly || retiredPreview}
-                        versionDisabled={true}
-                        selectionCommand={selectionCommands[item.position_snapshot_id]}
-                        onSelectionChange={(rows) =>
-                          setSelectedGroups((current) =>
-                            JSON.stringify(current[item.position_snapshot_id]) ===
-                            JSON.stringify(rows)
-                              ? current
-                              : { ...current, [item.position_snapshot_id]: rows },
-                          )
-                        }
-                      />
-                    ) : (
-                      <div
-                        className={`inline-alert ${
-                          item.status === "error" ? "inline-alert--warn" : "inline-alert--info"
-                        }`}
-                        role="status"
-                      >
-                        <TInvestBatchItemStatus item={item} />{" "}
-                        {item.message ?? "Нет предпросмотра для позиции."}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-      </Panel>
-
-      <details open className={styles.individual}>
-        <summary>Одна позиция · индивидуальное применение</summary>
-        <Panel
-          action={
-            <Badge tone={month.status === "closed" ? "closed" : "draft"}>
-              {labelOf(MONTH_STATUS_LABELS, month.status)}
-            </Badge>
-          }
-          label="Контекст"
-          title="Месяц, версия и позиция"
-        >
-          <div className="editor-grid">
-            <Field htmlFor="payout-forecast-position" label="Позиция">
-              <Select
-                disabled={loadingContext || applying}
-                id="payout-forecast-position"
-                onChange={(event) => {
-                  setSelectedPositionId(event.target.value);
-                  contextRevision.current += 1;
-                  setPreview(null);
-                  setPreviewMeta(null);
-                  // B3: a pending single confirm must not survive a position
-                  // change. Batch confirms stay independent of this selector.
-                  setPendingApply((current) =>
-                    current && current.batchPreviewId === null ? null : current,
-                  );
-                  setActionError(null);
-                  setLastApplyResult(null);
-                }}
-                value={selectedPositionId}
-              >
-                <option value="">— выбери позицию —</option>
-                {positions.map((position) => {
-                  const account = accountById.get(position.account_id);
-                  const instrument = instrumentById.get(position.instrument_id);
-                  const type = instrument
-                    ? labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)
-                    : "инструмент";
-                  return (
-                    <option key={position.id} value={position.id}>
-                      {account?.name ?? "Неизвестный счёт"} ·{" "}
-                      {instrument?.name ?? "Неизвестный инструмент"}
-                      {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
-                      {formatQuantity(position.quantity)} шт.
-                    </option>
-                  );
-                })}
-              </Select>
-            </Field>
-            <div className="stack-8">
-              <span className="muted tiny">Версия прогноза</span>
-              <strong>{version}</strong>
-            </div>
+            <h2>Прогноз на 12 месяцев</h2>
+            <p className="muted">
+              От даты снимка {formatDate(month.snapshot_date)}
+              {contextError || automatic?.status === "error" ? null : ` · ${dateLabel}`}
+            </p>
           </div>
           <div className="toolbar">
-            {manualEditorHref ? (
-              <Link className="btn btn--ghost" to={manualEditorHref}>
-                Ручные выплаты этого месяца →
-              </Link>
-            ) : null}
-            <span className="muted tiny">
-              {expectedCount === null
-                ? "Ручные ожидаемые строки проверяются локально."
-                : `Ручных ожидаемых строк версии «${version}»: ${expectedCount}.`}
-            </span>
+            <Button
+              disabled={applying || loadingContext || previewLoading || batchLoading}
+              onClick={reloadCalendar}
+              type="button"
+              title="Перечитать сохранённый прогноз"
+            >
+              {loadingContext ? "Обновляем…" : "Обновить"}
+            </Button>
+            <Button
+              type="button"
+              aria-expanded={detailsOpen}
+              aria-controls="payout-forecast-details"
+              onClick={() => setDetailsOpen((value) => !value)}
+            >
+              Подробности
+            </Button>
           </div>
-          {selectedPositionId && !loadingContext && positions.length === 0 ? (
-            <EmptyState description="Добавь позицию в этом месяце." inline title="Нет позиций" />
-          ) : null}
-        </Panel>
-
-        <PayoutPreviewPanel
-          applying={applying}
-          error={null}
-          forecastVersion={forecastVersion}
-          loading={previewLoading || batchLoading}
-          onApply={(rows) => requestSingleApply(rows)}
-          onForecastVersionChange={(value) => {
-            handleVersionChange(value);
-            setPreview(null);
-            setPreviewMeta(null);
-            setActionError(null);
-            setLastApplyResult(null);
-          }}
-          onRefresh={() => void handlePreview()}
-          positionLabel={positionLabel}
-          preview={preview}
-          readOnly={readOnly}
-          versionDisabled={applying}
-        />
-      </details>
-
+        </div>
+        <dl className={styles.totals}>
+          <div>
+            <dt>Прогноз дохода · купоны и дивиденды</dt>
+            <dd>
+              {calendarLoaded
+                ? calendarTotal(calendar.flatMap((entry) => [entry.coupon, entry.dividend]))
+                : "Не определён"}
+            </dd>
+          </div>
+          <div>
+            <dt>Возврат номинала</dt>
+            <dd>
+              {calendarLoaded
+                ? calendarTotal(calendar.map((entry) => entry.redemption))
+                : "Не определён"}
+            </dd>
+          </div>
+        </dl>
+        <p className="muted tiny">
+          Прогнозные суммы. Личный налог по выплатам T-Invest не определён.
+        </p>
+        {attention.length ? (
+          <section className={styles.attention} aria-label="Требует внимания" role="status">
+            <h3>Требует внимания</h3>
+            <ul>
+              {[...new Set(attention)].map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        <h3>Выплаты по датам</h3>
+        {payments.length ? (
+          <section
+            aria-label="Выплаты: прокрутка списка"
+            className={styles.scroll}
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll the payouts table.
+            tabIndex={0}
+          >
+            <Table aria-label="Выплаты по датам">
+              <thead>
+                <tr>
+                  <Th>Дата</Th>
+                  <Th>Бумага / счёт</Th>
+                  <Th>Выплата</Th>
+                  <Th numeric>Сумма</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((item) => (
+                  <tr key={`${item.source_kind}-${item.source_id}`}>
+                    <Td>{formatDate(item.expected_date)}</Td>
+                    <Td>
+                      <strong>{item.instrument_name ?? "Бумага не определена"}</strong>
+                      <div className="muted tiny">{item.account_name}</div>
+                    </Td>
+                    <Td>
+                      {payoutKindLabel(item.flow_type)}
+                      {item.flow_type === "redemption" ? (
+                        <div className="muted tiny">возврат капитала, не доход</div>
+                      ) : null}
+                    </Td>
+                    <Td numeric>
+                      {formatMoney(item.expected_net_amount.amount, {
+                        currency:
+                          item.expected_net_amount.currency === "RUB"
+                            ? "₽"
+                            : item.expected_net_amount.currency,
+                      })}
+                      {item.is_approximate ? (
+                        <div className="muted tiny">приблизительно</div>
+                      ) : null}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </section>
+        ) : (
+          <p>
+            {calendarLoaded
+              ? "На этом горизонте нет сохранённых выплат."
+              : "Сохранённые выплаты пока недоступны."}
+          </p>
+        )}
+      </section>
       <Panel
         action={<Badge>12 месяцев · вручную и T-Invest</Badge>}
         label="Прогноз"
@@ -1271,6 +1248,363 @@ function PayoutForecastTool({
           </section>
         )}
       </Panel>
+      <div id="payout-forecast-details" hidden={!detailsOpen} className={styles.diagnostics}>
+        <h2>Подробности прогноза</h2>
+        <p>
+          «Обновить» перечитывает сохранённый календарь. Проверка T-Invest ниже получает
+          предпросмотр; применение выбранных событий требует подтверждения.
+        </p>
+        <p>
+          <Link to={`/v2/close?month=${monthId}&panel=brokers`}>
+            Загрузка файлов месяца · PDF выплат
+          </Link>
+        </p>
+        {automatic ? (
+          <p>
+            Автообновление: {automatic.status}
+            {automatic.reason_codes.length ? ` · ${automatic.reason_codes.join(", ")}` : ""}
+          </p>
+        ) : null}
+        {contextError ? (
+          <div className="inline-alert inline-alert--error" role="alert">
+            {contextError}
+          </div>
+        ) : null}
+        <TInvestPayoutApplySummary result={lastApplyResult} />
+        <Panel label="Операции" title="Проверка и применение прогноза">
+          <div className="toolbar">
+            <Button
+              disabled={
+                previewLoading ||
+                batchLoading ||
+                applying ||
+                loadingContext ||
+                positions.length === 0
+              }
+              onClick={() => void handleBatchPreview()}
+              variant="primary"
+              type="button"
+            >
+              {batchLoading ? "Запрашиваем…" : "Проверить все позиции T-Invest"}
+            </Button>
+            <Button
+              disabled={
+                applying ||
+                previewLoading ||
+                batchLoading ||
+                retiredPreview ||
+                readOnly ||
+                !Object.values(selectedGroups).some((rows) => rows.length)
+              }
+              onClick={requestBulkApply}
+              type="button"
+              variant="primary"
+            >
+              Применить выбранные
+            </Button>
+            <span role="status">
+              Выбрано событий:{" "}
+              {Object.values(selectedGroups).reduce((count, rows) => count + rows.length, 0)}
+            </span>
+            <Button
+              disabled={applying || retiredPreview || readOnly || !batchPreview}
+              onClick={() =>
+                selectionCommand(
+                  batchPreview?.items.map((item) => item.position_snapshot_id) ?? [],
+                  "eligible",
+                )
+              }
+              type="button"
+            >
+              Выбрать доступные
+            </Button>
+            <Button
+              disabled={applying || !batchPreview}
+              onClick={() =>
+                selectionCommand(
+                  batchPreview?.items.map((item) => item.position_snapshot_id) ?? [],
+                  "clear",
+                )
+              }
+              type="button"
+            >
+              Очистить выбор
+            </Button>
+            <Button
+              disabled={!batchPreview}
+              onClick={() =>
+                setExpanded(new Set(batchPreview?.items.map((item) => item.position_snapshot_id)))
+              }
+              type="button"
+            >
+              Развернуть всё
+            </Button>
+            <Button disabled={!batchPreview} onClick={() => setExpanded(new Set())} type="button">
+              Свернуть всё
+            </Button>
+            {applying ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  stopRequested.current = true;
+                }}
+              >
+                Остановить после текущей группы
+              </Button>
+            ) : null}
+          </div>
+          {actionError ? (
+            <div role="alert" className="inline-alert inline-alert--warn">
+              {actionError}
+            </div>
+          ) : null}
+          {executionResults.length ? (
+            <div aria-live="polite">
+              <p>
+                Результат по группам. Подтверждено:{" "}
+                {executionResults.filter((row) => row.outcome === "CONFIRMED").length} из{" "}
+                {executionResults.length}.
+              </p>
+              {executionResults.map((row, index) => (
+                <p key={row.group.payload.position_snapshot_id}>
+                  <strong>{row.group.label}</strong>: {PAYOUT_OUTCOME_LABELS[row.outcome]} · версия
+                  «{row.group.payload.forecast_version}» ·{" "}
+                  {activeGroup === index
+                    ? "Проверяем / применяем…"
+                    : row.message.replaceAll("об Apply", "о применении")}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </Panel>
+
+        {refreshStatus && refreshStatus.positions_changed > 0 ? (
+          <div className="inline-alert inline-alert--warn payout-refresh-needed" role="status">
+            <div>
+              <strong>Прогноз выплат требует обновления.</strong> {refreshStatus.positions_changed}{" "}
+              позиции изменились локально; T-Invest ещё не перечитан.
+            </div>
+            <Button
+              disabled={batchLoading || applying || loadingContext}
+              onClick={() =>
+                void handleBatchPreview(
+                  refreshStatus.items.map((item) => item.position_snapshot_id),
+                )
+              }
+              type="button"
+            >
+              {batchLoading ? "Запрашиваем…" : "Проверить изменённые"}
+            </Button>
+          </div>
+        ) : null}
+
+        <Panel label="Синхронизация" title="Проверка позиций T-Invest">
+          {batchPreview ? (
+            <div className="stack-18 payout-batch-results">
+              <TInvestBatchSummary preview={batchPreview} />
+              {batchPreview.items.map((item) => {
+                const itemLabel = positionLabelFor(item.account_id, item.instrument_id);
+                const previewValue = item.preview;
+                const attention = previewValue?.rows.filter(
+                  (row) => row.status !== "new" && row.status !== "unchanged",
+                );
+                return (
+                  <div className="payout-batch-results__group" key={item.position_snapshot_id}>
+                    <div className="payout-batch-results__heading">
+                      <strong>{itemLabel}</strong>
+                      <TInvestBatchItemStatus item={item} />
+                    </div>
+                    <p>
+                      Событий: {previewValue?.rows.length ?? 0} · Выбрано:{" "}
+                      {selectedGroups[item.position_snapshot_id]?.length ?? 0}
+                    </p>
+                    <p>
+                      Доход: {payoutSubtotal(previewValue?.rows ?? [], false)} · Возврат капитала:{" "}
+                      {payoutSubtotal(previewValue?.rows ?? [], true)}
+                    </p>
+                    {attention?.length ? (
+                      <p>
+                        {attention
+                          .map(
+                            (row) =>
+                              `${PAYOUT_ATTENTION[row.status] ?? "Требует проверки"}${row.message ? `: ${row.message}` : ""}`,
+                          )
+                          .join(" · ")}
+                      </p>
+                    ) : null}
+                    {previewValue?.rows.some((row) => row.status === "unchanged") ? (
+                      <p>Уже сохранено; повторно не отправляется.</p>
+                    ) : null}
+                    {item.message ? <p role="status">{item.message}</p> : null}
+                    <Button
+                      type="button"
+                      aria-expanded={expanded.has(item.position_snapshot_id)}
+                      aria-controls={`payout-group-${item.position_snapshot_id}`}
+                      onClick={() =>
+                        setExpanded((current) => {
+                          const next = new Set(current);
+                          if (next.has(item.position_snapshot_id))
+                            next.delete(item.position_snapshot_id);
+                          else next.add(item.position_snapshot_id);
+                          return next;
+                        })
+                      }
+                    >
+                      {expanded.has(item.position_snapshot_id) ? "Свернуть" : "Развернуть"}{" "}
+                      {itemLabel}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={applying || retiredPreview || readOnly || !previewValue}
+                      onClick={() =>
+                        selectionCommand(
+                          [item.position_snapshot_id],
+                          selectedGroups[item.position_snapshot_id]?.length ? "clear" : "eligible",
+                        )
+                      }
+                    >
+                      Выбрать / очистить {itemLabel}
+                    </Button>
+                    <div
+                      id={`payout-group-${item.position_snapshot_id}`}
+                      hidden={!expanded.has(item.position_snapshot_id)}
+                    >
+                      {previewValue ? (
+                        <PayoutPreviewPanel
+                          applying={applying}
+                          error={null}
+                          forecastVersion={version}
+                          loading={previewLoading || batchLoading}
+                          onApply={(rows) => requestBatchApply(previewValue, rows)}
+                          onForecastVersionChange={() => undefined}
+                          onRefresh={() =>
+                            void handleBatchPositionRefresh(item.position_snapshot_id)
+                          }
+                          positionLabel={itemLabel}
+                          preview={previewValue}
+                          readOnly={readOnly || retiredPreview}
+                          versionDisabled={true}
+                          selectionCommand={selectionCommands[item.position_snapshot_id]}
+                          onSelectionChange={(rows) =>
+                            setSelectedGroups((current) =>
+                              JSON.stringify(current[item.position_snapshot_id]) ===
+                              JSON.stringify(rows)
+                                ? current
+                                : { ...current, [item.position_snapshot_id]: rows },
+                            )
+                          }
+                        />
+                      ) : (
+                        <div
+                          className={`inline-alert ${
+                            item.status === "error" ? "inline-alert--warn" : "inline-alert--info"
+                          }`}
+                          role="status"
+                        >
+                          <TInvestBatchItemStatus item={item} />{" "}
+                          {item.message ?? "Нет предпросмотра для позиции."}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </Panel>
+
+        <details open className={styles.individual}>
+          <summary>Одна позиция · индивидуальное применение</summary>
+          <Panel
+            action={
+              <Badge tone={month.status === "closed" ? "closed" : "draft"}>
+                {labelOf(MONTH_STATUS_LABELS, month.status)}
+              </Badge>
+            }
+            label="Контекст"
+            title="Месяц, версия и позиция"
+          >
+            <div className="editor-grid">
+              <Field htmlFor="payout-forecast-position" label="Позиция">
+                <Select
+                  disabled={loadingContext || applying}
+                  id="payout-forecast-position"
+                  onChange={(event) => {
+                    setSelectedPositionId(event.target.value);
+                    contextRevision.current += 1;
+                    setPreview(null);
+                    setPreviewMeta(null);
+                    // B3: a pending single confirm must not survive a position
+                    // change. Batch confirms stay independent of this selector.
+                    setPendingApply((current) =>
+                      current && current.batchPreviewId === null ? null : current,
+                    );
+                    setActionError(null);
+                    setLastApplyResult(null);
+                  }}
+                  value={selectedPositionId}
+                >
+                  <option value="">— выбери позицию —</option>
+                  {positions.map((position) => {
+                    const account = accountById.get(position.account_id);
+                    const instrument = instrumentById.get(position.instrument_id);
+                    const type = instrument
+                      ? labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)
+                      : "инструмент";
+                    return (
+                      <option key={position.id} value={position.id}>
+                        {account?.name ?? "Неизвестный счёт"} ·{" "}
+                        {instrument?.name ?? "Неизвестный инструмент"}
+                        {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
+                        {formatQuantity(position.quantity)} шт.
+                      </option>
+                    );
+                  })}
+                </Select>
+              </Field>
+              <div className="stack-8">
+                <span className="muted tiny">Версия прогноза</span>
+                <strong>{version}</strong>
+              </div>
+            </div>
+            <div className="toolbar">
+              {manualEditorHref ? (
+                <Link className="btn btn--ghost" to={manualEditorHref}>
+                  Ручные выплаты этого месяца →
+                </Link>
+              ) : null}
+              <span className="muted tiny">
+                {expectedCount === null
+                  ? "Ручные ожидаемые строки проверяются локально."
+                  : `Ручных ожидаемых строк версии «${version}»: ${expectedCount}.`}
+              </span>
+            </div>
+            {selectedPositionId && !loadingContext && positions.length === 0 ? (
+              <EmptyState description="Добавь позицию в этом месяце." inline title="Нет позиций" />
+            ) : null}
+          </Panel>
+
+          <PayoutPreviewPanel
+            applying={applying}
+            error={null}
+            forecastVersion={forecastVersion}
+            loading={previewLoading || batchLoading}
+            onApply={(rows) => requestSingleApply(rows)}
+            onForecastVersionChange={(value) => {
+              handleVersionChange(value);
+              setPreview(null);
+              setPreviewMeta(null);
+              setActionError(null);
+              setLastApplyResult(null);
+            }}
+            onRefresh={() => void handlePreview()}
+            positionLabel={positionLabel}
+            preview={preview}
+            readOnly={readOnly}
+            versionDisabled={applying}
+          />
+        </details>
+      </div>
 
       <ConfirmDialog
         open={pendingBulk !== null}
@@ -1316,34 +1650,18 @@ export default function UiV2PayoutForecastPage() {
   const month = isQueryReady(months) && selection.kind === "selected" ? selection.month : null;
   const close = parseMonthlyCloseReturnContext(params);
   const returnPath = close && close.monthId === month?.id ? monthlyCloseReturnPath(close) : null;
+  const [payoutWriteActive, setPayoutWriteActive] = useState(false);
+  const [statementWriteActive, setStatementWriteActive] = useState(false);
+  const statementDisclosure = useRef<HTMLDetailsElement>(null);
   const [statementOutcomeByMonth, setStatementOutcomeByMonth] = useState<{
     monthId: number;
     outcome: AlfaStatementTransientOutcome;
   } | null>(null);
-  const [payoutWriteActive, setPayoutWriteActive] = useState(false);
-  const [statementWriteActive, setStatementWriteActive] = useState(false);
   const closeStepActive =
     close !== null && close.step === "actual_payouts" && close.monthId === month?.id;
-  const actualView = location.hash === "#statement-import";
-  const monthOptions = useMemo(() => {
-    const rows = months.data ?? [];
-    const fallback = newestMonth(rows);
-    return { rows, fallback };
-  }, [months.data]);
-
-  useEffect(() => {
-    if (!month || location.hash !== "#statement-import") return;
-    const target = document.getElementById("statement-import");
-    if (target && typeof target.scrollIntoView === "function") {
-      target.scrollIntoView({ block: "start" });
-    }
-  }, [location.hash, month]);
-
-  // The transient close outcome belongs to one explicit month: an older month
-  // must never publish it into the current month context.
   const statementOutcome =
-    statementOutcomeByMonth && statementOutcomeByMonth.monthId === month?.id
-      ? statementOutcomeByMonth.outcome
+    statementOutcomeByMonth?.monthId === month?.id
+      ? (statementOutcomeByMonth?.outcome ?? null)
       : null;
   const handleStatementOutcome = useCallback(
     (next: AlfaStatementTransientOutcome | null) => {
@@ -1353,17 +1671,29 @@ export default function UiV2PayoutForecastPage() {
     [closeStepActive, month],
   );
 
+  useEffect(() => {
+    if (location.hash !== "#statement-import" || !month || !statementDisclosure.current) return;
+    const disclosure = statementDisclosure.current;
+    disclosure.open = true;
+    disclosure.scrollIntoView?.({ block: "start" });
+  }, [location.hash, month]);
+  const monthOptions = useMemo(() => {
+    const rows = months.data ?? [];
+    const fallback = newestMonth(rows);
+    return { rows, fallback };
+  }, [months.data]);
+
   return (
     <UiV2DataFrame
       active="payouts"
       title="Выплаты"
-      subtitle="Календарь ожидаемых выплат и явное применение прогнозных событий T-Invest."
+      subtitle="Доход и возврат номинала по сохранённому прогнозу."
       monthId={month?.id}
     >
       <div className={styles.context}>
         <label htmlFor="payout-forecast-month">Отчётный месяц</label>
         <select
-          disabled={statementWriteActive || payoutWriteActive}
+          disabled={payoutWriteActive || statementWriteActive}
           id="payout-forecast-month"
           value={month?.id ?? ""}
           onChange={(event) =>
@@ -1404,57 +1734,31 @@ export default function UiV2PayoutForecastPage() {
       ) : (
         <>
           <DataMonthContext month={month} automatic={false} />
-          <nav className="toolbar" aria-label="Сценарий выплат">
-            <Link
-              aria-current={!actualView ? "page" : undefined}
-              to={`${location.pathname}${location.search}#future-payouts`}
-            >
-              Будущие выплаты
-            </Link>
-            <Link
-              aria-current={actualView ? "page" : undefined}
-              to={`${location.pathname}${location.search}#statement-import`}
-            >
-              Фактические выплаты · PDF
-            </Link>
-          </nav>
-          {actualView ? (
-            <div id="statement-import">
-              <UiV2StatementImportSection
-                closeStepActive={closeStepActive}
-                key={month.id}
-                month={month}
-                onApplyingChange={setStatementWriteActive}
-                onOutcome={handleStatementOutcome}
-                outcome={statementOutcome}
-                returnPath={returnPath}
-              />
-            </div>
-          ) : null}
-          {!actualView ? (
+          <div inert={statementWriteActive}>
             <PayoutForecastTool
               key={`${month.id}:${location.search}`}
               monthId={month.id}
               onApplyingChange={setPayoutWriteActive}
               close={close && close.monthId === month.id ? close : null}
             />
-          ) : null}
-          <p>
-            <Link
-              to={
-                close && close.monthId === month.id
-                  ? withMonthlyCloseReturn(
-                      `/v2/data/months/${month.id}?section=payouts`,
-                      close.monthId,
-                      close.step,
-                      close.origin,
-                    )
-                  : `/v2/data/months/${month.id}?section=payouts${location.hash}`
-              }
-            >
-              Ручные выплаты месяца →
-            </Link>
-          </p>
+          </div>
+          <details
+            className={styles.individual}
+            id="statement-import"
+            inert={payoutWriteActive}
+            key={month.id}
+            ref={statementDisclosure}
+          >
+            <summary>Импорт выписок (старый)</summary>
+            <UiV2StatementImportSection
+              closeStepActive={closeStepActive}
+              month={month}
+              onApplyingChange={setStatementWriteActive}
+              onOutcome={handleStatementOutcome}
+              outcome={statementOutcome}
+              returnPath={returnPath}
+            />
+          </details>
         </>
       )}
     </UiV2DataFrame>

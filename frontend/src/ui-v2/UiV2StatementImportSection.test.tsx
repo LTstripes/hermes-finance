@@ -1,11 +1,28 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAccounts } from "../api/accounts";
+import { listInstruments } from "../api/instruments";
+import { applyStatement, inspectStatement, prepareStatement } from "../api/statementImport";
+import { createQueryClient } from "../queryClient";
+import type { AlfaStatementTransientOutcome } from "../components/month-close/statementOutcome";
 import { getCloseReadiness, getMonth } from "../api/months";
 import { listInvestmentFlows } from "../api/investmentFlows";
 import type { CloseReadiness, InvestmentFlow, ReportingMonth } from "../api/types";
 import type { StatementApplyVerification } from "../components/StatementImportPanel";
-import { confirmStatementApply } from "./UiV2StatementImportSection";
+import { UiV2StatementImportSection, confirmStatementApply } from "./UiV2StatementImportSection";
 
+vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
+vi.mock("../api/instruments", () => ({ listInstruments: vi.fn() }));
+vi.mock("../api/statementImport", () => ({
+  inspectStatement: vi.fn(),
+  prepareStatement: vi.fn(),
+  applyStatement: vi.fn(),
+}));
 vi.mock("../api/months", () => ({
   getMonth: vi.fn(),
   getCloseReadiness: vi.fn(),
@@ -273,5 +290,311 @@ describe("confirmStatementApply authoritative readback", () => {
       flow(502),
     ]);
     await expect(confirmStatementApply(7, verification())).resolves.toBeUndefined();
+  });
+});
+
+// PDF interaction coverage belongs to the importer; the forecast page no longer mounts it.
+describe("statement import interaction and exact-month recovery", () => {
+  function money(amount: string) {
+    return { amount, currency: "RUB" };
+  }
+  const draftMonth = month;
+  const closedMonth = {
+    ...month,
+    id: 8,
+    month: 7,
+    status: "closed",
+    snapshot_date: "2026-07-31",
+  } as ReportingMonth;
+  const statementFile = new File(["synthetic statement pdf"], "synthetic-statement.pdf", {
+    type: "application/pdf",
+  });
+
+  const statementInspect = {
+    document_sha256: "sha-1",
+    status: "applicable",
+    rows: [
+      {
+        status: "matched",
+        provider_account_ref: "synthetic-broker",
+        isin: "RU000SYNTH01",
+        event_kind: "coupon",
+        record_date: "2026-08-01",
+        event_date: "2026-08-03",
+        reason: null,
+      },
+    ],
+    warnings: [],
+    reason: null,
+  };
+
+  const statementPreparation = {
+    provider: "alfa_pdf",
+    document_sha256: "sha-1",
+    status: "applicable",
+    warnings: [],
+    reason: null,
+    rows: [
+      {
+        status: "matched",
+        duplicate_class: null,
+        provider_account_ref: "synthetic-broker",
+        expected_hermes_account_id: 1,
+        expected_hermes_instrument_id: 10,
+        natural_identity: "synthetic-row-1",
+        material_fingerprint: "fp-synthetic-1",
+        expected_candidate_ids: [],
+        candidates: [],
+        isin: "RU000SYNTH01",
+        event_kind: "coupon",
+        record_date: "2026-08-01",
+        event_date: "2026-08-03",
+        quantity: "10",
+        per_unit: "10.00",
+        gross_amount: "12450.00",
+        gross_currency: "RUB",
+        tax_amount: "1618.50",
+        tax_available: true,
+        tax_rate: "13.00",
+        net_amount: "10831.50",
+        net_currency: "RUB",
+        reason: null,
+      },
+    ],
+  };
+
+  const spanningStatementPreparation = {
+    ...statementPreparation,
+    rows: [
+      statementPreparation.rows[0],
+      {
+        ...statementPreparation.rows[0],
+        natural_identity: "synthetic-sep",
+        material_fingerprint: "fp-sep",
+        event_date: "2026-09-03",
+        record_date: "2026-09-01",
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(getMonth).mockImplementation(async (id) => (id === 8 ? closedMonth : draftMonth));
+    vi.mocked(getCloseReadiness).mockResolvedValue(readiness);
+    vi.mocked(listAccounts).mockResolvedValue([
+      { id: 1, name: "Synthetic", status: "active" },
+    ] as never);
+    vi.mocked(listInstruments).mockResolvedValue([
+      { id: 10, name: "Bond", ticker: "B", instrument_type: "bond", status: "active" },
+    ] as never);
+    vi.mocked(listInvestmentFlows).mockResolvedValue([
+      {
+        id: 501,
+        reporting_month_id: 7,
+        account_id: 1,
+        instrument_id: 10,
+        flow_type: "coupon",
+        event_date: "2026-08-03",
+        gross_amount: money("12450.00"),
+        tax_amount: money("1618.50"),
+        commission_amount: money("0.00"),
+        net_amount: money("10831.50"),
+        currency: "RUB",
+        source: "alfa_pdf",
+        notes: null,
+        statement_link: {
+          applied_statement_event_id: 91,
+          link_mode: "statement_created",
+          status: "active",
+        },
+      } as never,
+    ]);
+    vi.mocked(inspectStatement).mockResolvedValue(structuredClone(statementInspect) as never);
+    vi.mocked(prepareStatement).mockResolvedValue(structuredClone(statementPreparation) as never);
+    vi.mocked(applyStatement).mockResolvedValue({
+      success: true,
+      selected_count: 1,
+      items: [
+        {
+          action: "created",
+          natural_identity: "synthetic-row-1",
+          applied_statement_event_id: 91,
+          investment_cash_flow_id: 501,
+          material_fingerprint: "fp-synthetic-1",
+          revision_id: 92,
+        },
+      ],
+      error_code: null,
+      message: null,
+    } as never);
+  });
+  function StatementHarness({
+    closed = false,
+    close = false,
+  }: {
+    closed?: boolean;
+    close?: boolean;
+  }) {
+    const [selected, setSelected] = useState(closed ? closedMonth : draftMonth);
+    const [outcome, setOutcome] = useState<AlfaStatementTransientOutcome | null>(null);
+    const [busy, setBusy] = useState(false);
+    return (
+      <>
+        <label htmlFor="statement-month">Отчётный месяц</label>
+        <select
+          id="statement-month"
+          value={selected.id}
+          disabled={busy}
+          onChange={(event) => setSelected(event.target.value === "8" ? closedMonth : draftMonth)}
+        >
+          <option value="7">Август 2026</option>
+          <option value="8">Июль 2026</option>
+        </select>
+        <UiV2StatementImportSection
+          key={selected.id}
+          month={selected}
+          closeStepActive={close}
+          onApplyingChange={setBusy}
+          onOutcome={setOutcome}
+          outcome={outcome}
+          returnPath={close ? "/v2/close?month=7&step=actual_payouts" : null}
+        />
+      </>
+    );
+  }
+  function showStatement(options: { closed?: boolean; close?: boolean } = {}) {
+    return render(
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter>
+          <StatementHarness {...options} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  async function prepareStatementRow(user: ReturnType<typeof userEvent.setup>) {
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findByText("synthetic-broker");
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await screen.findByText("Новая строка");
+    await user.click(screen.getByRole("checkbox", { name: "Выбрать строку 1" }));
+  }
+
+  it("retires the statement document when the explicit month changes", async () => {
+    const user = userEvent.setup();
+    showStatement();
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findByText("synthetic-broker");
+
+    await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "8");
+    await screen.findByLabelText("PDF отчёта Alfa");
+    expect(screen.queryByText("synthetic-broker")).not.toBeInTheDocument();
+    const input = screen.getByLabelText("PDF отчёта Alfa") as HTMLInputElement;
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+  });
+
+  it("constrains the native statement workspace to rows of the explicit month", async () => {
+    const user = userEvent.setup();
+    // One synthetic two-month preparation: the selected month is August 2026.
+    vi.mocked(prepareStatement).mockResolvedValueOnce(spanningStatementPreparation as never);
+    showStatement();
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+    await screen.findByText("synthetic-broker");
+    await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
+    await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
+    await screen.findAllByText("Новая строка");
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes[0]).toBeEnabled();
+    expect(checkboxes[1]).toBeDisabled();
+    expect(screen.getByText(/строка относится к другому отчётному месяцу/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+    expect(applyStatement).not.toHaveBeenCalled();
+  });
+
+  it("keeps upload, inspect and prepare free of any write until the owner confirms", async () => {
+    const user = userEvent.setup();
+    showStatement();
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await prepareStatementRow(user);
+    expect(prepareStatement).toHaveBeenCalledTimes(1);
+    expect(applyStatement).not.toHaveBeenCalled();
+    expect(listInvestmentFlows).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
+    expect(applyStatement).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    expect(screen.getByText("Новая строка")).toBeInTheDocument();
+  });
+
+  it("applies a synthetic statement only after the exact-month authoritative reread", async () => {
+    const user = userEvent.setup();
+    showStatement();
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await prepareStatementRow(user);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+
+    expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
+    expect(applyStatement).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(listInvestmentFlows).toHaveBeenCalledWith(7));
+    expect(getCloseReadiness).toHaveBeenCalledWith(7);
+    expect(getMonth).toHaveBeenCalledWith(7);
+    expect(screen.queryByText(/не подтверждён повторной загрузкой/)).not.toBeInTheDocument();
+  });
+
+  it("does not claim success when the applied flow id is missing from the reread", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listInvestmentFlows).mockResolvedValue([]);
+    showStatement();
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await prepareStatementRow(user);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+
+    expect(await screen.findByText(/не подтверждён повторной загрузкой/)).toBeInTheDocument();
+    expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
+    // The prepared document is retired: no blind replay of the same selection.
+    expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
+  });
+
+  it("keeps the statement import fail-closed on a CLOSED month", async () => {
+    showStatement({ closed: true });
+    await screen.findByLabelText("PDF отчёта Alfa");
+    expect(
+      screen.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
+    ).toBeInTheDocument();
+    expect(applyStatement).not.toHaveBeenCalled();
+  });
+
+  it("hands a zero-row statement outcome back to the same-month close step", async () => {
+    const user = userEvent.setup();
+    vi.mocked(inspectStatement).mockResolvedValueOnce({
+      ...statementInspect,
+      rows: [],
+    } as never);
+    showStatement({ close: true });
+    await screen.findByLabelText("PDF отчёта Alfa");
+    await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
+    await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
+
+    expect(await screen.findByText("Результат проверки PDF Alfa")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Продолжить к закрытию" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=7&step=actual_payouts",
+    );
   });
 });
