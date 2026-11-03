@@ -112,6 +112,7 @@ from hermes_finance.diagnostics import (
     configure_private_logging,
 )
 from hermes_finance.security import LocalhostSecurityMiddleware
+from hermes_finance.services.draft_payouts import AcceptanceRefresh
 from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceStore
 from hermes_finance.settings import Settings
 
@@ -152,6 +153,7 @@ def create_app(
     application = FastAPI(title="Hermes Finance API", version=__version__)
     application.state.returns_account_display_names = Settings().returns_account_display_names
     application.state.quote_preview_evidence = QuotePreviewEvidenceStore()
+    application.state.acceptance_payout_refresh = AcceptanceRefresh()
     application.state.reviewed_bond_valuation_path = (
         reviewed_bond_valuation_path
         if reviewed_bond_valuation_path is not None

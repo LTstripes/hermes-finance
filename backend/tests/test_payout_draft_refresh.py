@@ -1,9 +1,11 @@
 """Synthetic XML -> accepted DRAFT -> explicit, durable provider forecasts."""
 
 import json
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +21,7 @@ from test_statement_import_mybroker_endpoints import (
 )
 from test_statement_import_payout_reconciliation import settlement as settlement
 
+from hermes_finance.api import payouts as payout_api
 from hermes_finance.domain import InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.market_data.dto import (
@@ -34,8 +37,14 @@ from hermes_finance.persistence import (
     AppliedProviderPayout,
     PositionSnapshot,
 )
+from hermes_finance.services import draft_payouts
 
 UID = "44444444-4444-4444-4444-444444444444"
+
+
+@pytest.fixture(autouse=True)
+def short_acceptance_debounce(monkeypatch):
+    monkeypatch.setattr(draft_payouts.AcceptanceRefresh, "debounce_seconds", 0.01)
 
 
 class Provider:
@@ -89,7 +98,7 @@ class Provider:
         )
 
 
-def setup(database, provider, xml=None):
+def setup(database, provider, xml=None, *, automatic=False):
     scope = _broker_month_setup(database)
     client = TestClient(
         create_app(database=database, market_data_provider=provider, payout_provider=provider)
@@ -110,7 +119,14 @@ def setup(database, provider, xml=None):
     )
     preview = _broker_month_preview(client, scope, xml)
     assert preview["can_apply"], preview
-    ack = _broker_month_apply(client, scope, preview, xml)
+    # Existing explicit-refresh tests own their trigger; automatic tests opt in
+    # to the production acceptance path and assert its separate boundaries below.
+    with (
+        nullcontext()
+        if automatic
+        else patch("hermes_finance.api.broker_months.schedule_draft_payout_refresh")
+    ):
+        ack = _broker_month_apply(client, scope, preview, xml)
     assert ack.status_code == 200, ack.text
     assert client.get("/api/broker-months/synthetic-batch").json()["bookkeeping_ready"]
     return client, scope["reporting_month_id"]
@@ -207,7 +223,7 @@ def test_provider_exceptions_are_bounded_and_never_write_actuals(database, case)
     assert not _all_month_tables(database)["investment_cash_flows"]
 
 
-def second_account(database, client, month):
+def second_account(database, client, month, *, automatic=False):
     from hermes_finance.services.accounts import create_account
     from hermes_finance.services.broker_identity_mappings import confirm_mapping
 
@@ -236,9 +252,14 @@ def second_account(database, client, month):
     filename = FILENAME.replace("1234567", "7654321")
     scope = {"reporting_month_id": month, "account_id": account_id}
     preview = _broker_month_preview(client, scope, xml, filename=filename)
-    response = _broker_month_apply(
-        client, scope, preview, xml, request_id="second-account", filename=filename
-    )
+    with (
+        nullcontext()
+        if automatic
+        else patch("hermes_finance.api.broker_months.schedule_draft_payout_refresh")
+    ):
+        response = _broker_month_apply(
+            client, scope, preview, xml, request_id="second-account", filename=filename
+        )
     assert response.status_code == 200, response.text
     assert response.json()["bookkeeping_ready"], response.json()
     return account_id
@@ -474,7 +495,8 @@ def test_identity_registry_aba_during_discovery_or_uid_verification(database, wh
     assert not _all_month_tables(database)["instrument_market_mappings"]
 
 
-def test_sold_out_source_creates_no_positive_position_or_provider_request(database):
+@pytest.mark.parametrize("automatic", [False, True])
+def test_sold_out_source_creates_no_positive_position_or_provider_request(database, automatic):
     provider = Provider()
     xml = (
         broker_month_xml()
@@ -486,7 +508,9 @@ def test_sold_out_source_creates_no_positive_position_or_provider_request(databa
         .replace(b'volume="-1000.00"', b'volume="800.00"')
         .replace(b'real_rest="400.00"', b'real_rest="2200.00"')
     )
-    client, month = setup(database, provider, xml)
+    client, month = setup(database, provider, xml, automatic=automatic)
+    if automatic:
+        assert refresh_status(client, month)["automatic_refresh"]["status"] == "completed"
     assert refresh(client, month)["items"] == []
     assert provider.requests == [] and provider.discovery == []
 
@@ -589,3 +613,260 @@ def test_existing_970_paid_and_retired_actual_links_survive_refresh(database, se
     assert "actual_payout_review_required" in str(result)
     assert _all_month_tables(database) == before
     assert client.get("/api/broker-months/draft-paid").json()["relations"][0]["state"] == "retired"
+
+
+def refresh_status(client, month):
+    response = client.get(f"/api/months/{month}/payout-refresh-status")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_acceptance_automatically_refreshes_after_fresh_positions_read(database, monkeypatch):
+    provider = Provider()
+    original = draft_payouts.refresh
+    contexts = []
+
+    def tracked(session, month, **kwargs):
+        # The callback starts from an independently read, committed SOURCE and
+        # native positions, rather than financial Apply's in-memory projection.
+        context = draft_payouts.read_context(session, month)
+        assert context["eligible_positions"] == 1
+        assert kwargs["context_digest"] == context["context_digest"]
+        contexts.append(context)
+        return original(session, month, **kwargs)
+
+    monkeypatch.setattr(draft_payouts, "refresh", tracked)
+    client, month = setup(database, provider, automatic=True)
+    assert len(contexts) == 1
+    assert len(provider.requests) == 2  # Existing preview + apply verification.
+    assert len(calendar(client, month)) == 1
+    status = refresh_status(client, month)
+    assert status["automatic_refresh"]["status"] == "completed"
+    assert status["forecast_as_of"]
+    before = _all_month_tables(database)
+    calls = len(provider.requests), len(provider.discovery)
+    for _ in range(2):
+        assert refresh_status(client, month) == status
+        assert client.get(f"/api/months/{month}/draft-payouts").status_code == 200
+        assert client.get("/api/broker-months/synthetic-batch").status_code == 200
+        calendar(client, month)
+    assert _all_month_tables(database) == before
+    assert (len(provider.requests), len(provider.discovery)) == calls
+
+
+def test_source_save_and_failed_financial_acceptance_do_not_trigger(database):
+    provider = Provider()
+    scope = _broker_month_setup(database)
+    client = TestClient(
+        create_app(database=database, market_data_provider=provider, payout_provider=provider)
+    )
+    xml = broker_month_xml()
+    saved = client.post(
+        "/api/broker-months/intakes",
+        files={"file": (FILENAME, xml, "application/xml")},
+        data={"intent": json.dumps({"request_id": "only-save"})},
+    )
+    assert saved.status_code == 200
+    before = _all_month_tables(database)
+    assert client.get(f"/api/broker-months/intakes/{saved.json()['intake_id']}").status_code == 200
+    preview = _broker_month_preview(client, scope, xml)
+    preview["confirmation_digest"] = "0" * 64
+    failed = _broker_month_apply(client, scope, preview, xml)
+    assert failed.status_code == 409
+    assert (
+        refresh_status(client, scope["reporting_month_id"])["automatic_refresh"]["status"] == "idle"
+    )
+    assert provider.requests == provider.discovery == []
+    assert _all_month_tables(database) == before
+
+
+def test_acceptance_burst_coalesces_and_rereads_all_accounts(database, monkeypatch):
+    from fastapi import BackgroundTasks
+
+    callbacks = []
+    monkeypatch.setattr(
+        BackgroundTasks, "add_task", lambda self, fn, *args, **kw: callbacks.append((fn, args, kw))
+    )
+    provider = Provider()
+    client, month = setup(database, provider, automatic=True)
+    account_b = second_account(database, client, month, automatic=True)
+    assert len(callbacks) == 1
+    assert refresh_status(client, month)["automatic_refresh"]["status"] == "pending"
+    assert provider.requests == provider.discovery == []
+    fn, args, kw = callbacks.pop()
+    fn(*args, **kw)
+    assert refresh_status(client, month)["automatic_refresh"]["status"] == "completed"
+    assert len(provider.requests) == 4
+    assert {
+        (r["account_id"], r["expected_net_amount"]["amount"]) for r in calendar(client, month)
+    } == {(1, "25.00"), (account_b, "50.00")}
+    # Replaying the committed request is ACK/GET recovery, not a new acceptance.
+    preview = _broker_month_preview(
+        client, {"reporting_month_id": month, "account_id": 1}, broker_month_xml()
+    )
+    # The original digest is bound to its original dependencies, so reuse the
+    # persisted confirmation rather than the newly prepared plan.
+    receipt = client.get("/api/broker-months/synthetic-batch").json()
+    preview["confirmation_digest"] = receipt["confirmation_digest"]
+    duplicate = _broker_month_apply(
+        client, {"reporting_month_id": month, "account_id": 1}, preview, broker_month_xml()
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["duplicate"]
+    assert callbacks == []
+    assert len(provider.requests) == 4
+
+
+@pytest.mark.parametrize("when", [1, 2])
+def test_automatic_refresh_discards_positions_changed_during_io(database, monkeypatch, when):
+    from fastapi import BackgroundTasks
+
+    callbacks = []
+    monkeypatch.setattr(
+        BackgroundTasks, "add_task", lambda self, fn, *args, **kw: callbacks.append((fn, args, kw))
+    )
+    provider = Provider()
+    client, month = setup(database, provider, automatic=True)
+
+    def change(call):
+        if call == when:
+            with database.session_factory() as session:
+                session.scalar(select(PositionSnapshot)).quantity = Decimal("12")
+                session.commit()
+
+    provider.on_fetch = change
+    fn, args, kw = callbacks.pop()
+    fn(*args, **kw)
+    assert calendar(client, month) == []
+    status = refresh_status(client, month)["automatic_refresh"]
+    assert status["status"] in {"needs_review", "error"}
+    assert set(status["reason_codes"]) & {"draft_changed", "preview_changed"}
+    assert not _all_month_tables(database)["applied_payout_revisions"]
+
+
+def test_acceptance_during_refresh_does_not_chain_another_pass(database, monkeypatch):
+    from fastapi import BackgroundTasks
+
+    callbacks = []
+    monkeypatch.setattr(
+        BackgroundTasks, "add_task", lambda self, fn, *args, **kw: callbacks.append((fn, args, kw))
+    )
+    provider = Provider()
+    client, month = setup(database, provider, automatic=True)
+
+    def accept_another(call):
+        if call == 1:
+            second_account(database, client, month, automatic=True)
+
+    provider.on_fetch = accept_another
+    fn, args, kw = callbacks.pop()
+    fn(*args, **kw)
+    assert callbacks == []
+    assert len(provider.requests) == 1
+    assert calendar(client, month) == []
+    assert refresh_status(client, month)["automatic_refresh"]["reason_codes"] == ["draft_changed"]
+
+
+@pytest.mark.parametrize("failure", ["fetch", "resolve", "resolve_value"])
+def test_automatic_failure_preserves_forecast_and_as_of(database, monkeypatch, failure):
+    from fastapi import BackgroundTasks
+
+    callbacks = []
+    monkeypatch.setattr(
+        BackgroundTasks, "add_task", lambda self, fn, *args, **kw: callbacks.append((fn, args, kw))
+    )
+    provider = Provider()
+    client, month = setup(database, provider)
+    assert refresh(client, month)["summary"]["updated"] == 1
+    before = _all_month_tables(database)
+    saved_rows = calendar(client, month)
+    saved_as_of = refresh_status(client, month)["forecast_as_of"]
+    second_account(database, client, month, automatic=True)
+    if failure == "fetch":
+        provider.fail = True
+    else:
+        closed = []
+        monkeypatch.setattr(
+            payout_api, "resolve_verify_provider", lambda *a, **kw: (provider, True)
+        )
+        monkeypatch.setattr(provider, "close", lambda: closed.append(True), raising=False)
+
+        def fail_resolution(*args, **kwargs):
+            error = ValueError if failure == "resolve_value" else RuntimeError
+            raise error("TOKEN=must-not-be-returned")
+
+        monkeypatch.setattr(payout_api, "resolve_payout_provider", fail_resolution)
+    fn, args, kw = callbacks.pop()
+    fn(*args, **kw)
+    status = refresh_status(client, month)
+    assert status["automatic_refresh"]["status"] == "error"
+    if failure != "fetch":
+        assert closed == [True]
+    assert status["forecast_as_of"] == saved_as_of
+    assert calendar(client, month) == saved_rows
+    assert "TOKEN" not in str(status)
+    assert (
+        _all_month_tables(database)["applied_payout_revisions"]
+        == before["applied_payout_revisions"]
+    )
+    calls = len(provider.requests), len(provider.discovery)
+    refresh_status(client, month)
+    assert (len(provider.requests), len(provider.discovery)) == calls
+    assert callbacks == []
+
+
+def test_acceptance_debounce_extends_until_last_acceptance_without_retry(monkeypatch):
+    coordinator = draft_payouts.AcceptanceRefresh()
+    coordinator.debounce_seconds = 10
+    clock = [0]
+    waits = []
+    monkeypatch.setattr(draft_payouts, "monotonic", lambda: clock[0])
+    assert coordinator.schedule(1)
+
+    def wait(remaining):
+        waits.append(remaining)
+        if len(waits) == 1:
+            clock[0] = 9
+            assert not coordinator.schedule(1)
+            clock[0] = 10
+        else:
+            clock[0] = 19
+
+    monkeypatch.setattr(coordinator._condition, "wait", wait)
+
+    def refresh_once():
+        assert waits == [10, 9]
+        assert coordinator.read(1)["status"] == "running"
+        assert not coordinator.schedule(1)
+        return {
+            "summary": {"error": 0, "needs_review": 0, "unsupported": 0, "updated": 0},
+            "items": [],
+        }
+
+    coordinator.run(1, refresh_once)
+    assert coordinator.read(1)["status"] == "completed"
+    assert coordinator.read(2)["status"] == "idle"
+    assert coordinator.schedule(1)  # A later independent acceptance can refresh.
+
+
+def test_month_closed_during_acceptance_debounce_never_refreshes(database, monkeypatch):
+    from fastapi import BackgroundTasks
+
+    from hermes_finance.services.reporting_months import close_reporting_month
+
+    callbacks = []
+    monkeypatch.setattr(
+        BackgroundTasks, "add_task", lambda self, fn, *args, **kw: callbacks.append((fn, args, kw))
+    )
+    provider = Provider()
+    client, month = setup(database, provider, automatic=True)
+    with database.session_factory() as session:
+        close_reporting_month(session, month)
+    before = _all_month_tables(database)
+    fn, args, kw = callbacks.pop()
+    fn(*args, **kw)
+    status = refresh_status(client, month)["automatic_refresh"]
+    assert status["status"] == "needs_review"
+    assert status["reason_codes"] == ["draft_changed"]
+    assert provider.requests == provider.discovery == []
+    assert _all_month_tables(database) == before

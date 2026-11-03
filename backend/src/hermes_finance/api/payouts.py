@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.market_data import (
@@ -29,7 +30,12 @@ from hermes_finance.market_data.payout_protocol import (
     PayoutFetchResult,
     PayoutProvider,
 )
-from hermes_finance.persistence import AppliedProviderPayout, PositionSnapshot, ReportingMonth
+from hermes_finance.persistence import (
+    AppliedPayoutRevision,
+    AppliedProviderPayout,
+    PositionSnapshot,
+    ReportingMonth,
+)
 from hermes_finance.services import draft_payouts
 from hermes_finance.services.applied_payouts import PayoutCountingDecision
 from hermes_finance.services.instrument_mappings import get_instrument_mapping
@@ -209,12 +215,22 @@ class PayoutRefreshStatusItemOut(BaseModel):
     applied_payout_count: int
 
 
+class AutomaticPayoutRefreshOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["idle", "pending", "running", "completed", "partial", "needs_review", "error"]
+    message: str
+    reason_codes: list[str]
+
+
 class PayoutRefreshStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reporting_month_id: int
     positions_changed: int
     items: list[PayoutRefreshStatusItemOut]
+    forecast_as_of: datetime | None = None
+    automatic_refresh: AutomaticPayoutRefreshOut | None = None
 
 
 class ManualDuplicateDecisionIn(BaseModel):
@@ -546,7 +562,18 @@ def _refresh_status(
                 applied_payout_count=len(stale),
             )
         )
+    latest = (
+        select(func.max(AppliedPayoutRevision.id))
+        .where(AppliedPayoutRevision.applied_payout_id.in_([p.id for p in payouts]))
+        .group_by(AppliedPayoutRevision.applied_payout_id)
+    )
+    dates = list(
+        session.scalars(
+            select(AppliedPayoutRevision.fetched_at).where(AppliedPayoutRevision.id.in_(latest))
+        )
+    )
     return PayoutRefreshStatusResponse(
+        forecast_as_of=min(dates) if dates and len(dates) == len(payouts) else None,
         reporting_month_id=month.id,
         positions_changed=len(items),
         items=items,
@@ -695,26 +722,61 @@ def draft_payout_refresh_endpoint(
     request: Request,
     session: Session = Depends(session_for_request),
 ):
-    mapping_provider, owned_mapping = resolve_verify_provider(
-        request, payload_provider=T_INVEST_PROVIDER
-    )
-    payout_provider, owned_payout = resolve_payout_provider(request)
     try:
-        return draft_payouts.refresh(
-            session,
-            month_id,
-            context_digest=payload.context_digest,
-            forecast_version=payload.forecast_version,
-            mapping_provider=mapping_provider,
-            payout_provider=payout_provider,
+        return _refresh_draft_with_providers(
+            request, session, month_id, payload.context_digest, payload.forecast_version
         )
     except ReportingMonthNotFoundError as error:
         raise HTTPException(status_code=404, detail="Reporting month not found") from error
     except ValueError as error:
         raise _payout_context_changed() from error
+
+
+def _refresh_draft_with_providers(request, session, month_id, context_digest, forecast_version):
+    mapping_provider, owned_mapping = resolve_verify_provider(
+        request, payload_provider=T_INVEST_PROVIDER
+    )
+    try:
+        payout_provider, owned_payout = resolve_payout_provider(request)
+        try:
+            return draft_payouts.refresh(
+                session,
+                month_id,
+                context_digest=context_digest,
+                forecast_version=forecast_version,
+                mapping_provider=mapping_provider,
+                payout_provider=payout_provider,
+            )
+        finally:
+            close_owned_payout_resource(owned_payout)
     finally:
         close_owned_provider(mapping_provider, owned_mapping)
-        close_owned_payout_resource(owned_payout)
+
+
+def schedule_draft_payout_refresh(request, background_tasks: BackgroundTasks, accepted):
+    """Called only by the successful strict financial SOURCE acceptance POST.
+
+    Its service already independently rereads the committed financial receipt.
+    A replay, source Save, finance-link or GET never schedules provider work.
+    """
+    if accepted["duplicate"] or accepted["status"] != "draft":
+        return
+    month_id = accepted["reporting_month_id"]
+    coordinator = request.app.state.acceptance_payout_refresh
+    if coordinator.schedule(month_id):
+        background_tasks.add_task(
+            coordinator.run, month_id, lambda: _accepted_refresh(request, month_id)
+        )
+
+
+def _accepted_refresh(request, month_id):
+    # A new session after the burst; never retain the accepting request's snapshot
+    # or ORM positions across the debounce. This also respects restore admission.
+    with contextmanager(session_for_request)(request) as session:
+        context = draft_payouts.read_context(session, month_id)
+        return _refresh_draft_with_providers(
+            request, session, month_id, context["context_digest"], "v1"
+        )
 
 
 @router.post(
@@ -918,9 +980,22 @@ def _payout_batch_preview_in_snapshot(
 )
 def payout_refresh_status_endpoint(
     month_id: int,
+    request: Request,
     session: Session = Depends(session_for_request),
 ) -> PayoutRefreshStatusResponse:
-    return _refresh_status(session, reporting_month_id=month_id)
+    result = _refresh_status(session, reporting_month_id=month_id)
+    state = request.app.state.acceptance_payout_refresh.read(month_id)
+    messages = {
+        "idle": "Автоматическое обновление в этом сеансе не запускалось.",
+        "pending": "Ожидается завершение принятия выписок.",
+        "running": "Прогноз обновляется.",
+        "completed": "Прогноз обновлён.",
+        "partial": "Обновлена часть прогноза. Остальные сохранённые данные сохранены; нужна проверка.",
+        "needs_review": "Прогноз требует проверки. Ранее сохранённые данные сохранены.",
+        "error": "Не удалось обновить прогноз. Ранее сохранённые данные сохранены.",
+    }
+    result.automatic_refresh = AutomaticPayoutRefreshOut(**state, message=messages[state["status"]])
+    return result
 
 
 @router.post("/api/months/{month_id}/payout-apply", response_model=PayoutApplyResponse)
