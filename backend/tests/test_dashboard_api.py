@@ -693,3 +693,31 @@ def test_optional_capital_explanation_failure_preserves_month_reads(
         body = recovered.json()
         summary = body["summary"] if endpoint == "dashboard" else body
         assert summary["capital_change"]["breakdown"] is not None
+
+
+@pytest.mark.parametrize("endpoint", ["summary", "dashboard"])
+def test_light_month_reads_skip_capital_explanation_and_preserve_other_fields(
+    client, monkeypatch, endpoint
+):
+    from hermes_finance.services import monthly_capital_change as service
+
+    _, month_id = _seed_two_months(client)
+    path = f"/api/months/{month_id}/{endpoint}"
+    full = client.get(path)
+    assert full.status_code == 200
+    expected = full.json()
+    target = expected["summary"] if endpoint == "dashboard" else expected
+    assert target["capital_change"] is not None
+    target["capital_change"] = None
+
+    calls = []
+
+    def unexpected(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("unneeded capital calculation")
+
+    monkeypatch.setattr(service, "monthly_capital_change", unexpected)
+    light = client.get(path + "?include_capital_change=false")
+    assert light.status_code == 200
+    assert light.json() == expected
+    assert not calls

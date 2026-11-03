@@ -182,6 +182,21 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   expect(evidence.errors).toEqual([]);
 });
 
+test("ui-v2 Home passive hover keeps tooltip without a full-height cursor", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installApi(page);
+  await page.goto("/v2");
+  const chart = page.getByTestId("v2-passive-history");
+  await expect(chart).toHaveAttribute("data-point-count", "4");
+  await chart.locator(".recharts-bar-rectangle").first().hover();
+  await expect(chart.locator(".recharts-tooltip-wrapper")).toBeVisible();
+  await expect(chart.locator(".recharts-tooltip-cursor")).toHaveCount(0);
+  await capture(page, testInfo, "ui-v2-passive-hover");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
 test("ui-v2 Home partial capital coverage stays beside the known subtotal", async ({
   page,
 }, testInfo) => {

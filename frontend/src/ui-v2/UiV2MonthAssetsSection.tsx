@@ -260,8 +260,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     queryFn: ({ signal }) => listDebts(monthId, signal),
   });
   const dashboardQuery = useQuery({
-    queryKey: queryKeys.dashboard(monthId),
-    queryFn: ({ signal }) => getDashboard(monthId, signal),
+    queryKey: queryKeys.dashboardBasic(monthId),
+    queryFn: ({ signal }) => getDashboard(monthId, signal, false),
   });
 
   const [depositDraft, setDepositDraft] = useState<DepositDraft>(emptyDeposit);
@@ -404,7 +404,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   /** Confirmed save → other surfaces go stale; linked-pair facts reread now. */
   async function markDataStale(): Promise<void> {
     await queryClient.invalidateQueries({ refetchType: "none" });
-    await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.dashboardBasic(monthId) });
   }
 
   /**

@@ -142,7 +142,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
   });
   const summaryQuery = useQuery({
     queryKey: ["month-income-summary", month.id],
-    queryFn: ({ signal }) => getMonthSummary(month.id, signal),
+    queryFn: ({ signal }) => getMonthSummary(month.id, signal, false),
     retry: false,
   });
 
@@ -264,7 +264,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       const [freshMonth, freshIncomes, freshSummary] = await Promise.all([
         refresh(),
         listIncomes(monthId),
-        getMonthSummary(monthId),
+        getMonthSummary(monthId, undefined, false),
       ]);
       if (operation.current !== token) return;
       if (freshMonth.id !== monthId) {
@@ -307,7 +307,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       setRecoveryError(null);
       setRecovery("confirmed");
       try {
-        const freshSummary = await getMonthSummary(monthId);
+        const freshSummary = await getMonthSummary(monthId, undefined, false);
         if (operation.current === token) {
           queryClient.setQueryData(["month-income-summary", monthId], freshSummary);
         }

@@ -225,7 +225,7 @@ export function Concentration({
         <Support support={metric.support} />
       </summary>
       <div className={styles.metricBody}>
-        <dl className={styles.facts}>
+        <dl className={`${styles.facts} ${event ? "" : styles.concentrationFacts}`}>
           {basis ? (
             <div>
               <dt>{basis}</dt>
@@ -244,8 +244,8 @@ export function Concentration({
         {metric.items.length === 0 ? (
           <p className={styles.empty}>Нет данных</p>
         ) : (
-          <Table className={styles.table}>
-            <caption>{title}</caption>
+          <Table className={`${styles.table} ${event ? "" : styles.concentrationTable}`}>
+            <caption className={styles.visuallyHidden}>{title}</caption>
             <thead>
               <tr>
                 <Th>{event ? "Событие / инструмент" : "Позиция"}</Th>

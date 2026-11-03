@@ -155,7 +155,7 @@
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   margin: 14px 0;
 }
@@ -294,4 +294,41 @@
     font-weight: 600;
     text-align: left;
   }
+}
+
+.concentrationTable {
+  table-layout: fixed;
+  max-width: 720px;
+}
+.concentrationFacts {
+  max-width: 720px;
+  grid-template-columns: 52fr 28fr 20fr;
+}
+.concentrationFacts > div:first-child:nth-last-child(2) {
+  grid-column: 2;
+}
+@media (max-width: 600px) {
+  .concentrationFacts {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+  .concentrationFacts > div:first-child:nth-last-child(2) {
+    grid-column: auto;
+  }
+}
+.concentrationTable th:first-child {
+  width: 52%;
+}
+.concentrationTable th:nth-child(2) {
+  width: 28%;
+}
+.concentrationTable th:nth-child(3) {
+  width: 20%;
+}
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

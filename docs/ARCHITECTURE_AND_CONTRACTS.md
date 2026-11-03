@@ -6280,14 +6280,37 @@ Monthly GET reads saved classifications without reattaching originals. For an
 exact SHA/normalized-document/coverage match to a financial import, it also
 revalidates the existing source/month section dispositions and exact Money bonus
 proof. Only effective section exemptions remove their own blockers. A current
-`broker_bonus` occurrence can interpret the same default/assumed unknown or
-promo-deposit row as internal account income (`broker_bonus_confirmed`), never
-Owner funding or an additional payout/cash fact. Explicit user choices remain
-authoritative. Retired, stale, wrong-source/ordinal/fingerprint or conflicting
-proofs retain the saved classification, including UNKNOWN;
+`broker_bonus` occurrence can interpret the same positive RUB unknown or
+promo-deposit row as a confirmed `external_gift` flow for source-account returns
+(`broker_gift_external_flow`). Its date and exact amount come only from that
+immutable posted Money occurrence. It enters the existing dated external schedule
+once, so the gift is excluded from investment P&L and the Dietz denominator uses
+its real date. The classification distinguishes gifts from personal deposits;
+the broad contribution total includes all external incoming capital. It creates
+no Owner funding, H2/ExternalFlow record, additional payout or cash fact: closing
+cash already contains the receipt, and a subsequent sale is not another inflow.
+This explicitly resolves a saved user-choice UNKNOWN without rewriting it, and
+labels an already chosen external deposit as a gift. Other explicit economic
+choices remain authoritative. Provisional include/exclude assumptions cannot
+override a current gift proof. Retired, stale, wrong-source/ordinal/fingerprint
+or conflicting proofs retain the saved classification, including UNKNOWN;
 these reads write no classification, receipt or financial row. Operations and
 unresolved structures retain the source-period impact rules below. External
+gift recognition uses the same current exact proof on every month read; it has
+no account/date/amount allowlist and requires no extra classification save after
+normal source confirmation. A security gift without a proved Money receipt is
+not cash. Missing receipt-date valuation or unsupported custody movements remain
+unresolved; sale proceeds, current prices and quantities cannot invent an in-kind
+contribution or remove those blockers. External
 deposits/withdrawals enter the schedule with their persisted status;
+Saved XML/PDF investment proofs use the same exact current gift evidence, and
+bind the relevant gift proof head and currentness into their dependencies.
+Changed, replaced or invalid gift proof retires the dependent investment proof.
+Unchanged v2 and 1.9.4 proofs may be read under v3 only when the full original
+dependency recomputes exactly and no relevant gift proof head exists. This direct
+read-only compatibility edge does not authorize pending writers, fallback to an
+older proof, other revisions, or any future semantics revision. Gift-bearing
+scopes remain stale unless separately confirmed or certified.
 `coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
 per month, without adding it again as investor flow. The monthly
 `income_assumptions_used` flag is true when any included coupon/dividend uses
@@ -14368,3 +14391,6 @@ Public summary and comparison defaults retain their explanation. Home explicitly
 requests `include_capital_change=false` on closed-report comparison and uses a
 separate query-cache identity; all other response fields are unchanged. The close
 workflow skips the bridge because it never serializes or displays it.
+Summary and dashboard also accept `include_capital_change=false`, preserving all
+other response fields and using distinct frontend cache keys. The default remains
+true. Capital loads the compact comparison first and its explanation separately.

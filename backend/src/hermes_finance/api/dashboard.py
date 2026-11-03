@@ -536,11 +536,17 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
 def get_month_summary(
     month_id: int,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
+    include_capital_change: bool = True,
     session: Session = Depends(session_for_request),
 ) -> MonthlySummaryOut:
     with coherent_read_snapshot(session):
         month = get_reporting_month(session, month_id)
-        summary = monthly_summary(session, month_id, forecast_version=forecast_version)
+        summary = monthly_summary(
+            session,
+            month_id,
+            forecast_version=forecast_version,
+            include_capital_change=include_capital_change,
+        )
         return _summary_out(month, summary)
 
 
@@ -738,6 +744,14 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
 def get_month_dashboard(
     month_id: int,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
+    include_capital_change: bool = True,
     session: Session = Depends(session_for_request),
 ) -> DashboardOut:
-    return dashboard_to_out(build_dashboard(session, month_id, forecast_version=forecast_version))
+    return dashboard_to_out(
+        build_dashboard(
+            session,
+            month_id,
+            forecast_version=forecast_version,
+            include_capital_change=include_capital_change,
+        )
+    )

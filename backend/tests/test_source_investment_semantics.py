@@ -33,9 +33,11 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
+# Saved XML/PDF gift interpretation changes in v3 and requires independent
+# compatibility review for older proofs.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v2",
-    "eb5544fae1746dab2ae77ce57e4afadaa5a00f11be03af2aa040db1b247b040d",
+    "source_investment_semantics_v3",
+    "4dda7287fd3966a622d4b3361c52e5f8f69b7f74891fd009773aa711991f8f72",
 )
 
 

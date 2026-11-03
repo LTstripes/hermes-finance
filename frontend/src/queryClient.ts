@@ -6,6 +6,8 @@ export const queryKeys = {
   accounts: ["accounts"] as const,
   instruments: ["instruments"] as const,
   dashboard: (monthId: number | null) => ["dashboard", monthId] as const,
+  dashboardBasic: (monthId: number | null) =>
+    ["dashboard", monthId, "without-explanation"] as const,
   monthCloseWorkflow: (monthId: number | null) => ["month-close-workflow", monthId] as const,
   closedReportComparison: ["closed-report-comparison"] as const,
   closedReportComparisonBasic: ["closed-report-comparison", "without-explanation"] as const,

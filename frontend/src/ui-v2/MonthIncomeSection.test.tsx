@@ -338,7 +338,7 @@ describe("native month editor income leaf", () => {
     expect(within(section).getByText("Расчётный налог")).toBeInTheDocument();
     expect(within(section).getByText("Расчётный net")).toBeInTheDocument();
     expect(listIncomes).toHaveBeenCalledWith(7, expect.any(AbortSignal));
-    expect(getMonthSummary).toHaveBeenCalledWith(7, expect.any(AbortSignal));
+    expect(getMonthSummary).toHaveBeenCalledWith(7, expect.any(AbortSignal), false);
     expect(onDirty).not.toHaveBeenCalledWith("income", true);
     expect(within(section).getByRole("button", { name: "Сохранить доходы" })).toBeDisabled();
   });

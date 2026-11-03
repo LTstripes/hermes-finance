@@ -13,12 +13,16 @@ const UNAVAILABLE_MONEY: MoneyValue = { amount: "", currency: "RUB" };
 export async function getMonthSummary(
   monthId: number,
   signal?: AbortSignal,
+  includeCapitalChange = true,
 ): Promise<MonthSummary> {
   try {
-    return await apiRequest<MonthSummary>(`/api/months/${monthId}/summary`, {
-      method: "GET",
-      signal,
-    });
+    return await apiRequest<MonthSummary>(
+      `/api/months/${monthId}/summary${includeCapitalChange ? "" : "?include_capital_change=false"}`,
+      {
+        method: "GET",
+        signal,
+      },
+    );
   } catch (error) {
     if (error instanceof ApiClientError && error.code === "salary_tax_history_incomplete") {
       return {
