@@ -1348,6 +1348,58 @@ it("keeps the ordinary desktop view to two actions and separates 12-month income
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
+it.each(["?month=8", "?month=8&from=monthly-close-v2&monthId=8&step=future_payouts"])(
+  "shows unknown completeness for an empty calendar month without opening details (%s)",
+  async (query) => {
+    vi.mocked(listPayoutCalendar).mockResolvedValue([
+      {
+        ...calendarFixture[0],
+        year: closedMonth.year,
+        month: closedMonth.month,
+        coupon: money("0.00"),
+        dividend: money("0.00"),
+        interest: money("0.00"),
+        redemption: money("0.00"),
+        other: money("0.00"),
+        passive_net: money("0.00"),
+        total_net: money("0.00"),
+        actual_attribution_coverage: "unknown",
+        items: [],
+      },
+    ]);
+    vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+      reporting_month_id: closedMonth.id,
+      positions_changed: 0,
+      items: [],
+    });
+    vi.mocked(getCloseReadiness).mockResolvedValue({
+      ...closedMonth,
+      can_close: false,
+      items: [],
+    } as CloseReadiness);
+
+    show(query);
+    const calendar = await screen.findByRole("region", {
+      name: "Календарь выплат: горизонтальная прокрутка таблицы",
+    });
+    expect(calendar).toBeVisible();
+    expect(within(calendar).getByText("Полнота неизвестна; известная часть:")).toBeVisible();
+    expect(calendar).toHaveTextContent("Июль 2026");
+    expect(calendar).toHaveTextContent("0 выплат");
+    expect(calendar).toHaveTextContent("Пассивный доход: 0");
+    expect(calendar).toHaveTextContent("весь денежный поток: 0");
+    expect(calendar).not.toHaveTextContent("999");
+    expect(listPayoutCalendar).toHaveBeenCalledWith(closedMonth.id, "v1");
+    expect(screen.getByRole("button", { name: "Подробности" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(previewPayouts).not.toHaveBeenCalled();
+    expect(previewPayoutsBatch).not.toHaveBeenCalled();
+    expect(applyPayouts).not.toHaveBeenCalled();
+  },
+);
+
 it("opens advanced operations and technical diagnostics in one click", async () => {
   const user = userEvent.setup();
   show("?month=7");

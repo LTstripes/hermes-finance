@@ -1232,6 +1232,22 @@ function PayoutForecastTool({
           </p>
         )}
       </section>
+      <Panel
+        action={<Badge>12 месяцев · вручную и T-Invest</Badge>}
+        label="Прогноз"
+        title="Объединённый календарь выплат"
+      >
+        {loadingContext ? (
+          <LoadingState description="Загружаем локальный календарь…" inline />
+        ) : (
+          <section
+            aria-label="Календарь выплат: горизонтальная прокрутка таблицы"
+            className={styles.scroll}
+          >
+            <PayoutPaymentsCalendar months={calendar} />
+          </section>
+        )}
+      </Panel>
       <div id="payout-forecast-details" hidden={!detailsOpen} className={styles.diagnostics}>
         <h2>Подробности прогноза</h2>
         <p>
@@ -1588,23 +1604,6 @@ function PayoutForecastTool({
             versionDisabled={applying}
           />
         </details>
-
-        <Panel
-          action={<Badge>12 месяцев · вручную и T-Invest</Badge>}
-          label="Прогноз"
-          title="Объединённый календарь выплат"
-        >
-          {loadingContext ? (
-            <LoadingState description="Загружаем локальный календарь…" inline />
-          ) : (
-            <section
-              aria-label="Календарь выплат: горизонтальная прокрутка таблицы"
-              className={styles.scroll}
-            >
-              <PayoutPaymentsCalendar months={calendar} />
-            </section>
-          )}
-        </Panel>
       </div>
 
       <ConfirmDialog
