@@ -38,7 +38,7 @@ from hermes_finance.services.ai_financial_review import (
     validate_ai_financial_review,
 )
 from hermes_finance.services.reporting_months import create_reporting_month
-from hermes_finance.services.source_monthly_returns import read_monthly_returns
+from hermes_finance.services.source_monthly_returns import read_monthly_result, read_monthly_returns
 
 
 @pytest.fixture
@@ -269,8 +269,15 @@ def test_cash_gift_resolves_unknown_but_preserves_other_economic_choices(
     before = snapshot(database)
     with database.session_factory() as session:
         monthly = read_monthly_returns(session, source_account=ACCOUNT)
+        limited = read_monthly_result(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+        )
         intake = source_intake.read_intake(session, saved["intake_id"])
     row = monthly.months[0].result
+    assert limited == row
     eligible = confirmed and user_choice != "fee"
     expected_classification = user_choice or "external_deposit"
     bonus = next(r for r in intake["money_classifications"] if r["date"] == date(2030, 1, 23))
