@@ -568,6 +568,7 @@ export default function UiV2CapitalPage() {
   const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
   const closedId = latestClosed?.id ?? null;
   const closed = closedId !== null;
+  const previousClosedId = months.filter((month) => month.status === "closed")[1]?.id ?? null;
 
   const comparisonQuery = useQuery({
     enabled: closed,
@@ -576,7 +577,13 @@ export default function UiV2CapitalPage() {
     refetchOnWindowFocus: true,
   });
   const capitalChangeQuery = useQuery({
-    enabled: closed && isQueryReady(comparisonQuery),
+    enabled:
+      closed &&
+      isQueryReady(monthsQuery) &&
+      isQueryReady(comparisonQuery) &&
+      comparisonQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
+      comparisonQuery.data.current?.reporting_month_id === closedId &&
+      (comparisonQuery.data.previous?.reporting_month_id ?? null) === previousClosedId,
     queryKey: queryKeys.closedReportComparison,
     queryFn: ({ signal }) => getClosedReportComparison(signal),
     refetchOnWindowFocus: true,
@@ -638,7 +645,8 @@ export default function UiV2CapitalPage() {
   const comparisonReady =
     isQueryReady(comparisonQuery) &&
     comparisonQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
-    comparisonQuery.data.current?.reporting_month_id === closedId;
+    comparisonQuery.data.current?.reporting_month_id === closedId &&
+    (comparisonQuery.data.previous?.reporting_month_id ?? null) === previousClosedId;
   const compositionReady =
     isQueryReady(compositionQuery) &&
     compositionQuery.data?.points.at(-1)?.reporting_month_id === closedId;
@@ -745,7 +753,15 @@ export default function UiV2CapitalPage() {
         ) : null}
         <div className={styles.homeGrid}>
           <CapitalChange
-            comparison={isQueryReady(capitalChangeQuery) ? capitalChangeQuery.data : undefined}
+            comparison={
+              comparisonReady &&
+              isQueryReady(capitalChangeQuery) &&
+              capitalChangeQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
+              capitalChangeQuery.data.current?.reporting_month_id === closedId &&
+              (capitalChangeQuery.data.previous?.reporting_month_id ?? null) === previousClosedId
+                ? capitalChangeQuery.data
+                : undefined
+            }
           />
           <CompositionOverTime
             assetClasses={compositionReady ? (compositionQuery.data?.asset_classes ?? []) : []}

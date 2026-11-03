@@ -119,6 +119,7 @@ function setup(path = "/v2/capital") {
     months: uiV2Months,
     brokerMonths: [] as BrokerMonthReadback[],
     comparison: makeUiV2Comparison(),
+    fullComparison: null as ReturnType<typeof makeUiV2Comparison> | null,
     comparisonGate: null as Promise<void> | null,
     composition: makeUiV2CapitalHistory(),
     risk: makeUiV2RiskAllocation(),
@@ -157,7 +158,7 @@ function setup(path = "/v2/capital") {
           break;
         case "/api/analytics/closed-report-comparison":
           if (state.comparisonGate) await state.comparisonGate;
-          data = state.comparison;
+          data = !url.search && state.fullComparison ? state.fullComparison : state.comparison;
           break;
         case "/api/analytics/capital-composition":
           data = state.composition;
@@ -837,3 +838,32 @@ it("shows loading rather than a false error while the capital comparison is pend
   release();
   expect(await screen.findByTestId("capital-net")).toBeVisible();
 });
+
+it.each(["current", "previous"] as const)(
+  "does not mix a settled old %s month with current capital cards",
+  async (oldPart) => {
+    const { state, mount, reads, client } = setup();
+    const stale = makeUiV2Comparison();
+    if (!stale.current) throw new Error("synthetic current missing");
+    if (!stale.previous) throw new Error("synthetic previous missing");
+    if (oldPart === "current") stale.current.reporting_month_id = 999;
+    else stale.previous.reporting_month_id = 999;
+    stale.capital_change = {
+      reporting_month_id: oldPart === "current" ? 999 : uiV2CapitalMonthId,
+      previous_reporting_month_id: oldPart === "previous" ? 999 : uiV2CapitalPreviousMonthId,
+      period_start: "2026-04-01",
+      period_end: "2026-04-30",
+      component_basis: "known_subtotals",
+      breakdown: null,
+      reason_codes: [],
+    };
+    state.fullComparison = stale;
+    mount();
+    await screen.findByTestId("capital-net");
+    await waitFor(() => expect(reads).toContain("GET /api/analytics/closed-report-comparison"));
+    await waitFor(() =>
+      expect(client.getQueryState(["closed-report-comparison"])?.status).toBe("success"),
+    );
+    expect(screen.queryByText("Как изменился капитал за месяц")).toBeNull();
+  },
+);

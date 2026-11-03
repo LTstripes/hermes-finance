@@ -298,6 +298,22 @@
 
 .concentrationTable {
   table-layout: fixed;
+  max-width: 720px;
+}
+.concentrationFacts {
+  max-width: 720px;
+  grid-template-columns: 52fr 28fr 20fr;
+}
+.concentrationFacts > div:first-child:nth-last-child(2) {
+  grid-column: 2;
+}
+@media (max-width: 600px) {
+  .concentrationFacts {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+  .concentrationFacts > div:first-child:nth-last-child(2) {
+    grid-column: auto;
+  }
 }
 .concentrationTable th:first-child {
   width: 52%;

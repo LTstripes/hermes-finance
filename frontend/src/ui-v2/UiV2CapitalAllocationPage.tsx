@@ -225,7 +225,7 @@ export function Concentration({
         <Support support={metric.support} />
       </summary>
       <div className={styles.metricBody}>
-        <dl className={styles.facts}>
+        <dl className={`${styles.facts} ${event ? "" : styles.concentrationFacts}`}>
           {basis ? (
             <div>
               <dt>{basis}</dt>
