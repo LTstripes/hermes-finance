@@ -634,6 +634,8 @@ Use the executable sources for current jobs, filters, selections and timeouts:
 - [UI evidence workflow](../.github/workflows/ui-v2-evidence.yml) and [identity checks](../scripts/tests/test-ui-evidence-identity.py) own candidate provenance and safe duplicate omission.
 - [Playwright projects](../frontend/playwright.config.ts) and [visual configuration](../frontend/playwright.visual.config.ts) own browser selections and desktop viewports.
 
+G04 opts into backend request timing with `HERMES_CI_REQUEST_TIMING_LOG`; the workflow owns the log path and failure artifact. JSONL records flush at request start, response headers and finish (including dependency cleanup), with a generated request ID, process ID, method, registered route template, UTC timestamp, status and monotonic elapsed milliseconds. An unfinished start remains visible after a killed server. Queries, path parameter values, bodies and exception text are excluded under [C1 diagnostics](ARCHITECTURE_AND_CONTRACTS.md#c1-0004-localhost-request-security-12). Without the variable no timing middleware or file is created; these timings do not identify CPU versus SQLite wait by themselves.
+
 Do not copy matrix counts, shard lists, timeout values or selected Windows node counts into this handbook. Update their executable owner and relevant contract checks together. D4 owns verification policy: required coverage must remain complete, ambiguous classification must fail conservatively, ordinary PR cancellation must not cancel canonical/protected work, and exact-head evidence must identify the code it checked. Desktop coverage follows the [desktop policy](#d4-verification_policy-1-12-ui-платформа-и-визуальная-приёмка).
 
 For ordinary PRs, the area classifier selects G04/real-backend journeys for

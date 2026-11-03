@@ -135,15 +135,44 @@ class Overview(DTO):
     proof_status: str
 
 
+class EventCashLeg(DTO):
+    role: str
+    date: date
+    account_cash_kopecks: str
+    instrument_flow_kopecks: str
+    source_references: list[str]
+    ownership: str
+
+
 class Event(DTO):
     ordinal: int
+    event_key: str
     kind: str
     date: date | None
+    execution_date: date | None
+    trade_time: str | None
     cash_date: date | None
     quantity_date: date | None
     quantity: str | None
+    unit_price: str | None
+    price_unit: Literal["RUB_PER_UNIT", "PERCENT_OF_FACE", "UNKNOWN"]
+    face_value: str | None
+    face_value_date: date | None
+    native_trade_amount_kopecks: str | None
+    native_total_basis: str | None
+    accrued_interest_kopecks: str | None
+    commission_kopecks: str | None
+    gross_payout_kopecks: str | None
+    withheld_tax_kopecks: str | None
+    net_payout_kopecks: str | None
     amount: Metric
+    cash_legs: list[EventCashLeg]
+    effective_isin: str | None
+    attribution_basis: str | None
+    current: bool
     counted: bool
+    reason_codes: list[str]
+    assumptions: list[str]
 
 
 class Detail(Instrument):

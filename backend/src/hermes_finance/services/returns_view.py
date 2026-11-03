@@ -772,17 +772,54 @@ def read_detail(session, *, scope, start, end, isin):
             "events": [
                 {
                     "ordinal": ordinal,
+                    "event_key": e.event_key,
                     "kind": e.kind,
                     "date": e.event_date,
+                    "execution_date": e.execution_date,
+                    "trade_time": e.trade_time,
                     "cash_date": e.cash_settlement_date,
                     "quantity_date": e.depository_settlement_date,
                     "quantity": None if e.quantity_delta is None else str(e.quantity_delta),
+                    **{
+                        name: None if (value := getattr(e, name)) is None else str(value)
+                        for name in (
+                            "unit_price",
+                            "face_value",
+                            "native_trade_amount_kopecks",
+                            "accrued_interest_kopecks",
+                            "commission_kopecks",
+                            "gross_payout_kopecks",
+                            "withheld_tax_kopecks",
+                            "net_payout_kopecks",
+                        )
+                    },
+                    "price_unit": e.price_unit,
+                    "face_value_date": e.face_value_date,
+                    "native_total_basis": e.native_total_basis,
+                    # Compatibility amount is the native total or net payout.
+                    # Only the dated cash legs describe cash counted in economics.
                     "amount": metric(
                         e.net_payout_kopecks
                         if e.kind in {"COUPON", "DIVIDEND"}
                         else e.native_trade_amount_kopecks
                     ),
+                    "cash_legs": [
+                        {
+                            "role": leg.role,
+                            "date": leg.date,
+                            "account_cash_kopecks": str(leg.account_cash_kopecks),
+                            "instrument_flow_kopecks": str(leg.instrument_flow_kopecks),
+                            "source_references": leg.source_references,
+                            "ownership": leg.ownership,
+                        }
+                        for leg in e.cash_legs
+                    ],
+                    "effective_isin": e.effective_isin,
+                    "attribution_basis": e.attribution_basis,
+                    "current": e.current,
                     "counted": e.counted and e.current,
+                    "reason_codes": e.reason_codes,
+                    "assumptions": e.assumptions,
                 }
                 for ordinal, e in enumerate(analysis.events)
                 if e.event_date is None
@@ -790,6 +827,7 @@ def read_detail(session, *, scope, start, end, isin):
                     day is not None and start < day <= end
                     for day in (
                         e.event_date,
+                        e.execution_date,
                         e.cash_settlement_date,
                         e.depository_settlement_date,
                         *(leg.date for leg in e.cash_legs),

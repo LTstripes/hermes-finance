@@ -314,6 +314,8 @@ jobs:
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.browser != 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      HERMES_CI_REQUEST_TIMING_LOG: /tmp/hermes-backend-request-timing.jsonl
 
     steps:
       - name: Check out repository
@@ -391,6 +393,14 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=bond-source
+
+      - name: Upload backend request timings on failure
+        if: failure() && needs.privacy.result == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: g04-backend-request-timing
+          path: /tmp/hermes-backend-request-timing.jsonl
+          if-no-files-found: warn
 
       - name: Upload synthetic real-backend journey evidence
         if: always() && needs.privacy.result == 'success'
