@@ -2334,6 +2334,34 @@ All routes are under `/api/broker-months/intakes`:
 | `POST /{id}/decisions` | Original + exact reviewed digest/request ID; append decisions/policy/overrides only. |
 | `POST /{id}/finance-link` | Same reviewed command protocol, referencing an existing strict SOURCE receipt; append a link only. |
 
+GET detail and list also expose an additive `review_summary`, derived inside the
+same coherent read without journal, catalogue or financial writes or network calls:
+
+- `scope` retains the explicit account/month (NULL while unbound), exact native
+  accounts and saved coverage interval. Native aliases are not equated.
+- `journal` counts all saved observations by section and links their observation
+  IDs, including opaque structural inventory. Saved means journal retention only.
+- `pending` lists instrument and recognized-observation counts, IDs/ISINs and
+  reason codes, plus scope-wide exceptions that cannot safely be assigned to a
+  row. These sets overlap the saved journal; they are not a 12-of-13 financial
+  acceptance result. Without an effective strict finance link, recognized rows
+  retain `source_intake_pending`. Existing proposal reasons, explicit deferrals,
+  REPO identity and unsupported Money remain visible.
+- `currencies.instrument_counts` counts unique proposals separately for
+  `source_proven`, `official_proven`, `existing_catalogue`, `owner_selected`,
+  `owner_default_rub`, `unknown` and `conflict`. Instrument entries retain the
+  existing assessment, policy/override/assessment revision and proof reference,
+  linked to the saved observations; no currency or financial value is inferred.
+  `source_values` identifies explicit source currency fields by observation ID
+  and field path; `source_value_counts` counts these fields separately. Its
+  `source_proven` means only that field was observed (cash/settlement currency),
+  never security denomination or complete economics. Missing currency stays
+  NULL/`unknown`; counts are not amounts, and unknown amounts never become zero.
+- `assumptions_grant_close=false` and `assumptions_grant_exact_returns=false`
+  explicitly deny authority from assumptions. Existing can_stage/can_apply,
+  bookkeeping/Close and return gates remain authoritative and unchanged. A clean
+  summary grants none of these permissions; policy A→B→A retains a new revision.
+
 The read-only [source-intake-bound instrument result](#c7-source_intake_result-1)
 slice computes one visibly hypothetical per-instrument RUB/percent result from a
 saved original and reuses the accepted #858/#862 readers; it writes nothing and

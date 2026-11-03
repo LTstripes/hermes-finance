@@ -599,6 +599,15 @@ def test_native_repo_partner_and_opaque_attributes_are_observations_only(databas
         for o in view["observations"]
     )
     assert any(t["repo_observed"] and t["identity"] is None for t in view["document"]["trades"])
+    summary = view["review_summary"]
+    repo_ids = {
+        o["id"]
+        for o in view["observations"]
+        if o["section"] == "trades" and o["facts"]["repo_observed"]
+    }
+    pending = {r["observation_id"]: r["reason_codes"] for r in summary["pending"]["observations"]}
+    assert repo_ids and all("repo_identity_unsupported" in pending[ref] for ref in repo_ids)
+    assert not summary["assumptions_grant_close"]
     assert _all_month_tables(database) == before
 
 
@@ -1816,3 +1825,135 @@ def test_month_broker_pdf_partial_apply_keeps_confirmation(database):
     assert item["state"] == "needs_decision"
     assert item["accepted_count"] == 1
     assert item["row_count"] == 2
+
+
+@pytest.mark.parametrize("mode", ["default", "unknown", "selected", "official", "conflict"])
+def test_read_only_review_summary_currency_matrix_and_unchanged_gates(database, monkeypatch, mode):
+    scope = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    client = TestClient(create_app(database=database))
+    if mode in {"official", "conflict"}:
+        _public_inbox_fixture(monkeypatch, currency="USD")
+        lookup = client.post(
+            "/api/broker-months/public-identity-lookup",
+            json={"consent": True, "isins": ["RU000A000001"]},
+        )
+        assert lookup.status_code == 200
+    before = _all_month_tables(database)
+    view = save(client, xml, scope)
+    if mode in {"unknown", "selected", "conflict"}:
+        changes = {
+            "unknown": {"default_enabled": False},
+            "selected": {"overrides": [{"isin": "RU000A000001", "currency": "RUB"}]},
+            "conflict": {"overrides": [{"isin": "RU000A000001", "currency": "RUB"}]},
+        }[mode]
+        response = review(client, view, xml, intent(view, **changes))
+        assert response.status_code == 200, response.text
+        view = client.get(f"{BASE}/{view['id']}").json()
+    baseline_plan = _broker_month_preview(client, scope, xml)
+    readiness_path = f"/api/months/{scope['reporting_month_id']}/close-readiness"
+    readiness = client.get(readiness_path).json()
+    snapshot = _tables(database)
+    restored = TestClient(create_app(database=database))
+    reread = restored.get(f"{BASE}/{view['id']}").json()
+    listed = restored.get(f"{BASE}?reporting_month_id={scope['reporting_month_id']}").json()
+    summary = reread["review_summary"]
+    assert listed[0]["review_summary"] == summary == view["review_summary"]
+    assert summary["scope"] == {
+        **scope,
+        "source_accounts": ["1234567", "1234567-000"],
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-01-31",
+    }
+    observations = {o["id"]: o for o in reread["observations"]}
+    assert summary["journal"]["observation_count"] == len(observations)
+    assert {
+        ref for section in summary["journal"]["sections"] for ref in section["observation_ids"]
+    } == set(observations)
+    assert all(
+        section["count"] == len(section["observation_ids"])
+        for section in summary["journal"]["sections"]
+    )
+    currencies = summary["currencies"]
+    expected_basis = {
+        "default": "owner_default_rub",
+        "unknown": "unknown",
+        "selected": "owner_selected",
+        "official": "official_proven",
+        "conflict": "conflict",
+    }[mode]
+    assert currencies["instrument_counts"] == {
+        "source_proven": 0,
+        "official_proven": int(mode == "official"),
+        "existing_catalogue": 12,
+        "owner_selected": int(mode == "selected"),
+        "owner_default_rub": int(mode == "default"),
+        "unknown": int(mode == "unknown"),
+        "conflict": int(mode == "conflict"),
+    }
+    unknown = next(p for p in reread["proposals"] if p["isin"] == "RU000A000001")
+    assert unknown["hermes_id"] is None
+    assert unknown["candidates"][0]["isin"] is None  # Same-name NULL-ISIN card is no proof.
+    item = next(p for p in currencies["instruments"] if p["isin"] == unknown["isin"])
+    assert item["basis"] == expected_basis
+    assert item["policy_revision"] == reread["state"]["policy_revision"]
+    assert item["assessment_revision"] == reread["head_seq"]
+    assert (item["override_revision"] is not None) == (mode in {"selected", "conflict"})
+    assert item["observation_ids"]
+    assert all(
+        observations[ref]["facts"]["isin"] == item["isin"] for ref in item["observation_ids"]
+    )
+    if mode == "unknown":
+        assert item["effective_currency"] is None
+    if mode == "conflict":
+        assert item["observed_denomination"] == "USD"
+        assert "source_intake_currency_conflict" in item["reasons"]
+    assert currencies["source_value_counts"]["source_proven"] > 0
+    for value in currencies["source_values"]:
+        facts = observations[value["observation_id"]]["facts"]
+        core = facts.get("core", facts)
+        assert value["currency"] == core["currency"]
+        assert value["basis"] == "source_proven"
+    assert source_intake.PENDING in summary["pending"]["scope_reason_codes"]
+    assert summary["pending"]["instrument_count"] == len(summary["pending"]["instruments"])
+    assert summary["pending"]["observation_count"] == len(summary["pending"]["observations"])
+    assert all(
+        source_intake.PENDING in row["reason_codes"] for row in summary["pending"]["observations"]
+    )
+    assert not summary["assumptions_grant_close"]
+    assert not summary["assumptions_grant_exact_returns"]
+    assert not reread["bookkeeping_ready"] and reread["financial_authority"] == "none"
+    fresh_plan = _broker_month_preview(restored, scope, xml)
+    assert not fresh_plan["can_apply"] and not fresh_plan["identity"]["can_stage"]
+    assert fresh_plan["conflicts"] == baseline_plan["conflicts"]
+    assert restored.get(readiness_path).json() == readiness
+    assert _tables(database) == snapshot  # GET/list/Preview do not append even journal rows.
+    rejected = _broker_month_apply(restored, scope, fresh_plan, xml)
+    assert rejected.status_code == 409
+    assert _all_month_tables(database) == before
+
+
+def test_review_summary_policy_aba_keeps_distinct_assumption_revision(database):
+    scope = _broker_month_setup(database)
+    xml = _source_inbox_xml(database)
+    client = TestClient(create_app(database=database))
+    view = save(client, xml, scope)
+    original = view["review_summary"]["currencies"]
+    revisions = [view["state"]["policy_revision"]]
+    for enabled, request_id in [(False, "summary-policy-b"), (True, "summary-policy-a2")]:
+        response = review(client, view, xml, intent(view, default_enabled=enabled), request_id)
+        assert response.status_code == 200, response.text
+        view = client.get(f"{BASE}/{view['id']}").json()
+        revisions.append(view["state"]["policy_revision"])
+        counts = view["review_summary"]["currencies"]["instrument_counts"]
+        assert counts["owner_default_rub"] == int(enabled)
+        assert counts["unknown"] == int(not enabled)
+    current = view["review_summary"]["currencies"]
+    assert current["instrument_counts"] == original["instrument_counts"]
+    assert revisions[0] < revisions[1] < revisions[2]
+    assumed = next(p for p in current["instruments"] if p["basis"] == "owner_default_rub")
+    assert assumed["policy_revision"] == revisions[-1]
+    assert assumed["assessment_revision"] == view["head_seq"]
+    assert source_intake.PENDING in view["exceptions"]
+    plan = _broker_month_preview(client, scope, xml)
+    assert not plan["can_apply"] and not plan["identity"]["can_stage"]
