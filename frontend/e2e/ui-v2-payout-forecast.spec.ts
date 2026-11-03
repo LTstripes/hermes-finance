@@ -468,3 +468,36 @@ for (const mode of ["partial", "offline"] as const) {
     await page.screenshot({ path: testInfo.outputPath(`payout-${mode}.png`), fullPage: true });
   });
 }
+
+test("legacy statement import stays collapsed and expands on hash navigation and reload", async ({
+  page,
+}) => {
+  const api = await installPayoutApi(page);
+  await page.goto("/v2/data/payouts?month=12");
+  const disclosure = page.locator("details#statement-import");
+  const input = page.getByLabel("PDF отчёта Alfa");
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(input).toBeHidden();
+
+  const summary = disclosure.locator("summary");
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  await summary.click();
+  await expect(input).toBeHidden();
+
+  await page.evaluate(() => {
+    window.location.hash = "statement-import";
+  });
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  await expect(page.getByRole("region", { name: "Основной прогноз" })).toBeVisible();
+
+  await page.reload();
+  await expect(disclosure).toHaveAttribute("open");
+  await expect(input).toBeVisible();
+  expect(api.posts).toEqual([]);
+  expect(api.errors).toEqual([]);
+});

@@ -305,17 +305,25 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
   ).toBeInTheDocument();
 });
 
-it.each(["", "?month=", "?month=bad", "?month=999", "?month=7&month=7", "?month=07"])(
-  "rejects invalid explicit scope %s",
-  async (query) => {
-    show(query);
-    expect(await screen.findByText("Месяц не выбран")).toBeInTheDocument();
-    expect(getMonth).not.toHaveBeenCalled();
-    expect(previewPayouts).not.toHaveBeenCalled();
-    expect(previewPayoutsBatch).not.toHaveBeenCalled();
-    expect(applyPayouts).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  "",
+  "?month=",
+  "?month=bad",
+  "?month=999",
+  "?month=7&month=7",
+  "?month=07",
+  "#statement-import",
+  "?month=999#statement-import",
+])("rejects invalid explicit scope %s", async (query) => {
+  show(query);
+  expect(await screen.findByText("Месяц не выбран")).toBeInTheDocument();
+  expect(getMonth).not.toHaveBeenCalled();
+  expect(document.getElementById("statement-import")).toBeNull();
+  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(previewPayouts).not.toHaveBeenCalled();
+  expect(previewPayoutsBatch).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
 
 it("mounts the tool only after the Owner explicitly selects a month", async () => {
   const user = userEvent.setup();
@@ -1081,7 +1089,7 @@ it("bulk starts collapsed, disclosure preserves selection and top confirmation f
   mockBulk(2);
   show("?month=7");
   await openDetails();
-  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(screen.getByLabelText("PDF отчёта Alfa")).not.toBeVisible();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText("Выбрано событий: 2");
   expect(document.getElementById("payout-group-11")).toHaveAttribute("hidden");
@@ -1336,7 +1344,7 @@ it("keeps the ordinary desktop view to two actions and separates 12-month income
   expect(within(main).queryByRole("status", { name: "Требует внимания" })).toBeNull();
   expect(main).not.toHaveTextContent(/t_invest|UID-1|K-1|active|completed|v1/);
   expect(screen.queryByRole("button", { name: "Проверить все позиции T-Invest" })).toBeNull();
-  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(screen.getByLabelText("PDF отчёта Alfa")).not.toBeVisible();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
@@ -1492,19 +1500,45 @@ it("does not turn invalid money into zero or retain a different version after a 
 it.each([
   "?month=7#statement-import",
   "?month=7&from=monthly-close-v2&monthId=7&step=actual_payouts#statement-import",
-])("legacy PDF entry %s offers the month upload without another importer", async (query) => {
+])("legacy PDF entry %s expands the original importer and keeps the forecast", async (query) => {
   show(query);
-  expect(await screen.findByRole("link", { name: "Открыть файлы месяца" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=7&panel=brokers",
-  );
-  await openDetails();
-  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
-  expect(screen.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=7&panel=brokers",
-  );
+  const input = await screen.findByLabelText("PDF отчёта Alfa");
+  expect(document.getElementById("statement-import")).toHaveAttribute("open");
+  expect(input).toBeVisible();
+  expect(input).toHaveAttribute("id", "statement-file");
+  expect(screen.getByRole("button", { name: "Проверить отчёт" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Основной прогноз" })).toBeVisible();
   expect(previewPayouts).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("keeps the old importer collapsed until explicitly opened and preserves its file on collapse", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  const input = await screen.findByLabelText("PDF отчёта Alfa");
+  const disclosure = document.getElementById("statement-import");
+  expect(disclosure?.tagName).toBe("DETAILS");
+  expect(disclosure).not.toHaveAttribute("open");
+  expect(input).not.toBeVisible();
+  const summary = screen.getByText("Импорт выписок (старый)");
+  await user.click(summary);
+  expect(disclosure).toHaveAttribute("open");
+  expect(input).toBeVisible();
+  const file = new File(["synthetic PDF"], "synthetic.pdf", { type: "application/pdf" });
+  await user.upload(input, file);
+  await user.click(summary);
+  expect(input).not.toBeVisible();
+  await user.click(summary);
+  expect(input).toBeVisible();
+  expect((input as HTMLInputElement).files?.[0]).toBe(file);
+});
+
+it("keeps CLOSED statements inspectable with applying blocked", async () => {
+  show("?month=8#statement-import");
+  expect(await screen.findByLabelText("PDF отчёта Alfa")).toBeVisible();
+  expect(
+    screen.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
+  ).toBeVisible();
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 

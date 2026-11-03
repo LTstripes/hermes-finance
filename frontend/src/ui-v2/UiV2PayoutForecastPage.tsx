@@ -1,8 +1,6 @@
-import { reasonCopy } from "../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { listExpectedFlows } from "../api/expectedFlows";
@@ -40,6 +38,7 @@ import {
   withMonthlyCloseReturn,
   withSelectedReturnMonth,
 } from "../components/month-close/navigation";
+import type { AlfaStatementTransientOutcome } from "../components/month-close/statementOutcome";
 import {
   TInvestBatchItemStatus,
   TInvestBatchSummary,
@@ -62,6 +61,7 @@ import {
 } from "../components/ui";
 import { formatDate, formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
+import { reasonCopy } from "../lib/reasonCopy";
 import { queryKeys } from "../queryClient";
 import { resolveMonthSelection } from "./monthSelection";
 import {
@@ -73,6 +73,7 @@ import {
 import { DataMonthContext, UiV2DataFrame } from "./UiV2DataShell";
 import styles from "./UiV2PayoutForecast.module.css";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { UiV2StatementImportSection } from "./UiV2StatementImportSection";
 
 const PAYOUT_OUTCOME_LABELS: Record<PayoutExecutionResult["outcome"], string> = {
   CONFIRMED: "Сохранение подтверждено",
@@ -1651,6 +1652,32 @@ export default function UiV2PayoutForecastPage() {
   const close = parseMonthlyCloseReturnContext(params);
   const returnPath = close && close.monthId === month?.id ? monthlyCloseReturnPath(close) : null;
   const [payoutWriteActive, setPayoutWriteActive] = useState(false);
+  const [statementWriteActive, setStatementWriteActive] = useState(false);
+  const statementDisclosure = useRef<HTMLDetailsElement>(null);
+  const [statementOutcomeByMonth, setStatementOutcomeByMonth] = useState<{
+    monthId: number;
+    outcome: AlfaStatementTransientOutcome;
+  } | null>(null);
+  const closeStepActive =
+    close !== null && close.step === "actual_payouts" && close.monthId === month?.id;
+  const statementOutcome =
+    statementOutcomeByMonth?.monthId === month?.id
+      ? (statementOutcomeByMonth?.outcome ?? null)
+      : null;
+  const handleStatementOutcome = useCallback(
+    (next: AlfaStatementTransientOutcome | null) => {
+      if (!closeStepActive || month === null) return;
+      setStatementOutcomeByMonth(next ? { monthId: month.id, outcome: next } : null);
+    },
+    [closeStepActive, month],
+  );
+
+  useEffect(() => {
+    if (location.hash !== "#statement-import" || !month || !statementDisclosure.current) return;
+    const disclosure = statementDisclosure.current;
+    disclosure.open = true;
+    disclosure.scrollIntoView?.({ block: "start" });
+  }, [location.hash, month]);
   const monthOptions = useMemo(() => {
     const rows = months.data ?? [];
     const fallback = newestMonth(rows);
@@ -1667,7 +1694,7 @@ export default function UiV2PayoutForecastPage() {
       <div className={styles.context}>
         <label htmlFor="payout-forecast-month">Отчётный месяц</label>
         <select
-          disabled={payoutWriteActive}
+          disabled={payoutWriteActive || statementWriteActive}
           id="payout-forecast-month"
           value={month?.id ?? ""}
           onChange={(event) =>
@@ -1708,17 +1735,31 @@ export default function UiV2PayoutForecastPage() {
       ) : (
         <>
           <DataMonthContext month={month} automatic={false} />
-          {location.hash === "#statement-import" ? (
-            <UiV2Notice title="PDF выплат загружается в файлах месяца">
-              <Link to={`/v2/close?month=${month.id}&panel=brokers`}>Открыть файлы месяца</Link>
-            </UiV2Notice>
-          ) : null}
-          <PayoutForecastTool
-            key={`${month.id}:${location.search}`}
-            monthId={month.id}
-            onApplyingChange={setPayoutWriteActive}
-            close={close && close.monthId === month.id ? close : null}
-          />
+          <div inert={statementWriteActive}>
+            <PayoutForecastTool
+              key={`${month.id}:${location.search}`}
+              monthId={month.id}
+              onApplyingChange={setPayoutWriteActive}
+              close={close && close.monthId === month.id ? close : null}
+            />
+          </div>
+          <details
+            className={styles.individual}
+            id="statement-import"
+            inert={payoutWriteActive}
+            key={month.id}
+            ref={statementDisclosure}
+          >
+            <summary>Импорт выписок (старый)</summary>
+            <UiV2StatementImportSection
+              closeStepActive={closeStepActive}
+              month={month}
+              onApplyingChange={setStatementWriteActive}
+              onOutcome={handleStatementOutcome}
+              outcome={statementOutcome}
+              returnPath={returnPath}
+            />
+          </details>
         </>
       )}
     </UiV2DataFrame>

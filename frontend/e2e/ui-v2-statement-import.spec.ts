@@ -542,10 +542,13 @@ test("month spanning document: only the explicit month can be submitted", {
   expect(api.errors).toEqual([]);
 });
 
-test("legacy payout PDF entry links to the single Month file intake", async ({ page }) => {
+test("legacy payout PDF entry expands the old importer and retains the Month file intake link", async ({
+  page,
+}) => {
   const api = await installStatementApi(page);
   await page.goto("/v2/data/payouts?month=12#statement-import");
-  await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
+  await expect(page.locator("details#statement-import")).toHaveAttribute("open");
+  await expect(page.getByLabel("PDF отчёта Alfa")).toBeVisible();
   await page.getByRole("button", { name: "Подробности" }).click();
   const upload = page.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" });
   await expect(upload).toHaveAttribute("href", "/v2/close?month=12&panel=brokers");
