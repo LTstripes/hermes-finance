@@ -13,7 +13,16 @@ are evidence for their dated stage, not a newer installation status.
 and the served frontend agree. The previous 1.10.0 release receipts remain
 historical evidence, rather than the current installation checkpoint.
 
-A hotfix candidate restores a narrowly reviewed 1.9.4 proof read transition,
+Application candidate `8a503342f527083ce8a50c1f92ece3c5d31c8451` passed
+[PR CI41691415069](https://github.com/LTstripes/hermes-finance/actions/runs/41691415069),
+[UI evidence41691414935](https://github.com/LTstripes/hermes-finance/actions/runs/41691414935)
+and independent code/financial review. The isolated October-workspace browser
+failure reproduced a pending source refetch; the unchanged scenario passed
+locally and on the one targeted CI-job rerun. Version1.10.2 packaging changes
+metadata and release expectations only; exact packaging CI, publication and
+Stable installation remain separate gates.
+
+The hotfix restores a narrowly reviewed 1.9.4 proof read transition,
 bounds the capital bridge to the required month, skips unused explanations on
 Home/Close and separates saved payout display from optional diagnostics. Instrument
 account details are collapsed. Candidate checks and independent review do not
