@@ -237,7 +237,7 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
   const keys = useMemo<MonthLiabilitiesKeys>(
     () => ({
       accounts: [...queryKeys.accounts, monthId],
-      dashboard: queryKeys.dashboard(monthId),
+      dashboard: queryKeys.dashboardBasic(monthId),
       debts: queryKeys.debts(monthId),
       properties: queryKeys.properties(monthId),
       summary: ["month-summary", monthId],
@@ -262,12 +262,12 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
   });
   const dashboardQuery = useQuery({
     queryKey: keys.dashboard,
-    queryFn: ({ signal }) => getDashboard(monthId, signal),
+    queryFn: ({ signal }) => getDashboard(monthId, signal, false),
     retry: false,
   });
   const summaryQuery = useQuery({
     queryKey: keys.summary,
-    queryFn: ({ signal }) => getMonthSummary(monthId, signal),
+    queryFn: ({ signal }) => getMonthSummary(monthId, signal, false),
     retry: false,
   });
 
@@ -321,7 +321,7 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
       await work();
       if (operation.current !== token) return false;
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: keys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) }),
         queryClient.invalidateQueries({ queryKey: keys.summary }),
       ]);
       return operation.current === token;

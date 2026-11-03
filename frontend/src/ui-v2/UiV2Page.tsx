@@ -518,6 +518,7 @@ function PassiveChart({ data }: { data: PassiveIncomeHistory["points"] }) {
             tick={{ fontSize: 11, fill: "#607084" }}
           />
           <Tooltip
+            cursor={false}
             formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Факт"]}
             labelFormatter={(label) => `Отчёт ${label}`}
           />

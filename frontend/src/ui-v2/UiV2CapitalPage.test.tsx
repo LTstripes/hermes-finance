@@ -119,6 +119,7 @@ function setup(path = "/v2/capital") {
     months: uiV2Months,
     brokerMonths: [] as BrokerMonthReadback[],
     comparison: makeUiV2Comparison(),
+    comparisonGate: null as Promise<void> | null,
     composition: makeUiV2CapitalHistory(),
     risk: makeUiV2RiskAllocation(),
     dashboard: makeUiV2Dashboard(),
@@ -155,6 +156,7 @@ function setup(path = "/v2/capital") {
           data = state.brokerMonths;
           break;
         case "/api/analytics/closed-report-comparison":
+          if (state.comparisonGate) await state.comparisonGate;
           data = state.comparison;
           break;
         case "/api/analytics/capital-composition":
@@ -820,4 +822,18 @@ it("does not render a capital explanation for another month", async () => {
   mount();
   await screen.findByTestId("capital-net");
   expect(screen.queryByText("Как изменился капитал за месяц")).not.toBeInTheDocument();
+});
+
+it("shows loading rather than a false error while the capital comparison is pending", async () => {
+  const { mount, state } = setup();
+  let release!: () => void;
+  state.comparisonGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  expect(await screen.findAllByText("Загружаем показатели…")).toHaveLength(3);
+  const headline = screen.getByRole("region", { name: "Главные показатели капитала" });
+  expect(within(headline).queryByText("Данные временно недоступны")).toBeNull();
+  release();
+  expect(await screen.findByTestId("capital-net")).toBeVisible();
 });

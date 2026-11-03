@@ -97,10 +97,12 @@ function Panel({
 function HeadlineGrid({
   comparison,
   ready,
+  loading,
   retry,
 }: {
   comparison: ClosedReportComparison | undefined;
   ready: boolean;
+  loading: boolean;
   retry: () => void;
 }) {
   const current = ready ? (comparison?.current ?? null) : null;
@@ -150,7 +152,11 @@ function HeadlineGrid({
               ) : null}
             </p>
             {metric.value === null ? (
-              <UiV2WidgetState retry={retryOrNothing} />
+              loading ? (
+                <UiV2Loading label="Загружаем показатели…" />
+              ) : (
+                <UiV2WidgetState retry={retryOrNothing} />
+              )
             ) : (
               <>
                 <p className={styles.metricValue} data-testid={metric.testId}>
@@ -565,6 +571,12 @@ export default function UiV2CapitalPage() {
 
   const comparisonQuery = useQuery({
     enabled: closed,
+    queryKey: queryKeys.closedReportComparisonBasic,
+    queryFn: ({ signal }) => getClosedReportComparison(signal, false),
+    refetchOnWindowFocus: true,
+  });
+  const capitalChangeQuery = useQuery({
+    enabled: closed && isQueryReady(comparisonQuery),
     queryKey: queryKeys.closedReportComparison,
     queryFn: ({ signal }) => getClosedReportComparison(signal),
     refetchOnWindowFocus: true,
@@ -583,8 +595,8 @@ export default function UiV2CapitalPage() {
   });
   const dashboardQuery = useQuery({
     enabled: closed,
-    queryKey: queryKeys.dashboard(closedId),
-    queryFn: ({ signal }) => getDashboard(closedId as number, signal),
+    queryKey: queryKeys.dashboardBasic(closedId),
+    queryFn: ({ signal }) => getDashboard(closedId as number, signal, false),
     refetchOnWindowFocus: true,
   });
   const cashQuery = useQuery({
@@ -725,13 +737,16 @@ export default function UiV2CapitalPage() {
         <HeadlineGrid
           comparison={comparison}
           ready={comparisonReady}
+          loading={comparisonQuery.isPending || comparisonQuery.isFetching}
           retry={() => void comparisonQuery.refetch()}
         />
         {accountsReady ? (
           <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
         ) : null}
         <div className={styles.homeGrid}>
-          <CapitalChange comparison={comparison} />
+          <CapitalChange
+            comparison={isQueryReady(capitalChangeQuery) ? capitalChangeQuery.data : undefined}
+          />
           <CompositionOverTime
             assetClasses={compositionReady ? (compositionQuery.data?.asset_classes ?? []) : []}
             points={compositionReady ? (compositionQuery.data?.points ?? []) : []}

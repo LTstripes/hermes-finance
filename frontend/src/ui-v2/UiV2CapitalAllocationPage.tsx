@@ -244,8 +244,8 @@ export function Concentration({
         {metric.items.length === 0 ? (
           <p className={styles.empty}>Нет данных</p>
         ) : (
-          <Table className={styles.table}>
-            <caption>{title}</caption>
+          <Table className={`${styles.table} ${event ? "" : styles.concentrationTable}`}>
+            <caption className={styles.visuallyHidden}>{title}</caption>
             <thead>
               <tr>
                 <Th>{event ? "Событие / инструмент" : "Позиция"}</Th>

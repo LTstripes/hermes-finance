@@ -14368,3 +14368,6 @@ Public summary and comparison defaults retain their explanation. Home explicitly
 requests `include_capital_change=false` on closed-report comparison and uses a
 separate query-cache identity; all other response fields are unchanged. The close
 workflow skips the bridge because it never serializes or displays it.
+Summary and dashboard also accept `include_capital_change=false`, preserving all
+other response fields and using distinct frontend cache keys. The default remains
+true. Capital loads the compact comparison first and its explanation separately.
