@@ -1310,8 +1310,7 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
   const accountsReady = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === "/api/accounts" &&
-      response.request().method() === "GET",
+      new URL(response.url()).pathname === "/api/accounts" && response.request().method() === "GET",
   );
   await page.goBack();
   expect((await accountsReady).ok()).toBe(true);

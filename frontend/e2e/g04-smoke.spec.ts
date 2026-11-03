@@ -4,8 +4,7 @@ test("G04 smoke: retired v1 entry redirects to the native UI", async ({ page }) 
   // The shell heading renders before the initial month read completes.
   const months = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === "/api/months" &&
-      response.request().method() === "GET",
+      new URL(response.url()).pathname === "/api/months" && response.request().method() === "GET",
   );
   await page.goto("/v1");
   expect((await months).ok()).toBe(true);
@@ -20,8 +19,7 @@ test("G04 smoke: retired v1 entry redirects to the native UI", async ({ page }) 
 
   const settings = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === "/api/settings" &&
-      response.request().method() === "GET",
+      new URL(response.url()).pathname === "/api/settings" && response.request().method() === "GET",
   );
   await page.getByRole("link", { name: "Настройки", exact: true }).click();
   await expect(page).toHaveURL(/\/v2\/data\/app$/);

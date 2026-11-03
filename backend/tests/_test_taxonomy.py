@@ -276,6 +276,7 @@ CI_CORE_A_SHARD_WEIGHTS = {
     "test_source_account_history_service.py": 0.010,
     "test_source_instrument_events.py": 18.586,
     "test_source_instrument_returns_service.py": 33.175,
+    "test_source_investment_semantics.py": 0.010,
     "test_source_money_classifications_service.py": 24.231,
     "test_source_monthly_returns_service.py": 116.145,
     "test_source_payout_preview.py": 4.138,
