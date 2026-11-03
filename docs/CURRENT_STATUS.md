@@ -8,37 +8,66 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-A separate gift-policy candidate treats exact current confirmed cash gifts as
-dated external capital for source-account returns, including a prior explicit
-UNKNOWN without rewriting it. Gifts remain distinct from personal deposits;
-unsupported in-kind gifts stay unresolved. This candidate changes no financial
-data or Stable installation and still requires independent financial review/CI.
-The saved XML/PDF proof follow-up changes investment semantics to v3, with a
-bounded read-only transition for unchanged v2 and 1.9.4 proofs where no relevant
-gift proof exists. Proofs with gift evidence are not automatically transitioned.
-This local candidate requires independent financial review and is not installed.
+The next **1.10.3 candidate** combines capital/month-read latency and display
+corrections from [#1072](https://github.com/LTstripes/hermes-finance/pull/1072)
+with confirmed cash-gift return treatment from
+[#1073](https://github.com/LTstripes/hermes-finance/pull/1073). Integration,
+exact-release checks, publication and installation remain separate gates. The
+intermittent G04 navigation failure remains unclassified even though its retry
+passed. Owner UX acceptance and AI-export performance remain separate.
 
-**Installed runtime readback on 3 November: 1.10.1,
-`f29b9732d01f267b001e7448dfd6cff00e741c3c`.** Health, the prepared code identity
-and the served frontend agree. The previous 1.10.0 release receipts remain
-historical evidence, rather than the current installation checkpoint.
 
-Application candidate `8a503342f527083ce8a50c1f92ece3c5d31c8451` passed
-[PR CI41691415069](https://github.com/LTstripes/hermes-finance/actions/runs/41691415069),
-[UI evidence41691414935](https://github.com/LTstripes/hermes-finance/actions/runs/41691414935)
-and independent code/financial review. The isolated October-workspace browser
-failure reproduced a pending source refetch; the unchanged scenario passed
-locally and on the one targeted CI-job rerun. Version1.10.2 packaging changes
-metadata and release expectations only; exact packaging CI, publication and
-Stable installation remain separate gates.
+**Released and installed on 3 November: [1.10.2](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.2),
+`1e6f45d8362f9331415c763c39dc5db0ac105257`.** Health is `ok/1.10.2`,
+Stable is clean and pinned to the annotated release, and the prepared code and
+served frontend agree. [#1069](https://github.com/LTstripes/hermes-finance/pull/1069)
+contains the implementation and sanitized installation receipt.
 
-The hotfix restores a narrowly reviewed 1.9.4 proof read transition,
-bounds the capital bridge to the required month, skips unused explanations on
-Home/Close and separates saved payout display from optional diagnostics. Instrument
-account details are collapsed. Candidate checks and independent review do not
-mean release or Stable installation. Historical-proof compatibility does not
-remove unresolved October Money/section evidence or establish a complete October
-return. No financial data or CLOSED state is changed by this candidate.
+Application candidate `8a503342f527083ce8a50c1f92ece3c5d31c8451` and the
+nonsemantic version-packaging delta to `3c739dc9efacfbea37787daa5f3250febb6757c0`
+passed independent review. Exact packaging
+[PR CI41696164265](https://github.com/LTstripes/hermes-finance/actions/runs/41696164265)
+and [UI evidence41696164266](https://github.com/LTstripes/hermes-finance/actions/runs/41696164266)
+passed; the merge has the same product tree. Exact-main
+[push CI41698467647](https://github.com/LTstripes/hermes-finance/actions/runs/41698467647)
+and [guarded publication41701617355](https://github.com/LTstripes/hermes-finance/actions/runs/41701617355)
+completed SUCCESS. The October-workspace browser scenario exposed the previously
+diagnosed pending source-refetch timing failure; one targeted same-SHA G04 retry
+passed without changing code, assertions or timeouts. Independent tag/release
+readback confirms the annotated tag and its peeled exact commit.
+
+Owner-local OPS02 created a fresh verified SQLite backup before the code change;
+independent schema and all-82-table readback matches the original. Its producing
+1.10.1 code archive is retained with the backup. Prepare/Validate and separate
+stock Start completed. The first hidden Start failed before backend because of
+inherited PowerShell module paths; hidden Validate passed with standard
+process-local Windows PowerShell module paths, then only Start was repeated after
+proving the prior controller exited and the port was free. Global settings and
+runtime guards were unchanged.
+
+Native open-file identity confirms the original physical production database.
+All rows, schema 0068, `.env`, data identity, CLOSED October and all eight October
+Money readback hashes remain unchanged, including the newest Owner confirmation.
+Final readback after API/browser checks also found no database writes. No
+financial Apply, Reopen, reimport or schema migration occurred.
+
+The hotfix bounds the capital bridge to the required month, skips unused
+explanations on Home/Close, restores the narrowly reviewed 1.9.4 proof read
+transition, separates saved payouts from optional diagnostics and collapses
+instrument account details. Same-data summary/dashboard/default comparison
+response hashes match 1.10.1. Local samples improved from 4.3–4.5s to 2.6–3.1s;
+Home's comparison without the unused explanation took 0.013s with every other
+field identical. Close-workflow GET returned 200 in 2.45s. These samples are not
+an SLA. Installed browser readback confirms saved payouts and collapsed details.
+
+Valid historical proof reads are restored; unsupported or unconfirmed evidence
+remains unavailable, so the overall return remains partial. The compatibility
+receipt compares old `_derive` with current verified dependencies, not a complete
+isolated 1.9.4 runtime. Full AI-export latency remains substantial. Broker-statement
+and payout visual simplification still need the separately agreed design and
+Owner UX acceptance; this hotfix does not claim that work complete.
+
+## Earlier checkpoints (historical)
 
 1.9.3 is published and installed at `f67e8031b0869c395f57317b76b3fcdae5ea144c`.
 Installed parallel month/payment reads completed promptly, but actual browser UAT
