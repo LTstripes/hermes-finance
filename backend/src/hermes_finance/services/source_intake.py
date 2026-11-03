@@ -663,6 +663,106 @@ def _assessment(proposal, state, head_seq, override_revision):
     }
 
 
+def _review_summary(original, state, observations, proposals, reasons, linked):
+    """Presentation of existing evidence only; never an input to financial gates."""
+    proposal_reasons = {
+        p["isin"]: set(p["currency_assessment"]["reasons"])
+        | ({"source_intake_identity_deferred"} if p["isin"] in state["deferred_isins"] else set())
+        for p in proposals
+    }
+    sections = {}
+    refs_by_isin = {}
+    source_values = []
+    pending_observations = []
+    for observation in observations:
+        sections.setdefault(observation.section, []).append(observation.id)
+        facts = json.loads(observation.facts_json)
+        core = facts.get("core", facts)
+        isin = core.get("isin")
+        if isin is not None:
+            refs_by_isin.setdefault(isin, []).append(observation.id)
+        if observation.row_class != "recognized":
+            continue
+        row_reasons = set(facts.get("blockers", [])) | proposal_reasons.get(isin, set())
+        if not linked:
+            row_reasons.add(PENDING)
+        if observation.section == "trades" and facts.get("repo_observed"):
+            row_reasons.add("repo_identity_unsupported")
+        if observation.section == "money" and facts.get("kind") == "unsupported":
+            row_reasons.add("money_semantics_unsupported")
+        if row_reasons:
+            pending_observations.append(
+                {"observation_id": observation.id, "reason_codes": sorted(row_reasons)}
+            )
+        if "currency" in core:
+            source_values.append(
+                {
+                    "observation_id": observation.id,
+                    "field": "core.currency" if "core" in facts else "currency",
+                    "currency": core["currency"],
+                    "basis": "source_proven" if core["currency"] is not None else "unknown",
+                }
+            )
+    counts = dict.fromkeys(
+        (
+            "source_proven",
+            "official_proven",
+            "existing_catalogue",
+            "owner_selected",
+            "owner_default_rub",
+            "unknown",
+            "conflict",
+        ),
+        0,
+    )
+    instruments = []
+    pending_instruments = []
+    for proposal in proposals:
+        assessment = proposal["currency_assessment"]
+        counts[assessment["basis"]] += 1
+        refs = refs_by_isin.get(proposal["isin"], [])
+        instruments.append({"isin": proposal["isin"], "observation_ids": refs, **assessment})
+        codes = proposal_reasons[proposal["isin"]]
+        if codes:
+            pending_instruments.append(
+                {"isin": proposal["isin"], "observation_ids": refs, "reason_codes": sorted(codes)}
+            )
+    return {
+        "scope": {
+            "account_id": state["account_id"],
+            "reporting_month_id": state["reporting_month_id"],
+            "source_accounts": json.loads(original.native_accounts_json),
+            "covered_from": original.covered_from.isoformat(),
+            "covered_to": original.covered_to.isoformat(),
+        },
+        "journal": {
+            "observation_count": len(observations),
+            "sections": [
+                {"section": section, "count": len(refs), "observation_ids": refs}
+                for section, refs in sorted(sections.items())
+            ],
+        },
+        "pending": {
+            "scope_reason_codes": sorted(reasons),
+            "instrument_count": len(pending_instruments),
+            "instruments": pending_instruments,
+            "observation_count": len(pending_observations),
+            "observations": pending_observations,
+        },
+        "currencies": {
+            "instrument_counts": counts,
+            "instruments": instruments,
+            "source_value_counts": {
+                basis: sum(value["basis"] == basis for value in source_values)
+                for basis in ("source_proven", "unknown")
+            },
+            "source_values": source_values,
+        },
+        "assumptions_grant_close": False,
+        "assumptions_grant_exact_returns": False,
+    }
+
+
 def _view(session, original, *, include_money_classifications=True):
     _policy(session)
     events = _events(session, original.id)
@@ -749,6 +849,9 @@ def _view(session, original, *, include_money_classifications=True):
         "original_required": True,
         "document": manifest["source"],
         "proposals": proposals,
+        "review_summary": _review_summary(
+            original, state, observations, proposals, reasons, link is not None
+        ),
         **(
             {"money_classifications": list_classifications(session, original.id)}
             if include_money_classifications
