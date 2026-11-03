@@ -1865,13 +1865,22 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   expect(await currentIntakes()).toHaveLength(2);
   const picker = sourcePanel.getByLabel("Счёт источника месяца");
   const list = sourcePanel.getByRole("list", { name: "Источники и исключения месяца" });
+  const sourceAccountAUrl = (url: URL) =>
+    url.pathname === "/v2/close" &&
+    url.searchParams.get("month") === String(month.id) &&
+    url.searchParams.get("panel") === "brokers" &&
+    url.searchParams.get("source_account") === "7452034";
   await selectSourceAccount(page, "7452034");
   await expect(list).not.toContainText("8562034");
   await selectSourceAccount(page, "8562034");
   await expect(list).not.toContainText("7452034");
   await page.goBack();
+  await expect(page).toHaveURL(sourceAccountAUrl);
+  // Back restores URL scope; the disclosure may have remounted closed.
+  await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
   await reloadWorkspace(page);
+  await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
   await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
   await expect(page).toHaveURL(
@@ -1954,8 +1963,11 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await selectSourceAccount(page, "");
   await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue("");
   await page.goBack();
+  await expect(page).toHaveURL(sourceAccountAUrl);
+  await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
   await reloadWorkspace(page);
+  await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
   await showSourceReview(page);
   await expect(journal.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
