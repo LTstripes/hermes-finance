@@ -275,22 +275,16 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await expect(page.getByTestId("report-net")).toBeVisible();
   await page.screenshot({ path: info.outputPath("archive-desktop.png"), fullPage: true });
 
-  await page.goto("/v2/close?month=1&step=next_month_outlook");
-  await advanced(page);
-  await expect(page.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
-    "href",
-    "/v2/data/payouts?month=1&from=monthly-close-v2&step=next_month_outlook&monthId=1",
-  );
-  await expect(page.getByRole("link", { name: "Создать следующий месяц" })).toHaveAttribute(
-    "href",
+  await page.goto(
     "/v2/data/months?month=1&from=monthly-close-v2&step=next_month_outlook&monthId=1",
   );
-  await page.getByRole("link", { name: "Создать следующий месяц" }).click();
   await expect(
     page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }),
   ).toHaveAttribute("href", "/v2/close?month=1&step=next_month_outlook");
   await page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }).click();
   await expect(page).toHaveURL(/\/v2\/close\?month=1&step=next_month_outlook$/);
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
