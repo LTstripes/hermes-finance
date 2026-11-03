@@ -178,7 +178,7 @@ $savedLog = $env:HERMES_PREVIEW_TEST_LOG
 $savedPort = $env:HERMES_FINANCE_PORT
 $savedRecovery = @{}
 try {
-    foreach ($name in @("HERMES_FINANCE_RECOVERY_READINESS_TOKEN", "HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY", "HERMES_FINANCE_RECOVERY_CHECKOUT_SHA")) { $savedRecovery[$name] = [Environment]::GetEnvironmentVariable($name, "Process"); Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in @("HERMES_FINANCE_DATABASE_PATH", "HERMES_FINANCE_RECOVERY_READINESS_TOKEN", "HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY", "HERMES_FINANCE_RECOVERY_CHECKOUT_SHA")) { $savedRecovery[$name] = [Environment]::GetEnvironmentVariable($name, "Process"); Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
     $env:HERMES_FINANCE_PORT = "43210"
     foreach ($explicit in @($false, $true)) {
         $env:HERMES_PREVIEW_TEST_LOG = Join-Path $root ("launch-"+$explicit+".log")

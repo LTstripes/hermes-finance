@@ -221,6 +221,45 @@ function Get-HermesStartPort {
     return $PreviewPort
 }
 
+function Clear-HermesUnpinnedDatabaseOverride {
+    param(
+        [Parameter(Mandatory = $true)][string]$Checkout,
+        [string]$Python = (Join-Path $Checkout "backend\.venv\Scripts\python.exe")
+    )
+
+    if ($null -eq [Environment]::GetEnvironmentVariable("HERMES_FINANCE_DATABASE_PATH", "Process")) { return }
+
+    # Use the prepared runtime's dotenv parser, matching Settings (BOM, quoting,
+    # export, duplicate keys and interpolation), without importing the app or
+    # opening any database. Only a fixed verdict crosses the process boundary.
+    $code = @'
+import logging, os, sys
+from pathlib import Path
+logging.disable(logging.CRITICAL)
+try:
+    from dotenv import dotenv_values
+    values = {key.lower(): value for key, value in dotenv_values(Path(sys.argv[1]), encoding='utf-8-sig').items()}
+    configured = values.get('hermes_finance_database_path')
+    inherited = os.environ.get('HERMES_FINANCE_DATABASE_PATH')
+    os.chdir(Path(sys.argv[1]).parent / 'backend')
+    normalize = lambda value: os.path.normcase(os.path.abspath(value))
+    print('equal' if configured is not None and normalize(configured) == normalize(inherited) else 'conflict')
+except Exception:
+    print('invalid')
+'@
+    try {
+        $verdict = (& $python -I -c $code (Join-Path $Checkout ".env") 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { $verdict = "invalid" }
+    }
+    catch { $verdict = "invalid" }
+    if ($verdict -ne "equal") {
+        # Missing .env configuration also refuses: silently clearing an isolated
+        # smoke override could otherwise start against the default database.
+        throw "Inherited HERMES_FINANCE_DATABASE_PATH conflicts with or cannot be verified against .env. Remove the variable from the launching shell and retry; configure the intended database in .env. No backend was started."
+    }
+    Remove-Item Env:HERMES_FINANCE_DATABASE_PATH -ErrorAction SilentlyContinue
+}
+
 function Get-HermesPreviewStartBinding {
     param([Parameter(Mandatory = $true)][string]$Checkout)
     Assert-HermesScratchPathBoundary -Path (Join-Path $Checkout ".hermes-preview-boundary.json")
@@ -579,6 +618,9 @@ try {
             $pinnedDatabase = if ($previewRequested) { $previewBinding.Database } else { Assert-HermesPreviewPinnedRuntimeBoundary -Checkout $repoRoot }
             if ($null -ne $pinnedDatabase) {
                 $env:HERMES_FINANCE_DATABASE_PATH = $pinnedDatabase
+            }
+            else {
+                Clear-HermesUnpinnedDatabaseOverride -Checkout $repoRoot
             }
             $backendArguments = @("run", "--locked", "--offline", "--no-sync", "hermes-finance-api")
         }

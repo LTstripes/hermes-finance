@@ -706,6 +706,7 @@ jobs:
         shell: pwsh
         run: |
           $env:HERMES_FINANCE_DATABASE_PATH = Join-Path $env:RUNNER_TEMP "hermes-finance-smoke.db"
+          "HERMES_FINANCE_DATABASE_PATH=$env:HERMES_FINANCE_DATABASE_PATH" | Set-Content -LiteralPath .env -Encoding utf8
 
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -ExitAfterReady
           if ($LASTEXITCODE -ne 0) {

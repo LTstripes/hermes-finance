@@ -4,9 +4,8 @@ param()
 # R06-10 canonical Windows production smoke.
 # Isolated temp DB. Hits only local health/months/frontend.
 # Does not invoke quote/payout/statement preview or apply,
-# so it does not make a live T-Invest request. Settings may
-# still load the ignored repository-root .env; this script does not prove
-# the token file was unread. It must not print or expose a token.
+# so it does not make a live T-Invest request. The repository-root .env
+# is saved without output and restored after launcher cleanup.
 # Proves the production listener is exactly 127.0.0.1:8000
 # and /api/health reports version 0.7.0.
 
@@ -213,17 +212,37 @@ $savedDatabase = [Environment]::GetEnvironmentVariable(
     "HERMES_FINANCE_DATABASE_PATH",
     "Process"
 )
+$savedToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
+
+$envFile = Join-Path $repoRoot ".env"
+$envExisted = Test-Path -LiteralPath $envFile
+$savedEnv = [byte[]]@()
+if ($envExisted) { $savedEnv = [IO.File]::ReadAllBytes($envFile) }
 
 try {
-    # Do not print or copy a token value. Clearing a process override does not
-    # stop Settings from loading the ignored repository-root .env.
-    Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
-    $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
+    # The launcher verifies its inherited override against checkout-local dotenv.
+    [IO.File]::WriteAllText($envFile, "HERMES_FINANCE_DATABASE_PATH=$databasePath", (New-Object Text.UTF8Encoding($false)))
+    # Limit overrides to child creation, including launch/cleanup failure paths.
+    try {
+        # Do not print or persist a token value. The temporary dotenv contains only
+        # the synthetic database setting.
+        Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
+        $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
-    Write-Host "R06-10 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
-    $launcherProcess = Start-WindowsPowerShellFile `
-        -FilePath $launcher `
-        -WorkingDirectory $repoRoot
+        Write-Host "R06-10 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
+        $launcherProcess = Start-WindowsPowerShellFile `
+            -FilePath $launcher `
+            -WorkingDirectory $repoRoot
+    }
+    finally {
+        if ($null -eq $savedDatabase) {
+            Remove-Item Env:HERMES_FINANCE_DATABASE_PATH -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:HERMES_FINANCE_DATABASE_PATH = $savedDatabase
+        }
+        [Environment]::SetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", $savedToken, "Process")
+    }
 
     $healthResponse = Wait-ForProductionStack -Process $launcherProcess
     if (-not (Test-Path $databasePath -PathType Leaf)) {
@@ -247,12 +266,12 @@ try {
     Write-Host "R06-10 Windows smoke: port $listenPort is bound only to 127.0.0.1." -ForegroundColor Green
 }
 finally {
-    Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
-    if ($null -eq $savedDatabase) {
-        Remove-Item Env:HERMES_FINANCE_DATABASE_PATH -ErrorAction SilentlyContinue
+    try {
+        Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
     }
-    else {
-        $env:HERMES_FINANCE_DATABASE_PATH = $savedDatabase
+    finally {
+        if ($envExisted) { [IO.File]::WriteAllBytes($envFile, $savedEnv) }
+        else { Remove-Item -LiteralPath $envFile -ErrorAction SilentlyContinue }
     }
 }
 
