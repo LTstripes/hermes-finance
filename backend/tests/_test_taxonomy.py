@@ -111,6 +111,7 @@ CI_CORE_ADDITIONAL_FILES = (
     "test_source_money_classifications_service.py",
     "test_reopen_confirmations_service.py",
     "test_money_preparation_service.py",
+    "test_source_investment_semantics.py",
 )
 
 # Measured with `pytest -m ci_core --durations=0` on the refreshed canonical
@@ -620,6 +621,7 @@ _CI_LANE_OVERRIDES = {
     "test_instrument_mappings_api.py": "ci_integrations",
     "test_ci_lane_ownership.py": "ci_runtime_release",
     "test_source_payout_preview.py": "ci_core",
+    "test_source_investment_semantics.py": "ci_core",
 }
 
 _MIGRATION_FILES = frozenset(

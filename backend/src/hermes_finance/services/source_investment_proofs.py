@@ -32,6 +32,12 @@ from hermes_finance.statement_import.investment_report import InvestmentPayout, 
 
 VERSION = "source_return_investment_v1"
 
+# Bump whenever derived investment result meaning changes: statement_import/mybroker.py
+# parsing, mybroker_return_structure, source_report_preview._money classification or
+# payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
+# The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
+SEMANTICS_REVISION = "source_investment_semantics_v2"
+
 
 def _json(value):
     return json.dumps(value, sort_keys=True, default=lambda x: x.isoformat())
@@ -171,52 +177,7 @@ def _latest(session, scope):
     return None
 
 
-def _implementation_digest():
-    package = Path(__file__).resolve().parents[1]
-    return mybroker.digest(
-        [
-            (p.relative_to(package).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest())
-            for p in sorted(package.rglob("*.py"))
-        ]
-    )
-
-
-def _metadata_predecessor(implementation):
-    """One reviewed release edge; never ignore Python files or follow a chain.
-
-    The target digest lives in package data to avoid a self-referential Python
-    hash. It must match the complete running implementation, including this
-    verifier. Missing/invalid data or any other code keeps the usual strict gate.
-    """
-    predecessor = "52873e49d0a0655af1a96e6be1631c522bbca00e76ee9bd8ef09bfb5fe9ddb9e"
-
-    def unique_keys(pairs):
-        result = dict(pairs)
-        if len(result) != len(pairs):
-            raise ValueError("duplicate compatibility key")
-        return result
-
-    try:
-        raw = Path(__file__).with_name("source_investment_proofs_1_9_1.json").read_bytes()
-        if len(raw) > 512:
-            return None
-        edge = json.loads(raw, object_pairs_hook=unique_keys)
-    except (OSError, ValueError):
-        return None
-    if (
-        isinstance(edge, dict)
-        and set(edge) == {"predecessor", "successor"}
-        and edge["predecessor"] == predecessor
-        and isinstance(edge["successor"], str)
-        and re.fullmatch(r"[0-9a-f]{64}", edge["successor"])
-        and edge["successor"] == implementation
-        and implementation != predecessor
-    ):
-        return predecessor
-    return None
-
-
-def _snapshot(session, account, start, end, *, reserved=False, read_dependency=None):
+def _snapshot(session, account, start, end, *, reserved=False):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
         raise ProofError("investment_proof_scope_ambiguous")
@@ -267,28 +228,15 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
         # profiles. New scoped clocks follow both old and current member IDs.
         if len(bits) != 3 or (bits[0] == "m" and int(bits[1]) in ids):
             clocks.append([clock.seq, clock.token])
-    # Conservative implementation fingerprint, including transitive classifier,
-    # identity, Decimal/money and XIRR helpers. A hand-picked parent-module list
-    # could silently keep a proof current after a helper-only semantic change.
-    code = _implementation_digest()
     operands = {
         "physical": physical,
-        "code": code,
+        "code": SEMANTICS_REVISION,
         "sources": sources,
         "money_ids": sorted(ids),
         "clocks": clocks,
         "native": sorted(native),
     }
-    digest = mybroker.digest(operands)
-    # Read compatibility rechecks every live operand under the one certified
-    # predecessor. It neither changes evidence nor admits an old issued form.
-    if not reserved and read_dependency is not None and read_dependency != digest:
-        predecessor = _metadata_predecessor(code)
-        if predecessor is not None:
-            previous = mybroker.digest({**operands, "code": predecessor})
-            if read_dependency == previous:
-                digest = previous
-    return digest, selected, next(iter(native))
+    return mybroker.digest(operands), selected, next(iter(native))
 
 
 def _bound_view(selected, sha):
@@ -447,7 +395,6 @@ def _derive(
         plan["source_account"],
         date.fromisoformat(plan["covered_from"]),
         date.fromisoformat(plan["covered_to"]),
-        read_dependency=plan["dependency"],
     )
     if (
         _evidence_digest(plan) != row.dependency_digest
