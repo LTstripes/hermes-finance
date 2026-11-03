@@ -38,6 +38,14 @@ VERSION = "source_return_investment_v1"
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
 SEMANTICS_REVISION = "source_investment_semantics_v2"
 
+# One explicit read-only transition from the released 1.9.4 implementation
+# (a381dbf1). Its stored evidence derivation (_report/_captured_money/_interval,
+# payout linking and numeric kernels) is unchanged; the additive execution_date
+# field does not change economics. Never follow compatibility chains or admit
+# pending forms. A semantics bump disables this edge until separately reviewed.
+_LEGACY_READ_REVISION = "source_investment_semantics_v2"
+_LEGACY_READ_CODE = "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81"
+
 
 def _json(value):
     return json.dumps(value, sort_keys=True, default=lambda x: x.isoformat())
@@ -177,7 +185,7 @@ def _latest(session, scope):
     return None
 
 
-def _snapshot(session, account, start, end, *, reserved=False):
+def _snapshot(session, account, start, end, *, reserved=False, read_dependency=None):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
         raise ProofError("investment_proof_scope_ambiguous")
@@ -236,7 +244,12 @@ def _snapshot(session, account, start, end, *, reserved=False):
         "clocks": clocks,
         "native": sorted(native),
     }
-    return mybroker.digest(operands), selected, next(iter(native))
+    current = mybroker.digest(operands)
+    if not reserved and read_dependency is not None and SEMANTICS_REVISION == _LEGACY_READ_REVISION:
+        previous = mybroker.digest({**operands, "code": _LEGACY_READ_CODE})
+        if read_dependency == previous:
+            current = previous
+    return current, selected, next(iter(native))
 
 
 def _bound_view(selected, sha):
@@ -395,6 +408,7 @@ def _derive(
         plan["source_account"],
         date.fromisoformat(plan["covered_from"]),
         date.fromisoformat(plan["covered_to"]),
+        read_dependency=plan["dependency"],
     )
     if (
         _evidence_digest(plan) != row.dependency_digest

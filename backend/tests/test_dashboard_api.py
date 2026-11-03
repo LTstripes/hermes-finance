@@ -659,7 +659,10 @@ def test_optional_capital_explanation_failure_preserves_month_reads(
     before = client.get(path)
     assert before.status_code == 200, before.text
 
+    explanation_calls = []
+
     def broken_source_result(*args, **kwargs):
+        explanation_calls.append(True)
         raise error_type("SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS")
 
     monkeypatch.setattr(capital_change_service, "_investment_result", broken_source_result)
@@ -671,12 +674,15 @@ def test_optional_capital_explanation_failure_preserves_month_reads(
         assert actual["month"] == expected["month"]
         assert actual["final_review"] == expected["final_review"]
         assert actual["readiness"] == expected["readiness"]
+        assert not explanation_calls
+        assert "Capital-change explanation unavailable" not in caplog.text
     else:
         expected_summary = expected["summary"] if endpoint == "dashboard" else expected
         assert expected_summary["capital_change"]["breakdown"] is not None
         expected_summary["capital_change"] = None
         assert actual == expected
-    assert "Capital-change explanation unavailable" in caplog.text
+        assert explanation_calls
+        assert "Capital-change explanation unavailable" in caplog.text
     assert "SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS" not in caplog.text
 
     # Recovery uses fresh reads; the failure does not poison the Session/cache.

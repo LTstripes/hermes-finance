@@ -1618,3 +1618,14 @@ it("shows persisted reconciliation conflicts even after transient automatic stat
   expect(main).toHaveTextContent("Есть несогласованные выплаты");
   expect(main).not.toHaveTextContent(/unresolved_payout_reconciliation|technical diagnostic/);
 });
+
+it("shows saved forecast before optional mapping and readiness reads complete", async () => {
+  vi.mocked(getInstrumentMapping).mockReturnValue(new Promise(() => {}));
+  vi.mocked(getCloseReadiness).mockReturnValue(new Promise(() => {}));
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(main).toHaveTextContent("Прогноз дохода");
+  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+  expect(main).not.toHaveTextContent("Не удалось проверить согласованность выплат");
+  expect(applyPayouts).not.toHaveBeenCalled();
+});

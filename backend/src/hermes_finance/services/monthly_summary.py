@@ -79,6 +79,7 @@ def monthly_summary(
     *,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
     allow_incomplete_salary_tax: bool = False,
+    include_capital_change: bool = True,
 ) -> MonthlySummaryResult:
     """Assemble the unified monthly summary for a reporting month.
 
@@ -165,12 +166,16 @@ def monthly_summary(
 
     from hermes_finance.services.monthly_capital_change import monthly_capital_change
 
-    capital_change = monthly_capital_change(
-        session,
-        current=reporting_month,
-        previous=prev,
-        liquid=liquid_capital,
-        previous_liquid=prev_liquid,
+    capital_change = (
+        monthly_capital_change(
+            session,
+            current=reporting_month,
+            previous=prev,
+            liquid=liquid_capital,
+            previous_liquid=prev_liquid,
+        )
+        if include_capital_change
+        else None
     )
     return MonthlySummaryResult(
         year=year,

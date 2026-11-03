@@ -512,6 +512,33 @@ def read_monthly_returns(
     originals: Mapping[int, tuple[bytes, str]] | None = None,
     assumptions: Mapping[int, ProvisionalAssumptions] | None = None,
 ) -> SourceMonthlyReturns:
+    return _read_monthly_returns(
+        session, source_account=source_account, originals=originals, assumptions=assumptions
+    )
+
+
+@coherent_read_operation
+def read_monthly_result(session, *, source_account, opening_date, closing_date):
+    """The ordinary month's operands, without unrelated periods or XIRR.
+
+    Source selection, classifications and exact-month proof precedence use the
+    same reader as the full history. This private projection is not a writer.
+    """
+    if opening_date + timedelta(days=1) != closing_date.replace(
+        day=1
+    ) or closing_date != _month_end(closing_date):
+        raise ValueError("a complete calendar month is required")
+    with source_read_snapshot(session):
+        return _read_monthly_returns(
+            session,
+            source_account=source_account,
+            target_month=closing_date.replace(day=1),
+        )
+
+
+def _read_monthly_returns(
+    session, *, source_account, originals=None, assumptions=None, target_month=None
+):
     """Read persisted classifications; isolate bad originals/months and retain gaps."""
     from hermes_finance.services.returns_account_link import account_link
 
@@ -686,6 +713,8 @@ def read_monthly_returns(
         (flow.event_date, flow.amount_kopecks, flow.status) for flow in flows if flow.included
     ]
     if not sources:
+        if target_month is not None:
+            return None
         empty = calculate_monthly_return_chain([], [])
         return SourceMonthlyReturns(
             source_account,
@@ -716,8 +745,12 @@ def read_monthly_returns(
     }
     rows = []
     first = min(source[1] for source in sources)
-    month = first.replace(day=1)
-    last = max(source[2] for source in sources)
+    if target_month is not None and not (
+        first.replace(day=1) <= target_month <= max(source[2] for source in sources)
+    ):
+        return None
+    month = target_month or first.replace(day=1)
+    last = _month_end(target_month) if target_month else max(source[2] for source in sources)
     period_uncertain_months = uncertain_months.copy()
     previous_closing = None
     while month <= last:
@@ -748,9 +781,18 @@ def read_monthly_returns(
 
         opening = endpoint(3, lambda source: source[1] == month)
         closing = endpoint(4, lambda source: source[2] == end)
-        calculated = calculate_monthly_return_chain(
-            [(month - timedelta(days=1), opening), (end, closing)], schedule
-        ).months[0]
+        # The monthly row never needs the chain's period XIRR. Use its same
+        # canonical monthly kernel directly for the bounded projection.
+        if target_month is not None:
+            from hermes_finance.domain.monthly_return_chain import calculate_interval_return
+
+            calculated = calculate_interval_return(
+                (month - timedelta(days=1), opening), (end, closing), schedule
+            )
+        else:
+            calculated = calculate_monthly_return_chain(
+                [(month - timedelta(days=1), opening), (end, closing)], schedule
+            ).months[0]
         if {month - timedelta(days=1), end} & conflicting_endpoint_dates:
             calculated = replace(
                 calculated, reason_codes=(*calculated.reason_codes, "duplicate_position")
@@ -797,7 +839,17 @@ def read_monthly_returns(
         month = _next_month(month)
     from hermes_finance.services.source_investment_proofs import read_reports
 
-    investment_reports = read_reports(session, source_account=source_account)
+    if target_month is None:
+        investment_reports = read_reports(session, source_account=source_account)
+    else:
+        from hermes_finance.services.source_investment_proofs import read_account_summaries
+
+        investment_reports = read_account_summaries(
+            session,
+            source_account=source_account,
+            opening_date=target_month - timedelta(days=1),
+            closing_date=_month_end(target_month),
+        )
     for proof in investment_reports:
         for index, row in enumerate(rows):
             if (str(row.result.opening_date + timedelta(days=1)), str(row.result.closing_date)) != (
@@ -841,6 +893,12 @@ def read_monthly_returns(
                 dividends_kopecks=amount("dividends_kopecks"),
                 income_assumptions_used=True,
             )
+            if target_month is not None:
+                # The guarded account projection already supplies this exact
+                # month's operands. Its omitted flow schedule is needed only
+                # when constructing the full history below. Preserve the full
+                # reader's fold across every matching proof scope/alias.
+                continue
             lower, upper = row.result.opening_date, row.result.closing_date
             schedule = [(d, a, status) for d, a, status in schedule if not lower < d <= upper]
             if interval is not None:
@@ -852,6 +910,8 @@ def read_monthly_returns(
                     period_uncertain_months.discard(upper.replace(day=1))
             else:
                 schedule.append((upper, 0, "unknown"))
+    if target_month is not None:
+        return rows[0].result
     period = _period_totals(rows, schedule, period_uncertain_months)
     groups = []
     current = []

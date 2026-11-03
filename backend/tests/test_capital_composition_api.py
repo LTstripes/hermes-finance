@@ -914,3 +914,29 @@ def test_optional_capital_explanation_failure_preserves_closed_comparison(client
     monkeypatch.setattr(capital_change_service, "_external_net", broken_external_result)
     expected["capital_change"] = None
     assert _comparison(client) == expected
+
+
+def test_comparison_can_omit_unused_explanation_without_changing_other_fields(client, monkeypatch):
+    from hermes_finance.services import monthly_capital_change as service
+
+    for month in (1, 2):
+        month_id = _create_month(
+            client,
+            year=2031,
+            month=month,
+            snapshot_date=f"2031-{month:02d}-" + ("31" if month == 1 else "28"),
+        )
+        _create_cash(client, month_id, "1000.00")
+        assert close_fixture_month_http(client, month_id).status_code == 200
+    expected = _comparison(client)
+    assert expected["capital_change"] is not None
+    expected["capital_change"] = None
+    monkeypatch.setattr(
+        service,
+        "monthly_capital_change",
+        lambda *args, **kwargs: pytest.fail("unused explanation calculated"),
+    )
+    response = client.get("/api/analytics/closed-report-comparison?include_capital_change=false")
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert client.get(f"/api/months/{month_id}/close-workflow").status_code == 200

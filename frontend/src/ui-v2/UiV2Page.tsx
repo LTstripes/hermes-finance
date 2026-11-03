@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { Link } from "react-router";
 import {
   Bar,
   BarChart,
@@ -14,14 +15,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Link } from "react-router";
 
 import {
   getCapitalComposition,
   getClosedReportComparison,
   getPassiveIncomeHistory,
 } from "../api/analytics";
-import { listGoalSummary, type GoalSummary } from "../api/goals";
+import { type GoalSummary, listGoalSummary } from "../api/goals";
 import { useMonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { listMonths } from "../api/months";
 import type {
@@ -32,24 +32,24 @@ import type {
   ReportingMonth,
 } from "../api/types";
 import { isGuidedCloseStepId } from "../components/month-close/navigation";
-import { HelpTip } from "../components/ui";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
+import { HelpTip } from "../components/ui";
 import { formatMoney, formatMonth } from "../lib/format";
 import { moneyToChartNumber, toKopecks } from "../lib/money";
-import { accountingStartLabel } from "./uiV2Copy";
-import { rubleAxisTick } from "./rubleAxis";
 import { queryKeys } from "../queryClient";
 import { uiV2GoalsPath } from "./goalRoute";
 import {
-  reportIndex,
   monthWorkspacePath,
+  reportIndex,
   selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
-import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
-import { UiV2Shell } from "./UiV2Shell";
+import { rubleAxisTick } from "./rubleAxis";
 import styles from "./UiV2Page.module.css";
-import { moneyDeltaText as moneyDelta, moneyText as money, moneyTone as tone } from "./valueFormat";
+import { UiV2Shell } from "./UiV2Shell";
+import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
+import { accountingStartLabel } from "./uiV2Copy";
+import { moneyText as money, moneyDeltaText as moneyDelta, moneyTone as tone } from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -664,8 +664,8 @@ export default function UiV2Page() {
 
   const comparisonQuery = useQuery({
     enabled: closedId !== null,
-    queryKey: queryKeys.closedReportComparison,
-    queryFn: ({ signal }) => getClosedReportComparison(signal),
+    queryKey: queryKeys.closedReportComparisonBasic,
+    queryFn: ({ signal }) => getClosedReportComparison(signal, false),
     refetchOnWindowFocus: true,
   });
   const compositionQuery = useQuery({
