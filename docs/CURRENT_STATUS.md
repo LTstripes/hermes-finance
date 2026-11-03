@@ -8,13 +8,41 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-The next **1.10.3 candidate** combines capital/month-read latency and display
-corrections from [#1072](https://github.com/LTstripes/hermes-finance/pull/1072)
-with confirmed cash-gift return treatment from
-[#1073](https://github.com/LTstripes/hermes-finance/pull/1073). Integration,
-exact-release checks, publication and installation remain separate gates. The
-intermittent G04 navigation failure remains unclassified even though its retry
-passed. Owner UX acceptance and AI-export performance remain separate.
+**Released and installed on 3 November: [1.10.3](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.3),
+`a4c06bf85eb2fcb09e83692beccf2a9ff86849a9`.** Stable is clean and pinned to
+the annotated release, with health `ok/1.10.3`.
+
+The release combines capital/month-read latency and display corrections from
+[#1072](https://github.com/LTstripes/hermes-finance/pull/1072) with confirmed
+cash-gift return treatment from
+[#1073](https://github.com/LTstripes/hermes-finance/pull/1073).
+[#1075](https://github.com/LTstripes/hermes-finance/pull/1075) records the exact
+candidate's independent review GO, successful PR CI/UI, the synthetic admission
+fixture correction and the sanitized installation receipt. Its merged tree is
+identical to the reviewed candidate. Exact-main
+[push CI41729361360](https://github.com/LTstripes/hermes-finance/actions/runs/41729361360)
+and [guarded publication41731224619](https://github.com/LTstripes/hermes-finance/actions/runs/41731224619)
+completed SUCCESS. Independent remote readback confirms the annotated tag and
+published stable release at the exact canonical commit.
+
+Owner-authorized stock OPS02 and separate hidden Start succeeded. Fresh SQLite
+backups were independently checked against the schema and all 82 tables, with
+the verified producing 1.10.2 code archive retained beside them. Native open-file
+identity proves the original physical production database. Final post-API/browser
+checks confirm unchanged rows, schema 0068, configuration and data identity.
+October remains CLOSED and all eight October Money readback hashes match,
+including the latest Owner confirmation. No financial Apply, Reopen, reimport or
+schema migration occurred.
+
+Installed browser checks confirm populated Capital cards, aligned largest-position
+columns, loaded salary/liability tabs in read-only October, and the passive-income
+tooltip without its full-height grey cursor. The October brokerage result/rate is
+now available; IIS evidence remains current. One actual fast Capital-card GET
+took 0.039s; full explanation and returns reads remain slower. Owner UX acceptance
+and AI-export performance remain separate. The older intermittent G04 navigation
+failure remains unclassified even though its retry passed.
+
+### Previous 1.10.2 installation (historical)
 
 
 **Released and installed on 3 November: [1.10.2](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.2),
