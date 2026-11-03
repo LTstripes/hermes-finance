@@ -641,7 +641,7 @@ def _interval(
         if currency != "RUB":
             unlinked.append(row)
             continue
-        if kind in {"external_deposit", "external_withdrawal"}:
+        if kind in {"external_deposit", "external_withdrawal", "external_gift"}:
             external.append((day, amount, "confirmed"))
             continue
         if kind in {"coupon", "dividend"}:
@@ -1148,6 +1148,19 @@ def preview_source_reports(session, entries, originals, income_report, *, histor
 
     payloads = {hashlib.sha256(raw).hexdigest(): raw for _, raw in originals}
     money = {d["document_sha256"]: _money(d, payloads[d["document_sha256"]]) for d in documents}
+    from hermes_finance.services.source_return_evidence import apply_cash_gifts
+
+    for d in documents:
+        selected, _ = _selected_sources(session, d["filename_account"])
+        matches = [
+            view
+            for original, view, error in selected
+            if not error and original.document_sha256 == d["document_sha256"]
+        ]
+        if len(matches) == 1:
+            money[d["document_sha256"]] = apply_cash_gifts(
+                session, matches[0], money[d["document_sha256"]]
+            )
     links, issues = _payout_links(documents, money, report)
     intervals = []
     comparison = []

@@ -8,6 +8,16 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+A separate gift-policy candidate treats exact current confirmed cash gifts as
+dated external capital for source-account returns, including a prior explicit
+UNKNOWN without rewriting it. Gifts remain distinct from personal deposits;
+unsupported in-kind gifts stay unresolved. This candidate changes no financial
+data or Stable installation and still requires independent financial review/CI.
+The saved XML/PDF proof follow-up changes investment semantics to v3, with a
+bounded read-only transition for unchanged v2 and 1.9.4 proofs where no relevant
+gift proof exists. Proofs with gift evidence are not automatically transitioned.
+This local candidate requires independent financial review and is not installed.
+
 **Installed runtime readback on 3 November: 1.10.1,
 `f29b9732d01f267b001e7448dfd6cff00e741c3c`.** Health, the prepared code identity
 and the served frontend agree. The previous 1.10.0 release receipts remain

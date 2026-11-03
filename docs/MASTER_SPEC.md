@@ -395,6 +395,11 @@ financial account. Instrument and monthly results retain their individual dates.
 Account history continues through newer saved months under the
 [C7 continuity contract](ARCHITECTURE_AND_CONTRACTS.md#c7-returns-overall);
 missing evidence remains a visible gap, independently of Close.
+Confirmed cash gifts are external incoming capital for source-account returns,
+separate from personal deposits. Their posted date/amount enter the existing
+schedule once; gifts are not investment profit and sale proceeds are not a second
+contribution. Ordinary source confirmation requires no later classification save.
+Unsupported in-kind gifts retain their actual evidence gap rather than invented cash.
 
 Figures and actions lead. Do not present a technical prose wall, repeated
 provenance/caveats, a column of account/period codes, or empty blocks. Show known
