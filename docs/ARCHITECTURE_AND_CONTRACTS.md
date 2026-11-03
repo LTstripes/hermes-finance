@@ -11922,10 +11922,22 @@ T-Invest market data, Alfa current snapshots, MyBroker historical originals, PDF
 
 ### Durable actual payout settlement (#711)
 
-#### Explicit financial-DRAFT forecast refresh
+<a id="explicit-financial-draft-forecast-refresh"></a>
+#### Financial-DRAFT forecast refresh
 
 `GET /api/months/{id}/draft-payouts` returns eligibility and a dependency digest;
-`POST /api/months/{id}/draft-payouts/refresh` is the explicit provider action.
+`POST /api/months/{id}/draft-payouts/refresh` remains the explicit provider action.
+Successful new strict financial SOURCE acceptance through `POST /api/broker-months/apply`
+also triggers this same refresh after rereading current positions in a new session.
+A process-local response callback coalesces each month until 750 ms after the last
+acceptance. An acceptance during an active refresh never queues a follow-up; the
+existing dependency guards reject stale responses. Source Save, finance-link,
+duplicate acceptance recovery and GET/Reload do not schedule writes.
+`GET /api/months/{id}/payout-refresh-status` additionally reports transient automatic
+status and reason codes, plus `forecast_as_of`: the oldest fetched date among the
+latest saved revisions of active T-Invest payouts, or NULL without complete evidence.
+Provider failures preserve those revisions and dates. Attempt status resets to idle
+on process restart; restart never replays pending work.
 Eligibility requires a current strict broker-month SOURCE receipt and its native
 positive `PositionSnapshot`, active broker/IIS account, stock/bond ISIN and RUB.
 Source-only observations, copied/manual positions and CLOSED scopes do not qualify.
@@ -11937,7 +11949,7 @@ manual review. No mapping replacement is inferred from a provider search.
 
 The orchestration reuses batch preview/apply services, `AppliedProviderPayout`,
 append-only revisions and the merged calendar. Each position is independently
-committed and reread; no new store, background job or retry journal exists. Fresh
+committed and reread; no new store, background job queue or retry journal exists. Fresh
 source/identity and forecast dependencies are checked after provider I/O under
 the existing reserved DRAFT writer. Changed quantity requires a current accepted
 financial projection, never source-preview or browser quantity. A single physical
@@ -12254,7 +12266,7 @@ Quote preview remains an explicit button. A missing token fails calmly and does 
 <a id="c9-t-invest-market-data-1-payouts-05"></a>
 #### Payouts (0.5)
 
-Future coupons, dividends and redemptions are fetched only after an explicit owner preview. Hermes positions remain local: there is no broker portfolio/account import. Apply freezes the quantity from the local `PositionSnapshot` and never edits manual expected-flow rows. Unresolved duplicates stay manual-only. Provider coupons may feed C04; provider dividends stay calendar-visible and do not change the historical C04 dividend component; redemption is cash flow, never passive income. Reaching an event date does not create a realized investment cash flow. Startup, dashboard and month reads do not call T-Invest.
+Future coupons, dividends and redemptions use explicit owner preview or the financial-DRAFT acceptance trigger specified above. Hermes positions remain local: there is no broker portfolio/account import. Apply freezes the quantity from the local `PositionSnapshot` and never edits manual expected-flow rows. Unresolved duplicates stay manual-only. Provider coupons may feed C04; provider dividends stay calendar-visible and do not change the historical C04 dividend component; redemption is cash flow, never passive income. Reaching an event date does not create a realized investment cash flow. Startup, dashboard and month reads do not call T-Invest.
 
 
 <a id="c9-t-invest-market-data-1-live-probe-developer-only"></a>

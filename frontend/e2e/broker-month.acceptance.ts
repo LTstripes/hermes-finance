@@ -549,6 +549,18 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   ).toBeVisible();
   expect(writes).toBe(1);
   expect(reads).toBe(1);
+  // Acceptance now saves forecasts after the 750 ms debounce. Wait for that
+  // batch before opening the panel, so its initial GET reads the saved result.
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get("/api/months/1/payout-refresh-status");
+        expect(response.ok()).toBe(true);
+        return (await response.json()).automatic_refresh;
+      },
+      { timeout: 15000 },
+    )
+    .toMatchObject({ status: "completed", reason_codes: [] });
   const batches = await (await request.get("/api/broker-months?reporting_month_id=1")).json();
   expect(batches).toHaveLength(1);
   const saved = batches[0];
@@ -580,8 +592,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
     exact: true,
   });
   await expect(forecast).toBeEnabled();
-  await forecast.click();
-  await expect(page.getByText(/Позиций обновлено: 2; без изменений: 0/)).toBeVisible();
+  // These reads must already contain the automatic result, before any manual POST.
   await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
     /25\s*₽/,
   );
@@ -607,11 +618,28 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1";
   });
+  const manualRefresh = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/months/1/draft-payouts/refresh") &&
+      response.request().method() === "POST",
+  );
   await forecast.click();
+  const manualResult = await manualRefresh;
+  expect(manualResult.ok()).toBe(true);
+  expect((await manualResult.json()).summary).toEqual({
+    updated: 0,
+    unchanged: 2,
+    unsupported: 0,
+    needs_review: 0,
+    error: 0,
+  });
   await expect(page.getByText(/Позиций обновлено: 0; без изменений: 2/)).toBeVisible();
   expect(
     (await (await request.get("/api/synthetic-broker-inventory")).json()).table_digests,
   ).toEqual(savedForecasts.table_digests);
+  expect(
+    await (await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")).json(),
+  ).toEqual(forecasts);
   const providerCalls = await (await request.get("/api/synthetic-draft-provider-calls")).json();
   await reloadWorkspace(page);
   await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(

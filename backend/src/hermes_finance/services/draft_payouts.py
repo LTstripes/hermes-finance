@@ -1,11 +1,14 @@
-"""Explicit DRAFT-only orchestration of the existing forecast reader/writer.
+"""DRAFT-only orchestration of the existing forecast reader/writer.
 
 No source acceptance, actual payout, ECF, progress journal or background retry.
-Each position commits independently; a new click always starts with fresh reads.
+Each position commits independently; every refresh starts with fresh reads.
 """
 
 from collections import Counter
+from copy import deepcopy
 from datetime import timedelta
+from threading import Condition
+from time import monotonic
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,6 +40,69 @@ from hermes_finance.services.payout_preview import PayoutPreviewStatus, build_pa
 from hermes_finance.services.reporting_months import ReportingMonthNotFoundError
 from hermes_finance.services.source_native import NATIVE_SOURCE
 from hermes_finance.statement_import.mybroker import digest
+
+
+class AcceptanceRefresh:
+    """One post-response callback per month, without a queue or automatic retry.
+
+    Only financial acceptance schedules work. GET merely copies transient status;
+    persisted forecast dates continue to come from existing payout revisions.
+    """
+
+    debounce_seconds = 0.75
+
+    def __init__(self):
+        self._condition = Condition()
+        self._active = set()
+        self._deadlines = {}
+        self._status = {}
+
+    def schedule(self, month_id):
+        with self._condition:
+            if month_id in self._active:
+                if self._status[month_id]["status"] == "pending":
+                    self._deadlines[month_id] = monotonic() + self.debounce_seconds
+                    self._condition.notify_all()
+                # Acceptance during I/O is handled by refresh's currentness guard.
+                # Never enqueue another pass or chain refreshes after this one.
+                return False
+            self._active.add(month_id)
+            self._deadlines[month_id] = monotonic() + self.debounce_seconds
+            self._status[month_id] = {"status": "pending", "reason_codes": []}
+            return True
+
+    def read(self, month_id):
+        with self._condition:
+            return deepcopy(self._status.get(month_id, {"status": "idle", "reason_codes": []}))
+
+    def run(self, month_id, refresh):
+        final = {"status": "error", "reason_codes": ["refresh_unconfirmed"]}
+        try:
+            with self._condition:
+                while (remaining := self._deadlines[month_id] - monotonic()) > 0:
+                    self._condition.wait(remaining)
+                self._status[month_id] = {"status": "running", "reason_codes": []}
+            result = refresh()
+            summary = result["summary"]
+            reasons = sorted({r for item in result["items"] for r in item["reason_codes"]})
+            if summary["error"]:
+                status = "partial" if summary["updated"] else "error"
+            elif summary["needs_review"] or summary["unsupported"]:
+                status = "partial" if summary["updated"] else "needs_review"
+            else:
+                status = "completed"
+            final = {"status": status, "reason_codes": reasons}
+        except ValueError as error:
+            if str(error) == "draft_changed":
+                final = {"status": "needs_review", "reason_codes": ["draft_changed"]}
+        except Exception:
+            # Never leak provider text or fail the committed acceptance's ACK.
+            pass
+        finally:
+            with self._condition:
+                self._status[month_id] = final
+                self._active.discard(month_id)
+                self._deadlines.pop(month_id, None)
 
 
 def _material(row):

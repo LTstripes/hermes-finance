@@ -4,12 +4,22 @@ import hashlib
 import json
 from copy import deepcopy
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.mybroker_import import _bytes
+from hermes_finance.api.payouts import schedule_draft_payout_refresh
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.source_intake import router as intake_router
 from hermes_finance.api.uploads import BoundedUploadRoute
@@ -278,6 +288,8 @@ async def preview(
 
 @router.post("/apply")
 async def apply(
+    request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     confirmation: str = Form(...),
     supporting: list[UploadFile] = File(default=[]),
@@ -321,13 +333,15 @@ async def apply(
         if len(supporting) > 3:
             raise MyBrokerError("optional_document_limit")
         hashes = sorted([hashlib.sha256(await _bytes(f)).hexdigest() for f in supporting])
-        return apply_broker_month(
+        accepted = apply_broker_month(
             session,
             document=await _bytes(file),
             filename=file.filename or "",
             optional_hashes=hashes,
             **requested.model_dump(),
         )
+        schedule_draft_payout_refresh(request, background_tasks, accepted)
+        return accepted
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
     except (ValidationError, ValueError, AttributeError):
