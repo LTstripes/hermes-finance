@@ -583,6 +583,7 @@ def read_events(session, views, identities, native_account, gaps):
                 event_date=cash_date or execution,
                 native_identity=trade.get("identity"),
                 native_ids=tuple(trade.get("ids", [])),
+                execution_date=execution,
                 trade_time=core.get("trade_time"),
                 cash_settlement_date=cash_date,
                 depository_settlement_date=depo_date,

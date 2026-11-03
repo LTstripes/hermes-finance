@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from types import SimpleNamespace
 
 import pytest
@@ -1015,6 +1015,11 @@ def test_payout_replays_are_counted_once_and_sale_is_in_universe(db, reinvest):
     assert detail.buys.value == ("10000" if reinvest else "0")
     assert result.instruments[0].pnl.value == str(direct.instruments[0].analysis.pnl.value)
     assert len([e for e in detail.events if e.kind == "SELL"]) == 1
+    assert detail.pnl.value == "12000"  # sale 1100 + dividend 20 - opening 1000
+    assert [e.kind for e in detail.events].count("DIVIDEND") == 1
+    assert [e.kind for e in detail.events].count("BUY") == int(reinvest)
+    assert all(e.effective_isin == ISIN for e in detail.events)
+    assert detail.analysis.closing.economic_value_kopecks == (10000 if reinvest else 0)
 
 
 def test_large_money_and_decimal_remain_strings_partial_is_withheld(db, monkeypatch):
@@ -1061,10 +1066,11 @@ def test_detail_api_reuses_dated_analysis_with_provenance_unknowns_and_replay(db
 
     def dated_trades(root):
         rows = root.findall(".//m:Details[@trade_no]", NS)
-        for row, day in zip(rows, (20, 25, 28)):
+        for row, day, price in zip(rows, (20, 25, 28), ("1000", "1010", "1100")):
             row.set("save_settlement_date", f"{day}.04.2030")
             row.set("save_depo_settlement_date", f"{day}.04.2030")
-            row.set("db_time", f"{day}.04.2030 09:00:00")
+            row.set("db_time", f"{day - 1}.04.2030 09:00:00")
+            row.set("Price", price)
         if holding == "absent":
             position = root.find(".//m:Details[@ISIN1]", NS)
             position.attrib.pop("income_rest")
@@ -1099,7 +1105,8 @@ def test_detail_api_reuses_dated_analysis_with_provenance_unknowns_and_replay(db
             )
             assert response.status_code == 200, response.text
             assert response.headers["cache-control"] == "no-store"
-            wire = response.json()["analysis"]
+            payload = response.json()
+            wire = payload["analysis"]
             with db.session_factory() as value:
                 direct = (
                     read_instrument_returns(
@@ -1123,11 +1130,311 @@ def test_detail_api_reuses_dated_analysis_with_provenance_unknowns_and_replay(db
                 assert wire["events"][0]["commission_kopecks"] == "500"
                 assert wire["events"][0]["unit_price"] is not None
                 assert wire["events"][0]["native_ids"]
+                buys = [e for e in payload["events"] if e["kind"] == "BUY"]
+                sale = next(e for e in payload["events"] if e["kind"] == "SELL")
+                assert [e["unit_price"] for e in buys] == ["1000", "1010"]
+                assert [e["quantity"] for e in buys] == ["2", "3"]
+                assert [e["commission_kopecks"] for e in buys] == ["500", "700"]
+                assert [e["native_trade_amount_kopecks"] for e in buys] == ["200000", "303000"]
+                assert all(e["price_unit"] == "RUB_PER_UNIT" for e in buys)
+                assert all(e["accrued_interest_kopecks"] == "0" for e in buys)
+                assert buys[0]["date"] == "2030-04-20"  # legacy cash/event date
+                assert buys[0]["execution_date"] == "2030-04-19"
+                assert buys[0]["trade_time"] == "2030-04-19T09:00:00"
+                assert buys[0]["cash_date"] == buys[0]["quantity_date"] == "2030-04-20"
+                assert buys[0]["amount"]["value"] == "200000"  # legacy native amount
+                assert sale["unit_price"] == "1100" and sale["quantity"] == "-1"
+                assert sale["commission_kopecks"] == "300"
+                assert sale["native_trade_amount_kopecks"] == "110000"
+                assert [
+                    sum(int(leg["account_cash_kopecks"]) for leg in e["cash_legs"])
+                    for e in (*buys, sale)
+                ] == [-200500, -303700, 109700]
+                legs = [leg for e in payload["events"] for leg in e["cash_legs"]]
+                assert len({leg["ownership"] for leg in legs}) == len(legs)
+                assert all(
+                    int(leg["instrument_flow_kopecks"]) == -int(leg["account_cash_kopecks"])
+                    for leg in legs
+                )
+                assert all(e["counted"] and e["current"] for e in payload["events"])
+                assert all(e["effective_isin"] == ISIN for e in payload["events"])
+                assert all(e["event_key"] for e in payload["events"])
+                assert wire["closing"]["quantity"] == "4"
+                assert wire["closing"]["date"] == payload["valuation_date"] == "2030-04-30"
+                assert wire["closing"]["economic_value_kopecks"] == "440000"
+                if holding == "zero":
+                    # 4400 - (2000+5) - (3030+7) + (1100-3) = 455 RUB.
+                    assert wire["pnl"]["value"] == payload["pnl"]["value"] == "45500"
+                    # 200500*10 + 303700*5 - 109700*2 = 3304100 kopeck-days.
+                    assert wire["modified_dietz"]["capital_days"] == "3304100"
+                    with localcontext() as context:
+                        context.prec = 60
+                        expected_rate = Decimal(13650) / Decimal(33041)
+                    assert Decimal(wire["modified_dietz"]["value"]) == expected_rate
+                    assert payload["rate"]["unit"] == "fraction"
+                    assert payload["rate"]["method"] == "modified_dietz"
+                    assert wire["modified_dietz"]["annualized"] is False
+                    assert all(c["complete"] for c in wire["coverage"].values())
+                else:
+                    assert wire["pnl"]["value"] is payload["pnl"]["value"] is None
+                    assert wire["modified_dietz"]["value"] is None
+                    assert wire["known_subtotal"]["status"] == "partial"
+                    assert not wire["coverage"]["quantity"]["complete"]
             else:
                 assert wire["pnl"]["value"] is None
                 assert "bond_valuation_basis_unknown" in wire["reason_codes"]
                 assert len(wire["events"]) == 1
                 assert wire["events"][0]["net_payout_kopecks"] == "7000"
+                (coupon,) = payload["events"]
+                assert coupon["net_payout_kopecks"] == coupon["amount"]["value"] == "7000"
+                assert coupon["gross_payout_kopecks"] is coupon["withheld_tax_kopecks"] is None
+                assert coupon["unit_price"] is coupon["quantity"] is None
+                assert coupon["cash_legs"][0]["account_cash_kopecks"] == "7000"
+                assert payload["conditional_pnl"]["value"] == "8000"  # 2010 - 2000 + 70
+                assert wire["known_subtotal"]["value"] == "7000"
+                assert wire["known_subtotal"]["status"] == "partial"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_detail_api_preserves_persisted_payout_and_stale_link(db, stale):
+    from test_source_instrument_events import setup_link
+
+    from hermes_finance.api.source_instrument_returns import router as source_router
+    from hermes_finance.services import security_reg_isin_mappings as mappings
+
+    setup_link(db)
+    if stale:
+        with db.session_factory() as value:
+            mappings.remove_mapping(value, "1-01-99999-Z")
+    before = snapshot(db)
+    app = FastAPI()
+    app.include_router(returns_router)
+    app.include_router(source_router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/returns/instrument",
+            params={"scope": SCOPE, "start": START, "end": END, "isin": ISIN},
+        )
+        source_response = client.get(
+            "/api/source-returns/instruments",
+            params={
+                "source_account": ACCOUNT,
+                "opening_date": START,
+                "closing_date": END,
+                "isin": ISIN,
+            },
+        )
+    assert response.status_code == source_response.status_code == 200
+    assert (
+        response.headers["cache-control"] == source_response.headers["cache-control"] == "no-store"
+    )
+    detail, source = response.json(), source_response.json()
+    assert source["native_source_account"] == ACCOUNT
+    assert source["financial_authority"] == "none"
+    (payout,) = detail["events"]
+    (source_payout,) = source["instruments"][0]["analysis"]["events"]
+    assert source_payout["persisted_link_status"] == "linked"  # saved choice is never repaired
+    assert payout["gross_payout_kopecks"] == "18700"
+    assert payout["withheld_tax_kopecks"] == "10000"
+    assert payout["net_payout_kopecks"] == payout["amount"]["value"] == "8700"
+    assert payout["execution_date"] is None
+    assert payout["cash_legs"][0]["account_cash_kopecks"] == "8700"
+    assert payout["cash_legs"][0]["instrument_flow_kopecks"] == "-8700"
+    assert payout["current"] is payout["counted"] is (not stale)
+    if stale:
+        assert payout["effective_isin"] is source_payout["effective_isin"] is None
+        assert "payout_link_stale" in payout["reason_codes"]
+        assert detail["pnl"]["value"] is detail["rate"]["value"] is None
+        assert detail["analysis"]["known_subtotal"]["status"] == "partial"
+        assert not detail["analysis"]["coverage"]["payouts"]["complete"]
+    else:
+        assert payout["effective_isin"] == ISIN
+        # 1100 - 1000 + 87 net. The informational 100 tax is not subtracted again.
+        assert detail["pnl"]["value"] == "18700"
+        assert source["instruments"][0]["analysis"]["pnl"]["value"] == 18700
+        assert source["instruments"][0]["months"][0]["return_percent"] == "18.7"
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("opening", ["zero", "missing"])
+def test_detail_late_acquisition_keeps_full_outer_interval_and_unknown_opening(db, opening):
+    from hermes_finance.statement_import.mybroker import NS
+
+    def late_trade(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.set("db_time", "18.06.2030 09:00:00")
+        trade.set("save_settlement_date", "20.06.2030")
+        trade.set("save_depo_settlement_date", "21.06.2030")
+        trade.set("Price", "100")
+        if opening == "missing":
+            position = root.find(".//m:Details[@ISIN1]", NS)
+            position.attrib.pop("income_rest")
+            position.attrib.pop("income_volume")
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", None, "0"),),
+        end_month=6,
+        mutate=late_trade,
+    )
+    before = snapshot(db)
+    end = date(2030, 6, 30)
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=end, isin=ISIN)
+        )
+    import json
+
+    wire = json.loads(detail.model_dump_json())
+    a = wire["analysis"]
+    assert wire["period"] == {"start": "2030-03-31", "end": "2030-06-30"}
+    assert a["opening"]["date"] == a["history_start"] == "2030-03-31"
+    assert a["closing"]["date"] == "2030-06-30"
+    (buy,) = wire["events"]
+    assert buy["execution_date"] == "2030-06-18"
+    assert buy["cash_date"] == "2030-06-20"
+    assert buy["quantity_date"] == "2030-06-21"
+    assert buy["commission_kopecks"] == "0"
+    assert buy["accrued_interest_kopecks"] == "0"  # existing non-bond applicability rule
+    if opening == "zero":
+        assert a["opening"]["economic_value_kopecks"] == "0"
+        assert a["opening"]["quantity"] == "0"
+        assert wire["pnl"]["value"] == "10000"  # 1100 - 1000
+        assert a["modified_dietz"]["capital_days"] == "1000000"  # 100000 * 10
+        assert wire["rate"]["value"] == "0.91"  # 10000 * 91 / 1000000
+        assert a["chained_monthly"]["value"] is None
+    else:
+        assert a["opening"]["economic_value_kopecks"] is None
+        assert a["opening"]["quantity"] is None
+        assert wire["pnl"]["value"] is wire["rate"]["value"] is None
+        assert a["known_subtotal"]["status"] == "partial"
+        assert a["known_subtotal"]["value"] == "-100000"
+        assert wire["reason_codes"]
+        assert not a["coverage"]["endpoints"]["complete"]
+    assert snapshot(db) == before
+
+
+def test_detail_projects_actual_money_posting_dates_without_duplicating_native_amount(db):
+    from test_source_instrument_events import trade_date
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", None, "2"),),
+        mutate=trade_date(
+            10,
+            depo=11,
+            money=(
+                ("Расчеты по сделке 10000000001", "Synthetic principal", "-1000", 12),
+                ("Комиссия по сделке 10000000001", "Synthetic fee", "-2", 13),
+            ),
+        ),
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=END, isin=ISIN)
+        )
+    (buy,) = detail.events
+    assert buy.attribution_basis == "matched_money"
+    assert buy.execution_date == buy.cash_date == date(2030, 4, 10)
+    assert buy.quantity_date == date(2030, 4, 11)
+    assert {leg.role: (leg.date, leg.account_cash_kopecks) for leg in buy.cash_legs} == {
+        "principal": (date(2030, 4, 12), "-100000"),
+        "commission": (date(2030, 4, 13), "-200"),
+    }
+    assert detail.buys.value == "100200"
+    assert detail.pnl.value == "9800"  # 1100 - 1000 - 2, no second native debit
+    assert detail.analysis.modified_dietz.capital_days == 1803400  # 100000*18 + 200*17
+    assert snapshot(db) == before
+
+
+def test_detail_keeps_uncounted_execution_in_interval_with_later_settlement(db):
+    from hermes_finance.statement_import.mybroker import NS
+
+    def deferred_settlement(root):
+        trade = root.find(".//m:Details[@trade_no]", NS)
+        trade.set("db_time", "29.04.2030 09:00:00")
+        trade.set("save_settlement_date", "02.05.2030")
+        trade.set("save_depo_settlement_date", "03.05.2030")
+        trade.set("Price", "100")
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", None, None),),
+        end_month=5,
+        mutate=deferred_settlement,
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=END, isin=ISIN)
+        )
+    (buy,) = detail.events
+    assert buy.execution_date == date(2030, 4, 29)
+    assert buy.date == buy.cash_date == date(2030, 5, 2)
+    assert buy.quantity_date == date(2030, 5, 3)
+    assert not buy.counted and buy.commission_kopecks is None
+    assert "trade_components_missing" in buy.reason_codes
+    assert detail.buys.value is None
+    assert detail.pnl.value is detail.rate.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fee", ["2", None])
+def test_detail_bond_decomposition_is_once_and_conditional_result_is_separate(db, fee):
+    from test_source_instrument_events import trade_date
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "1010"),
+        trades=((BOND, "1", "1000", "20", fee),),
+        mutate=trade_date(15, price="98", money=(("Купон", BOND, "30", 30),)),
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        detail = Detail.model_validate(
+            view.read_detail(session, scope=SCOPE, start=START, end=END, isin=BOND)
+        )
+    buy = next(e for e in detail.events if e.kind == "BUY")
+    assert buy.unit_price == "98" and buy.price_unit == "PERCENT_OF_FACE"
+    assert buy.face_value == "1000" and buy.face_value_date == date(2030, 4, 15)
+    assert buy.native_trade_amount_kopecks == "100000"
+    assert buy.native_total_basis == "includes_paid_nkd"
+    assert buy.accrued_interest_kopecks == "2000"
+    assert detail.pnl.value is detail.rate.value is None
+    assert detail.analysis.known_subtotal.status == "partial"
+    assert "bond_valuation_basis_unknown" in detail.reason_codes
+    assert detail.coupons.value == "3000"
+    if fee is not None:
+        assert buy.commission_kopecks == "200"
+        assert sum(int(leg.account_cash_kopecks) for leg in buy.cash_legs) == -100200
+        assert detail.buys.value == "100200"  # native amount already includes NKD
+        assert detail.conditional_pnl.value == "3800"  # 1010 - 1002 + 30
+        assert detail.analysis.known_subtotal.value == -97200
+        assert detail.analysis.statement_estimate.modified_dietz.capital_days == 1503000
+        with localcontext() as context:
+            context.prec = 60
+            assert Decimal(detail.conditional_rate.value) == Decimal(38) / Decimal(501)
+    else:
+        assert buy.commission_kopecks is None and not buy.counted
+        assert buy.reason_codes
+        assert detail.conditional_pnl.value is detail.conditional_rate.value is None
+        assert not detail.analysis.coverage["costs"].complete
+        assert detail.analysis.known_subtotal.value == 3000
     assert snapshot(db) == before
 
 

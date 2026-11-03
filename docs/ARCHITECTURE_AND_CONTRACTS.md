@@ -6695,8 +6695,20 @@ The on-demand Returns projection `/api/returns/instrument` adds the same complet
 `analysis` shape while retaining its compatibility fields; the overview stays
 compact. Money values and capital-days serialize as exact integer strings in this
 projection, Decimal rates/quantities/prices as strings, with NULL and source
-identities preserved. No new calculation or authority is introduced. Consumers
-bind analysis and endpoint dates, contract, account scope and ISIN to the request.
+identities preserved. Its compact `events` projection also retains the event key,
+execution date/time, cash/depository dates, signed quantity, source price/unit,
+dated face value, native amount/basis, NKD, commission, gross/withheld/net payout,
+effective ISIN, attribution, current/counting flags, reasons and assumptions.
+These Decimal and money fields are exact strings or NULL. Dated `cash_legs`
+retain signed account cash, inverse instrument flow, ownership and references;
+only current counted legs in the selected interval contribute to economics.
+The compatibility `amount` remains the native trade total or net payout, so it
+must not be added to cash legs or informational NKD/commission/tax fields.
+Endpoint values/dates, coverage, full P&L, explicitly partial known subtotal and
+conditional estimate remain separately available in `analysis`; its named
+`modified_dietz` is a Decimal fraction with the actual dates and method flags.
+No new calculation or authority is introduced. Consumers bind analysis and
+endpoint dates, contract, account scope and ISIN to the request.
 The shared detail presents `history_complete_since_acquisition` only as the
 existing zero-opening/acquisition/coverage condition within the source interval;
 it is not proof of no earlier ownership. Attributed account/file origin evidence
@@ -6717,7 +6729,10 @@ Integer minor-unit and Decimal-fraction formatting remains exact; legacy unsafe
 JSON money numbers are withheld rather than displayed as precise amounts.
 
 
-Events retain native ordered trade IDs, execution time, cash and depository dates,
+Events retain native ordered trade IDs, explicit `execution_date` and execution
+time, cash and depository dates. For trades, legacy `event_date` (and Returns
+`date`) remains cash settlement date, falling back to execution only when
+settlement is absent; non-trades have NULL `execution_date`. Events retain
 signed quantity, source price/unit, dated trade face, amount, NKD, commission,
 gross/withheld/net payout, saved classification and link status, effective ISIN,
 currentness, provenance and reasons. Missing components remain NULL. Dated cash

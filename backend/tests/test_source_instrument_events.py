@@ -867,6 +867,7 @@ def test_saved_trade_contract_vectors(db, opening, closing, qty, amount, day, ex
         assert a.modified_dietz.value is None
     assert a.history_complete_since_acquisition == (opening[0] == "0")
     assert a.opening_date == date(2030, 3, 31) and a.closing_date == date(2030, 4, 30)
+    assert a.events[0].execution_date == date(2030, 4, day)
     assert a.events[0].cash_settlement_date == date(2030, 4, day)
     assert a.events[0].unit_price == 100
     assert a.events[0].attribution_basis == "native_trade_settlement"

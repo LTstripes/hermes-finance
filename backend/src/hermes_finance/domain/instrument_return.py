@@ -71,6 +71,7 @@ class InstrumentEvent:
     event_date: date | None
     native_identity: str | None = None
     native_ids: tuple[str, ...] = ()
+    execution_date: date | None = None
     trade_time: str | None = None
     cash_settlement_date: date | None = None
     depository_settlement_date: date | None = None
