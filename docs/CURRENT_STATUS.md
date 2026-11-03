@@ -8,6 +8,12 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+A separate gift-policy candidate treats exact current confirmed cash gifts as
+dated external capital for source-account returns, including a prior explicit
+UNKNOWN without rewriting it. Gifts remain distinct from personal deposits;
+unsupported in-kind gifts stay unresolved. This candidate changes no financial
+data or Stable installation and still requires independent financial review/CI.
+
 **Released and installed: [v1.10.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.0),
 `679f72e63933e9c80892f80c48a18292c2af8416`** ([release notes](release-notes-1.10.0.md)).
 Exact-main [CI41527900783](https://github.com/LTstripes/hermes-finance/actions/runs/41527900783)

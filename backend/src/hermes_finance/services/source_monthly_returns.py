@@ -451,21 +451,27 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
         included, status = external, saved.status
         if (
             classification in {"unknown", "external_deposit"}
-            and (saved.origin, saved.status) == ("default_rule", "assumed")
+            and amount > 0
             and effective_bonus(session, financial_source, row)
         ):
-            classification, included, status = "broker_bonus", False, "confirmed"
+            # A current exact cash-gift proof supplies the missing meaning of
+            # UNKNOWN, including a prior explicit UNKNOWN. It never rewrites the
+            # saved choice, creates cash, or supplies an in-kind asset valuation.
+            classification, included, status = "external_gift", True, "confirmed"
             gaps.append(
                 SourceReturnGap(
-                    "broker_bonus_confirmed", view["id"], event_date.replace(day=1), reference
+                    "broker_gift_external_flow", view["id"], event_date.replace(day=1), reference
                 )
             )
         # Preserve the Python provisional-choice compatibility surface for default
-        # rows only; an explicit persisted classification is always authoritative.
+        # rows only. A confirmed gift is not an optional Owner-funding assumption.
         requirement = f"candidate:{row['ordinal']}:{digest(row)[:12]}"
         requested = (
             [choice for choice in choices.selections if choice.requirement_id == requirement]
-            if choices and external and saved.origin == "default_rule"
+            if choices
+            and external
+            and saved.origin == "default_rule"
+            and classification != "external_gift"
             else []
         )
         selected = [choice for choice in requested if choice.source_references == (reference,)]
@@ -677,7 +683,7 @@ def read_monthly_returns(
             income[income_month][flow.classification] += flow.amount_kopecks
             if flow.status == "assumed":
                 assumed_income_months.add(income_month)
-        elif flow.classification in {"external_deposit", "external_withdrawal"}:
+        elif flow.classification in {"external_deposit", "external_withdrawal", "external_gift"}:
             flows.append(replace(flow, source_references=refs))
         if len(observations) > 1:
             gaps.append(SourceReturnGap("overlap_flow_deduplicated", source_reference=refs[0]))
@@ -770,8 +776,8 @@ def read_monthly_returns(
                 ),
             )
         flags = list(calculated.reason_codes)
-        if any(gap.code == "broker_bonus_confirmed" and gap.month == month for gap in gaps):
-            flags.append("broker_bonus_confirmed")
+        if any(gap.code == "broker_gift_external_flow" and gap.month == month for gap in gaps):
+            flags.append("broker_gift_external_flow")
         if opening is not None and previous_closing is not None and opening != previous_closing:
             flags.append("seam_mismatch")
         # Inferred periods already have one explained gap per intake/month.

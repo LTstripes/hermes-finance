@@ -41,6 +41,8 @@ const COPY: Record<
   string,
   string | ({ default: string } & Partial<Record<ReasonSurface, string>>)
 > = {
+  broker_gift_external_flow:
+    "Подарок учтён как внешнее поступление для доходности, отдельно от личных пополнений.",
   known_instrument_accounts_only:
     "Сумма известных значений по показанным счетам; пробелы отмечены отдельно.",
   combined_rate_periods_and_flows_not_proven:

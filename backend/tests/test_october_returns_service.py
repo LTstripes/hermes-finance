@@ -3,6 +3,8 @@
 import json
 from copy import deepcopy
 from datetime import UTC, date, datetime
+from decimal import Decimal, localcontext
+from xml.etree import ElementTree as ET
 
 import pytest
 from sqlalchemy import select
@@ -15,6 +17,7 @@ from test_source_monthly_returns_service import (
     proof_confirm,
     proof_preview,
     read,
+    save_cancellation_long,
     save_service_month,
     snapshot,
 )
@@ -124,7 +127,7 @@ def test_bonus_source_binding_compares_parser_facts_and_rejects_mismatches(datab
 
 
 @pytest.mark.parametrize("confirmed,stale", [(False, False), (True, False), (True, True)])
-def test_only_current_exact_bonus_removes_unknown_without_new_cash(database, confirmed, stale):
+def test_only_current_exact_cash_gift_is_external_without_new_cash(database, confirmed, stale):
     client, scope, raw, source = existing_statement(database, gift=True)
     with database.session_factory() as session:
         saved = source_intake.save_intake(
@@ -160,18 +163,47 @@ def test_only_current_exact_bonus_removes_unknown_without_new_cash(database, con
     row = monthly.months[0]
     bonus = next(r for r in intake["money_classifications"] if str(r["date"]) == "2030-01-23")
     assert bonus["classification"] == "unknown"  # read never writes the classification
-    assert monthly.flows == ()  # neither Owner funding nor another payout
     eligible = confirmed and not stale
+    assert len(monthly.flows) == int(eligible)
+    if eligible:
+        gift = monthly.flows[0]
+        assert (gift.classification, gift.included, gift.status) == (
+            "external_gift",
+            True,
+            "confirmed",
+        )
+        assert (gift.event_date, gift.amount_kopecks) == (date(2030, 1, 23), 1723)
+        assert row.result.contributions_kopecks == 1723
+        assert row.result.growth_kopecks == (
+            row.result.closing_kopecks - row.result.opening_kopecks - 1723
+        )
+        # Gift on January23 has eight days' weight; real sale settlements in
+        # this fixture are cash conversion, not additional contributions.
+        with localcontext() as context:
+            context.prec = 60
+            expected_rate = Decimal(row.result.growth_kopecks * 31) / Decimal(
+                row.result.opening_kopecks * 31 + 1723 * 8
+            )
+        assert row.result.modified_dietz_return == expected_rate
     assert (row.result.growth_kopecks is not None) == eligible
     assert (row.result.modified_dietz_return is not None) == eligible
     codes = {gap.code for gap in monthly.gaps}
-    assert ("broker_bonus_confirmed" in codes) == eligible
+    assert ("broker_gift_external_flow" in codes) == eligible
     assert ("unrecognized_money" in codes) == (not eligible)
     expected = None if row.result.growth_kopecks is None else str(row.result.growth_kopecks)
     assert ordinary["selected"]["pnl"]["value"] == expected
     interval = exported["data"]["accounts"][0]["intervals"][0]
     value = interval["account"]["metrics"]["pnl"]["value"]
     assert (value is None) == (not eligible)
+    if eligible:
+        assert interval["account"]["contributions"] == {"amount": "17.23", "currency": "RUB"}
+        assert interval["account"]["external_flows"] == [
+            {
+                "date": "2030-01-23",
+                "amount": {"amount": "17.23", "currency": "RUB"},
+                "status": "confirmed",
+            }
+        ]
     assert snapshot(database) == before
     if eligible:
         from hermes_finance.persistence import MyBrokerImport
@@ -188,11 +220,36 @@ def test_only_current_exact_bonus_removes_unknown_without_new_cash(database, con
                 session, financial_source, {**raw_bonus, "ordinal": raw_bonus["ordinal"] + 100}
             )
             assert not effective_bonus(session, financial_source, {**raw_bonus, "amount": "17.24"})
+            from hermes_finance.domain.broker_statement_provisional import (
+                ProvisionalAssumptions,
+                ProvisionalChoice,
+            )
+
+            reference = monthly.flows[0].source_references[0]
+            _, _, _, ordinal, fingerprint = reference.split(":")
+            excluded = ProvisionalAssumptions(
+                schedule_mode="explicit_empty",
+                selections=(
+                    ProvisionalChoice(
+                        requirement_id=f"candidate:{ordinal}:{fingerprint[:12]}",
+                        source_references=(reference,),
+                        choice="exclude_from_external_schedule",
+                    ),
+                ),
+            )
+            authoritative = read_monthly_returns(
+                session, source_account=ACCOUNT, assumptions={saved["intake_id"]: excluded}
+            )
+            assert authoritative.flows[0].included
+            assert authoritative.months[0].result.contributions_kopecks == 1723
+        assert snapshot(database) == before
 
 
 @pytest.mark.parametrize("confirmed", [False, True])
-@pytest.mark.parametrize("user_choice", [None, "unknown", "external_deposit"])
-def test_exact_bonus_replaces_only_assumed_promo_deposit(database, confirmed, user_choice):
+@pytest.mark.parametrize("user_choice", [None, "unknown", "external_deposit", "fee"])
+def test_cash_gift_resolves_unknown_but_preserves_other_economic_choices(
+    database, confirmed, user_choice
+):
     from hermes_finance.services.source_money_classifications import choose_classification
 
     client, scope, raw, source = existing_statement(database, gift=True)
@@ -214,15 +271,15 @@ def test_exact_bonus_replaces_only_assumed_promo_deposit(database, confirmed, us
         monthly = read_monthly_returns(session, source_account=ACCOUNT)
         intake = source_intake.read_intake(session, saved["intake_id"])
     row = monthly.months[0].result
-    eligible = confirmed and user_choice is None
+    eligible = confirmed and user_choice != "fee"
     expected_classification = user_choice or "external_deposit"
     bonus = next(r for r in intake["money_classifications"] if r["date"] == date(2030, 1, 23))
     assert bonus["classification"] == expected_classification
-    assert ("broker_bonus_confirmed" in {g.code for g in monthly.gaps}) == eligible
-    if user_choice == "unknown":
+    assert ("broker_gift_external_flow" in {g.code for g in monthly.gaps}) == eligible
+    if user_choice == "unknown" and not eligible:
         assert monthly.flows == ()
         assert row.contributions_kopecks is row.growth_kopecks is None
-    elif eligible:
+    elif user_choice == "fee":
         assert monthly.flows == ()
         assert row.contributions_kopecks == 0
         assert row.growth_kopecks == row.closing_kopecks - row.opening_kopecks
@@ -230,7 +287,60 @@ def test_exact_bonus_replaces_only_assumed_promo_deposit(database, confirmed, us
         assert len(monthly.flows) == 1
         assert monthly.flows[0].amount_kopecks == 1723
         assert row.contributions_kopecks == 1723
+        assert monthly.flows[0].classification == (
+            "external_gift" if eligible else "external_deposit"
+        )
+        assert row.growth_kopecks == row.closing_kopecks - row.opening_kopecks - 1723
     assert snapshot(database) == before
+
+
+def test_overlapping_cash_gift_occurrences_count_once_without_borrowing_proof(database):
+    client, scope, raw, source = existing_statement(database, gift=True)
+    with database.session_factory() as session:
+        source_intake.save_intake(session, document=raw, filename=FILENAME, request_id="gift-first")
+        repeated = source_intake.save_intake(
+            session, document=raw, filename=FILENAME, request_id="gift-first"
+        )
+        assert repeated["duplicate"]
+        # Different immutable original with the same economic occurrences.
+        root = ET.fromstring(raw)
+        ET.indent(root)
+        overlapping = ET.tostring(root, encoding="utf-8")
+        assert overlapping != raw
+        source_intake.save_intake(
+            session, document=overlapping, filename=FILENAME, request_id="gift-overlap"
+        )
+    accept_bookkeeping(client, scope, raw, source)
+    _accept_money(client, source, raw, confirmed=True)
+    before = snapshot(database)
+    with database.session_factory() as session:
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+    assert len(monthly.flows) == 1
+    gift = monthly.flows[0]
+    assert (gift.classification, gift.amount_kopecks, gift.status) == (
+        "external_gift",
+        1723,
+        "confirmed",
+    )
+    assert len(gift.source_references) == 2
+    assert snapshot(database) == before
+
+
+def test_in_kind_gift_without_cash_or_valuation_stays_unresolved(db):
+    save_cancellation_long(
+        db,
+        mutate=lambda root, row: (
+            row.set("qty", "1.0000000000"),
+            row.set("comment_new", "Synthetic promotional security gift, no cash or valuation"),
+        ),
+    )
+    before = snapshot(db)
+    monthly = read(db)
+    assert monthly.flows == ()
+    assert all(row.result.growth_kopecks is None for row in monthly.months)
+    assert "4_Transfers_unsupported" in {gap.code for gap in monthly.gaps}
+    assert "broker_gift_external_flow" not in {gap.code for gap in monthly.gaps}
+    assert snapshot(db) == before
 
 
 def test_saved_history_new_month_replay_and_ai_export_share_one_outer_result(database, monkeypatch):
