@@ -16,6 +16,7 @@ holds the outputs of the existing calculators.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from hermes_finance.domain.cash_balance import CashBalanceResult
 from hermes_finance.domain.coverage_goals import CoverageGoalsResult
@@ -73,6 +74,7 @@ class MonthlySummaryResult:
     passive_income_average_months_used: tuple[str, ...] = ()
     portfolio_source_coverage: PortfolioSourceCoverage | None = None
     liquid_capital_delta_coverage: PortfolioSourceCoverage | None = None
+    capital_change: MonthlyCapitalChange | None = None
 
 
 def assemble_warnings(
@@ -99,3 +101,54 @@ def assemble_warnings(
     if liquid_capital_delta is None:
         warnings.append(_NO_PREVIOUS_MONTH_WARNING)
     return tuple(warnings)
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalChangeBreakdown:
+    """Known signed components; unexplained is never an 'other' component.
+
+    Component amounts are known subtotals, not assertions of complete history.
+    The caller must retain source/endpoint gaps alongside this exact identity.
+    """
+
+    start: RubleAmount
+    external_net: RubleAmount
+    investment_result: RubleAmount
+    other_changes: RubleAmount
+    unexplained: RubleAmount
+    end: RubleAmount
+
+
+def explain_capital_change(
+    *,
+    start: RubleAmount,
+    end: RubleAmount,
+    external_net: RubleAmount,
+    investment_result: RubleAmount,
+    other_changes: RubleAmount,
+) -> CapitalChangeBreakdown:
+    """Reconcile existing producer amounts in integer minor units exactly."""
+    return CapitalChangeBreakdown(
+        start=start,
+        external_net=external_net,
+        investment_result=investment_result,
+        other_changes=other_changes,
+        unexplained=RubleAmount(
+            end.kopecks
+            - start.kopecks
+            - external_net.kopecks
+            - investment_result.kopecks
+            - other_changes.kopecks
+        ),
+        end=end,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MonthlyCapitalChange:
+    reporting_month_id: int
+    previous_reporting_month_id: int | None
+    period_start: date
+    period_end: date
+    breakdown: CapitalChangeBreakdown | None
+    reason_codes: tuple[str, ...]

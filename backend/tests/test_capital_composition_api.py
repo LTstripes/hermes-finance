@@ -861,3 +861,56 @@ def test_closed_report_comparison_does_not_double_count_linked_debt(
     assert body["liquid_capital_net_delta"] == _rub("30.00")
     assert body["linked_pair_debts_delta"] == _rub("20.00")
     assert body["net_liquid_capital_reconciles"] is True
+
+
+@pytest.mark.parametrize("end,residual", [("1000.01", "0.00"), ("1007.02", "7.01")])
+def test_monthly_capital_bridge_api_keeps_unexplained_separate(client, end, residual):
+    jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
+    feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
+    _create_cash(client, jan, "1000.01")
+    _create_cash(client, feb, end)
+    for month_id in (jan, feb):
+        response = close_fixture_month_http(client, month_id)
+        assert response.status_code == 200, response.text
+    comparison = _comparison(client)
+    change = comparison["capital_change"]
+    assert change["reporting_month_id"] == feb
+    assert change["previous_reporting_month_id"] == jan
+    assert change["component_basis"] == "known_subtotals"
+    amounts = change["breakdown"]
+    assert amounts["other_changes"] == _rub("0.00")
+    assert amounts["unexplained"] == _rub(residual)
+    assert sum(
+        Decimal(amounts[key]["amount"])
+        for key in (
+            "start",
+            "external_net",
+            "investment_result",
+            "other_changes",
+            "unexplained",
+        )
+    ) == Decimal(amounts["end"]["amount"])
+    summary = client.get(f"/api/months/{feb}/summary")
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["capital_change"] == change
+
+
+def test_optional_capital_explanation_failure_preserves_closed_comparison(client, monkeypatch):
+    from hermes_finance.services import monthly_capital_change as capital_change_service
+
+    jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
+    feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
+    _create_cash(client, jan, "1000.01")
+    _create_cash(client, feb, "1007.02")
+    for month_id in (jan, feb):
+        response = close_fixture_month_http(client, month_id)
+        assert response.status_code == 200, response.text
+    expected = _comparison(client)
+    assert expected["capital_change"]["breakdown"] is not None
+
+    def broken_external_result(*args, **kwargs):
+        raise ArithmeticError("synthetic optional attribution failure")
+
+    monkeypatch.setattr(capital_change_service, "_external_net", broken_external_result)
+    expected["capital_change"] = None
+    assert _comparison(client) == expected

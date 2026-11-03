@@ -16,7 +16,9 @@ fixture value is synthetic (2031/2032).
 from datetime import date
 from pathlib import Path
 
+import pytest
 from _month_close_helpers import close_fixture_month
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
@@ -341,6 +343,308 @@ def test_deltas_only_liquid_capital_and_passive_income(tmp_path: Path) -> None:
         assert feb.passive_income_delta is not None
         assert feb.liquid_capital_delta == RubleAmount(0)
         assert feb.passive_income_delta == RubleAmount(0)
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "external,end,interest,residual",
+    [
+        (None, "1000.01", "0.00", "0.00"),
+        ("-200.02", "800.49", "0.50", "0.00"),
+        ("200.02", "1200.60", "0.50", "0.07"),
+    ],
+)
+def test_monthly_capital_bridge_reconciles_synthetic_activity(
+    tmp_path,
+    external,
+    end,
+    interest,
+    residual,
+):
+    from hermes_finance.persistence import AccountPerformanceScopeMembership
+    from hermes_finance.services.external_flows import create_external_flow
+
+    session, database = session_for(tmp_path)
+    try:
+        jan = create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
+        feb = create_reporting_month(session, year=2031, month=2, snapshot_date=date(2031, 2, 28))
+        account = create_account(session, name="Synthetic bridge deposit", account_type="deposit")
+        session.add(
+            AccountPerformanceScopeMembership(
+                account_id=account.id,
+                effective_from=date(2031, 1, 1),
+                include_in_returns=True,
+            )
+        )
+        session.commit()
+        add_deposit(
+            session,
+            month_id=jan.id,
+            account_id=account.id,
+            balance="1000.01",
+            actual_interest_received="0.00",
+        )
+        add_deposit(
+            session,
+            month_id=feb.id,
+            account_id=account.id,
+            balance=end,
+            actual_interest_received=interest,
+        )
+        if external is not None:
+            direction = "withdrawal" if external.startswith("-") else "contribution"
+            create_external_flow(
+                session,
+                reporting_month_id=feb.id,
+                account_id=account.id,
+                event_date=date(2031, 2, 12),
+                boundary_amount=external.lstrip("-"),
+                direction=direction,
+                kind="external_" + direction,
+                scope_membership="stable_in_scope",
+                source="synthetic",
+            )
+        result = monthly_summary(session, feb.id).capital_change
+        assert result is not None and result.breakdown is not None
+        bridge = result.breakdown
+        assert bridge.start.to_api() == "1000.01"
+        assert bridge.external_net.to_api() == (external or "0.00")
+        assert bridge.investment_result.to_api() == interest
+        assert bridge.other_changes.to_api() == "0.00"
+        assert bridge.unexplained.to_api() == residual
+        assert (
+            sum(
+                value.kopecks
+                for value in (
+                    bridge.start,
+                    bridge.external_net,
+                    bridge.investment_result,
+                    bridge.other_changes,
+                    bridge.unexplained,
+                )
+            )
+            == bridge.end.kopecks
+        )
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_capital_bridge_does_not_infer_missing_calendar_month(tmp_path):
+    session, database = session_for(tmp_path)
+    try:
+        create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
+        march = create_reporting_month(session, year=2031, month=3, snapshot_date=date(2031, 3, 31))
+        result = monthly_summary(session, march.id).capital_change
+        assert result.breakdown is None
+        assert "capital_calendar_gap" in result.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("case", ["linked", "unlinked", "mismatch", "excluded"])
+def test_capital_bridge_reuses_exact_account_returns_without_payout_double_count(tmp_path, case):
+    from test_source_monthly_returns_service import save_month
+    from test_statement_import_mybroker import ACCOUNT
+
+    from hermes_finance.services.broker_identity_mappings import confirm_mapping
+    from hermes_finance.services.cash import create_cash_balance
+    from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
+    from hermes_finance.services.liquid_capital import liquid_capital_for_month
+    from hermes_finance.services.monthly_capital_change import monthly_capital_change
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    session, database = session_for(tmp_path)
+    try:
+        account = create_account(
+            session,
+            name="Synthetic source return account",
+            account_type="brokerage",
+            include_in_capital=case != "excluded",
+        )
+        if case != "unlinked":
+            for identity in (ACCOUNT, "1234567"):
+                confirm_mapping(
+                    session,
+                    provider=PROVIDER,
+                    subject_kind="account",
+                    provider_identity=identity,
+                    hermes_target_id=account.id,
+                )
+        save_month(database)
+        march = create_reporting_month(
+            session,
+            year=2030,
+            month=3,
+            snapshot_date=date(2030, 3, 31),
+        )
+        april = create_reporting_month(
+            session,
+            year=2030,
+            month=4,
+            snapshot_date=date(2030, 4, 30),
+        )
+        for month, amount in ((march, "10000.00"), (april, "11211.00")):
+            create_cash_balance(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                name="Synthetic saved account value",
+                amount=amount,
+                include_in_capital=case != "excluded",
+            )
+        # This separate accepted payment is already inside account economics;
+        # it must never be added on top of the source-account period P&L.
+        create_investment_cash_flow(
+            session,
+            reporting_month_id=april.id,
+            account_id=account.id,
+            flow_type="coupon",
+            net_amount="100.00",
+            gross_amount="100.00",
+            event_date=date(2030, 4, 15),
+            source="synthetic",
+        )
+        if case == "mismatch":
+            from hermes_finance.persistence import CashBalance
+
+            cash = session.scalar(
+                select(CashBalance).where(
+                    CashBalance.reporting_month_id == april.id,
+                )
+            )
+            cash.amount_kopecks += 1
+            session.commit()
+        result = monthly_capital_change(
+            session,
+            current=april,
+            previous=march,
+            liquid=liquid_capital_for_month(session, april.id),
+            previous_liquid=liquid_capital_for_month(session, march.id),
+        )
+        if case == "excluded":
+            assert result.breakdown is not None
+            assert result.breakdown.investment_result == RubleAmount(0)
+            assert result.breakdown.end == RubleAmount(0)
+            return
+        assert result.breakdown is not None
+        assert result.breakdown.investment_result.to_api() == (
+            "211.00" if case == "linked" else "0.00"
+        )
+        assert result.breakdown.unexplained.to_api() == (
+            "1000.00" if case == "linked" else "1211.01" if case == "mismatch" else "1211.00"
+        )
+        if case == "linked":
+            assert "capital_investment_source_estimate" in result.reason_codes
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "scope_case", ["matching", "missing_roster", "unassigned_cash", "excluded"]
+)
+def test_capital_bridge_does_not_promote_account_or_unknown_scope_funding(tmp_path, scope_case):
+    from hermes_finance.persistence import AccountPerformanceScopeMembership
+    from hermes_finance.services.cash import create_cash_balance
+    from hermes_finance.services.external_flows import create_external_flow
+
+    session, database = session_for(tmp_path)
+    try:
+        jan = create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
+        feb = create_reporting_month(session, year=2031, month=2, snapshot_date=date(2031, 2, 28))
+        account = create_account(
+            session,
+            name="Synthetic scope account",
+            account_type="deposit",
+            include_in_capital=scope_case != "excluded",
+        )
+        add_deposit(
+            session,
+            month_id=jan.id,
+            account_id=account.id,
+            balance="1000.00",
+            actual_interest_received="0.00",
+        )
+        add_deposit(
+            session,
+            month_id=feb.id,
+            account_id=account.id,
+            balance="1100.00",
+            actual_interest_received="0.00",
+        )
+        if scope_case == "unassigned_cash":
+            for month in (jan, feb):
+                create_cash_balance(
+                    session,
+                    reporting_month_id=month.id,
+                    name="Synthetic unassigned zero",
+                    amount="0.00",
+                )
+        if scope_case != "missing_roster":
+            session.add(
+                AccountPerformanceScopeMembership(
+                    account_id=account.id,
+                    effective_from=date(2031, 1, 1),
+                    include_in_returns=scope_case != "excluded",
+                )
+            )
+            session.commit()
+        create_external_flow(
+            session,
+            reporting_month_id=feb.id,
+            account_id=account.id,
+            event_date=date(2031, 2, 12),
+            boundary_amount="100.00",
+            direction="contribution",
+            kind="external_contribution",
+            scope_membership="stable_in_scope",
+            source="synthetic",
+        )
+        result = monthly_summary(session, feb.id).capital_change
+        assert result.breakdown is not None
+        assert result.breakdown.external_net.to_api() == (
+            "100.00" if scope_case == "matching" else "0.00"
+        )
+        if scope_case in {"missing_roster", "unassigned_cash"}:
+            assert "capital_external_scope_unproven" in result.reason_codes
+            assert result.breakdown.unexplained.to_api() == "100.00"
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("failure", ["maintenance", "snapshot_mutation", "snapshot_cleanup", "sql"])
+def test_optional_capital_explanation_does_not_hide_database_guards(tmp_path, monkeypatch, failure):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from hermes_finance.database import (
+        DatabaseMaintenanceError,
+        ReadSnapshotCleanupError,
+        ReadSnapshotMutationError,
+    )
+    from hermes_finance.services import monthly_capital_change as capital_change_service
+
+    errors = {
+        "maintenance": DatabaseMaintenanceError,
+        "snapshot_mutation": ReadSnapshotMutationError,
+        "snapshot_cleanup": ReadSnapshotCleanupError,
+        "sql": SQLAlchemyError,
+    }
+    error_type = errors[failure]
+    session, database = session_for(tmp_path)
+    try:
+        month_id = build_month(session, 2031, 1)
+
+        def refused_calculation(*args, **kwargs):
+            raise error_type("synthetic database boundary failure")
+
+        monkeypatch.setattr(capital_change_service, "_monthly_capital_change", refused_calculation)
+        with pytest.raises(error_type, match="synthetic database boundary failure"):
+            monthly_summary(session, month_id)
     finally:
         session.close()
         database.engine.dispose()

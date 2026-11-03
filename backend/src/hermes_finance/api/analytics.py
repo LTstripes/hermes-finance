@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
+from hermes_finance.domain.monthly_summary import MonthlyCapitalChange
 from hermes_finance.domain.passive_income import PassiveIncomeResult
 from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
 from hermes_finance.domain.values import RubleAmount
@@ -106,6 +107,58 @@ class CapitalChangeExplanationOut(BaseModel):
     reconciles: bool
 
 
+class CapitalChangeAmountsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start: MoneyValue
+    external_net: MoneyValue
+    investment_result: MoneyValue
+    other_changes: MoneyValue
+    unexplained: MoneyValue
+    end: MoneyValue
+
+
+class MonthlyCapitalChangeOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    previous_reporting_month_id: int | None
+    period_start: date
+    period_end: date
+    component_basis: Literal["known_subtotals"] = "known_subtotals"
+    breakdown: CapitalChangeAmountsOut | None
+    reason_codes: list[str]
+
+
+def capital_change_to_out(result: MonthlyCapitalChange | None) -> MonthlyCapitalChangeOut | None:
+    if result is None:
+        return None
+    return MonthlyCapitalChangeOut(
+        reporting_month_id=result.reporting_month_id,
+        previous_reporting_month_id=result.previous_reporting_month_id,
+        period_start=result.period_start,
+        period_end=result.period_end,
+        breakdown=(
+            CapitalChangeAmountsOut(
+                **{
+                    name: _money(getattr(result.breakdown, name))
+                    for name in (
+                        "start",
+                        "external_net",
+                        "investment_result",
+                        "other_changes",
+                        "unexplained",
+                        "end",
+                    )
+                }
+            )
+            if result.breakdown is not None
+            else None
+        ),
+        reason_codes=list(result.reason_codes),
+    )
+
+
 class ClosedReportComparisonOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +181,7 @@ class ClosedReportComparisonOut(BaseModel):
     linked_pair_net_contribution_delta: MoneyValue | None
     net_liquid_capital_reconciles: bool | None
     explanation: CapitalChangeExplanationOut | None
+    capital_change: MonthlyCapitalChangeOut | None
 
 
 class PassiveIncomeBreakdownOut(BaseModel):
@@ -326,6 +380,7 @@ def get_closed_report_comparison(
         )
 
     return ClosedReportComparisonOut(
+        capital_change=capital_change_to_out(comparison.capital_change),
         comparison_basis="latest_closed_to_previous_closed",
         availability=availability,
         asset_classes=list(comparison.asset_classes),

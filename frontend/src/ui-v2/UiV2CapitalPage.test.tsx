@@ -779,3 +779,45 @@ it.each(["position", "account", "instrument"])(
     ).toBeVisible();
   },
 );
+
+it("shows the unexplained residual separately from other capital changes", async () => {
+  const { state, mount } = setup();
+  state.comparison.capital_change = {
+    reporting_month_id: uiV2CapitalMonthId,
+    previous_reporting_month_id: uiV2CapitalPreviousMonthId,
+    period_start: "2026-04-01",
+    period_end: "2026-04-30",
+    component_basis: "known_subtotals",
+    breakdown: {
+      start: { amount: "1000.00", currency: "RUB" },
+      external_net: { amount: "-100.00", currency: "RUB" },
+      investment_result: { amount: "10.00", currency: "RUB" },
+      other_changes: { amount: "5.00", currency: "RUB" },
+      unexplained: { amount: "7.01", currency: "RUB" },
+      end: { amount: "922.01", currency: "RUB" },
+    },
+    reason_codes: [],
+  };
+  mount();
+  const residual = await screen.findByTestId("capital-unexplained");
+  expect(residual).toHaveTextContent("Необъяснённый остаток");
+  expect(residual).toHaveTextContent("7,01");
+  expect(residual).not.toHaveTextContent("Прочие изменения");
+  expect(screen.getByText("Внешние внесения и изъятия")).toBeVisible();
+});
+
+it("does not render a capital explanation for another month", async () => {
+  const { state, mount } = setup();
+  state.comparison.capital_change = {
+    reporting_month_id: 999,
+    previous_reporting_month_id: uiV2CapitalPreviousMonthId,
+    period_start: "2026-04-01",
+    period_end: "2026-04-30",
+    component_basis: "known_subtotals",
+    breakdown: null,
+    reason_codes: [],
+  };
+  mount();
+  await screen.findByTestId("capital-net");
+  expect(screen.queryByText("Как изменился капитал за месяц")).not.toBeInTheDocument();
+});
