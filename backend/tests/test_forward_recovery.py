@@ -839,3 +839,29 @@ def test_synthetic_failure_recovery_finish_and_real_cli_start(profile):
     finally:
         child.terminate()
         child.wait(timeout=15)
+
+
+def test_close_fixture_holds_runtime_admission_through_server(monkeypatch):
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "frontend/e2e/monthly_close_fixture.py"
+    spec = importlib.util.spec_from_file_location("synthetic_close_fixture", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original = module.create_database
+    selected = []
+
+    def capture(database_path):
+        selected.append(database_path)
+        return original(database_path)
+
+    def fake_run(*args, **kwargs):
+        with pytest.raises(AdmissionError, match="database_admission_busy"):
+            with database_admission(selected[0], recovery=True):
+                pass
+        with database_admission(selected[0]):
+            pass
+
+    monkeypatch.setattr(module, "create_database", capture)
+    monkeypatch.setattr(module.uvicorn, "run", fake_run)
+    module.main()
