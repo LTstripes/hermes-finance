@@ -4,9 +4,8 @@ param()
 # R05-11 canonical Windows production smoke.
 # Isolated temp DB. Hits only local health/months/frontend.
 # Does not invoke quote/payout preview or apply, so it does not
-# make a live T-Invest/provider request. Settings may still load
-# the ignored repository-root .env; this script does not prove
-# the token file was unread. It must not print or expose a token.
+# make a live T-Invest/provider request. The repository-root .env
+# is saved without output and restored after launcher cleanup.
 # Proves the production listener is exactly 127.0.0.1:8000
 # and /api/health reports version 0.5.0.
 
@@ -187,11 +186,18 @@ $savedDatabase = [Environment]::GetEnvironmentVariable(
 )
 $savedToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
 
+$envFile = Join-Path $repoRoot ".env"
+$envExisted = Test-Path -LiteralPath $envFile
+$savedEnv = [byte[]]@()
+if ($envExisted) { $savedEnv = [IO.File]::ReadAllBytes($envFile) }
+
 try {
+    # The launcher verifies its inherited override against checkout-local dotenv.
+    [IO.File]::WriteAllText($envFile, "HERMES_FINANCE_DATABASE_PATH=$databasePath", (New-Object Text.UTF8Encoding($false)))
     # Limit overrides to child creation, including launch/cleanup failure paths.
     try {
-        # Do not print or persist a token value. Clearing a process override does not
-        # stop Settings from loading the ignored repository-root .env.
+        # Do not print or persist a token value. The temporary dotenv contains only
+        # the synthetic database setting.
         Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
         $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
@@ -226,7 +232,13 @@ try {
     Write-Host "R05-11 Windows smoke: port $listenPort is bound only to 127.0.0.1." -ForegroundColor Green
 }
 finally {
-    Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
+    try {
+        Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
+    }
+    finally {
+        if ($envExisted) { [IO.File]::WriteAllBytes($envFile, $savedEnv) }
+        else { Remove-Item -LiteralPath $envFile -ErrorAction SilentlyContinue }
+    }
 }
 
 try {

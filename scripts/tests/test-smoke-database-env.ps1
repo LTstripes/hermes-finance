@@ -20,6 +20,9 @@ $originalDatabase = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_DATABA
 $originalToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
 $parentDatabase = $null
 $parentToken = $null
+function Check-SmokeDotenv {
+    Check ([IO.File]::ReadAllText($envFile) -ceq "HERMES_FINANCE_DATABASE_PATH=$databasePath") "only synthetic database configured until launcher cleanup"
+}
 function Check-ParentEnvironment {
     Check ($env:HERMES_FINANCE_DATABASE_PATH -ceq $parentDatabase) "parent database restored before readiness/cleanup"
     Check ($env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ceq $parentToken) "parent token restored before readiness/cleanup"
@@ -29,6 +32,7 @@ function Check-ParentEnvironment {
 function Start-WindowsPowerShellFile {
     param($FilePath, $WorkingDirectory)
     $script:launchCalls++
+    Check-SmokeDotenv
     Check ($env:HERMES_FINANCE_DATABASE_PATH -ceq $databasePath) "synthetic database override applies during child creation"
     Check ($null -eq $env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN) "child does not inherit token override"
     if ($mode -in @("launch-failure", "launch-and-cleanup-failure")) { throw "synthetic-launch-failure" }
@@ -37,6 +41,7 @@ function Start-WindowsPowerShellFile {
 function Wait-ForProductionStack {
     param($Process)
     $script:waitCalls++
+    Check-SmokeDotenv
     Check-ParentEnvironment
     if ($mode -eq "wait-failure") { throw "synthetic-wait-failure" }
     return [pscustomobject]@{ Content=('{"status":"ok","version":"' + $expectedVersion + '"}') }
@@ -46,6 +51,7 @@ function Assert-ExactLoopbackListener { param($Port) Check-ParentEnvironment }
 function Stop-ProcessTree {
     param($Process, $Name)
     $script:stopCalls++
+    Check-SmokeDotenv
     Check-ParentEnvironment
     if ($mode -in @("cleanup-failure", "launch-and-cleanup-failure")) { throw "synthetic-cleanup-failure" }
 }
@@ -61,26 +67,38 @@ try {
         foreach ($present in @($false, $true)) {
             $parentDatabase = if ($present) { Join-Path $root "parent-synthetic.db" } else { $null }
             $parentToken = if ($present) { "synthetic-token-sentinel" } else { $null }
-            foreach ($mode in @("success", "launch-failure", "wait-failure", "cleanup-failure", "launch-and-cleanup-failure")) {
-                [Environment]::SetEnvironmentVariable("HERMES_FINANCE_DATABASE_PATH", $parentDatabase, "Process")
-                [Environment]::SetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", $parentToken, "Process")
-                # Use the same saved values as the script setup, without reading
-                # any runtime .env or executing the smoke script's top level.
-                $savedDatabase = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_DATABASE_PATH", "Process")
-                $savedToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
-                $launcherProcess = $null
-                $script:launchCalls = 0; $script:waitCalls = 0; $script:stopCalls = 0
-                $failure = $null
-                try { & $operation 6>$null | Out-Null }
-                catch { $failure = $_.Exception.Message }
-                if ($mode -eq "success") { Check ($null -eq $failure) "synthetic success: $relative" }
-                else {
-                    $expectedFailure = if ($mode.Contains("cleanup")) { "synthetic-cleanup-failure" } elseif ($mode -eq "launch-failure") { "synthetic-launch-failure" } else { "synthetic-wait-failure" }
-                    Check ($failure -ceq $expectedFailure) "expected injected failure: $relative / $mode"
+            foreach ($dotenvState in @("missing", "empty", "populated")) {
+                foreach ($mode in @("success", "launch-failure", "wait-failure", "cleanup-failure", "launch-and-cleanup-failure")) {
+                    [Environment]::SetEnvironmentVariable("HERMES_FINANCE_DATABASE_PATH", $parentDatabase, "Process")
+                    [Environment]::SetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", $parentToken, "Process")
+                    # Use the same saved values as the script setup, without reading
+                    # any runtime .env or executing the smoke script's top level.
+                    $savedDatabase = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_DATABASE_PATH", "Process")
+                    $savedToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
+                    $envFile = Join-Path $repoRoot ".env"
+                    $envExisted = $dotenvState -ne "missing"
+                    $savedEnv = [byte[]]@()
+                    if ($dotenvState -eq "populated") { $savedEnv = [Text.Encoding]::UTF8.GetBytes("# synthetic sentinel`r`nUNRELATED=synthetic-token-sentinel`r`nHERMES_FINANCE_DATABASE_PATH=parent.db") }
+                    if ($envExisted) { [IO.File]::WriteAllBytes($envFile, $savedEnv) }
+                    $launcherProcess = $null
+                    $script:launchCalls = 0; $script:waitCalls = 0; $script:stopCalls = 0
+                    $failure = $null
+                    try { & $operation 6>$null | Out-Null }
+                    catch { $failure = $_.Exception.Message }
+                    if ($mode -eq "success") { Check ($null -eq $failure) "synthetic success: $relative" }
+                    else {
+                        $expectedFailure = if ($mode.Contains("cleanup")) { "synthetic-cleanup-failure" } elseif ($mode -eq "launch-failure") { "synthetic-launch-failure" } else { "synthetic-wait-failure" }
+                        Check ($failure -ceq $expectedFailure) "expected injected failure: $relative / $mode"
+                    }
+                    Check ($script:launchCalls -eq 1 -and $script:stopCalls -eq 1) "launch and cleanup invoked exactly once"
+                    Check ($script:waitCalls -eq $(if ($mode -in @("launch-failure", "launch-and-cleanup-failure")) { 0 } else { 1 })) "readiness only after successful child creation"
+                    Check-ParentEnvironment
+                    Check ((Test-Path -LiteralPath $envFile) -eq $envExisted) "original dotenv presence restored: $dotenvState / $mode"
+                    if ($envExisted) {
+                        Check ([Convert]::ToBase64String([IO.File]::ReadAllBytes($envFile)) -ceq [Convert]::ToBase64String($savedEnv)) "original dotenv bytes restored: $dotenvState / $mode"
+                        Remove-Item -LiteralPath $envFile
+                    }
                 }
-                Check ($script:launchCalls -eq 1 -and $script:stopCalls -eq 1) "launch and cleanup invoked exactly once"
-                Check ($script:waitCalls -eq $(if ($mode -in @("launch-failure", "launch-and-cleanup-failure")) { 0 } else { 1 })) "readiness only after successful child creation"
-                Check-ParentEnvironment
             }
         }
     }
