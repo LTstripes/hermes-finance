@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      HERMES_CI_REQUEST_TIMING_LOG: ${{ runner.temp }}/hermes-backend-request-timing.jsonl
+      HERMES_CI_REQUEST_TIMING_LOG: /tmp/hermes-backend-request-timing.jsonl
 
     steps:
       - name: Check out repository
@@ -399,7 +399,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: g04-backend-request-timing
-          path: ${{ runner.temp }}/hermes-backend-request-timing.jsonl
+          path: /tmp/hermes-backend-request-timing.jsonl
           if-no-files-found: warn
 
       - name: Upload synthetic real-backend journey evidence
