@@ -330,6 +330,7 @@ function PayoutForecastTool({
   const [refreshStatus, setRefreshStatus] = useState<PayoutRefreshStatus | null>(null);
   const [mappings, setMappings] = useState<InstrumentMarketMapping[]>([]);
   const [mappingUnavailable, setMappingUnavailable] = useState(false);
+  const [diagnosticsPending, setDiagnosticsPending] = useState(true);
   const [savedConflict, setSavedConflict] = useState<boolean | null>(null);
   const [calendarLoaded, setCalendarLoaded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -406,6 +407,10 @@ function PayoutForecastTool({
     setLoadingContext(true);
     setContextError(null);
     setMonthMismatch(false);
+    setMappings([]);
+    setMappingUnavailable(false);
+    setSavedConflict(null);
+    setDiagnosticsPending(true);
     try {
       const [
         freshMonth,
@@ -441,45 +446,6 @@ function PayoutForecastTool({
         setExpectedCount(null);
         return;
       }
-      const mappingInstrumentIds = [
-        ...new Set(
-          positionRows
-            .filter((position) => {
-              const instrument = instrumentRows.find((row) => row.id === position.instrument_id);
-              return (
-                instrument &&
-                ["stock", "bond"].includes(instrument.instrument_type) &&
-                /^\d+(?:\.\d+)?$/.test(position.quantity) &&
-                /[1-9]/.test(position.quantity)
-              );
-            })
-            .map((row) => row.instrument_id),
-        ),
-      ];
-      const mappingReads = await Promise.allSettled(
-        mappingInstrumentIds.map(async (id) => {
-          const value = await getInstrumentMapping(id);
-          if (value.instrument_id !== id) throw new Error("Сопоставление другой бумаги.");
-          return value;
-        }),
-      );
-      if (!alive.current || generation !== readGeneration.current) return;
-      setMappings(mappingReads.flatMap((row) => (row.status === "fulfilled" ? [row.value] : [])));
-      setMappingUnavailable(mappingReads.some((row) => row.status === "rejected"));
-      // Local-only readback: no provider request happens here.
-      const readiness = await getCloseReadiness(target).catch(() => null);
-      if (!alive.current || generation !== readGeneration.current) return;
-      const readinessMatches =
-        readiness &&
-        readiness.year === freshMonth.year &&
-        readiness.month === freshMonth.month &&
-        readiness.status === freshMonth.status &&
-        readiness.snapshot_date === freshMonth.snapshot_date;
-      setSavedConflict(
-        readinessMatches
-          ? readiness.items.some((item) => item.code === "unresolved_payout_reconciliation")
-          : null,
-      );
       setMonth(freshMonth);
       setAccounts(accountRows);
       setInstruments(instrumentRows);
@@ -511,6 +477,49 @@ function PayoutForecastTool({
             ? String(positionRows[0].id)
             : "",
       );
+      setLoadingContext(false);
+      const mappingInstrumentIds = [
+        ...new Set(
+          positionRows
+            .filter((position) => {
+              const instrument = instrumentRows.find((row) => row.id === position.instrument_id);
+              return (
+                instrument &&
+                ["stock", "bond"].includes(instrument.instrument_type) &&
+                /^\d+(?:\.\d+)?$/.test(position.quantity) &&
+                /[1-9]/.test(position.quantity)
+              );
+            })
+            .map((row) => row.instrument_id),
+        ),
+      ];
+      const mappingReadsPromise = Promise.allSettled(
+        mappingInstrumentIds.map(async (id) => {
+          const value = await getInstrumentMapping(id);
+          if (value.instrument_id !== id) throw new Error("Сопоставление другой бумаги.");
+          return value;
+        }),
+      );
+      const [mappingReads, readiness] = await Promise.all([
+        mappingReadsPromise,
+        getCloseReadiness(target).catch(() => null),
+      ]);
+      if (!alive.current || generation !== readGeneration.current) return;
+      setMappings(mappingReads.flatMap((row) => (row.status === "fulfilled" ? [row.value] : [])));
+      setMappingUnavailable(mappingReads.some((row) => row.status === "rejected"));
+      // Local-only readback: no provider request happens here.
+      const readinessMatches =
+        readiness &&
+        readiness.year === freshMonth.year &&
+        readiness.month === freshMonth.month &&
+        readiness.status === freshMonth.status &&
+        readiness.snapshot_date === freshMonth.snapshot_date;
+      setSavedConflict(
+        readinessMatches
+          ? readiness.items.some((item) => item.code === "unresolved_payout_reconciliation")
+          : null,
+      );
+      setDiagnosticsPending(false);
     } catch (cause) {
       if (alive.current && generation === readGeneration.current)
         setContextError(formatApiError(cause));
@@ -1041,7 +1050,8 @@ function PayoutForecastTool({
   }
   if (savedConflict)
     attention.push("Есть несогласованные выплаты. Проверь способ учёта в подробностях.");
-  if (savedConflict === null) attention.push("Не удалось проверить согласованность выплат.");
+  if (!diagnosticsPending && savedConflict === null)
+    attention.push("Не удалось проверить согласованность выплат.");
   if (mappingUnavailable) attention.push("Не удалось проверить сопоставление части бумаг.");
   if (positions.some((position) => !instrumentById.has(position.instrument_id))) {
     attention.push("Часть бумаг не найдена в справочнике. Прогноз может быть неполным.");

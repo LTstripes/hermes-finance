@@ -37,7 +37,7 @@ SEMANTIC_MODULES = (
 # compatibility review for older proofs.
 SEMANTICS_PIN = (
     "source_investment_semantics_v3",
-    "913eafd4cedf307417f95f57e6af5872f4bb5bdcc3e7288ed56d65b5d6c62b42",
+    "e746b5f6a372e3cee859ec4403d935ea2e6abe74ce1d6295cf5a40c22731b78f",
 )
 
 

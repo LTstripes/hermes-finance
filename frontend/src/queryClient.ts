@@ -8,6 +8,7 @@ export const queryKeys = {
   dashboard: (monthId: number | null) => ["dashboard", monthId] as const,
   monthCloseWorkflow: (monthId: number | null) => ["month-close-workflow", monthId] as const,
   closedReportComparison: ["closed-report-comparison"] as const,
+  closedReportComparisonBasic: ["closed-report-comparison", "without-explanation"] as const,
   capitalComposition: ["capital-composition"] as const,
   passiveIncomeHistory: (monthId: number | null) => ["passive-income-history", monthId] as const,
   incomePlanSummary: (monthId: number | null) => ["income-plan-summary", monthId] as const,

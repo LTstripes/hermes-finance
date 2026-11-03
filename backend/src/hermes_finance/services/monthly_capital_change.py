@@ -16,6 +16,7 @@ from hermes_finance.database import (
     ReadSnapshotCleanupError,
     ReadSnapshotMutationError,
     coherent_read_operation,
+    snapshot_read_result,
 )
 from hermes_finance.domain.liquid_capital import LiquidCapitalResult
 from hermes_finance.domain.monthly_summary import MonthlyCapitalChange, explain_capital_change
@@ -35,7 +36,7 @@ from hermes_finance.services.portfolio_source_coverage import portfolio_source_c
 from hermes_finance.services.returns_account_link import account_link
 from hermes_finance.services.returns_view import _source_scopes
 from hermes_finance.services.source_monthly_returns import (
-    read_monthly_returns,
+    read_monthly_result,
     source_read_snapshot,
 )
 
@@ -152,17 +153,11 @@ def _investment_result(session, accounts, current, previous, liquid, previous_li
             if native is None:
                 reasons.add("capital_investment_account_result_unavailable")
                 continue
-            observed = read_monthly_returns(session, source_account=native)
-            row = next(
-                (
-                    row.result
-                    for row in observed.months
-                    if (
-                        row.result.opening_date == previous.snapshot_date
-                        and row.result.closing_date == current.snapshot_date
-                    )
-                ),
-                None,
+            row = read_monthly_result(
+                session,
+                source_account=native,
+                opening_date=previous.snapshot_date,
+                closing_date=current.snapshot_date,
             )
             if (
                 row is None
@@ -207,12 +202,17 @@ def monthly_capital_change(
 ) -> MonthlyCapitalChange | None:
     """Keep this optional explanation from breaking established financial reads."""
     try:
-        return _monthly_capital_change(
+        return snapshot_read_result(
             session,
-            current=current,
-            previous=previous,
-            liquid=liquid,
-            previous_liquid=previous_liquid,
+            "monthly_capital_change",
+            (current.id, previous.id if previous else None, repr(liquid), repr(previous_liquid)),
+            lambda: _monthly_capital_change(
+                session,
+                current=current,
+                previous=previous,
+                liquid=liquid,
+                previous_liquid=previous_liquid,
+            ),
         )
     except (
         DatabaseMaintenanceError,

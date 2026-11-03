@@ -43,7 +43,6 @@ _GIFT_COMPAT_CODES = (
     "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
 )
 
-
 def _json(value):
     return json.dumps(value, sort_keys=True, default=lambda x: x.isoformat())
 

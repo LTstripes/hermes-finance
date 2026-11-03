@@ -2511,3 +2511,47 @@ def test_unrecognized_money_nulls_income_subtotals_only_in_affected_month(db, in
         gap["code"] == "unrecognized_money" and gap["month"] == "2030-05-01" for gap in body["gaps"]
     )
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("variant", ["ordinary", "missing", "foreign_currency", "overlap"])
+def test_bounded_month_result_matches_full_history_without_period_xirr(db, monkeypatch, variant):
+    from hermes_finance.domain import monthly_return_chain
+    from hermes_finance.services.source_monthly_returns import read_monthly_result
+
+    save_month(
+        db,
+        4,
+        missing_closing=variant == "missing",
+        money_currency="USD" if variant == "foreign_currency" else None,
+    )
+    save_month(db, 5, beginning="10211", closing="12000")
+    if variant == "overlap":
+        save_month(db, 4, closing="10300", marker="conflicting-endpoint")
+    expected = read(db)
+    before = snapshot(db)
+    monkeypatch.setattr(
+        monthly_return_chain,
+        "_period_xirr",
+        lambda *args: pytest.fail("bounded read calculated XIRR"),
+    )
+    with db.session_factory() as session:
+        for row in expected.months:
+            assert (
+                read_monthly_result(
+                    session,
+                    source_account=ACCOUNT,
+                    opening_date=row.result.opening_date,
+                    closing_date=row.result.closing_date,
+                )
+                == row.result
+            )
+        assert (
+            read_monthly_result(
+                session,
+                source_account=ACCOUNT,
+                opening_date=date(2030, 5, 31),
+                closing_date=date(2030, 6, 30),
+            )
+            is None
+        )
+    assert snapshot(db) == before

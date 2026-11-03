@@ -12,8 +12,12 @@ export function getCapitalComposition(signal?: AbortSignal): Promise<CapitalComp
   });
 }
 
-export function getClosedReportComparison(signal?: AbortSignal): Promise<ClosedReportComparison> {
-  return apiRequest<ClosedReportComparison>("/api/analytics/closed-report-comparison", {
+export function getClosedReportComparison(
+  signal?: AbortSignal,
+  includeCapitalChange = true,
+): Promise<ClosedReportComparison> {
+  const query = includeCapitalChange ? "" : "?include_capital_change=false";
+  return apiRequest<ClosedReportComparison>(`/api/analytics/closed-report-comparison${query}`, {
     method: "GET",
     signal,
   });

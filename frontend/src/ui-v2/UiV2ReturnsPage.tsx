@@ -402,25 +402,32 @@ export default function UiV2ReturnsPage() {
                                     key={a.scope}
                                     aria-label={label(a.scope, a.label)}
                                   >
-                                    <strong>{label(a.scope, a.label)}</strong>
-                                    <ReturnsInstrumentResult
-                                      result={a.resultAvailable ? a : null}
-                                      reasonCodes={
-                                        a.resultAvailable
-                                          ? r.reason_codes
-                                          : [
-                                              ...(data.source_accounts.find(
-                                                (source) => source.scope === a.scope,
-                                              )?.reason_codes ?? []),
-                                              "all_history_source_proof_unavailable",
-                                            ]
-                                      }
-                                    />
-                                    <ReturnsResultMeta
-                                      period={a.period}
-                                      valuationDate={a.valuation_date}
-                                      accountLink={a.account_link}
-                                    />
+                                    <details>
+                                      <summary>
+                                        {label(a.scope, a.label)} ·{" "}
+                                        {a.resultAvailable
+                                          ? `${displayMetric(a.pnl, true)} · ${displayMetric(a.rate)}`
+                                          : "Нужна проверка данных"}
+                                      </summary>
+                                      <ReturnsInstrumentResult
+                                        result={a.resultAvailable ? a : null}
+                                        reasonCodes={
+                                          a.resultAvailable
+                                            ? r.reason_codes
+                                            : [
+                                                ...(data.source_accounts.find(
+                                                  (source) => source.scope === a.scope,
+                                                )?.reason_codes ?? []),
+                                                "all_history_source_proof_unavailable",
+                                              ]
+                                        }
+                                      />
+                                      <ReturnsResultMeta
+                                        period={a.period}
+                                        valuationDate={a.valuation_date}
+                                        accountLink={a.account_link}
+                                      />
+                                    </details>
                                   </section>
                                 ))}
                               </td>

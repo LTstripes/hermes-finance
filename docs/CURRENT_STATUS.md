@@ -18,14 +18,28 @@ bounded read-only transition for unchanged v2 and 1.9.4 proofs where no relevant
 gift proof exists. Proofs with gift evidence are not automatically transitioned.
 This local candidate requires independent financial review and is not installed.
 
-**Released and installed: [v1.10.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.0),
-`679f72e63933e9c80892f80c48a18292c2af8416`** ([release notes](release-notes-1.10.0.md)).
-Exact-main [CI41527900783](https://github.com/LTstripes/hermes-finance/actions/runs/41527900783)
-and [guarded release41529526823](https://github.com/LTstripes/hermes-finance/actions/runs/41529526823)
-completed SUCCESS; independent read-back confirms the annotated tag peels to the
-exact main commit and the release is published. Stable was updated through
-backup-first OPS02 and started; health reports 1.10.0. No schema migration.
-Owner visual UAT of the new month-sources intake and returns screens is pending.
+**Installed runtime readback on 3 November: 1.10.1,
+`f29b9732d01f267b001e7448dfd6cff00e741c3c`.** Health, the prepared code identity
+and the served frontend agree. The previous 1.10.0 release receipts remain
+historical evidence, rather than the current installation checkpoint.
+
+Application candidate `8a503342f527083ce8a50c1f92ece3c5d31c8451` passed
+[PR CI41691415069](https://github.com/LTstripes/hermes-finance/actions/runs/41691415069),
+[UI evidence41691414935](https://github.com/LTstripes/hermes-finance/actions/runs/41691414935)
+and independent code/financial review. The isolated October-workspace browser
+failure reproduced a pending source refetch; the unchanged scenario passed
+locally and on the one targeted CI-job rerun. Version1.10.2 packaging changes
+metadata and release expectations only; exact packaging CI, publication and
+Stable installation remain separate gates.
+
+The hotfix restores a narrowly reviewed 1.9.4 proof read transition,
+bounds the capital bridge to the required month, skips unused explanations on
+Home/Close and separates saved payout display from optional diagnostics. Instrument
+account details are collapsed. Candidate checks and independent review do not
+mean release or Stable installation. Historical-proof compatibility does not
+remove unresolved October Money/section evidence or establish a complete October
+return. No financial data or CLOSED state is changed by this candidate.
+
 1.9.3 is published and installed at `f67e8031b0869c395f57317b76b3fcdae5ea144c`.
 Installed parallel month/payment reads completed promptly, but actual browser UAT
 then reproduced a separate render crash: the old Money table dereferenced legacy

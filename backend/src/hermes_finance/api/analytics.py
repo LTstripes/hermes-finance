@@ -356,9 +356,10 @@ def get_capital_composition(
     response_model=ClosedReportComparisonOut,
 )
 def get_closed_report_comparison(
+    include_capital_change: bool = True,
     session: Session = Depends(session_for_request),
 ) -> ClosedReportComparisonOut:
-    comparison = closed_report_comparison(session)
+    comparison = closed_report_comparison(session, include_capital_change=include_capital_change)
     if comparison.current is None:
         availability: Literal[
             "available", "previous_closed_report_unavailable", "no_closed_report"

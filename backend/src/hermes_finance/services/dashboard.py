@@ -371,6 +371,7 @@ def build_dashboard(
     *,
     forecast_version: str = DEFAULT_FORECAST_VERSION,
     allow_incomplete_salary_tax: bool = False,
+    include_capital_change: bool = True,
 ) -> DashboardResult:
     """Assemble the dashboard payload for one reporting month."""
     month = get_reporting_month(session, reporting_month_id)
@@ -379,6 +380,7 @@ def build_dashboard(
         reporting_month_id,
         forecast_version=forecast_version,
         allow_incomplete_salary_tax=allow_incomplete_salary_tax,
+        include_capital_change=include_capital_change,
     )
     liquid = summary.liquid_capital
     allocation = asset_allocation_for_month(session, reporting_month_id, liquid)

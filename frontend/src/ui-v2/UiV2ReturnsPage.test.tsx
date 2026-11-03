@@ -253,6 +253,9 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
+  expect(within(a).getByText(/Нужна проверка данных/)).not.toBeVisible();
+  fireEvent.click(within(a).getByText(/Учебный счёт А ·/));
+  fireEvent.click(within(b).getByText(/Учебный счёт Б ·/));
   expect(a).toHaveTextContent("0 ₽");
   expect(a).toHaveTextContent("Нужна проверка данных");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
