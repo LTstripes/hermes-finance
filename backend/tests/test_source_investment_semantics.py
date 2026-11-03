@@ -35,7 +35,7 @@ SEMANTIC_MODULES = (
 # Pin the revision alongside the digest so bumping either alone fails the guard.
 SEMANTICS_PIN = (
     "source_investment_semantics_v2",
-    "85f33eaef591be1eef9b6674998fd6e8af98e3b5f50c0049025d24051c68b042",
+    "eb5544fae1746dab2ae77ce57e4afadaa5a00f11be03af2aa040db1b247b040d",
 )
 
 

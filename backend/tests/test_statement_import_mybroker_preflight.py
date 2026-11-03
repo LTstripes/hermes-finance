@@ -2187,3 +2187,69 @@ def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkey
                 request_id="legacy-pending",
             )
     assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("stale_newer_alias", [True, False])
+def test_bounded_month_retains_full_reader_fold_for_proof_aliases(
+    database, monkeypatch, stale_newer_alias
+):
+    import json
+
+    from hermes_finance.persistence import SourceReturnProof
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_monthly_returns import (
+        read_monthly_result,
+        read_monthly_returns,
+    )
+
+    save_semantics_proof(database, monkeypatch, proofs.SEMANTICS_REVISION, "native-proof")
+    with database.session_factory() as session:
+        original = session.scalar(
+            select(SourceReturnProof).where(SourceReturnProof.proof_version == proofs.VERSION)
+        )
+        plan = json.loads(original.evidence_json)
+        alias = deepcopy(plan)
+        alias["source_account"] = ACCOUNT if plan["source_account"] != ACCOUNT else "1234567"
+        dependency, _, _ = proofs._snapshot(
+            session,
+            alias["source_account"],
+            date.fromisoformat(alias["covered_from"]),
+            date.fromisoformat(alias["covered_to"]),
+        )
+        alias["dependency"] = "f" * 64 if stale_newer_alias else dependency
+
+        def append(evidence, request_id):
+            session.add(
+                SourceReturnProof(
+                    source_account=evidence["source_account"],
+                    native_account=original.native_account,
+                    request_id=request_id,
+                    request_fingerprint="a" * 64,
+                    proof_version=proofs.VERSION,
+                    dependency_digest=proofs._evidence_digest(evidence),
+                    evidence_json=proofs._json(evidence),
+                    confirmed_at=original.confirmed_at,
+                )
+            )
+            session.flush()
+
+        if not stale_newer_alias:
+            stale = {**plan, "dependency": "f" * 64}
+            append(stale, "stale-base-proof")
+        append(alias, "alias-proof")
+        session.commit()
+    before = snapshot(database)
+    with database.session_factory() as session:
+        reports = proofs.read_reports(session, source_account=ACCOUNT)
+        assert len(reports) == 2
+        assert {report["status"] for report in reports} == {"current", "stale"}
+        full = read_monthly_returns(session, source_account=ACCOUNT)
+        row = full.months[0].result
+        bounded = read_monthly_result(
+            session,
+            source_account=ACCOUNT,
+            opening_date=row.opening_date,
+            closing_date=row.closing_date,
+        )
+        assert bounded == row
+    assert snapshot(database) == before
