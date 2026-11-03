@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { readDisplayNames } from "./returns/dashboard";
+import resultStyles from "./returns/InstrumentResult.module.css";
 import {
   compareDecimal,
   displayMetric,
@@ -23,6 +24,7 @@ import { ReturnsBreakdown } from "./returns/ReturnsBreakdown";
 import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
 import { Explanation, Info, Value } from "./returns/ReturnsInfo";
+import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
 
@@ -119,12 +121,11 @@ function Instruments({
             )}
           </div>
         ) : (
-          <table className={styles.instruments}>
+          <table className={`${styles.instruments} ${resultStyles.list}`}>
             <thead>
               <tr>
                 <th>Инструмент</th>
-                <th>Результат ₽</th>
-                <th>Доходность %</th>
+                <th colSpan={2}>Результат ₽ и доходность %</th>
                 <th>Купоны / дивиденды</th>
               </tr>
             </thead>
@@ -151,11 +152,13 @@ function Instruments({
                             : "Бумага"}
                       </small>
                     </th>
-                    <td>
-                      <Value metric={row.pnl} label={`${row.name}: результат`} signed />
-                    </td>
-                    <td>
-                      <Value metric={row.rate} label={`${row.name}: доходность`} />
+                    <td colSpan={2}>
+                      <ReturnsInstrumentResult result={row} />
+                      <ReturnsResultMeta
+                        period={row.period}
+                        valuationDate={row.valuation_date}
+                        accountLink={row.account_link}
+                      />
                     </td>
                     <td>
                       <Value metric={row.coupons} label={`${row.name}: купоны`} />

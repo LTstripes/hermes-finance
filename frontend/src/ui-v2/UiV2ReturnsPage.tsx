@@ -12,11 +12,13 @@ import {
   selectedAccounts,
   selectedIncome,
 } from "./returns/dashboard";
+import resultStyles from "./returns/InstrumentResult.module.css";
 import { compareDecimal, dateLabel, displayMetric, periodLabel } from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
+import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
 
@@ -365,13 +367,14 @@ export default function UiV2ReturnsPage() {
                   </div>
                   {rows.length > 0 ? (
                     <div className={styles.tableScroll}>
-                      <table className={`${styles.instruments} ${layout.list}`}>
+                      <table
+                        className={`${styles.instruments} ${layout.list} ${resultStyles.list}`}
+                      >
                         <thead>
                           <tr>
                             <th>Инструмент</th>
                             <th>Результат</th>
                             <th>Полученный доход</th>
-                            {accounts.length === 1 && <th>Modified Dietz за период</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -391,29 +394,35 @@ export default function UiV2ReturnsPage() {
                                       ? "Акция"
                                       : r.isin}
                                 </small>
-                                <details>
-                                  <summary>Счета и даты</summary>
-                                  {r.accounts.map((a) => (
+                              </th>
+                              <td>
+                                {r.accounts.map((a) => (
+                                  <section
+                                    className={layout.instrumentAccount}
+                                    key={a.scope}
+                                    aria-label={label(a.scope, a.label)}
+                                  >
+                                    <strong>{label(a.scope, a.label)}</strong>
+                                    <ReturnsInstrumentResult
+                                      result={a.resultAvailable ? a : null}
+                                      reasonCodes={
+                                        a.resultAvailable
+                                          ? r.reason_codes
+                                          : [
+                                              ...(data.source_accounts.find(
+                                                (source) => source.scope === a.scope,
+                                              )?.reason_codes ?? []),
+                                              "all_history_source_proof_unavailable",
+                                            ]
+                                      }
+                                    />
                                     <ReturnsResultMeta
-                                      key={a.scope}
                                       period={a.period}
                                       valuationDate={a.valuation_date}
                                       accountLink={a.account_link}
                                     />
-                                  ))}
-                                </details>
-                              </th>
-                              <td>
-                                {r.pnl.value !== null ? (
-                                  <>
-                                    {displayMetric(r.pnl, true)}
-                                    {r.partial && (
-                                      <small className={layout.muted}>Известная часть</small>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className={layout.muted}>Нужна проверка данных</span>
-                                )}
+                                  </section>
+                                ))}
                               </td>
                               <td>
                                 {r.coupons.value !== null && r.coupons.value !== "0" && (
@@ -423,9 +432,6 @@ export default function UiV2ReturnsPage() {
                                   <div>Дивиденды {displayMetric(r.dividends)}</div>
                                 )}
                               </td>
-                              {accounts.length === 1 && (
-                                <td>{r.rate.value !== null && <>{displayMetric(r.rate)}</>}</td>
-                              )}
                             </tr>
                           ))}
                         </tbody>

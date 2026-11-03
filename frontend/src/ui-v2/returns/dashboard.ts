@@ -60,7 +60,10 @@ export function instrumentSummary(data: Overall, row: OverallInstrument, scope: 
   const values = eligible.filter((a) => a.details_loaded);
   return {
     ...row,
-    accounts,
+    accounts: accounts.map((a) => ({
+      ...a,
+      resultAvailable: eligible.includes(a) && a.details_loaded,
+    })),
     pnl: knownMoney(values.map((a) => a.pnl)),
     coupons: knownMoney(values.map((a) => a.coupons)),
     dividends: knownMoney(values.map((a) => a.dividends)),

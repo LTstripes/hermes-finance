@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
-import { overallFixture, incomeFixture } from "./returns/overallFixtures";
 import type { Overall } from "./returns/overall";
+import { incomeFixture, overallFixture } from "./returns/overallFixtures";
 import UiV2ReturnsPage from "./UiV2ReturnsPage";
 
 const response = (body: unknown, status = 200) =>
@@ -237,4 +237,27 @@ test("dirty gold form blocks instrument navigation and survives summary refresh"
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
   await screen.findByRole("region", { name: "Результат" });
   expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("3.25");
+});
+
+test("instrument results retain each account's money, rate and own dates, including missing evidence", async () => {
+  const data = overallFixture();
+  data.instruments[0].accounts[0].pnl.value = "0";
+  data.instruments[0].accounts[0].rate = {
+    ...data.instruments[0].accounts[0].rate,
+    value: null,
+    reason_codes: ["missing_endpoint"],
+  };
+  const calls = install(data);
+  setup();
+  const table = await screen.findByRole("table");
+  const row = within(table).getByRole("row", { name: /Учебная акция/ });
+  const a = within(row).getByRole("region", { name: "Учебный счёт А" });
+  const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
+  expect(a).toHaveTextContent("0 ₽");
+  expect(a).toHaveTextContent("Нужна проверка данных");
+  expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
+  expect(b).toHaveTextContent("−4 ₽");
+  expect(b).toHaveTextContent("−4,00%");
+  expect(b).toHaveTextContent("31.03.2030 — 30.04.2030");
+  expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
 });

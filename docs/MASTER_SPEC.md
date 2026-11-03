@@ -404,7 +404,10 @@ window; do not silently crop that window or substitute another denominator.
 All exact ISIN groups, including sold instruments and separate account contexts,
 remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
 over all available account histories; individual account periods, rates and
-local gaps remain visible through the existing detail presentation. The default
+local gaps remain visible through the existing detail presentation. The instrument list
+shows each account's RUB result and period percentage separately, with its own dates;
+unavailable values show a dash and a short review reason. The shared instrument
+card also exposes the calculation's assumptions briefly, with expandable details. The default
 overview loads visible summaries and identity metadata only; instrument details load on
 entry, and credited coupon/dividend events load on disclosure. Known paid income
 is shown across included accounts, then by account, ISIN and dated operation,
