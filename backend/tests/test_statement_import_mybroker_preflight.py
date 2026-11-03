@@ -1273,6 +1273,36 @@ def test_investment_semantics_rejects_legacy_digest(database, monkeypatch, prede
     assert snapshot(database) == before
 
 
+@pytest.mark.parametrize(
+    "old_code",
+    [
+        "source_investment_semantics_v2",
+        "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
+    ],
+)
+def test_gift_v3_compatibility_preserves_exact_old_proof_without_gift(
+    database, monkeypatch, old_code
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    original = save_semantics_proof(database, monkeypatch, old_code, "old-no-gift")
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert proofs.read_reports(session) == original
+    assert snapshot(database) == before
+    # All old dependency operands remain authoritative; change a captured row.
+    from hermes_finance.persistence import SourceMoneyClassification
+
+    with database.session_factory() as session:
+        captured = session.scalar(select(SourceMoneyClassification))
+        captured.classification = "unknown"
+        session.commit()
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == "stale"
+        assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+
+
 def test_investment_semantics_revision_change_stales_saved_proof(database, monkeypatch):
     from hermes_finance.services import source_investment_proofs as proofs
 

@@ -37,6 +37,11 @@ VERSION = "source_return_investment_v1"
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
 SEMANTICS_REVISION = "source_investment_semantics_v3"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v3"
+_GIFT_COMPAT_CODES = (
+    "source_investment_semantics_v2",
+    "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
+)
 
 
 def _json(value):
@@ -177,7 +182,7 @@ def _latest(session, scope):
     return None
 
 
-def _snapshot(session, account, start, end, *, reserved=False):
+def _snapshot(session, account, start, end, *, reserved=False, read_dependency=None):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
         raise ProofError("investment_proof_scope_ambiguous")
@@ -257,7 +262,21 @@ def _snapshot(session, account, start, end, *, reserved=False):
     }
     if gift_dependencies:
         operands["gift_dependencies"] = sorted(gift_dependencies)
-    return mybroker.digest(operands), selected, next(iter(native))
+    current = mybroker.digest(operands)
+    # Read-only, direct compatibility only when no relevant gift proof exists.
+    # Recompute every old operand; no writer or future semantic revision is admitted.
+    if (
+        not reserved
+        and read_dependency is not None
+        and not gift_dependencies
+        and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION
+    ):
+        for code in _GIFT_COMPAT_CODES:
+            previous = mybroker.digest({**operands, "code": code})
+            if read_dependency == previous:
+                current = previous
+                break
+    return current, selected, next(iter(native))
 
 
 def _bound_view(selected, sha):
@@ -422,6 +441,7 @@ def _derive(
         plan["source_account"],
         date.fromisoformat(plan["covered_from"]),
         date.fromisoformat(plan["covered_to"]),
+        read_dependency=plan["dependency"],
     )
     if (
         _evidence_digest(plan) != row.dependency_digest

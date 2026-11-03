@@ -6304,8 +6304,12 @@ contribution or remove those blockers. External
 deposits/withdrawals enter the schedule with their persisted status;
 Saved XML/PDF investment proofs use the same exact current gift evidence, and
 bind the relevant gift proof head and currentness into their dependencies.
-Changed, replaced or invalid gift proof retires the dependent investment proof;
-prior semantics require a separately reviewed compatibility transition.
+Changed, replaced or invalid gift proof retires the dependent investment proof.
+Unchanged v2 and 1.9.4 proofs may be read under v3 only when the full original
+dependency recomputes exactly and no relevant gift proof head exists. This direct
+read-only compatibility edge does not authorize pending writers, fallback to an
+older proof, other revisions, or any future semantics revision. Gift-bearing
+scopes remain stale unless separately confirmed or certified.
 `coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
 per month, without adding it again as investor flow. The monthly
 `income_assumptions_used` flag is true when any included coupon/dividend uses

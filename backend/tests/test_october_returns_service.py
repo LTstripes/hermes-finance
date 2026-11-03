@@ -422,6 +422,42 @@ def test_saved_investment_gift_proof_currentness_and_ai(database, monkeypatch, c
     assert stale_export["data"]["accounts"][0]["intervals"][0]["account"] is None
 
 
+def test_old_investment_proof_becomes_stale_when_gift_proof_is_added(database, monkeypatch):
+    from test_statement_import_mybroker_preflight import investment_case
+
+    from hermes_finance.services import mybroker_preflight, source_report_preview
+
+    client, scope, raw, source = existing_statement(database, gift=True)
+    with database.session_factory() as session:
+        source_intake.save_intake(
+            session, document=raw, filename=FILENAME, request_id="old-proof-gift-source"
+        )
+    accept_bookkeeping(client, scope, raw, source)
+    _, _, _, report, _ = investment_case()
+    monkeypatch.setattr(source_report_preview, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(source_report_preview, "parse_investment_report", lambda *_: report)
+    with monkeypatch.context() as old:
+        old.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v2")
+        with database.session_factory() as session:
+            preview = mybroker_preflight.preview_batch(
+                session, originals=[(FILENAME, raw)], income_report=b"synthetic pdf"
+            )["source_return_preview"]["persistence"]
+            assert preview["available"], preview
+            proofs.confirm(
+                session,
+                form_token=preview["form_token"],
+                preview_digest=preview["preview_digest"],
+                request_id="old-proof-before-gift",
+            )
+    with database.session_factory() as session:
+        assert proofs.read_reports(session, source_account=ACCOUNT)[0]["status"] == "current"
+    _accept_money(client, source, raw, confirmed=True)
+    with database.session_factory() as session:
+        result = proofs.read_reports(session, source_account=ACCOUNT)[0]
+    assert result["status"] == "stale"
+    assert result["reason_codes"] == ["investment_proof_dependencies_changed"]
+
+
 def test_saved_history_new_month_replay_and_ai_export_share_one_outer_result(database, monkeypatch):
     # Save the continuation before issuing the historical proof so its full
     # currentness contract is exercised without pretending an old proof survived.

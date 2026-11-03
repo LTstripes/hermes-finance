@@ -13,10 +13,10 @@ dated external capital for source-account returns, including a prior explicit
 UNKNOWN without rewriting it. Gifts remain distinct from personal deposits;
 unsupported in-kind gifts stay unresolved. This candidate changes no financial
 data or Stable installation and still requires independent financial review/CI.
-The saved XML/PDF proof follow-up changes investment semantics to v3. Existing
-v2 proofs require a separately reviewed compatibility transition before release;
-the v3 bump alone can otherwise stale previously confirmed history. This local
-candidate is not installed and does not assert that transition is solved.
+The saved XML/PDF proof follow-up changes investment semantics to v3, with a
+bounded read-only transition for unchanged v2 and 1.9.4 proofs where no relevant
+gift proof exists. Proofs with gift evidence are not automatically transitioned.
+This local candidate requires independent financial review and is not installed.
 
 **Released and installed: [v1.10.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.0),
 `679f72e63933e9c80892f80c48a18292c2af8416`** ([release notes](release-notes-1.10.0.md)).
