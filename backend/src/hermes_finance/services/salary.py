@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.domain import IncomeType, ReportingMonthStatus, RubleAmount
@@ -64,8 +64,8 @@ def _salary_gross_for_month(session: Session, reporting_month_id: int) -> int:
 def prior_taxable_gross_ytd(session: Session, reporting_month: ReportingMonth) -> tuple[int, bool]:
     """Return ``(ytd_before_current_payment, opening_context_available)``.
 
-    Prior months must be closed and contain explicitly saved salary facts,
-    including an explicit zero. Close alone does not attest a missing salary.
+    Prior months must be closed and contain saved or legacy NULL-origin salary
+    rows, including an explicit zero. Close alone does not attest a missing salary.
     An optional annual opening
     baseline is applied once. Raises
     :class:`SalaryTaxHistoryIncompleteError` when required months are
@@ -95,7 +95,10 @@ def prior_taxable_gross_ytd(session: Session, reporting_month: ReportingMonth) -
             and_(
                 IncomeEntry.reporting_month_id == ReportingMonth.id,
                 IncomeEntry.income_type == IncomeType.SALARY.value,
-                IncomeEntry.actual_fact_origin == "saved_actual_v1",
+                or_(
+                    IncomeEntry.actual_fact_origin == "saved_actual_v1",
+                    IncomeEntry.actual_fact_origin.is_(None),
+                ),
             ),
         )
         .where(
