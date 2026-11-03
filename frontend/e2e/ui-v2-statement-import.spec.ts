@@ -535,22 +535,10 @@ test("native payout panel requires a month before opening a spanning document", 
   expect(api.errors).toEqual([]);
 });
 
-test("v2 Close actual_payouts routes to the native statement-import anchor and back", async ({
-  page,
-}) => {
+test("native statement-import anchor returns to the single Month Close panel", async ({ page }) => {
   const api = await installStatementApi(page);
-  await page.goto("/v2/close?month=12&step=actual_payouts");
-  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
-  const chooseFile = page.getByRole("link", { name: "Выбрать выписку с выплатами" });
-  await expect(chooseFile).toHaveAttribute(
-    "href",
+  await page.goto(
     "/v2/data/payouts?month=12&from=monthly-close-v2&step=actual_payouts&monthId=12#statement-import",
-  );
-  await chooseFile.focus();
-  await expect(chooseFile).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(
-    /\/v2\/data\/payouts\?month=12&from=monthly-close-v2&step=actual_payouts&monthId=12#statement-import$/,
   );
   await expect(page.locator("#statement-import")).toBeVisible();
   await expect(page.getByLabel("PDF отчёта Alfa")).toBeVisible();
@@ -561,6 +549,8 @@ test("v2 Close actual_payouts routes to the native statement-import anchor and b
   await backToClose.focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=actual_payouts$/);
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
   expect(api.errors).toEqual([]);
 });

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiClientError, formatApiError } from "../../api/client";
-import { useMonthCloseWorkflow, type MonthCloseWorkflow } from "../../api/monthCloseWorkflow";
+import { type MonthCloseWorkflow, useMonthCloseWorkflow } from "../../api/monthCloseWorkflow";
 import { closeMonth, reopenMonth } from "../../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../../api/types";
 import { queryKeys } from "../../queryClient";
@@ -60,7 +60,7 @@ function assertPersistedMonthIdentity(
 }
 
 /**
- * One shared, non-optimistic lifecycle for both the v1 and native v2 shells.
+ * Non-optimistic lifecycle for the Month workspace.
  * The server workflow stays authoritative: refetch before the dialog, refetch
  * again before the command, verify persisted status, invalidate, then refetch.
  */

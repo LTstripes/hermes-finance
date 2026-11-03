@@ -12,12 +12,6 @@ async function fullReview(page: Page) {
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
 }
-async function advanced(page: Page) {
-  const summary = page.getByText("Дополнительные интеграции и проверки", { exact: true });
-  await expect(summary).toBeVisible();
-  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
-    await summary.click();
-}
 test.beforeEach(async ({ page }) => {
   page.on("dialog", (dialog) =>
     dialog.type() === "beforeunload" ? dialog.accept() : dialog.dismiss(),
@@ -281,22 +275,16 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await expect(page.getByTestId("report-net")).toBeVisible();
   await page.screenshot({ path: info.outputPath("archive-desktop.png"), fullPage: true });
 
-  await page.goto("/v2/close?month=1&step=next_month_outlook");
-  await advanced(page);
-  await expect(page.getByRole("link", { name: "Открыть денежную лестницу" })).toHaveAttribute(
-    "href",
-    "/v2/data/payouts?month=1&from=monthly-close-v2&step=next_month_outlook&monthId=1",
-  );
-  await expect(page.getByRole("link", { name: "Создать следующий месяц" })).toHaveAttribute(
-    "href",
+  await page.goto(
     "/v2/data/months?month=1&from=monthly-close-v2&step=next_month_outlook&monthId=1",
   );
-  await page.getByRole("link", { name: "Создать следующий месяц" }).click();
   await expect(
     page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }),
   ).toHaveAttribute("href", "/v2/close?month=1&step=next_month_outlook");
   await page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }).click();
   await expect(page).toHaveURL(/\/v2\/close\?month=1&step=next_month_outlook$/);
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
@@ -429,9 +417,9 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
 
     // Quotes are a focused handoff; only its explicit button requests the provider.
-    await page.goto(`/v2/close?month=${old}&step=market_quotes`);
-    await advanced(page);
-    await page.getByRole("link", { name: "Открыть котировки", exact: true }).click();
+    await page.goto(
+      `/v2/data/months/${old}?section=positions&from=monthly-close-v2&step=market_quotes&monthId=${old}#month-quotes`,
+    );
     const quotes = page.getByRole("button", { name: "Обновить котировки", exact: true });
     await expect(quotes).toBeFocused();
     await expect(quotes).toBeInViewport();

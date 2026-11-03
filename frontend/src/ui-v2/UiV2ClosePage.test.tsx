@@ -292,19 +292,22 @@ describe("native Monthly Close work mode", () => {
     expect(document.getElementById("month-work-area")).toBeNull();
   });
 
-  it("keeps legacy step links in collapsed additional integrations without automatic provider calls", async () => {
-    const { mount, state } = setup("/v2/close?month=12&step=actual_payouts");
-    mount();
-    await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
-    const details = screen.getByText("Дополнительные интеграции и проверки").closest("details");
-    expect(details).not.toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Дополнительные интеграции и проверки"));
-    expect(screen.getByRole("link", { name: "Выбрать выписку с выплатами" })).toHaveAttribute(
-      "href",
-      "/v2/data/payouts?month=12&from=monthly-close-v2&step=actual_payouts&monthId=12#statement-import",
-    );
-    expect(state.writes).toEqual([]);
-  });
+  it.each(["actual_payouts", "future_payouts", "market_quotes", "final_review_close"])(
+    "opens the single Close panel for legacy step %s without the retired wizard",
+    async (step) => {
+      const { mount, state } = setup(`/v2/close?month=12&step=${step}&context=retained`);
+      state.workflow = readyForClose();
+      mount();
+      await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
+      expect(screen.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+      expect(screen.getAllByRole("button", { name: "Закрыть месяц" })).toHaveLength(1);
+      expect(screen.queryByRole("list", { name: "Шаги закрытия" })).toBeNull();
+      expect(screen.queryByText("Дополнительные интеграции и проверки")).toBeNull();
+      expect(screen.queryByRole("link", { name: "Выбрать выписку с выплатами" })).toBeNull();
+      expect(screen.getByTestId("test-location")).toHaveTextContent("context=retained");
+      expect(state.writes).toEqual([]);
+    },
+  );
 
   it.each(["/v2/close?month=12&panel=bad", "/v2/close?month=12&panel=income&panel=assets"])(
     "rejects invalid panel without mounting forms: %s",
@@ -499,13 +502,12 @@ describe("native Monthly Close work mode", () => {
     await waitFor(() => expect(state.workflowReads).toBeGreaterThan(before));
   });
 
-  it("keeps final review above collapsed progress with an accessible close and exact-month edit", async () => {
+  it("keeps final review with an accessible close and exact-month context", async () => {
     const { mount, state } = setup("/v2/close?month=12&step=final_review_close&context=retained");
     state.workflow = readyForClose();
     mount();
     const close = await screen.findByRole("button", { name: "Закрыть месяц" });
-    const progress = screen.getByText("Дополнительные интеграции и проверки").closest("details");
-    expect(progress).not.toHaveAttribute("open");
+    expect(screen.queryByRole("list", { name: "Шаги закрытия" })).toBeNull();
     expect(screen.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
     expect(close).toBeVisible();
     expect(screen.getByTestId("test-location")).toHaveTextContent("context=retained");

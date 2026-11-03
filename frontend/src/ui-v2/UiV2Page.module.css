@@ -789,8 +789,7 @@
   color: var(--ink);
 }
 
-.draftBadge,
-.closeStepState {
+.draftBadge {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -801,21 +800,6 @@
   font-size: 0.77rem;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.closeStepState[data-state="completed"] {
-  background: #e4f3eb;
-  color: #216343;
-}
-
-.closeStepState[data-state="warning"] {
-  background: #fff2d8;
-  color: #76500d;
-}
-
-.closeStepState[data-state="blocked"] {
-  background: #fde8e7;
-  color: #8a302b;
 }
 
 .closeCurrent,
@@ -846,8 +830,7 @@
 .closeRecommendation,
 .closeOutcome p,
 .closeCompactReview p,
-.closeLifecyclePanel p,
-.closeStepCopy p {
+.closeLifecyclePanel p {
   color: var(--muted);
 }
 
@@ -908,14 +891,6 @@
   font-weight: 700;
 }
 
-.closeStepList {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0 5px 0 0;
-  list-style: none;
-}
-
 .closeStepsOverview {
   min-width: 0;
   padding: 18px;
@@ -935,46 +910,6 @@
   top: 12px;
   z-index: 2;
   box-shadow: 0 4px 18px rgb(44 74 108 / 12%);
-}
-
-.closeStep {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
-  min-width: 0;
-  padding: 13px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: #f7f9fb;
-}
-
-.closeStep[data-active="true"] {
-  border-color: #9bb8d7;
-  background: #edf4fb;
-}
-
-.closeStepOrder {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #dfe7ef;
-  font-weight: 800;
-}
-
-.closeStepCopy {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.closeStepCopy > a {
-  font-weight: 750;
-}
-
-.closeStepCopy > p {
-  margin-top: 4px;
 }
 
 .closeCompactReview > div,
@@ -1185,20 +1120,8 @@
     padding: 17px;
   }
 
-  .closeStep {
-    grid-template-columns: 28px minmax(0, 1fr);
-  }
-
   .closeCurrentHeading {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .closeCurrentHeading .closeStepState {
-    grid-column: 1;
-  }
-
-  .closeStep > .closeStepState {
-    grid-column: 2;
   }
 }
