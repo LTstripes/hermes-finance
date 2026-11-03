@@ -71,7 +71,7 @@ async function uploadOriginal(
     await expect(review).toBeEnabled();
     await review.click();
   }
-  await waitForSourceSelection(page, intakeId);
+  await waitForSourceSelection(page, intakeId, historical ? file.name : undefined);
   await expect(
     page.getByText(`Оригинал в текущем сеансе: ${file.name}.`, { exact: false }),
   ).toBeVisible();
@@ -80,16 +80,27 @@ async function uploadOriginal(
   await check.click();
 }
 
-async function waitForSourceSelection(page: Page, intakeId: number) {
+async function waitForSourceSelection(page: Page, intakeId: number, historicalFilename?: string) {
   const confirm = page.getByRole("button", { name: "Открыть выписку", exact: true });
   const picker = page
-    .getByRole("region", { name: "Долговечный разбор источника", exact: true })
+    .getByRole("region", {
+      name: "Долговечный разбор источника",
+      exact: true,
+      // Selection can commit before the review disclosure is expanded.
+      includeHidden: true,
+    })
     .getByLabel("Сохранённый разбор", { exact: true });
   // Opening a saved source may first render a discard dialog or commit a new
   // account scope. An immediate isVisible() can miss that decision.
   await expect
     .poll(async () => {
       if (await confirm.isVisible()) return true;
+      // An out-of-period historical source is absent from this month's picker.
+      // Its retained original still proves that opening the source completed.
+      if (historicalFilename)
+        return page
+          .getByText(`Оригинал в текущем сеансе: ${historicalFilename}.`, { exact: false })
+          .isVisible();
       return picker.evaluateAll(
         (elements, id) => (elements[0] as HTMLSelectElement | undefined)?.value === id,
         String(intakeId),
@@ -98,7 +109,7 @@ async function waitForSourceSelection(page: Page, intakeId: number) {
     .toBe(true);
   if (await confirm.isVisible()) await confirm.click();
   await showSourceReview(page);
-  await expect(picker).toHaveValue(String(intakeId));
+  if (!historicalFilename) await expect(picker).toHaveValue(String(intakeId));
   await expect(page.getByLabel("Брокерский счёт", { exact: true })).toBeEnabled();
 }
 
