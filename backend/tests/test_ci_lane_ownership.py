@@ -12,6 +12,8 @@ from pathlib import Path
 
 from _pytest.mark.expression import Expression
 from _test_taxonomy import (
+    CI_CORE_A_SHARD_MARKERS,
+    CI_CORE_A_SHARD_WEIGHTS,
     CI_CORE_SHARD_MARKERS,
     CI_INTEGRATIONS_A_SHARD_MARKERS,
     CI_INTEGRATIONS_A_SHARD_WEIGHTS,
@@ -25,6 +27,7 @@ from _test_taxonomy import (
     CI_PERSISTENCE_SHARD_MARKERS,
     CI_PERSISTENCE_SHARD_WEIGHTS,
     TESTS_ROOT,
+    ci_core_a_shard_for_test_path,
     ci_core_shard_for_test_path,
     ci_integrations_a_shard_for_test_node,
     ci_integrations_b_shard_for_test_node,
@@ -116,6 +119,35 @@ def _report_duration_estimates(name: str, totals: dict[str, float]) -> None:
     """Optional `pytest -s` diagnostics; real workflow timeouts remain the gate."""
     ratio = max(totals.values()) / min(totals.values())
     print(f"{name}: estimated seconds={totals}, max/min={ratio:.3f}")
+
+
+def test_core_a_subshards_cover_the_original_group_once(monkeypatch) -> None:
+    import _test_taxonomy as taxonomy
+
+    files = {
+        path.relative_to(TESTS_ROOT).as_posix()
+        for path in iter_backend_test_files()
+        if ci_core_shard_for_test_path(path) == "ci_core_a"
+    }
+    assert set(CI_CORE_A_SHARD_WEIGHTS) == files
+    assert all(weight > 0 for weight in CI_CORE_A_SHARD_WEIGHTS.values())
+    totals = dict.fromkeys(CI_CORE_A_SHARD_MARKERS, 0.0)
+    for key, weight in CI_CORE_A_SHARD_WEIGHTS.items():
+        shard = ci_core_a_shard_for_test_path(TESTS_ROOT / key)
+        assert shard in CI_CORE_A_SHARD_MARKERS
+        totals[shard] += weight
+    assert min(totals.values()) > 0
+    _report_duration_estimates("core-a", totals)
+    assert max(totals.values()) / min(totals.values()) < 1.1
+    for path in iter_backend_test_files():
+        if ci_core_shard_for_test_path(path) != "ci_core_a":
+            assert ci_core_a_shard_for_test_path(path) is None
+
+    weights = dict(CI_CORE_A_SHARD_WEIGHTS)
+    key = next(iter(weights))
+    weights.pop(key)
+    monkeypatch.setattr(taxonomy, "CI_CORE_A_SHARD_WEIGHTS", weights)
+    assert ci_core_a_shard_for_test_path(TESTS_ROOT / key) is None
 
 
 def test_persistence_shards_cover_the_lane_once() -> None:
@@ -359,6 +391,8 @@ def test_integrations_b_shards_are_stable(monkeypatch) -> None:
 
 def test_shard_markers_are_not_parent_lanes() -> None:
     assert set(CI_CORE_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
+    assert set(CI_CORE_A_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
+    assert set(CI_CORE_A_SHARD_MARKERS).isdisjoint(CI_CORE_SHARD_MARKERS)
     assert set(CI_PERSISTENCE_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
     assert set(CI_INTEGRATIONS_A_SHARD_MARKERS).isdisjoint(CI_LANE_MARKERS)
@@ -390,7 +424,9 @@ def test_backend_matrix_keeps_full_lanes_and_duration_weighted_shards() -> None:
     entries = dict((lane, (marker, timeout)) for lane, marker, timeout in _workflow_entries())
 
     assert list(entries) == [
-        "core-a",
+        "core-a1",
+        "core-a2",
+        "core-a3",
         "core-b",
         "persistence-a",
         "persistence-b",
@@ -425,7 +461,9 @@ def test_backend_matrix_keeps_full_lanes_and_duration_weighted_shards() -> None:
             f"ci_persistence and {shard}",
             10,
         )
-    for lane in ("core-a", "core-b", "runtime-release", "benchmark"):
+    for index, shard in enumerate(CI_CORE_A_SHARD_MARKERS, start=1):
+        assert entries[f"core-a{index}"] == (f"ci_core and ci_core_a and {shard}", 15)
+    for lane in ("core-b", "runtime-release", "benchmark"):
         assert entries[lane][1] == 10
     assert "\n          - lane: integrations\n" not in workflow
     assert "timeout-minutes: ${{ matrix.timeout_minutes }}" in workflow
@@ -569,6 +607,10 @@ def test_collected_nodes_run_in_exactly_one_parent_and_integration_shard() -> No
             assert len(names.intersection(CI_CORE_SHARD_MARKERS)) == 1
         else:
             assert names.isdisjoint(CI_CORE_SHARD_MARKERS)
+        if "ci_core_a" in names:
+            assert len(names.intersection(CI_CORE_A_SHARD_MARKERS)) == 1, nodeid
+        else:
+            assert names.isdisjoint(CI_CORE_A_SHARD_MARKERS), nodeid
         if lanes == {"ci_persistence"}:
             assert len(names.intersection(CI_PERSISTENCE_SHARD_MARKERS)) == 1
         else:

@@ -134,9 +134,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - lane: core-a
-            marker: "ci_core and ci_core_a"
-            timeout_minutes: 10
+          # Subdivide the original core-a group, including its accumulated new suites.
+          - lane: core-a1
+            marker: "ci_core and ci_core_a and ci_core_a1"
+            timeout_minutes: 15
+          - lane: core-a2
+            marker: "ci_core and ci_core_a and ci_core_a2"
+            timeout_minutes: 15
+          - lane: core-a3
+            marker: "ci_core and ci_core_a and ci_core_a3"
+            timeout_minutes: 15
           - lane: core-b
             marker: "ci_core and ci_core_b"
             timeout_minutes: 10
