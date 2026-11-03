@@ -213,17 +213,30 @@ $savedDatabase = [Environment]::GetEnvironmentVariable(
     "HERMES_FINANCE_DATABASE_PATH",
     "Process"
 )
+$savedToken = [Environment]::GetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", "Process")
 
 try {
-    # Do not print or copy a token value. Clearing a process override does not
-    # stop Settings from loading the ignored repository-root .env.
-    Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
-    $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
+    # Limit overrides to child creation, including launch/cleanup failure paths.
+    try {
+        # Do not print or persist a token value. Clearing a process override does not
+        # stop Settings from loading the ignored repository-root .env.
+        Remove-Item Env:HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN -ErrorAction SilentlyContinue
+        $env:HERMES_FINANCE_DATABASE_PATH = $databasePath
 
-    Write-Host "R06-10 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
-    $launcherProcess = Start-WindowsPowerShellFile `
-        -FilePath $launcher `
-        -WorkingDirectory $repoRoot
+        Write-Host "R06-10 Windows smoke: starting canonical launcher with isolated DB." -ForegroundColor Cyan
+        $launcherProcess = Start-WindowsPowerShellFile `
+            -FilePath $launcher `
+            -WorkingDirectory $repoRoot
+    }
+    finally {
+        if ($null -eq $savedDatabase) {
+            Remove-Item Env:HERMES_FINANCE_DATABASE_PATH -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:HERMES_FINANCE_DATABASE_PATH = $savedDatabase
+        }
+        [Environment]::SetEnvironmentVariable("HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN", $savedToken, "Process")
+    }
 
     $healthResponse = Wait-ForProductionStack -Process $launcherProcess
     if (-not (Test-Path $databasePath -PathType Leaf)) {
@@ -248,12 +261,6 @@ try {
 }
 finally {
     Stop-ProcessTree -Process $launcherProcess -Name "canonical launcher"
-    if ($null -eq $savedDatabase) {
-        Remove-Item Env:HERMES_FINANCE_DATABASE_PATH -ErrorAction SilentlyContinue
-    }
-    else {
-        $env:HERMES_FINANCE_DATABASE_PATH = $savedDatabase
-    }
 }
 
 try {
