@@ -98,6 +98,12 @@ export type PayoutBatchPreview = {
 export type PayoutRefreshStatus = {
   reporting_month_id: number;
   positions_changed: number;
+  forecast_as_of?: string | null;
+  automatic_refresh?: {
+    status: "idle" | "pending" | "running" | "completed" | "partial" | "needs_review" | "error";
+    message: string;
+    reason_codes: string[];
+  } | null;
   items: Array<{
     account_id: number;
     instrument_id: number;

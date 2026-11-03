@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
 import {
@@ -151,6 +152,31 @@ async function installStatementApi(
   page: Page,
   options: StatementApiOptions = {},
 ): Promise<ApiRecorder> {
+  let pdfSaved = false;
+  const pdfItem = {
+    intake_id: null,
+    document_sha256: createHash("sha256").update(SYNTHETIC_PDF).digest("hex"),
+    filename_digest: createHash("sha256")
+      .update(JSON.stringify("synthetic-statement.pdf"))
+      .digest("hex"),
+    kind: "income_pdf",
+    slot: "income_pdf",
+    source_accounts: ["synthetic-broker"],
+    covered_from: "2031-08-01",
+    covered_to: "2031-08-31",
+    state: "needs_decision",
+    exceptions: [],
+    head_seq: 0,
+    request_ids: [],
+  };
+  const sources = () => ({
+    reporting_month_id: 12,
+    items: pdfSaved ? [pdfItem] : [],
+    confirmation_count: pdfSaved ? 1 : 0,
+    status: pdfSaved ? "needs_confirmation" : "empty",
+    severity: pdfSaved ? "warning" : null,
+    financial_effects: 0,
+  });
   const record: ApiRecorder = { posts: [], gets: [], errors: [], applySelections: [] };
   const inspectFixture = options.spanning ? spanningInspect : statementInspect;
   const prepareFixture = options.spanning ? spanningPreparation : statementPreparation;
@@ -169,6 +195,18 @@ async function installStatementApi(
       const request = route.request();
       const url = new URL(request.url());
       const pathname = url.pathname;
+      if (pathname === "/api/months/12/broker-sources") {
+        if (request.method() === "POST") {
+          pdfSaved = true;
+          await route.fulfill({
+            json: {
+              ...sources(),
+              results: [{ index: 0, item: pdfItem, duplicate: false, error: null }],
+            },
+          });
+        } else await route.fulfill({ json: sources() });
+        return;
+      }
       if (request.method() === "GET" && pathname === "/api/months") {
         await route.fulfill({ json: uiV2Months });
         return;
@@ -230,8 +268,9 @@ async function installStatementApi(
         await route.fulfill({ json: [] });
         return;
       }
-      if (request.method() === "GET" && pathname === "/api/months/12/close-workflow") {
-        await route.fulfill({ json: makeUiV2Workflow({ monthId: 12 }) });
+      const workflowMatch = /^\/api\/months\/(\d+)\/close-workflow$/.exec(pathname);
+      if (request.method() === "GET" && workflowMatch) {
+        await route.fulfill({ json: makeUiV2Workflow({ monthId: Number(workflowMatch[1]) }) });
         return;
       }
       if (
@@ -314,12 +353,17 @@ async function assertNoPageOverflow(page: Page) {
   );
 }
 
-async function prepareStatement(page: Page) {
-  await page.setInputFiles("#statement-file", {
+async function openMonthPdf(page: Page) {
+  await page.getByLabel("Выбрать файлы", { exact: true }).setInputFiles({
     name: "synthetic-statement.pdf",
     mimeType: "application/pdf",
     buffer: SYNTHETIC_PDF,
   });
+  await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Проверить отчёт" })).toBeVisible();
+}
+
+async function prepareStatement(page: Page) {
   await page.getByRole("button", { name: "Проверить отчёт" }).click();
   await expect(
     page.getByRole("cell", { name: "synthetic-broker", exact: true }).first(),
@@ -333,33 +377,30 @@ async function prepareStatement(page: Page) {
 
 for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   test(
-    `native statement import ${viewport.name}: inspect/prepare/cancel/apply + readback`,
+    `month statement import ${viewport.name}: inspect/prepare/cancel/apply + readback`,
     { tag: "@viewport-owned" },
     async ({ page }, testInfo) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const api = await installStatementApi(page);
-      await page.goto("/v2/data/payouts?month=12#statement-import");
+      await page.goto("/v2/close?month=12&panel=brokers");
 
-      await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
-      await expect(page.locator("#statement-import")).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
       // No file or provider action happens on mount.
       expect(api.posts).toEqual([]);
+      await openMonthPdf(page);
+      // Explicit source upload saves a descriptor; it does not accept payouts.
+      expect(api.posts).toEqual(["POST /api/months/12/broker-sources"]);
       await assertNoPageOverflow(page);
       await page.screenshot({
         path: testInfo.outputPath(`${viewport.name}-statement-mount.png`),
         fullPage: true,
       });
 
-      // Selecting a file alone performs no request either.
-      await page.setInputFiles("#statement-file", {
-        name: "synthetic-statement.pdf",
-        mimeType: "application/pdf",
-        buffer: SYNTHETIC_PDF,
-      });
-      expect(api.posts).toEqual([]);
+      // The same uploaded original is supplied to review without a second uploader.
+      await expect(page.locator("#statement-file")).toHaveCount(0);
 
       await prepareStatement(page);
-      expect(api.posts).toEqual([
+      expect(api.posts.filter((call) => !call.endsWith("/broker-sources"))).toEqual([
         "POST /api/statement-import/inspect",
         "POST /api/statement-import/prepare",
       ]);
@@ -423,33 +464,33 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     },
   );
 
-  test(`native statement import ${viewport.name}: stale month context cannot publish`, {
+  test(`month statement import ${viewport.name}: stale month context cannot publish`, {
     tag: "@viewport-owned",
   }, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12#statement-import");
-    await expect(page.locator("#statement-import")).toBeVisible();
+    await page.goto("/v2/close?month=12&panel=brokers");
+    await openMonthPdf(page);
 
     await prepareStatement(page);
-    expect(api.posts).toHaveLength(2);
+    expect(api.posts.filter((call) => !call.endsWith("/broker-sources"))).toHaveLength(2);
 
     // Switching the explicit month retires the prepared document.
-    await page.getByLabel("Отчётный месяц").selectOption("91");
-    await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
+    await page.goto("/v2/close?month=91&panel=brokers");
+    await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
     await expect(page.getByText("Новая строка")).toHaveCount(0);
     expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(0);
     expect(api.errors).toEqual([]);
     await assertNoPageOverflow(page);
   });
 
-  test(`native statement import ${viewport.name}: ambiguous apply failure needs a fresh prepare`, {
+  test(`month statement import ${viewport.name}: ambiguous apply failure needs a fresh prepare`, {
     tag: "@viewport-owned",
   }, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installStatementApi(page);
-    await page.goto("/v2/data/payouts?month=12#statement-import");
-    await expect(page.locator("#statement-import")).toBeVisible();
+    await page.goto("/v2/close?month=12&panel=brokers");
+    await openMonthPdf(page);
     await prepareStatement(page);
 
     await page.route("**/api/statement-import/apply", (route) => route.abort());
@@ -473,13 +514,13 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
   });
 }
 
-test("native spanning document: only the explicit month can be submitted", {
+test("month spanning document: only the explicit month can be submitted", {
   tag: "@viewport-owned",
 }, async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   const api = await installStatementApi(page, { spanning: true });
-  await page.goto("/v2/data/payouts?month=12#statement-import");
-  await expect(page.locator("#statement-import")).toBeVisible();
+  await page.goto("/v2/close?month=12&panel=brokers");
+  await openMonthPdf(page);
   await prepareStatement(page);
 
   const checkboxes = page.getByRole("checkbox");
@@ -501,56 +542,18 @@ test("native spanning document: only the explicit month can be submitted", {
   expect(api.errors).toEqual([]);
 });
 
-test("native payout panel requires a month before opening a spanning document", {
-  tag: "@viewport-owned",
-}, async ({ page }) => {
-  await page.setViewportSize({ width: 1366, height: 900 });
-  const api = await installStatementApi(page, { spanning: true });
-  await page.goto("/v2/data/payouts");
-  await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Месяц не выбран" })).toBeVisible();
-  await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
-  expect(api.posts).toEqual([]);
-  await page.getByLabel("Отчётный месяц").selectOption("12");
-  await page.getByRole("link", { name: "Фактические выплаты · PDF" }).click();
-  await expect(page).toHaveURL(/\/v2\/data\/payouts\?month=12#statement-import$/);
-  await expect(page.locator("#statement-import")).toBeVisible();
-  await prepareStatement(page);
-
-  const checkboxes = page.getByRole("checkbox");
-  await expect(checkboxes).toHaveCount(2);
-  await expect(checkboxes.nth(0)).toBeEnabled();
-  await expect(checkboxes.nth(1)).toBeDisabled();
-  await expect(page.getByText(/строка относится к другому отчётному месяцу/)).toBeVisible();
-
-  await page.getByRole("button", { name: "Выбрать все готовые" }).click();
-  await expect(checkboxes.nth(0)).toBeChecked();
-  await expect(checkboxes.nth(1)).not.toBeChecked();
-
-  await page.getByRole("button", { name: "Применить выбранные строки" }).click();
-  await page.getByRole("button", { name: "Подтвердить и применить" }).click();
-
-  await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
-  expect(api.applySelections).toEqual(["synthetic-row-1"]);
-  expect(api.errors).toEqual([]);
-});
-
-test("native statement-import anchor returns to the single Month Close panel", async ({ page }) => {
+test("legacy payout PDF entry links to the single Month file intake", async ({ page }) => {
   const api = await installStatementApi(page);
-  await page.goto(
-    "/v2/data/payouts?month=12&from=monthly-close-v2&step=actual_payouts&monthId=12#statement-import",
-  );
-  await expect(page.locator("#statement-import")).toBeVisible();
-  await expect(page.getByLabel("PDF отчёта Alfa")).toBeVisible();
-  expect(api.posts).toEqual([]);
-
-  const backToClose = page.getByRole("link", { name: "Вернуться к закрытию" });
-  await expect(backToClose).toHaveAttribute("href", "/v2/close?month=12&step=actual_payouts");
-  await backToClose.focus();
+  await page.goto("/v2/data/payouts?month=12#statement-import");
+  await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
+  await page.getByRole("button", { name: "Подробности" }).click();
+  const upload = page.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" });
+  await expect(upload).toHaveAttribute("href", "/v2/close?month=12&panel=brokers");
+  await upload.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/v2\/close\?month=12&step=actual_payouts$/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/v2\/close\?month=12&panel=brokers$/);
+  await openMonthPdf(page);
+  await expect(page.getByRole("button", { name: "Проверить отчёт" })).toBeVisible();
+  expect(api.posts).toEqual(["POST /api/months/12/broker-sources"]);
   expect(api.errors).toEqual([]);
 });

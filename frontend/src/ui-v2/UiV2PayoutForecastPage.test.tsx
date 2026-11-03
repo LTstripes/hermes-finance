@@ -6,8 +6,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 import { listAccounts } from "../api/accounts";
 import { listExpectedFlows } from "../api/expectedFlows";
+import { getInstrumentMapping } from "../api/instrumentMappings";
 import { listInstruments } from "../api/instruments";
-import { listInvestmentFlows } from "../api/investmentFlows";
 import { getCloseReadiness, getMonth, listMonths } from "../api/months";
 import {
   applyPayouts,
@@ -20,12 +20,12 @@ import {
   previewPayoutsBatch,
 } from "../api/payouts";
 import { listPositions } from "../api/positions";
-import { applyStatement, inspectStatement, prepareStatement } from "../api/statementImport";
 import type { CloseReadiness, PositionSnapshot, ReportingMonth } from "../api/types";
 import { createQueryClient } from "../queryClient";
 import UiV2PayoutForecastPage from "./UiV2PayoutForecastPage";
 
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
+vi.mock("../api/instrumentMappings", () => ({ getInstrumentMapping: vi.fn() }));
 vi.mock("../api/instruments", () => ({ listInstruments: vi.fn() }));
 vi.mock("../api/months", () => ({
   listMonths: vi.fn(),
@@ -34,12 +34,6 @@ vi.mock("../api/months", () => ({
 }));
 vi.mock("../api/positions", () => ({ listPositions: vi.fn() }));
 vi.mock("../api/expectedFlows", () => ({ listExpectedFlows: vi.fn() }));
-vi.mock("../api/investmentFlows", () => ({ listInvestmentFlows: vi.fn() }));
-vi.mock("../api/statementImport", () => ({
-  inspectStatement: vi.fn(),
-  prepareStatement: vi.fn(),
-  applyStatement: vi.fn(),
-}));
 vi.mock("../api/payouts", () => ({
   previewPayouts: vi.fn(),
   previewPayoutsBatch: vi.fn(),
@@ -191,77 +185,6 @@ const previewFixture: PayoutPreview = {
   ],
 };
 
-const statementFile = new File(["synthetic statement pdf"], "synthetic-statement.pdf", {
-  type: "application/pdf",
-});
-
-const statementInspect = {
-  document_sha256: "sha-1",
-  status: "applicable",
-  rows: [
-    {
-      status: "matched",
-      provider_account_ref: "synthetic-broker",
-      isin: "RU000SYNTH01",
-      event_kind: "coupon",
-      record_date: "2026-08-01",
-      event_date: "2026-08-03",
-      reason: null,
-    },
-  ],
-  warnings: [],
-  reason: null,
-};
-
-const statementPreparation = {
-  provider: "alfa_pdf",
-  document_sha256: "sha-1",
-  status: "applicable",
-  warnings: [],
-  reason: null,
-  rows: [
-    {
-      status: "matched",
-      duplicate_class: null,
-      provider_account_ref: "synthetic-broker",
-      expected_hermes_account_id: 1,
-      expected_hermes_instrument_id: 10,
-      natural_identity: "synthetic-row-1",
-      material_fingerprint: "fp-synthetic-1",
-      expected_candidate_ids: [],
-      candidates: [],
-      isin: "RU000SYNTH01",
-      event_kind: "coupon",
-      record_date: "2026-08-01",
-      event_date: "2026-08-03",
-      quantity: "10",
-      per_unit: "10.00",
-      gross_amount: "12450.00",
-      gross_currency: "RUB",
-      tax_amount: "1618.50",
-      tax_available: true,
-      tax_rate: "13.00",
-      net_amount: "10831.50",
-      net_currency: "RUB",
-      reason: null,
-    },
-  ],
-};
-
-const spanningStatementPreparation = {
-  ...statementPreparation,
-  rows: [
-    statementPreparation.rows[0],
-    {
-      ...statementPreparation.rows[0],
-      natural_identity: "synthetic-sep",
-      material_fingerprint: "fp-sep",
-      event_date: "2026-09-03",
-      record_date: "2026-09-01",
-    },
-  ],
-};
-
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(listMonths).mockResolvedValue([draftMonth, closedMonth]);
@@ -276,6 +199,13 @@ beforeEach(() => {
   vi.mocked(listAccounts).mockResolvedValue([
     { id: 1, name: "Synthetic", status: "active" },
   ] as never);
+  vi.mocked(getInstrumentMapping).mockResolvedValue({
+    instrument_id: 10,
+    state: "mapped",
+    identity: { provider: "t_invest", provider_instrument_id: "UID-1", provider_venue_id: null },
+    instrument_isin: "RU000SYNTH01",
+    legacy_moex_secid: null,
+  });
   vi.mocked(listInstruments).mockResolvedValue([
     { id: 10, name: "Bond", ticker: "B", instrument_type: "bond", status: "active" },
   ] as never);
@@ -286,49 +216,11 @@ beforeEach(() => {
   vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
     reporting_month_id: 7,
     positions_changed: 0,
+    forecast_as_of: "2026-08-31T12:00:00Z",
+    automatic_refresh: { status: "completed", message: "", reason_codes: [] },
     items: [],
   } as never);
   vi.mocked(listExpectedFlows).mockResolvedValue([]);
-  vi.mocked(listInvestmentFlows).mockResolvedValue([
-    {
-      id: 501,
-      reporting_month_id: 7,
-      account_id: 1,
-      instrument_id: 10,
-      flow_type: "coupon",
-      event_date: "2026-08-03",
-      gross_amount: money("12450.00"),
-      tax_amount: money("1618.50"),
-      commission_amount: money("0.00"),
-      net_amount: money("10831.50"),
-      currency: "RUB",
-      source: "alfa_pdf",
-      notes: null,
-      statement_link: {
-        applied_statement_event_id: 91,
-        link_mode: "statement_created",
-        status: "active",
-      },
-    } as never,
-  ]);
-  vi.mocked(inspectStatement).mockResolvedValue(structuredClone(statementInspect) as never);
-  vi.mocked(prepareStatement).mockResolvedValue(structuredClone(statementPreparation) as never);
-  vi.mocked(applyStatement).mockResolvedValue({
-    success: true,
-    selected_count: 1,
-    items: [
-      {
-        action: "created",
-        natural_identity: "synthetic-row-1",
-        applied_statement_event_id: 91,
-        investment_cash_flow_id: 501,
-        material_fingerprint: "fp-synthetic-1",
-        revision_id: 92,
-      },
-    ],
-    error_code: null,
-    message: null,
-  } as never);
   vi.mocked(previewPayouts).mockResolvedValue(structuredClone(previewFixture) as never);
   vi.mocked(previewPayoutsBatch).mockResolvedValue({
     reporting_month_id: 7,
@@ -378,6 +270,11 @@ beforeEach(() => {
   } as never);
 });
 
+async function openDetails() {
+  const button = await screen.findByRole("button", { name: "Подробности" });
+  if (button.getAttribute("aria-expanded") === "false") fireEvent.click(button);
+}
+
 function show(query: string) {
   return render(
     <QueryClientProvider client={createQueryClient()}>
@@ -390,7 +287,7 @@ function show(query: string) {
 
 it("uses the exact month and preserves query/hash in Data navigation", async () => {
   show("?month=7&from=monthly-close-v2&monthId=7&step=future_payouts&scope=synthetic#target");
-  expect(await screen.findByText("Объединённый календарь выплат")).toBeInTheDocument();
+  await openDetails();
   expect(getMonth).toHaveBeenCalledWith(7);
   expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
     "href",
@@ -401,7 +298,11 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
     "/v2/data/files?month=7&from=monthly-close-v2&monthId=7&step=future_payouts&scope=synthetic#target",
   );
   // Mixed calendar: passive income and principal stay distinct.
-  expect(screen.getByText("возврат капитала, не доход")).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("region", { name: "Основной прогноз" })).getByText(
+      "возврат капитала, не доход",
+    ),
+  ).toBeInTheDocument();
 });
 
 it.each(["", "?month=", "?month=bad", "?month=999", "?month=7&month=7", "?month=07"])(
@@ -422,13 +323,13 @@ it("mounts the tool only after the Owner explicitly selects a month", async () =
   expect(await screen.findByText("Месяц не выбран")).toBeInTheDocument();
   expect(getMonth).not.toHaveBeenCalled();
   await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "7");
-  expect(await screen.findByText("Объединённый календарь выплат")).toBeInTheDocument();
+  await openDetails();
   expect(getMonth).toHaveBeenCalledWith(7);
 });
 
 it("does not call the provider on mount; local calendar loads without preview", async () => {
   show("?month=7");
-  expect(await screen.findByText("Объединённый календарь выплат")).toBeInTheDocument();
+  await openDetails();
   await waitFor(() => expect(listPayoutCalendar).toHaveBeenCalledWith(7, "v1"));
   expect(getPayoutRefreshStatus).toHaveBeenCalledWith(7);
   expect(previewPayouts).not.toHaveBeenCalled();
@@ -441,7 +342,7 @@ it("does not call the provider on mount; local calendar loads without preview", 
 it("runs explicit preview, then cancel leaves no write, confirm applies and rereads", async () => {
   const user = userEvent.setup();
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
 
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
@@ -469,7 +370,7 @@ it("runs explicit preview, then cancel leaves no write, confirm applies and rere
 
 it("treats version change as stale preview that cannot apply", async () => {
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
@@ -484,7 +385,7 @@ it("treats version change as stale preview that cannot apply", async () => {
 it("keeps CLOSED fail-closed: preview stays readable, apply is blocked", async () => {
   const user = userEvent.setup();
   show("?month=8");
-  expect(await screen.findByText("Объединённый календарь выплат")).toBeInTheDocument();
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   // Preview itself is allowed on CLOSED; the panel explains read-only.
   expect(await screen.findByText(/Месяц закрыт\. Предпросмотр доступен/)).toBeInTheDocument();
@@ -493,7 +394,7 @@ it("keeps CLOSED fail-closed: preview stays readable, apply is blocked", async (
 
 it("does not offer a return to a different close month", async () => {
   show("?month=7&from=monthly-close-v2&monthId=8&step=future_payouts");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   expect(screen.queryByRole("link", { name: "Вернуться к закрытию" })).not.toBeInTheDocument();
   expect(screen.getByText(/другому месяцу/)).toBeInTheDocument();
 });
@@ -502,7 +403,7 @@ it("shows provider error without claiming success", async () => {
   const user = userEvent.setup();
   vi.mocked(previewPayouts).mockRejectedValue(new Error("synthetic provider failure"));
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText(/synthetic provider failure/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
@@ -519,7 +420,7 @@ it("clears preview when the backend reports preview_changed", async () => {
     message: "refresh preview before applying",
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -537,7 +438,7 @@ it("rejects a single preview for a foreign position/account/instrument", async (
     position_snapshot_id: 999,
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(screen.queryByText("Новая")).not.toBeInTheDocument();
@@ -560,7 +461,7 @@ it("rejects a batch response with the wrong forecast version", async () => {
     items: [],
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
@@ -593,7 +494,7 @@ it("rejects a batch response with a foreign embedded item identity", async () =>
     ],
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   expect(await screen.findByText(/не соответствует выбранной позиции/)).toBeInTheDocument();
   expect(applyPayouts).not.toHaveBeenCalled();
@@ -602,7 +503,7 @@ it("rejects a batch response with a foreign embedded item identity", async () =>
 it("a refreshed batch item cannot replace another position", async () => {
   const user = userEvent.setup();
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   expect(await screen.findByText("Проверка завершена")).toBeInTheDocument();
   // A foreign refresh response for the same requested position is rejected
@@ -624,7 +525,7 @@ it("an open single confirm cannot POST after the position changes", async () => 
   const user = userEvent.setup();
   vi.mocked(listPositions).mockResolvedValue([position, secondPosition]);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -661,7 +562,7 @@ it("does not confirm an apply whose items mismatch the selected count", async ()
     message: null,
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -695,7 +596,7 @@ it("does not confirm when the applied payout id is absent from the reread calend
     message: null,
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -712,7 +613,7 @@ it("does not confirm on foreign refresh status", async () => {
     items: [],
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -727,7 +628,7 @@ it("does not confirm on wrong-version expected rows", async () => {
     { reporting_month_id: 7, forecast_version: "foreign" },
   ] as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -748,7 +649,7 @@ it("does not confirm on mismatched readiness lifecycle", async () => {
     items: [],
   } as unknown as CloseReadiness);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -766,7 +667,7 @@ it("happy path proves payout ids, exact month/version and readiness before succe
     },
   ] as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -788,7 +689,7 @@ it("does not confirm a malformed 0/0 success for one submitted row", async () =>
     message: null,
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -807,7 +708,7 @@ it("freezes position and version controls for the whole apply/readback lifetime"
       }) as never,
   );
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -853,7 +754,7 @@ it("retires an in-flight completion when the version changes before publish", as
       }) as never,
   );
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -985,7 +886,7 @@ it("confirms count_manual success through the linked manual calendar row", async
     },
   ] as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Возможный дубль")).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText("Решение для дубля 1"), "count_manual");
@@ -998,7 +899,7 @@ it("confirms count_manual success through the linked manual calendar row", async
 it("confirms provider-visible success through the provider calendar row", async () => {
   const user = userEvent.setup();
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -1019,7 +920,7 @@ it.each(["date", "reconciliation", "counting", "manual_link"])(
     if (change === "manual_link") Object.assign(provider, { linked_manual_id: 999 });
     vi.mocked(listPayoutCalendar).mockResolvedValue(calendar as never);
     show("?month=7");
-    await screen.findByText("Объединённый календарь выплат");
+    await openDetails();
     await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
     await screen.findByText("Новая");
     await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -1053,7 +954,7 @@ it("does not confirm readback after the reporting-month snapshot context changes
     };
   });
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   await screen.findByText("Новая");
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -1073,171 +974,13 @@ it("does not confirm an unrelated manual link for the applied payout", async () 
   } as never);
   vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 602) as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
   await user.click(screen.getByRole("button", { name: /Применить \(1\)/ }));
   expect(await screen.findByText(/не подтверждены повторной загрузкой/)).toBeInTheDocument();
   expect(screen.queryByText(/Применено выплат: 1/)).not.toBeInTheDocument();
-});
-
-async function prepareStatementRow(user: ReturnType<typeof userEvent.setup>) {
-  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
-  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
-  await screen.findByText("synthetic-broker");
-  await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
-  await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
-  await screen.findByText("Новая строка");
-  await user.click(screen.getByRole("checkbox", { name: "Выбрать строку 1" }));
-}
-
-it("mounts the statement import section only for a valid explicit month with no action on mount", async () => {
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  expect(document.getElementById("statement-import")).not.toBeNull();
-  expect(screen.getByLabelText("PDF отчёта Alfa")).toBeInTheDocument();
-  expect(inspectStatement).not.toHaveBeenCalled();
-  expect(prepareStatement).not.toHaveBeenCalled();
-  expect(applyStatement).not.toHaveBeenCalled();
-  expect(listInvestmentFlows).not.toHaveBeenCalled();
-  expect(previewPayouts).not.toHaveBeenCalled();
-  expect(applyPayouts).not.toHaveBeenCalled();
-});
-
-it("keeps the write/import tool unmounted without a valid explicit month", async () => {
-  show("?month=bad#statement-import");
-  await screen.findByText("Месяц не выбран");
-  expect(document.getElementById("statement-import")).toBeNull();
-  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
-  expect(inspectStatement).not.toHaveBeenCalled();
-});
-
-it("retires the statement document when the explicit month changes", async () => {
-  const user = userEvent.setup();
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
-  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
-  await screen.findByText("synthetic-broker");
-
-  await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "8");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  expect(screen.queryByText("synthetic-broker")).not.toBeInTheDocument();
-  const input = screen.getByLabelText("PDF отчёта Alfa") as HTMLInputElement;
-  expect(input.files?.length ?? 0).toBe(0);
-  expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
-});
-
-it("constrains the native statement workspace to rows of the explicit month", async () => {
-  const user = userEvent.setup();
-  // One synthetic two-month preparation: the selected month is August 2026.
-  vi.mocked(prepareStatement).mockResolvedValueOnce(spanningStatementPreparation as never);
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
-  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
-  await screen.findByText("synthetic-broker");
-  await user.selectOptions(screen.getByLabelText("Alfa-счёт synthetic-broker"), "1");
-  await user.click(screen.getByRole("button", { name: "Подготовить к импорту" }));
-  await screen.findAllByText("Новая строка");
-
-  const checkboxes = screen.getAllByRole("checkbox");
-  expect(checkboxes).toHaveLength(2);
-  expect(checkboxes[0]).toBeEnabled();
-  expect(checkboxes[1]).toBeDisabled();
-  expect(screen.getByText(/строка относится к другому отчётному месяцу/)).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: "Выбрать все готовые" }));
-  expect(checkboxes[0]).toBeChecked();
-  expect(checkboxes[1]).not.toBeChecked();
-  expect(applyStatement).not.toHaveBeenCalled();
-});
-
-it("keeps upload, inspect and prepare free of any write until the owner confirms", async () => {
-  const user = userEvent.setup();
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await prepareStatementRow(user);
-  expect(prepareStatement).toHaveBeenCalledTimes(1);
-  expect(applyStatement).not.toHaveBeenCalled();
-  expect(listInvestmentFlows).not.toHaveBeenCalled();
-
-  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
-  const dialog = await screen.findByRole("alertdialog");
-  await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
-  expect(applyStatement).not.toHaveBeenCalled();
-  expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
-  expect(screen.getByText("Новая строка")).toBeInTheDocument();
-});
-
-it("applies a synthetic statement only after the exact-month authoritative reread", async () => {
-  const user = userEvent.setup();
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await prepareStatementRow(user);
-  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
-  await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
-
-  expect(await screen.findByText(/Импортировано строк: 1/)).toBeInTheDocument();
-  expect(applyStatement).toHaveBeenCalledTimes(1);
-  await waitFor(() => expect(listInvestmentFlows).toHaveBeenCalledWith(7));
-  expect(getCloseReadiness).toHaveBeenCalledWith(7);
-  expect(getMonth).toHaveBeenCalledWith(7);
-  expect(screen.queryByText(/не подтверждён повторной загрузкой/)).not.toBeInTheDocument();
-});
-
-it("does not claim success when the applied flow id is missing from the reread", async () => {
-  const user = userEvent.setup();
-  vi.mocked(listInvestmentFlows).mockResolvedValue([]);
-  show("?month=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await prepareStatementRow(user);
-  await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
-  await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
-
-  expect(await screen.findByText(/не подтверждён повторной загрузкой/)).toBeInTheDocument();
-  expect(screen.queryByText(/Импортировано строк/)).not.toBeInTheDocument();
-  // The prepared document is retired: no blind replay of the same selection.
-  expect(screen.queryByRole("button", { name: "Применить выбранные строки" })).toBeNull();
-});
-
-it("keeps the statement import fail-closed on a CLOSED month", async () => {
-  show("?month=8#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  expect(
-    screen.getByText(/Проверка PDF доступна, но применение выплат заблокировано/),
-  ).toBeInTheDocument();
-  expect(applyStatement).not.toHaveBeenCalled();
-});
-
-it("routes the actual_payouts close step to the native statement-import anchor and back", async () => {
-  show("?month=7&from=monthly-close-v2&step=actual_payouts&monthId=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  expect(document.getElementById("statement-import")).not.toBeNull();
-  expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=7&step=actual_payouts",
-  );
-  expect(screen.queryByRole("link", { name: "Продолжить к закрытию" })).toBeNull();
-});
-
-it("hands a zero-row statement outcome back to the same-month close step", async () => {
-  const user = userEvent.setup();
-  vi.mocked(inspectStatement).mockResolvedValueOnce({
-    ...statementInspect,
-    rows: [],
-  } as never);
-  show("?month=7&from=monthly-close-v2&step=actual_payouts&monthId=7#statement-import");
-  await screen.findByLabelText("PDF отчёта Alfa");
-  await user.upload(screen.getByLabelText("PDF отчёта Alfa"), statementFile);
-  await user.click(screen.getByRole("button", { name: "Проверить отчёт" }));
-
-  expect(await screen.findByText("Результат проверки PDF Alfa")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Продолжить к закрытию" })).toHaveAttribute(
-    "href",
-    "/v2/close?month=7&step=actual_payouts",
-  );
 });
 
 it("does not confirm a mismatched manual reconciliation identity", async () => {
@@ -1252,7 +995,7 @@ it("does not confirm a mismatched manual reconciliation identity", async () => {
   // Same manual source_id, but the link points at another payout.
   vi.mocked(listPayoutCalendar).mockResolvedValue(manualOnlyCalendar(101, 999) as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить выплаты T-Invest" }));
   expect(await screen.findByText("Новая")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /Применить выбранные \(1\)/ }));
@@ -1337,7 +1080,7 @@ it("bulk starts collapsed, disclosure preserves selection and top confirmation f
   const user = userEvent.setup();
   mockBulk(2);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText("Выбрано событий: 2");
@@ -1376,7 +1119,7 @@ it("bulk mixed success and ambiguous failure retains CONFIRMED, UNKNOWN and NOT_
       message: null,
     }))
     .mockRejectedValueOnce(new Error("lost response"));
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText("Выбрано событий: 3");
   await user.click(screen.getByRole("button", { name: "Применить выбранные" }));
@@ -1387,7 +1130,7 @@ it("bulk mixed success and ambiguous failure retains CONFIRMED, UNKNOWN and NOT_
   expect(applyPayouts).toHaveBeenCalledTimes(2);
   view.unmount();
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   expect(applyPayouts).toHaveBeenCalledTimes(2);
   expect(previewPayoutsBatch).toHaveBeenCalledTimes(1);
   // Reload performs only local reads. A later write needs fresh explicit preview + confirmation.
@@ -1411,7 +1154,7 @@ it("a preview queued before Apply cannot rearm selection after UNKNOWN", async (
     .mockResolvedValue(previewFixture);
   vi.mocked(applyPayouts).mockRejectedValueOnce(new Error("synthetic lost response"));
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   const refresh = screen.getByRole("button", { name: "Проверить выплаты T-Invest" });
   await user.click(refresh);
   await screen.findByText("Новая");
@@ -1448,7 +1191,7 @@ it("blocks bulk Apply while an explicit batch preview remains pending", async ()
   const user = userEvent.setup();
   mockBulk();
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   const refresh = screen.getByRole("button", { name: "Проверить все позиции T-Invest" });
   await user.click(refresh);
   await screen.findByText("Выбрано событий: 3");
@@ -1478,7 +1221,7 @@ it("bulk blocks duplicate clicks and individual Apply until authoritative readba
         resolve = done;
       }),
   );
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText("Выбрано событий: 2");
   await user.click(screen.getByRole("button", { name: "Развернуть всё" }));
@@ -1506,7 +1249,7 @@ it("bulk rejects changed local quantity before POST and leaves later groups NOT_
   const user = userEvent.setup();
   const items = mockBulk(2);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText("Выбрано событий: 2");
   vi.mocked(listPositions).mockResolvedValue(
@@ -1553,7 +1296,7 @@ it("collapsed warnings remain visible and manual duplicates require explicit row
     items,
   } as never);
   show("?month=7");
-  await screen.findByText("Объединённый календарь выплат");
+  await openDetails();
   await user.click(screen.getByRole("button", { name: "Проверить все позиции T-Invest" }));
   await screen.findByText(/Возможный ручной дубль/);
   expect(screen.getByText(/Уже сохранено; повторно не отправляется/)).toBeInTheDocument();
@@ -1574,4 +1317,218 @@ it("collapsed warnings remain visible and manual duplicates require explicit row
   });
   // A receipt lacking that explicit link remains unverified, never a false success.
   await screen.findByText(/Сохранение не подтверждено/);
+});
+
+it("keeps the ordinary desktop view to two actions and separates 12-month income from principal", async () => {
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(within(main).getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
+  expect(
+    within(main)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["Обновить", "Подробности"]);
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды300");
+  expect(main).toHaveTextContent("Возврат номинала1 000");
+  expect(main).not.toHaveTextContent("1 300");
+  expect(main).toHaveTextContent("Последний прогноз: 31.08.2026");
+  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+  expect(within(main).queryByRole("status", { name: "Требует внимания" })).toBeNull();
+  expect(main).not.toHaveTextContent(/t_invest|UID-1|K-1|active|completed|v1/);
+  expect(screen.queryByRole("button", { name: "Проверить все позиции T-Invest" })).toBeNull();
+  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("opens advanced operations and technical diagnostics in one click", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  await user.click(await screen.findByRole("button", { name: "Подробности" }));
+  expect(screen.getByRole("button", { name: "Проверить все позиции T-Invest" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Проверить выплаты T-Invest" })).toBeVisible();
+  expect(screen.getByText(/Автообновление: completed/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=7&panel=brokers",
+  );
+  await user.click(screen.getByRole("button", { name: "Подробности" }));
+  expect(screen.queryByRole("button", { name: "Проверить выплаты T-Invest" })).toBeNull();
+  expect(previewPayouts).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("shows partial coverage, unmapped papers and conflicts in plain language", async () => {
+  vi.mocked(getInstrumentMapping).mockResolvedValue({
+    instrument_id: 10,
+    state: "unmapped",
+    identity: null,
+    instrument_isin: "RU000SYNTH01",
+    legacy_moex_secid: null,
+  });
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 7,
+    positions_changed: 1,
+    items: [],
+    forecast_as_of: "2026-08-29T12:00:00Z",
+    automatic_refresh: {
+      status: "partial",
+      message: "technical_payload",
+      reason_codes: ["mapping_ambiguous", "possible_manual_duplicate", "draft_changed"],
+    },
+  });
+  vi.mocked(listPayoutCalendar).mockResolvedValue([
+    { ...calendarFixture[0], actual_attribution_coverage: "unknown" },
+  ] as never);
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  const attention = within(main).getByRole("status", { name: "Требует внимания" });
+  expect(attention).toHaveTextContent("Прогноз неполный");
+  expect(attention).toHaveTextContent("Bond: нет сопоставления с T-Invest");
+  expect(attention).toHaveTextContent("Есть конфликт выплат");
+  expect(attention).toHaveTextContent("прогноз может быть устаревшим");
+  expect(attention).toHaveTextContent("Полнота выплат неизвестна");
+  expect(main).toHaveTextContent("Последний прогноз: 29.08.2026");
+  expect(main).not.toHaveTextContent(
+    /mapping_ambiguous|possible_manual_duplicate|draft_changed|technical_payload/,
+  );
+  expect(within(main).getAllByRole("button")).toHaveLength(2);
+});
+
+it("keeps the previous calendar and its backend date after an offline reload without a provider request", async () => {
+  const user = userEvent.setup();
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  vi.mocked(listPayoutCalendar).mockRejectedValueOnce(new Error("synthetic offline"));
+  vi.mocked(getPayoutRefreshStatus).mockRejectedValueOnce(new Error("synthetic offline"));
+  await user.click(within(main).getByRole("button", { name: "Обновить" }));
+  expect(await within(main).findByText(/Обновление недоступно/)).toHaveTextContent(
+    "Показан прежний прогноз. Последний прогноз: 31.08.2026",
+  );
+  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды300");
+  expect(main).not.toHaveTextContent("synthetic offline");
+  expect(previewPayoutsBatch).not.toHaveBeenCalled();
+  expect(previewPayouts).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+  await user.click(within(main).getByRole("button", { name: "Обновить" }));
+  await waitFor(() => expect(within(main).queryByText(/Обновление недоступно/)).toBeNull());
+});
+
+it("shows the saved forecast on provider failure after entry and keeps an unknown date explicit", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 7,
+    positions_changed: 0,
+    items: [],
+    forecast_as_of: null,
+    automatic_refresh: {
+      status: "error",
+      message: "provider_error",
+      reason_codes: ["provider_unavailable"],
+    },
+  });
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(within(main).getByText(/Обновление недоступно/)).toHaveTextContent(
+    "Показан прежний прогноз. Дата последнего прогноза неизвестна",
+  );
+  expect(main).not.toHaveTextContent(/provider_error|provider_unavailable/);
+  expect(within(main).getByRole("table")).toBeVisible();
+});
+
+it("does not lose the saved calendar when only status or mapping reads fail", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockRejectedValue(new Error("status offline"));
+  vi.mocked(getInstrumentMapping).mockRejectedValue(new Error("mapping offline"));
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(within(main).getByRole("table")).toBeVisible();
+  expect(main).toHaveTextContent("Не удалось проверить сопоставление части бумаг");
+  expect(main).toHaveTextContent("Дата последнего прогноза неизвестна");
+});
+
+it("sorts saved payments by date and uses exact cents without mixing currencies", async () => {
+  vi.mocked(listPayoutCalendar).mockResolvedValue([
+    {
+      ...calendarFixture[0],
+      coupon: money("90071992547409.91"),
+      dividend: money("0.02"),
+      items: [...calendarFixture[0].items].reverse(),
+    },
+    {
+      ...calendarFixture[0],
+      month: 10,
+      coupon: { amount: "1.01", currency: "USD" },
+      dividend: { amount: "0.02", currency: "USD" },
+      redemption: { amount: "0.00", currency: "USD" },
+      items: [],
+    },
+  ] as never);
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(main).toHaveTextContent("90 071 992 547 409,93 ₽ · 1,03 USD");
+  const rows = within(within(main).getByRole("table")).getAllByRole("row").slice(1);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[0].textContent)).toEqual([
+    "10.09.2026",
+    "10.09.2026",
+    "15.09.2026",
+  ]);
+});
+
+it("does not turn invalid money into zero or retain a different version after a failed read", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listPayoutCalendar).mockResolvedValueOnce([
+    { ...calendarFixture[0], coupon: money("unknown") },
+  ] as never);
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивидендыНе определён");
+  await openDetails();
+  vi.mocked(listPayoutCalendar).mockRejectedValue(new Error("version unavailable"));
+  await user.clear(screen.getByLabelText("Версия прогноза"));
+  await user.type(screen.getByLabelText("Версия прогноза"), "v2");
+  await waitFor(() => expect(within(main).queryByRole("table")).toBeNull());
+  expect(main).not.toHaveTextContent("Последний прогноз: 31.08.2026");
+});
+
+it.each([
+  "?month=7#statement-import",
+  "?month=7&from=monthly-close-v2&monthId=7&step=actual_payouts#statement-import",
+])("legacy PDF entry %s offers the month upload without another importer", async (query) => {
+  show(query);
+  expect(await screen.findByRole("link", { name: "Открыть файлы месяца" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=7&panel=brokers",
+  );
+  await openDetails();
+  expect(screen.queryByLabelText("PDF отчёта Alfa")).toBeNull();
+  expect(screen.getByRole("link", { name: "Загрузка файлов месяца · PDF выплат" })).toHaveAttribute(
+    "href",
+    "/v2/close?month=7&panel=brokers",
+  );
+  expect(previewPayouts).not.toHaveBeenCalled();
+  expect(applyPayouts).not.toHaveBeenCalled();
+});
+
+it("shows persisted reconciliation conflicts even after transient automatic status resets", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 7,
+    positions_changed: 0,
+    items: [],
+    automatic_refresh: { status: "idle", message: "", reason_codes: [] },
+  });
+  vi.mocked(getCloseReadiness).mockResolvedValue({
+    ...draftMonth,
+    can_close: false,
+    items: [
+      {
+        code: "unresolved_payout_reconciliation",
+        severity: "warning",
+        message: "technical diagnostic",
+        context: {},
+      },
+    ],
+  } as CloseReadiness);
+  show("?month=7");
+  const main = await screen.findByRole("region", { name: "Основной прогноз" });
+  expect(main).toHaveTextContent("Есть несогласованные выплаты");
+  expect(main).not.toHaveTextContent(/unresolved_payout_reconciliation|technical diagnostic/);
 });

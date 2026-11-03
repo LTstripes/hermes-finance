@@ -30,6 +30,8 @@ recovery before another explicit click. Coupons/dividends and principal repaymen
 are separate, labelled announced/forecast with personal tax/net unknown. Source
 previews and actual payout reconciliation retain their existing authority.
 
+The payout forecast page leads with a 12-month saved-calendar summary: coupon/dividend income and principal repayment are separate, followed by payments ordered by date. **Требует внимания** lists missing mappings, conflicts, incomplete or unavailable forecasts; the last forecast date comes from backend evidence and stays explicitly unknown when absent. Failed reloads retain the previously loaded calendar and its date in the same month/version. The primary actions are **Обновить** (local reread) and **Подробности**; provider preview, explicit selected-row Apply, diagnostics and manual editing live in the one-click disclosure. Payout PDF upload uses the Month workspace's **Брокерские выписки** file intake; this page links there and mounts no PDF uploader, including for legacy statement-import links.
+
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
 The user may close the selected month with incomplete data or unfinished steps.
