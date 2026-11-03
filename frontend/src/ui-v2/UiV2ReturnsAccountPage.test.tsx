@@ -631,3 +631,18 @@ test("accepted net payments remain visible when the result and percentage are un
   ).toHaveLength(2);
   expect(within(payouts).queryByText("Оценка")).toBeNull();
 });
+
+test("instrument row exposes both server metrics and visible missing-evidence reason", async () => {
+  install();
+  setup();
+  const section = await screen.findByRole("region", { name: "По инструментам" });
+  const zero = within(section).getByRole("row", { name: /Равновесие/ });
+  expect(zero).toHaveTextContent("0 ₽");
+  expect(zero).toHaveTextContent("0,00%");
+  const missing = within(section).getByRole("row", { name: /Учебная облигация/ });
+  expect(missing).toHaveTextContent("Нужна проверка данных");
+  expect(within(missing).getByText(/^Причины:/)).toHaveTextContent(
+    "Не хватает стоимости на границе периода",
+  );
+  expect(missing).toHaveTextContent("30.04.2030 — 31.05.2030");
+});

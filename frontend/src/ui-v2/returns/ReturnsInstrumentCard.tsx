@@ -7,12 +7,14 @@ import { instrumentBreakdown } from "./breakdown";
 import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
 import { getInstrumentCard } from "./cards";
 import styles from "./InstrumentCard.module.css";
+import resultStyles from "./InstrumentResult.module.css";
 import { dateLabel, displayMetric } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
 import { Explanation } from "./ReturnsInfo";
+import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function ReturnsInstrumentCard({
@@ -173,13 +175,12 @@ export function ReturnsInstrumentCard({
             <section className={styles.panel} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>
               <div className={styles.scroll}>
-                <table className={styles.table}>
+                <table className={`${styles.table} ${resultStyles.list}`}>
                   <thead>
                     <tr>
                       <th>Счёт</th>
                       <th>Позиция</th>
-                      <th>Результат</th>
-                      <th>Доходность за период</th>
+                      <th colSpan={2}>Результат и доходность за период</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -213,28 +214,24 @@ export function ReturnsInstrumentCard({
                                 </small>
                               )}
                             </td>
-                            <td>
-                              {hasAmount(account.detail.pnl)
-                                ? displayMetric(account.detail.pnl, true)
-                                : "Нет расчёта"}
-                            </td>
-                            <td>
-                              {account.detail.rate.value !== null ? (
-                                <>
-                                  {displayMetric(account.detail.rate)}
-                                  <small>
-                                    {account.detail.rate.method === "modified_dietz"
-                                      ? "Modified Dietz · не годовой"
-                                      : account.detail.rate.method}
-                                  </small>
-                                </>
-                              ) : (
-                                "Нет расчёта"
-                              )}
+                            <td colSpan={2}>
+                              <ReturnsInstrumentResult
+                                result={account.detail}
+                                analysis={account.detail.analysis}
+                                reasonCodes={[
+                                  ...account.reason_codes,
+                                  ...account.detail.reason_codes,
+                                ]}
+                              />
                             </td>
                           </>
                         ) : (
-                          <td colSpan={3}>Расчёт недоступен; данные не заменены нулём.</td>
+                          <td colSpan={3}>
+                            <ReturnsInstrumentResult
+                              result={null}
+                              reasonCodes={account.reason_codes}
+                            />
+                          </td>
                         )}
                       </tr>
                     ))}

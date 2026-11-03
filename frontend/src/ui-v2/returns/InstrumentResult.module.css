@@ -1,0 +1,52 @@
+.result {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin: 0;
+}
+.metrics > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.metrics dt {
+  color: #526378;
+  font-size: 11px;
+}
+.metrics dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+.notice,
+.notes {
+  margin: 8px 0 0;
+  color: #526378;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.notes code {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 650px) {
+  .list > thead {
+    display: none;
+  }
+  .list > tbody > tr {
+    display: block;
+    border-bottom: 1px solid #dfe6ed;
+  }
+  .list > tbody > tr > th,
+  .list > tbody > tr > td {
+    display: block;
+    width: auto !important;
+    border: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

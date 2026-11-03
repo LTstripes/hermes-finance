@@ -12,7 +12,7 @@ import {
   may,
   overviewFixture,
 } from "../src/ui-v2/returns/fixtures";
-import { overallFixture } from "../src/ui-v2/returns/overallFixtures";
+import { instrumentCardFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
 async function install(page: Page, extendedHistory = false) {
   const calls: string[] = [];
@@ -515,5 +515,87 @@ test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) 
     expect(colors.background).not.toBe(colors.inactiveBackground);
     expect(colors.marker).not.toBe("none");
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  }
+});
+
+test("ui-v2 returns instrument results: separate accounts, assumptions and narrow layout @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const overall = overallFixture();
+  const card = instrumentCardFixture();
+  const first = overall.instruments[0].accounts[0];
+  first.pnl.value = "0";
+  first.rate = { ...first.rate, value: null, reason_codes: ["missing_endpoint"] };
+  const detail = card.accounts[0].detail;
+  if (!detail) throw new Error("Synthetic instrument detail missing");
+  detail.analysis.assumptions = ["face_value_assumed"];
+  const calls: string[] = [];
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const url = new URL(route.request().url());
+      expect(route.request().method()).toBe("GET");
+      calls.push(url.pathname);
+      const scope = url.searchParams.get("scope") ?? "source:SYNTH-A";
+      const period = {
+        start: url.searchParams.get("start") ?? may.start,
+        end: url.searchParams.get("end") ?? may.end,
+      };
+      const body =
+        url.pathname === "/api/returns/overall"
+          ? overall
+          : url.pathname === "/api/returns/instrument-card"
+            ? card
+            : url.pathname === "/api/returns/context"
+              ? contextFixture
+              : url.pathname === "/api/returns/overview"
+                ? overviewFixture(scope, period)
+                : null;
+      await route.fulfill({ status: body ? 200 : 404, json: body ?? {} });
+    },
+  );
+  let cardReads = 0;
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/v2/returns");
+    const instruments = page.getByRole("region", { name: "По инструментам" });
+    const row = instruments.getByRole("row").filter({ hasText: "Учебная акция" });
+    const a = row.getByRole("region", { name: "Учебный счёт А" });
+    const b = row.getByRole("region", { name: "Учебный счёт Б" });
+    await expect(a).toContainText("0 ₽");
+    await expect(a).toContainText("Нужна проверка данных");
+    await expect(a).toContainText("30.04.2030 — 31.05.2030");
+    await expect(b).toContainText("−4,00%");
+    await expect(b).toContainText("31.03.2030 — 30.04.2030");
+    expect(calls.filter((call) => call.endsWith("instrument-card"))).toHaveLength(cardReads);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await instruments.screenshot({
+      path: testInfo.outputPath(`instrument-results-overview-${width}.png`),
+    });
+    await row.getByRole("link", { name: "Учебная акция", exact: true }).click();
+    const accounts = page.getByRole("region", { name: "Позиции и результат по счетам" });
+    await expect(accounts).toContainText("+12 ₽");
+    cardReads = calls.filter((call) => call.endsWith("instrument-card")).length;
+    await expect(accounts).toContainText("−4,00%");
+    await expect(accounts.getByText(/^Допущения:/)).toBeVisible();
+    await expect(accounts.getByText(/^Допущения:/)).toContainText(
+      "Номинал сделки принят с допущением",
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await accounts.screenshot({
+      path: testInfo.outputPath(`instrument-results-card-${width}.png`),
+    });
+    await page.getByRole("button", { name: "К доходности", exact: true }).click();
+    await expect(instruments).toBeVisible();
+    await page.goto("/v2/returns/account?scope=source:SYNTH-A");
+    const missing = page.getByRole("row").filter({ hasText: "Учебная облигация" });
+    await expect(missing).toContainText("Нужна проверка данных");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
   }
 });

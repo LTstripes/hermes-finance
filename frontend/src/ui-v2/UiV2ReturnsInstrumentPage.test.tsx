@@ -146,7 +146,9 @@ test("sold zero and known sibling survive a stale account without stale zero fal
   expect(accounts.getByText("0 шт.")).toBeVisible();
   expect(accounts.getByText("+12 ₽")).toBeVisible();
   expect(accounts.getByText("12,00%")).toBeVisible();
-  expect(accounts.getByText("Расчёт недоступен; данные не заменены нулём.")).toBeVisible();
+  expect(accounts.getByText("Нужна проверка данных")).toBeVisible();
+  expect(accounts.getAllByText("—")).toHaveLength(2);
+  expect(accounts.queryByText("0 ₽")).toBeNull();
   expect(
     screen.getByText(
       "Проверка выписок устарела; требуется актуальное подтверждение. Счёт: Учебный счёт Б · Инструмент: Учебная акция.",
