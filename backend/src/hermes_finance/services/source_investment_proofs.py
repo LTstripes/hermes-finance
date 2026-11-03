@@ -36,7 +36,7 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v2"
+SEMANTICS_REVISION = "source_investment_semantics_v3"
 
 
 def _json(value):
@@ -181,12 +181,31 @@ def _snapshot(session, account, start, end, *, reserved=False):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
         raise ProofError("investment_proof_scope_ambiguous")
-    sources, money_ids = [], []
+    sources, money_ids, gift_dependencies = [], [], []
+    from hermes_finance.services import broker_money
+    from hermes_finance.services.source_return_evidence import bound_import, effective_bonus
+
+    gift_heads = broker_money.latest_proofs(session)
     for original, view, error in selected:
         if error:
             raise ProofError("investment_proof_source_unavailable")
         if original.covered_to < start or original.covered_from > end:
             continue
+        source = bound_import(session, view)
+        if source is not None:
+            for row in view["document"]["money"]:
+                entry = gift_heads.get(("broker_bonus", f"{source.id}:{row['ordinal']}"))
+                if entry is not None:
+                    receipt, proof, target = entry
+                    gift_dependencies.append(
+                        [
+                            original.id,
+                            row["ordinal"],
+                            receipt.request_id,
+                            mybroker.digest([proof, target]),
+                            effective_bonus(session, source, row),
+                        ]
+                    )
         decisions = [
             r.seq
             for r in source_intake._events(session, original.id)
@@ -236,6 +255,8 @@ def _snapshot(session, account, start, end, *, reserved=False):
         "clocks": clocks,
         "native": sorted(native),
     }
+    if gift_dependencies:
+        operands["gift_dependencies"] = sorted(gift_dependencies)
     return mybroker.digest(operands), selected, next(iter(native))
 
 
@@ -246,18 +267,24 @@ def _bound_view(selected, sha):
     return matches[0]
 
 
-def _captured_money(document, view):
+def _captured_money(session, document, view):
     from hermes_finance.services.source_report_preview import _money
+    from hermes_finance.services.source_return_evidence import apply_cash_gifts
 
     rows = view["money_classifications"]
     if len(rows) != len(document["money"]):
         raise ProofError("investment_proof_classification_conflict")
     money = _money(document, None, texts=[(r["operation"], r["narrative"], None) for r in rows])
+    money = apply_cash_gifts(session, view, money)
     for value, captured in zip(money, rows):
         if (
             (
                 captured["origin"] == "user_choice"
                 and value["classification"] != captured["classification"]
+                and not (
+                    value["classification"] == "external_gift"
+                    and captured["classification"] in {"unknown", "external_deposit"}
+                )
             )
             or value["minor"] != captured["amount_kopecks"]
             or str(value["day"]) != str(captured["date"])
@@ -297,7 +324,7 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
                 payloads[document["document_sha256"]],
                 filenames[document["document_sha256"]],
             )
-            captured = _captured_money(document, view)
+            captured = _captured_money(session, document, view)
             display_names = {}
             trades, names, _, cancellations = _native(
                 document, payloads[document["document_sha256"]], display_names=display_names
@@ -406,7 +433,7 @@ def _derive(
     if original.id != plan["intake_id"]:
         raise ProofError("investment_proof_binding_changed")
     document = view["document"]
-    money = _captured_money(document, view)
+    money = _captured_money(session, document, view)
     report = _restore_report(plan["report"])
     links, issues = _payout_links([document], {plan["source_sha256"]: money}, report)
     return _interval(
@@ -838,7 +865,7 @@ def confirm(session, *, form_token, preview_digest, request_id, replace_existing
             original, view = _bound_view(selected, plan["source_sha256"])
             if original.id != plan["intake_id"]:
                 raise ProofError("investment_proof_binding_changed")
-            _captured_money(view["document"], view)
+            _captured_money(session, view["document"], view)
             evidence = {
                 **plan,
                 "batch_id": request_id,

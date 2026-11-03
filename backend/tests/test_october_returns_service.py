@@ -343,6 +343,85 @@ def test_in_kind_gift_without_cash_or_valuation_stays_unresolved(db):
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("change", ["dependency", "withdrawn"])
+def test_saved_investment_gift_proof_currentness_and_ai(database, monkeypatch, change):
+    from test_statement_import_mybroker_preflight import investment_case
+
+    from hermes_finance.services import broker_money, mybroker_preflight, source_report_preview
+
+    client, scope, raw, source = existing_statement(database, gift=True)
+    with database.session_factory() as session:
+        saved = source_intake.save_intake(
+            session, document=raw, filename=FILENAME, request_id="gift-investment-source"
+        )
+        bonus = session.scalar(
+            select(SourceMoneyClassification).where(
+                SourceMoneyClassification.intake_id == saved["intake_id"],
+                SourceMoneyClassification.date == date(2030, 1, 23),
+            )
+        )
+        bonus.classification, bonus.origin, bonus.status = "unknown", "user_choice", "confirmed"
+        session.commit()
+    accept_bookkeeping(client, scope, raw, source)
+    _accept_money(client, source, raw, confirmed=True)
+    _, _, _, report, _ = investment_case()
+    monkeypatch.setattr(source_report_preview, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(source_report_preview, "parse_investment_report", lambda *_: report)
+    with database.session_factory() as session:
+        result = mybroker_preflight.preview_batch(
+            session, originals=[(FILENAME, raw)], income_report=b"synthetic pdf"
+        )["source_return_preview"]
+        persistence = result["persistence"]
+        assert persistence["available"], persistence
+        proofs.confirm(
+            session,
+            form_token=persistence["form_token"],
+            preview_digest=persistence["preview_digest"],
+            request_id="gift-investment-proof",
+        )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        saved_proof = proofs.read_reports(session, source_account=ACCOUNT)[0]
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+        ordinary = returns_view.read_overview(
+            session, scope=f"source:{ACCOUNT}", start=date(2029, 12, 31), end=date(2030, 1, 31)
+        )
+        export = ai_source_returns.source_returns_section(
+            session, as_of_date=date(2030, 1, 31), reporting_period=(2030, 1)
+        )
+    assert saved_proof["status"] == "current"
+    interval = saved_proof["interval"]
+    assert interval["contributions_kopecks"] == "1723"
+    assert interval["pnl"]["value"] is not None
+    assert monthly.months[0].result.growth_kopecks == int(interval["pnl"]["value"])
+    assert ordinary["selected"]["pnl"]["value"] == interval["pnl"]["value"]
+    selected = export["data"]["accounts"][0]["intervals"][0]["account"]
+    assert selected["contributions"]["amount"] == "17.23"
+    assert Decimal(selected["metrics"]["pnl"]["value"]["amount"]) == (
+        Decimal(interval["pnl"]["value"]) / 100
+    )
+    assert snapshot(database) == before
+    # A changed dependency invalidates the exact gift proof and saved investment proof.
+    if change == "dependency":
+        with database.session_factory() as session:
+            session.get(Instrument, 1).name = "Changed synthetic gift proof dependency"
+            session.commit()
+    else:
+        # Model absence of the previously present exact proof head without
+        # changing any receipt or financial row.
+        monkeypatch.setattr(broker_money, "latest_proofs", lambda session: {})
+    with database.session_factory() as session:
+        stale = proofs.read_reports(session, source_account=ACCOUNT)[0]
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+        stale_export = ai_source_returns.source_returns_section(
+            session, as_of_date=date(2030, 1, 31), reporting_period=(2030, 1)
+        )
+    assert stale["status"] == "stale"
+    assert "investment_proof_dependencies_changed" in stale["reason_codes"]
+    assert monthly.months[0].result.growth_kopecks is None
+    assert stale_export["data"]["accounts"][0]["intervals"][0]["account"] is None
+
+
 def test_saved_history_new_month_replay_and_ai_export_share_one_outer_result(database, monkeypatch):
     # Save the continuation before issuing the historical proof so its full
     # currentness contract is exercised without pretending an old proof survived.

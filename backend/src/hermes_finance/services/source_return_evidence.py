@@ -53,6 +53,27 @@ def effective_bonus(session, source, row):
     ) and not money.proof_blockers(session, receipt, proof, target)
 
 
+def apply_cash_gifts(session, view, rows):
+    """Project only current exact cash gifts; never mutate saved source rows."""
+    source = bound_import(session, view)
+    captured = view["money_classifications"]
+    raw = view["document"]["money"]
+    if len(rows) != len(raw) or len(rows) != len(captured):
+        return rows
+    result = []
+    for value, saved, original in zip(rows, captured, raw, strict=True):
+        eligible = (
+            saved["classification"] in {"unknown", "external_deposit"}
+            and value["minor"] == saved["amount_kopecks"]
+            and value["minor"] > 0
+            and str(value["day"]) == str(saved["date"])
+            and value["currency"] == saved["currency"] == "RUB"
+            and effective_bonus(session, source, original)
+        )
+        result.append({**value, "classification": "external_gift"} if eligible else value)
+    return result
+
+
 def effective_section_blockers(session, source, codes):
     if source is None:
         return set(codes)

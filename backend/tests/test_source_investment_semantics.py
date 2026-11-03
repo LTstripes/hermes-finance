@@ -33,12 +33,11 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# The cash-gift change is in the monthly projection only. Persisted XML/PDF
-# investment _derive semantics and its v2 revision are unchanged; the whole-file
-# tripwire still records the reviewed candidate's changed monthly module.
+# Saved XML/PDF gift interpretation changes in v3 and requires independent
+# compatibility review for older proofs.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v2",
-    "6c87efc2214ba5c84428107beddd11ad7acbd483f2128cf970cbefc5f6f9f626",
+    "source_investment_semantics_v3",
+    "24ff2c4e67797239035e6c9c2f9f6183bae7ac0c6b37c98bf59116fcd5905966",
 )
 
 

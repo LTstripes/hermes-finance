@@ -6302,6 +6302,10 @@ not cash. Missing receipt-date valuation or unsupported custody movements remain
 unresolved; sale proceeds, current prices and quantities cannot invent an in-kind
 contribution or remove those blockers. External
 deposits/withdrawals enter the schedule with their persisted status;
+Saved XML/PDF investment proofs use the same exact current gift evidence, and
+bind the relevant gift proof head and currentness into their dependencies.
+Changed, replaced or invalid gift proof retires the dependent investment proof;
+prior semantics require a separately reviewed compatibility transition.
 `coupons_kopecks` and `dividends_kopecks` report the classified RUB income subtotal
 per month, without adding it again as investor flow. The monthly
 `income_assumptions_used` flag is true when any included coupon/dividend uses
