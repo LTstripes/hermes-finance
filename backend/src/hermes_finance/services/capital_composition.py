@@ -100,7 +100,9 @@ def _amount_delta(current: RubleAmount, previous: RubleAmount) -> RubleAmount:
 
 
 @coherent_read_operation
-def closed_report_comparison(session: Session) -> ClosedReportComparison:
+def closed_report_comparison(
+    session: Session, *, include_capital_change: bool = True
+) -> ClosedReportComparison:
     """Return the latest closed report and its previous closed report.
 
     Draft months are excluded by :func:`capital_composition_history`, so a
@@ -112,7 +114,7 @@ def closed_report_comparison(session: Session) -> ClosedReportComparison:
     current = history.points[-1] if history.points else None
     previous = history.points[-2] if len(history.points) >= 2 else None
     capital_change = None
-    if current is not None:
+    if current is not None and include_capital_change:
         from hermes_finance.services.monthly_capital_change import monthly_capital_change
 
         ids = [current.reporting_month_id] + ([previous.reporting_month_id] if previous else [])

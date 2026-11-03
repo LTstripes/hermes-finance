@@ -409,7 +409,8 @@ All exact ISIN groups, including sold instruments and separate account contexts,
 remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
 over all available account histories; individual account periods, rates and
 local gaps remain visible through the existing detail presentation. The instrument list
-shows each account's RUB result and period percentage separately, with its own dates;
+shows each account's RUB result and period percentage on a compact summary row.
+Account dates, explanation and assumptions expand on demand;
 unavailable values show a dash and a short review reason. The shared instrument
 card also exposes the calculation's assumptions briefly, with expandable details. The default
 overview loads visible summaries and identity metadata only; instrument details load on

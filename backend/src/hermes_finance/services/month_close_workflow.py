@@ -1072,7 +1072,9 @@ def build_final_month_review(
     """Compose the final review from existing read models only."""
     month_id = getattr(month, "id")
     if getattr(month, "snapshot_date") is None:
-        summary = monthly_summary(session, month_id, allow_incomplete_salary_tax=True)
+        summary = monthly_summary(
+            session, month_id, allow_incomplete_salary_tax=True, include_capital_change=False
+        )
         dashboard = None
         ladder = None
     else:
@@ -1080,6 +1082,7 @@ def build_final_month_review(
             session,
             month_id,
             allow_incomplete_salary_tax=True,
+            include_capital_change=False,
         )
         summary = dashboard.summary
         ladder = dashboard.cash_flow_ladder

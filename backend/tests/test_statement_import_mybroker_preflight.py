@@ -1332,8 +1332,9 @@ def test_investment_semantics_latest_stale_proof_has_no_older_compatible_fallbac
 
 
 @pytest.mark.parametrize("operation", ["copy", "replace"])
+@pytest.mark.parametrize("legacy", [False, True])
 def test_investment_semantics_preserves_physical_database_binding(
-    database, monkeypatch, tmp_path, operation
+    database, monkeypatch, tmp_path, operation, legacy
 ):
     from shutil import copyfile
 
@@ -1341,7 +1342,12 @@ def test_investment_semantics_preserves_physical_database_binding(
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.source_proof_file import file_incarnation
 
-    save_semantics_proof(database, monkeypatch, proofs.SEMANTICS_REVISION, "physical-original")
+    save_semantics_proof(
+        database,
+        monkeypatch,
+        proofs._LEGACY_READ_CODE if legacy else proofs.SEMANTICS_REVISION,
+        "physical-original",
+    )
     with database.session_factory() as session:
         assert proofs.request_status(session, "physical-original")["current"]
     before = snapshot(database)
@@ -1405,7 +1411,8 @@ def test_investment_persistent_save_repeat_reload_and_ordinary_readers(database,
 
 
 @pytest.mark.parametrize("mutation", ["classification", "aba", "overlap"])
-def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mutation):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mutation, legacy):
     from hermes_finance.persistence import SourceMoneyClassification
     from hermes_finance.services import source_intake
     from hermes_finance.services import source_investment_proofs as proofs
@@ -1414,7 +1421,7 @@ def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mu
     save_semantics_proof(
         database,
         monkeypatch,
-        proofs.SEMANTICS_REVISION,
+        proofs._LEGACY_READ_CODE if legacy else proofs.SEMANTICS_REVISION,
         "proof-currentness",
     )
     if mutation == "overlap":
@@ -2125,3 +2132,58 @@ def test_disclosure_preserves_decimal_lexemes_and_missing_costs():
     assert str(result["unit_price"]) == trade["core"]["price"]
     assert result["accrued_interest_kopecks"] is None
     assert result["commission_kopecks"] is None
+
+
+def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
+    database, monkeypatch
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    original = save_semantics_proof(
+        database, monkeypatch, proofs._LEGACY_READ_CODE, "reviewed-legacy"
+    )
+    before = snapshot(database)
+    before_bytes = database.database_path.read_bytes()
+    with database.session_factory() as session:
+        assert proofs.read_reports(session) == original
+        assert proofs.request_status(session, "reviewed-legacy")["current"]
+        from hermes_finance.services.source_monthly_returns import (
+            read_monthly_result,
+            read_monthly_returns,
+        )
+
+        complete = read_monthly_returns(session, source_account=ACCOUNT)
+        for row in complete.months:
+            assert (
+                read_monthly_result(
+                    session,
+                    source_account=ACCOUNT,
+                    opening_date=row.result.opening_date,
+                    closing_date=row.result.closing_date,
+                )
+                == row.result
+            )
+    assert snapshot(database) == before
+    assert database.database_path.read_bytes() == before_bytes
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_future")
+        with database.session_factory() as session:
+            assert proofs.read_reports(session)[0]["status"] == "stale"
+
+
+def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.source_return_proofs import ProofError
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "SEMANTICS_REVISION", proofs._LEGACY_READ_CODE)
+        preview = saved_investment_preview(database, patch)["persistence"]
+    before = snapshot(database)
+    with database.session_factory() as session:
+        with pytest.raises(ProofError, match="investment_proof_dependencies_changed"):
+            proofs.confirm(
+                session,
+                **{k: preview[k] for k in ("form_token", "preview_digest")},
+                request_id="legacy-pending",
+            )
+    assert snapshot(database) == before

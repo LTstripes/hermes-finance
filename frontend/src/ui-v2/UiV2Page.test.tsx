@@ -1,8 +1,8 @@
 import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Suspense } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Suspense } from "react";
 
 import { createQueryClient, queryKeys } from "../queryClient";
 import {
@@ -259,7 +259,7 @@ it("ignores a late old comparison after a corrected readback has settled", async
     release();
   });
   expect(screen.getByRole("button", { name: "Почему часть счетов не объединена" })).toBeVisible();
-  expect(client.getQueryData(queryKeys.closedReportComparison)).toEqual(state.comparison);
+  expect(client.getQueryData(queryKeys.closedReportComparisonBasic)).toEqual(state.comparison);
 });
 
 it("keeps a newer draft separate and routes its single CTA to the server recommendation", async () => {
