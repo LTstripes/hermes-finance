@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -105,7 +106,11 @@ from hermes_finance.api.statement_import import router as statement_import_route
 from hermes_finance.api.tax_brackets import router as tax_brackets_router
 from hermes_finance.api.tax_iis_planner import router as tax_iis_planner_router
 from hermes_finance.database import Database
-from hermes_finance.diagnostics import DiagnosticContextMiddleware, configure_private_logging
+from hermes_finance.diagnostics import (
+    DiagnosticContextMiddleware,
+    RequestTimingMiddleware,
+    configure_private_logging,
+)
 from hermes_finance.security import LocalhostSecurityMiddleware
 from hermes_finance.services.quote_preview_evidence import QuotePreviewEvidenceStore
 from hermes_finance.settings import Settings
@@ -170,6 +175,10 @@ def create_app(
                 response.headers[header] = recovery_readiness[name]
         return response
 
+    if timing_log := os.environ.get("HERMES_CI_REQUEST_TIMING_LOG"):
+        application.add_middleware(
+            RequestTimingMiddleware, log_path=Path(timing_log), routes=application.routes
+        )
     application.add_middleware(DiagnosticContextMiddleware)
     register_error_handlers(application)
     application.include_router(settings_router)

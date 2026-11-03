@@ -891,3 +891,216 @@ def test_multipart_non_file_field_one_mib_boundary(tmp_path, extra):
         assert response.json()["selected_count"] == 0
     else:
         assert response.json()["error"]["message"] == "document_size_invalid"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_ci_request_timing_is_opt_in_and_uses_private_route_template(
+    tmp_path, monkeypatch, enabled
+):
+    from datetime import datetime
+
+    from fastapi import APIRouter
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.diagnostics import RequestTimingMiddleware
+
+    log_path = tmp_path / "requests.jsonl"
+    if enabled:
+        monkeypatch.setenv("HERMES_CI_REQUEST_TIMING_LOG", str(log_path))
+    app = _app(tmp_path)
+    assert any(m.cls is RequestTimingMiddleware for m in app.user_middleware) is enabled
+
+    inner = APIRouter()
+
+    @inner.get("/{item}")
+    def show(item: str):
+        return {"ok": True}
+
+    outer = APIRouter()
+    outer.include_router(inner, prefix="/timing")
+    app.include_router(outer, prefix="/api")
+
+    marker = "SYNTHETIC_PRIVATE_VALUE"
+    with TestClient(app) as client:
+        assert client.get(f"/api/timing/{marker}?note={marker}").json() == {"ok": True}
+        assert client.post(f"/api/timing/{marker}", json={"secret": marker}).status_code == 405
+        assert client.get(f"/api/unknown/{marker}?note={marker}").status_code == 404
+        assert (
+            client.get(f"/api/timing/{marker}", headers={"host": "attacker.example"}).status_code
+            == 400
+        )
+    if not enabled:
+        assert not log_path.exists()
+        return
+    text = log_path.read_text(encoding="utf-8")
+    assert marker not in text
+    records = [json.loads(line) for line in text.splitlines()]
+    assert len(records) == 12
+    assert len({r["request_id"] for r in records}) == 4
+    for offset, (method, route, status) in enumerate(
+        [
+            ("GET", "/api/timing/{item}", 200),
+            ("POST", "/api/timing/{item}", 405),
+            ("GET", "<unmatched>", 404),
+            ("GET", "/api/timing/{item}", 400),
+        ]
+    ):
+        start, response, finish = records[offset * 3 : offset * 3 + 3]
+        assert [r["event"] for r in (start, response, finish)] == [
+            "start",
+            "response_start",
+            "finish",
+        ]
+        assert start["status"] is None
+        assert response["status"] == finish["status"] == status
+        assert finish["outcome"] == "completed"
+        assert len({r["request_id"] for r in (start, response, finish)}) == 1
+        assert all(r["method"] == method and r["path"] == route for r in (start, response, finish))
+        assert all(
+            r["pid"] > 0 and datetime.fromisoformat(r["timestamp"]).tzinfo
+            for r in (start, response, finish)
+        )
+        assert 0 <= start["duration_ms"] <= response["duration_ms"] <= finish["duration_ms"]
+
+
+@pytest.mark.parametrize("failure", [None, "error", "cancelled", "incomplete"])
+def test_ci_request_timing_flushes_before_dispatch_and_preserves_stream_and_failure(
+    tmp_path, failure
+):
+    from starlette.routing import Route
+
+    from hermes_finance import diagnostics
+
+    log_path = tmp_path / "requests.jsonl"
+    sent = []
+
+    def records():
+        return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+    async def application(scope, receive, send):
+        # This read happens before the handler returns or produces any response.
+        assert [r["event"] for r in records()] == ["start"]
+        if failure == "error":
+            raise RuntimeError("SYNTHETIC_PRIVATE_ERROR")
+        if failure == "cancelled":
+            raise asyncio.CancelledError("SYNTHETIC_PRIVATE_ERROR")
+        if failure == "incomplete":
+            return
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"first", "more_body": True})
+        assert [message["type"] for message in sent] == [
+            "http.response.start",
+            "http.response.body",
+        ]
+        assert [r["event"] for r in records()] == ["start", "response_start"]
+        await send({"type": "http.response.body", "body": b"last"})
+        # Finish must include post-response work (e.g. session cleanup).
+        assert len(sent) == 3
+        assert records()[-1]["event"] == "response_start"
+
+    middleware = diagnostics.RequestTimingMiddleware(
+        application,
+        log_path=log_path,
+        routes=[Route("/api/items/{item}", application)],
+    )
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+
+    async def send(message):
+        sent.append(message)
+
+    async def exchange():
+        scope = {"type": "http", "method": "GET", "path": "/api/items/SYNTHETIC_PRIVATE_PATH"}
+        await middleware(scope, receive, send)
+
+    if failure in {"error", "cancelled"}:
+        error_type = RuntimeError if failure == "error" else asyncio.CancelledError
+        with pytest.raises(error_type, match="SYNTHETIC_PRIVATE_ERROR"):
+            asyncio.run(exchange())
+    else:
+        asyncio.run(exchange())
+    result = records()
+    assert result[-1]["event"] == "finish"
+    assert result[-1]["outcome"] == (failure or "completed")
+    assert result[-1]["status"] == (200 if failure is None else 500 if failure == "error" else None)
+    assert len({r["request_id"] for r in result}) == 1
+    assert all(r["path"] == "/api/items/{item}" for r in result)
+    assert "SYNTHETIC_PRIVATE" not in log_path.read_text(encoding="utf-8")
+
+
+def test_ci_request_timing_keeps_overlapping_requests_and_server_appends_separate(tmp_path):
+    from starlette.routing import Route
+
+    from hermes_finance.diagnostics import RequestTimingMiddleware
+
+    log_path = tmp_path / "requests.jsonl"
+
+    async def exchange():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def application(scope, receive, send):
+            if scope["method"] == "GET":
+                entered.set()
+                await release.wait()
+            await send({"type": "http.response.start", "status": 204, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        async def transport(message=None):
+            return {"type": "http.request", "body": b""}
+
+        def server():
+            return RequestTimingMiddleware(
+                application,
+                log_path=log_path,
+                routes=[Route("/api/timing", application, methods=["GET", "POST"])],
+            )
+
+        first = asyncio.create_task(
+            server()({"type": "http", "path": "/api/timing", "method": "GET"}, transport, transport)
+        )
+        await entered.wait()
+        await server()(
+            {"type": "http", "path": "/api/timing", "method": "POST"}, transport, transport
+        )
+        records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+        assert [(r["method"], r["event"]) for r in records] == [
+            ("GET", "start"),
+            ("POST", "start"),
+            ("POST", "response_start"),
+            ("POST", "finish"),
+        ]
+        release.set()
+        await first
+
+    asyncio.run(exchange())
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 6
+    assert len({r["request_id"] for r in records}) == 2
+    for request_id in {r["request_id"] for r in records}:
+        assert [r["event"] for r in records if r["request_id"] == request_id] == [
+            "start",
+            "response_start",
+            "finish",
+        ]
+
+
+def test_ci_request_timing_resolves_both_source_reader_templates(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.services import broker_sources, source_intake
+
+    log_path = tmp_path / "requests.jsonl"
+    monkeypatch.setenv("HERMES_CI_REQUEST_TIMING_LOG", str(log_path))
+    monkeypatch.setattr(source_intake, "list_intakes", lambda *_: [])
+    monkeypatch.setattr(broker_sources, "read_sources", lambda *_: {"items": []})
+    with TestClient(_app(tmp_path)) as client:
+        assert client.get("/api/broker-months/intakes?include_unbound=true").json() == []
+        assert client.get("/api/months/16/broker-sources").json() == {"items": []}
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert [r["path"] for r in records if r["event"] == "start"] == [
+        "/api/broker-months/intakes",
+        "/api/months/{month_id}/broker-sources",
+    ]
+    assert [r["status"] for r in records if r["event"] == "finish"] == [200, 200]
