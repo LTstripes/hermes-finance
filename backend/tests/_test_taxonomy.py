@@ -35,6 +35,12 @@ CI_CORE_SHARD_MARKERS = (
     "ci_core_b",
 )
 
+CI_CORE_A_SHARD_MARKERS = (
+    "ci_core_a1",
+    "ci_core_a2",
+    "ci_core_a3",
+)
+
 CI_PERSISTENCE_SHARD_MARKERS = (
     "ci_persistence_a",
     "ci_persistence_b",
@@ -207,6 +213,74 @@ CI_CORE_SHARD_WEIGHTS = {
     "test_scenario_lab_inflation_real_value.py": 12.23,
     "test_tax_brackets_api.py": 1.47,
     "test_tax_iis_planner.py": 11.58,
+}
+
+# Measured on Python 3.13 / Windows at 535c8e5 with `pytest -m ci_core --junitxml=...`.
+# Summed setup/call/teardown seconds per file, with a 0.01s floor. Only the
+# original core-a group is subdivided; the accepted A/B membership stays fixed.
+CI_CORE_A_SHARD_WEIGHTS = {
+    "domain/test_cash_balance.py": 0.010,
+    "domain/test_monthly_summary.py": 0.010,
+    "domain/test_passive_income.py": 0.010,
+    "domain/test_tax_iis_planner_domain.py": 0.010,
+    "domain/test_xirr_uniqueness.py": 0.621,
+    "test_accounts.py": 5.893,
+    "test_astra_medium_xfail.py": 1.980,
+    "test_cash_api.py": 1.288,
+    "test_close_readiness.py": 26.234,
+    "test_comments.py": 2.527,
+    "test_coverage_goals_service.py": 2.259,
+    "test_d06_events_api.py": 11.055,
+    "test_debts.py": 7.968,
+    "test_deterministic_insights.py": 6.864,
+    "test_empty_manual_close.py": 51.391,
+    "test_expected_cash_flows.py": 3.535,
+    "test_expenses.py": 2.175,
+    "test_financial_context_api.py": 3.782,
+    "test_goal_achievement.py": 3.321,
+    "test_goal_achievement_api.py": 1.401,
+    "test_goals.py": 3.501,
+    "test_historical_membership.py": 44.810,
+    "test_instrument_eod_observations_service.py": 23.964,
+    "test_instrument_return.py": 0.010,
+    "test_instrument_what_if_service.py": 58.071,
+    "test_liquid_capital_service.py": 4.374,
+    "test_money_preparation_service.py": 17.702,
+    "test_monthly_return_chain.py": 1.089,
+    "test_normalized_bonus_service.py": 3.560,
+    "test_october_returns_service.py": 24.281,
+    "test_owner_manual_gold_history_service.py": 20.870,
+    "test_passive_income_average_service.py": 3.851,
+    "test_passive_income_service.py": 8.348,
+    "test_perf04a_attribution.py": 30.039,
+    "test_performance_readiness.py": 21.290,
+    "test_portfolio_review_package.py": 14.510,
+    "test_properties.py": 9.364,
+    "test_r02_27_passive_goal_current_value.py": 1.392,
+    "test_r08_03a_valuation_boundaries.py": 32.779,
+    "test_r08_493_month_delete_coverage.py": 4.547,
+    "test_r08_h2b_cash_boundary.py": 8.952,
+    "test_r08_h2d_in_kind_coverage.py": 15.343,
+    "test_r08_h3_tax_direct_payout.py": 6.344,
+    "test_reopen_confirmations_service.py": 20.621,
+    "test_returns_overall_service.py": 3.416,
+    "test_returns_read_efficiency_service.py": 15.577,
+    "test_returns_view_service.py": 16.840,
+    "test_salary_tax_opening.py": 11.087,
+    "test_salary_tax_opening_api.py": 4.503,
+    "test_salary_tax_service.py": 12.510,
+    "test_scenario_lab_api.py": 15.204,
+    "test_scenario_lab_fx_translation_shock.py": 9.279,
+    "test_scenario_lab_inflation_real_value.py": 13.142,
+    "test_security_reg_isin_mappings_service.py": 1.274,
+    "test_source_account_history_service.py": 0.010,
+    "test_source_instrument_events.py": 18.586,
+    "test_source_instrument_returns_service.py": 33.175,
+    "test_source_investment_semantics.py": 0.010,
+    "test_source_money_classifications_service.py": 24.231,
+    "test_source_monthly_returns_service.py": 116.145,
+    "test_source_payout_preview.py": 4.138,
+    "test_tax_brackets_api.py": 1.442,
 }
 
 # Duration-weighted module seconds for the two ci_integrations shards.
@@ -856,6 +930,21 @@ def ci_core_shard_for_test_path(test_path: Path) -> str | None:
         relative_path.as_posix(),
         CI_CORE_SHARD_WEIGHTS,
         CI_CORE_SHARD_MARKERS,
+    )
+
+
+def ci_core_a_shard_for_test_path(test_path: Path) -> str | None:
+    """Subdivide the original core-a group without moving core-b files."""
+
+    if ci_core_shard_for_test_path(test_path) != "ci_core_a":
+        return None
+    relative_path = _relative_test_path(test_path)
+    if relative_path is None:
+        return None
+    return _weighted_shard(
+        relative_path.as_posix(),
+        CI_CORE_A_SHARD_WEIGHTS,
+        CI_CORE_A_SHARD_MARKERS,
     )
 
 

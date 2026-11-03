@@ -71,10 +71,46 @@ async function uploadOriginal(
     await expect(review).toBeEnabled();
     await review.click();
   }
-  const changeSource = page.getByRole("button", { name: "Открыть выписку", exact: true });
-  if (await changeSource.isVisible()) await changeSource.click();
+  await waitForSourceSelection(page, intakeId, historical ? file.name : undefined);
+  await expect(
+    page.getByText(`Оригинал в текущем сеансе: ${file.name}.`, { exact: false }),
+  ).toBeVisible();
+  const check = page.getByRole("button", { name: "Проверить изменения", exact: true });
+  await expect(check).toBeEnabled();
+  await check.click();
+}
+
+async function waitForSourceSelection(page: Page, intakeId: number, historicalFilename?: string) {
+  const confirm = page.getByRole("button", { name: "Открыть выписку", exact: true });
+  const picker = page
+    .getByRole("region", {
+      name: "Долговечный разбор источника",
+      exact: true,
+      // Selection can commit before the review disclosure is expanded.
+      includeHidden: true,
+    })
+    .getByLabel("Сохранённый разбор", { exact: true });
+  // Opening a saved source may first render a discard dialog or commit a new
+  // account scope. An immediate isVisible() can miss that decision.
+  await expect
+    .poll(async () => {
+      if (await confirm.isVisible()) return true;
+      // An out-of-period historical source is absent from this month's picker.
+      // Its retained original still proves that opening the source completed.
+      if (historicalFilename)
+        return page
+          .getByText(`Оригинал в текущем сеансе: ${historicalFilename}.`, { exact: false })
+          .isVisible();
+      return picker.evaluateAll(
+        (elements, id) => (elements[0] as HTMLSelectElement | undefined)?.value === id,
+        String(intakeId),
+      );
+    })
+    .toBe(true);
+  if (await confirm.isVisible()) await confirm.click();
   await showSourceReview(page);
-  await page.getByRole("button", { name: "Проверить изменения", exact: true }).click();
+  if (!historicalFilename) await expect(picker).toHaveValue(String(intakeId));
+  await expect(page.getByLabel("Брокерский счёт", { exact: true })).toBeEnabled();
 }
 
 function expectFinancialInventoryUnchanged(
@@ -98,9 +134,20 @@ async function showSourceReview(page: Page) {
 }
 async function selectSourceAccount(page: Page, value: string) {
   await openDisclosure(page, "Подробности");
-  await page.getByLabel("Счёт источника месяца", { exact: true }).selectOption(value);
+  const picker = page.getByLabel("Счёт источника месяца", { exact: true });
+  await expect(picker).toBeEnabled();
+  if ((await picker.inputValue()) === value) return;
+  await picker.selectOption(value);
   const confirm = page.getByRole("button", { name: "Сменить счёт", exact: true });
+  const scopeCommitted = () =>
+    (new URL(page.url()).searchParams.get("source_account") ?? "") === value;
+  await expect.poll(async () => scopeCommitted() || (await confirm.isVisible())).toBe(true);
   if (await confirm.isVisible()) await confirm.click();
+  await expect(page).toHaveURL(scopeCommitted);
+  await expect(picker).toHaveValue(value);
+  await expect(
+    page.getByRole("region", { name: "Состояние источников месяца", exact: true }),
+  ).toContainText(`счёт источника: ${value || "выбери один счёт"}.`);
 }
 async function reloadWorkspace(page: Page) {
   await page.reload();
@@ -1272,8 +1319,18 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   ).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
+  const accountsReady = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/accounts" && response.request().method() === "GET",
+  );
   await page.goBack();
+  expect((await accountsReady).ok()).toBe(true);
+  await showSourceReview(page);
   await expect(page.getByText(`Оригинал в текущем сеансе: ${file.name}`)).toBeVisible();
+  const broker = page.getByLabel("Брокерский счёт", { exact: true });
+  await expect(broker.locator('option[value="4"]')).toHaveCount(1);
+  await expect(broker).toHaveValue("4");
+  await expect(broker).toBeEnabled();
   await expect(save).toHaveCount(0);
 
   const order: string[] = [];
@@ -1305,7 +1362,6 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
     }
     return route.continue();
   });
-  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Проверить изменения", exact: true }).click();
   await expect(save).toBeEnabled();
   await save.click();
@@ -1809,13 +1865,22 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   expect(await currentIntakes()).toHaveLength(2);
   const picker = sourcePanel.getByLabel("Счёт источника месяца");
   const list = sourcePanel.getByRole("list", { name: "Источники и исключения месяца" });
+  const sourceAccountAUrl = (url: URL) =>
+    url.pathname === "/v2/close" &&
+    url.searchParams.get("month") === String(month.id) &&
+    url.searchParams.get("panel") === "brokers" &&
+    url.searchParams.get("source_account") === "7452034";
   await selectSourceAccount(page, "7452034");
   await expect(list).not.toContainText("8562034");
   await selectSourceAccount(page, "8562034");
   await expect(list).not.toContainText("7452034");
   await page.goBack();
+  await expect(page).toHaveURL(sourceAccountAUrl);
+  // Back restores URL scope; the disclosure may have remounted closed.
+  await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
   await reloadWorkspace(page);
+  await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
   await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
   await expect(page).toHaveURL(
@@ -1898,8 +1963,11 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await selectSourceAccount(page, "");
   await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue("");
   await page.goBack();
+  await expect(page).toHaveURL(sourceAccountAUrl);
+  await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
   await reloadWorkspace(page);
+  await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
   await showSourceReview(page);
   await expect(journal.getByRole("button", { name: "Проверить изменения разбора" })).toBeDisabled();
