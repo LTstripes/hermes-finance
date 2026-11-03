@@ -1375,7 +1375,7 @@ def test_investment_semantics_preserves_physical_database_binding(
     save_semantics_proof(
         database,
         monkeypatch,
-        proofs._LEGACY_READ_CODE if legacy else proofs.SEMANTICS_REVISION,
+        proofs._GIFT_COMPAT_CODES[1] if legacy else proofs.SEMANTICS_REVISION,
         "physical-original",
     )
     with database.session_factory() as session:
@@ -1451,7 +1451,7 @@ def test_investment_persistent_currentness_no_fallback(database, monkeypatch, mu
     save_semantics_proof(
         database,
         monkeypatch,
-        proofs._LEGACY_READ_CODE if legacy else proofs.SEMANTICS_REVISION,
+        proofs._GIFT_COMPAT_CODES[1] if legacy else proofs.SEMANTICS_REVISION,
         "proof-currentness",
     )
     if mutation == "overlap":
@@ -1822,7 +1822,10 @@ def test_investment_saved_history_material_conflict_and_occurrence_not_source_su
     monkeypatch.setattr(
         service,
         "_selected_sources",
-        lambda *_: ([(SimpleNamespace(id=i), saved, None) for i in [1, 2]], None),
+        lambda *_: (
+            [(SimpleNamespace(id=i, document_sha256=str(i) * 64), saved, None) for i in [1, 2]],
+            None,
+        ),
     )
     r = run(database, [(FILENAME, raw)], income_report=b"pdf")["source_return_preview"]
     c = r["comparison"][0]
@@ -2170,7 +2173,7 @@ def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
     from hermes_finance.services import source_investment_proofs as proofs
 
     original = save_semantics_proof(
-        database, monkeypatch, proofs._LEGACY_READ_CODE, "reviewed-legacy"
+        database, monkeypatch, proofs._GIFT_COMPAT_CODES[1], "reviewed-legacy"
     )
     before = snapshot(database)
     before_bytes = database.database_path.read_bytes()
@@ -2206,7 +2209,7 @@ def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkey
     from hermes_finance.services.source_return_proofs import ProofError
 
     with monkeypatch.context() as patch:
-        patch.setattr(proofs, "SEMANTICS_REVISION", proofs._LEGACY_READ_CODE)
+        patch.setattr(proofs, "SEMANTICS_REVISION", proofs._GIFT_COMPAT_CODES[1])
         preview = saved_investment_preview(database, patch)["persistence"]
     before = snapshot(database)
     with database.session_factory() as session:
