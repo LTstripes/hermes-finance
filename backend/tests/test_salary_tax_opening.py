@@ -3,11 +3,12 @@ from pathlib import Path
 
 import pytest
 from _month_close_helpers import close_fixture_month
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import create_database
 from hermes_finance.domain import IncomeType
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, IncomeEntry
 from hermes_finance.services.incomes import create_income_entry
 from hermes_finance.services.reporting_months import (
     create_reporting_month,
@@ -115,7 +116,10 @@ def test_missing_opening_context_fails_closed_for_first_may_payment(tmp_path: Pa
         database.engine.dispose()
 
 
-def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(tmp_path: Path) -> None:
+@pytest.mark.parametrize("origin", [None, "saved_actual_v1"], ids=["legacy", "saved"])
+def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(
+    tmp_path: Path, origin: str | None
+) -> None:
     session, database = session_for(tmp_path)
     try:
         upsert_salary_tax_year_context(
@@ -132,6 +136,13 @@ def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(tmp_path:
             calculate_salary_tax(session, june_id)
 
         add_salary(session, may_id, "100000.00")
+        entry = session.scalars(
+            select(IncomeEntry).where(IncomeEntry.reporting_month_id == may_id)
+        ).one()
+        entry.actual_fact_origin = origin
+        session.commit()
+        with pytest.raises(SalaryTaxHistoryIncompleteError):
+            calculate_salary_tax(session, june_id)
         close_fixture_month(session, may_id)
         assert calculate_salary_tax(session, june_id).tax_kopecks == 1_300_000
 
@@ -143,7 +154,10 @@ def test_draft_prior_month_is_not_known_and_reopen_invalidates_history(tmp_path:
         database.engine.dispose()
 
 
-def test_closed_salary_free_month_remains_unknown_until_explicit_zero(tmp_path: Path) -> None:
+@pytest.mark.parametrize("origin", [None, "saved_actual_v1"], ids=["legacy", "saved"])
+def test_closed_salary_free_month_remains_unknown_until_explicit_zero(
+    tmp_path: Path, origin: str | None
+) -> None:
     session, database = session_for(tmp_path)
     try:
         upsert_salary_tax_year_context(
@@ -160,6 +174,11 @@ def test_closed_salary_free_month_remains_unknown_until_explicit_zero(tmp_path: 
             calculate_salary_tax(session, june_id)
         reopen_reporting_month(session, may_id)
         add_salary(session, may_id, "0.00")
+        entry = session.scalars(
+            select(IncomeEntry).where(IncomeEntry.reporting_month_id == may_id)
+        ).one()
+        entry.actual_fact_origin = origin
+        session.commit()
         close_fixture_month(session, may_id)
         result = calculate_salary_tax(session, june_id)
         assert result.tax_kopecks == 4_300_000
