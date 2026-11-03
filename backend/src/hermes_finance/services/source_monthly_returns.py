@@ -893,6 +893,11 @@ def _read_monthly_returns(
                 dividends_kopecks=amount("dividends_kopecks"),
                 income_assumptions_used=True,
             )
+            if target_month is not None:
+                # The guarded account projection already supplies this exact
+                # month's operands. Its omitted flow schedule is needed only
+                # when constructing the full history below.
+                return changed
             lower, upper = row.result.opening_date, row.result.closing_date
             schedule = [(d, a, status) for d, a, status in schedule if not lower < d <= upper]
             if interval is not None:
