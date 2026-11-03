@@ -12,12 +12,6 @@ async function fullReview(page: Page) {
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
 }
-async function advanced(page: Page) {
-  const summary = page.getByText("Дополнительные интеграции и проверки", { exact: true });
-  await expect(summary).toBeVisible();
-  if (!(await summary.evaluate((element) => element.closest("details")?.open)))
-    await summary.click();
-}
 test.beforeEach(async ({ page }) => {
   page.on("dialog", (dialog) =>
     dialog.type() === "beforeunload" ? dialog.accept() : dialog.dismiss(),
@@ -429,9 +423,9 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
 
     // Quotes are a focused handoff; only its explicit button requests the provider.
-    await page.goto(`/v2/close?month=${old}&step=market_quotes`);
-    await advanced(page);
-    await page.getByRole("link", { name: "Открыть котировки", exact: true }).click();
+    await page.goto(
+      `/v2/data/months/${old}?section=positions&from=monthly-close-v2&step=market_quotes&monthId=${old}#month-quotes`,
+    );
     const quotes = page.getByRole("button", { name: "Обновить котировки", exact: true });
     await expect(quotes).toBeFocused();
     await expect(quotes).toBeInViewport();

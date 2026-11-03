@@ -1,11 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
-
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import type { BrokerMonthReadback } from "../src/api/brokerMonths";
 import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 import { makeCapitalDraft } from "../src/test/capitalDraftFixtures";
+import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
 
 import {
   makeUiV2ArchiveHistory,
@@ -504,8 +503,6 @@ test("ui-v2 Monthly Close desktop: final review, Close and Home journey", async 
   await page.goto("/v2");
   await page.getByTestId("v2-draft-action").click();
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=market_quotes$/);
-  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
-  await page.getByRole("link", { name: "Проверить итоги и закрыть месяц" }).first().click();
   await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть месяц" }).click();
   await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
@@ -523,22 +520,17 @@ test("ui-v2 Monthly Close desktop: final review, Close and Home journey", async 
   expect(evidence.errors).toEqual([]);
 });
 
-test("ui-v2 Monthly Close desktop payout step: explicit additional checks and provider handoff stay bounded", async ({
+test("ui-v2 Month desktop: legacy payout return has one Close panel without the wizard", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "Unique desktop evidence captured once");
   const evidence = await installCloseApi(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=12&step=actual_payouts");
-  await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "Проверить полученные выплаты", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toBeVisible();
-  const steps = page
-    .getByText("Дополнительные интеграции и проверки", { exact: true })
-    .locator("..");
-  await expect(steps).toHaveAttribute("open", "");
+  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toHaveCount(0);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-close-desktop-payout-step");
   expect(evidence.unexpected).toEqual([]);

@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
-import type { GuidedCloseActionId, GuidedCloseStep } from "../api/monthCloseWorkflow";
 import { listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
 import {
@@ -15,9 +14,7 @@ import {
 } from "../components/month-close/FinalMonthReview";
 import { IntentionalEmptyClose } from "../components/month-close/IntentionalEmptyClose";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
-import { isGuidedCloseStepId, routeForGuidedAction } from "../components/month-close/navigation";
 import { closeOwnerCopy } from "../components/month-close/ownerCopy";
-import { MonthlyCloseStepSummary } from "../components/month-close/ProviderStepSummary";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import {
   type AlfaStatementTransientOutcome,
@@ -42,15 +39,6 @@ import styles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
-const STATE_LABELS: Record<GuidedCloseStep["state"], string> = {
-  not_started: "Ещё не начато",
-  ready: "Следующее действие",
-  completed: "Готово",
-  skipped: "Не применяется",
-  warning: "Нужно внимание",
-  blocked: "Требуется исправить",
-};
-
 const MANUAL_SECTIONS = [
   ["general", "Снимок и общие данные", "Дата, источник, настройки месяца"],
   ["income", "Зарплата и другие доходы", "Ручные поступления"],
@@ -61,50 +49,6 @@ const MANUAL_SECTIONS = [
   ["liabilities", "Долги, кредитка и недвижимость", "Долг, ипотека и платежи"],
   ["note", "Комментарии", "Пояснения к месяцу"],
 ] as const;
-
-function actionPath(actionId: GuidedCloseActionId, monthId: number, stepId: GuidedCloseStep["id"]) {
-  if (actionId === "open_final_review") return monthWorkspacePath(monthId, "final_review_close");
-  return routeForGuidedAction(actionId, monthId, stepId, "monthly-close-v2");
-}
-
-function StepList({
-  monthId,
-  steps,
-  viewedStepId,
-}: {
-  monthId: number;
-  steps: GuidedCloseStep[];
-  viewedStepId: GuidedCloseStep["id"] | null;
-}) {
-  const location = useLocation();
-  return (
-    <ol className={styles.closeStepList} aria-label="Шаги закрытия">
-      {steps.map((step) => (
-        <li
-          className={styles.closeStep}
-          data-active={step.id === viewedStepId ? "true" : undefined}
-          id={`v2-close-step-${step.id}`}
-          key={step.id}
-        >
-          <span className={styles.closeStepOrder}>{step.order}</span>
-          <div className={styles.closeStepCopy}>
-            <Link
-              aria-current={step.id === viewedStepId ? "step" : undefined}
-              to={monthWorkspacePath(monthId, step.id, location.search, location.hash)}
-            >
-              {step.title}
-            </Link>
-            <p>{closeOwnerCopy(step.why)}</p>
-            <MonthlyCloseStepSummary compact step={step} />
-          </div>
-          <span className={styles.closeStepState} data-state={step.state}>
-            {STATE_LABELS[step.state]}
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 export default function UiV2ClosePage() {
   const [params] = useSearchParams();
@@ -183,14 +127,6 @@ export default function UiV2ClosePage() {
       (workflow.outlook.source_month.id === monthId &&
         workflow.outlook.source_month.year === workflow.month.year &&
         workflow.outlook.source_month.month === workflow.month.month));
-  const stepValues = params.getAll("step");
-  const requestedStep =
-    stepValues.length === 1 && isGuidedCloseStepId(stepValues[0]) ? stepValues[0] : null;
-  const viewedStep = workflowIdentityMatches
-    ? (workflow.steps.find((step) => step.id === requestedStep) ??
-      workflow.steps.find((step) => step.id === workflow.recommended_step_id) ??
-      null)
-    : null;
   const panels = [...MANUAL_SECTIONS.map(([id]) => id), "brokers", "close"];
   const panelValues = params.getAll("panel");
   const legacySection = params.getAll("section");
@@ -468,34 +404,12 @@ export default function UiV2ClosePage() {
                     available={false}
                   />
                 ) : null}
-                <details>
-                  <summary>Дополнительные интеграции и проверки</summary>
-                  <StepList
-                    monthId={workflow.month.id}
-                    steps={workflow.steps}
-                    viewedStepId={viewedStep?.id ?? null}
-                  />
-                  {!closed && viewedStep?.id === "market_quotes" && !viewedStep.primary_action ? (
-                    <Link to={actionPath("open_quote_preview", workflow.month.id, viewedStep.id)}>
-                      Открыть котировки
-                    </Link>
-                  ) : null}
-                  {viewedStep &&
-                    (!closed || viewedStep.id === "next_month_outlook") &&
-                    [viewedStep.primary_action, ...viewedStep.secondary_actions].map((action) =>
-                      action && action.id !== "confirm_close" ? (
-                        <Link
-                          key={action.id}
-                          to={actionPath(action.id, workflow.month.id, viewedStep.id)}
-                        >
-                          {closeOwnerCopy(action.label)}
-                        </Link>
-                      ) : null,
-                    )}
-                  {closed && workflow.outlook ? (
+                {closed && workflow.outlook ? (
+                  <details>
+                    <summary>Что известно о следующем месяце</summary>
                     <NextMonthOutlook outlook={workflow.outlook} />
-                  ) : null}
-                </details>
+                  </details>
+                ) : null}
               </>
             ) : null}
             <footer className={monthStyles.workFooter}>

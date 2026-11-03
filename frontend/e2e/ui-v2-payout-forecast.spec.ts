@@ -352,23 +352,13 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(api.errors).toEqual([]);
   });
 
-  test(`native payout forecast ${viewport.name}: v2 Close round-trip keeps the month`, async ({
+  test(`native payout forecast ${viewport.name}: legacy return opens the single Month Close panel`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const api = await installPayoutApi(page);
-    await page.goto("/v2/close?month=12&step=future_payouts");
-    await page.getByText("Дополнительные интеграции и проверки", { exact: true }).click();
-    const openCalendar = page.getByRole("link", { name: "Открыть календарь выплат" });
-    await expect(openCalendar).toHaveAttribute(
-      "href",
+    await page.goto(
       "/v2/data/payouts?month=12&from=monthly-close-v2&step=future_payouts&monthId=12",
-    );
-    await openCalendar.focus();
-    await expect(openCalendar).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(
-      /\/v2\/data\/payouts\?month=12&from=monthly-close-v2&step=future_payouts&monthId=12$/,
     );
     await expect(page.getByRole("heading", { level: 1, name: "Выплаты" })).toBeVisible();
     const backToClose = page.getByRole("link", { name: "Вернуться к закрытию" });
@@ -376,6 +366,8 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await backToClose.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/v2\/close\?month=12&step=future_payouts$/);
+    await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
     await assertNoPageOverflow(page);
     await expect(api.errors).toEqual([]);
