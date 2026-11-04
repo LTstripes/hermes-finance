@@ -27,6 +27,17 @@ absent endpoint valuations still withhold full returns. Exact-candidate CI,
 Integrator acceptance, authorized release/installation and representative Owner
 readback remain separate gates; no installed-state change is claimed here.
 
+The independent audit rejected `67f9c5e7`; its earlier code GO is superseded.
+The same branch's remediation tightens contradictory account costs and exact
+REPO pairs, makes supported later-start instrument periods reach Returns/card/AI,
+retains unknown siblings and adds an explicitly separate before-unallocated-cost
+estimate. V8 compatibility excludes changed financial scopes rather than simply
+renaming the revision. Compatible absent valuations and missing interior seams
+are distinguished from conflicting/invalid facts. HTTP redirects cannot establish
+empty payout coverage; discovery failures also receive bounded final summaries.
+Only synthetic checks are used here; the separate Owner-local readback is not
+copied into fixtures or claimed as candidate runtime/UAT evidence.
+
 ### Retained pre-release checkpoint for #1077 (historical)
 
 The later merge/release receipt is in [#1077](https://github.com/LTstripes/hermes-finance/pull/1077).

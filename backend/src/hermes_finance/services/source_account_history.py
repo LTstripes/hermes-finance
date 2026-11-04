@@ -12,6 +12,25 @@ CONTRACT = "source_account_history_v1"
 
 
 def latest_history(reports):
+    latest = {}
+    for report in reports:
+        key = (report.get("covered_from"), report.get("covered_to"))
+        if key not in latest or report.get("proof_id", 0) > latest[key].get("proof_id", 0):
+            latest[key] = report
+    reports = list(latest.values())
+    reliable = [
+        p
+        for p in reports
+        if p.get("status") == "current"
+        and p.get("interval")
+        and p["interval"].get("pnl", {}).get("value") is not None
+    ]
+    if reliable:
+        earliest = min(p["covered_from"] for p in reliable)
+        return max(
+            (p for p in reliable if p["covered_from"] == earliest),
+            key=lambda p: (p["covered_to"], p["proof_id"]),
+        )
     return max(
         (p for p in reports if p["history_from_zero"]),
         key=lambda p: (p["covered_to"], p["proof_id"]),
@@ -52,7 +71,12 @@ def extend_history(proof, monthly, *, through=None):
     start = date.fromisoformat(proof["covered_from"]) - timedelta(days=1)
     reasons = set(proof["reason_codes"])
     blockers = set()
-    if raw["pnl"]["value"] is None:
+    valuation_only = {"missing_endpoint", "economic_endpoint_unavailable"}
+    if raw["pnl"]["value"] is None and not (
+        raw["opening_kopecks"] is not None
+        and raw["closing_kopecks"] is None
+        and not set(raw["reason_codes"]) - valuation_only
+    ):
         blockers.add("history_base_unavailable")
     flows = list(raw.get("external_flows", ()))
     reasons.update(raw["reason_codes"])
@@ -66,13 +90,18 @@ def extend_history(proof, monthly, *, through=None):
         r = row.result
         if r.opening_date != cursor:
             blockers.add("history_interval_gap_or_overlap")
-        if previous is None or r.opening_kopecks is None:
-            blockers.add("history_seam_unavailable")
-        elif int(previous) != r.opening_kopecks:
+        if (
+            previous is not None
+            and r.opening_kopecks is not None
+            and int(previous) != r.opening_kopecks
+        ):
             blockers.add("history_seam_mismatch")
         reasons.update(r.reason_codes)
         reasons.update(row.flags)
-        if r.growth_kopecks is None:
+        # An interior valuation is unnecessary for outer cash economics. Keep
+        # every non-valuation failure and independently validate dated flows.
+        allowed_missing = {"missing_endpoint", "missing_month_endpoint", "history_seam_unavailable"}
+        if r.growth_kopecks is None and (set(r.reason_codes) | set(row.flags)) - allowed_missing:
             blockers.add("history_month_unavailable")
         matching = [
             p

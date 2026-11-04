@@ -2134,6 +2134,15 @@
         "events"
       ],
       "properties": {
+        "before_unallocated_costs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pnl", "modified_dietz"],
+          "properties": {
+            "pnl": {"$ref": "#/$defs/source_metric"},
+            "modified_dietz": {"$ref": "#/$defs/source_metric"}
+          }
+        },
         "period": {"$ref":"#/$defs/returns_period"},
         "valuation_date": {"type":["string","null"],"format":"date"},
         "isin": {

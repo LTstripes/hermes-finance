@@ -47,6 +47,28 @@ def history_case():
 
 
 class TestSourceAccountHistory(unittest.TestCase):
+    def test_missing_interior_seam_does_not_remove_known_outer_return(self):
+        proof, monthly = history_case()
+        proof["interval"].update(
+            closing_kopecks=None, pnl={"value": None}, reason_codes=["missing_endpoint"]
+        )
+        monthly.months[0].result = replace(
+            monthly.months[0].result,
+            opening_kopecks=None,
+            growth_kopecks=None,
+            reason_codes=("missing_endpoint",),
+            missing_endpoint=True,
+        )
+        result = extend_history(proof, monthly)["interval"]
+        self.assertEqual(result["pnl"]["value"], "20000")
+        self.assertIsNotNone(result["modified_dietz"]["value"])
+
+    def test_nonzero_reliable_period_is_selected_without_claiming_inception(self):
+        proof, _ = history_case()
+        proof["history_from_zero"] = False
+        proof["interval"]["opening_kopecks"] = "50000"
+        self.assertIs(latest_history([proof]), proof)
+
     def test_october_extends_both_accounts_with_outer_dietz_not_sum_of_rates(self):
         for account, scale in (("synthetic-brokerage", 1), ("synthetic-iis", 2)):
             with self.subTest(account=account):
@@ -141,7 +163,9 @@ class TestSourceAccountHistory(unittest.TestCase):
         self.assertIs(extend_history(proof, monthly, through=SEAM), proof)
         newer = {**proof, "proof_id": 2, "status": "stale", "interval": None}
         self.assertIs(latest_history([proof, newer]), newer)
-        self.assertIsNone(latest_history([{**proof, "history_from_zero": False}]))
+        selected = latest_history([{**proof, "history_from_zero": False}])
+        self.assertIsNotNone(selected)
+        self.assertFalse(selected["history_from_zero"])
         self.assertIsNone(extend_history(None, monthly))
 
     def test_valuation_gap_preserves_independently_known_income(self):

@@ -917,6 +917,8 @@ class TInvestClient:
             raise _NotFound()
         if status in {408, 429} or status >= 500:
             raise _NetworkFailure("T-Invest network error")
+        if not 200 <= status < 300 and status < 400:
+            raise _Malformed("T-Invest returned an unsuccessful HTTP status")
         try:
             payload = response.json()
         except ValueError as error:

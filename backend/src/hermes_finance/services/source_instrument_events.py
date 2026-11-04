@@ -21,6 +21,7 @@ from hermes_finance.domain.instrument_return import (
     InstrumentEvent,
     Metric,
     SourceReference,
+    StatementEstimate,
     calculate_economics,
 )
 from hermes_finance.domain.money_security import parse_money_security
@@ -58,6 +59,11 @@ def _account_cost_scope(saved, classification, isin):
     return (
         classification in {"fee", "tax"}
         and isin is None
+        and saved.get("amount_kopecks", 0) < 0
+        and normalize_currency(saved.get("currency")) == "RUB"
+        and not re.search(
+            r"дивиденд|dividend|купон|coupon|нкд|сделк|репо|погашен|сторно|возврат|компенсац", text
+        )
         and any(w in text for w in ("ведение счета", "ведение счёта", "account maintenance"))
     )
 
@@ -478,7 +484,9 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
 
     trades = defaultdict(list)
     for view in views:
-        repo_ids = repo_return_identities(view)
+        repo_ids = view.get("return_repo_identities")
+        if repo_ids is None:
+            repo_ids = repo_return_identities(view)
         for trade in view["document"].get("trades", []):
             repo_identity = (
                 repo_ids.get(trade["ordinal"]) if trade["section"] == "completed" else None
@@ -873,6 +881,7 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
 
     quantities, values, refs, reasons = set(), set(), [], set()
     basis_refs = set()
+    observation_scopes = set()
     for view in views:
         if "period_inferred_from_content" in view["document"].get("warnings", []):
             continue
@@ -895,7 +904,20 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
             if reference:
                 basis_refs.add(reference)
             q = _quantity(row.get("actual_quantity" if closing else "beginning_actual_quantity"))
-            v = _minor(row.get("ending_value" if closing else "beginning_value"))
+            raw_value = row.get("ending_value" if closing else "beginning_value")
+            v = _minor(raw_value)
+            if raw_value is not None and v is None:
+                reasons.add("missing_endpoint")
+            observation_scopes.add(
+                (
+                    view["document"].get("provider"),
+                    row.get("source_account"),
+                    isin,
+                    q,
+                    tuple(sorted(view["document"].get("endpoint_basis", {}).items())),
+                    bool(reference) if kind == "bond" else "stock",
+                )
+            )
             refs.append(
                 f"position:{view['id']}:{row['ordinal']}:{'closing' if closing else 'opening'}"
             )
@@ -908,10 +930,18 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
                 "ending_value": "covered_to_eod",
             }:
                 reasons.add("endpoint_basis_unsupported")
-    q = next(iter(quantities)) if len(quantities) == 1 else None
-    v = next(iter(values)) if len(values) == 1 else None
-    if len(quantities) > 1 or len(values) > 1:
+    known_quantities, known_values = quantities - {None}, values - {None}
+    q = (
+        next(iter(known_quantities))
+        if len(known_quantities) == 1 and None not in quantities
+        else None
+    )
+    v = next(iter(known_values)) if len(known_values) == 1 else None
+    if len(known_quantities) > 1 or len(known_values) > 1:
         reasons.add("overlapping_endpoint_conflict")
+    if None in values and known_values and (len(observation_scopes) != 1 or q is None):
+        v = None
+        reasons.add("missing_endpoint")
     if q is None or v is None or v < 0:
         reasons.add("missing_endpoint")
     if reasons:
@@ -1064,6 +1094,42 @@ def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed
     components, pnl, subtotal, rate, estimate = calculate_economics(
         opening, closing, selected, coverage
     )
+    excluded_costs = tuple(
+        e
+        for e in selected
+        if e.isin is None
+        and e.kind in {"FEE", "TAX"}
+        and set(e.reason_codes) == {"unallocated_instrument_cost"}
+        and e.cash_legs
+        and all(leg.account_cash_kopecks < 0 for leg in e.cash_legs)
+    )
+    if pnl.value is None and excluded_costs:
+        without_costs = analyse(
+            views,
+            isin,
+            kind,
+            start,
+            end,
+            tuple(e for e in events if e not in excluded_costs),
+            references,
+            gaps,
+            reviewed_basis=reviewed_basis,
+        )
+        if without_costs.pnl.value is not None:
+            assumption = ("unallocated_costs_excluded",)
+            estimate = StatementEstimate(
+                replace(
+                    without_costs.pnl,
+                    status="provisional",
+                    assumptions=without_costs.pnl.assumptions + assumption,
+                ),
+                replace(
+                    without_costs.modified_dietz,
+                    status="provisional",
+                    assumptions=without_costs.modified_dietz.assumptions + assumption,
+                ),
+                assumption,
+            )
     history_start = min(
         (_date(v["covered_from"]) - timedelta(days=1) for v in views), default=start
     )

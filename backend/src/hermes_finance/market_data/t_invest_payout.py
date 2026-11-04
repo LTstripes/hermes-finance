@@ -130,6 +130,7 @@ class TInvestPayoutProvider:
         try:
             uid = normalize_t_invest_uid(request.instrument_uid)
         except ValueError:
+            self._log_early_failure(request, "invalid_identity")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=request.instrument_uid,
@@ -144,6 +145,7 @@ class TInvestPayoutProvider:
         discovered = self._client.discover_candidates(provider_instrument_id=uid)
         kind, discovery_failure = _resolve_discovered_kind(discovered)
         if discovery_failure is not None:
+            self._log_early_failure(request, "discovery_failed")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=uid,
@@ -161,6 +163,7 @@ class TInvestPayoutProvider:
         elif kind in {InstrumentType.STOCK, InstrumentType.FUND}:
             windows = (self._dividend_window(uid, request),)
         else:
+            self._log_early_failure(request, "unsupported_kind")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=uid,
@@ -194,6 +197,15 @@ class TInvestPayoutProvider:
             events=tuple(events),
             coverage=tuple(coverage),
             failures=tuple(failures),
+        )
+
+    def _log_early_failure(self, request, status):
+        logger.warning(
+            "T-Invest payouts: method=discovery calendar_from=%s calendar_to=%s status=%s "
+            "received=unknown processed=0 returned=0 failures=1",
+            request.calendar_from,
+            request.calendar_to,
+            status,
         )
 
     def _bond_flags(self, uid: str) -> tuple[_BondFlags, PayoutFailure | None]:

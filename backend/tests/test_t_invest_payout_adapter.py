@@ -176,6 +176,22 @@ def test_payout_summary_counts_parsed_and_calendar_filtered_rows(caplog):
     assert f"status=ok received={rows} processed={rows} returned=0 failures=0" in caplog.text
 
 
+def test_discovery_error_has_sanitized_final_summary(caplog, monkeypatch):
+    client = _stock_client()
+    monkeypatch.setattr(
+        client, "discover_candidates", lambda **_: DiscoverResult(status=QuoteStatus.NETWORK_ERROR)
+    )
+    caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest_payout")
+    result = TInvestPayoutProvider(client).fetch_payouts(
+        PayoutFetchRequest(
+            instrument_uid=_STOCK_UID, calendar_from=date(2030, 1, 1), calendar_to=date(2030, 2, 1)
+        )
+    )
+    assert result.failures and not client.calls
+    assert "method=discovery" in caplog.text and "status=discovery_failed" in caplog.text
+    assert _STOCK_UID not in caplog.text
+
+
 def test_bond_fixture_maps_coupon_and_mty_without_cpn_double_import() -> None:
     client = _bond_client()
     result = TInvestPayoutProvider(client).fetch_payouts(

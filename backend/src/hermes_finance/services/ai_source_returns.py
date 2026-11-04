@@ -240,6 +240,23 @@ def _instrument(isin, meta, analysis, raw=None):
         "opening": _endpoint(analysis.opening),
         "closing": _endpoint(analysis.closing),
         "metrics": metrics,
+        **(
+            {
+                "before_unallocated_costs": {
+                    "pnl": _domain_metric(analysis.statement_estimate.pnl),
+                    "modified_dietz": _metric(
+                        analysis.statement_estimate.modified_dietz.value,
+                        status=analysis.statement_estimate.modified_dietz.status,
+                        reasons=analysis.statement_estimate.modified_dietz.reason_codes
+                        + analysis.statement_estimate.assumptions,
+                        method="modified_dietz",
+                        rate=True,
+                    ),
+                }
+            }
+            if "unallocated_costs_excluded" in analysis.statement_estimate.assumptions
+            else {}
+        ),
         # Returns presentation may add components; the AI contract keeps its
         # original allowlist and the producer's values/support for each field.
         "components": {
@@ -444,6 +461,70 @@ def source_returns_section(
                 key = ((r.opening_date + timedelta(days=1)).isoformat(), r.closing_date.isoformat())
                 if key not in intervals:
                     intervals[key] = _monthly_interval(session, account, row, monthly.flows)
+            from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+            available = (
+                read_instrument_returns(
+                    session,
+                    source_account=account,
+                    include_monthly_history=False,
+                    available_period=True,
+                    excluded_periods={
+                        (
+                            date.fromisoformat(p["covered_from"]) - timedelta(days=1),
+                            date.fromisoformat(p["covered_to"]),
+                        )
+                        for p in proofs
+                        if p["status"] != "current"
+                        and canonical.get(p["source_account"], p["source_account"]) == account
+                    },
+                )
+                if selected
+                else None
+            )
+            for instrument_row in available.instruments if available is not None else ():
+                analysis = instrument_row.analysis
+                if (
+                    not analysis
+                    or (
+                        analysis.pnl.value is None
+                        and not (
+                            "unallocated_costs_excluded" in analysis.statement_estimate.assumptions
+                            and analysis.statement_estimate.pnl.value is not None
+                        )
+                    )
+                    or analysis.closing_date > as_of_date
+                ):
+                    continue
+                key = (
+                    (analysis.opening_date + timedelta(days=1)).isoformat(),
+                    str(analysis.closing_date),
+                )
+                if key not in intervals:
+                    intervals[key] = {
+                        **_bounds(analysis.opening_date, analysis.closing_date),
+                        "period": {
+                            "start": str(analysis.opening_date),
+                            "end": str(analysis.closing_date),
+                        },
+                        "valuation_date": str(analysis.closing_date),
+                        "source_contract": "instrument_return_v2",
+                        "currentness": "current",
+                        "history_from_zero": analysis.history_complete_since_acquisition,
+                        "reason_codes": [],
+                        "account": None,
+                        "instruments": [],
+                    }
+                    proof_order[key] = -1
+                target = intervals[key]["instruments"]
+                projected = _instrument(
+                    instrument_row.isin, metadata.get(instrument_row.isin, {}), analysis
+                )
+                prior = next((item for item in target if item["isin"] == instrument_row.isin), None)
+                if prior is None:
+                    target.append(projected)
+                elif prior["metrics"]["pnl"]["value"] is None:
+                    target[target.index(prior)] = projected
             from hermes_finance.services.source_account_history import (
                 extend_history,
                 latest_history,
@@ -468,20 +549,33 @@ def source_returns_section(
             )
             for index, item in enumerate(ordered, 1):
                 item["ref"] = f"source-account-{ordinal}-interval-{index}"
-            history = [i for i in ordered if i["history_from_zero"]]
+            reliable = [
+                i
+                for i in ordered
+                if i["currentness"] == "current"
+                and i["account"]
+                and i["account"]["metrics"]["pnl"]["value"] is not None
+            ]
+            earliest = min((i["opening_date"] for i in reliable), default=None)
+            history = (
+                [i for i in reliable if i["opening_date"] == earliest]
+                if reliable
+                else [i for i in ordered if i["history_from_zero"]]
+            )
             whole = (
                 max(
                     history,
                     key=lambda i: (
                         i["closing_date"],
-                        proof_order[
+                        proof_order.get(
                             (
                                 (
                                     date.fromisoformat(i["opening_date"]) + timedelta(days=1)
                                 ).isoformat(),
                                 i["closing_date"],
-                            )
-                        ],
+                            ),
+                            -1,
+                        ),
                     ),
                 )
                 if history

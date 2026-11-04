@@ -808,6 +808,17 @@ def test_http_failure_logs_only_status(caplog):
     assert TEST_TOKEN not in caplog.text
 
 
+def test_redirect_empty_body_is_not_successful_empty_payout():
+    from hermes_finance.market_data.t_invest import _Malformed
+
+    http = httpx2.Client(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(302, json={})),
+        base_url="https://example.test",
+    )
+    with pytest.raises(_Malformed):
+        TInvestClient(token=TEST_TOKEN, client=http).request_payout_method("GetDividends", {})
+
+
 @pytest.mark.parametrize("period", ["2030-04-01T00:00:00Z", "sensitive"])
 def test_request_summary_logs_only_normalized_window_and_count(caplog, period):
     stub = TInvestStub()

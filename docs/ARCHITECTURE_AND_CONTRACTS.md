@@ -6947,11 +6947,47 @@ This supplies identity only: `repo_trade_unsupported`, uncounted cash/quantity,
 and unavailable full economic returns remain. Frozen parsers and financial
 receipt identities are unchanged.
 
-The instrument-reader change advances the reviewed semantic tripwire to v7.
-Saved account-proof `_captured_money`, `_payout_links`, `_interval` and dependency
-operands retain their meaning. Read-only v6 compatibility recomputes the exact
-old digest with all original, physical, classification, clock and gift operands;
-it neither reissues a receipt nor applies to writers or unknown future revisions.
+The audit correction advances the semantic tripwire to v8. The original-bound
+account proof now requires reciprocal B partners, complementary leg markers,
+matching account/issue/currency, opposite quantities and trade/cash/depository
+dates inside the interval before treating a REPO obligation as closed. Opposite
+first legs of unrelated pairs never suffice. Unproved pairs withhold account
+rates and affected instrument totals; this does not provide general REPO economics.
+Old proof decisions remain immutable. Read-only old-version compatibility is
+limited to interval-local sources whose meaning did not change: no REPO and no
+unallocated or contradictory cost scope. All original, physical, classification,
+clock and gift operands must still reproduce exactly. A new intersecting source
+can invalidate a proof; reads neither reissue it nor apply compatibility to writers.
+
+Account-only cost exclusion requires a negative RUB amount, explicit account
+maintenance meaning and no payout, trade, redemption, reversal or compensation
+contradiction, consistently across occurrences. Generic unallocated fees/taxes
+keep full instrument P/MD unknown. If every other economic dependency is complete,
+the existing calculator may additionally return a separate provisional
+`statement_estimate` with `unallocated_costs_excluded`: result and period rate
+before distributing those known expenses. The expense events remain inspectable.
+Returns displays this separately as “Без нераспределённых расходов счёта”; full
+P/MD is not replaced. AI keeps the separate `before_unallocated_costs` metrics,
+including percentage units, in addition to the unchanged full-result fields.
+
+Available-period instrument presentation can select the earliest reliable EOD
+start ending at the latest known EOD valuation, including a nonzero opening
+position. The bounded scan prefers a full result, then an explicitly separate
+before-cost estimate. Missing history before that start is not called zero or
+complete acquisition history. Every account/issue retains its own dates and
+unknown siblings remain visible. Explicit requests retain their exact interval;
+a stale proof's exact interval is excluded from automatic native fallback.
+The scan does not search every pair of earlier ending dates. REPO inventory
+identity is reconstructed once per source in one coherent read, with no
+cross-request cache.
+
+At the same account/issue/date/quantity and compatible source/EOD/valuation basis,
+an absent instrument boundary value may coexist with an independently known
+value without becoming a conflict. Different known values or quantities still
+conflict; an invalid present value cannot borrow another original's value.
+Outer account economics does not require an interior valuation. History extension
+keeps date continuity, actual seam conflicts, complete dated external-flow
+schedules and every non-valuation blocker while allowing missing interior values.
 
 Economic bond endpoints require evidenced dirty value or clean plus boundary NKD.
 Saved source facts alone do not provide that proof: `reported_unknown` and

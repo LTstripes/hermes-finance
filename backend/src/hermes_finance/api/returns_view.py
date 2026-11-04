@@ -42,6 +42,8 @@ class AccountLink(DTO):
 
 
 class Result(DTO):
+    conditional_pnl: Metric | None = None
+    conditional_rate: Metric | None = None
     account_link: AccountLink | None = None
     valuation_date: date | None
     period: Period
@@ -68,6 +70,8 @@ class Context(DTO):
 
 
 class Instrument(DTO):
+    conditional_pnl: Metric | None = None
+    conditional_rate: Metric | None = None
     account_link: AccountLink | None = None
     valuation_date: date | None
     isin: str

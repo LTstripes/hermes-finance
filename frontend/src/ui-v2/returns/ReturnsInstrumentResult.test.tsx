@@ -12,6 +12,21 @@ const setup = (props: Parameters<typeof ReturnsInstrumentResult>[0]) =>
     </MemoryRouter>,
   );
 
+test("shows a separate before-cost result while full result remains unknown", () => {
+  setup({
+    result: {
+      pnl: m(null),
+      rate: m(null, "fraction"),
+      conditional_pnl: { ...m("10000"), reason_codes: ["unallocated_costs_excluded"] },
+      conditional_rate: m("0.1", "fraction", "modified_dietz"),
+    },
+  });
+  const estimate = screen.getByRole("region", { name: "Результат без нераспределённых расходов" });
+  expect(estimate).toHaveTextContent("+100 ₽");
+  expect(estimate).toHaveTextContent("10,00%");
+  expect(screen.getAllByText("—")).toHaveLength(2);
+});
+
 test("instrument card hides the account gift disclosure but keeps real missing-data reasons", () => {
   const detail = detailFixture();
   detail.pnl = { ...m(null), reason_codes: ["broker_gift_external_flow", "source_proof_stale"] };

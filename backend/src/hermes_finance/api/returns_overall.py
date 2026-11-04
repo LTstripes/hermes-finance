@@ -47,6 +47,7 @@ class InstrumentAccount(Result):
     label: str
     canonical_account_id: int | None = None
     details_loaded: bool = True
+    native_period: bool = False
 
 
 class OverallInstrument(DTO):

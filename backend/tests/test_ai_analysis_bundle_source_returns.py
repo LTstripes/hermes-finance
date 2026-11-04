@@ -1332,7 +1332,7 @@ def test_all_history_same_end_uses_ordinary_latest_proof_tiebreak(database, monk
     account = section["data"]["accounts"][0]
     chosen = next(i for i in account["intervals"] if i["ref"] == account["all_history_ref"])
     assert (
-        chosen["opening_date"] == str(ordinary.instruments[0].analysis.opening_date) == "2028-12-31"
+        chosen["opening_date"] == str(ordinary.instruments[0].analysis.opening_date) == "2027-12-31"
     )
 
 

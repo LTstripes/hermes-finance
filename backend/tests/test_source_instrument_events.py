@@ -38,6 +38,141 @@ from hermes_finance.statement_import.mybroker import NS
 CASH_RETURN = "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС"
 
 
+@pytest.mark.parametrize(
+    "amount,text",
+    [
+        ("50", "Дивиденды и ведение счета"),
+        ("-2", "Дивиденды и ведение счета"),
+        ("2", "account maintenance"),
+        ("-2", "account maintenance погашение облигаций Synthetic"),
+    ],
+)
+def test_contradictory_account_cost_never_hides_cash(db, amount, text):
+    save(db, bond=None, trades=(), extra=(("Комиссия", text, amount),))
+    before = snapshot(db)
+    result = read(db)
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert not result.account_reconciliation_events
+    assert result.unresolved_events
+    assert snapshot(db) == before
+
+
+def test_supported_later_period_reaches_overview_card_and_ai(db):
+    from hermes_finance.services import ai_source_returns, returns_overall
+
+    save(db, bond=("2", "2", "2000", "2100"), trades=(), stock=("10", "10", "", "1100"))
+    save(db, 5, bond=("2", "2", "2100", "2200"), trades=(), stock=("10", "10", "1100", "1200"))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        native = read_instrument_returns(
+            session, source_account=ACCOUNT, available_period=True, include_monthly_history=False
+        )
+        analysis = by_isin(native)[ISIN].analysis
+        assert (analysis.opening_date, analysis.closing_date) == (
+            date(2030, 4, 30),
+            date(2030, 5, 31),
+        )
+        assert analysis.pnl.value == 10000 and analysis.modified_dietz.value is not None
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        assert {item["isin"] for item in overview["instruments"]} == {ISIN, BOND}
+        card = returns_overall.read_instrument_card(session, ISIN, overview=overview)
+        (account,) = card["accounts"]
+        assert account["detail"]["analysis"].pnl.value == 10000
+        assert account["period"] == {"start": date(2030, 4, 30), "end": date(2030, 5, 31)}
+        section = ai_source_returns.source_returns_section(
+            session, as_of_date=date(2030, 5, 31), reporting_period=(2030, 5)
+        )
+        intervals = section["data"]["accounts"][0]["intervals"]
+        assert any(
+            i["opening_date"] == "2030-04-30" and any(t["isin"] == ISIN for t in i["instruments"])
+            for i in intervals
+        )
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("quantity", ["10", "11"])
+def test_unknown_boundary_value_is_not_a_conflicting_known_value(db, quantity):
+    save(db, bond=None, trades=(), marker="known")
+    save(db, bond=None, trades=(), stock=(quantity, "10", "", "1100"), marker="unknown")
+    analysis = by_isin(read(db))[ISIN].analysis
+    if quantity == "10":
+        assert analysis.opening.economic_value_kopecks == 100000
+        assert analysis.pnl.value == 10000
+        assert "overlapping_endpoint_conflict" not in analysis.reason_codes
+    else:
+        assert analysis.pnl.value is None
+        assert "overlapping_endpoint_conflict" in analysis.reason_codes
+
+
+def test_unallocated_negative_fee_has_separate_before_cost_result(db):
+    from hermes_finance.services import returns_overall
+
+    save(db, bond=None, trades=(), extra=(("Комиссия", "unallocated cost", "-2"),))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_instrument_returns(session, source_account=ACCOUNT, available_period=True)
+        analysis = by_isin(result)[ISIN].analysis
+        assert analysis.pnl.value is None
+        assert analysis.statement_estimate.pnl.value == 10000
+        assert analysis.statement_estimate.modified_dietz.value == Decimal("0.1")
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        indexed = overview["instruments"][0]["accounts"][0]
+        assert indexed["pnl"]["value"] is None
+        assert indexed["conditional_pnl"]["value"] == "10000"
+        assert "unallocated_costs_excluded" in indexed["conditional_pnl"]["reason_codes"]
+        from hermes_finance.services import ai_source_returns
+
+        refs = {}
+        section = ai_source_returns.source_returns_section(
+            session,
+            as_of_date=date(2030, 4, 30),
+            reporting_period=(2030, 4),
+            source_account_refs=refs,
+        )
+        instrument = next(
+            item
+            for period in section["data"]["accounts"][0]["intervals"]
+            for item in period["instruments"]
+            if item["isin"] == ISIN and "before_unallocated_costs" in item
+        )
+        assert instrument["metrics"]["pnl"]["value"] is None
+        assert instrument["before_unallocated_costs"]["modified_dietz"]["value"] == "10"
+        blocked = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            available_period=True,
+            include_monthly_history=False,
+            excluded_periods={(date(2030, 3, 31), date(2030, 4, 30))},
+        )
+        assert by_isin(blocked)[ISIN].analysis.statement_estimate.pnl.value is None
+    assert result.unresolved_events
+    assert snapshot(db) == before
+
+
+def test_invalid_subkopeck_boundary_cannot_borrow_other_original_value(db):
+    save(db, bond=None, trades=(), marker="valid-value")
+    save(db, bond=None, trades=(), stock=("10", "10", "1000.001", "1100"), marker="invalid-value")
+    analysis = by_isin(read(db))[ISIN].analysis
+    assert analysis.opening.economic_value_kopecks is None
+    assert analysis.pnl.value is None
+
+
+def test_repo_identity_inventory_is_reconstructed_once_per_source_read(db, monkeypatch):
+    from hermes_finance.services import source_trade_identity
+
+    save(db, mutate=_repo_source_scope, end_month=6)
+    original = source_trade_identity.repo_return_identities
+    calls = []
+
+    def counted(view):
+        calls.append(view["id"])
+        return original(view)
+
+    monkeypatch.setattr(source_trade_identity, "repo_return_identities", counted)
+    read(db)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("choice", [None, "unknown"])
 def test_contract_return_read_rule_preserves_saved_default_and_manual_choice(db, choice):
     intake = save(db, bond=None, trades=(), extra=(("Перевод", CASH_RETURN, "-50"),))
