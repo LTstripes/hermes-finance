@@ -121,7 +121,7 @@ test("sorts and displays a native instrument period despite stale account proof"
   expect(rows[1]).toHaveTextContent("Бумага 5");
   expect(rows[1]).toHaveTextContent("−9 ₽");
   expect(rows[1]).not.toHaveTextContent("Нужна проверка данных");
-  fireEvent.click(rows[1].querySelector("summary")!);
+  fireEvent.click(within(rows[1]).getByText(/Учебный счёт А ·/));
   expect(within(rows[1]).getByText(/30\.04\.2030 — 31\.10\.2030/)).toBeVisible();
   expect(rows[2]).toHaveTextContent("Нужна проверка данных");
 });

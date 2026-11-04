@@ -298,7 +298,12 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await page.getByRole("button", { name: "Добавить вклад", exact: true }).click();
   await expect(page.getByRole("cell", { name: /^Синтетический длинный вклад/ })).toBeVisible();
   await expect(page.getByLabel("Название вклада", { exact: true })).toHaveValue("");
-  await expect(page.getByRole("status").filter({ hasText: /^Сохранено$/ })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({
+      hasText:
+        /^Вклад «Синтетический длинный вклад: все суммы и действия доступны» сохранён; данные перечитаны\.$/,
+    }),
+  ).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
     .toBeUndefined();
@@ -559,7 +564,10 @@ for (const width of [1280, 1440, 1920])
         expect(field.required, field.text).toBeLessThanOrEqual(field.available);
       await fits(page);
       await page.screenshot({ path: info.outputPath("deposit-edit.png"), fullPage: true });
-      await table.getByRole("button", { name: "Отмена", exact: true }).click();
+      await page.getByRole("button", { name: "Отмена", exact: true }).click();
+      await expect(table.locator("input, select")).toHaveCount(0);
+      await expect(table).toContainText("12 345 678,90");
+      await expect(table).toContainText("12 345,67");
       await tile(page, /Брокерские выписки/);
       const sourceDetails = page.getByText("Подробности", { exact: true });
       await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
