@@ -19,7 +19,6 @@ test("instrument card hides the account gift disclosure but keeps real missing-d
   setup({
     result: detail,
     reasonCodes: ["broker_gift_external_flow", "source_proof_stale"],
-    hideAccountGift: true,
   });
   expect(screen.queryByText(reasonCopy("broker_gift_external_flow").message)).toBeNull();
   expect(

@@ -21,7 +21,7 @@ from test_source_monthly_returns_service import (
     save_service_month,
     snapshot,
 )
-from test_statement_import_mybroker import ACCOUNT, FILENAME
+from test_statement_import_mybroker import ACCOUNT, FILENAME, ISIN
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_preflight import original, saved_investment_preview
 
@@ -38,6 +38,7 @@ from hermes_finance.services.ai_financial_review import (
     validate_ai_financial_review,
 )
 from hermes_finance.services.reporting_months import create_reporting_month
+from hermes_finance.services.source_instrument_returns import read_instrument_returns
 from hermes_finance.services.source_monthly_returns import read_monthly_result, read_monthly_returns
 
 
@@ -88,6 +89,53 @@ def _accept_money(client, source, raw, *, confirmed):
     )
     assert saved.status_code == 200, saved.text
     assert all(t["effective"] for t in saved.json()["targets"])
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_cash_gift_keeps_account_flow_without_blocking_instrument_evidence(database, confirmed):
+    client, scope, raw, source = existing_statement(database, gift=True)
+    with database.session_factory() as session:
+        saved = source_intake.save_intake(
+            session, document=raw, filename=FILENAME, request_id="gift-instrument-read"
+        )
+        bonus = session.scalar(
+            select(SourceMoneyClassification).where(
+                SourceMoneyClassification.intake_id == saved["intake_id"],
+                SourceMoneyClassification.date == date(2030, 1, 23),
+            )
+        )
+        bonus.classification = "unknown"
+        session.commit()
+    accept_bookkeeping(client, scope, raw, source)
+    _accept_money(client, source, raw, confirmed=confirmed)
+    before = snapshot(database)
+    with database.session_factory() as session:
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            isin=ISIN,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            include_monthly_history=False,
+        )
+    analysis = next(row.analysis for row in result.instruments if row.isin == ISIN)
+    if confirmed:
+        assert len(monthly.flows) == 1
+        assert monthly.flows[0].classification == "external_gift"
+        assert monthly.flows[0].amount_kopecks == 1723
+        row = monthly.months[0].result
+        assert row.contributions_kopecks == 1723
+        assert row.growth_kopecks == row.closing_kopecks - row.opening_kopecks - 1723
+        assert "broker_gift_external_flow" in {gap.code for gap in monthly.gaps}
+        assert "broker_gift_external_flow" not in {gap.code for gap in result.gaps}
+        assert "broker_gift_external_flow" not in analysis.reason_codes
+        assert not any(event.classification == "external_gift" for event in analysis.events)
+    else:
+        assert monthly.flows == ()
+        assert "unrecognized_money" in {gap.code for gap in monthly.gaps}
+        assert "unrecognized_money" in analysis.reason_codes
+    assert snapshot(database) == before
 
 
 def test_bonus_source_binding_compares_parser_facts_and_rejects_mismatches(database):

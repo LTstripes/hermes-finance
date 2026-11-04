@@ -323,7 +323,9 @@ def read_events(session, views, identities, native_account, gaps):
                     _date(view["covered_from"]).replace(day=1),
                 )
             )
-        gaps.extend(InstrumentReturnGap(**vars(g)) for g in local)
+        gaps.extend(
+            InstrumentReturnGap(**vars(g)) for g in local if g.code != "broker_gift_external_flow"
+        )
         for ref, raw_row in raw.items():
             if ref in validated_refs:
                 continue
@@ -638,7 +640,8 @@ def read_events(session, views, identities, native_account, gaps):
             and any(w in text for w in ("ведение счета", "ведение счёта", "account maintenance"))
         )
         if (
-            classification in {"external_deposit", "external_withdrawal", "internal_transfer"}
+            classification
+            in {"external_deposit", "external_withdrawal", "internal_transfer", "external_gift"}
             and not reasons
         ):
             continue

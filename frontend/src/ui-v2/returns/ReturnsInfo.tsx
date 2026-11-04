@@ -27,10 +27,15 @@ const methods: Record<string, string> = {
   PERF04A: "Изменение стоимости после внешних пополнений и снятий, по подтверждённым отчётам.",
   twrr: "Доходность TWRR за выбранный период, по подтверждённым отчётам.",
 };
+export function visibleReturnReasons(codes: string[]) {
+  return codes.filter((code) => code !== "broker_gift_external_flow");
+}
+
 export function Explanation({ codes, context }: { codes: string[]; context?: ReasonContext }) {
+  const visibleCodes = visibleReturnReasons(codes);
   const copy = [
     ...new Map(
-      codes.map((code) => {
+      visibleCodes.map((code) => {
         const value = reasonCopy(code, { surface: "returns", ...context });
         return [value.message, value];
       }),
@@ -49,10 +54,10 @@ export function Explanation({ codes, context }: { codes: string[]; context?: Rea
           )}
         </p>
       ))}
-      {codes.length > 0 && (
+      {visibleCodes.length > 0 && (
         <details>
           <summary>Подробности</summary>
-          <code>{[...new Set(codes)].join(", ")}</code>
+          <code>{[...new Set(visibleCodes)].join(", ")}</code>
         </details>
       )}
     </>
@@ -103,7 +108,7 @@ export function Value({
       <span className={styles.number}>{displayMetric(metric, signed)}</span>
       <Info label={label}>
         {methods[metric.method] && <p>{methods[metric.method]}</p>}
-        {metric.value === null && !metric.reason_codes.length && (
+        {metric.value === null && !visibleReturnReasons(metric.reason_codes).length && (
           <p>Нет подтверждённого значения для этого периода.</p>
         )}
         <Explanation codes={metric.reason_codes} />

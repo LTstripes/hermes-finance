@@ -13,7 +13,7 @@ import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
-import { Explanation } from "./ReturnsInfo";
+import { Explanation, visibleReturnReasons } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
@@ -50,13 +50,13 @@ export function ReturnsInstrumentCard({
     data?.accounts
       .map((account) => ({
         account,
-        codes: [
+        codes: visibleReturnReasons([
           ...new Set([
             ...account.reason_codes,
             ...(account.detail?.pnl.value === null ? account.detail.pnl.reason_codes : []),
             ...(account.detail?.rate.value === null ? account.detail.rate.reason_codes : []),
           ]),
-        ].filter((code) => code !== "broker_gift_external_flow"),
+        ]),
       }))
       .filter(({ account, codes }) => !account.included || !account.detail || codes.length > 0) ??
     [];
@@ -216,7 +216,6 @@ export function ReturnsInstrumentCard({
                             </td>
                             <td colSpan={2}>
                               <ReturnsInstrumentResult
-                                hideAccountGift
                                 result={account.detail}
                                 analysis={account.detail.analysis}
                                 reasonCodes={[
@@ -229,7 +228,6 @@ export function ReturnsInstrumentCard({
                         ) : (
                           <td colSpan={3}>
                             <ReturnsInstrumentResult
-                              hideAccountGift
                               result={null}
                               reasonCodes={account.reason_codes}
                             />

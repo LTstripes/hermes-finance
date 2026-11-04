@@ -276,7 +276,13 @@ def _income(session, views, identities, gaps):
             while month <= date.fromisoformat(view["covered_to"]):
                 gaps.append(InstrumentReturnGap("source_reader_unavailable", view["id"], month))
                 month = _next_month(month)
-        gaps.extend(InstrumentReturnGap(**asdict(gap)) for gap in local_gaps)
+        # A confirmed cash gift is an account-level external flow, not a gap
+        # in the evidence for each individual instrument.
+        gaps.extend(
+            InstrumentReturnGap(**asdict(gap))
+            for gap in local_gaps
+            if gap.code != "broker_gift_external_flow"
+        )
     result = []
     for observations in occurrences.values():
         confirmed = [pair for pair in observations if pair[0].status == "confirmed"]

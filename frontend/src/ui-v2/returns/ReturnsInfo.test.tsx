@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { expect, test } from "vitest";
-import { Explanation, Value } from "./ReturnsInfo";
 import type { Metric } from "./model";
+import { Explanation, Value } from "./ReturnsInfo";
 
 test("known reason renders a phrase, with its raw code only in closed details", () => {
   render(<Explanation codes={["missing_endpoint"]} />);
@@ -10,6 +10,16 @@ test("known reason renders a phrase, with its raw code only in closed details", 
   expect(screen.getByText("missing_endpoint")).not.toBeVisible();
   fireEvent.click(screen.getByText("Подробности"));
   expect(screen.getByText("missing_endpoint")).toBeVisible();
+});
+test("account gift disclosure is quiet while a real missing endpoint remains explained", () => {
+  const view = render(<Explanation codes={["broker_gift_external_flow", "missing_endpoint"]} />);
+  expect(screen.getByText("Не хватает стоимости на границе периода.")).toBeVisible();
+  expect(screen.queryByText(/Подарок был учтён/)).toBeNull();
+  fireEvent.click(screen.getByText("Подробности"));
+  expect(screen.getByText("missing_endpoint")).toBeVisible();
+  expect(screen.queryByText("broker_gift_external_flow")).toBeNull();
+  view.rerender(<Explanation codes={["broker_gift_external_flow"]} />);
+  expect(view.container).toBeEmptyDOMElement();
 });
 test("unknown reason never diagnoses missing data or renders a guessed action", () => {
   render(

@@ -2,7 +2,7 @@ import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { reasonCopy } from "../../lib/reasonCopy";
 import styles from "./InstrumentResult.module.css";
 import { type Metric, unavailable } from "./model";
-import { Explanation, Value } from "./ReturnsInfo";
+import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
 
 function Notes({ label, codes }: { label: string; codes: string[] }) {
   const messages = [
@@ -27,20 +27,16 @@ export function ReturnsInstrumentResult({
   result,
   analysis,
   reasonCodes = [],
-  hideAccountGift = false,
 }: {
   result: { pnl: Metric; rate: Metric } | null;
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
-  hideAccountGift?: boolean;
 }) {
-  const visible = (codes: string[]) =>
-    hideAccountGift ? codes.filter((code) => code !== "broker_gift_external_flow") : codes;
   const originalPnl = result?.pnl ?? unavailable;
   const originalRate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
-  const pnl = { ...originalPnl, reason_codes: visible(originalPnl.reason_codes) };
-  const rate = { ...originalRate, reason_codes: visible(originalRate.reason_codes) };
-  const reasons = visible([
+  const pnl = { ...originalPnl, reason_codes: visibleReturnReasons(originalPnl.reason_codes) };
+  const rate = { ...originalRate, reason_codes: visibleReturnReasons(originalRate.reason_codes) };
+  const reasons = visibleReturnReasons([
     ...new Set([
       ...reasonCodes,
       ...pnl.reason_codes,
