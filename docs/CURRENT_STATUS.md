@@ -8,6 +8,43 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+**1.10.5 metadata preparation, 4 November:** the common candidate in
+[#1083](https://github.com/LTstripes/hermes-finance/pull/1083),
+`f25e4d2de221d93fea2ea5d1201de63c5bcc62b1`, contains #1078, #1080, #1081
+and #1082. Independent code review returned GO on that exact head;
+[CI](https://github.com/LTstripes/hermes-finance/actions/runs/41907265170)
+and [UI evidence](https://github.com/LTstripes/hermes-finance/actions/runs/41907265291)
+completed successfully. Synthetic 30 April–31 October instrument results reach
+overview/card/AI with their own boundaries; the deposit desktop matrix and the
+two-source Apply/Close/lost-ACK journey also passed. These are synthetic checks,
+not Owner UAT or a measurement of the reported real Close delay.
+
+Branch `codex/release-1105-metadata-20261104` prepares version 1.10.5 and its
+release notes on top of that exact common candidate. This metadata follow-up
+must retain the existing code review's scope and receive its own applicable
+version/health/release checks; earlier CI is not claimed for a changed head.
+No new dependency, migration or financial calculation is introduced.
+
+**Owner UAT is blocked.** [O1's UAT-copy process](OWNER_RUNTIME_OPERATIONS.md#o1-0014-launcher-runtime-profile-safety-77-7-uat-copy-process)
+states: “This is an owner-only action. … Agents never perform it and never
+receive the copy.” The Owner has not yet received a current supported concrete
+command/procedure for the fresh representative-history Preview copy. No copy
+was obtained and no Owner UAT is claimed. Resolve that supported Owner-only
+preparation path before representative-history UAT and acceptance; do not use a
+development clone, a live production database or synthetic evidence as a substitute.
+The 1.10.5 notes deliberately retain `UAT-PENDING`, so the publication guard
+continues to block them. After UAT passes, reconcile that exact release tree,
+finalize the notes, verify exact-candidate PR CI and exact-main push CI, and only
+then consider authorized publication and backup-first Stable update/separate Start.
+PR approval still needs explicit Owner confirmation at the action.
+
+The later [#1077 receipt](https://github.com/LTstripes/hermes-finance/pull/1077)
+records release and installation of 1.10.4 at canonical main `4ff1641`; this task
+performs no installed-state readback or runtime/data change. Main, Stable and
+published tags are unchanged by this preparation.
+
+### Retained Worker preparation for #1078 (historical)
+
 **Unreleased Worker follow-up, 4 November:** branch
 `codex/returns-scope-repo-tinvest-20261104` starts at canonical main `4ff1641`.
 Synthetic regressions demonstrate an account-only expense overlap gap leaking
