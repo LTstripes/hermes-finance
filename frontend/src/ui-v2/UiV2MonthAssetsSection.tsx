@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import {
   createCashBalance,
   deleteCashBalance,
@@ -100,6 +100,18 @@ function sameMoney(left: string | null | undefined, right: string | null | undef
   return a !== null && b !== null && a === b;
 }
 
+/** A typed client rejection confirms the server did not accept this write. */
+function isDefiniteWriteRejection(cause: unknown): boolean {
+  return (
+    cause instanceof ApiClientError &&
+    cause.status >= 400 &&
+    cause.status < 500 &&
+    cause.status !== 408 &&
+    cause.status !== 429 &&
+    cause.code !== "http_error"
+  );
+}
+
 /** A total is rendered only when every component amount is valid; otherwise — never a zero. */
 function totalText(value: string | null, currency: string | null | undefined): string {
   return value === null ? "—" : formatMoney(value, { currency: currencySuffix(currency) });
@@ -130,6 +142,19 @@ type DepositIntent = {
   balance: MoneyValue;
   annual_rate: string;
   actual_interest_received: MoneyValue;
+};
+
+type DepositRecovery = {
+  unconfirmed: boolean;
+  version: number;
+  pendingCreate: PendingCreate | null;
+  createDraft: DepositDraft | null;
+  edits: Map<number, DepositIntent>;
+  otherWrites: Map<
+    number,
+    | { kind: "create"; id: number | null; intent: DepositIntent; draft: DepositDraft }
+    | { kind: "delete"; id: number }
+  >;
 };
 
 /**
@@ -264,9 +289,50 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     queryFn: ({ signal }) => getDashboard(monthId, signal, false),
   });
 
-  const [depositDraft, setDepositDraft] = useState<DepositDraft>(emptyDeposit);
+  // Query-scoped recovery survives leaving and returning to this month within
+  // the same client, without retaining data outside the local session.
+  const depositRecovery = useQuery({
+    queryKey: ["deposit-readback-recovery", monthId],
+    queryFn: (): DepositRecovery => ({
+      unconfirmed: false,
+      version: 0,
+      pendingCreate: null,
+      createDraft: null,
+      edits: new Map(),
+      otherWrites: new Map(),
+    }),
+    enabled: false,
+    gcTime: Infinity,
+    initialData: (): DepositRecovery => ({
+      unconfirmed: false,
+      version: 0,
+      pendingCreate: null,
+      createDraft: null,
+      edits: new Map(),
+      otherWrites: new Map(),
+    }),
+  }).data;
+
+  const unresolvedCreate = [...depositRecovery.otherWrites.values()].find(
+    (item) => item.kind === "create" && item.id === null,
+  );
+  const [depositDraft, setDepositDraft] = useState<DepositDraft>(
+    () =>
+      ((depositRecovery.pendingCreate || unresolvedCreate) && depositRecovery.createDraft) ||
+      depositRecovery.pendingCreate?.draft ||
+      (unresolvedCreate?.kind === "create" ? unresolvedCreate.draft : emptyDeposit()),
+  );
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCash);
-  const [depositDraftTouched, setDepositDraftTouched] = useState(false);
+  const [depositDraftTouched, setDepositDraftTouched] = useState(
+    Boolean(depositRecovery.pendingCreate || unresolvedCreate),
+  );
+  const [depositTotalsUnconfirmed, setDepositTotalsUnconfirmedState] = useState(
+    depositRecovery.unconfirmed,
+  );
+  function setDepositTotalsUnconfirmed(value: boolean) {
+    depositRecovery.unconfirmed = value;
+    setDepositTotalsUnconfirmedState(value);
+  }
   const [cashDraftTouched, setCashDraftTouched] = useState(false);
   const [editDeposits, setEditDeposits] = useState<Record<number, DepositDraft> | null>(null);
   const [editOriginals, setEditOriginals] = useState<Record<number, DepositSnapshot>>({});
@@ -281,9 +347,19 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const [totalWarning, setTotalWarning] = useState<string | null>(null);
   // A successful POST is retained here until confirmed: retries re-check by id
   // without ever repeating the create (duplicate-POST guard).
-  const [pendingCreated, setPendingCreated] = useState<PendingCreate | null>(null);
+  const [pendingCreated, setPendingCreatedState] = useState<PendingCreate | null>(
+    depositRecovery.pendingCreate,
+  );
+  function setPendingCreated(value: PendingCreate | null) {
+    depositRecovery.pendingCreate = value;
+    setPendingCreatedState(value);
+  }
+  useEffect(() => {
+    depositRecovery.createDraft = pendingCreated || unresolvedCreate ? depositDraft : null;
+  }, [depositDraft, depositRecovery, pendingCreated, unresolvedCreate]);
   // Retain attempted writes until a fresh list establishes their outcome.
-  const pendingDepositEdits = useRef(new Map<number, DepositIntent>());
+  const pendingDepositEdits = useRef(depositRecovery.edits);
+  const pendingOtherDepositWrites = useRef(depositRecovery.otherWrites);
   const busyRef = useRef(false);
   const operation = useRef(0);
 
@@ -390,11 +466,49 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   }
 
   async function refetchDepositRows(): Promise<DepositSnapshot[]> {
+    const version = depositRecovery.version;
     const result = await depositsQuery.refetch();
     if (!result.isSuccess || !result.data) {
       throw new Error("Список вкладов не удалось перечитать.");
     }
-    return requireMonthRows(result.data, monthId, "вкладов");
+    if (version !== depositRecovery.version) {
+      throw new Error("Список вкладов изменился во время чтения. Обнови данные ещё раз.");
+    }
+    const rows = requireMonthRows(result.data, monthId, "вкладов");
+    const editsConfirmed = [...pendingDepositEdits.current].every(([id, intent]) =>
+      matchesDepositIntent(
+        rows.find((row) => row.id === id),
+        intent,
+      ),
+    );
+    for (const [token, other] of pendingOtherDepositWrites.current) {
+      const confirmed =
+        other.kind === "delete"
+          ? !rows.some((row) => row.id === other.id)
+          : other.id !== null &&
+            matchesDepositIntent(
+              rows.find((row) => row.id === other.id),
+              other.intent,
+            );
+      if (confirmed) pendingOtherDepositWrites.current.delete(token);
+    }
+    setDepositTotalsUnconfirmed(!editsConfirmed || pendingOtherDepositWrites.current.size > 0);
+    return rows;
+  }
+
+  async function refreshDepositDisplay() {
+    if (busyRef.current) return;
+    const token = ++operation.current;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await refetchDepositRows();
+    } catch (cause) {
+      reportFailure(token, cause);
+    } finally {
+      finishAction(token);
+    }
   }
 
   async function refetchCashRows(): Promise<CashBalance[]> {
@@ -459,7 +573,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
 
   async function handleCreateDeposit(event: FormEvent) {
     event.preventDefault();
-    if (busyRef.current) return;
+    if (busyRef.current || unresolvedCreate) return;
     if (readOnly) {
       setActionError("Месяц закрыт: изменения активов недоступны.");
       return;
@@ -469,6 +583,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setBusy(true);
     setActionError(null);
     setNotice(null);
+    let writeId: number | null = null;
+    let writeAcknowledged = false;
     try {
       if (pendingCreated) {
         // Identity retained from a successful POST: confirm by id only — a
@@ -496,6 +612,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           "RUB",
         ),
       };
+      writeId = ++depositRecovery.version;
+      pendingOtherDepositWrites.current.set(writeId, {
+        kind: "create",
+        id: null,
+        intent,
+        draft: { ...depositDraft },
+      });
+      setDepositTotalsUnconfirmed(true);
       const created = await createDeposit({
         reporting_month_id: monthId,
         account_id: accountId,
@@ -505,9 +629,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         annual_rate: intent.annual_rate,
         actual_interest_received: intent.actual_interest_received,
       });
+      writeAcknowledged = true;
       if (created.reporting_month_id !== monthId) {
         throw new Error("API сохранил вклад в другом месяце.");
       }
+      pendingOtherDepositWrites.current.set(writeId, {
+        kind: "create",
+        id: created.id,
+        intent,
+        draft: { ...depositDraft },
+      });
       const pending: PendingCreate = {
         id: created.id,
         accountId,
@@ -517,8 +648,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       setPendingCreated(pending);
       await confirmCreatedDeposit(pending, token);
     } catch (cause) {
+      if (writeId !== null && !writeAcknowledged && isDefiniteWriteRejection(cause)) {
+        pendingOtherDepositWrites.current.delete(writeId);
+      }
       reportFailure(token, cause);
-      void depositsQuery.refetch();
+      void refetchDepositRows().catch(() => {});
     } finally {
       finishAction(token);
     }
@@ -592,6 +726,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (operation.current !== token) return;
       const id = Number(idText);
       const current = editOriginals[id];
+      let writeAcknowledged = false;
       try {
         if (!current || !draft.name.trim()) throw new Error("Укажи название вклада");
         const intent: DepositIntent = {
@@ -640,8 +775,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           draft.annual_rate === current.annual_rate &&
           draft.actual_interest === moneyAmount(current.actual_interest_received);
         if (unchanged) continue;
+        depositRecovery.version += 1;
         pendingDepositEdits.current.set(id, intent);
+        setDepositTotalsUnconfirmed(true);
         const changed = await updateDeposit(id, intent, current.updated_at);
+        writeAcknowledged = true;
         if (operation.current !== token) return;
         if (changed.id !== id || changed.reporting_month_id !== monthId) {
           throw new Error("Ответ сохранения не подтверждает выбранный вклад.");
@@ -658,6 +796,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         pendingDepositEdits.current.delete(id);
         saved.push(intent.name);
       } catch (cause) {
+        if (!writeAcknowledged && isDefiniteWriteRejection(cause))
+          pendingDepositEdits.current.delete(id);
         failed[id] = draft;
         errors.push(`«${draft.name || id}»: ${formatApiError(cause)}`);
       }
@@ -688,8 +828,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setActionError(null);
     setNotice(null);
     setPendingDeleteDeposit(null);
+    let writeId: number | null = null;
+    let writeAcknowledged = false;
     try {
+      writeId = ++depositRecovery.version;
+      pendingOtherDepositWrites.current.set(writeId, { kind: "delete", id: target.id });
+      setDepositTotalsUnconfirmed(true);
       await deleteDeposit(target.id);
+      writeAcknowledged = true;
       const fresh = await refetchDepositRows();
       if (fresh.some((row) => row.id === target.id)) {
         throw new Error("Удаление не подтверждено перечитыванием списка.");
@@ -698,8 +844,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (operation.current !== token) return;
       setNotice(`Вклад «${target.name}» удалён; данные перечитаны.`);
     } catch (cause) {
+      if (writeId !== null && !writeAcknowledged && isDefiniteWriteRejection(cause)) {
+        pendingOtherDepositWrites.current.delete(writeId);
+      }
       reportFailure(token, cause);
-      void depositsQuery.refetch();
+      void refetchDepositRows().catch(() => {});
     } finally {
       finishAction(token);
     }
@@ -886,8 +1035,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           <Panel
             action={
               <Badge>
-                {depositsForeign ? (
-                  <>итог — · снимок не подтверждён</>
+                {depositsForeign || depositTotalsUnconfirmed ? (
+                  <>итог — · данные уточняются</>
                 ) : (
                   <>
                     итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
@@ -1070,16 +1219,43 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 </Button>
               </div>
             ) : null}
+            {depositTotalsUnconfirmed ? (
+              <p className={styles.hint} role="status">
+                {unresolvedCreate
+                  ? "Не удалось подтвердить создание вклада. Проверь список вкладов и перезапусти приложение перед повторным добавлением."
+                  : "Итоги вкладов уточняются."}{" "}
+                <button disabled={busy} onClick={() => void refreshDepositDisplay()} type="button">
+                  Обновить
+                </button>
+              </p>
+            ) : null}
             <div className="totals-bar">
               <span>
-                Баланс: <strong>{totalText(depositTotals.balance, depositTotals.currency)}</strong>
+                Баланс:{" "}
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.balance,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
               <span>
                 Прогноз / мес:{" "}
-                <strong>{totalText(depositTotals.expected, depositTotals.currency)}</strong>
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.expected,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
               <span>
-                Получено: <strong>{totalText(depositTotals.actual, depositTotals.currency)}</strong>
+                Получено:{" "}
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.actual,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
             </div>
             {depositTotals.mixed ? (
@@ -1177,7 +1353,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                     />
                   </Field>
                 </div>
-                <Button disabled={busy || readOnly} type="submit" variant="primary">
+                <Button
+                  disabled={busy || readOnly || Boolean(unresolvedCreate)}
+                  type="submit"
+                  variant="primary"
+                >
                   {pendingCreated ? "Проверить создание" : "Добавить вклад"}
                 </Button>
                 <details className="field-details">
